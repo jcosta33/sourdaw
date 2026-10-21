@@ -645,6 +645,24 @@ function everyAudioTrackExceptVocals(name: string, arguments_: Record<string, un
     };
 }
 
+describe('a selection never reaches a track the request excepts', () => {
+    it('refuses the excepted track a kind selection reaches', () => {
+        const result = compileMix('add an EQ to every audio track except Vocals', [
+            roleItem(
+                'addDevice',
+                { deviceType: 'builtin-eq' },
+                { targetArgument: 'trackId', entity: 'track', where: { kind: 'audio' } },
+                4
+            ),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
+        expect(result.rejections).toEqual([
+            { index: 0, name: 'addDevice', reason: 'Compiled target trackId is not authorized by the user request' },
+        ]);
+    });
+});
+
 describe('a name stated only inside a protection picks no target', () => {
     it('refuses a track picked by a name the request states only in the clip it protects', () => {
         const bassWithVerse: ProjectTrack = {
