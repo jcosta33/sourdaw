@@ -1,0 +1,39 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_d9777cbdcb00b3 52,54,60-61,198-200,301-309,321,334,347,360,373,377-407,445-458,605,611,632-642,1237-1285,1397,1416-1427
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_e1a2a48bd6ed2f 8-9,13,111-113,521-577,602-815
+src/modules/AudioRendering/presentations/views/__tests__/deliveryPresets.spec.ts
+  s_59e31a5c6f3e31::t_5895e2afa7d10d 1-22
+src/modules/AudioRendering/presentations/views/__tests__/exportSettings.spec.ts
+  s_59e31a5c6f3e31::t_68dbaf2d921c80 34,56,78,101,127,142,166,188-209
+src/modules/AudioRendering/presentations/views/deliveryPresets.ts
+  s_59e31a5c6f3e31::t_66e2a1e9b0b75c 1-23
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_59e31a5c6f3e31::t_c81014d5673518 35,45-48,64,144-150
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/writePodcastId3.spec.ts
+  s_59e31a5c6f3e31::t_c383f390bb028c 1-93
+src/modules/AudioRendering/repositories/audioEncoders/writePodcastId3.ts
+  s_59e31a5c6f3e31::t_4aad323721bf9c 1-69
+src/modules/AudioRendering/useCases/__tests__/audioBufferToMp3PodcastMetadata.spec.ts
+  s_59e31a5c6f3e31::t_bd995e916c5d08 1-64
+src/modules/AudioRendering/useCases/audioBufferToMp3.ts
+  s_59e31a5c6f3e31::t_576f77fd6f0922 3,11,15-16,18-27
+src/modules/AudioRendering/useCases/validatePodcastMetadata.ts
+  s_59e31a5c6f3e31::t_ae4f0f94a18552 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bc2900a3d987ab1cfee1b9a30fbc6f2ee903e17",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
