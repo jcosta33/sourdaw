@@ -11,7 +11,9 @@ export const writeRenderCache = inject({ logger })(
         async function writeRenderCache({ cacheKey, audio }: WriteRenderCacheInput): WriteRenderCacheOutput {
             try {
                 const cached = await accessRenderCache({ cacheKey, audio });
-                if (cached === null) return;
+                if (cached === null) {
+                    return;
+                }
                 logger.info(`[StorageManager] Cached render: ${cacheKey}`);
             } catch (error) {
                 logger.warn(`[StorageManager] Failed to cache render ${cacheKey}: ${String(error)}`);

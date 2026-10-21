@@ -31,7 +31,9 @@ async function reconcileCache(directory: FileSystemDirectoryHandle): Promise<Cac
             hasUnknownDirectory = true;
             continue;
         }
-        if (name === RECENCY_FILE) continue;
+        if (name === RECENCY_FILE) {
+            continue;
+        }
         const file = await handle.getFile();
         // Unknown files consume space but never become eviction candidates.
         totalBytes += file.size;
@@ -47,14 +49,18 @@ async function reconcileCache(directory: FileSystemDirectoryHandle): Promise<Cac
         const handle = await directory.getFileHandle(RECENCY_FILE);
         const file = await handle.getFile();
         // Bound untrusted metadata by the largest useful index for the files that exist.
-        if (file.size <= Math.max(1024, sizes.size * 67 + 1)) savedOrder = JSON.parse(await file.text());
+        if (file.size <= Math.max(1024, sizes.size * 67 + 1)) {
+            savedOrder = JSON.parse(await file.text());
+        }
     } catch {
         // Missing or corrupt metadata cannot authorize deletion; actual files own accounting.
     }
     const orderedKeys = new Set<string>();
     if (Array.isArray(savedOrder)) {
         for (const key of savedOrder) {
-            if (typeof key === 'string' && sizes.has(key)) orderedKeys.add(key);
+            if (typeof key === 'string' && sizes.has(key)) {
+                orderedKeys.add(key);
+            }
         }
     }
     // Upgrading or recovering a missing index retains the files' last-write order.
@@ -92,12 +98,16 @@ export async function accessRenderCache({
     cacheKey: string;
     audio?: Float32Array;
 }): Promise<Float32Array | null> {
-    if (!CACHE_KEY.test(cacheKey)) return null;
+    if (!CACHE_KEY.test(cacheKey)) {
+        return null;
+    }
     if (audio !== undefined && (!isPcmSize(audio.byteLength) || audio.byteLength > DEFAULT_CACHE_LIMIT_BYTES)) {
         return null;
     }
     const locks = globalThis.navigator?.locks;
-    if (locks === undefined) throw new Error('Render caching requires the Web Locks API');
+    if (locks === undefined) {
+        throw new Error('Render caching requires the Web Locks API');
+    }
 
     return locks.request(CACHE_LOCK, { mode: 'exclusive' }, async () => {
         const root = await navigator.storage.getDirectory();
@@ -105,10 +115,14 @@ export async function accessRenderCache({
         const state = await reconcileCache(directory);
         const name = `${cacheKey}${RENDER_CACHE_EXTENSION}`;
         if (audio === undefined) {
-            if (!state.sizes.has(cacheKey)) return null;
+            if (!state.sizes.has(cacheKey)) {
+                return null;
+            }
             const handle = await directory.getFileHandle(name);
             const buffer = await (await handle.getFile()).arrayBuffer();
-            if (!isPcmSize(buffer.byteLength)) return null;
+            if (!isPcmSize(buffer.byteLength)) {
+                return null;
+            }
             const cached = new Float32Array(buffer);
             // A metadata write failure must not make otherwise valid cached audio unusable.
             try {
@@ -120,15 +134,23 @@ export async function accessRenderCache({
         }
 
         // Unknown hierarchies cannot be safely measured or reclaimed by this cache.
-        if (state.hasUnknownDirectory) return null;
+        if (state.hasUnknownDirectory) {
+            return null;
+        }
         // A same-named directory or invalid PCM is not an entry this cache may replace.
-        if (state.occupied.has(name) && !state.sizes.has(cacheKey)) return null;
+        if (state.occupied.has(name) && !state.sizes.has(cacheKey)) {
+            return null;
+        }
         const previousSize = state.sizes.get(cacheKey) ?? 0;
         const victims = state.order.filter((key) => key !== cacheKey);
         const reclaimable = victims.reduce((sum, key) => sum + (state.sizes.get(key) ?? 0), 0);
-        if (state.totalBytes - previousSize - reclaimable + audio.byteLength > DEFAULT_CACHE_LIMIT_BYTES) return null;
+        if (state.totalBytes - previousSize - reclaimable + audio.byteLength > DEFAULT_CACHE_LIMIT_BYTES) {
+            return null;
+        }
         for (const key of victims) {
-            if (state.totalBytes - previousSize + audio.byteLength <= DEFAULT_CACHE_LIMIT_BYTES) break;
+            if (state.totalBytes - previousSize + audio.byteLength <= DEFAULT_CACHE_LIMIT_BYTES) {
+                break;
+            }
             await directory.removeEntry(`${key}${RENDER_CACHE_EXTENSION}`);
             state.totalBytes -= state.sizes.get(key) ?? 0;
             state.order = state.order.filter((entry) => entry !== key);
@@ -138,7 +160,9 @@ export async function accessRenderCache({
             // Copy only this view, including when its backing buffer contains other audio.
             await writeFile(handle, new Float32Array(audio).buffer);
         } catch (error) {
-            if (!state.occupied.has(name)) await directory.removeEntry(name).catch(() => undefined);
+            if (!state.occupied.has(name)) {
+                await directory.removeEntry(name).catch(() => undefined);
+            }
             throw error;
         }
         await recordUse(directory, state.order, cacheKey);

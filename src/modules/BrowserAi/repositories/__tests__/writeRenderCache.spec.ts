@@ -27,15 +27,21 @@ function storage() {
         kind: 'directory',
         async getFileHandle(name: string, options?: { create?: boolean }) {
             if (!entries.has(name)) {
-                if (!options?.create) throw new DOMException('missing', 'NotFoundError');
+                if (!options?.create) {
+                    throw new DOMException('missing', 'NotFoundError');
+                }
                 entries.set(name, { kind: 'file', bytes: new Uint8Array() });
             }
-            if (entries.get(name)?.kind !== 'file') throw new DOMException('directory', 'TypeMismatchError');
+            if (entries.get(name)?.kind !== 'file') {
+                throw new DOMException('directory', 'TypeMismatchError');
+            }
             return {
                 kind: 'file',
                 async getFile() {
                     const entry = entries.get(name);
-                    if (entry?.kind !== 'file') throw new Error('missing');
+                    if (entry?.kind !== 'file') {
+                        throw new Error('missing');
+                    }
                     const bytes = entry.bytes.slice();
                     return {
                         size: bytes.byteLength,
@@ -48,14 +54,21 @@ function storage() {
                     let pending = new Uint8Array();
                     return {
                         async write(data: ArrayBuffer | ArrayBufferView | string) {
-                            if (failWrite === name) throw new Error('write failed');
-                            if (typeof data === 'string') pending = new TextEncoder().encode(data);
-                            else if (ArrayBuffer.isView(data))
+                            if (failWrite === name) {
+                                throw new Error('write failed');
+                            }
+                            if (typeof data === 'string') {
+                                pending = new TextEncoder().encode(data);
+                            } else if (ArrayBuffer.isView(data)) {
                                 pending = new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
-                            else pending = new Uint8Array(data).slice();
+                            } else {
+                                pending = new Uint8Array(data).slice();
+                            }
                         },
                         async close() {
-                            if (failClose === name) throw new Error('close failed');
+                            if (failClose === name) {
+                                throw new Error('close failed');
+                            }
                             entries.set(name, { kind: 'file', bytes: pending });
                         },
                         async abort() {
@@ -107,7 +120,7 @@ function storage() {
             entries.set(name, { kind: 'file', bytes, lastModified });
         },
         payloadBytes() {
-            return [...entries]
+            return Array.from(entries)
                 .filter(([name]) => name.endsWith('.pcm'))
                 .reduce((sum, [, entry]) => sum + (entry.kind === 'file' ? entry.bytes.length : 0), 0);
         },
@@ -173,8 +186,11 @@ describe('bounded render cache', () => {
 
     it.each(['write', 'close'] as const)('aborts a failed %s and preserves an existing entry', async (failure) => {
         await write(A);
-        if (failure === 'write') disk.failWrite(`${A}.pcm`);
-        else disk.failClose(`${A}.pcm`);
+        if (failure === 'write') {
+            disk.failWrite(`${A}.pcm`);
+        } else {
+            disk.failClose(`${A}.pcm`);
+        }
         await write(A, [2]);
         expect(await read(A)).toEqual(new Float32Array([1]));
         expect(disk.aborted).toContain(`${A}.pcm`);
@@ -225,7 +241,9 @@ describe('bounded render cache', () => {
     it.each(['absent', 'corrupt'])('evicts the oldest cold file when its recency index is %s', async (indexState) => {
         disk.seed(`${B}.pcm`, new Uint8Array(new Float32Array([2]).buffer), 100);
         disk.seed(`${A}.pcm`, new Uint8Array(new Float32Array([1]).buffer), 200);
-        if (indexState === 'corrupt') disk.seed(INDEX, new TextEncoder().encode('{broken'));
+        if (indexState === 'corrupt') {
+            disk.seed(INDEX, new TextEncoder().encode('{broken'));
+        }
 
         await write(C);
 
@@ -258,13 +276,14 @@ describe('bounded render cache', () => {
     });
 
     it.each(['storage', 'locks'])('keeps rendering best effort when %s is unavailable', async (unavailable) => {
-        if (unavailable === 'locks')
+        if (unavailable === 'locks') {
             Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
-        else
+        } else {
             Object.defineProperty(navigator, 'storage', {
                 configurable: true,
                 value: { getDirectory: vi.fn().mockRejectedValue(new Error('OPFS unavailable')) },
             });
+        }
         await expect(write(A)).resolves.toBeUndefined();
         expect(await read(A)).toBeNull();
     });
