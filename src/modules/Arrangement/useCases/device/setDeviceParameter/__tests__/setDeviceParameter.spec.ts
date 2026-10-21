@@ -110,6 +110,60 @@ describe('setDeviceParameter', () => {
         return track;
     }
 
+    it('previews a clamped transient in the engine without writing the track', () => {
+        const track = makeTrack('t1');
+        track.devices[0] = { ...track.devices[0]!, type: 'builtin-synth', parameterValues: { detune: 5 } };
+        setTrackState([track]);
+
+        expect(setDeviceParameter('d1', 'detune', 500, { transient: true })).toBe(true);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'detune', 100);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues.detune).toBe(5);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it.each(['missing', 'duplicate', 'vca'])('refuses an invalid transient target: %s', (kind) => {
+        const track = makeTrack('t1');
+        if (kind === 'missing') setTrackState([makeTrackWithoutDevices('t1')]);
+        else if (kind === 'duplicate') setTrackState([track, makeTrack('t2')]);
+        else setTrackState([setRuntimeKind(track, 'vca')]);
+        expect(setDeviceParameter('d1', 'gain', 0.5, { transient: true })).toBe(false);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it.each([{ projectOnly: true }, { deleteParameter: true }])(
+        'rejects a mixed transient option before any runtime or project write: %j',
+        (options) => {
+            setTrackState([makeTrack('t1')]);
+            expect(setDeviceParameter('d1', 'gain', 0.5, { ...options, transient: true })).toBe(false);
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['write', 'touch', 'latch'] as const)(
+        'retains every transient automation-recording input in %s mode',
+        (automationMode) => {
+            setTrackState([{ ...makeTrack('t1'), automationMode }]);
+            mocks.transportStoreValue = { isPlaying: true };
+            for (const [index, value] of [0.2, 0.8, 0.3].entries()) {
+                mocks.captureGestureBeat.mockReturnValue(index + 1);
+                setDeviceParameter('d1', 'gain', value, { transient: true });
+            }
+            expect(mocks.recordAutomationValue.mock.calls).toEqual([
+                ['t1', 'd1:gain', 0.2, 1],
+                ['t1', 'd1:gain', 0.8, 2],
+                ['t1', 'd1:gain', 0.3, 3],
+            ]);
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            mocks.recordAutomationValue.mockClear();
+            setDeviceParameter('d1', 'gain', 0.4, { transient: true, automationRecordingPolicy: 'suppressed' });
+            expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        }
+    );
+
     it('updates parameter in store and engine', () => {
         setTrackState([makeTrack('t1')]);
 

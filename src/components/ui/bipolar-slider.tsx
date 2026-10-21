@@ -1,4 +1,4 @@
-import { type ReactElement, type PointerEvent } from 'react';
+import { type ReactElement, type PointerEvent, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { Row } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
@@ -7,6 +7,7 @@ import { cn } from '#/utils/Styles/cn';
 type BipolarSliderProps = {
     value: number;
     onValueChange: (val: number) => void;
+    onValueCommit?: (val: number) => void;
     min: number;
     max: number;
     step?: number;
@@ -20,6 +21,7 @@ type BipolarSliderProps = {
 export const BipolarSlider = ({
     value,
     onValueChange,
+    onValueCommit,
     min,
     max,
     step = 0.1,
@@ -37,24 +39,82 @@ export const BipolarSlider = ({
     // Default position
     const normalizedDefault = range === 0 ? 50 : ((defaultValue - min) / range) * 100;
 
+    const pendingValue = useRef<number | null>(null);
+    const activePointerId = useRef<number | null>(null);
+    const commitRef = useRef<() => void>(() => undefined);
+    const commitPending = (): void => {
+        const pending = pendingValue.current;
+        pendingValue.current = null;
+        activePointerId.current = null;
+        if (pending !== null) {
+            onValueCommit?.(pending);
+        }
+    };
+    useLayoutEffect(() => {
+        commitRef.current = commitPending;
+    });
+    const hasCommitHandler = onValueCommit !== undefined;
+    useEffect(() => {
+        if (!hasCommitHandler) {
+            return;
+        }
+        const finish = (): void => commitRef.current();
+        const visibilityChanged = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finish();
+            }
+        };
+        window.addEventListener('blur', finish);
+        document.addEventListener('visibilitychange', visibilityChanged);
+        return () => {
+            window.removeEventListener('blur', finish);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            finish();
+        };
+    }, [hasCommitHandler]);
+
     const handleChange = ([v]: number[]) => {
         if (v === undefined) {
             return;
         }
         const mapped = min + (v / 100) * range;
+        if (onValueCommit) {
+            pendingValue.current = mapped;
+        }
         onValueChange(mapped);
     };
 
+    const finishPointer = (event: PointerEvent<HTMLDivElement>): void => {
+        if (activePointerId.current === event.pointerId) {
+            commitPending();
+        }
+    };
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        if (onValueCommit && event.button === 0) {
+            activePointerId.current = event.pointerId;
+        }
         if (event.metaKey || event.ctrlKey) {
             event.preventDefault();
             event.stopPropagation();
+            if (onValueCommit) {
+                pendingValue.current = defaultValue;
+            }
             onValueChange(defaultValue);
+            commitPending();
         }
     };
 
     return (
-        <div className={cn('flex flex-col gap-1 w-full', className)}>
+        <div
+            className={cn('flex flex-col gap-1 w-full', className)}
+            onPointerCancel={finishPointer}
+            onLostPointerCapture={finishPointer}
+            onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                    commitPending();
+                }
+            }}
+        >
             {label ? (
                 <Row justify="between" className="px-1">
                     <span className="text-[10px] text-muted-foreground">{label}</span>
@@ -72,6 +132,7 @@ export const BipolarSlider = ({
                     aria-label={ariaLabel ?? label ?? 'Bipolar value'}
                     value={[normalized]}
                     onValueChange={handleChange}
+                    onValueCommit={commitPending}
                     max={100}
                     step={step > 0 ? (step / range) * 100 : 0.1}
                     className="z-10"
