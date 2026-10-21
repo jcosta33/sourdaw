@@ -35,9 +35,12 @@ Probe: omit a listed live same-UID process from one whole catalog and require re
 fresh one; omit it from every catalog and require retention naming it at the deadline; alternate
 the omission of two processes and require retention, never pooled coverage. For a missed holder
 that forks into storage and exits before its liveness check, state sample, or scoped read, require
-a fresh whole observation that finds the heir. Require the closing parent listing to catch a heir
-handed storage by a live missed holder, including one reparented to launchd, and to ignore an
-unrelated newcomer. Measure convergence with repeated guarded real specs beside the base guard.
+a fresh whole observation that finds the heir; one that forks after the closing process list and
+stays an unreaped zombie must still reach the closing parent listing. Require a missed process gone
+before the closing list to cost no fresh observation. Require the closing parent listing to catch a
+heir handed storage by a live missed holder, including one reparented to launchd, and to ignore an
+unrelated newcomer and another account's launchd children. Measure convergence with repeated
+guarded real specs beside the base guard.
 
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 

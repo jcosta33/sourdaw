@@ -1208,11 +1208,13 @@ function scopedDarwinFileState(
     return { kind: 'uncovered', pids: pids.filter((pid) => !census.pids.has(pid)) };
 }
 
-// Takes one closing same-UID process list after a scoped read. A process absent from the
-// observation's earlier lists whose parent is a missed process, another such newcomer, or
-// launchd may hold storage handed over after its parent's lists were taken; newcomers with
-// other parents are ignored so the census converges while other work starts processes. A
-// process already listed that opens storage later remains the open-after-inspection gap.
+// Takes one closing same-UID process list after a clean scoped read or a skipped zombie. A
+// process absent from the observation's earlier lists whose parent is a missed process,
+// including a zombie, another such newcomer, or launchd may hold storage handed over after its
+// parent's lists were taken; newcomers with other parents are ignored so the census converges
+// while other work starts processes. Other accounts' processes are not recorded: their launchd
+// daemons would otherwise read as heirs in every listing. A process already listed that opens
+// storage later remains the open-after-inspection gap.
 function missedProcessHeirs(missed: number[], listed: Set<number>, uid: number, deadline: number): number[] | string {
     const result = spawnSync('ps', ['-axo', 'pid=,ppid=,uid='], {
         encoding: 'utf8',
@@ -1675,17 +1677,23 @@ export function storageFileState(
                     return currentPids === 'file-census-time-bound' ? expired() : unknown(currentPids);
                 }
                 const missing = new Map<number, string>();
-                // A missed process found gone may have forked a storage user after the process
-                // lists were taken; only a fresh observation, whose lists include any heir, can
-                // cover it. A process that left no heir is simply absent from the fresh lists.
+                // A missed process found gone after the closing list was taken may have forked a
+                // storage user after it; only a fresh observation, whose lists include any heir,
+                // can cover it. A process that left no heir is simply absent from the fresh lists.
                 const exited: number[] = [];
+                // A missed zombie holds no files, but it may have forked before it exited.
+                const zombies: number[] = [];
+                const closingPids = new Set(currentPids);
                 let onlySameUidPids = true;
                 for (const pid of new Set([...pids, ...currentPids])) {
                     if (census.pids.has(pid)) {
                         continue;
                     }
                     if (processIsGone(pid)) {
-                        exited.push(pid);
+                        // Gone before the closing list was taken, it left any child in that list.
+                        if (closingPids.has(pid)) {
+                            exited.push(pid);
+                        }
                         continue;
                     }
                     if (Date.now() > deadline) {
@@ -1695,8 +1703,10 @@ export function storageFileState(
                     // XNU closes the file table before publishing SZOMB. This only
                     // proves absence of file use, never release of the PID identity.
                     if (snapshot?.uid === uid && snapshot.state === 'Z') {
+                        zombies.push(pid);
                         continue;
                     }
+                    // Found alive after the closing list was taken, it may have outlived that list.
                     if (snapshot === undefined && processIsGone(pid)) {
                         exited.push(pid);
                         continue;
@@ -1708,7 +1718,7 @@ export function storageFileState(
                 if (Date.now() >= deadline) {
                     return expired();
                 }
-                if (missing.size === 0 && exited.length === 0) {
+                if (missing.size === 0 && exited.length === 0 && zombies.length === 0) {
                     return 'dead';
                 }
                 const describe = (pids: number[]) =>
@@ -1724,28 +1734,31 @@ export function storageFileState(
                     uncovered = `lsof-missed-pid-exited:count=${exited.length}:pid=${exited.slice(0, 4).join(',')}`;
                     continue;
                 }
-                uncovered = describe([...missing.keys()]);
-                // lsof can omit a live same-UID process, or finish before one is born. Other
-                // work keeps starting processes, so read the missed ones directly; coverage
-                // stays within this observation and is never pooled with earlier catalogs.
-                const scoped = scopedDarwinFileState([...missing.keys()], uid, tempDirectories, deadline);
-                if (scoped.kind === 'alive') {
-                    return 'alive';
+                if (missing.size > 0) {
+                    uncovered = describe([...missing.keys()]);
+                    // lsof can omit a live same-UID process, or finish before one is born. Other
+                    // work keeps starting processes, so read the missed ones directly; coverage
+                    // stays within this observation and is never pooled with earlier catalogs.
+                    const scoped = scopedDarwinFileState([...missing.keys()], uid, tempDirectories, deadline);
+                    if (scoped.kind === 'alive') {
+                        return 'alive';
+                    }
+                    if (scoped.kind === 'expired' || Date.now() >= deadline) {
+                        return expired();
+                    }
+                    if (scoped.kind === 'unavailable') {
+                        return unknown(scoped.reason);
+                    }
+                    if (scoped.pids.length > 0) {
+                        // Discard the whole observation: a fresh catalog must cover what stayed missed.
+                        uncovered = describe(scoped.pids);
+                        continue;
+                    }
                 }
-                if (scoped.kind === 'expired' || Date.now() >= deadline) {
-                    return expired();
-                }
-                if (scoped.kind === 'unavailable') {
-                    return unknown(scoped.reason);
-                }
-                if (scoped.pids.length > 0) {
-                    // Discard the whole observation: a fresh catalog must cover what stayed missed.
-                    uncovered = describe(scoped.pids);
-                    continue;
-                }
-                // A missed holder read clean may already have handed storage to a new process.
+                // A missed holder read clean, or a zombie, may already have handed storage to a
+                // new process.
                 const heirs = missedProcessHeirs(
-                    [...missing.keys()],
+                    [...missing.keys(), ...zombies],
                     new Set([...pids, ...currentPids]),
                     uid,
                     deadline

@@ -759,21 +759,26 @@ observations. On macOS, `lsof` races the processes it reads: a descriptor that c
 reads leaves an otherwise valid catalog missing only its type, and a live same-UID process,
 whether newborn or already listed, can be absent from a whole-account catalog. Other work on a busy
 host keeps starting such processes, so a fresh whole catalog may never be complete. A missed
-process found gone, at its first liveness check, before its state sample, or by its scoped read,
-never contributes to proof of release: it may have forked a storage user after the process lists
-were taken, so the census takes a fresh whole observation, whose lists include any heir. A
-same-UID zombie is still skipped: XNU closes its file table first and it cannot fork. An
-observation with such an exited process spends no scoped read. An omitted process with another or
+process found gone after the observation's closing process list was taken, whether listed there
+and gone at its first liveness check, or found alive then and gone before its state sample or by
+its scoped read, never contributes to proof of release: it may have forked a storage user after
+that list, so the census takes a fresh whole observation, whose lists include any heir. An
+observation with such an exited process spends no scoped read. A missed process listed only in the
+opening list and gone at its first liveness check exited before the closing list, which therefore
+holds any child it forked, so it needs no fresh observation. A same-UID zombie needs no coverage,
+since XNU closes its file table first, but it may have forked before it became a zombie, so an
+observation with one still takes the closing parent list below. An omitted process with another or
 unsampled UID retains storage at once. Every other omitted process, in any sampled state including
 `ps`'s undetermined `?`, is read directly in the same observation with a PID-scoped, same-UID
 `lsof`: a storage path there is a live use; an exit status other than 0 or 1, any diagnostic,
 unusable output or a process that was not requested retains storage at once; a catalog missing
 only a descriptor type, or one that does not list a missed process, leaves it uncovered. A missed
-process read clean may already have handed storage to a new process, so before such a read can
-prove release the census takes one closing same-UID process list with parents. A process absent
-from the observation's earlier lists whose parent is a missed process, another such newcomer, or
-launchd sends the census to a fresh whole observation; newcomers with other parents are ignored
-so the census converges while other work starts processes. A process already listed and
+process read clean, or a skipped zombie, may already have handed storage to a new process, so
+before such an observation can prove release the census takes one closing same-UID process list
+with parents. A process absent from the observation's earlier lists whose parent is a missed
+process, including a zombie, another such newcomer, or launchd sends the census to a fresh whole
+observation; newcomers with other parents, and every other account's processes, are ignored so
+the census converges while other work starts processes. A process already listed and
 inspected that opens storage, or starts a storage user, afterwards remains outside this sampled
 proof. Coverage counts only within one observation and is never pooled across catalogs. An
 observation left uncovered, or a catalog missing a descriptor type, is discarded for a wholly
