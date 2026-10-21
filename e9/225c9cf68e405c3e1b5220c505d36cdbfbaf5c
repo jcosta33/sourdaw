@@ -1,0 +1,28 @@
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_2bfd55a4393d7c::t_82685f396ec792 679,681-682
+  s_2bfd55a4393d7c::t_b5dfd242e50406 637,640-641,647-653,659-663
+  s_2bfd55a4393d7c::t_9a44b93a1d9052 138-146,149
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_2bfd55a4393d7c::t_58d613053068fa 1,4
+  s_2bfd55a4393d7c::t_079fdbb5b9b72f 794-803
+  s_2bfd55a4393d7c::t_c9bfd651d415cc 725-726
+  s_2bfd55a4393d7c::t_95e9163e4c949f 838-843
+  s_2bfd55a4393d7c::t_2fea5b582031f9 639-724,727-793,804-837,844-849,851-901
+  s_2bfd55a4393d7c::t_beb5189bdc30da 850
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9225c9cf68e405c3e1b5220c505d36cdbfbaf5c",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
