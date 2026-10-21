@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseReviewStancesRecord } from '../reviewDossierPublication.ts';
 import { assertFreshReviewStructuralAdmission, REVIEW_STANCES_ADMISSION_FORMAT } from '../reviewStructuralAdmission.ts';
 
-import type { CompletedReviewStance, ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
+import type { CompletedReviewStance } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const plan: ReviewRiskPlan = {
@@ -21,21 +21,6 @@ const completed: CompletedReviewStance[] = [
     { stance: 'weak probe', reviewerModel: 'model-two', modelTier: 'standard', outcome: 'clean' },
     { stance: 'stale replay', reviewerModel: 'model-three', modelTier: 'standard', outcome: 'clean' },
 ];
-
-type PublicationContext = Pick<ReviewDossier, 'recommendation'> & { events: readonly ReviewDossierEvent[] };
-
-const blockingPublication: PublicationContext = {
-    recommendation: 'request-changes',
-    events: [
-        {
-            kind: 'finding-accepted',
-            findingId: 'comment-0',
-            path: 'scripts/reviewStructuralAdmission.ts',
-            line: 1,
-            side: 'RIGHT',
-        },
-    ],
-};
 
 function record(draws: readonly CompletedReviewStance[] = completed) {
     return {
@@ -75,7 +60,7 @@ function admit(
     value: unknown,
     draws: readonly CompletedReviewStance[] = completed,
     riskPlan = plan,
-    publication?: PublicationContext
+    publication?: { recommendation: 'approve' | 'request-changes'; acceptedFindingCount: number }
 ): void {
     assertFreshReviewStructuralAdmission(riskPlan, draws, { present: true, value }, 'bundle/stances.json', publication);
 }
@@ -83,13 +68,18 @@ function admit(
 describe('fresh reviewer structural admission', () => {
     it('admits a failed unmodified baseline only for a blocker draw in a change request with an accepted finding', () => {
         const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome: 'blocker-found' }, ...completed.slice(1)];
-        expect(() => admit(recordWithResult('baseline-failed', draws), draws, plan, blockingPublication)).not.toThrow();
+        expect(() =>
+            admit(recordWithResult('baseline-failed', draws), draws, plan, {
+                recommendation: 'request-changes',
+                acceptedFindingCount: 1,
+            })
+        ).not.toThrow();
     });
 
     it.each([
-        ['approval', { ...blockingPublication, recommendation: 'approve' }, 'blocker-found'],
-        ['no accepted finding', { ...blockingPublication, events: [] }, 'blocker-found'],
-        ['clean draw', blockingPublication, 'clean'],
+        ['approval', { recommendation: 'approve', acceptedFindingCount: 1 }, 'blocker-found'],
+        ['no accepted finding', { recommendation: 'request-changes', acceptedFindingCount: 0 }, 'blocker-found'],
+        ['clean draw', { recommendation: 'request-changes', acceptedFindingCount: 1 }, 'clean'],
     ] as const)('refuses a failed baseline on %s', (_case, publication, outcome) => {
         const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome }, ...completed.slice(1)];
         expect(() => admit(recordWithResult('baseline-failed', draws), draws, plan, publication)).toThrow(
@@ -106,9 +96,12 @@ describe('fresh reviewer structural admission', () => {
 
     it.each(['still-green', 'not-run'] as const)('still refuses %s on a blocking change request', (result) => {
         const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome: 'blocker-found' }, ...completed.slice(1)];
-        expect(() => admit(recordWithResult(result, draws), draws, plan, blockingPublication)).toThrow(
-            new RegExp(`baseline probe.*reported ${result}`, 'u')
-        );
+        expect(() =>
+            admit(recordWithResult(result, draws), draws, plan, {
+                recommendation: 'request-changes',
+                acceptedFindingCount: 1,
+            })
+        ).toThrow(new RegExp(`baseline probe.*reported ${result}`, 'u'));
     });
 
     it.each([undefined, 'passed'] as const)('rejects unsupported probe result %s', (result) => {

@@ -346,14 +346,16 @@ export function prepareReviewDossierPublication(input: {
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
         recordedStances,
     });
-    const dossier = publication.dossier;
     // Exact published replay is exempt; recovered binding retains historical caller-side rules.
-    if (publishedReviewId(dossier) === undefined) {
+    if (publishedReviewId(publication.dossier) === undefined) {
         if (input.recovered !== true) {
-            assertFreshReviewStructuralAdmission(plan, completedStances(dossier), stancesRead, stancesPath, dossier);
+            assertFreshReviewStructuralAdmission(plan, completedStances(publication.dossier), stancesRead, stancesPath, {
+                recommendation: publication.dossier.recommendation,
+                acceptedFindingCount: acceptedFindings(publication.dossier).length,
+            });
         }
         assertSemanticAssessmentAcknowledged(
-            dossier,
+            publication.dossier,
             readSemanticCiRecord(input.port, input.bundle),
             {
                 pr: plan.pr,
