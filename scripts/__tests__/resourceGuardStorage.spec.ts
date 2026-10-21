@@ -607,6 +607,10 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                 command: process.execPath,
                 args: ['-e', parent, descendant, rootMarker, marker, heartbeat, String(scenario === 'parent exit')],
                 profile: 'focused',
+                // The guard samples the tree at spawn and then per interval; a sample taken while the
+                // descendant is still the parent's child tracks it, and normal exit then kills it.
+                // One spawn-time sample, before the descendant exists, keeps it a hidden user.
+                sampleIntervalMs: 60_000,
                 availableMemoryBytes: abundantMemoryBytes,
                 maxRssBytes: 512 * 1024 ** 2,
                 admissionRoot: root,
