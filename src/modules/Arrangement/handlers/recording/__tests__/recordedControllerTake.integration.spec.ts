@@ -165,7 +165,7 @@ describe('recorded controller take commit', () => {
         await stopRecording(8);
         flushAutomergeStorageWrites();
 
-        const rowsOf = <TRow extends object>(rows: readonly TRow[] | undefined) =>
+        const rowsOf = <TRow extends { id: string }>(rows: readonly TRow[] | undefined) =>
             (rows ?? []).map(({ id: _id, ...row }) => row);
         const recordedCc = midiStore.value?.ccByClipId[clipId];
         const recordedBend = midiStore.value?.pitchBendByClipId[clipId];
