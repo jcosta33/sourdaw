@@ -204,6 +204,7 @@ export { armTrack } from './recording/armTrack';
 export { commitRecording } from './recording/commitRecording';
 export { discardRecording } from './recording/discardRecording';
 export { stageRecordingTake } from './recording/stageRecordingTake';
+export { observeRecordingPassEntry } from './recording/observeRecordingPassEntry';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 

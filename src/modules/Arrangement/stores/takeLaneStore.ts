@@ -25,7 +25,12 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
-const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats', 'passAnchorSeconds', 'passDepthSeconds'] as const;
+const TAKE_OPTIONAL_KEYS = [
+    'sourceOffsetBeats',
+    'passAnchorSeconds',
+    'passDepthSeconds',
+    'passSourceEndSeconds',
+] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 
 type HasExactKeysInput = {
@@ -97,20 +102,24 @@ function is_valid_take(value: unknown): value is Take {
  * A placed pass carries its anchor and its depth together, and only beside the
  * media depth that marks it a pass. A pass recorded ahead of its media sounds
  * before the media begins, so its anchor may be negative; its material lies
- * inside the recording, so its depth may not.
+ * inside the recording, so its depth may not. A saved exclusive source end
+ * must leave material beyond that depth.
  */
 function is_valid_pass_placement(value: object): boolean {
     const hasAnchor = 'passAnchorSeconds' in value;
     const hasDepth = 'passDepthSeconds' in value;
     if (!hasAnchor && !hasDepth) {
-        return true;
+        return !('passSourceEndSeconds' in value);
     }
     return (
         hasAnchor &&
         hasDepth &&
         'sourceOffsetBeats' in value &&
         is_finite_number(value.passAnchorSeconds) &&
-        is_finite_non_negative_number(value.passDepthSeconds)
+        is_finite_non_negative_number(value.passDepthSeconds) &&
+        (!('passSourceEndSeconds' in value) ||
+            (is_finite_non_negative_number(value.passSourceEndSeconds) &&
+                value.passSourceEndSeconds > value.passDepthSeconds))
     );
 }
 
@@ -135,6 +144,9 @@ function normalize_take(take: Take): Take {
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         sanitized.passAnchorSeconds = take.passAnchorSeconds;
         sanitized.passDepthSeconds = take.passDepthSeconds;
+        if (take.passSourceEndSeconds !== undefined) {
+            sanitized.passSourceEndSeconds = take.passSourceEndSeconds;
+        }
     }
     return sanitized;
 }

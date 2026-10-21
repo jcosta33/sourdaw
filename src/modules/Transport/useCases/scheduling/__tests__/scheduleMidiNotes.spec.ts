@@ -345,7 +345,12 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = { notesByClipId: {} };
 
         const previousPendingSeam = schedulerSession.pendingSeam;
-        schedulerSession.pendingSeam = { seamAudioTime: 10.1, anchorAudioTime: 10, anchorPosition: 11.9 };
+        schedulerSession.pendingSeam = {
+            seamAudioTime: 10.1,
+            destinationBeat: 8,
+            anchorAudioTime: 10,
+            anchorPosition: 11.9,
+        };
         try {
             await scheduleMidiNotes(
                 4.05,

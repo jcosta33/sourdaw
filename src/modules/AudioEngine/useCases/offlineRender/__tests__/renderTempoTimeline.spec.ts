@@ -24,6 +24,23 @@ describe('renderTempoTimeline', () => {
         }
     });
 
+    it('inverts placement after a tempo excursion shorter than the constant-span tolerance', () => {
+        const secondsAtBeat = (beat: number) => {
+            if (beat <= 0.0001) {
+                return beat / 2;
+            }
+            if (beat <= 0.0002) {
+                return 0.00005 + (beat - 0.0001) / 4;
+            }
+            return beat / 2 - 0.000025;
+        };
+        const tempoAtBeat = (beat: number) => (beat >= 0.0001 && beat < 0.0002 ? 240 : 120);
+        const timeline = renderTempoTimeline(secondsAtBeat, tempoAtBeat);
+
+        expect(timeline.beatAtSeconds(0.4)).toBeCloseTo(0.80005, 12);
+        expect(secondsAtBeat(timeline.beatAtSeconds(0.4))).toBeCloseTo(0.4, 12);
+    });
+
     it('reads a whole-sample placement back to within a sample', () => {
         const sampleRate = 48_000;
         const map = twoTempoMap(120, 10, 60);
