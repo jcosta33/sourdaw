@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
+import { type ReactElement, useRef, useEffect, useState, lazy, Suspense } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -20,6 +20,7 @@ import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import { createTimelineRenderer } from '../renderers/createTimelineRenderer';
 
 import { ClipContextMenu } from './ClipContextMenu';
+import { TimelineClipNavigator } from './TimelineClipNavigator';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 
 const PresenceOverlayLazy = lazy(() =>
@@ -32,6 +33,13 @@ export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
+    const browseButtonRef = useRef<HTMLButtonElement>(null);
+    const [isClipNavigatorOpen, setIsClipNavigatorOpen] = useState(false);
+
+    const closeClipNavigator = () => {
+        setIsClipNavigatorOpen(false);
+        browseButtonRef.current?.focus();
+    };
 
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const marqueeSelection = clipSelection.marqueeSelection;
@@ -427,6 +435,17 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
+
+            <button
+                ref={browseButtonRef}
+                type="button"
+                aria-expanded={isClipNavigatorOpen}
+                onClick={() => setIsClipNavigatorOpen((open) => !open)}
+                className="absolute left-2 top-2 z-30 rounded border border-border bg-surface-base px-2 py-1 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-primary"
+            >
+                Browse timeline clips
+            </button>
+            {isClipNavigatorOpen ? <TimelineClipNavigator onClose={closeClipNavigator} /> : null}
 
             <Suspense fallback={null}>
                 <PresenceOverlayLazy

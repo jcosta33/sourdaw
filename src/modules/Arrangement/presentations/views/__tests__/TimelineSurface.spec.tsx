@@ -288,6 +288,24 @@ describe('TimelineSurface', () => {
         expect(canvas).toHaveAttribute('aria-label', 'Timeline editor surface');
     });
 
+    it('opens a clip listbox for named clips on distinct visible tracks', () => {
+        zoomHandlers.trackStoreRef.current?.set({
+            tracks: [
+                makeTrack({ id: 'voice', clips: [makeClip({ id: 'verse', trackId: 'voice', name: 'Verse' })] }),
+                makeTrack({ id: 'drums', clips: [makeClip({ id: 'fill', trackId: 'drums', name: 'Fill' })] }),
+            ],
+            selectedTrackId: null,
+        });
+
+        renderWithTooltip(<TimelineSurface />);
+        fireEvent.click(screen.getByRole('button', { name: 'Browse timeline clips' }));
+
+        const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
+        expect(listbox).toBeVisible();
+        expect(screen.getByRole('option', { name: /Verse/ })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Fill/ })).toBeInTheDocument();
+    });
+
     it('should render PresenceOverlay', async () => {
         renderWithTooltip(<TimelineSurface />);
         expect(await screen.findByTestId('presence-overlay')).toBeInTheDocument();
