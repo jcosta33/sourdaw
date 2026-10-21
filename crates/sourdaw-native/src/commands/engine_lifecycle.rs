@@ -154,20 +154,24 @@ pub async fn retire_native_engine(
     crumbs: &CrumbsState,
     windows_host: &dyn PluginWindowHost,
 ) -> RetireNativeEngineResult {
-    let (retired_engine, engine_owned_plugins) = match drain_the_lost_engine(state, crumbs).await {
-        DrainedEngine::NothingToRetire(outcome) => {
-            return RetireNativeEngineResult::of(outcome, Vec::new())
-        }
-        DrainedEngine::Drained {
-            handle,
-            engine_owned_plugins,
-        } => (handle, engine_owned_plugins),
-    };
+    let (retired_engine, engine_owned_plugins, crumbs_work) =
+        match drain_the_lost_engine(state, crumbs).await {
+            DrainedEngine::NothingToRetire(outcome) => {
+                return RetireNativeEngineResult::of(outcome, Vec::new())
+            }
+            DrainedEngine::Drained {
+                handle,
+                engine_owned_plugins,
+                crumbs_work,
+            } => (handle, engine_owned_plugins, crumbs_work),
+        };
 
+    let crumbs_work = crumbs::finish_detached_crumbs(crumbs_work, crumbs);
     let retired_instance_ids =
         retire_engine_owned_plugins(state, engine_owned_plugins, Some(windows_host));
 
     drop(retired_engine);
+    drop(crumbs_work);
 
     // The dead scheduler releases its own `Arc` when the owner thread drops
     // it behind the handle above, which may or may not have happened by now.
@@ -185,6 +189,7 @@ enum DrainedEngine {
     Drained {
         handle: EngineHandle,
         engine_owned_plugins: Vec<(String, EnginePluginInstanceData)>,
+        crumbs_work: Vec<crumbs::DrainedCrumbsWork>,
     },
     NothingToRetire(RetireOutcome),
 }
@@ -218,12 +223,13 @@ async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> Draine
     };
 
     let engine_owned_plugins = take_engine_owned_plugins(state);
-    crumbs::detach_from_retired_engine(crumbs);
+    let crumbs_work = crumbs::detach_from_retired_engine(crumbs);
     registry.reset_for_engine_restart();
 
     DrainedEngine::Drained {
         handle,
         engine_owned_plugins,
+        crumbs_work,
     }
 }
 

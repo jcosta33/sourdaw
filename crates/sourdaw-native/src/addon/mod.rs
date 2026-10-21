@@ -1387,22 +1387,34 @@ impl SourdawNative {
         threshold: f64,
         target_pad: u8,
         max_duration_secs: f64,
-    ) -> Result<()> {
-        reason(
+    ) -> Result<Value> {
+        json(reason(
             commands::crumbs::arm_recording(
                 instance_id,
                 threshold as f32,
                 target_pad,
                 max_duration_secs as f32,
                 &self.singletons.crumbs,
+                &self.singletons.app_state,
+                Arc::clone(&self.singletons.events),
             )
             .await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn stop_recording(&self, instance_id: String, take_id: String) -> Result<()> {
+        reason(
+            commands::crumbs::stop_recording(instance_id, take_id, &self.singletons.crumbs).await,
         )
     }
 
     #[napi]
-    pub async fn stop_recording(&self, instance_id: String) -> Result<()> {
-        reason(commands::crumbs::stop_recording(instance_id, &self.singletons.crumbs).await)
+    pub async fn get_crumbs_recording_state(&self, instance_id: String) -> Result<Value> {
+        json(reason(
+            commands::crumbs::get_crumbs_recording_state(instance_id, &self.singletons.crumbs)
+                .await,
+        )?)
     }
 
     // ── Pitch edit ─────────────────────────────────────────────────────

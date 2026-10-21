@@ -1,5 +1,11 @@
 pub mod audio_thread;
 pub mod capture;
+#[cfg(feature = "command-capture-fixture")]
+pub use audio_thread::CaptureLifecycleDriver;
+pub use audio_thread::{
+    CaptureCompletionService, CaptureFirstInput, CapturePeriodObservation, CapturePeriodSnapshot,
+    CaptureServiceProgress,
+};
 pub(crate) mod device;
 pub mod retrospective;
 /// Why an engine has no capture side. The device seam itself stays internal;
@@ -153,6 +159,7 @@ pub struct EngineHandle {
     /// One attempt per nonempty input-holder period, including a refused open.
     capture_period_requested: bool,
     capture_period_used: bool,
+    capture_period: CapturePeriodObservation,
     retired_capture_events: Vec<(Consumer<EngineEvent>, Arc<AtomicU8>)>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
@@ -310,6 +317,7 @@ impl EngineHandle {
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             capture_period_requested: false,
             capture_period_used: false,
+            capture_period: spawned.capture_period,
             retired_capture_events: Vec::new(),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
@@ -395,12 +403,14 @@ impl EngineHandle {
             ));
             self.input_latency_frames = Arc::clone(&latency);
             self.retrospective = control;
+            self.capture_period = CapturePeriodObservation::new();
             self.audio_thread
                 .prepare_capture(audio_thread::CapturePeriod {
                     events: events_tx,
                     latency,
                     refusal,
                     retrospective: writer,
+                    observation: self.capture_period.clone(),
                 });
         }
         self.capture_period_used = false;
@@ -946,7 +956,46 @@ impl EngineHandle {
     /// registration ahead of the `AddPlugin` that answers it, and until the id
     /// resolves the callback skips it.
     pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
-        self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))
+        self.prepare_capture_consumer_registration(plugin_id)?
+            .commit()
+            .map(|_| ())
+    }
+
+    /// Reserve the single producer's next registration without publishing a
+    /// graph command or acquiring input. The borrower binds its take before
+    /// committing, so a render callback cannot outrun that preparation.
+    pub fn prepare_capture_consumer_registration(
+        &mut self,
+        plugin_id: usize,
+    ) -> Result<PreparedCaptureRegistration<'_>, String> {
+        if self.capture_consumers.contains(&plugin_id) {
+            return Err(capture_consumer_registered_error(plugin_id));
+        }
+        if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
+            return Err(capture_bus_full_error());
+        }
+        if self.command_tx.slots() == 0 {
+            return Err("Audio command queue full".to_string());
+        }
+        self.prepare_capture_period();
+        let period = self.capture_period.clone();
+        Ok(PreparedCaptureRegistration {
+            engine: self,
+            plugin_id,
+            period,
+        })
+    }
+
+    pub fn is_current_capture_period(&self, expected: &CapturePeriodObservation) -> bool {
+        self.capture_period.same_period(expected)
+    }
+
+    /// Adopt one weakly owned take service before acquiring its capture holder.
+    pub fn adopt_capture_completion_service(
+        &self,
+        service: Box<dyn CaptureCompletionService>,
+    ) -> Result<(), String> {
+        self.audio_thread.adopt_capture_completion_service(service)
     }
 
     /// Stop feeding a native plugin the captured input.
@@ -1444,6 +1493,26 @@ impl EngineHandle {
     }
 }
 
+/// An exclusive producer borrow, not an acquired input holder. Dropping it
+/// leaves the graph and capture ledger untouched.
+pub struct PreparedCaptureRegistration<'engine> {
+    engine: &'engine mut EngineHandle,
+    plugin_id: usize,
+    period: CapturePeriodObservation,
+}
+
+impl PreparedCaptureRegistration<'_> {
+    pub fn period(&self) -> &CapturePeriodObservation {
+        &self.period
+    }
+
+    pub fn commit(self) -> Result<CapturePeriodObservation, String> {
+        self.engine
+            .push(GraphCommand::RegisterCaptureConsumer(self.plugin_id))?;
+        Ok(self.period)
+    }
+}
+
 /// The one wording for a refusal against the shared effect table, so the batch
 /// path, the plugin path and the crumbs path all report the same ceiling.
 fn effect_table_full_error() -> String {
@@ -1548,6 +1617,7 @@ fn engine_handle_fixture(
         capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
         capture_period_requested: false,
         capture_period_used: false,
+        capture_period: CapturePeriodObservation::new(),
         retired_capture_events: Vec::new(),
         midi_rt_diagnostics,
         timeline_rt_diagnostics,
@@ -1609,6 +1679,59 @@ pub fn engine_handle_for_command_capture(
         command_rx,
         retired_adoption_rx,
     )
+}
+
+/// A controlled input/renderer driver for cross-crate native lifecycle tests.
+/// Both actual capture delivery and rendering use the graph returned here.
+#[cfg(feature = "command-capture-fixture")]
+pub fn capture_lifecycle_fixture(
+    capacity: usize,
+    refuse_input: bool,
+) -> Result<(EngineHandle, CaptureLifecycleDriver), String> {
+    let (command_tx, commands) = RingBuffer::new(capacity);
+    let (retired_tx, retired_rx) = RingBuffer::new(scheduler::RETIREMENT_QUEUE_CAPACITY);
+    let (retired_adoption_tx, retired_adoptions) = std::sync::mpsc::channel();
+    let (midi_tx, midi_reader) = active_midi_rt_diagnostics_channel();
+    let (timeline_tx, timeline_reader) = timeline_rt_diagnostics_channel();
+    let (progress_tx, progress_reader) = graph_progress_channel();
+    let (position_tx, position_reader) = transport_position_channel();
+    let (meter_tx, meter_reader) = meter_channel();
+    let scheduler = scheduler::AudioScheduler::with_rt_diagnostics(
+        commands,
+        retired_tx,
+        48_000.0,
+        midi_tx,
+        timeline_tx,
+        progress_tx,
+        position_tx,
+        meter_tx,
+    );
+    let parts = audio_thread::capture_lifecycle_driver(
+        scheduler,
+        retired_rx,
+        retired_adoptions,
+        refuse_input,
+    )?;
+    let (_output_events, output_events) = engine_event_channel();
+    let mut engine = engine_handle_fixture(
+        command_tx,
+        retired_adoption_tx,
+        midi_reader,
+        timeline_reader,
+        progress_reader,
+        position_reader,
+        meter_reader,
+        output_events,
+        parts.events,
+        parts.refusal,
+        audio_thread::new_render_liveness().rendering,
+        audio_thread::new_output_stream_fault_slot(),
+    );
+    engine.audio_thread = parts.handle;
+    engine.capture_period = parts.period;
+    engine.input_latency_frames = parts.latency;
+    engine.retrospective = parts.retrospective;
+    Ok((engine, parts.driver))
 }
 
 #[cfg(test)]
