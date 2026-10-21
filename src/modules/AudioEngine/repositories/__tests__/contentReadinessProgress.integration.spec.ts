@@ -5,9 +5,15 @@ import { logger } from '#/infra/logger/appLogger';
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { createTrack, setTrackState } from '#/modules/Arrangement/useCases';
 import { defaultLevainState, levainStore } from '#/modules/Levain/stores';
-import { getDecodedBankDiagnostics, registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
+import {
+    configureLevainZoneTableBuilder,
+    getDecodedBankDiagnostics,
+    registerLevainDevice,
+    unregisterLevainDevice,
+} from '#/modules/Levain/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { buildLevainZoneTables } from '../../useCases/buildLevainZoneTables';
 
 import { createAudioEngineTopologyTestHarness as createAudioEngine } from './createAudioEngineTopologyTestHarness';
 
@@ -183,6 +189,7 @@ describe('live Levain content progress', () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
         vi.clearAllMocks();
+        configureLevainZoneTableBuilder(buildLevainZoneTables);
         progressEvents = [];
         progressChanged = Promise.withResolvers<void>();
         pendingWorkletAcks = [];
@@ -229,6 +236,7 @@ describe('live Levain content progress', () => {
     });
 
     afterEach(() => {
+        configureLevainZoneTableBuilder(null);
         setAudioDeviceRuntimeSink({});
         setTrackState(defaultTrackState);
         vi.unstubAllGlobals();

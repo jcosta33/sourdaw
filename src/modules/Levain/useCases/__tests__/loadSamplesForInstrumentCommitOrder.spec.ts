@@ -6,18 +6,6 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-// The zone-table Worker does not exist under Node; build the tables in place.
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    buildLevainZoneTables: vi.fn(
-        (request: { zones: readonly { zoneId: number }[]; numArticulations: number; numMics: number }) =>
-            Promise.resolve({
-                lut: new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2),
-                arena: Uint32Array.from(request.zones, (zone) => zone.zoneId),
-            })
-    ),
-}));
-
 vi.mock('../../repositories/sampleLoader/fetchAndDecode', () => {
     const buffer = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 2);
     return {
@@ -34,6 +22,7 @@ import { createDefaultPatch, type MicPositionType } from '../../models/LevainPat
 import { decodedBankResource } from '../../repositories/sampleLoader/decodedBankResource';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
+import { configureLevainZoneTableBuilder } from '../configureLevainZoneTableBuilder';
 import { createLevainBridge } from '../levainParamBridge/helpers';
 
 // ---------------------------------------------------------------------------
@@ -266,8 +255,21 @@ function makeDeps(autoLoad: typeof autoLoadLevainSamples) {
     };
 }
 
+// The zone-table Worker does not exist under Node; build the tables in place.
+function buildZoneTablesInPlace(request: {
+    zones: readonly { zoneId: number }[];
+    numArticulations: number;
+    numMics: number;
+}) {
+    return Promise.resolve({
+        lut: new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2),
+        arena: Uint32Array.from(request.zones, (zone) => zone.zoneId),
+    });
+}
+
 describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader, commit order across a supersession', () => {
     beforeEach(() => {
+        configureLevainZoneTableBuilder(buildZoneTablesInPlace);
         decodedBankResource.clear();
         levainStore.set({});
         vi.stubGlobal(
@@ -312,6 +314,7 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
     });
 
     afterEach(() => {
+        configureLevainZoneTableBuilder(null);
         decodedBankResource.clear();
         vi.unstubAllGlobals();
         vi.clearAllMocks();

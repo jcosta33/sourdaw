@@ -7,7 +7,7 @@ import type { LevainZoneTableRequest } from '../../../models/LevainZoneTables';
 const compiled = vi.hoisted(() => ({ module: {} as WebAssembly.Module }));
 
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
-    compileWasmModule: vi.fn(() => Promise.resolve(compiled.module)),
+    fetchCompiledWasmModule: vi.fn(() => Promise.resolve(compiled.module)),
 }));
 
 class FakeWorker {

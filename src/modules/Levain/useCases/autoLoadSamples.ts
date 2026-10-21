@@ -1,11 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
-import { buildLevainZoneTables } from '#/modules/AudioEngine/useCases';
 
 import { type MicPositionType } from '../models/LevainPatch';
 import { WEB_LOD } from '../repositories/sampleLoader/helpers';
 import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
 import { resolveSampleBasePath } from '../repositories/sampleLoader/resolveSampleBasePath';
 import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
+
+import { configuredLevainZoneTableBuilder } from './configureLevainZoneTableBuilder';
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
@@ -67,7 +68,7 @@ export async function autoLoadLevainSamples(
             basePath: manifestBase,
             expectedInstrumentId: instrumentId,
             nodePort,
-            buildZoneTables: buildLevainZoneTables,
+            buildZoneTables: configuredLevainZoneTableBuilder.build,
             lod: WEB_LOD,
             onProgress: (progress) => {
                 if (signal?.aborted) {

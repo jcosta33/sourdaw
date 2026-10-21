@@ -126,7 +126,7 @@ function loadWasmModule(url: string): Promise<WebAssembly.Module> {
  * realm of its own, so unlike a worklet host it binds no bundle version to an
  * `AudioContext`.
  */
-export function compileWasmModule(url: string): Promise<WebAssembly.Module> {
+export function fetchCompiledWasmModule(url: string): Promise<WebAssembly.Module> {
     return loadWasmModule(url);
 }
 

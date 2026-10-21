@@ -1,5 +1,5 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { compileWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { fetchCompiledWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import type { LevainZoneTableRequest, LevainZoneTables } from '../../models/LevainZoneTables';
 
@@ -45,7 +45,7 @@ export async function buildLevainZoneTablesInWorker(
     signal?: AbortSignal
 ): Promise<LevainZoneTables> {
     signal?.throwIfAborted();
-    const wasmModule = await raceAbortSignal(compileWasmModule(DAW_DSP_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchCompiledWasmModule(DAW_DSP_WASM_URL), signal);
     signal?.throwIfAborted();
 
     return new Promise<LevainZoneTables>((resolve, reject) => {
