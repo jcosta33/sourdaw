@@ -1,0 +1,27 @@
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  s_59e31a5c6f3e31::t_039180b488d2fe 53-54,56-58,66-76
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_efed1a0787fcad 375-378,389,412-421,423,425-439,450-452,590-591,600-604,612
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_59e31a5c6f3e31::t_a76fe44eadbfe2 252-255,257-266,282-284,287-295
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_a1957dfe9caa6f 21,238-243,257-265,284-288,292-296,335,370-378,392-400,416-417,434-436,448-456,462-463,466-467,474,480-481,483-486,493-494,497-498,500-516,519-520,531-533,541-542,549-552,558-561,571-572,575-578,583-588,596-597,609-613,622-623,625,627-630,632-648,651-671,675-686,689-811,814-878
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/deviceAutomationUndoExclusion.integration.spec.ts
+  s_59e31a5c6f3e31::t_56bd1db5b1d904 3,179-183,190-209,242-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6287c2d9ad427aee7e696f03cdf35d618e59925",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
