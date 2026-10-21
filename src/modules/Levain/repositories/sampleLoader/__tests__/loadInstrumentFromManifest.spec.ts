@@ -2125,6 +2125,39 @@ describe('loadInstrumentFromManifest', () => {
             expect(request).toMatchObject({ numArticulations: 11, numMics: 3 });
         });
 
+        it('reserves the tables of a bank whose articulation count differs from its mic count at both dimensions', async () => {
+            const zone = (file: string, micId: number): Record<string, unknown> => ({
+                ...MANIFEST.articulations[0]!.zones[0]!,
+                file,
+                micId,
+            });
+            const manifest = {
+                ...MANIFEST,
+                micPositions: ['close', 'room'],
+                articulations: [
+                    { type: 'sustain', id: 0, zones: [zone('sus-close.wav', 0), zone('sus-room.wav', 1)] },
+                    { type: 'spiccato', id: 7, zones: [zone('spic-close.wav', 0), zone('spic-room.wav', 1)] },
+                ],
+            };
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(manifest) })
+            );
+            const port = makePort();
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/dimensions',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const reserve = postedMessages(port).find((message) => message.type === 'reserveZoneTables');
+            // Ids 0 and 7 span eight articulations; the fake builder sizes the LUT 8 x 2 x 128 x 16 entries.
+            expect(reserve).toMatchObject({ numArticulations: 8, numMics: 2, lutEntries: 32_768, arenaEntries: 4 });
+        });
+
         describe('a load that uploads no PCM, ended while its builder works', () => {
             /** A follower or ready load of its own bank: it posts no chunk before its tables. */
             function loadWithoutPcm(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {

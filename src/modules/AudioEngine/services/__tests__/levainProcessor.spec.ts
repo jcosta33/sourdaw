@@ -653,13 +653,30 @@ describe('LevainProcessor message handling', () => {
             sustain: 1,
             release: 0.1,
         });
+        send(proc, {
+            type: 'reserveZoneTables',
+            loadToken: 1,
+            numArticulations: 1,
+            numMics: 1,
+            lutEntries: 1,
+            arenaEntries: 1,
+        });
+        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 0, data: new Uint32Array([0, 1]) });
+        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'arena', start: 0, data: new Uint32Array([0]) });
         stageAndCommit(proc, 1);
 
         for (const upload of ['begin_sample', 'commit_sample_frames', 'seal_sample']) {
             expect(calls.filter((call) => call.method === upload)).toHaveLength(0);
         }
         expect(calls.filter((call) => call.method === 'add_zone')).toHaveLength(0);
-        expect(calls.filter((call) => call.method === 'seal_zone_tables')).toHaveLength(0);
+        for (const zoneTableCall of [
+            'reserve_zone_tables',
+            'commit_zone_lut_chunk',
+            'commit_zone_arena_chunk',
+            'seal_zone_tables',
+        ]) {
+            expect(calls.filter((call) => call.method === zoneTableCall)).toHaveLength(0);
+        }
 
         send(proc, { type: 'beginSampleBank', bankKey: 'stale-tail-bank', instrumentId: 'violin', loadToken: 2 });
         uploadSample(proc, 2, 0, [0.3]);

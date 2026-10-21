@@ -540,7 +540,7 @@ describe('shipped LevainProcessor zone-table staging', () => {
         }
     });
 
-    it('drops a zone-table chunk that reaches a follower after its owner failed, and the follower stays live', async () => {
+    it('drops a zone-table chunk and a reservation that reach a follower after its owner failed, and the follower stays live', async () => {
         const create = await processorFactory();
         const request: LevainZoneTableRequest = { zones: [WIDE_ZONE], numArticulations: 1, numMics: 1 };
         const owner = create();
@@ -579,6 +579,8 @@ describe('shipped LevainProcessor zone-table staging', () => {
 
         // The arena chunk the follower's loader posted before it heard is now stale.
         send(follower, deliveries[2]);
+        // So is a reservation that arrives after it: the engine already holds one, so applying it would fault the follower.
+        send(follower, deliveries[0]);
 
         expect(window()).toEqual(windowBefore);
         expect(written()).toBe(1);
