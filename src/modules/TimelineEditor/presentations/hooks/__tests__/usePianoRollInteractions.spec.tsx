@@ -118,6 +118,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
 const PREFERRED_DEFAULT_VELOCITY = 87;
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     getTransportState: mocks.getTransportState,
 }));
 

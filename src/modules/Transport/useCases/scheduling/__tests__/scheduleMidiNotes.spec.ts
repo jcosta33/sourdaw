@@ -3136,6 +3136,35 @@ describe('scheduleMidiNotes', () => {
                         `sustain 0 @${1.5 * BEAT_FRAMES}`,
                     ]);
                 });
+
+                it('drops a partial sustain stored on the closing line, leaving the pedal at the boundary to the next clip', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    // Sustain is a continuous position, so a half-pedal row on the closing line is
+                    // no lift: the boundary posts nothing for it, and clip B's own press decides.
+                    loadAbuttingClips(
+                        [clipA(), clipB()],
+                        [storedController('press', 64, 127, 0)],
+                        [storedController('down', 64, 127, 0), storedController('half', 64, 63, 2)]
+                    );
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                        `off 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                    expect(posted.filter((entry) => entry.startsWith('sustain'))).toEqual([
+                        'sustain 1 @0',
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
             });
 
             it('lands a release and a controller on one beat on one frame at a fractional samples-per-beat tempo', async () => {
