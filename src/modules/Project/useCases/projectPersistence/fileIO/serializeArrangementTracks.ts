@@ -53,6 +53,7 @@ function serializeClip(clip: Clip, notesByClipId?: NotesByClipId): ProjectClip {
         bufferId: clip.audioBufferId,
         sampleStartBeat: clip.audioOffsetBeats,
         audioOffsetSeconds: clip.audioOffsetSeconds,
+        audioLoopStartSeconds: clip.audioLoopStartSeconds,
         fileId: clip.fileId,
         assetHash: clip.assetHash,
         midiOffsetBeats: clip.midiOffsetBeats,

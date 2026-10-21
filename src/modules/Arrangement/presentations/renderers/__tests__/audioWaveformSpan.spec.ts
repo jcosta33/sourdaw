@@ -245,6 +245,68 @@ describe('computeAudioWaveformDrawSpan', () => {
         expect(afterPreview[1]!.span.endSample).toBe(200);
     });
 
+    it('draws both canonical loop segments and invalidates a changed anchor without sharing peak placement', () => {
+        const clip: ClipRenderModel = {
+            id: 'right',
+            startBeat: 4,
+            endBeat: 8,
+            name: 'Right',
+            color: '#000',
+            type: 'audio',
+            muted: false,
+            midiNotes: [],
+            audioOffsetSeconds: 7,
+            audioOffsetBeats: 7,
+            audioLoopStartSeconds: 5.5,
+            clipStartTempo: 60,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 2,
+            stretchMode: 'repitch',
+            stretchRatio: 1.5,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        const model: TimelineRenderModel = {
+            dataDirty: true,
+            tracks: [],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 8,
+            beatsPerPixel: 0.04,
+            pixelsPerBeat: 25,
+            trackHeight: 40,
+            scrollY: 0,
+            tempo: 120,
+            tempoChanges: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        const input = { clip, model, sampleRate: 100, bufferLength: 2000, maxBins: 600 };
+        const occurrences = getAudioWaveformOccurrences(input);
+        expect(
+            occurrences.map(({ span }) => [span.audibleStartBeat, span.sourceStartSeconds, span.sourceEndSeconds])
+        ).toEqual([
+            [4, 7, 10],
+            [6, 5.5, 8.5],
+        ]);
+        expect(
+            Array.from(getAudioWaveformPeakPositions({ clip, model, occurrence: occurrences[0]!, binCount: 2 }))
+        ).toEqual([100, 125, 150]);
+        expect(
+            Array.from(getAudioWaveformPeakPositions({ clip, model, occurrence: occurrences[1]!, binCount: 2 }))
+        ).toEqual([150, 175, 200]);
+        clip.loopOriginBeat = 3;
+        expect(getAudioWaveformOccurrences(input)).not.toBe(occurrences);
+        expect(getAudioWaveformOccurrences(input)[1]!.span.audibleStartBeat).toBe(7);
+    });
+
     it('requests only the visible tail of a long source window and places its bins there', () => {
         const clip: ClipRenderModel = {
             id: 'long-audio',

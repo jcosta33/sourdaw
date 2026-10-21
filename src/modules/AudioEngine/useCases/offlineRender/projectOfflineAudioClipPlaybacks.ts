@@ -1,7 +1,7 @@
 import { type GainEnvelopeSeriesPoint, type Track } from '#/modules/Arrangement/stores';
 // Not `#/modules/Arrangement/useCases` — same cycle law as `scheduleTrackClips`.
 import { envelopeGainDbToLinear } from '#/utils/clipGainEnvelopeSchedule';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -30,6 +30,8 @@ export type OfflineProjectableAudioClip = Pick<
     | 'fadeInBeats'
     | 'fadeOutBeats'
     | 'audioOffsetBeats'
+    | 'audioOffsetSeconds'
+    | 'audioLoopStartSeconds'
 >;
 
 export type ProjectOfflineAudioClipPlaybacksInput = Readonly<{
@@ -148,67 +150,7 @@ export function projectOfflineAudioClipPlaybacks(
         clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const clipGainValue = clip.gain;
 
-    const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-    // The flat rate at the clip's start beat converts source beats into the
-    // source seconds every read below seeks with. Two things the timeline
-    // arithmetic below does are deliberately absent from it:
-    //
-    //   - the tempo map is not integrated. The rate is the flat one governing
-    //     the clip's start beat, because the material was rendered at one
-    //     tempo; a change inside the offset span moves the clip on the
-    //     timeline, never the point it seeks to inside the file.
-    //   - the stretch ratio is not applied. It scales how long the material
-    //     sounds, not where reading begins; `scheduleOfflineClipSource` scales
-    //     the duration alone, exactly as live does.
-    //
-    // A non-positive or non-finite tempo cannot come from either tempo store,
-    // both of which clamp what they hold; treating it as "no offset" keeps a
-    // malformed one from turning the seek into Infinity or NaN.
     const clipTempo = resolveTempoAtBeat(clip.startBeat);
-    const clipSecondsPerBeat = Number.isFinite(clipTempo) && clipTempo > 0 ? 60 / clipTempo : 0;
-
-    // The loop region the clip was looped with, in source beats (#4988): the
-    // content offset names where the head enters, and a start trim advances
-    // only that entry — subtracting the trim advance recovers the region the
-    // offset originally named. The pass reads that region cyclically, entering
-    // at the advance's phase, so material past the region end stays unheard
-    // however far the clip is trimmed. An unanchored clip — or a stale-anchored
-    // one with the loop off, the anchor being inert there — advances zero,
-    // which puts the region at the offset itself and the entry at the region
-    // head: exactly the pre-anchor read, one segment per pass.
-    const loopAdvanceBeats = resolveClipLoopOriginAdvance({
-        startBeat: clip.startBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const regionStartBeats = clipAudioOffsetBeats - loopAdvanceBeats;
-    const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
-
-    type LoopPassSegment = {
-        /** Segment span inside the pass, in beats from the pass head. */
-        startBeat: number;
-        endBeat: number;
-        /** Where this segment starts reading, in source beats. */
-        sourceStartBeats: number;
-    };
-
-    function buildPassSegments(passLengthBeats: number): LoopPassSegment[] {
-        if (regionEntryBeats <= 0) {
-            return [{ startBeat: 0, endBeat: passLengthBeats, sourceStartBeats: regionStartBeats }];
-        }
-        const headSegmentEndBeat = Math.min(passLengthBeats, loopLen - regionEntryBeats);
-        const segments: LoopPassSegment[] = [
-            { startBeat: 0, endBeat: headSegmentEndBeat, sourceStartBeats: regionStartBeats + regionEntryBeats },
-        ];
-        if (passLengthBeats > headSegmentEndBeat) {
-            segments.push({
-                startBeat: headSegmentEndBeat,
-                endBeat: passLengthBeats,
-                sourceStartBeats: regionStartBeats,
-            });
-        }
-        return segments;
-    }
 
     const playbacks: OfflineAudioClipPlaybackProjection[] = [];
     // Whether a playback has been emitted yet: the fade-in gate reads it so
@@ -229,7 +171,15 @@ export function projectOfflineAudioClipPlaybacks(
 
         const isFirstIter = iter === 0;
         const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
-        const passSegments = buildPassSegments(remainingBeats);
+        const passSegments = projectAudioLoopPassSegments({
+            clip,
+            loopLengthBeats: loopLen,
+            iterationStartBeat: iterStartBeat,
+            iterationEndBeat: iterEndBeat,
+            stretchRatio: safeStretchRatio,
+            tempoAtClipStart: clipTempo,
+            secondsAtBeat: projectBeatToSeconds,
+        });
         // Where this pass's playbacks begin in the array: the fade-out is
         // stamped on the pass's last emitted playback after the segment loop,
         // so the index range must be known before it runs.
@@ -254,8 +204,8 @@ export function projectOfflineAudioClipPlaybacks(
 
         for (let segmentIndex = 0; segmentIndex < passSegments.length; segmentIndex++) {
             const segment = passSegments[segmentIndex]!;
-            const segmentStartBeat = iterStartBeat + segment.startBeat;
-            const segmentEndBeat = iterStartBeat + segment.endBeat;
+            const segmentStartBeat = iterStartBeat + segment.startOffsetBeats;
+            const segmentEndBeat = iterStartBeat + segment.endOffsetBeats;
 
             const rawSegmentStartSec = projectBeatToSeconds(segmentStartBeat) + compensationDelay;
             const rawSegmentEndSec = projectBeatToSeconds(segmentEndBeat) + compensationDelay;
@@ -265,7 +215,7 @@ export function projectOfflineAudioClipPlaybacks(
             // opens at its head. The segment still ends where the pass says it
             // does, so the pre-roll shortens what is heard rather than moving
             // the tail.
-            const segmentSourceStartSec = segment.sourceStartBeats * clipSecondsPerBeat;
+            const segmentSourceStartSec = segment.sourceStartSeconds;
             const segmentPreRollSec = Math.max(0, -segmentSourceStartSec) / safeStretchRatio;
             const segmentStartTime = rawSegmentStartSec - regionStartSec + segmentPreRollSec;
             if (segmentStartTime >= durationSeconds) {

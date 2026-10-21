@@ -949,6 +949,7 @@ function insertClipGeometry(clip: Clip, operation: InsertGlobalTimeOperation, ri
         return [
             {
                 ...materialized,
+                ...shiftLoopOriginEntry(materialized, operation.durationBeats),
                 startBeat: clip.startBeat + operation.durationBeats,
                 endBeat: clip.endBeat + operation.durationBeats,
             },

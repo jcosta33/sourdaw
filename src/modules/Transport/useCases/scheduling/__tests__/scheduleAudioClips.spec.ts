@@ -176,6 +176,54 @@ describe('scheduleAudioClips', () => {
         disposeAudioClipScheduling();
     });
 
+    it('preserves the source loop seam of a canonical stretched right split across tempo', () => {
+        tempoMapStore.value = {
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const sources: ReturnType<typeof makeFakeSource>[] = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const source = makeFakeSource();
+            sources.push(source);
+            return source as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 20 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({
+                startBeat: 4,
+                endBeat: 8,
+                regionStartBeat: 4,
+                regionEndBeat: 8,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 2,
+                audioOffsetSeconds: 7,
+                audioOffsetBeats: 7,
+                audioLoopStartSeconds: 5.5,
+                stretchMode: 'repitch',
+                stretchRatio: 1.5,
+            }),
+        ] as ReturnType<typeof resolveClipsWithComping>);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        scheduleAudioClips(0, 8, 0, new Set(), new Set(), [], defaultTransportState);
+        const starts = sources.flatMap((source) => source.start.mock.calls);
+        expect(starts).toEqual([
+            [2, 7, 3],
+            [4, 5.5, 3],
+        ]);
+        const sourceAt = (time: number) => {
+            const start = starts.find(([when, , duration]) => when <= time && time < when + duration / 1.5);
+            if (!start) {
+                throw new Error('Expected audible live source');
+            }
+            return start[1] + (time - start[0]) * 1.5;
+        };
+        expect(sourceAt(3.5)).toBe(9.25);
+        expect(sourceAt(4.5)).toBe(6.25);
+    });
+
     it('does not notify when there are no tracks', () => {
         trackStoreState.value = { tracks: [] };
         scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState);

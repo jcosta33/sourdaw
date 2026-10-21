@@ -1,3 +1,5 @@
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { updateClip } from '../../repositories/track/updateClip';
 
 /**
@@ -16,7 +18,12 @@ import { updateClip } from '../../repositories/track/updateClip';
  * today's law: a fresh user enable restamps at the live start, and a legacy
  * restore entry replays exactly the restamp it always did.
  */
-export function setClipLoop(clipId: string, enabled: boolean | undefined, anchorBeat?: number | null): boolean {
+export function setClipLoop(
+    clipId: string,
+    enabled: boolean | undefined,
+    anchorBeat?: number | null,
+    sourceBoundary?: number | null
+): boolean {
     // A non-finite anchor is corrupted data, not an anchor state (#5198): a
     // persisted `1e999` decodes as Infinity, and writing it into clip state
     // derives a NaN loop window in every reader. Drop it to the absent form —
@@ -38,6 +45,17 @@ export function setClipLoop(clipId: string, enabled: boolean | undefined, anchor
             delete updatedClip.loopOriginBeat;
         } else {
             updatedClip.loopOriginBeat = restoreAnchorBeat;
+        }
+        if (sourceBoundary !== undefined) {
+            delete updatedClip.audioLoopStartSeconds;
+            if (sourceBoundary !== null && Number.isFinite(sourceBoundary)) {
+                updatedClip.audioLoopStartSeconds = sourceBoundary;
+            }
+        } else if (enabled === true && context.type === 'audio') {
+            updatedClip.audioLoopStartSeconds = resolveAudioSourceOffsetSeconds(
+                context,
+                readTempoAtBeat({ beat: context.startBeat })
+            );
         }
         return updatedClip;
     });

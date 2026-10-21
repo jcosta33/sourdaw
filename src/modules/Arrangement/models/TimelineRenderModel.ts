@@ -60,11 +60,14 @@ export type ClipRenderModel = {
     audioOffsetBeats?: number;
     /** Authoritative signed media entry, including zero. */
     audioOffsetSeconds?: number;
+    /** Fixed source loop boundary; relocation and tempo edits never rederive it. */
+    audioLoopStartSeconds?: number;
     /** Tempo governing this clip's source offset, which may differ from the project base tempo. */
     clipStartTempo?: number;
     /** Source seconds consumed per destination second when stretch is enabled. */
     stretchRatio?: number;
     stretchMode?: 'off' | 'repitch' | 'timestretch';
+    loopOriginBeat?: number;
     loopEnabled?: boolean;
     loopLength?: number;
     midiOffsetBeats?: number;

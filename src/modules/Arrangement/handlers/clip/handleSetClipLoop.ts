@@ -1,3 +1,5 @@
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { createHandler } from '#/utils/createHandler';
 
 import { setClipLoop } from '../../useCases/clipLoop/setClipLoop';
@@ -26,9 +28,17 @@ export const handleSetClipLoop = createHandler<'setClipLoop'>({
                   present: clip.loopEnabled !== undefined,
                   enabled: clip.loopEnabled ?? false,
                   ...anchorEntry,
+                  audioLoopStartSeconds: clip.audioLoopStartSeconds ?? null,
               }
             : null;
-        const nextState = { present: true, enabled: action.payload.enabled };
+        const nextState = {
+            present: true,
+            enabled: action.payload.enabled,
+            audioLoopStartSeconds:
+                action.payload.enabled && clip?.type === 'audio'
+                    ? resolveAudioSourceOffsetSeconds(clip, readTempoAtBeat({ beat: clip.startBeat }))
+                    : (clip?.audioLoopStartSeconds ?? null),
+        };
         return {
             label: action.payload.enabled ? 'Enable clip loop' : 'Disable clip loop',
             inverseAction: previousState

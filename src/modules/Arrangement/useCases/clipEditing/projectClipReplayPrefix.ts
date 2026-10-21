@@ -28,6 +28,12 @@ type ShiftedOwnerState = {
 function withAudioSource(clip: ReplayClip, source: AudioSourceStateSnapshot): ReplayClip {
     const { audioOffsetSeconds: _sourceSeconds, audioOffsetBeats: _sourceBeats, ...restored } = clip;
     const replayClip: RestoredReplayClip = restored;
+    if (source.audioLoopStartSeconds !== undefined) {
+        delete replayClip.audioLoopStartSeconds;
+        if (source.audioLoopStartSeconds !== null) {
+            replayClip.audioLoopStartSeconds = source.audioLoopStartSeconds;
+        }
+    }
     if (source.audioOffsetSeconds !== null) {
         replayClip.audioOffsetSeconds = source.audioOffsetSeconds;
     }
@@ -65,9 +71,21 @@ function projectClipEdit(clip: ReplayClip, action: AppAction): ReplayClip {
         );
         if (source) {
             if (transition.direction === 'apply') {
-                return { ...clip, audioOffsetSeconds: source.audioOffsetSeconds };
+                return {
+                    ...clip,
+                    audioOffsetSeconds: source.audioOffsetSeconds,
+                    ...(source.audioLoopStartSeconds !== undefined
+                        ? { audioLoopStartSeconds: source.audioLoopStartSeconds }
+                        : {}),
+                };
             }
-            const { audioOffsetSeconds: _removed, ...restored } = clip;
+            const restored = { ...clip };
+            if (!source.audioOffsetWasCanonical) {
+                delete restored.audioOffsetSeconds;
+            }
+            if (source.audioLoopStartSeconds !== undefined) {
+                delete restored.audioLoopStartSeconds;
+            }
             return restored;
         }
     }

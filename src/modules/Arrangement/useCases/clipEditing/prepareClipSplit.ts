@@ -12,6 +12,7 @@ import { captureClipSplitTakeLanes } from '../comping/captureClipSplitTakeLanes'
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
+import { audioSourceAtBeat } from './audioSourceAtBeat';
 import { projectClipReplayPrefix } from './projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
@@ -146,27 +147,8 @@ export function prepareClipSplit({
         name: `${clip.name} (L)`,
         fadeOutBeats: 0,
     };
-    // The right fragment's loop anchor follows its basis (#4988). The MIDI
-    // fragment re-bases its notes (offset 0, notes shifted down by the split)
-    // into a fresh media basis the source's timeline anchor has no meaning
-    // in: carried through, the old anchor's advance opens the loop window
-    // behind the fragment's head and silences surviving material, so it
-    // restamps at the fragment's own start — key absent for an unanchored
-    // source, the same law the delete/bounce fragment writers follow. The
-    // audio fragment's media basis is preserved, and its offset advances by
-    // the media delta `contentSplitDelta` — the stretched span the runtimes
-    // actually played over the cut, not `timelineSplitDelta`. For the region
-    // the audio readers recover —
-    // `audioOffsetBeats - (startBeat - loopOriginBeat)` — to survive the
-    // split, the carried anchor's advance (`startBeat - loopOriginBeat`)
-    // must grow by that same media delta: shifted by
-    // `timelineSplitDelta - contentSplitDelta`, the fragment's advance grows
-    // to `(startBeat - loopOriginBeat) + contentSplitDelta`, which cancels
-    // the offset's advance exactly at any stretch (the shift is zero at
-    // stretch 1, so an unstretched split carries the anchor unchanged).
-    // Carried unshifted, a stretched split displaces the region by
-    // `timelineSplitDelta * (stretch - 1)` source beats and the fragment
-    // enters on the wrong material at the cut.
+    // MIDI rebases its media; canonical audio keeps the source boundary and
+    // original timeline phase independently, captured below on both fragments.
     const rightLoopOriginEntry = fragmentLoopOriginEntry(
         clip,
         adjustedSplitBeat,
@@ -184,8 +166,12 @@ export function prepareClipSplit({
         ...rightLoopOriginEntry,
     };
     if (clip.type === 'audio') {
-        leftClip.audioOffsetSeconds = sourceEntrySeconds;
-        rightClip.audioOffsetSeconds = splitSourceSeconds;
+        Object.assign(leftClip, audioSourceAtBeat(clip, clip.startBeat));
+        Object.assign(rightClip, audioSourceAtBeat(clip, adjustedSplitBeat));
+        if (clip.loopEnabled) {
+            leftClip.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
+            rightClip.loopOriginBeat = leftClip.loopOriginBeat;
+        }
     }
     const takes = captureClipSplitTakeLanes(clip, effectiveRightClipId, adjustedSplitBeat);
     if (!takes) {

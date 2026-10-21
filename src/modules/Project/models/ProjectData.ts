@@ -239,6 +239,8 @@ export type ProjectClip = {
     bufferId?: string;
     sampleStartBeat?: number;
     audioOffsetSeconds?: number;
+    /** Fixed source loop boundary; relocation and tempo edits never rederive it. */
+    audioLoopStartSeconds?: number;
     fileId?: string;
     // Runtime aliases retained only for loading snapshots written before the
     // arrangement collection gained an explicit serialized shape.

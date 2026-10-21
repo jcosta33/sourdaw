@@ -86,6 +86,8 @@ const optionalClipFields: Record<string, (value: unknown) => boolean> = {
     assetHash: (value) => typeof value === 'string',
     audioOffsetBeats: isFiniteNumber,
     audioOffsetSeconds: isFiniteNumber,
+    audioLoopStartSeconds: isFiniteNumber,
+    loopOriginBeat: isFiniteNumber,
     midiOffsetBeats: isFiniteNumber,
     stretchMode: (value) => value === 'off' || value === 'repitch' || value === 'timestretch',
     stretchRatio: isFiniteNumber,

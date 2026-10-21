@@ -200,6 +200,8 @@ function projectPreviewClip(base: ClipRenderModel, position: ClipPreviewPosition
             previousPosition.endBeat === position.endBeat &&
             previousPosition.audioOffsetBeats === position.audioOffsetBeats &&
             previousPosition.audioOffsetSeconds === position.audioOffsetSeconds &&
+            previousPosition.audioLoopStartSeconds === position.audioLoopStartSeconds &&
+            previousPosition.loopOriginBeat === position.loopOriginBeat &&
             previousPosition.midiOffsetBeats === position.midiOffsetBeats
         ) {
             return prior.clip;
@@ -212,6 +214,8 @@ function projectPreviewClip(base: ClipRenderModel, position: ClipPreviewPosition
         endBeat: position.endBeat,
         audioOffsetBeats: position.audioOffsetBeats ?? base.audioOffsetBeats,
         audioOffsetSeconds: position.audioOffsetSeconds ?? base.audioOffsetSeconds,
+        audioLoopStartSeconds: position.audioLoopStartSeconds ?? base.audioLoopStartSeconds,
+        loopOriginBeat: position.loopOriginBeat ?? base.loopOriginBeat,
         clipStartTempo: readTempoAtBeat({ beat: position.startBeat }),
         midiOffsetBeats: position.midiOffsetBeats ?? base.midiOffsetBeats,
     };
@@ -222,6 +226,8 @@ function projectPreviewClip(base: ClipRenderModel, position: ClipPreviewPosition
             endBeat: position.endBeat,
             audioOffsetBeats: position.audioOffsetBeats,
             audioOffsetSeconds: position.audioOffsetSeconds,
+            audioLoopStartSeconds: position.audioLoopStartSeconds,
+            loopOriginBeat: position.loopOriginBeat,
             midiOffsetBeats: position.midiOffsetBeats,
         },
         clip,
@@ -291,6 +297,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopLength: clip.loopLength,
                     audioOffsetBeats: clip.audioOffsetBeats,
                     audioOffsetSeconds: clip.audioOffsetSeconds,
+                    audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                    loopOriginBeat: clip.loopOriginBeat,
                     clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
                     midiOffsetBeats: clip.midiOffsetBeats,
                     stretchRatio: clip.stretchRatio,
@@ -326,6 +334,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopLength: ghost.loopLength,
                     audioOffsetBeats: ghost.audioOffsetBeats,
                     audioOffsetSeconds: ghost.audioOffsetSeconds,
+                    audioLoopStartSeconds: ghost.audioLoopStartSeconds,
+                    loopOriginBeat: ghost.loopOriginBeat,
                     clipStartTempo: readTempoAtBeat({ beat: ghost.startBeat }),
                     midiOffsetBeats: ghost.midiOffsetBeats,
                     stretchRatio: ghost.stretchRatio,
@@ -372,6 +382,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                                   loopLength: clip.loopLength,
                                   audioOffsetBeats: clip.audioOffsetBeats,
                                   audioOffsetSeconds: clip.audioOffsetSeconds,
+                                  audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                                  loopOriginBeat: clip.loopOriginBeat,
                                   clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
                                   midiOffsetBeats: clip.midiOffsetBeats,
                                   stretchRatio: clip.stretchRatio,

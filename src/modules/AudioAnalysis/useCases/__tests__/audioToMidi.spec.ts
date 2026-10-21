@@ -299,6 +299,46 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         }
     });
 
+    it('transcribes the reset source window of a canonical split at its actual tempo-map beat', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        try {
+            arrangeClip({
+                id: 'c1',
+                audioBufferId: 'buf1',
+                startBeat: 4,
+                endBeat: 8,
+                name: 'Right',
+                audioOffsetSeconds: 7,
+                audioOffsetBeats: 7,
+                audioLoopStartSeconds: 5.5,
+                loopOriginBeat: 2,
+                loopEnabled: true,
+                loopLength: 4,
+                stretchMode: 'repitch',
+                stretchRatio: 1.5,
+            });
+            mocks.getCachedAudioBuffer.mockReturnValue(
+                makeBuffer(12 * SAMPLE_RATE, (index) =>
+                    (index >= 6.25 * SAMPLE_RATE && index < 6.35 * SAMPLE_RATE) || index >= 10.75 * SAMPLE_RATE
+                        ? 0.8
+                        : 0
+                )
+            );
+            expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+            expect(noteStartBeats()).toHaveLength(1);
+            expect(noteStartBeats()[0]).toBeCloseTo(2.5, 1);
+        } finally {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set(defaultTransportState);
+        }
+    });
+
     it('restarts source time for each loop but integrates each occurrence at its own tempo', () => {
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         tempoMapStore.set({

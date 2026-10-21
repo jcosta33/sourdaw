@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { hydrateUndoStoreFromSession, undoStore } from '#/modules/Command/stores/undoStore';
+import { getExecutableCommandRegistration } from '#/modules/Command/useCases/getExecutableCommandRegistration';
+import { getInternalUndoSessionReplayContracts } from '#/modules/Command/useCases/getInternalUndoSessionReplayContracts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
@@ -150,6 +153,156 @@ describe('split comped audio #5048 typed split of a comped audio clip', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+    it.each([false, true])(
+        'keeps anchored source, saved split replay and tempo relocation with zero-depth comp=%s',
+        async (comp) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const clip: Clip = {
+                ...sourceClip,
+                audioOffsetSeconds: 5.5,
+                audioOffsetBeats: 11,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 2,
+                stretchMode: 'repitch',
+                stretchRatio: 1.5,
+            };
+            trackStore.set({ tracks: [{ ...sourceTrack, clips: [clip] }], selectedTrackId: 'track-1', ghostClips: [] });
+            takeLaneStore.set({
+                lanes: comp
+                    ? [
+                          {
+                              id: 'loop-lane',
+                              trackId: 'track-1',
+                              takes: [
+                                  {
+                                      id: 'loop-take',
+                                      clipId: 'source',
+                                      name: 'Selected carrier',
+                                      startBeat: 2,
+                                      endBeat: 8,
+                                      selected: true,
+                                      sourceOffsetSeconds: 0,
+                                  },
+                              ],
+                              activeCompRegions: [{ startBeat: 2, endBeat: 8, takeId: 'loop-take' }],
+                          },
+                      ]
+                    : [],
+            });
+            const forward = getExecutableCommandRegistration('splitClip');
+            const contracts = [
+                {
+                    actionType: forward.actionType,
+                    operationVersion: forward.operationVersion,
+                    role: 'forward' as const,
+                    validateArguments: forward.runtimeSchema.validate,
+                    validateEntry: forward.sessionEntryValidator,
+                },
+                ...getInternalUndoSessionReplayContracts(),
+            ];
+            hydrateUndoStoreFromSession(contracts);
+            flushAutomergeStorageWrites();
+            const sourceAt = (state: ReturnType<typeof snapshot>, songSecond: number) => {
+                const playback = state.playbacks.find(
+                    (item) => item.startSec <= songSecond && songSecond < item.startSec + item.playDuration
+                );
+                if (!playback) {
+                    throw new Error('Expected actual offline playback at probe time');
+                }
+                return playback.bufferOffsetSec + (songSecond - playback.startSec) * playback.playbackRate;
+            };
+            const before = snapshot();
+            expect(sourceAt(before, 4.5)).toBeCloseTo(6.25);
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'source', beat: 4, rightClipId: 'right' } },
+                { source: 'manual' }
+            );
+            flushAutomergeStorageWrites();
+            const after = snapshot();
+            expect(spans(after.projected.clips)).toEqual([
+                [2, 4],
+                [4, 8],
+            ]);
+            expect(sourceAt(after, 3.5)).toBeCloseTo(9.25);
+            expect(after.playbacks).toEqual(
+                expect.arrayContaining([expect.objectContaining({ startSec: 4, bufferOffsetSec: 5.5 })])
+            );
+            expect(sourceAt(after, 4.5)).toBeCloseTo(6.25);
+            expect(sourceAt(after, 1.5)).toBeCloseTo(6.25);
+            await vi.waitFor(() => {
+                const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+                expect(saved.past).toHaveLength(1);
+            });
+            const saved = sessionStorage.getItem('sourdaw-undo-session')!;
+            clearUndoHistory();
+            sessionStorage.setItem('sourdaw-undo-session', saved);
+            hydrateUndoStoreFromSession(contracts);
+            expect(undoStore.value?.past).toHaveLength(1);
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(sourceAt(snapshot(), 4.5)).toBeCloseTo(6.25);
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(sourceAt(snapshot(), 4.5)).toBeCloseTo(6.25);
+            if (!comp) {
+                await executeAppAction(
+                    { type: 'moveClip', payload: { clipId: 'right', trackId: 'track-1', startBeat: 0 } },
+                    { source: 'manual' }
+                );
+                flushAutomergeStorageWrites();
+                const moved = snapshot();
+                const right = moved.offline.find((candidate) => candidate.id === 'right');
+                expect(right).toMatchObject({
+                    startBeat: 0,
+                    audioOffsetSeconds: 7,
+                    audioLoopStartSeconds: 5.5,
+                    loopOriginBeat: -2,
+                });
+                await executeAppAction(
+                    { type: 'trimClipStart', payload: { clipId: 'right', newStartBeat: 1 } },
+                    { source: 'manual' }
+                );
+                flushAutomergeStorageWrites();
+                const trimmed = snapshot().offline.find((candidate) => candidate.id === 'right');
+                expect(trimmed).toMatchObject({
+                    startBeat: 1,
+                    audioOffsetSeconds: 7.75,
+                    audioLoopStartSeconds: 5.5,
+                    loopOriginBeat: -2,
+                });
+                if (!trimmed) {
+                    throw new Error('Expected trimmed right fragment');
+                }
+                const emitted = projectOfflineAudioClipPlaybacks({
+                    clip: trimmed,
+                    bufferDurationSeconds: 20,
+                    regionStartBeat: 0,
+                    regionStartSec: 0,
+                    durationSeconds: 20,
+                    compensationDelay: 0,
+                    ...time,
+                });
+                expect(emitted).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ startSec: 1, bufferOffsetSec: 5.5 })])
+                );
+                await undo();
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(snapshot().offline.find((candidate) => candidate.id === 'right')).toMatchObject({
+                    startBeat: 4,
+                    audioOffsetSeconds: 7,
+                    audioLoopStartSeconds: 5.5,
+                });
+            }
+        }
+    );
+
     it.each([
         { name: 'legacy beat depth', depth: { sourceOffsetBeats: 2 }, seconds: 1 },
         { name: 'canonical second depth', depth: { sourceOffsetBeats: 99, sourceOffsetSeconds: 1 }, seconds: 1 },

@@ -4,6 +4,8 @@ import {
     getAudioSourcePositionSeconds,
     getAudioTimelineElapsedSeconds,
     resolveAudioSourceOffsetSeconds,
+    projectAudioLoopPassSegments,
+    resolveAudioLoopStartSeconds,
 } from '../audioSourceTime';
 
 describe('resolveAudioSourceOffsetSeconds', () => {
@@ -73,5 +75,41 @@ describe('audio source and timeline seconds', () => {
     ])('uses the shared stretch bound for forward and inverse ratio $ratio', ({ ratio, sourcePosition }) => {
         expect(getAudioSourcePositionSeconds(1, 4, ratio)).toBeCloseTo(sourcePosition, 12);
         expect(getAudioTimelineElapsedSeconds(1, sourcePosition, ratio)).toBeCloseTo(4, 12);
+    });
+});
+
+describe('canonical loop source boundary', () => {
+    it.each([0, -1, 5.5])(
+        'keeps signed source boundary %s independently of the new placement tempo',
+        (audioLoopStartSeconds) => {
+            const clip = {
+                startBeat: 4,
+                loopOriginBeat: 2,
+                loopEnabled: true,
+                audioOffsetSeconds: 7,
+                audioLoopStartSeconds,
+            };
+            expect(resolveAudioLoopStartSeconds(clip, 120)).toBe(audioLoopStartSeconds);
+            expect(resolveAudioLoopStartSeconds(clip, 60)).toBe(audioLoopStartSeconds);
+        }
+    );
+    it('keeps the stored head while the loop boundary is inert with looping off', () => {
+        expect(
+            projectAudioLoopPassSegments({
+                clip: {
+                    startBeat: 4,
+                    loopOriginBeat: 2,
+                    loopEnabled: false,
+                    audioOffsetSeconds: -1,
+                    audioLoopStartSeconds: 5.5,
+                },
+                loopLengthBeats: 4,
+                iterationStartBeat: 4,
+                iterationEndBeat: 8,
+                stretchRatio: 1.5,
+                tempoAtClipStart: 60,
+                secondsAtBeat: (beat) => beat,
+            })
+        ).toEqual([{ startOffsetBeats: 0, endOffsetBeats: 4, sourceStartSeconds: -1 }]);
     });
 });

@@ -20,7 +20,7 @@ import {
     envelopeGainDbToLinear,
     foldGainCurveAnchorsToAudibleStart,
 } from '#/utils/clipGainEnvelopeSchedule';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -209,7 +209,6 @@ export function scheduleAudioClips(
             // the export prints the right one.
             const clipGain = clip.gain;
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
-            const clipBeatsPerSecond = clipTempo / 60;
 
             // Single source of truth for beat → audio-context time on the timeline.
             // Every timeline quantity — iteration start, iteration length, fade
@@ -303,33 +302,15 @@ export function scheduleAudioClips(
                 // advances zero, which puts the region at the offset and the
                 // entry at the region head: exactly the pre-anchor read, one
                 // segment per pass.
-                const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-                const loopAdvanceBeats = resolveClipLoopOriginAdvance({
-                    startBeat: clip.startBeat,
-                    loopOriginBeat: clip.loopOriginBeat,
-                    loopEnabled,
+                const passSegments = projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: loopLen,
+                    iterationStartBeat: iterStartBeat,
+                    iterationEndBeat: iterStartBeat + iterDurationBeats,
+                    stretchRatio,
+                    tempoAtClipStart: clipTempo,
+                    secondsAtBeat: (beat) => secondsBetweenBeats(changes, 0, beat, transport.tempo),
                 });
-                const regionStartBeats = clipAudioOffsetBeats - loopAdvanceBeats;
-                const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
-                const headSegmentEndBeats = Math.min(iterDurationBeats, loopLen - regionEntryBeats);
-                const passSegments: {
-                    startOffsetBeats: number;
-                    endOffsetBeats: number;
-                    sourceStartBeats: number;
-                }[] = [
-                    {
-                        startOffsetBeats: 0,
-                        endOffsetBeats: headSegmentEndBeats,
-                        sourceStartBeats: regionStartBeats + regionEntryBeats,
-                    },
-                ];
-                if (regionEntryBeats > 0 && iterDurationBeats > headSegmentEndBeats) {
-                    passSegments.push({
-                        startOffsetBeats: headSegmentEndBeats,
-                        endOffsetBeats: iterDurationBeats,
-                        sourceStartBeats: regionStartBeats,
-                    });
-                }
 
                 // The pass head's time is read before `now`, in the same order
                 // the single-source read always used: the two clock reads are
@@ -368,7 +349,7 @@ export function scheduleAudioClips(
                     // that the tail's read-anchored end does not have.
                     const segmentStartTime =
                         iterStartTime + secondsBetweenBeats(changes, iterStartBeat, segmentStartBeat, transport.tempo);
-                    const segmentSourceStartSeconds = segment.sourceStartBeats / clipBeatsPerSecond;
+                    const segmentSourceStartSeconds = segment.sourceStartSeconds;
                     // A negative source start — reachable and unfloored from
                     // both write paths, `slipClipContent` and a leftward
                     // left-edge drag in `trimClipStart` — puts the segment's

@@ -43,13 +43,23 @@ function validClipDepth(source: Record<string, unknown>): boolean {
         source.originalTempo > 0 &&
         finite(source.audioOffsetBeats) &&
         finite(source.audioOffsetSeconds) &&
-        Object.is(source.audioOffsetSeconds, source.audioOffsetBeats * (60 / source.originalTempo))
+        (source.audioOffsetWasCanonical === true ||
+            Object.is(source.audioOffsetSeconds, source.audioOffsetBeats * (60 / source.originalTempo)))
     );
 }
 
 function validClipSource(value: unknown): value is Record<string, unknown> {
     return (
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        (!('audioLoopStartSeconds' in value) || finite(value.audioLoopStartSeconds)) &&
+        (!('audioOffsetWasCanonical' in value) || value.audioOffsetWasCanonical === true) &&
+        (!('audioOffsetBeatsPresent' in value) || value.audioOffsetBeatsPresent === false) &&
         exactKeys(value, [
+            ...Object.keys(value).filter((key) =>
+                ['audioLoopStartSeconds', 'audioOffsetWasCanonical', 'audioOffsetBeatsPresent'].includes(key)
+            ),
             'trackId',
             'alternativeId',
             'clipId',

@@ -1,3 +1,4 @@
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { resolveTakeMedia } from '../stores/resolveTakeMedia';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
@@ -17,7 +18,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -27,7 +32,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -92,7 +101,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
-                sourceStartBeat: clip.startBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
             });
         }
     }

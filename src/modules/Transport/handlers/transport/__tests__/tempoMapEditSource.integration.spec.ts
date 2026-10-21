@@ -165,6 +165,37 @@ describe('tempo map edit preserves canonical audio source', () => {
         removeCrdtDoc('root');
     });
 
+    it.each([0, -1, 3])(
+        'captures loop boundary before tempo changes canonical entry %s and restores its absence',
+        async (entry) => {
+            const clip = {
+                ...legacyClip,
+                startBeat: 6,
+                endBeat: 12,
+                audioOffsetSeconds: entry,
+                audioOffsetBeats: entry * 2,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 2,
+            };
+            trackStore.set({ tracks: [{ ...track, clips: [clip] }], selectedTrackId: 'track-1', ghostClips: [] });
+            flushAutomergeStorageWrites();
+            await executeAppAction({ type: 'addTempoMapChange', payload: { beat: 4, tempo: 60, curve: 'instant' } });
+            flushAutomergeStorageWrites();
+            expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
+                audioOffsetSeconds: entry,
+                audioLoopStartSeconds: entry - 2,
+            });
+            await undo();
+            expect(trackStore.value?.tracks[0]?.clips[0]).toEqual(clip);
+            await redo();
+            expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
+                audioOffsetSeconds: entry,
+                audioLoopStartSeconds: entry - 2,
+            });
+        }
+    );
+
     it('adds an event before a legacy clip without changing its media entry, then restores exact absence', async () => {
         await executeAppAction({ type: 'addTempoMapChange', payload: { beat: 4, tempo: 60, curve: 'instant' } });
         flushAutomergeStorageWrites();

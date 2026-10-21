@@ -1,9 +1,13 @@
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import {
     getAudioSourcePositionSeconds,
     getAudioTimelineElapsedSeconds,
     resolveAudioSourceOffsetSeconds,
+    resolveAudioLoopStartSeconds,
+    projectAudioLoopPassSegments,
 } from '#/utils/audioSourceTime';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type Take } from '../models/TakeLane';
 import { isTempoConstantBetween, type TempoTimeline } from '../models/TempoTimeline';
@@ -36,7 +40,12 @@ export function resolveTakeMedia(
         const offsetAt = (beat: number) => (clip.midiOffsetBeats ?? 0) + (beat - (clip.startBeat - depthBeats));
         return {
             earliestBeat: clip.startBeat,
-            sourceStartBeat: clip.startBeat - depthBeats,
+            sourceStartBeat:
+                resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }) - depthBeats,
             offsetAt,
             clipAt: (beat) => {
                 const offset = offsetAt(beat);
@@ -65,8 +74,37 @@ export function resolveTakeMedia(
         );
         sourceStartBeat = passStartBeat - (depth * timeline.tempoAtBeat(passStartBeat)) / 60;
     }
-    const sourceAt = (beat: number) =>
-        getAudioSourcePositionSeconds(sourceEntrySeconds, timeline.secondsAtBeat(beat) - startSeconds, rate);
+    const carrier = !placed && legacyDepthSeconds === 0;
+    const sourceAt = (beat: number) => {
+        if (carrier && clip.loopEnabled && beat >= clip.startBeat) {
+            const loop = projectClipLoopExpansion({
+                clipDurationBeats: clip.endBeat - clip.startBeat,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: true,
+            });
+            const iterationStartBeat =
+                clip.startBeat + Math.floor((beat - clip.startBeat) / loop.loopLengthBeats) * loop.loopLengthBeats;
+            const segments = projectAudioLoopPassSegments({
+                clip,
+                loopLengthBeats: loop.loopLengthBeats,
+                iterationStartBeat,
+                iterationEndBeat: iterationStartBeat + loop.loopLengthBeats,
+                stretchRatio: rate,
+                tempoAtClipStart: tempo,
+                secondsAtBeat: timeline.secondsAtBeat,
+            });
+            const segment = segments.find((item) => beat < iterationStartBeat + item.endOffsetBeats) ?? segments.at(-1);
+            if (segment) {
+                return getAudioSourcePositionSeconds(
+                    segment.sourceStartSeconds,
+                    timeline.secondsAtBeat(beat) -
+                        timeline.secondsAtBeat(iterationStartBeat + segment.startOffsetBeats),
+                    rate
+                );
+            }
+        }
+        return getAudioSourcePositionSeconds(sourceEntrySeconds, timeline.secondsAtBeat(beat) - startSeconds, rate);
+    };
     const offsetAt = (beat: number): number => {
         // Keep exact legacy beat arithmetic where it expresses the same source.
         if (
@@ -88,13 +126,22 @@ export function resolveTakeMedia(
             const offsetSeconds = sourceAt(beat);
             const offsetBeats = offsetAt(beat);
             if (
+                !clip.loopEnabled &&
                 beat === clip.startBeat &&
                 offsetSeconds === entrySeconds &&
                 offsetBeats === (clip.audioOffsetBeats ?? 0)
             ) {
                 return clip;
             }
-            return { ...clip, audioOffsetBeats: offsetBeats, audioOffsetSeconds: offsetSeconds };
+            const fragment = { ...clip, audioOffsetBeats: offsetBeats, audioOffsetSeconds: offsetSeconds };
+            if (carrier && clip.loopEnabled) {
+                fragment.audioLoopStartSeconds = resolveAudioLoopStartSeconds(clip, tempo);
+                fragment.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
+            } else if (!carrier) {
+                delete fragment.loopOriginBeat;
+                delete fragment.audioLoopStartSeconds;
+            }
+            return fragment;
         },
     };
 }

@@ -76,6 +76,7 @@ export const handleMoveClip = createHandler<'moveClip'>({
         let nextSource: ClipMoveActionSnapshot['audioSource'];
         if (clip.type === 'audio') {
             nextSource = {
+                ...audioSourceAtBeat(clip, clip.startBeat),
                 audioOffsetSeconds: sourceSeconds,
                 audioOffsetBeats: (sourceSeconds * readTempoAtBeat({ beat: action.payload.startBeat })) / 60,
             };

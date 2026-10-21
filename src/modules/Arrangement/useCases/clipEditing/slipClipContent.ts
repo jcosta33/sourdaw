@@ -48,6 +48,12 @@ export function slipClipContent(
             const source = audioSourceAfterSlip(context, newOffset, offsetSeconds);
             const updated: Clip = { ...context, ...source };
             if (restoreAudioSource) {
+                if (restoreAudioSource.audioLoopStartSeconds !== undefined) {
+                    delete updated.audioLoopStartSeconds;
+                    if (restoreAudioSource.audioLoopStartSeconds !== null) {
+                        updated.audioLoopStartSeconds = restoreAudioSource.audioLoopStartSeconds;
+                    }
+                }
                 delete updated.audioOffsetSeconds;
                 delete updated.audioOffsetBeats;
                 if (restoreAudioSource.audioOffsetSeconds !== null) {

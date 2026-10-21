@@ -1,4 +1,8 @@
-import { captureDurableDocumentWitness, captureProjectMutationAuthorization, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureDurableDocumentWitness,
+    captureProjectMutationAuthorization,
+    getCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -116,8 +120,13 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             return { status: 'conflict' };
         }
         const installCapture = () => {
-            if (capture && stagedRetired && getCrdtDoc('root') &&
-                captureDurableDocumentWitness() !== documentBeforeReplay && ownsPublication?.()) {
+            if (
+                capture &&
+                stagedRetired &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
                 capture.splice(0, capture.length, ...stagedRetired);
             }
         };

@@ -45,6 +45,22 @@ const validTrackBase = {
 };
 
 describe('sanitizeTrackSnapshot — clip optional field round-trip', () => {
+    it.each([0, -1, 5.5])('preserves signed canonical loop boundary %s through projection', (audioLoopStartSeconds) => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                clips: [{ ...validClipBase, loopEnabled: true, audioLoopStartSeconds }],
+            })
+        );
+        expect(result.tracks[0]?.clips[0]?.audioLoopStartSeconds).toBe(audioLoopStartSeconds);
+    });
+    it.each([NaN, Infinity, '5.5'])('drops malformed canonical loop boundary %s', (audioLoopStartSeconds) => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({ ...validTrackBase, clips: [{ ...validClipBase, audioLoopStartSeconds }] })
+        );
+        expect(Object.hasOwn(result.tracks[0]!.clips[0]!, 'audioLoopStartSeconds')).toBe(false);
+    });
+
     it('preserves audio clip source and offset fields through the round-trip', () => {
         const clip = {
             ...validClipBase,

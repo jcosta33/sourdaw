@@ -2,7 +2,7 @@ import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
-import { getAudioTimelineElapsedSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { getAudioTimelineElapsedSeconds, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { frequencyToMidiNote } from '#/utils/pitch';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -77,6 +77,8 @@ type ClipPlaybackFields = {
     endBeat: number;
     audioOffsetBeats?: number;
     audioOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    loopOriginBeat?: number;
     stretchMode?: string;
     stretchRatio?: number;
     loopEnabled?: boolean;
@@ -112,42 +114,47 @@ function projectAudibleClipWindow(
     }
 
     const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
-    const offsetSec = resolveAudioSourceOffsetSeconds(clip, tempo);
-    const baseBufferOffsetSec = Math.max(0, offsetSec);
-    const sourcePreRollSec = Math.max(0, -offsetSec) / stretchRatio;
     const loop = projectClipLoopExpansion({
         clipDurationBeats: clipBeats,
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled: clip.loopEnabled ?? false,
     });
-
+    const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
     const spans: AudibleSourceSpan[] = [];
-    for (
-        let iteration = 0;
-        iteration < loop.iterationCount && iteration * loop.loopLengthBeats < clipBeats;
-        iteration++
-    ) {
-        const iterationStartBeat = clip.startBeat + iteration * loop.loopLengthBeats;
-        const iterationEndBeat = Math.min(clip.endBeat, iterationStartBeat + loop.loopLengthBeats);
-        const iterationStartSeconds = readSecondsAtBeat({ beat: iterationStartBeat });
-        const audibleDestSec = readSecondsAtBeat({ beat: iterationEndBeat }) - iterationStartSeconds - sourcePreRollSec;
-        if (!(audibleDestSec > 0)) {
-            continue;
-        }
-        const remainingBufferSourceSec = Math.max(0, bufferDurationSec - baseBufferOffsetSec);
-        const sourceDurationSec = Math.min(audibleDestSec * stretchRatio, remainingBufferSourceSec);
-        if (!(sourceDurationSec > 0)) {
-            continue;
-        }
-        spans.push({
-            iterationStartBeat,
-            iterationEndBeat,
-            iterationStartSeconds,
-            sourceOffsetSeconds: offsetSec,
+    for (let iteration = 0; iteration < loop.iterationCount; iteration++) {
+        const passStart = clip.startBeat + iteration * loop.loopLengthBeats;
+        const passEnd = Math.min(clip.endBeat, passStart + loop.loopLengthBeats);
+        for (const segment of projectAudioLoopPassSegments({
+            clip,
+            loopLengthBeats: loop.loopLengthBeats,
+            iterationStartBeat: passStart,
+            iterationEndBeat: passEnd,
             stretchRatio,
-            startSec: baseBufferOffsetSec,
-            durationSec: sourceDurationSec,
-        });
+            tempoAtClipStart: tempo,
+            secondsAtBeat,
+        })) {
+            const iterationStartBeat = passStart + segment.startOffsetBeats;
+            const iterationEndBeat = passStart + segment.endOffsetBeats;
+            const iterationStartSeconds = secondsAtBeat(iterationStartBeat);
+            const offsetSec = segment.sourceStartSeconds;
+            const baseBufferOffsetSec = Math.max(0, offsetSec);
+            const sourcePreRollSec = Math.max(0, -offsetSec) / stretchRatio;
+            const sourceDurationSec = Math.min(
+                Math.max(0, secondsAtBeat(iterationEndBeat) - iterationStartSeconds - sourcePreRollSec) * stretchRatio,
+                Math.max(0, bufferDurationSec - baseBufferOffsetSec)
+            );
+            if (sourceDurationSec > 0) {
+                spans.push({
+                    iterationStartBeat,
+                    iterationEndBeat,
+                    iterationStartSeconds,
+                    sourceOffsetSeconds: offsetSec,
+                    stretchRatio,
+                    startSec: baseBufferOffsetSec,
+                    durationSec: sourceDurationSec,
+                });
+            }
+        }
     }
 
     return { spans };

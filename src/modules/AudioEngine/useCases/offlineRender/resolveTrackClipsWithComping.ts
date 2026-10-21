@@ -80,10 +80,8 @@ export function resolveTrackClipsWithComping(
         // existed. Gap fragments below keep the anchor: their offset advances
         // with the same beat as the window, so the source's region law holds
         // there unchanged.
-        const takeFragment = media.clipAt(overlapStart);
-        const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
         resolvedClips.push({
-            ...takeFragmentBasis,
+            ...media.clipAt(overlapStart),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,

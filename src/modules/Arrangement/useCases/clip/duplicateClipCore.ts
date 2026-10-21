@@ -95,6 +95,8 @@ export function duplicateClipCore(
         assetHash: clip.assetHash,
         audioOffsetBeats,
         audioOffsetSeconds,
+        audioLoopStartSeconds:
+            clip.type === 'audio' ? audioSourceAtBeat(clip, clip.startBeat).audioLoopStartSeconds : undefined,
         midiOffsetBeats: clip.midiOffsetBeats,
         fadeInBeats: clip.fadeInBeats,
         fadeOutBeats: clip.fadeOutBeats,

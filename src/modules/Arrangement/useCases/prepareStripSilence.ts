@@ -1,6 +1,6 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
-import { getAudioTimelineElapsedSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { getAudioTimelineElapsedSeconds, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
@@ -47,38 +47,50 @@ function emptySatelliteEntry(clipId: string): ClipSatelliteEntry {
 }
 
 function resolvePlayedWindows(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow[] {
-    const sourceOffsetSeconds = resolveAudioSourceOffsetSeconds(clip, readTempoAtBeat({ beat: clip.startBeat }));
     const stretchRatio = consumedStretchFactor(clip);
-    const clipBeats = clip.endBeat - clip.startBeat;
     const loop = projectClipLoopExpansion({
-        clipDurationBeats: clipBeats,
+        clipDurationBeats: clip.endBeat - clip.startBeat,
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled: clip.loopEnabled ?? false,
     });
-    const sourceStartSeconds = Math.max(0, sourceOffsetSeconds);
-    const startSample = Math.max(0, Math.floor(sourceStartSeconds * buffer.sampleRate));
-    const preRollSeconds = Math.max(0, -sourceOffsetSeconds) / stretchRatio;
+    const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
     const windows: PlayedWindow[] = [];
     for (let iteration = 0; iteration < loop.iterationCount; iteration++) {
-        const iterationStartBeat = clip.startBeat + iteration * loop.loopLengthBeats;
-        const iterationEndBeat = Math.min(clip.endBeat, iterationStartBeat + loop.loopLengthBeats);
-        const iterationStartSeconds = readSecondsAtBeat({ beat: iterationStartBeat });
-        const iterationDurationSeconds = readSecondsAtBeat({ beat: iterationEndBeat }) - iterationStartSeconds;
-        const consumedSourceSeconds = Math.max(0, iterationDurationSeconds - preRollSeconds) * stretchRatio;
-        const endSample = Math.min(
-            bufferLength,
-            Math.floor((sourceStartSeconds + consumedSourceSeconds) * buffer.sampleRate)
-        );
-        if (endSample > startSample) {
-            windows.push({
-                startSample,
-                endSample,
-                iterationStartBeat,
-                iterationEndBeat,
-                iterationStartSeconds,
-                stretchRatio,
-                sourceOffsetSeconds,
-            });
+        const passStart = clip.startBeat + iteration * loop.loopLengthBeats;
+        const passEnd = Math.min(clip.endBeat, passStart + loop.loopLengthBeats);
+        for (const segment of projectAudioLoopPassSegments({
+            clip,
+            loopLengthBeats: loop.loopLengthBeats,
+            iterationStartBeat: passStart,
+            iterationEndBeat: passEnd,
+            stretchRatio,
+            tempoAtClipStart: readTempoAtBeat({ beat: clip.startBeat }),
+            secondsAtBeat,
+        })) {
+            const iterationStartBeat = passStart + segment.startOffsetBeats;
+            const iterationEndBeat = passStart + segment.endOffsetBeats;
+            const sourceOffsetSeconds = segment.sourceStartSeconds;
+            const sourceStartSeconds = Math.max(0, sourceOffsetSeconds);
+            const preRollSeconds = Math.max(0, -sourceOffsetSeconds) / stretchRatio;
+            const iterationStartSeconds = secondsAtBeat(iterationStartBeat);
+            const consumedSourceSeconds =
+                Math.max(0, secondsAtBeat(iterationEndBeat) - iterationStartSeconds - preRollSeconds) * stretchRatio;
+            const startSample = Math.max(0, Math.floor(sourceStartSeconds * buffer.sampleRate));
+            const endSample = Math.min(
+                bufferLength,
+                Math.floor((sourceStartSeconds + consumedSourceSeconds) * buffer.sampleRate)
+            );
+            if (endSample > startSample) {
+                windows.push({
+                    startSample,
+                    endSample,
+                    iterationStartBeat,
+                    iterationEndBeat,
+                    iterationStartSeconds,
+                    stretchRatio,
+                    sourceOffsetSeconds,
+                });
+            }
         }
     }
     return windows;
@@ -393,6 +405,7 @@ export function prepareStripSilence({
             loopEnabled: false,
         };
         delete segment.loopLength;
+        delete segment.audioLoopStartSeconds;
         return segment;
     });
     const newClipSatellites: ClipSatelliteEntry[] = newClips.map((segment) => ({

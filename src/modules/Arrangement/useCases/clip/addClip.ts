@@ -6,13 +6,16 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip, type FollowAction, type StretchMode } from '../../stores/trackStore';
 
-function hasValidPlacement(input: Pick<Clip, 'startBeat' | 'endBeat' | 'audioOffsetSeconds'>): boolean {
+function hasValidPlacement(
+    input: Pick<Clip, 'startBeat' | 'endBeat' | 'audioOffsetSeconds' | 'audioLoopStartSeconds'>
+): boolean {
     return (
         Number.isFinite(input.startBeat) &&
         Number.isFinite(input.endBeat) &&
         input.startBeat >= 0 &&
         input.endBeat > input.startBeat &&
-        (input.audioOffsetSeconds === undefined || Number.isFinite(input.audioOffsetSeconds))
+        (input.audioOffsetSeconds === undefined || Number.isFinite(input.audioOffsetSeconds)) &&
+        (input.audioLoopStartSeconds === undefined || Number.isFinite(input.audioLoopStartSeconds))
     );
 }
 
@@ -29,6 +32,7 @@ export function addClip(input: {
     /** Optional source-clip properties to preserve (e.g. when duplicating). */
     audioOffsetBeats?: number;
     audioOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats?: number;
     fadeOutBeats?: number;
@@ -88,6 +92,7 @@ export function addClip(input: {
         assetHash: input.assetHash,
         audioOffsetBeats: input.audioOffsetBeats,
         audioOffsetSeconds: input.audioOffsetSeconds,
+        audioLoopStartSeconds: input.audioLoopStartSeconds,
         midiOffsetBeats: input.midiOffsetBeats,
         fadeInBeats: input.fadeInBeats ?? 0,
         fadeOutBeats: input.fadeOutBeats ?? 0,

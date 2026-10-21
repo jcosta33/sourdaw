@@ -189,25 +189,43 @@ describe('clip metadata handler replay', () => {
                 type: 'restoreClipLoop',
                 payload: {
                     clipId: clip.id,
-                    expected: { present: true, enabled: true },
+                    expected: { present: true, enabled: true, audioLoopStartSeconds: 0 },
                     // The enable's inverse records the pre-enable anchor state
                     // explicitly (#5198): this clip carried none, so the undo
                     // removes the key the enable minted.
-                    replacement: { present: true, enabled: false, loopOriginBeat: null },
+                    replacement: { present: true, enabled: false, loopOriginBeat: null, audioLoopStartSeconds: null },
                 },
             },
             redoAction: {
                 type: 'restoreClipLoop',
                 payload: {
                     clipId: clip.id,
-                    expected: { present: true, enabled: false, loopOriginBeat: null },
-                    replacement: { present: true, enabled: true },
+                    expected: { present: true, enabled: false, loopOriginBeat: null, audioLoopStartSeconds: null },
+                    replacement: { present: true, enabled: true, audioLoopStartSeconds: 0 },
                 },
             },
         });
         expect(handleSetClipLoop.isNoop?.(action)).toBe(false);
         expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
         expect(handleSetClipLoop.isNoop?.(action)).toBe(true);
+    });
+
+    it('captures a new loop region at the stored head and restores its prior dormant source boundary', () => {
+        const source = { ...clip, audioOffsetSeconds: 7, audioLoopStartSeconds: 5.5, loopOriginBeat: 2 };
+        trackStore.set({
+            tracks: [{ ...createTrack({ id: 'track-1', name: 'Audio', kind: 'audio' }), clips: [source] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const action = { type: 'setClipLoop', payload: { clipId: clip.id, enabled: true } } as const;
+        const description = handleSetClipLoop.describe(action);
+        expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioLoopStartSeconds).toBe(7);
+        if (description.inverseAction?.type !== 'restoreClipLoop') {
+            throw new Error('Expected loop inverse');
+        }
+        expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioLoopStartSeconds).toBe(5.5);
     });
 
     it('captures presence-aware guarded loop-length undo and redo actions', () => {
@@ -274,8 +292,8 @@ describe('clip metadata handler replay', () => {
             type: 'restoreClipLoop',
             payload: {
                 clipId: clip.id,
-                expected: { present: true, enabled: true },
-                replacement: { present: false, enabled: false, loopOriginBeat: null },
+                expected: { present: true, enabled: true, audioLoopStartSeconds: 0 },
+                replacement: { present: false, enabled: false, loopOriginBeat: null, audioLoopStartSeconds: null },
             },
         });
         expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
@@ -318,6 +336,7 @@ describe('clip loop disable undo keeps the pre-disable anchor (#5198)', () => {
             present: true,
             enabled: true,
             loopOriginBeat: 0,
+            audioLoopStartSeconds: 0,
         });
 
         expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
@@ -384,6 +403,7 @@ describe('clip loop enable undo removes the minted anchor (#5198)', () => {
             present: false,
             enabled: false,
             loopOriginBeat: null,
+            audioLoopStartSeconds: null,
         });
 
         expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
@@ -583,6 +603,7 @@ describe('clip loop disable undo keeps a never-anchored clip anchorless (#5198)'
             present: true,
             enabled: true,
             loopOriginBeat: null,
+            audioLoopStartSeconds: null,
         });
 
         expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });

@@ -115,6 +115,8 @@ export type Clip = {
     audioOffsetBeats?: number;
     /** Signed source position at the clip head. Authoritative when present, including zero. */
     audioOffsetSeconds?: number;
+    /** Fixed source loop boundary; relocation and tempo edits never rederive it. */
+    audioLoopStartSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;

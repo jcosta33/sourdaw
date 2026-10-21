@@ -400,6 +400,7 @@ function isClip(value: unknown): value is ProjectClip {
                 'sampleStartBeat',
                 'audioOffsetBeats',
                 'audioOffsetSeconds',
+                'audioLoopStartSeconds',
                 'midiOffsetBeats',
                 'stretchRatio',
                 'loopLength',

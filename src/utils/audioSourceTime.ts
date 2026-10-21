@@ -1,3 +1,4 @@
+import { resolveClipLoopOriginAdvance } from './clipLoopOrigin';
 import { boundStretchRatio } from './stretchRatioBound';
 
 type AudioSourceOffset = {
@@ -40,4 +41,75 @@ export function getAudioTimelineElapsedSeconds(
     stretchRatio: number
 ): number {
     return (sourcePositionSeconds - sourceOffsetSeconds) / boundStretchRatio(stretchRatio);
+}
+
+/** Source boundaries and timeline phase are independent after a trim, split or move. */
+type LoopedAudioSource = AudioSourceOffset & {
+    startBeat: number;
+    loopOriginBeat?: number;
+    loopEnabled?: boolean;
+    audioLoopStartSeconds?: number;
+};
+
+/** Legacy clips retain the published beat-region law until an edit captures its seconds. */
+export function resolveAudioLoopStartSeconds(clip: LoopedAudioSource, tempoAtClipStart: number): number {
+    if (clip.audioLoopStartSeconds !== undefined) {
+        return clip.audioLoopStartSeconds;
+    }
+    const advance = resolveClipLoopOriginAdvance({
+        ...clip,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    return (
+        resolveAudioSourceOffsetSeconds(clip, tempoAtClipStart) -
+        (Number.isFinite(tempoAtClipStart) && tempoAtClipStart > 0 ? advance * (60 / tempoAtClipStart) : 0)
+    );
+}
+
+/** The existing bounded pass segmentation, with source seconds and the song's actual clock. */
+export function projectAudioLoopPassSegments({
+    clip,
+    loopLengthBeats,
+    iterationStartBeat,
+    iterationEndBeat,
+    stretchRatio,
+    tempoAtClipStart,
+    secondsAtBeat,
+}: {
+    clip: LoopedAudioSource;
+    loopLengthBeats: number;
+    iterationStartBeat: number;
+    iterationEndBeat: number;
+    stretchRatio: number;
+    tempoAtClipStart: number;
+    secondsAtBeat: (beat: number) => number;
+}): { startOffsetBeats: number; endOffsetBeats: number; sourceStartSeconds: number }[] {
+    const duration = iterationEndBeat - iterationStartBeat;
+    if (!(duration > 0)) {
+        return [];
+    }
+    const advance = resolveClipLoopOriginAdvance({
+        ...clip,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const phase = ((advance % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+    const sourceStart = resolveAudioSourceOffsetSeconds(clip, tempoAtClipStart);
+    if (!clip.loopEnabled) {
+        return [{ startOffsetBeats: 0, endOffsetBeats: duration, sourceStartSeconds: sourceStart }];
+    }
+    const regionStart = resolveAudioLoopStartSeconds(clip, tempoAtClipStart);
+    const headSource =
+        clip.audioLoopStartSeconds === undefined || iterationStartBeat === clip.startBeat
+            ? sourceStart
+            : regionStart +
+              boundStretchRatio(stretchRatio) *
+                  (secondsAtBeat(iterationStartBeat) - secondsAtBeat(iterationStartBeat - phase));
+    const headEnd = Math.min(duration, loopLengthBeats - phase);
+    const segments = [{ startOffsetBeats: 0, endOffsetBeats: headEnd, sourceStartSeconds: headSource }];
+    if (phase > 0 && duration > headEnd) {
+        segments.push({ startOffsetBeats: headEnd, endOffsetBeats: duration, sourceStartSeconds: regionStart });
+    }
+    return segments;
 }

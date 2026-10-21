@@ -40,7 +40,7 @@ describe('handleTrimClipStart', () => {
             payload: { clipId: 'c1', newStartBeat: 2 },
         });
 
-        expect(mocks.trimClipStart).toHaveBeenCalledWith('c1', 2, undefined);
+        expect(mocks.trimClipStart).toHaveBeenCalledWith('c1', 2, undefined, undefined);
     });
 
     it('provides a description', () => {
@@ -64,7 +64,7 @@ describe('handleTrimClipStart', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'trimClipStart',
-            payload: { clipId: 'c1', newStartBeat: 1 },
+            payload: { clipId: 'c1', newStartBeat: 1, loopOriginBeat: null },
         });
     });
 
@@ -88,6 +88,7 @@ describe('handleTrimClipStart', () => {
             payload: {
                 clipId: 'c1',
                 newStartBeat: 1,
+                loopOriginBeat: null,
                 restoreAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 9 },
                 expectedAudioSource: { audioOffsetSeconds: 0.5, audioOffsetBeats: 1 },
             },
@@ -97,6 +98,7 @@ describe('handleTrimClipStart', () => {
             payload: {
                 clipId: 'c1',
                 newStartBeat: 2,
+                loopOriginBeat: null,
                 expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 9 },
                 restoreAudioSource: { audioOffsetSeconds: 0.5, audioOffsetBeats: 1 },
             },

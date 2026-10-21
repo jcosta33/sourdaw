@@ -30,7 +30,9 @@ export const handleRestoreReversedClip = createHandler<'restoreReversedClip'>({
                 ...candidate,
                 audioBufferId: action.payload.audioBufferId,
                 name: action.payload.name,
-                ...(action.payload.loopOriginBeat !== undefined ? { loopOriginBeat: action.payload.loopOriginBeat } : {}),
+                ...(action.payload.loopOriginBeat !== undefined
+                    ? { loopOriginBeat: action.payload.loopOriginBeat }
+                    : {}),
                 ...(action.payload.fadeInBeats !== undefined ? { fadeInBeats: action.payload.fadeInBeats } : {}),
                 ...(action.payload.fadeOutBeats !== undefined ? { fadeOutBeats: action.payload.fadeOutBeats } : {}),
             };

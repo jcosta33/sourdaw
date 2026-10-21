@@ -136,6 +136,7 @@ export type ClipStateSnapshot = {
     readonly assetHash?: string;
     readonly audioOffsetBeats?: number;
     readonly audioOffsetSeconds?: number;
+    readonly audioLoopStartSeconds?: number;
     readonly midiOffsetBeats?: number;
     readonly fadeInBeats: number;
     readonly fadeOutBeats: number;
@@ -188,6 +189,7 @@ export type ClipMoveActionSnapshot = {
 /** Optional clip-source field presence in an inverse action; null means absent. */
 export type AudioSourceStateSnapshot = {
     audioOffsetSeconds: number | null;
+    audioLoopStartSeconds?: number | null;
     audioOffsetBeats: number | null;
 };
 export type TakeSourceDepthSnapshot = {
@@ -214,6 +216,9 @@ export type TempoAudioSourceTransition = {
         readonly originalTempo: number;
         readonly audioOffsetBeats: number;
         readonly audioOffsetSeconds: number;
+        readonly audioLoopStartSeconds?: number;
+        readonly audioOffsetWasCanonical?: true;
+        readonly audioOffsetBeatsPresent?: false;
     }[];
     readonly takes: readonly {
         readonly laneId: string;
@@ -2535,6 +2540,7 @@ export type AppAction =
                    * captured clip carried none.
                    */
                   loopOriginBeat?: number | null;
+                  audioLoopStartSeconds?: number | null;
               };
               replacement: {
                   present: boolean;
@@ -2549,6 +2555,7 @@ export type AppAction =
                    * enable's restamp exactly as before.
                    */
                   loopOriginBeat?: number | null;
+                  audioLoopStartSeconds?: number | null;
               };
           };
       }

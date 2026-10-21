@@ -1,5 +1,5 @@
 import { beatAtSeconds, secondsBetweenBeats } from '#/modules/Transport/useCases';
-import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { resolveAudioSourceOffsetSeconds, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -109,6 +109,8 @@ function layoutKey(
         clip.startBeat,
         clip.endBeat,
         clip.audioOffsetSeconds,
+        clip.audioLoopStartSeconds,
+        clip.loopOriginBeat,
         clip.audioOffsetBeats,
         clip.clipStartTempo,
         clip.stretchMode,
@@ -215,33 +217,46 @@ export function getAudioWaveformOccurrences({
     for (let iteration = firstIteration; iteration < lastIteration; iteration++) {
         const iterationStartBeat = clip.startBeat + iteration * loop.loopLengthBeats;
         const iterationEndBeat = Math.min(clip.endBeat, iterationStartBeat + loop.loopLengthBeats);
-        const span = computeAudioWaveformDrawSpan({
-            offsetBeats: clip.audioOffsetBeats ?? 0,
-            offsetSeconds: clip.audioOffsetSeconds,
-            stretchRatio: ratio,
-            clipBeats: iterationEndBeat - iterationStartBeat,
-            secondsPerBeat: 60 / (clip.clipStartTempo ?? model.tempo),
-            sampleRate,
-            clipStartBeat: iterationStartBeat,
-            tempoChanges: changes,
-            baseTempo: model.tempo,
-            bufferLengthSamples: bufferLength,
-        });
-        const visibleSpan = visibleSourceWindow(
-            span,
-            changes,
-            model.tempo,
+        const segments = projectAudioLoopPassSegments({
+            clip: { ...clip },
+            loopLengthBeats: loop.loopLengthBeats,
+            iterationStartBeat,
             iterationEndBeat,
-            model.viewportStartBeat,
-            model.viewportEndBeat,
-            sampleRate
-        );
-        if (!visibleSpan) {
-            continue;
-        }
-        const numBins = Math.min(maxBins, Math.floor(visibleSpan.audibleTimelineBeats * model.pixelsPerBeat));
-        if (numBins > 0) {
-            occurrences.push({ iteration, span: visibleSpan, numBins });
+            stretchRatio: ratio,
+            tempoAtClipStart: clip.clipStartTempo ?? model.tempo,
+            secondsAtBeat: (beat) => secondsBetweenBeats(changes, 0, beat, model.tempo),
+        });
+        for (const [segmentIndex, segment] of segments.entries()) {
+            const segmentStartBeat = iterationStartBeat + segment.startOffsetBeats;
+            const segmentEndBeat = iterationStartBeat + segment.endOffsetBeats;
+            const span = computeAudioWaveformDrawSpan({
+                offsetBeats: clip.audioOffsetBeats ?? 0,
+                offsetSeconds: segment.sourceStartSeconds,
+                stretchRatio: ratio,
+                clipBeats: segmentEndBeat - segmentStartBeat,
+                secondsPerBeat: 60 / (clip.clipStartTempo ?? model.tempo),
+                sampleRate,
+                clipStartBeat: segmentStartBeat,
+                tempoChanges: changes,
+                baseTempo: model.tempo,
+                bufferLengthSamples: bufferLength,
+            });
+            const visibleSpan = visibleSourceWindow(
+                span,
+                changes,
+                model.tempo,
+                segmentEndBeat,
+                model.viewportStartBeat,
+                model.viewportEndBeat,
+                sampleRate
+            );
+            if (!visibleSpan) {
+                continue;
+            }
+            const numBins = Math.min(maxBins, Math.floor(visibleSpan.audibleTimelineBeats * model.pixelsPerBeat));
+            if (numBins > 0) {
+                occurrences.push({ iteration: iteration * 2 + segmentIndex, span: visibleSpan, numBins });
+            }
         }
     }
 

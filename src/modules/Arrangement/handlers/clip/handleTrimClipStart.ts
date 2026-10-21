@@ -87,7 +87,10 @@ function describeTrim(alpha: TrimClipStartAction): Description {
                 payload: {
                     clipId: clip.id,
                     newStartBeat: alpha.payload.newStartBeat,
-                    loopOriginBeat: alpha.payload.loopOriginBeat ?? clip.loopOriginBeat ?? (clip.loopEnabled ? clip.startBeat : null),
+                    loopOriginBeat:
+                        alpha.payload.loopOriginBeat ??
+                        clip.loopOriginBeat ??
+                        (clip.loopEnabled ? clip.startBeat : null),
                     expectedAudioSource: previousSource,
                     restoreAudioSource: nextSource,
                 },

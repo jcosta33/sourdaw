@@ -2,6 +2,7 @@ import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { type AudioSourceStateSnapshot, type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { resolveAudioLoopStartSeconds } from '#/utils/audioSourceTime';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -74,6 +75,12 @@ function resolveMovedAudioClip(
             audioOffsetSeconds: source.audioOffsetSeconds ?? undefined,
             audioOffsetBeats: source.audioOffsetBeats ?? undefined,
         };
+        if (source.audioLoopStartSeconds !== undefined) {
+            delete restored.audioLoopStartSeconds;
+            if (source.audioLoopStartSeconds !== null) {
+                restored.audioLoopStartSeconds = source.audioLoopStartSeconds;
+            }
+        }
         if (source.audioOffsetSeconds === null) {
             delete restored.audioOffsetSeconds;
         }
@@ -88,7 +95,21 @@ function resolveMovedAudioClip(
     if (!Number.isFinite(sourceSeconds) || !Number.isFinite(targetBeats)) {
         return null;
     }
-    return { ...movedClip, audioOffsetSeconds: sourceSeconds, audioOffsetBeats: targetBeats };
+    return {
+        ...movedClip,
+        audioOffsetSeconds: sourceSeconds,
+        audioOffsetBeats: targetBeats,
+        ...(sourceClip.loopEnabled
+            ? {
+                  audioLoopStartSeconds: resolveAudioLoopStartSeconds(
+                      sourceClip,
+                      readTempoAtBeat({ beat: sourceClip.startBeat })
+                  ),
+                  loopOriginBeat:
+                      (sourceClip.loopOriginBeat ?? sourceClip.startBeat) + startBeat - sourceClip.startBeat,
+              }
+            : {}),
+    };
 }
 
 function prepareClipMovement(

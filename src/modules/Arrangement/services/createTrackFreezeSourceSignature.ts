@@ -25,6 +25,7 @@ type RenderAffectingClipFields = Pick<
     | 'assetHash'
     | 'audioOffsetBeats'
     | 'audioOffsetSeconds'
+    | 'audioLoopStartSeconds'
     | 'midiOffsetBeats'
     | 'fadeInBeats'
     | 'fadeOutBeats'
@@ -84,7 +85,10 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         clip.stretchRatio ?? '',
         clip.loopEnabled ?? false,
         clip.loopLength ?? 0,
-        loopAnchoredStartBeat,
+        ...(loopAnchoredStartBeat !== clip.startBeat ? [`loopOriginBeat=${loopAnchoredStartBeat}`] : []),
+        ...(clip.loopEnabled && clip.audioLoopStartSeconds !== undefined
+            ? [`audioLoopStartSeconds=${clip.audioLoopStartSeconds}`]
+            : []),
     ].join(':');
 
     // Preserve legacy signatures byte-for-byte. When the authoritative source

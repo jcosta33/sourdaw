@@ -5,7 +5,12 @@ export function isAudioSourceStateSnapshot(value: unknown): value is AudioSource
         return false;
     }
     return (
-        Object.keys(value).length === 2 &&
+        Object.keys(value).every((key) =>
+            ['audioOffsetSeconds', 'audioOffsetBeats', 'audioLoopStartSeconds'].includes(key)
+        ) &&
+        (!('audioLoopStartSeconds' in value) ||
+            value.audioLoopStartSeconds === null ||
+            (typeof value.audioLoopStartSeconds === 'number' && Number.isFinite(value.audioLoopStartSeconds))) &&
         'audioOffsetSeconds' in value &&
         'audioOffsetBeats' in value &&
         (value.audioOffsetSeconds === null ||

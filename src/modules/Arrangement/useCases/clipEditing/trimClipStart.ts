@@ -56,7 +56,12 @@ function shiftMidiRowsWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrapped
 
 type RestoreAudioSource = NonNullable<Extract<AppAction, { type: 'trimClipStart' }>['payload']['restoreAudioSource']>;
 
-export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?: number | null, restoreAudioSource?: RestoreAudioSource): boolean {
+export function trimClipStart(
+    clipId: string,
+    newStartBeat: number,
+    anchorBeat?: number | null,
+    restoreAudioSource?: RestoreAudioSource
+): boolean {
     if (!Number.isFinite(newStartBeat)) {
         return false;
     }
@@ -122,9 +127,18 @@ export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?:
             }
             if (context.type === 'audio') {
                 const sourceAtNewStart = audioSourceAtBeat(context, startBeat);
+                if (sourceAtNewStart.audioLoopStartSeconds !== undefined) {
+                    updated.audioLoopStartSeconds = sourceAtNewStart.audioLoopStartSeconds;
+                }
                 updated.audioOffsetSeconds = sourceAtNewStart.audioOffsetSeconds;
                 updated.audioOffsetBeats = sourceAtNewStart.audioOffsetBeats;
                 if (restoreAudioSource) {
+                    if (restoreAudioSource.audioLoopStartSeconds !== undefined) {
+                        delete updated.audioLoopStartSeconds;
+                        if (restoreAudioSource.audioLoopStartSeconds !== null) {
+                            updated.audioLoopStartSeconds = restoreAudioSource.audioLoopStartSeconds;
+                        }
+                    }
                     delete updated.audioOffsetSeconds;
                     delete updated.audioOffsetBeats;
                     if (restoreAudioSource.audioOffsetSeconds !== null) {

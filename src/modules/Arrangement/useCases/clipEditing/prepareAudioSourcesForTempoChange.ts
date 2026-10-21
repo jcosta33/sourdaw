@@ -1,5 +1,5 @@
 import { readTempoAtBeat } from '#/modules/Transport/stores';
-import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { resolveAudioSourceOffsetSeconds, resolveAudioLoopStartSeconds } from '#/utils/audioSourceTime';
 import {
     type AppAction,
     type HandlerValidationContext,
@@ -112,8 +112,9 @@ function captureClipSource(
     const { clip, track, alternativeId } = location;
     if (
         clip.type !== 'audio' ||
-        Object.hasOwn(clip, 'audioOffsetSeconds') ||
-        !Object.hasOwn(clip, 'audioOffsetBeats')
+        (Object.hasOwn(clip, 'audioOffsetSeconds') &&
+            (!clip.loopEnabled || Object.hasOwn(clip, 'audioLoopStartSeconds'))) ||
+        (!Object.hasOwn(clip, 'audioOffsetBeats') && !clip.loopEnabled)
     ) {
         return undefined;
     }
@@ -121,7 +122,8 @@ function captureClipSource(
     if (Object.is(originalTempo, nextTempoAtBeat(clip.startBeat))) {
         return undefined;
     }
-    const audioOffsetBeats = clip.audioOffsetBeats;
+    const audioOffsetBeats =
+        clip.audioOffsetBeats ?? (resolveAudioSourceOffsetSeconds(clip, originalTempo) * originalTempo) / 60;
     const audioOffsetSeconds = resolveAudioSourceOffsetSeconds(clip, originalTempo);
     if (
         audioOffsetBeats === undefined ||
@@ -144,6 +146,11 @@ function captureClipSource(
         originalTempo,
         audioOffsetBeats,
         audioOffsetSeconds,
+        ...(clip.loopEnabled && clip.audioLoopStartSeconds === undefined
+            ? { audioLoopStartSeconds: resolveAudioLoopStartSeconds(clip, originalTempo) }
+            : {}),
+        ...(clip.audioOffsetSeconds !== undefined ? { audioOffsetWasCanonical: true as const } : {}),
+        ...(clip.audioOffsetBeats === undefined ? { audioOffsetBeatsPresent: false as const } : {}),
     };
 }
 
@@ -202,12 +209,25 @@ function findClip(tracks: readonly Track[], source: ClipSource): Clip | null {
 }
 
 function sourceMatches(clip: Clip, source: ClipSource, direction: TempoAudioSourceTransition['direction']): boolean {
-    if (direction === 'apply' && Object.hasOwn(clip, 'audioOffsetSeconds')) {
+    if (
+        direction === 'apply' &&
+        (source.audioOffsetWasCanonical
+            ? !Object.is(clip.audioOffsetSeconds, source.audioOffsetSeconds)
+            : Object.hasOwn(clip, 'audioOffsetSeconds'))
+    ) {
         return false;
     }
     if (
         direction === 'restore' &&
         (!Object.hasOwn(clip, 'audioOffsetSeconds') || !Object.is(clip.audioOffsetSeconds, source.audioOffsetSeconds))
+    ) {
+        return false;
+    }
+    if (
+        source.audioLoopStartSeconds !== undefined &&
+        (direction === 'apply'
+            ? Object.hasOwn(clip, 'audioLoopStartSeconds')
+            : !Object.is(clip.audioLoopStartSeconds, source.audioLoopStartSeconds))
     ) {
         return false;
     }
@@ -219,8 +239,9 @@ function sourceMatches(clip: Clip, source: ClipSource, direction: TempoAudioSour
         (clip.audioBufferId ?? null) === source.audioBufferId &&
         (clip.fileId ?? null) === source.fileId &&
         (clip.assetHash ?? null) === source.assetHash &&
-        Object.hasOwn(clip, 'audioOffsetBeats') &&
-        Object.is(clip.audioOffsetBeats, source.audioOffsetBeats)
+        (source.audioOffsetBeatsPresent === false
+            ? !Object.hasOwn(clip, 'audioOffsetBeats')
+            : Object.hasOwn(clip, 'audioOffsetBeats') && Object.is(clip.audioOffsetBeats, source.audioOffsetBeats))
     );
 }
 
@@ -246,9 +267,21 @@ function takeMatches(take: Take, source: TakeSource, direction: TempoAudioSource
 
 function withClipSource(clip: Clip, source: ClipSource, direction: TempoAudioSourceTransition['direction']): Clip {
     if (direction === 'apply') {
-        return { ...clip, audioOffsetSeconds: source.audioOffsetSeconds };
+        return {
+            ...clip,
+            audioOffsetSeconds: source.audioOffsetSeconds,
+            ...(source.audioLoopStartSeconds !== undefined
+                ? { audioLoopStartSeconds: source.audioLoopStartSeconds }
+                : {}),
+        };
     }
-    const { audioOffsetSeconds: _removed, ...restored } = clip;
+    const restored = { ...clip };
+    if (!source.audioOffsetWasCanonical) {
+        delete restored.audioOffsetSeconds;
+    }
+    if (source.audioLoopStartSeconds !== undefined) {
+        delete restored.audioLoopStartSeconds;
+    }
     return restored;
 }
 

@@ -139,6 +139,10 @@ export function pasteClip(): boolean {
                 assetHash: entry.clip.assetHash,
                 audioOffsetBeats,
                 audioOffsetSeconds,
+                audioLoopStartSeconds:
+                    entry.clip.type === 'audio'
+                        ? audioSourceAtBeat(entry.clip, entry.clip.startBeat).audioLoopStartSeconds
+                        : undefined,
                 midiOffsetBeats: entry.clip.midiOffsetBeats,
                 fadeInBeats: entry.clip.fadeInBeats,
                 fadeOutBeats: entry.clip.fadeOutBeats,
