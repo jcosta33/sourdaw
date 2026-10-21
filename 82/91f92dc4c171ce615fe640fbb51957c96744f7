@@ -1,0 +1,23 @@
+src/modules/BrowserAi/repositories/renderCacheStorage.ts
+  s_29d8df116c5b92::t_6c6e2bee1f887d 34-36,52-54,61-63,101-103,108-110,118-120,123-125,137-139,141-143,147-149,151-153,163-165
+src/modules/BrowserAi/repositories/writeRenderCache.ts
+  s_29d8df116c5b92::t_0db504adcbd07a 14-16
+src/modules/BrowserAi/repositories/__tests__/writeRenderCache.spec.ts
+  s_29d8df116c5b92::t_6c6e2bee1f887d 30-32,35-37,42-44,57-62,64-66,69-71,123,189-193,244-246,279,281,286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8291f92dc4c171ce615fe640fbb51957c96744f7",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
