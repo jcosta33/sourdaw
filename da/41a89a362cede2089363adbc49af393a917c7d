@@ -1,0 +1,25 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_7ba618d70f74dd 190,205,207
+  s_59e31a5c6f3e31::t_7eb3acf42b78ee 102,104,108,110,116,122-126,164-189,191-197,201-204,209-213
+  s_59e31a5c6f3e31::t_e0632ce8d6ea7e 198-200,206,208
+  s_59e31a5c6f3e31::t_29b179dd326256 214
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_59e31a5c6f3e31::t_ee5fe7c48e4e44 1,4,6,14,43-70,217-220,222-224,240-259
+  s_59e31a5c6f3e31::t_8a43ad99b90272 221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da41a89a362cede2089363adbc49af393a917c7d",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
