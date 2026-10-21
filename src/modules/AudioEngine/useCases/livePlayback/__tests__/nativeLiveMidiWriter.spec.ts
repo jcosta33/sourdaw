@@ -544,6 +544,66 @@ describe('the live MIDI writer', () => {
         expect(nativeLiveMidiWriter.pass?.lastClearedBeforeSeconds).toBe(2);
     });
 
+    it('bounds stable-window source and index visits by store capacity instead of the immutable loop length', async () => {
+        const pairs = 100_000;
+        const duration = pairs / 27.8;
+        mocks.events = pairedLane(pairs, 0, duration);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: duration, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const position = duration / 2;
+        await arm(position);
+        await pump(position, 0);
+        const slot = nativeLiveMidiWriter.pass?.targets[0];
+        if (!slot) {
+            throw new Error('the real arm must produce a target before measuring its prepared window');
+        }
+        let visits = 0;
+        // Count actual indexed reads of the score, resident entries and any
+        // prepared frame index. Preparation has already completed through arm.
+        for (const [key, value] of Object.entries(slot)) {
+            if (Array.isArray(value)) {
+                Reflect.set(
+                    slot,
+                    key,
+                    new Proxy(value, {
+                        get(target, property, receiver) {
+                            if (typeof property === 'string' && /^\d+$/.test(property)) {
+                                visits += 1;
+                            }
+                            return Reflect.get(target, property, receiver);
+                        },
+                    })
+                );
+            }
+        }
+        const preparedIndex = slot.loopFrameGroups;
+        await pump(position + 1 / 60, 0);
+        expect(slot.loopFrameGroups).toBe(preparedIndex);
+        console.info(`Loop MIDI stable-window visits: ${visits} for ${slot.events.length} source entries`);
+        // At most two capacity-bounded source passes, three ahead/trail index
+        // passes and resident bookkeeping, plus logarithmic position lookups.
+        const bound = 8 * MIDI_NOTE_STORE_CAPACITY + 4 * Math.ceil(Math.log2(slot.events.length + 1));
+        expect(visits).toBeLessThanOrEqual(bound);
+        expect(slot.held).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('replaces the prepared loop index when a note edit rearms the pass', async () => {
+        mocks.events = pairedLane(20, 0, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        await arm(0);
+        const original = nativeLiveMidiWriter.pass?.targets[0]?.loopFrameGroups;
+        expect(original).toHaveLength(40);
+        mocks.events = pairedLane(32, 0, 3);
+        requestNativeLiveMidiWriterRearm();
+        await poll(0.25);
+        const replacement = nativeLiveMidiWriter.pass?.targets[0]?.loopFrameGroups;
+        expect(replacement).not.toBe(original);
+        expect(replacement).toHaveLength(64);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.events).toHaveLength(64);
+    });
+
     it('keeps whole equal-frame groups at the adaptive cutoff', async () => {
         mocks.events = [...lane(1000, 0, 0.0005), ...lane(600, 0.75, 0)];
         nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 3, enabled: true };

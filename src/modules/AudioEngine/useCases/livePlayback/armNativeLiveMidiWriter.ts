@@ -57,7 +57,7 @@ import { type AudioGraphCommand, type AudioGraphDeviceTarget } from '../../model
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
-import { loopMidiWindowBatch } from './loopMidiWindowBatch';
+import { indexLoopMidiFrames, loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
     MIDI_WINDOW_SECONDS,
@@ -235,6 +235,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
                 deviceName: device?.name ?? entry.target.deviceId,
                 trackName: trackNameById.get(entry.target.trackId) ?? entry.target.trackId,
                 events: entry.events,
+                loopFrameGroups: span.looping ? indexLoopMidiFrames(entry.events, input.sampleRate) : undefined,
                 cursor: 0,
                 held: 0,
                 heldEventIndices: span.looping ? [] : undefined,

@@ -55,6 +55,13 @@ export const MIDI_TRAIL_SECONDS = 2;
 /** `MIDI_NOTE_STORE_CAPACITY` in `crates/daw-engine/src/midi/note_store.rs`. */
 export const MIDI_NOTE_STORE_CAPACITY = 2048;
 
+/** Immutable whole-frame ranges built once from one pass's ordered programme. */
+export type LiveMidiFrameGroup = Readonly<{
+    frame: number;
+    firstEventIndex: number;
+    endEventIndex: number;
+}>;
+
 /** One instrument's share of the pass: its notes, what has been sent, what the store holds. */
 export type LiveMidiWriterTarget = {
     target: AudioGraphDeviceTarget;
@@ -63,6 +70,8 @@ export type LiveMidiWriterTarget = {
     trackName: string;
     /** This target's events for its span, ascending by time. */
     events: readonly AudioGraphMidiNoteEvent[];
+    /** Prepared once on a looping arm; owned and invalidated with this programme. */
+    loopFrameGroups?: readonly LiveMidiFrameGroup[];
     /** Accepted event count; the contiguous prefix cursor for a non-looping pass. */
     cursor: number;
     /** Entries this side believes the engine's store still holds: sent minus cleared. */
