@@ -1,0 +1,21 @@
+src/modules/Toaster/presentations/components/PadGrid.tsx
+  s_59e31a5c6f3e31::t_cc4a4aaf5a79a5 117,119,188-192,194,196,207,215,223,226,229-236,244
+src/modules/Toaster/presentations/components/__tests__/PadGrid.spec.tsx
+  s_59e31a5c6f3e31::t_eada5790ce93c5 124-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab851adf40f4be32690ef57fad486c2b6c25b4f2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
