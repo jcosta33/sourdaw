@@ -1,0 +1,21 @@
+scripts/__tests__/publishReview.spec.ts
+  s_ba8dd89de9aac7::t_1c082c16b8dd6c 176,244-251,506-534,2308-2325
+scripts/publishReview.ts
+  s_ba8dd89de9aac7::t_5ddcfcb9f47692 355-373,397-407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c830ccb3c69c1465b9e7b68cd30dedf6d4e63f9e",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
