@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_66abdb5acdf805 373-380
+  s_1c08b47ac3792f::t_60327f1c0767c6 411-413
+  s_1c08b47ac3792f::t_416b6cd7d7ef82 48-49
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_c2cabaeba7713b 4696
+  s_1c08b47ac3792f::t_f3f984f439581d 4833
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_89f462b67d1d05 417-441
+  s_1c08b47ac3792f::t_6e21f39998ae44 274-279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b34293b9cef092c4ffd97d2d513108ac5692773",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
