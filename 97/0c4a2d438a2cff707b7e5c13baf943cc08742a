@@ -1,0 +1,35 @@
+docs/affected-e2e.md
+  s_1c08b47ac3792f::t_02237da4154935 37-40
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_ba8dd89de9aac7::t_a1ceb371330e99 133,196-208,513-520,524-538,543-585,1457-1498
+scripts/e2eSelectionShadow.ts
+  s_1c08b47ac3792f::t_6c331c4a722a98 22,285-289,492,499-500,610
+scripts/e2eSelectionShadowAgreement.ts
+  s_1c08b47ac3792f::t_45361c05d0762d 103-108,111-113,119-153,157-158,168-173
+scripts/e2eSelectionShadowCompatibility.ts
+  s_ba8dd89de9aac7::t_3beb940dea3baf 149-161,165-167,169,176-177,187-208,219-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "970c4a2d438a2cff707b7e5c13baf943cc08742a",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
