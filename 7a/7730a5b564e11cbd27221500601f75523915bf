@@ -1,0 +1,34 @@
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_29d8df116c5b92::t_70c4bbdec685ff 281,287,291,296-357
+  s_1c08b47ac3792f::t_54165103a4c487 358-359
+tests/e2e/nativeButtonKeyboardActivation.spec.ts
+  s_29d8df116c5b92::t_053da2dca238f6 9,37-42
+  s_29d8df116c5b92::t_d8ecd9195d37ab 1-8,11-36,43-62,64-68,70-73,75-81,83
+  s_29d8df116c5b92::t_9c271953e0d90d 10,63,69,74,82
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_29d8df116c5b92::t_57b8106dfe4dd8 62-75,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a7730a5b564e11cbd27221500601f75523915bf",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
