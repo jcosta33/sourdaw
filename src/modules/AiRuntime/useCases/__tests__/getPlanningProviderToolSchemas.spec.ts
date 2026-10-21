@@ -49,24 +49,25 @@ describe('provider workflow tool authority', () => {
     });
 
     it('carries changed owner bounds and required fields without a parallel schema', () => {
-        const schemas = registrySchemas.map((schema) =>
-            schema.function.name === 'setTrackPan'
-                ? {
-                      ...schema,
-                      function: {
-                          ...schema.function,
-                          parameters: {
-                              ...schema.function.parameters,
-                              properties: {
-                                  ...schema.function.parameters.properties,
-                                  pan: { type: 'number', maximum: 17 },
-                              },
-                              required: ['trackId' as const, 'pan' as const],
-                          },
-                      },
-                  }
-                : schema
-        );
+        const schemas = registrySchemas.map((schema) => {
+            if (schema.function.name !== 'setTrackPan') {
+                return schema;
+            }
+            return {
+                ...schema,
+                function: {
+                    ...schema.function,
+                    parameters: {
+                        ...schema.function.parameters,
+                        properties: {
+                            ...schema.function.parameters.properties,
+                            pan: { type: 'number', maximum: 17 },
+                        },
+                        required: ['trackId' as const, 'pan' as const],
+                    },
+                },
+            };
+        });
         vi.mocked(getExecutableAppActionToolSchemas).mockReturnValue(schemas);
         expect(getPlanningProviderToolSchemas().find((schema) => schema.function.name === 'setTrackPan')).toEqual(
             schemas.find((schema) => schema.function.name === 'setTrackPan')
@@ -132,11 +133,11 @@ describe('owner-published tool contracts retained after legacy schema retirement
     it('keeps sidechain endpoints owner-published and device parameters in exact native units', () => {
         for (const name of ['addSidechainRoute', 'removeSidechainRoute']) {
             const parameters = schema(name).parameters;
-            expect(Object.keys(parameters.properties)).toEqual(
-                name === 'addSidechainRoute'
-                    ? ['sourceTrackId', 'targetTrackId', 'targetDeviceId']
-                    : ['sourceTrackId', 'targetTrackId']
-            );
+            const expectedPropertyNames = ['sourceTrackId', 'targetTrackId'];
+            if (name === 'addSidechainRoute') {
+                expectedPropertyNames.push('targetDeviceId');
+            }
+            expect(Object.keys(parameters.properties)).toEqual(expectedPropertyNames);
             expect(parameters.required).toEqual(['sourceTrackId', 'targetTrackId']);
             expect(parameters.additionalProperties).toBe(false);
         }
