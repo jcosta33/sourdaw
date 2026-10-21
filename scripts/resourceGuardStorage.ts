@@ -23,7 +23,9 @@ import { resolvePrimaryRoot } from './githubAppIdentity.ts';
 export const DEFAULT_DISK_RESERVE_BYTES = 20 * 1024 ** 3;
 export const DISK_RESERVE_ENV = 'SOURDAW_GUARD_DISK_RESERVE_MIB';
 
-export type StorageProcessIdentity = { pid: number; startedAt: string };
+// startTicks is the Linux /proc start time, recorded for the supervisor that creates storage so a
+// later recovery can still prove which processes predate that supervisor after it dies.
+export type StorageProcessIdentity = { pid: number; startedAt: string; startTicks?: number };
 type StorageOwner = {
     version: 1;
     token: string;
@@ -215,11 +217,17 @@ function parseIdentity(value: unknown): StorageProcessIdentity | undefined {
         typeof value.startedAt !== 'string' ||
         value.startedAt.trim() !== value.startedAt ||
         value.startedAt.length === 0 ||
-        value.startedAt.length > 200
+        value.startedAt.length > 200 ||
+        !isOptionalStartTicks(value.startTicks)
     ) {
         return undefined;
     }
-    return { pid: value.pid, startedAt: value.startedAt };
+    // An absent startTicks key and an undefined one serialize alike, as record comparison requires.
+    return { pid: value.pid, startedAt: value.startedAt, startTicks: value.startTicks };
+}
+
+function isOptionalStartTicks(value: unknown): value is number | undefined {
+    return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
 }
 
 function parseOwner(value: unknown, token: string): StorageOwner | undefined {
