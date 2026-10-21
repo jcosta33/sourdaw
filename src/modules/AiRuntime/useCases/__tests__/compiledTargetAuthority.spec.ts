@@ -21,7 +21,7 @@ type CompiledItem = {
     arguments: Record<string, unknown>;
     selector?: {
         targetArgument: string;
-        entity: 'track' | 'device' | 'clip';
+        entity: 'track' | 'device' | 'clip' | 'automation-lane';
         where?: Record<string, string>;
         match?: { all?: Record<string, string>[]; any?: Record<string, string>[] };
         excludeIds?: string[];
@@ -1901,6 +1901,46 @@ describe('list punctuation between two names never states the name joining them'
     });
 });
 
+describe("a name's words join only across space and the separators the name itself has there", () => {
+    const listed = namedTracksContext(['Bass', 'Drums', 'Bass Drums']);
+    it.each([
+        'set "Bass" "Drums" volume to 50%',
+        'set Bass | Drums volume to 50%',
+        'set Bass • Drums volume to 50%',
+        'set Bass (Drums) volume to 50%',
+        'set Bass: Drums volume to 50%',
+        'set Bass * Drums volume to 50%',
+        // A spaced hyphen joins only a name with a hyphen there, as "hi hat" reads Hi-Hat and not the reverse.
+        'set Bass - Drums volume to 50%',
+    ])('refuses a Bass Drums pick for %j', (prompt) => {
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', listed.track('Bass Drums'), { gain: 0.5 })],
+            [],
+            listed.context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it.each([
+        ['set hi hat volume to 50%', 'Hi-Hat'],
+        ['set hi_hat volume to 50%', 'Hi-Hat'],
+        ['set Hi-Hat volume to 50%', 'Hi-Hat'],
+        ['set Hi–Hat volume to 50%', 'Hi-Hat'],
+        ['set Kick In volume to 50%', 'Kick (In)'],
+        ['set Lead/Guitar volume to 50%', 'Lead/Guitar'],
+        ['set Bass - Drums volume to 50%', 'Bass-Drums'],
+    ])('grounds "%s" for %s', (prompt, name) => {
+        const { context, track } = namedTracksContext([name, 'Snare']);
+        const result = compileAndBridge(prompt, [trackItem('setTrackGain', track(name), { gain: 0.5 })], [], context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([track(name).id]);
+    });
+});
+
 describe('a device name fragment picks only on the track the request names as owner', () => {
     const ownedVocals = createTrack({
         id: 'track-owned-vocals',
@@ -1943,5 +1983,106 @@ describe('a device name fragment picks only on the track the request names as ow
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result, 'deviceId')).toEqual([vocalsOwnedEq.id, keysOwnedEq.id]);
+    });
+});
+
+describe('a clip name fragment picks only on the track the request names as owner', () => {
+    const verseClip = (id: string, type: 'audio' | 'midi') => ({
+        id,
+        name: 'Verse',
+        type,
+        startBeat: 0,
+        endBeat: 8,
+        noteCount: type === 'midi' ? 4 : 0,
+    });
+    const clipVocals: ProjectTrack = {
+        ...createTrack({ id: 'track-clip-vocals', name: 'Vocals' }),
+        clipCount: 1,
+        clips: [verseClip('clip-vocals-verse', 'audio')],
+    };
+    const clipKeys: ProjectTrack = {
+        ...createTrack({ id: 'track-clip-keys', name: 'Keys', kind: 'midi' }),
+        clipCount: 1,
+        clips: [verseClip('clip-keys-verse', 'midi')],
+    };
+    const clipContext: ProjectContext = { ...projectContext, tracks: [clipVocals, clipKeys, master] };
+    const muteVerseClips: CompiledItem = roleItem(
+        'muteClip',
+        { muted: true },
+        { targetArgument: 'clipId', entity: 'clip', match: { all: [{ nameIncludes: 'Verse' }] } },
+        2
+    );
+
+    it('grounds only the Verse clip on the track "mute the Verse clip on Vocals" names', () => {
+        const result = compileAndBridge('mute the Verse clip on Vocals', [muteVerseClips], [], clipContext);
+
+        expect(targetsOf(result, 'clipId')).toEqual(['clip-vocals-verse']);
+        expect(result.rejections).toEqual([
+            { index: 1, name: 'muteClip', reason: 'Compiled target clipId is not authorized by the user request' },
+        ]);
+    });
+
+    it('grounds both Verse clips for "mute the Verse clips on Vocals and Keys"', () => {
+        const result = compileAndBridge('mute the Verse clips on Vocals and Keys', [muteVerseClips], [], clipContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'clipId')).toEqual(['clip-vocals-verse', 'clip-keys-verse']);
+    });
+});
+
+describe('an automation lane name fragment picks only on the track the request names as owner', () => {
+    const volumeLane = (id: string, trackId: string): NonNullable<ProjectContext['automationLanes']>[number] => ({
+        id,
+        trackId,
+        parameterId: 'volume',
+        name: 'Volume',
+        enabled: true,
+        minValue: 0,
+        maxValue: 1,
+        points: [
+            { beat: 0, value: 0.2, curve: 'linear' },
+            { beat: 8, value: 0.8, curve: 'linear' },
+        ],
+    });
+    const laneContext: ProjectContext = {
+        ...projectContext,
+        tracks: [vocals, keys, master],
+        automationLanes: [volumeLane('lane-vocals-volume', vocals.id), volumeLane('lane-keys-volume', keys.id)],
+    };
+    const invertVolumeLanes: CompiledItem = roleItem(
+        'invertAutomation',
+        {},
+        { targetArgument: 'laneId', entity: 'automation-lane', match: { all: [{ nameIncludes: 'Volume' }] } },
+        2
+    );
+
+    it('grounds only the Volume lane on the track "invert automation of the Volume lane on Vocals" names', () => {
+        const result = compileAndBridge(
+            'invert automation of the Volume lane on Vocals',
+            [invertVolumeLanes],
+            [],
+            laneContext
+        );
+
+        expect(targetsOf(result, 'laneId')).toEqual(['lane-vocals-volume']);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'invertAutomation',
+                reason: 'Compiled target laneId is not authorized by the user request',
+            },
+        ]);
+    });
+
+    it('grounds both Volume lanes for "invert automation of the Volume lanes on Vocals and Keys"', () => {
+        const result = compileAndBridge(
+            'invert automation of the Volume lanes on Vocals and Keys',
+            [invertVolumeLanes],
+            [],
+            laneContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'laneId')).toEqual(['lane-vocals-volume', 'lane-keys-volume']);
     });
 });

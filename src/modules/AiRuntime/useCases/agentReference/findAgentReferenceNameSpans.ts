@@ -27,11 +27,12 @@ const WORD_BOUNDARY_AFTER = '(?![\\p{L}\\p{N}])';
 const TRAILING_PUNCTUATION = /[^\p{L}\p{N}]+$/u;
 
 /**
- * List punctuation and line breaks start another item ("Bass & Drums", "Bass; Drums", a bulleted
- * list), so a name's words are read across them only where the name itself has that character. None
- * of them needs escaping inside a character class.
+ * What joins any two words of a name: a run of space on one line, or the underscore that stands for a
+ * space in identifiers and file names ("hi_hat"). Every other character, a line break included, may
+ * start another item ("Bass & Drums", "Bass | Drums", a bulleted list), so it joins a name's words
+ * only where the name itself has it between them.
  */
-const LIST_SEPARATORS = ['&', '+', '/', ';', '.', ',', '!', '?', '\n', '\r'];
+const NAME_WORD_SPACE = '\\p{Zs}\\t_';
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -41,9 +42,19 @@ function foldFinalSigma(folded: string): string {
     return folded.replaceAll('ς', 'σ');
 }
 
-/** Case and diacritics folded as normalizeAgentReferenceText folds them, final sigma aside, punctuation kept. */
+/** Typographic apostrophes and dashes are the separator a name types as ' or -: "Jose’s", "Hi–Hat". */
+function foldTypographicSeparators(folded: string): string {
+    return folded.replaceAll(/[‘’ʼ]/gu, "'").replaceAll(/\p{Pd}/gu, '-');
+}
+
+/**
+ * Case and diacritics folded as normalizeAgentReferenceText folds them, final sigma aside, punctuation
+ * kept with its typographic forms folded.
+ */
 function foldCharacters(value: string): string {
-    return foldFinalSigma(value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, ''));
+    return foldTypographicSeparators(
+        foldFinalSigma(value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, ''))
+    );
 }
 
 function normalizeName(value: string): string {
@@ -57,13 +68,19 @@ function getNameSeparators(name: string): string[] {
         .slice(1, -1);
 }
 
+/** The character as a literal inside a character class. */
+function escapeClassCharacter(character: string): string {
+    return /[\\\]^-]/u.test(character) ? `\\${character}` : character;
+}
+
 /**
- * What may join two of the name's words in the text: any run of punctuation or space, but list
- * punctuation or a line break only where the name's own separator there has it.
+ * What may join two of the name's words in the text: a run of space and of the characters the name's
+ * own separator there has, so "Kick In" reads Kick (In) and "Bass - Drums" reads Bass-Drums, never
+ * Bass Drums.
  */
 function getWordJoiner(nameSeparator: string): string {
-    const refused = LIST_SEPARATORS.filter((separator) => !nameSeparator.includes(separator)).join('');
-    return `[^\\p{L}\\p{N}${refused}]+`;
+    const ownCharacters = Array.from(new Set(nameSeparator), escapeClassCharacter).join('');
+    return `[${NAME_WORD_SPACE}${ownCharacters}]+`;
 }
 
 /** The text folded as normalizeName folds case and diacritics, with each folded code unit's offset in the text. */
@@ -146,9 +163,10 @@ function findTypedRanges(text: string, name: string): AgentReferenceTextRange[] 
 
 /**
  * Every range of the text that states the name: its words folded as normalizeAgentReferenceText folds
- * them, final sigma aside, in order, any run of punctuation or space between them except list
- * punctuation or a line break the name does not have there ("Bass & Drums" never states Bass Drums),
- * the final word in either grammatical number when the forms allow it. A range the name as typed
+ * them, final sigma aside, in order, joined by a run of space, underscore and the punctuation the name
+ * itself has between those words ("hi hat" and "hi_hat" state Hi-Hat, while "Bass & Drums" and
+ * "Bass | Drums" never state Bass Drums), the final word in either grammatical number when the forms
+ * allow it. A range the name as typed
  * covers reads as typed and reaches as far as the typed name does, short of the punctuation closing
  * it, wherever the text goes on: "Kick (In)" reads Kick (In) more closely than Kick In, and "Lead?" in
  * "mute Lead?!" reads no further than Lead does.

@@ -16,6 +16,7 @@ import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
+import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 
 /*
@@ -26,8 +27,9 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * never states. Every target the request protects or excludes is refused. What the request states is
  * the shared reference resolver's own reading of it, never a matcher of this file's: the resolver's
  * `naming` mode, which reads an object by its literal id or its whole name, case, diacritics and
- * punctuation folded but never joined across list punctuation the name lacks ("Bass & Drums" states
- * no Bass Drums) nor lengthened by punctuation closing it ("Lead?!" states Lead as closely as Lead?),
+ * punctuation folded, its words joined only across space and the punctuation the name itself has
+ * between them ("Bass & Drums" and "Bass - Drums" state no Bass Drums, "hi hat" states Hi-Hat), and
+ * never lengthened by punctuation closing it ("Lead?!" states Lead as closely as Lead?),
  * against every candidate whatever selection the request refers to, and takes the
  * final word of a name in either grammatical number ("the vocal" states Vocals), a form the direct
  * route leaves to its approximate reading. Each stated range names only the objects whose names read
@@ -38,14 +40,15 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * target or owner track. A name fragment is stated for a target it picks when it occurs as a whole
  * word, in either number, outside every range that states a longer whole name of another object, so
  * "the Drum Bus" states a "Bus" fragment for the Drum Bus and never for the FX Bus, while "the guitars"
- * states a "guitar" fragment for Guitar 2 beside the Guitar track. A fragment picks an owned object,
- * as a whole name does, only on the track the request qualifies as its owner or selects, or on a
- * track it names, so "bypass the EQ on Vocals" never states the EQ on Keys. The text read is the whole
- * request less its restrictions and the values any call of the batch writes, so an instruction may
- * pick by a name an earlier one states ("turn Vocals down and pan it left"). A selection reference
- * ("this track", "the selected track", "it" or "its" for the selected track) that resolves to the
- * picked objects states those picks only when the request names no object of that kind, so "set
- * Vocals volume so it sits better" never stands for the selected Keys.
+ * states a "guitar" fragment for Guitar 2 beside the Guitar track. A fragment picks an object a track
+ * owns (a device, clip or automation lane), as a whole name does, only on the track the request
+ * qualifies as its owner or selects, or on a track it names, so "bypass the EQ on Vocals" never states
+ * the EQ on Keys and "mute the Verse clip on Vocals" never the Verse clip on Keys. The text read is
+ * the whole request less its restrictions and the values any call of the batch writes, so an
+ * instruction may pick by a name an earlier one states ("turn Vocals down and pan it left"). A
+ * selection reference ("this track", "the selected track", "it" or "its" for the selected track) that
+ * resolves to the picked objects states those picks only when the request names no object of that
+ * kind, so "set Vocals volume so it sits better" never stands for the selected Keys.
  *
  * Literal targets, owner-track picks in a request that names and selects no track, and selections
  * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
@@ -89,7 +92,11 @@ export type CompiledTargetAuthorityInput = {
 
 export type CompiledTargetAuthority = { status: 'admitted' } | { status: 'refused' };
 
-/** Owned capabilities whose candidates a track dependency narrows to that track's objects. */
+/**
+ * Owned capabilities whose candidates the resolver narrows to a track dependency's objects; it reads
+ * no dependency for a clip or an automation lane, so their whole names are read against the owner
+ * the request qualifies or selects alone.
+ */
 const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
     'device',
     'sidechain-capable-device',
@@ -180,29 +187,7 @@ function readWithNamedOwners(
     return [...new Set([...named, ...ownedByNamedTracks])];
 }
 
-/**
- * The owned objects the text can refer to: those resolution draws its candidates from, narrowed to an
- * owner-qualified or selected track ("the EQ on Vocals"), with every object of each track the text
- * names, as readWithNamedOwners reads them. Null when the capability is not owned or a dependency
- * already fixes the owner.
- */
-function readReachableOwnedIds(
-    text: string,
-    capability: Capability,
-    context: ProjectContext,
-    dependencyId?: string
-): ReadonlySet<string> | null {
-    if (dependencyId !== undefined || !TRACK_DEPENDENT_CAPABILITIES.has(capability)) {
-        return null;
-    }
-    const readCandidates = (ownerId?: string) =>
-        getAgentReferenceCandidates({ prompt: text, capability, context, dependencyId: ownerId }).map(
-            (candidate) => candidate.id
-        );
-    const namedTrackIds = readStatedIds(text, 'track', context);
-    return new Set([...readCandidates(), ...namedTrackIds.flatMap((trackId) => readCandidates(trackId))]);
-}
-
+/** Every object the track owns: its devices, its clips and its automation lanes. */
 function getTrackOwnedObjectIds(trackId: string, context: ProjectContext): string[] {
     const laneIds = (context.automationLanes ?? []).filter((lane) => lane.trackId === trackId).map((lane) => lane.id);
     const track = context.tracks.find((candidate) => candidate.id === trackId);
@@ -210,6 +195,36 @@ function getTrackOwnedObjectIds(trackId: string, context: ProjectContext): strin
         return laneIds;
     }
     return [...track.devices.map((device) => device.id), ...track.clips.map((clip) => clip.id), ...laneIds];
+}
+
+function isTrackOwned(id: string, context: ProjectContext): boolean {
+    return context.tracks.some((track) => getTrackOwnedObjectIds(track.id, context).includes(id));
+}
+
+/**
+ * The track-owned objects the text can refer to: those resolution draws its candidates from, narrowed
+ * to an owner-qualified or selected track ("the EQ on Vocals", "the Verse clip on Vocals"), with every
+ * object of the capability on each track the text names. Null when a dependency already fixes the
+ * owner.
+ */
+function readReachableOwnedIds(
+    text: string,
+    capability: Capability,
+    context: ProjectContext,
+    dependencyId?: string
+): ReadonlySet<string> | null {
+    if (dependencyId !== undefined) {
+        return null;
+    }
+    const candidateIds = getAgentReferenceCandidates({ prompt: text, capability, context }).map(
+        (candidate) => candidate.id
+    );
+    const ownedByNamedTracks = readStatedIds(text, 'track', context).flatMap((trackId) =>
+        getTrackOwnedObjectIds(trackId, context).filter((id) =>
+            isAgentReferenceCapabilityCandidate({ capability, context, dependencyId: trackId, id })
+        )
+    );
+    return new Set([...candidateIds, ...ownedByNamedTracks]);
 }
 
 type MaskedRequest = { prompt: string; maskedPrompt: string; clauses: ReturnType<typeof getPromptClauses> };
@@ -362,9 +377,9 @@ function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceText
  * Whether the text states the fragment for every target it picks: as a whole word, in either number,
  * somewhere no range states a longer whole name of another object, so "Bus" inside "the Drum Bus"
  * states the Drum Bus and never the FX Bus. A whole name read no further than the fragment leaves it
- * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike. An
- * owned target must also be one the text can refer to, so "the EQ on Vocals" never states the EQ on
- * Keys.
+ * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike. A
+ * target a track owns must also be one the text can refer to, so "the EQ on Vocals" never states the
+ * EQ on Keys, nor "the Verse clip on Vocals" the Verse clip on Keys.
  */
 function statesFragment(
     text: string,
@@ -380,7 +395,7 @@ function statesFragment(
     });
     return pickedIds.every(
         (targetId) =>
-            (reachableIds === null || reachableIds.has(targetId)) &&
+            (reachableIds === null || !isTrackOwned(targetId, input.context) || reachableIds.has(targetId)) &&
             occurrences.some((occurrence) =>
                 nameRanges.every((nameRange) => nameRange.id === targetId || !extendsBeyond(nameRange, occurrence))
             )
