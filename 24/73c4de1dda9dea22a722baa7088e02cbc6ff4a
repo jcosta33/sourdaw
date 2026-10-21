@@ -1,0 +1,20 @@
+crates/daw-dsp/src/grinder/input.rs
+  s_59e31a5c6f3e31::t_5aae2d3ed4dd9a 69-73,342-434
+  s_59e31a5c6f3e31::t_b6cee5bcbb356d 435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2473c4de1dda9dea22a722baa7088e02cbc6ff4a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
