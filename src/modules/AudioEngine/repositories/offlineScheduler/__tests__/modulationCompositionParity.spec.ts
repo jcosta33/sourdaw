@@ -68,6 +68,7 @@ function run(
         },
         modulatorPlans: plans,
         durationSeconds: 0.03,
+        changes: [],
         slewTickSeconds: 0.01,
         sampleRate: 1000,
         ...options,
