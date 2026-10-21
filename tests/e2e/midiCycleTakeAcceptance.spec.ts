@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 
 import { type AppAction } from '../../src/utils/handlerContract';
 import { isRecordingPassId } from '../../src/utils/recordingPassId';
 
-import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
+import { add_midi_track, launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const LOOP_END = 4;
@@ -16,6 +17,7 @@ type BrowserEvidence = {
     sink: Array<{ frequency: number; at: number }>;
     labels: string[];
     rectangles: Array<{ x: number; y: number; width: number; height: number }>;
+    velocityBars: Array<{ x: number; y: number; width: number; height: number }>;
 };
 
 type EvidenceWindow = Window & { __midiCycleEvidence: BrowserEvidence };
@@ -23,7 +25,7 @@ type EvidenceWindow = Window & { __midiCycleEvidence: BrowserEvidence };
 /** Observational wrappers always call the original browser methods. No scheduler or voice is replaced. */
 async function observeBrowserBoundaries(page: Page): Promise<void> {
     await page.context().addInitScript(() => {
-        const state: BrowserEvidence = { captureSink: false, sink: [], labels: [], rectangles: [] };
+        const state: BrowserEvidence = { captureSink: false, sink: [], labels: [], rectangles: [], velocityBars: [] };
         (window as EvidenceWindow).__midiCycleEvidence = state;
         Reflect.deleteProperty(window, 'showSaveFilePicker');
         const createOscillator = AudioContext.prototype.createOscillator;
@@ -37,6 +39,13 @@ async function observeBrowserBoundaries(page: Page): Promise<void> {
                 return setFrequency(value, time);
             };
             return oscillator;
+        };
+        const fill = CanvasRenderingContext2D.prototype.fillRect;
+        CanvasRenderingContext2D.prototype.fillRect = function (...args) {
+            if (this.canvas.closest('[role="group"][aria-label="Velocity lane"]') && args[0] === 0 && args[1] === 0) {
+                state.velocityBars = [];
+            }
+            return fill.apply(this, args);
         };
         const drawImage = CanvasRenderingContext2D.prototype.drawImage;
         const text = CanvasRenderingContext2D.prototype.fillText;
@@ -57,10 +66,18 @@ async function observeBrowserBoundaries(page: Page): Promise<void> {
         CanvasRenderingContext2D.prototype.roundRect = function (...args) {
             if (this.canvas.getAttribute('aria-label') === 'Piano roll editor' && args[3] === 14) {
                 const matrix = this.getTransform();
-                const bounds = this.canvas.getBoundingClientRect();
                 state.rectangles.push({
-                    x: bounds.x + (matrix.a * args[0] + matrix.c * args[1] + matrix.e) / devicePixelRatio,
-                    y: bounds.y + (matrix.b * args[0] + matrix.d * args[1] + matrix.f) / devicePixelRatio,
+                    x: (matrix.a * args[0] + matrix.c * args[1] + matrix.e) / devicePixelRatio,
+                    y: (matrix.b * args[0] + matrix.d * args[1] + matrix.f) / devicePixelRatio,
+                    width: Math.abs(matrix.a * args[2]) / devicePixelRatio,
+                    height: Math.abs(matrix.d * args[3]) / devicePixelRatio,
+                });
+            }
+            if (this.canvas.closest('[role="group"][aria-label="Velocity lane"]')) {
+                const matrix = this.getTransform();
+                state.velocityBars.push({
+                    x: (matrix.a * args[0] + matrix.c * args[1] + matrix.e) / devicePixelRatio,
+                    y: (matrix.b * args[0] + matrix.d * args[1] + matrix.f) / devicePixelRatio,
                     width: Math.abs(matrix.a * args[2]) / devicePixelRatio,
                     height: Math.abs(matrix.d * args[3]) / devicePixelRatio,
                 });
@@ -142,7 +159,9 @@ async function command(page: Page, label: string): Promise<void> {
     const input = page.getByPlaceholder('Type a command...', { exact: true });
     await expect(input).toBeVisible();
     await input.fill(label);
-    await page.getByRole('option', { name: label, exact: true }).click();
+    const option = page.getByRole('option').filter({ has: page.getByText(label, { exact: true }) });
+    await expect(option).toBeVisible();
+    await option.click();
 }
 
 async function prepare(page: Page): Promise<string> {
@@ -169,6 +188,65 @@ async function prepare(page: Page): Promise<string> {
     return trackId;
 }
 
+async function noteGeometry(page: Page) {
+    return page.getByLabel('Piano roll editor').evaluate((canvas) => {
+        const note = (window as EvidenceWindow).__midiCycleEvidence.rectangles[0];
+        if (!note) {
+            throw new Error('Mounted editor has not drawn its selected note');
+        }
+        const bounds = canvas.getBoundingClientRect();
+        let scroll = canvas.parentElement;
+        while (
+            scroll &&
+            !(getComputedStyle(scroll).overflowY === 'auto' && scroll.scrollHeight > scroll.clientHeight)
+        ) {
+            scroll = scroll.parentElement;
+        }
+        if (!scroll) {
+            throw new Error('Piano roll vertical scrollport is missing');
+        }
+        const port = scroll.getBoundingClientRect();
+        return {
+            x: bounds.x + note.x,
+            y: bounds.y + note.y,
+            width: note.width,
+            height: note.height,
+            port: { x: port.x, y: port.y, width: port.width, height: port.height },
+            viewport: { width: innerWidth, height: innerHeight },
+            dpr: devicePixelRatio,
+        };
+    });
+}
+
+async function visibleNote(page: Page) {
+    const before = await noteGeometry(page);
+    const portCenter = {
+        x: Math.max(1, Math.min(before.viewport.width - 1, before.port.x + before.port.width / 2)),
+        y: Math.max(1, Math.min(before.viewport.height - 1, before.port.y + before.port.height / 2)),
+    };
+    await page.mouse.move(portCenter.x, portCenter.y);
+    await page.mouse.wheel(0, before.y + before.height / 2 - portCenter.y);
+    await expect
+        .poll(async () => {
+            const note = await noteGeometry(page);
+            return (
+                note.x >= Math.max(0, note.port.x) &&
+                note.y >= Math.max(0, note.port.y) &&
+                note.x + note.width <= Math.min(note.viewport.width, note.port.x + note.port.width) &&
+                note.y + note.height <= Math.min(note.viewport.height, note.port.y + note.port.height)
+            );
+        })
+        .toBe(true);
+    const visible = await noteGeometry(page);
+    expect(
+        await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute('aria-label'), {
+            x: visible.x + visible.width / 2,
+            y: visible.y + visible.height / 2,
+        })
+    ).toBe('Piano roll editor');
+    return visible;
+}
+
 async function promote(page: Page, take: { id: string; name: string }, pitch: number, info: TestInfo): Promise<void> {
     const button = page.getByRole('button', { name: `Promote ${take.name} to main take`, exact: true });
     await expect(button).toBeVisible();
@@ -180,8 +258,13 @@ async function promote(page: Page, take: { id: string; name: string }, pitch: nu
     await expect
         .poll(() => page.evaluate(() => [...new Set((window as EvidenceWindow).__midiCycleEvidence.labels)]))
         .toEqual([label]);
-    await info.attach(`selected-${pitch}-canvas`, {
-        body: await page.getByLabel('Piano roll editor').screenshot(),
+    await visibleNote(page);
+    await expect(page.getByRole('group', { name: 'Velocity lane', exact: true })).toBeVisible();
+    await expect
+        .poll(() => page.evaluate(() => (window as EvidenceWindow).__midiCycleEvidence.velocityBars.length))
+        .toBe(1);
+    await info.attach(`selected-${pitch}-visible-canvas`, {
+        body: await page.screenshot(),
         contentType: 'image/png',
     });
 }
@@ -293,12 +376,28 @@ async function exportWav(page: Page, pitch: number, info: TestInfo): Promise<voi
     await dialog.getByRole('button', { name: 'Close Bakery' }).click();
 }
 
-test('three actual MIDI loop laps survive selection, browser playback, WAV export, editing, one recording Undo and boot hydration', async ({
-    page,
-    context,
-}, info) => {
-    test.setTimeout(300_000);
-    await prepare(page);
+async function recordThreePasses(page: Page, info: TestInfo) {
+    const trackId = await prepare(page);
+    const latency = await page.evaluate(async (id) => {
+        const { audioEngine, getCompensationDelay } = await import('/src/modules/AudioEngine/useCases/index.ts');
+        const { transportStore } = await import('/src/modules/Transport/stores/index.ts');
+        const baseLatency = audioEngine.context.baseLatency || 0;
+        const outputLatency = audioEngine.context.outputLatency || 0;
+        const pdcLatency = getCompensationDelay(id);
+        const tempo = transportStore.value!.tempo;
+        return {
+            baseLatency,
+            outputLatency,
+            pdcLatency,
+            tempo,
+            latencyBeats: ((baseLatency + outputLatency + pdcLatency) * tempo) / 60,
+        };
+    }, trackId);
+    await info.attach('actual-recording-latency', { body: JSON.stringify(latency), contentType: 'application/json' });
+    // Admission rewinds input by the actual device/PDC latency before choosing
+    // its onset pass. Perform inside each pass, clear of that measured margin.
+    const interiorAttack = Math.max(1, latency.latencyBeats + 0.6);
+    expect(interiorAttack + 1.4).toBeLessThan(LOOP_END);
     const historyBefore = (await snapshot(page)).historyCount;
     await page.getByTestId('transport-record').click();
     await expect.poll(async () => (await clock(page)).recording).toBe(true);
@@ -306,15 +405,15 @@ test('three actual MIDI loop laps survive selection, browser playback, WAV expor
     await key(page, 'a', true);
     await atBeat(page, 1, 0.4);
     await key(page, 'a', false);
-    await atBeat(page, 1, 0.8);
+    await atBeat(page, 1, interiorAttack);
     await key(page, 'd', true);
-    await atBeat(page, 1, 1.8);
+    await atBeat(page, 1, interiorAttack + 1);
     await key(page, 'd', false);
-    await atBeat(page, 2, 0.3);
+    await atBeat(page, 2, interiorAttack);
     await key(page, 'g', true);
-    await atBeat(page, 2, 1.3);
+    await atBeat(page, 2, interiorAttack + 1);
     await key(page, 'g', false);
-    await atBeat(page, 2, 1.6);
+    await atBeat(page, 2, interiorAttack + 1.4);
     await page.getByTestId('transport-stop').click();
     await expect.poll(async () => (await snapshot(page)).notes.length).toBe(3);
     const recorded = await snapshot(page);
@@ -330,7 +429,7 @@ test('three actual MIDI loop laps survive selection, browser playback, WAV expor
     }
     expect(new Set(recorded.notes.map((note) => note.recordingPassId)).size).toBe(3);
     expect(recorded.notes[1].startBeat).toBeGreaterThan(4);
-    expect(recorded.notes[2].startBeat).toBeGreaterThan(8);
+    expect(recorded.notes[2].startBeat).toBeGreaterThan(8.3);
     expect(recorded.lane!.takes[2].endBeat).toBeLessThan(LOOP_END);
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).notes.length).toBe(0);
@@ -339,27 +438,97 @@ test('three actual MIDI loop laps survive selection, browser playback, WAV expor
     await expect.poll(async () => (await snapshot(page)).notes).toEqual(recorded.notes);
     expect((await snapshot(page)).lane).toEqual(recorded.lane);
 
+    await info.attach('actual-three-pass-recording', {
+        body: JSON.stringify(recorded),
+        contentType: 'application/json',
+    });
+    return recorded;
+}
+
+async function openPassEditor(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Toggle variation lanes', exact: true }).click();
     const timeline = page.getByLabel('Timeline editor surface');
     await expect(timeline).toBeVisible();
     await timeline.dblclick({ position: { x: 45, y: 30 } });
     await expect(page.getByLabel('Piano roll editor')).toBeVisible();
-    for (let index = 0; index < 3; index++) {
-        await promote(page, recorded.lane!.takes[index], PITCHES[index], info);
-        const sink = await browserPlayback(page, PITCHES[index]);
-        await info.attach(`selected-${PITCHES[index]}-actual-browser-sink`, {
-            body: JSON.stringify(sink),
-            contentType: 'application/json',
-        });
-        await exportWav(page, PITCHES[index], info);
-    }
+}
+
+async function editSelectedVelocity(page: Page, info: TestInfo, noteId: string): Promise<void> {
+    const before = await snapshot(page);
+    const selected = before.notes.find((note) => note.id === noteId);
+    expect(selected).toBeTruthy();
+    const canvas = page.getByRole('group', { name: 'Velocity lane', exact: true }).locator('canvas');
+    await expect(canvas).toBeVisible();
+    await expect
+        .poll(() => page.evaluate(() => (window as EvidenceWindow).__midiCycleEvidence.velocityBars.length))
+        .toBe(1);
+    const geometry = await canvas.evaluate((element) => {
+        const bar = (window as EvidenceWindow).__midiCycleEvidence.velocityBars[0];
+        const bounds = element.getBoundingClientRect();
+        const targetValue = 64;
+        const local = { x: bar.x + bar.width / 2, y: bounds.height - (targetValue / 127) * (bounds.height - 4) - 2 };
+        const target = document.elementFromPoint(bounds.x + local.x, bounds.y + local.y);
+        return {
+            local,
+            bar,
+            bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+            targetValue,
+            isTargetCanvas: target === element,
+            visible: bounds.y + local.y >= 0 && bounds.y + local.y < innerHeight,
+        };
+    });
+    expect(geometry.isTargetCanvas).toBe(true);
+    expect(geometry.visible).toBe(true);
+    await info.attach('velocity-before-visible-edit', { body: await page.screenshot(), contentType: 'image/png' });
+    await canvas.click({ position: geometry.local });
+    const expected = before.notes.map((note) =>
+        note.id === noteId ? { ...note, velocity: geometry.targetValue } : note
+    );
+    await expect.poll(async () => (await snapshot(page)).notes).toEqual(expected);
+    const after = await snapshot(page);
+    expect(after.notes.find((note) => note.id === noteId)).toEqual({ ...selected, velocity: geometry.targetValue });
+    expect(after.notes.filter((note) => note.id !== noteId)).toEqual(before.notes.filter((note) => note.id !== noteId));
+    await info.attach('velocity-after-visible-edit', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect.poll(async () => (await snapshot(page)).notes).toEqual(before.notes);
+    await page.getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect.poll(async () => (await snapshot(page)).notes).toEqual(expected);
+    await info.attach('actual-selected-velocity-edit', {
+        body: JSON.stringify({ before, after, geometry }),
+        contentType: 'application/json',
+    });
+}
+
+async function editAndReopen(
+    page: Page,
+    context: BrowserContext,
+    info: TestInfo,
+    recorded: Awaited<ReturnType<typeof snapshot>>
+): Promise<void> {
     await promote(page, recorded.lane!.takes[1], 64, info);
     const beforeEdit = await snapshot(page);
-    const rectangle = await page.evaluate(() => (window as EvidenceWindow).__midiCycleEvidence.rectangles[0]);
-    expect(rectangle).toBeTruthy();
-    await page.mouse.move(rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2);
+    const rectangle = await visibleNote(page);
+    const snapButton = page.getByRole('button', { name: '1/16', exact: true });
+    await snapButton.click();
+    await expect(snapButton).toHaveAttribute('aria-pressed', 'true');
+    const zoomPercent = Number(
+        await page.getByRole('slider', { name: 'Piano roll zoom' }).getAttribute('aria-valuenow')
+    );
+    expect(zoomPercent).toBeGreaterThan(0);
+    const gridSnap = 0.25;
+    const beatWidth = Math.max(1, (40 * zoomPercent) / 100);
+    const deltaPixels = beatWidth * gridSnap * 2;
+    const start = { x: rectangle.x + rectangle.width / 2, y: rectangle.y + rectangle.height / 2 };
+    await info.attach('actual-visible-drag-geometry', {
+        body: JSON.stringify({ rectangle, start, zoomPercent, gridSnap, beatWidth, deltaPixels, beforeEdit }),
+        contentType: 'application/json',
+    });
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute('aria-label'), start)).toBe(
+        'Piano roll editor'
+    );
+    await page.mouse.move(start.x, start.y);
     await page.mouse.down();
-    await page.mouse.move(rectangle.x + rectangle.width / 2 + 40, rectangle.y + rectangle.height / 2, { steps: 4 });
+    await page.mouse.move(start.x + deltaPixels, start.y, { steps: 4 });
     await page.mouse.up();
     await expect
         .poll(async () => (await snapshot(page)).notes.find((note) => note.id === recorded.notes[1].id)?.startBeat)
@@ -372,6 +541,7 @@ test('three actual MIDI loop laps survive selection, browser playback, WAV expor
     await page.getByRole('button', { name: 'Redo', exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).notes).not.toEqual(beforeEdit.notes);
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await editSelectedVelocity(page, info, recorded.notes[1].id);
     await command(page, 'Save Project');
     await expect
         .poll(() =>
@@ -382,19 +552,87 @@ test('three actual MIDI loop laps survive selection, browser playback, WAV expor
         )
         .toBe(false);
     const saved = await snapshot(page);
+    const savedIdentity = await page.evaluate(async () => {
+        const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+        const project = projectStore.value!;
+        return { projectId: project.projectId, createdAt: project.createdAt, name: project.name };
+    });
     // A fresh document exercises the real boot loader; setupWorkspace is not
     // repeated because its init script intentionally clears localStorage.
     const reopened = await context.newPage();
+    const boot = attach_first_paint_console(reopened);
     await reopened.goto('/');
-    await expect(reopened.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 45_000 });
+    await wait_for_console_marker(boot, CAPABILITIES_MARKER, 45_000);
+    await expect
+        .poll(
+            () =>
+                reopened.evaluate(async () => {
+                    const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+                    return { initialized: projectStore.value?.initialized, loading: projectStore.value?.loading };
+                }),
+            { timeout: 30_000 }
+        )
+        .toEqual({ initialized: true, loading: false });
+    await wait_for_workspace_ready(reopened);
+    expect(
+        await reopened.evaluate(async () => {
+            const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+            const project = projectStore.value!;
+            return { projectId: project.projectId, createdAt: project.createdAt, name: project.name };
+        })
+    ).toEqual(savedIdentity);
     await expect.poll(async () => (await snapshot(reopened)).notes, { timeout: 30_000 }).toEqual(saved.notes);
     expect((await snapshot(reopened)).lane).toEqual(saved.lane);
     expect((await snapshot(reopened)).clips).toEqual(saved.clips);
+    await reopened.getByTestId('transport-play').click();
+    await expect.poll(async () => (await clock(reopened)).playing).toBe(true);
+    await reopened.getByTestId('transport-stop').click();
+    await expect.poll(async () => (await clock(reopened)).playing).toBe(false);
+    await info.attach('fresh-page-actual-boot-console', {
+        body: JSON.stringify(boot.events),
+        contentType: 'application/json',
+    });
+    await info.attach('fresh-page-interactive-workspace', {
+        body: await reopened.screenshot(),
+        contentType: 'image/png',
+    });
     await info.attach('recorded-and-reopened-identities', {
         body: JSON.stringify({ recorded, saved, reopened: await snapshot(reopened) }),
         contentType: 'application/json',
     });
     await reopened.close();
+}
+
+test('three actual MIDI loop laps survive selection, browser playback, WAV export, editing, one recording Undo and boot hydration', async ({
+    page,
+    context,
+}, info) => {
+    test.setTimeout(300_000);
+    const recorded = await recordThreePasses(page, info);
+    await openPassEditor(page);
+    for (let index = 0; index < 3; index++) {
+        await promote(page, recorded.lane!.takes[index], PITCHES[index], info);
+        const sink = await browserPlayback(page, PITCHES[index]);
+        await info.attach(`selected-${PITCHES[index]}-actual-browser-sink`, {
+            body: JSON.stringify(sink),
+            contentType: 'application/json',
+        });
+        await exportWav(page, PITCHES[index], info);
+    }
+    await editAndReopen(page, context, info, recorded);
+});
+
+test('visible selected-pass editing and boot hydration preserve actual three-lap recording identities', async ({
+    page,
+    context,
+}, info) => {
+    test.setTimeout(180_000);
+    const recorded = await recordThreePasses(page, info);
+    await openPassEditor(page);
+    for (let index = 0; index < 3; index++) {
+        await promote(page, recorded.lane!.takes[index], PITCHES[index], info);
+    }
+    await editAndReopen(page, context, info, recorded);
 });
 
 test('automatic punch closes an actual virtual-keyboard recording at punch out while playback continues', async ({
