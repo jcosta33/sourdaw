@@ -1,0 +1,41 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_c358bd3100bfa0 902-1021
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_1c08b47ac3792f::t_51b48fddc28ed0 52-60,72-73,86-87,168,392,404-410,424-448
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  s_1c08b47ac3792f::t_e072fe0a89072c 3-4,126-168
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_59e31a5c6f3e31::t_1bc787e07e541e 2,8,15,23-25
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  s_59e31a5c6f3e31::t_c03937ddd5defb 251-386,524-575
+src/modules/Arrangement/useCases/clipEditing/restoreClipSplitState.ts
+  s_59e31a5c6f3e31::t_e7f10b9e0a9e11 7,27-36,77-78
+src/modules/Arrangement/useCases/comping/__tests__/projectedTakeLaneOwners.spec.ts
+  s_1c08b47ac3792f::t_8663a940fdcf8b 1-92
+src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts
+  s_1c08b47ac3792f::t_586970eae63ca9 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48211986da0ca0510dac64262ac9ddadfe48537b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
