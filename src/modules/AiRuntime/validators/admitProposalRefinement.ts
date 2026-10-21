@@ -240,7 +240,8 @@ function intentionForMention(input: {
     return REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';
 }
 
-function explicitlyRemovesCommand(prompt: string, command: Command, context: ProjectContext): boolean {
+/** Whether the request expressly drops this pending command, by its own target and operation. */
+export function explicitlyRemovesCommand(prompt: string, command: Command, context: ProjectContext): boolean {
     const payload = payloadOf(command);
     const targetIds = Object.entries(payload)
         .filter(([field, value]) => field.endsWith('Id') && !field.startsWith('expected') && typeof value === 'string')

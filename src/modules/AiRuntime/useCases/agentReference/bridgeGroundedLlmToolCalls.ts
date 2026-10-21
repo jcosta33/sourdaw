@@ -5,6 +5,7 @@ import {
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
+import { gainToDb } from '#/utils/audioLevelLaw';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
@@ -12,6 +13,7 @@ import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
 import { type RetainedCommandSet } from '../../models/RetainedCompilation';
 import {
     SEMANTIC_CLIP_MAX_BEATS,
@@ -34,7 +36,9 @@ import {
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
+import { explicitlyRemovesCommand } from '../../validators/admitProposalRefinement';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import { getCompiledTransformTargetIds } from '../getCompiledTransformTargetIds';
@@ -60,6 +64,7 @@ import {
     type BatchLocalBindingProducerName,
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
+import { type BoundRefinementValue, type RefinementClause } from './bindRefinementFigure';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
@@ -138,6 +143,8 @@ import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShor
 import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
+import { proposalCommandShape } from './proposalCommandShape';
+import { refinementClauseReader } from './refinementClauseReader';
 import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
 import { resolveCompleteClipReference } from './resolveCompleteClipReference';
 
@@ -156,6 +163,11 @@ type BridgeGroundedLlmToolCallsInput = {
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
     creativeAuthority?: CreativeRequestAuthority;
+    /**
+     * The grounding of the pending card this batch refines. Absent, the batch grounds exactly as any
+     * request does; present, a call may inherit a pending command instead of grounding in this text.
+     */
+    refinementBasis?: ProposalGroundingBasis;
 };
 
 type GroundToolCallInput = {
@@ -200,6 +212,19 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
     actionCommandGraph?: ActionCommandGraph;
     providerKnownTargetIds?: string[];
+    /** How a refinement's batch relates to the pending card it refines; present only with a refinement basis. */
+    refinement?: RefinementGroundingOutcome;
+    /** A question the refinement leaves open, asked instead of guessing a value or a target. */
+    clarification?: { reason: string; questions: string[] };
+};
+
+type RefinementGroundingOutcome = {
+    /** For each action, the pending command it inherits, or `null` when the refinement text grounded it. */
+    inheritedCommandIndexes: Array<number | null>;
+    /** Every object the chain protects: each source text's protections, the card's, and what the refinement removed. */
+    protectedObjects: Array<{ id: string; name: string }>;
+    /** Actions whose value kept the pending change's direction because the refinement stated none. */
+    keptDirectionActionIndexes: number[];
 };
 
 type BatchLocalCreationBinding = BatchLocalBindingProducer & {
@@ -3067,7 +3092,8 @@ function validateNumberValue(
     actionScope: ActionPromptScope,
     groundedArguments: Record<string, unknown>,
     context: ProjectContext,
-    referenceBoundFigures: readonly PromptDecibelFigure[] | undefined
+    referenceBoundFigures: readonly PromptDecibelFigure[] | undefined,
+    expectedValueOverride?: number
 ): string | null {
     if (valueRule.levelForm === 'linear' && statesDecibelFigure(actionScope.masked)) {
         return `Provider value ${valueRule.argument} must use the decibel form the request states`;
@@ -3076,7 +3102,12 @@ function validateNumberValue(
     if (automationLane === null) {
         return getValueMismatchReason(valueRule.argument);
     }
-    const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane, referenceBoundFigures);
+    // A refinement that kept the pending change's direction states its figure unsigned; the binder
+    // supplies the signed figure, and every check below still holds the call to it.
+    const expectedNumbers =
+        expectedValueOverride === undefined
+            ? getExpectedNumbers(actionScope, valueRule, automationLane, referenceBoundFigures)
+            : [expectedValueOverride];
     if (expectedNumbers === null) {
         return getValueMismatchReason(valueRule.argument);
     }
@@ -3448,7 +3479,8 @@ function validateGroundedValue(
     groundedArguments: Record<string, unknown>,
     context: ProjectContext,
     admitsCreativeCall: boolean,
-    referenceBoundFigures: readonly PromptDecibelFigure[] | undefined
+    referenceBoundFigures: readonly PromptDecibelFigure[] | undefined,
+    expectedValueOverrides?: ReadonlyMap<string, number>
 ): string | null {
     if (
         admitsCreativeCall &&
@@ -3466,7 +3498,8 @@ function validateGroundedValue(
                 actionScope,
                 groundedArguments,
                 context,
-                referenceBoundFigures
+                referenceBoundFigures,
+                expectedValueOverrides?.get(valueRule.argument)
             );
         case 'marker-beat': {
             const expectedBeat = getMarkerBeatFromPrompt(actionScope.text);
@@ -3589,7 +3622,8 @@ function validateGroundedValues(
     actionScope: ActionPromptScope,
     context: ProjectContext,
     clipRenameCarrier: ValidClipRenameCarrier | null,
-    admitsCreativeCall: boolean
+    admitsCreativeCall: boolean,
+    expectedValueOverrides?: ReadonlyMap<string, number>
 ): string | null {
     const referenceBoundFigures = getReferenceBoundDecibelFigures(
         actionScope,
@@ -3612,7 +3646,8 @@ function validateGroundedValues(
                 groundedArguments,
                 context,
                 admitsCreativeCall,
-                referenceBoundFigures
+                referenceBoundFigures,
+                expectedValueOverrides
             );
         } else {
             const matchesRenameValue =
@@ -5547,7 +5582,566 @@ function getCompilerSidechainRouteDeviceAdmissions(
     });
 }
 
-export function bridgeGroundedLlmToolCalls({
+function refuseRefinement(reason: string): BridgeGroundedLlmToolCallsResult {
+    return { actions: [], rejections: [rejection(0, '<batch>', reason)] };
+}
+
+function describePendingCommand(command: ProposalGroundingCommand, context: ProjectContext): string {
+    const names = command.targets.map(
+        (target) => context.tracks.find((track) => track.id === target.id)?.name ?? target.id
+    );
+    return names.length === 0 ? command.type : `${command.type} on ${names.join(', ')}`;
+}
+
+/** Every object an action changes, with the track that owns a device or clip it names. */
+function getActionTouchedIds(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): string[] {
+    return proposalCommandShape.targets(actionType, payload).flatMap((target) => {
+        const owner = context.tracks.find(
+            (track) =>
+                track.devices.some((device) => device.id === target.id) ||
+                track.clips.some((clip) => clip.id === target.id)
+        );
+        return owner === undefined ? [target.id] : [target.id, owner.id];
+    });
+}
+
+function getRefinementProtectedObjects(input: {
+    basis: ProposalGroundingBasis;
+    context: ProjectContext;
+    prompt: string;
+    removed: ReadonlyArray<{ id: string; name: string }>;
+}): Array<{ id: string; name: string }> {
+    const { basis, context, prompt } = input;
+    return unionProtectedObjects(
+        basis.protectedUnchanged,
+        ...basis.sources.map((source) => getApplicationProtectedObjects({ actions: [], context, prompt: source.text })),
+        getApplicationProtectedObjects({ actions: [], context, prompt }),
+        input.removed
+    );
+}
+
+function findProtectedChange(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
+    context: ProjectContext
+): string | null {
+    for (const action of actions) {
+        const payload: unknown = 'payload' in action ? action.payload : undefined;
+        const payloadRecord =
+            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
+        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
+        const hit = protectedObjects.find((object) => touched.has(object.id));
+        if (hit !== undefined) {
+            return `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
+        }
+    }
+    return null;
+}
+
+/**
+ * For each call, the one pending command of the same type and full target tuple it continues, or
+ * `null`. A call is never matched to a command another call already took, so a duplicate call on
+ * one target grounds as a new command.
+ */
+function partitionRefinedCalls(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Array<number | null> {
+    const claimed = new Set<number>();
+    return calls.map((call) => {
+        const key = proposalCommandShape.targetKey(call.name, call.arguments);
+        const matches = basis.commands.flatMap((command, index) =>
+            proposalCommandShape.targetKey(command.type, command.payload) === key ? [index] : []
+        );
+        const [only] = matches;
+        if (matches.length !== 1 || only === undefined || claimed.has(only)) {
+            return null;
+        }
+        claimed.add(only);
+        return only;
+    });
+}
+
+/** A pending command the batch leaves out stands only when the refinement removed it by name. */
+function findSilentOmission(input: {
+    basis: ProposalGroundingBasis;
+    inheritedOrRestated: ReadonlySet<number>;
+    removed: ReadonlySet<number>;
+    prompt: string;
+    context: ProjectContext;
+}): string | null {
+    for (const [index, command] of input.basis.commands.entries()) {
+        if (input.inheritedOrRestated.has(index) || input.removed.has(index)) {
+            continue;
+        }
+        if (!explicitlyRemovesCommand(input.prompt, { type: command.type, payload: command.payload }, input.context)) {
+            return `Refined proposal omits a pending ${describePendingCommand(command, input.context)} command without an explicit request to remove it`;
+        }
+    }
+    return null;
+}
+
+/** The pending commands a batch the refinement text grounded by itself still carries, by type and target. */
+function getCarriedCommandIndexes(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Set<number> {
+    const keys = new Set(calls.map((call) => proposalCommandShape.targetKey(call.name, call.arguments)));
+    return new Set(
+        basis.commands.flatMap((command, index) =>
+            keys.has(proposalCommandShape.targetKey(command.type, command.payload)) ? [index] : []
+        )
+    );
+}
+
+/** Which source calls still ground in their own request text, replayed against the project as it is now. */
+function replaySourceGrounding(
+    source: ProposalGroundingBasis['sources'][number],
+    input: BridgeGroundedLlmToolCallsInput
+): ReadonlySet<number> {
+    const replayed = bridgeGroundedLlmToolCalls({
+        calls: source.calls,
+        context: input.context,
+        markerSignatures: input.markerSignatures,
+        sectionSignatures: input.sectionSignatures,
+        prompt: source.text,
+    });
+    if (replayed.rejections.some((replayRejection) => replayRejection.name === '<batch>')) {
+        return new Set();
+    }
+    const rejected = new Set(replayed.rejections.map((replayRejection) => replayRejection.index));
+    return new Set(source.calls.flatMap((_call, index) => (rejected.has(index) ? [] : [index])));
+}
+
+/** How far a value sits from where the target is now, in the value's own unit, or `null` when unknown. */
+function distanceFromCurrent(
+    actionType: string,
+    argument: string,
+    value: number,
+    targets: ProposalGroundingCommand['targets'],
+    context: ProjectContext
+): number | null {
+    const levelForm = getExecutableAppActionGroundingRules(actionType)?.valueRules.find(
+        (rule) => rule.argument === argument && rule.kind === 'number-if-present'
+    );
+    const form = levelForm?.kind === 'number-if-present' ? levelForm.levelForm : undefined;
+    if (form === 'relative-decibel') {
+        return Math.abs(value);
+    }
+    const trackId = targets.find((target) => target.argument === 'trackId')?.id;
+    const track = context.tracks.find((candidate) => candidate.id === trackId);
+    if (form === 'absolute-decibel' && actionType === 'setTrackGain' && track !== undefined) {
+        return Math.abs(value - gainToDb(track.gain));
+    }
+    if (actionType === 'setTrackPan' && track !== undefined) {
+        return Math.abs(value - track.pan);
+    }
+    const deviceId = targets.find((target) => target.argument === 'deviceId')?.id;
+    const paramId = targets.find((target) => target.argument === 'paramId')?.id;
+    const parameter = context.tracks
+        .flatMap((candidate) => candidate.devices)
+        .find((device) => device.id === deviceId)
+        ?.parameters?.find((candidate) => candidate.id === paramId);
+    return parameter === undefined ? null : Math.abs(value - parameter.value);
+}
+
+function validateComparative(input: {
+    comparative: 'less' | 'more';
+    command: ProposalGroundingCommand;
+    call: ToolCallResult;
+    argument: string;
+    context: ProjectContext;
+}): string | null {
+    const { command, call, argument, context } = input;
+    const next = call.arguments[argument];
+    if (command.value === null || typeof next !== 'number') {
+        return `"${input.comparative}" has no pending value to compare against`;
+    }
+    const pendingDistance = distanceFromCurrent(
+        command.type,
+        command.value.argument,
+        command.value.value,
+        command.targets,
+        context
+    );
+    const nextDistance = distanceFromCurrent(call.name, argument, next, command.targets, context);
+    if (pendingDistance === null || nextDistance === null) {
+        return `"${input.comparative}" cannot be compared with the pending ${describePendingCommand(command, context)} value`;
+    }
+    const consistent = input.comparative === 'less' ? nextDistance < pendingDistance : nextDistance > pendingDistance;
+    return consistent
+        ? null
+        : `"${input.comparative}" asks for a ${input.comparative === 'less' ? 'smaller' : 'larger'} change than the pending ${describePendingCommand(command, context)}, and the stated value is not`;
+}
+
+/**
+ * Hold an inherited call to the value its refinement clause binds: the bound argument in the bound
+ * form, every other argument as pending, and the figure checked by the same unit, level-law,
+ * direction and range rules as any request, read from that clause.
+ */
+function validateBoundValue(
+    call: ToolCallResult,
+    command: ProposalGroundingCommand,
+    bound: BoundRefinementValue,
+    context: ProjectContext
+): string | null {
+    const groundingRules = getExecutableAppActionGroundingRules(call.name);
+    if (groundingRules === null || call.arguments[bound.argument] === undefined) {
+        return getValueMismatchReason(bound.argument);
+    }
+    const valueArguments = new Set(groundingRules.valueRules.map((rule) => rule.argument));
+    for (const argument of new Set([...Object.keys(call.arguments), ...Object.keys(command.payload)])) {
+        if (argument === bound.argument) {
+            continue;
+        }
+        if (valueArguments.has(argument)) {
+            if (call.arguments[argument] !== undefined) {
+                return getValueMismatchReason(argument);
+            }
+            continue;
+        }
+        if (canonicalJson(call.arguments[argument]) !== canonicalJson(command.payload[argument])) {
+            return getValueMismatchReason(argument);
+        }
+    }
+    const scope = buildWholePromptActionScope(bound.clause.text, context);
+    const groundedArguments = { ...call.arguments };
+    const overrides = bound.expected === null ? undefined : new Map([[bound.argument, bound.expected]]);
+    return (
+        validateDescriptorBackedValues(groundingRules, groundedArguments, scope, context) ??
+        validateGroundedValues(call.name, groundingRules, groundedArguments, scope, context, null, false, overrides)
+    );
+}
+
+/** Whether a new call answers an addition clause: by the action the clause asks for, or by an object it names. */
+function answersAdditionClause(
+    clause: RefinementClause,
+    call: ToolCallResult,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): boolean {
+    const intent = resolveClauseActionIntent(clause.masked, catalog)?.actionType;
+    if (intent === call.name) {
+        return true;
+    }
+    const touched = new Set(getActionTouchedIds(call.name, call.arguments, context));
+    return context.tracks.some(
+        (track) => touched.has(track.id) && getReferenceRanges(clause.text, track.name).length > 0
+    );
+}
+
+/** Whether a pending command's target still names an object of the open project. */
+function isProjectObject(
+    target: ProposalGroundingCommand['targets'][number],
+    targets: ProposalGroundingCommand['targets'],
+    context: ProjectContext
+): boolean {
+    const devices = context.tracks.flatMap((track) => track.devices);
+    if (target.argument === 'paramId') {
+        const deviceId = targets.find((candidate) => candidate.argument === 'deviceId')?.id;
+        const device = devices.find((candidate) => candidate.id === deviceId);
+        return device?.parameters?.some((parameter) => parameter.id === target.id) === true;
+    }
+    return (
+        context.tracks.some((track) => track.id === target.id) ||
+        devices.some((device) => device.id === target.id) ||
+        context.tracks.some((track) => track.clips.some((clip) => clip.id === target.id)) ||
+        (context.automationLanes ?? []).some((lane) => lane.id === target.id) ||
+        target.id === 'master'
+    );
+}
+
+type InheritedGrounding =
+    | { status: 'grounded'; actions: BridgeGroundedLlmToolCallsResult['actions']; keptDirection: boolean }
+    | { status: 'refused'; reason: string };
+
+function groundInheritedCall(input: {
+    call: ToolCallResult;
+    commandIndex: number;
+    basis: ProposalGroundingBasis;
+    binding: Extract<ReturnType<typeof refinementClauseReader.values>, { status: 'bound' }>;
+    replays: Map<number, ReadonlySet<number>>;
+    bridgeInput: BridgeGroundedLlmToolCallsInput;
+}): InheritedGrounding {
+    const { call, commandIndex, basis, binding, bridgeInput } = input;
+    const { context } = bridgeInput;
+    const command = basis.commands[commandIndex]!;
+    const source = basis.sources[command.source];
+    if (source === undefined) {
+        return { status: 'refused', reason: 'Pending command has no recorded request text' };
+    }
+    let accepted = input.replays.get(command.source);
+    if (accepted === undefined) {
+        accepted = replaySourceGrounding(source, bridgeInput);
+        input.replays.set(command.source, accepted);
+    }
+    if (!accepted.has(command.sourceCallIndex)) {
+        return {
+            status: 'refused',
+            reason: `The pending ${describePendingCommand(command, context)} target no longer grounds in the project`,
+        };
+    }
+    const bound = binding.values.get(commandIndex);
+    if (bound === undefined) {
+        if (canonicalJson(call.arguments) !== canonicalJson(command.payload)) {
+            return {
+                status: 'refused',
+                reason: `Refined proposal changes the pending ${describePendingCommand(command, context)} value the refinement does not state`,
+            };
+        }
+    } else {
+        const valueRejection = validateBoundValue(call, command, bound, context);
+        if (valueRejection !== null) {
+            return { status: 'refused', reason: valueRejection };
+        }
+        if (binding.comparative !== null) {
+            const comparativeRejection = validateComparative({
+                comparative: binding.comparative,
+                command,
+                call,
+                argument: bound.argument,
+                context,
+            });
+            if (comparativeRejection !== null) {
+                return { status: 'refused', reason: comparativeRejection };
+            }
+        }
+    }
+    const converted = bridgeLlmToolCalls({
+        calls: [call],
+        context,
+        markerSignatures: bridgeInput.markerSignatures,
+        projectPunchRegion: createPunchRegionPatch,
+        sectionSignatures: bridgeInput.sectionSignatures,
+    });
+    const [conversionRejection] = converted.rejections;
+    if (conversionRejection !== undefined) {
+        return { status: 'refused', reason: conversionRejection.reason };
+    }
+    return { status: 'grounded', actions: converted.actions, keptDirection: bound?.keptPendingDirection === true };
+}
+
+/**
+ * A "less" or "more" beside a batch the refinement text grounded by itself still compares: each
+ * pending value the batch restates must move closer to, or further from, where its target is now.
+ */
+function findDirectComparativeRejection(
+    calls: readonly ToolCallResult[],
+    inheritedCommandIndexes: ReadonlyArray<number | null>,
+    basis: ProposalGroundingBasis,
+    input: BridgeGroundedLlmToolCallsInput
+): string | null {
+    const comparative = refinementClauseReader.comparative(input.prompt, input.context);
+    if (comparative === null) {
+        return null;
+    }
+    if (comparative === 'both') {
+        return 'The refinement asks for both less and more';
+    }
+    const compared = calls.flatMap((call, index) => {
+        const command = basis.commands[inheritedCommandIndexes[index] ?? -1];
+        const argument = proposalCommandShape.value(call.name, call.arguments)?.argument;
+        const changed = command !== undefined && canonicalJson(call.arguments) !== canonicalJson(command.payload);
+        return command === undefined || argument === undefined || !changed ? [] : [{ call, command, argument }];
+    });
+    if (compared.length === 0) {
+        return `"${comparative}" names no pending value the batch changes`;
+    }
+    for (const { call, command, argument } of compared) {
+        const rejectionReason = validateComparative({ comparative, command, call, argument, context: input.context });
+        if (rejectionReason !== null) {
+            return rejectionReason;
+        }
+    }
+    return null;
+}
+
+function withRefinement(
+    bridged: BridgeGroundedLlmToolCallsResult,
+    refinement: RefinementGroundingOutcome,
+    context: ProjectContext
+): BridgeGroundedLlmToolCallsResult {
+    const protectedChange = findProtectedChange(bridged.actions, refinement.protectedObjects, context);
+    if (protectedChange !== null) {
+        return refuseRefinement(protectedChange);
+    }
+    return { ...bridged, refinement };
+}
+
+/**
+ * Ground a batch that refines a pending card. A batch the refinement text grounds by itself is
+ * admitted exactly as any request; otherwise each call continuing one pending command inherits that
+ * command's target authority, re-read from the request text that granted it, and may change only the
+ * value a refinement clause binds. Every other call grounds in the refinement text alone. Either way
+ * a pending command may leave the batch only by name, and nothing the chain protects may change.
+ */
+function bridgeRefinedLlmToolCalls(
+    input: BridgeGroundedLlmToolCallsInput,
+    basis: ProposalGroundingBasis
+): BridgeGroundedLlmToolCallsResult {
+    const { calls, context, prompt } = input;
+    const unrefined: BridgeGroundedLlmToolCallsInput = { ...input, refinementBasis: undefined };
+    const removals = refinementClauseReader.removals({ text: prompt, basis, context });
+    if (removals.status === 'refused') {
+        return refuseRefinement(removals.reason);
+    }
+    const protectedObjects = getRefinementProtectedObjects({
+        basis,
+        context,
+        prompt,
+        removed: [...removals.removedTargets, ...removals.protectedTargets],
+    });
+    const direct = bridgeGroundedLlmToolCalls(unrefined);
+    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis);
+    if (direct.rejections.length === 0) {
+        const carried = getCarriedCommandIndexes(calls, basis);
+        const keptRemoval = [...carried].find((index) => removals.removedCommandIndexes.has(index));
+        if (keptRemoval !== undefined) {
+            return refuseRefinement(
+                `Refined proposal keeps the pending ${describePendingCommand(basis.commands[keptRemoval]!, context)} command the request removes`
+            );
+        }
+        const omission = findSilentOmission({
+            basis,
+            inheritedOrRestated: carried,
+            removed: removals.removedCommandIndexes,
+            prompt,
+            context,
+        });
+        if (omission !== null) {
+            return refuseRefinement(omission);
+        }
+        const comparativeRejection = findDirectComparativeRejection(calls, inheritedCommandIndexes, basis, input);
+        if (comparativeRejection !== null) {
+            return refuseRefinement(comparativeRejection);
+        }
+        return withRefinement(
+            direct,
+            {
+                inheritedCommandIndexes: direct.actions.map(() => null),
+                protectedObjects,
+                keptDirectionActionIndexes: [],
+            },
+            context
+        );
+    }
+    if (inheritedCommandIndexes.every((index) => index === null)) {
+        return direct;
+    }
+    const binding = refinementClauseReader.values({
+        text: prompt,
+        basis,
+        context,
+        removalClauseStarts: removals.removalClauseStarts,
+    });
+    if (binding.status === 'clarify') {
+        return {
+            actions: [],
+            rejections: [],
+            clarification: { reason: binding.reason, questions: [binding.question] },
+        };
+    }
+    if (binding.status === 'refused') {
+        return refuseRefinement(binding.reason);
+    }
+    const inherited = new Set(inheritedCommandIndexes.filter((index): index is number => index !== null));
+    const keptRemoval = [...inherited].find((index) => removals.removedCommandIndexes.has(index));
+    if (keptRemoval !== undefined) {
+        return refuseRefinement(
+            `Refined proposal keeps the pending ${describePendingCommand(basis.commands[keptRemoval]!, context)} command the request removes`
+        );
+    }
+    const omission = findSilentOmission({
+        basis,
+        inheritedOrRestated: inherited,
+        removed: removals.removedCommandIndexes,
+        prompt,
+        context,
+    });
+    if (omission !== null) {
+        return refuseRefinement(omission);
+    }
+    const unboundValue = [...binding.values.keys()].find((index) => !inherited.has(index));
+    if (unboundValue !== undefined) {
+        return refuseRefinement(
+            `Refined proposal leaves out the pending ${describePendingCommand(basis.commands[unboundValue]!, context)} change the refinement restates`
+        );
+    }
+    const newCallIndexes = calls.flatMap((_call, index) => (inheritedCommandIndexes[index] === null ? [index] : []));
+    const newCalls = newCallIndexes.map((index) => calls[index]!);
+    const groundedNew =
+        newCalls.length === 0
+            ? { actions: [], rejections: [] }
+            : bridgeGroundedLlmToolCalls({ ...unrefined, calls: newCalls });
+    if (groundedNew.rejections.length > 0) {
+        return {
+            actions: [],
+            rejections: groundedNew.rejections.map((newRejection) =>
+                newRejection.name === '<batch>'
+                    ? newRejection
+                    : { ...newRejection, index: newCallIndexes[newRejection.index] ?? newRejection.index }
+            ),
+        };
+    }
+    const catalog = getExecutableAppActionGroundingCatalog();
+    const unanswered = binding.additionClauses.find(
+        (clause) => !newCalls.some((call) => answersAdditionClause(clause, call, catalog, context))
+    );
+    if (unanswered !== undefined) {
+        return refuseRefinement(`No proposed change answers "${unanswered.text.trim()}" in the refinement`);
+    }
+    for (const [index, commandIndex] of inheritedCommandIndexes.entries()) {
+        const command = commandIndex === null ? undefined : basis.commands[commandIndex];
+        const missing = command?.targets.find((target) => !isProjectObject(target, command.targets, context));
+        if (command !== undefined && missing !== undefined) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(
+                        index,
+                        command.type,
+                        `The pending ${command.type} target ${missing.id} is no longer in the project`
+                    ),
+                ],
+            };
+        }
+    }
+    const replays = new Map<number, ReadonlySet<number>>();
+    const actions: BridgeGroundedLlmToolCallsResult['actions'] = [];
+    const keptDirectionActionIndexes: number[] = [];
+    const newActions = [...groundedNew.actions];
+    for (const [index, call] of calls.entries()) {
+        const commandIndex = inheritedCommandIndexes[index];
+        if (commandIndex === null || commandIndex === undefined) {
+            const action = newActions.shift();
+            if (action === undefined) {
+                return refuseRefinement('Refined proposal lost a command while grounding it');
+            }
+            actions.push(action);
+            continue;
+        }
+        const grounded = groundInheritedCall({ call, commandIndex, basis, binding, replays, bridgeInput: unrefined });
+        if (grounded.status === 'refused') {
+            return { actions: [], rejections: [rejection(index, call.name, grounded.reason)] };
+        }
+        if (grounded.keptDirection) {
+            keptDirectionActionIndexes.push(actions.length);
+        }
+        actions.push(...grounded.actions);
+    }
+    return withRefinement(
+        { actions, rejections: [] },
+        { inheritedCommandIndexes, protectedObjects, keptDirectionActionIndexes },
+        context
+    );
+}
+
+export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (input.refinementBasis !== undefined) {
+        return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
+    }
+    return bridgeUnrefinedLlmToolCalls(input);
+}
+
+function bridgeUnrefinedLlmToolCalls({
     calls,
     context,
     markerSignatures = [],

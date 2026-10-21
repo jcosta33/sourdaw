@@ -7,14 +7,18 @@ import { type CreativeRequestAuthority } from '../models/CreativeInterpretation'
 import { type IntentResult } from '../models/IntentResult';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
+import { type ProposalGroundingBasis } from '../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { type ToolCallResult } from '../transformers/toolCallParser';
+import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
+import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
+import { proposalGroundingBasis } from './agentReference/proposalGroundingBasis';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
@@ -34,6 +38,17 @@ type GroundCompiledCommandBatchInput = {
     transformTargetIds: readonly string[];
     creativeAuthority: CreativeRequestAuthority | undefined;
     providerProposal: AgentRunProviderProposal | null;
+    /**
+     * The grounding of the pending card this batch refines. Undefined grounds the batch exactly as
+     * any request; it is applied only to an ordinary batch, because only an ordinary card carries one.
+     */
+    refinementBasis?: ProposalGroundingBasis;
+};
+
+/** What grounding a refinement against its pending card's basis established. */
+type GroundedRefinement = {
+    protectedUnchanged: Array<{ id: string; name: string }>;
+    keptDirectionActionIndexes: number[];
 };
 
 type GroundedFields = {
@@ -43,6 +58,9 @@ type GroundedFields = {
     providerKnownTargetIds: string[] | undefined;
     matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[];
     providerProposal: AgentRunProviderProposal | null;
+    /** What a later refinement of this batch's card inherits; only an ordinary batch carries one. */
+    groundingBasis: ProposalGroundingBasis | undefined;
+    refinement: GroundedRefinement | undefined;
 };
 
 type GroundCompiledCommandBatchResult =
@@ -81,9 +99,23 @@ function buildTransformProof(input: GroundCompiledCommandBatchInput) {
     };
 }
 
+/**
+ * A batch the planner proposed as plain commands: no compiled list, adopted compilation, creative
+ * authority or specialized workflow decided any of it, so each command stands on the request text.
+ */
+function isOrdinaryBatch(input: GroundCompiledCommandBatchInput): boolean {
+    return (
+        input.compilerEvidence === undefined &&
+        input.selectedCompilations.length === 0 &&
+        input.transformCommands.length === 0 &&
+        input.creativeAuthority === undefined &&
+        input.workflowCapabilityId === undefined
+    );
+}
+
 function bridgeCompiledCalls(
     input: GroundCompiledCommandBatchInput
-): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' }> {
+): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
     const transformProof = buildTransformProof(input);
     const bridged = bridgeGroundedLlmToolCalls({
@@ -97,7 +129,18 @@ function bridgeCompiledCalls(
         projectRevision: input.projectRevision,
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
+        refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
     });
+    if (bridged.clarification !== undefined) {
+        return {
+            status: 'clarify',
+            planningOutcome: {
+                kind: 'clarify',
+                reason: bridged.clarification.reason,
+                questions: [...bridged.clarification.questions],
+            },
+        };
+    }
     for (const rejected of bridged.rejections) {
         logger.warn(`[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`);
     }
@@ -209,6 +252,19 @@ function composeGroundedFields(
         };
     }
 
+    const refinementProtectedIds = bridged.refinement?.protectedObjects.map((object) => object.id) ?? [];
+    if (effectiveProviderProposal !== null && refinementProtectedIds.length > 0) {
+        effectiveProviderProposal = {
+            ...effectiveProviderProposal,
+            scope: {
+                ...effectiveProviderProposal.scope,
+                protectedTargetIds: [
+                    ...new Set([...effectiveProviderProposal.scope.protectedTargetIds, ...refinementProtectedIds]),
+                ],
+            },
+        };
+    }
+
     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] = deriveMatchSelectorPredicates(
         input.compilerEvidence,
         input.transformCommands.length
@@ -221,7 +277,61 @@ function composeGroundedFields(
         providerKnownTargetIds: getProviderKnownTargetIds(input),
         matchSelectorPredicates,
         providerProposal: effectiveProviderProposal,
+        groundingBasis: composeGroundingBasis(input, bridged, guarded),
+        refinement: toGroundedRefinement(bridged),
     };
+}
+
+function toGroundedRefinement(bridged: Bridged): GroundedRefinement | undefined {
+    if (bridged.refinement === undefined) {
+        return undefined;
+    }
+    return {
+        protectedUnchanged: bridged.refinement.protectedObjects,
+        keptDirectionActionIndexes: bridged.refinement.keptDirectionActionIndexes,
+    };
+}
+
+/**
+ * The basis the card for this batch carries, so a terse refinement of it can inherit its grounding.
+ * Only an ordinary batch whose commands are the provider's calls one for one carries one: anything an
+ * application route expanded, compiled or bound has no single request clause behind each command.
+ */
+function composeGroundingBasis(
+    input: GroundCompiledCommandBatchInput,
+    bridged: Bridged,
+    guarded: Guarded
+): ProposalGroundingBasis | undefined {
+    const alignsWithCalls =
+        guarded.actions.length === input.toolCalls.length &&
+        guarded.actions.every((action, index) => action.type === input.toolCalls[index]?.name);
+    if (
+        !isOrdinaryBatch(input) ||
+        bridged.actionCommandGraph !== undefined ||
+        (bridged.batchLocalActionIdentities?.length ?? 0) > 0 ||
+        !alignsWithCalls
+    ) {
+        return undefined;
+    }
+    const promptProtections = getApplicationProtectedObjects({
+        actions: guarded.actions,
+        context: input.context,
+        prompt: input.prompt,
+    });
+    if (input.refinementBasis !== undefined && bridged.refinement !== undefined) {
+        return proposalGroundingBasis.extend({
+            previous: input.refinementBasis,
+            prompt: input.prompt,
+            calls: input.toolCalls,
+            inheritedCommandIndexes: bridged.refinement.inheritedCommandIndexes,
+            protectedUnchanged: unionProtectedObjects(promptProtections, bridged.refinement.protectedObjects),
+        });
+    }
+    return proposalGroundingBasis.create({
+        prompt: input.prompt,
+        calls: input.toolCalls,
+        protectedUnchanged: promptProtections,
+    });
 }
 
 /** The direct targets the compiled list and any adopted transform proved, or none without either. */

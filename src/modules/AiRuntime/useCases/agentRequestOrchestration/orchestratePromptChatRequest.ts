@@ -454,13 +454,27 @@ async function dispatchPromptPlan(input: {
             agentRunId: admission.runId,
             projectId: captureProjectIdentity(),
         });
+        // A refinement's own text rarely restates what the chain protects, so the card it replaces
+        // and the basis it inherited carry those protections into its scope, preflight and card.
+        const refinedCardProtections =
+            refinement?.status === 'admitted' ? refinement.confirmation.protectedUnchanged : [];
         const confirmationDescription = describePendingActionConfirmation({
             actions: result.actions,
             context,
             prompt: request.userText,
             wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
             workflowCapabilityId: result.workflowCapabilityId,
+            inheritedProtectedUnchanged: [
+                refinedCardProtections,
+                result.refinementProtectedUnchanged ?? [],
+                result.groundingBasis?.protectedUnchanged ?? [],
+            ].flat(),
+            keptDirectionActionIndexes: result.keptDirectionActionIndexes ?? [],
         });
+        const groundingBasis =
+            result.groundingBasis === undefined
+                ? undefined
+                : { ...result.groundingBasis, protectedUnchanged: confirmationDescription.protectedUnchanged };
         const materializedPlan = materializePromptCommandPlan({
             userText: request.userText,
             runId: admission.runId,
@@ -517,6 +531,7 @@ async function dispatchPromptPlan(input: {
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
                 batchPosition: getBatchPosition(result.batchSchedule),
+                groundingBasis,
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,
