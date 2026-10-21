@@ -1582,3 +1582,156 @@ describe('a name fragment picks its targets only as the start of a word', () => 
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 });
+
+const writtenVocals = createTrack({ id: 'track-written-vocals', name: 'Vocals' });
+const writtenKick = createTrack({ id: 'track-written-kick', name: 'Kick' });
+const writtenSnare = createTrack({ id: 'track-written-snare', name: 'Snare' });
+const writtenValueContext: ProjectContext = {
+    ...projectContext,
+    tracks: [writtenVocals, writtenKick, writtenSnare, master],
+};
+
+describe('a name written by a call of any action in the batch picks no target', () => {
+    it('refuses a gain selector picking a track the request names only inside a new name', () => {
+        const result = compileAndBridge(
+            'rename Kick to Snare 2 and set Vocals volume to 75%',
+            [
+                trackItem('renameTrack', writtenKick, { name: 'Snare 2' }),
+                trackItem('setTrackGain', writtenSnare, { gain: 0.75 }),
+            ],
+            [],
+            writtenValueContext
+        );
+
+        expect(payloadTargets(result)).not.toContain(writtenSnare.id);
+        expect(result.rejections).toContainEqual({ index: 1, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it('grounds a gain selector for a track the request also names plainly', () => {
+        const result = compileAndBridge(
+            'rename Kick to Snare 2 and set Snare volume to 75%',
+            [
+                trackItem('renameTrack', writtenKick, { name: 'Snare 2' }),
+                trackItem('setTrackGain', writtenSnare, { gain: 0.75 }),
+            ],
+            [],
+            writtenValueContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(payloadTargets(result)).toEqual([writtenKick.id, writtenSnare.id]);
+    });
+});
+
+const formVocals = createTrack({ id: 'track-form-vocals', name: 'Vocals' });
+const formDrums = createTrack({ id: 'track-form-drums', name: 'Drums' });
+const formKeys = createTrack({ id: 'track-form-keys', name: 'Keys', kind: 'midi' });
+const formPads = createTrack({ id: 'track-form-pads', name: 'Pads', kind: 'midi' });
+const formHiHat = createTrack({ id: 'track-form-hi-hat', name: 'Hi-Hat' });
+const formCafeKeys = createTrack({ id: 'track-form-cafe-keys', name: 'Café Keys', kind: 'midi' });
+const formMelodyOne = createTrack({ id: 'track-form-melody-1', name: 'Melody 1', kind: 'midi' });
+const formMelodyTwo = createTrack({ id: 'track-form-melody-2', name: 'Melody 2', kind: 'midi' });
+const formHarmonyHigh = createTrack({ id: 'track-form-harmony-high', name: 'Harmony High' });
+const formHarmonyLow = createTrack({ id: 'track-form-harmony-low', name: 'Harmony Low' });
+const nameFormContext: ProjectContext = {
+    ...projectContext,
+    tracks: [
+        formVocals,
+        formDrums,
+        formKeys,
+        formPads,
+        formHiHat,
+        formCafeKeys,
+        formMelodyOne,
+        formMelodyTwo,
+        formHarmonyHigh,
+        formHarmonyLow,
+        master,
+    ],
+};
+
+describe('a name stated in an ordinary form picks its targets', () => {
+    it.each([
+        ['set the vocal volume to 75%', formVocals],
+        ['set the drum volume to 75%', formDrums],
+        ['set the key volume to 75%', formKeys],
+        ['set the pad volume to 75%', formPads],
+        ['set the hi hat volume to 75%', formHiHat],
+        ['set cafe keys volume to 75%', formCafeKeys],
+    ])('grounds "%s"', (prompt, track) => {
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track, { gain: 0.75 })],
+            [],
+            nameFormContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([track.id]);
+    });
+
+    it.each([
+        ['set the melodies volume to 75%', 'melody', [formMelodyOne.id, formMelodyTwo.id]],
+        ['set the harmonies volume to 75%', 'harmony', [formHarmonyHigh.id, formHarmonyLow.id]],
+    ])('grounds "%s" for a "%s" fragment', (prompt, fragment, expected) => {
+        const result = compileAndBridge(
+            prompt,
+            [
+                roleItem(
+                    'setTrackGain',
+                    { gain: 0.75 },
+                    { targetArgument: 'trackId', entity: 'track', match: { all: [{ nameIncludes: fragment }] } },
+                    expected.length
+                ),
+            ],
+            [],
+            nameFormContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+
+    it('protects a track a restriction names in an ordinary form', () => {
+        const result = compileMix('add an EQ to every audio track but leave the vocal alone', [
+            roleItem(
+                'addDevice',
+                { deviceType: 'builtin-eq' },
+                { targetArgument: 'trackId', entity: 'track', where: { kind: 'audio' } },
+                4
+            ),
+        ]);
+
+        expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
+        expect(result.rejections).toEqual([{ index: 0, name: 'addDevice', reason: UNAUTHORIZED_TRACK }]);
+    });
+});
+
+describe('"its" refers to the selected track as "it" does', () => {
+    it('grounds the selected track a request sets through "its"', () => {
+        const result = compileAndBridge(
+            'set its volume to 75%',
+            [trackItem('setTrackGain', mixVocals, { gain: 0.75 })],
+            [],
+            {
+                ...mixContext,
+                selectedTrackId: mixVocals.id,
+            }
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+    });
+
+    it('refuses the selected track for "its" once the request names another track', () => {
+        const result = compileAndBridge(
+            'set Keys volume to 75% so its level sits better',
+            [trackItem('setTrackGain', mixVocals, { gain: 0.75 })],
+            [],
+            { ...mixContext, selectedTrackId: mixVocals.id }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+});
