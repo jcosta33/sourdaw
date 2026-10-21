@@ -1,0 +1,47 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastClipNotes.spec.ts
+  s_29d8df116c5b92::t_a2506216a5bafb 6-13,130,133-140,147-148,161-176,182,186-196
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_1c08b47ac3792f::t_ae2011532607db 368-431
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastClipNotes.ts
+  s_29d8df116c5b92::t_fd5fa26d62a962 12-21,64-80
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_1c08b47ac3792f::t_9e962cb4560db4 140-145,147-153
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1c08b47ac3792f::t_969812ce6d02d9 752-756
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_1c08b47ac3792f::t_2b38f8b730f2d1 79-90
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_1c08b47ac3792f::t_ab5f94cf69c845 553-669
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_1c08b47ac3792f::t_f868ce2a1b781c 1397-1399,1417-1442
+src/modules/Transport/useCases/scheduling/selectMidiNotesForLoopWindow.ts
+  s_1c08b47ac3792f::t_f3c2dde66a4016 2,37-46,83-87,152,198-227
+src/utils/__tests__/clipLoopOrigin.spec.ts
+  s_1c08b47ac3792f::t_a5cee35a5cba10 98-113
+src/utils/clipLoopOrigin.ts
+  s_1c08b47ac3792f::t_56743305a8775b 188-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97ba1c80d260d23e2535edbffd381d464918ac73",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
