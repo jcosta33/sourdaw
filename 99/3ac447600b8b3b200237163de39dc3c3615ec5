@@ -1,0 +1,49 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_f404fb3c16b584 982-983,1024-1209
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_ba8dd89de9aac7::t_af1754b8307ccb 49,51-53,72-73,80,82,102,104-107,125-143,175,208
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_ba8dd89de9aac7::t_b6548cf382f45c 9,23,31,69,87,89,94-97,99,107-113,117,127,138-140,170,221,227
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_59e31a5c6f3e31::t_87951ddf3f8c4a 276-285,287,291,293-299
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_ba8dd89de9aac7::t_7f4aae0470b5e4 114,124,158
+src/modules/Arrangement/useCases/rippleDelete/__tests__/planRippleDelete.spec.ts
+  s_59e31a5c6f3e31::t_35ecc94a044ca2 49-68
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_59e31a5c6f3e31::t_5234b1c3192054 60-65
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  s_ba8dd89de9aac7::t_d23a919cc5c177 11,22,32
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  s_59e31a5c6f3e31::t_c2a48ae67356db 16,35-36
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_59e31a5c6f3e31::t_d4a140cfdd91f3 292-321
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_59e31a5c6f3e31::t_c46590699d7c63 893,1553,2517-2524,2541,2569,2588,2616,2639-2640,2663,2682,2690,2699,2710-2712,2726-2728,2759,2765,2774,2785,2793,2804-2805,2827,2849-2850,2875-2876,2931,2939,3000,3018,3024,3072,3080,3089,3098-3099,3104-3109,3144,3151,3167,3175,3235-3236,3360,3366,3416,3431,3436,3456-3457,3477,3491-3492,3501,3503,3515-3516,3524-3525,3595-3596,3672-3673,3753-3754,3896,3902,3906-3907,3932,3943,4026-4027,4054-4055,4077,4091,4100,4122,4136,4143,4150-4152,4190-4192,4214,4219,4231,4238,4243,4245,4251,4256,4258-4259,4278,4285,4293-4294,4300,4303,4347-4348,4357-4358,4421,4427-4428,4441-4442,4464-4465,4499,4506,4511-4512,4528,4533-4534,4546,4556,4563,4569,4574,4583-4584,4606,4611-4612,4649-4650,4670,4684-4685,4693-4694,4783,4790,4796-4797,4804,4818,4833,4847,4852-4855,4884,4890,4904,4910,4955,4957,4972,4981-4982,4984,4997-4998,5001,5008,5013,5040,5045,5140,5147,5175,5183,5189,5197-5198,5238,5249,5257,5263,5270,5275,5283-5284,5495,5511,5528,5535-5536,5539,5570,5583-5586,5596-5597,5642,5656,5661,5663,5711,5716,5734,5739,5771,5776,5843,5852,5864,5876,5897,5909,5915,5921-5922,5947,5953-5954,6018,6024,6034,6039,6041,6050,6052,6061,6206-6209,6211-6241,6245,6247-6266,6269,6271-6281,6283-6284,6291-6325,6331-6332,6335-6339,6341-6342,6344,6346-6358,6360-6362,6364-6368,6370-6371,6373-6375,6378-6389,6391,6393-6395,6400-6401,6403-6406,6410-6415,6420,6422-6423,6425-6426,6429-6443,6445-6446,6449,6451-6454,6458-6471
+src/utils/handlerContract.ts
+  s_59e31a5c6f3e31::t_420bfde5735a9b 1461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "993ac447600b8b3b200237163de39dc3c3615ec5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
