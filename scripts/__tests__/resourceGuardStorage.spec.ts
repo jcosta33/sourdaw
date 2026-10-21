@@ -297,7 +297,7 @@ function expectMarkedRecovery(
         }
     }
     const expectedDiagnostics: unknown[] = [];
-    if (diagnostics.length !== 0) {
+    if (diagnostics.length > 0) {
         expectedDiagnostics.push(
             expect.stringMatching(
                 /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-fields-unusable:descriptor-type-missing)$/
