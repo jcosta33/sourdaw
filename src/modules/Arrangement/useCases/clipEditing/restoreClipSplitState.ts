@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../clip/applyClipAutomationLaneTransition';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
+import { planTakeRetirement } from '../comping/planTakeRetirement';
 import { prepareClipSplitTakeReplay } from '../comping/prepareClipSplitTakeReplay';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
@@ -23,7 +24,16 @@ export function restoreClipSplitState(input: Input): boolean {
     if (!takeReplay) {
         return false;
     }
-    const retiredBefore = input.replacement.rightClip ? [] : captureRetiredTakeLanes([input.rightClipId]);
+    // Capture late right-side material before replay's liveness filter removes it.
+    // Historical shared-id re-keys solely own their input facets. Canonical
+    // partitions mint right ids, whose live names/selection need the retirement
+    // capture because those ids are absent after Undo.
+    const reKeyedTakeIds = new Set(takeReplay.flatMap((transition) => transition.takesBefore.map((take) => take.id)));
+    const retiredBefore = input.replacement.rightClip
+        ? []
+        : input.expected.takeLanes === undefined
+          ? (planTakeRetirement([input.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [])
+          : captureRetiredTakeLanes([input.rightClipId]);
     const trackRestored = replaceClipSplitTrackState(input);
     if (!trackRestored) {
         return false;
@@ -64,9 +74,8 @@ export function restoreClipSplitState(input: Input): boolean {
     // payload, which is how the first cut of this leg silently never ran.
     if (!input.replacement.rightClip) {
         writeTakeReKeyTransitions(takeReplay, 'apply');
-        const retired = removeTakesForClips([input.rightClipId]);
-        const capture = input.expected.takeLanes === undefined ? retired : retiredBefore;
-        input.retiredTakeLanes?.splice(0, input.retiredTakeLanes.length, ...capture);
+        removeTakesForClips([input.rightClipId]);
+        input.retiredTakeLanes?.splice(0, input.retiredTakeLanes.length, ...retiredBefore);
     } else if (input.retiredTakeLanes !== undefined) {
         // Redo leg: re-splice put the right clip back; reinstate the takes
         // the undo retired from it.
