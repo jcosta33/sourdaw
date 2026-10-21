@@ -139,6 +139,7 @@ describe('processLiveYeastTrackBlock', () => {
         // region end on its stored figure and never reaches the rack.
         vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
         vi.mocked(processYeastMidi).mockImplementation(({ events }) => Promise.resolve([...events]));
+        vi.mocked(processYeastMidi).mockClear();
 
         const result = await processLiveYeastTrackBlock({
             context: { sampleRate: 48_000 } as BaseAudioContext,
@@ -169,7 +170,7 @@ describe('processLiveYeastTrackBlock', () => {
             isCurrent: () => true,
         });
 
-        const inputEvents = vi.mocked(processYeastMidi).mock.calls[0]![0].events;
+        const inputEvents = vi.mocked(processYeastMidi).mock.lastCall?.[0].events ?? [];
         expect(inputEvents.map((event) => [event.kind.note, event.timePpq, event.kind.type])).toEqual([
             [60, 4, 'noteOn'],
             [60, 5, 'noteOff'],

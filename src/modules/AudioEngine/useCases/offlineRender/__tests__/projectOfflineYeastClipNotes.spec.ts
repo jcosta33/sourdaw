@@ -154,7 +154,9 @@ describe('projectOfflineYeastClipNotes — the anchored loop window on routed no
 
         expect(result.map((note) => note.pitch)).toEqual([61]);
         const callArg = projectMidiEvents.mock.calls[0]?.[0] as { events: Array<{ startBeat: number }> };
-        expect(callArg.events).toEqual([expect.objectContaining({ startBeat: 3 })]);
+        // The event keeps the absolute figure (`startPpq - midiOffsetBeats`);
+        // the membership input above is what subtracts the iteration start.
+        expect(callArg.events).toEqual([expect.objectContaining({ startBeat: 5 })]);
     });
 
     it('control: keeps every routed note when the clip carries no anchor', () => {
