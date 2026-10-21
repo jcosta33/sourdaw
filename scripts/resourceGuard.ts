@@ -1042,6 +1042,20 @@ function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead
     return startedAt === identity.startedAt ? 'alive' : 'unknown';
 }
 
+// Only this run's own live supervisor bounds which processes predate it. A recovered
+// owner, a foreign live owner, or a reused PID bounds nothing, so it excuses nothing.
+export function startTimeExcuseSupervisor(
+    owner: StorageProcessIdentity,
+    currentPid: number,
+    hostPlatform: NodeJS.Platform,
+    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown'
+): number | undefined {
+    if (hostPlatform !== 'linux' || owner.pid !== currentPid) {
+        return undefined;
+    }
+    return identityState(owner) === 'alive' ? currentPid : undefined;
+}
+
 function storageRecoveryPorts(report: (reason: string) => void): StorageRecoveryPorts {
     const ports: StorageRecoveryPorts = {
         identityState: storageIdentityState,
@@ -1075,13 +1089,7 @@ function storageRecoveryPorts(report: (reason: string) => void): StorageRecovery
             if (platform() === 'win32') {
                 return 'dead';
             }
-            // Only this run's own live supervisor bounds which processes predate it.
-            const supervisorPid =
-                platform() === 'linux' &&
-                owner.owner.pid === process.pid &&
-                storageIdentityState(owner.owner) === 'alive'
-                    ? process.pid
-                    : undefined;
+            const supervisorPid = startTimeExcuseSupervisor(owner.owner, process.pid, platform(), storageIdentityState);
             return storageFileState(
                 [tempDirectory, currentTempDirectory],
                 [
@@ -1306,8 +1314,14 @@ export function parseLinuxStartTicks(stat: string): number | undefined {
     return Number(startTime);
 }
 
-export function linuxFilePorts(supervisorPid?: number): LinuxFilePorts {
-    const startTicks = (pid: number) => parseLinuxStartTicks(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+function readLinuxStartTicks(pid: number): number | undefined {
+    return parseLinuxStartTicks(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+}
+
+export function linuxFilePorts(
+    supervisorPid?: number,
+    startTicks: (pid: number) => number | undefined = readLinuxStartTicks
+): LinuxFilePorts {
     return {
         inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
         readCwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
