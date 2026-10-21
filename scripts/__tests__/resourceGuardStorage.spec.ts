@@ -210,9 +210,10 @@ async function runMarkedGuard(root: string): Promise<{
         childPids.add(supervisorPid);
     }
     const exit = await closed;
-    const observed: { pid: number; tmp: string; ownerPid: number } | undefined = existsSync(marker)
-        ? JSON.parse(readFileSync(marker, 'utf8'))
-        : undefined;
+    let observed: { pid: number; tmp: string; ownerPid: number } | undefined;
+    if (existsSync(marker)) {
+        observed = JSON.parse(readFileSync(marker, 'utf8'));
+    }
     if (observed !== undefined) {
         childPids.add(observed.pid);
     }
@@ -295,15 +296,15 @@ function expectMarkedRecovery(
             expect(isAlive(run.supervisorPid)).toBe(false);
         }
     }
-    expect(diagnostics).toEqual(
-        diagnostics.length === 0
-            ? []
-            : [
-                  expect.stringMatching(
-                      /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-fields-unusable:descriptor-type-missing)$/
-                  ),
-              ]
-    );
+    const expectedDiagnostics: unknown[] = [];
+    if (diagnostics.length !== 0) {
+        expectedDiagnostics.push(
+            expect.stringMatching(
+                /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-fields-unusable:descriptor-type-missing)$/
+            )
+        );
+    }
+    expect(diagnostics).toEqual(expectedDiagnostics);
     const freshRetained = retainedTokens.includes(fresh.token);
     if (fresh.result.reason === undefined) {
         expect(freshRetained).toBe(false);
@@ -475,25 +476,17 @@ describe('guard-owned temporary storage', () => {
             const retainedLine = 'guard storage retained: process-tree exit or storage ownership could not be proved';
             let tempExistedWhileAlive = false;
             let tempDirectory: string | undefined;
-            const result = await guarded(root, {
+            let childAction = `process.exitCode=${childExit}`;
+            if (diskPressure) {
+                childAction = 'setInterval(() => {}, 1000)';
+            } else if (childExit === 7) {
+                childAction = `process.stdout.write(${JSON.stringify(`${retainedLine}\n`)});${childAction}`;
+            }
+            const options: Partial<Parameters<typeof runGuardedCommand>[0]> = {
                 args: [
                     '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));${diskPressure ? 'setInterval(() => {}, 1000)' : `${childExit === 7 ? `process.stdout.write(${JSON.stringify(`${retainedLine}\n`)});` : ''}process.exitCode=${childExit}`}`,
+                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));${childAction}`,
                 ],
-                ...(diskPressure
-                    ? {
-                          hostSampleIntervalMs: 20,
-                          sampleIntervalMs: 20,
-                          diskSampler: () => {
-                              if (!existsSync(marker)) {
-                                  return 1000;
-                              }
-                              const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
-                              tempExistedWhileAlive ||= isAlive(started.pid) && existsSync(started.tmp);
-                              return 0;
-                          },
-                      }
-                    : {}),
                 storageFactory: (input) => {
                     const storage = createGuardStorage({
                         ...input,
@@ -523,7 +516,20 @@ describe('guard-owned temporary storage', () => {
                         },
                     };
                 },
-            });
+            };
+            if (diskPressure) {
+                options.hostSampleIntervalMs = 20;
+                options.sampleIntervalMs = 20;
+                options.diskSampler = () => {
+                    if (!existsSync(marker)) {
+                        return 1000;
+                    }
+                    const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+                    tempExistedWhileAlive ||= isAlive(started.pid) && existsSync(started.tmp);
+                    return 0;
+                };
+            }
+            const result = await guarded(root, options);
             expect(existsSync(marker)).toBe(true);
             const child: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             childPids.add(child.pid);
@@ -538,22 +544,22 @@ describe('guard-owned temporary storage', () => {
             }
             const token = basename(dirname(tempDirectory));
             const retained = proof !== 'complete';
-            expect(releases).toEqual(
-                retained
-                    ? proof === 'throws'
-                        ? [
-                              { treeStopped: true, threw: true },
-                              { treeStopped: true, threw: true },
-                          ]
-                        : [
-                              { treeStopped: true, removed: false },
-                              { treeStopped: true, removed: false },
-                          ]
-                    : [
-                          { treeStopped: true, removed: false },
-                          { treeStopped: true, removed: true },
-                      ]
-            );
+            let expectedReleases: { treeStopped: boolean; removed?: boolean; threw?: boolean }[] = [
+                { treeStopped: true, removed: false },
+                { treeStopped: true, removed: true },
+            ];
+            if (proof === 'incomplete') {
+                expectedReleases = [
+                    { treeStopped: true, removed: false },
+                    { treeStopped: true, removed: false },
+                ];
+            } else if (proof === 'throws') {
+                expectedReleases = [
+                    { treeStopped: true, threw: true },
+                    { treeStopped: true, threw: true },
+                ];
+            }
+            expect(releases).toEqual(expectedReleases);
             expect(proofPaths).toHaveLength(retained ? 2 : 3);
             expect(proofPaths[0]).toBe(join(root, 'storage', token, 'tmp'));
             expect(proofPaths[1]).toBe(proofPaths[0]);
@@ -1905,15 +1911,21 @@ describe('storage ownership recovery', () => {
                 observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)
             ).toEqual([5000, 4900, 4800].slice(0, samples));
             let expectedReason: string | undefined;
-            if (ending === 'deadline') expectedReason = 'file-census-time-bound';
-            if (ending === 'third newborn')
+            if (ending === 'deadline') {
+                expectedReason = 'file-census-time-bound';
+            }
+            if (ending === 'third newborn') {
                 expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${thirdPid}/${uid}/S`;
-            if (secondSnapshot === 'wrong UID')
+            }
+            if (secondSnapshot === 'wrong UID') {
                 expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/${uid + 1}/S`;
-            if (secondSnapshot === 'unknown state')
+            }
+            if (secondSnapshot === 'unknown state') {
                 expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/${uid}/?`;
-            if (secondSnapshot === 'denied')
+            }
+            if (secondSnapshot === 'denied') {
                 expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/unknown/unknown`;
+            }
             expect(observed.reasons).toEqual(expectedReason === undefined ? [] : [expectedReason]);
         }
     );
@@ -2021,31 +2033,29 @@ describe('storage ownership recovery', () => {
         expect(observed.fileSamples).toBe(gap ? 2 : 6);
         expect(observed.processSamples).toBe(gap ? 4 : 12);
         const { pid, newPid, newerPid } = observed;
-        expect(observed.accountPids).toEqual(
-            gap
-                ? [[pid], [pid], [pid, newPid], [pid, newPid]]
-                : [
-                      [pid],
-                      [pid],
-                      [pid],
-                      [pid, newPid],
-                      [pid, newPid],
-                      [pid, newPid, newerPid],
-                      ...Array.from({ length: 6 }, () => [pid, newPid, newerPid]),
-                  ]
-        );
-        expect(observed.catalogPids).toEqual(
-            gap
-                ? [[pid], [pid]]
-                : [
-                      [pid],
-                      [pid],
-                      [pid, newPid],
-                      [pid, newPid, newerPid],
-                      [pid, newPid, newerPid],
-                      [pid, newPid, newerPid],
-                  ]
-        );
+        let expectedAccountPids = [
+            [pid],
+            [pid],
+            [pid],
+            [pid, newPid],
+            [pid, newPid],
+            [pid, newPid, newerPid],
+            ...Array.from({ length: 6 }, () => [pid, newPid, newerPid]),
+        ];
+        let expectedCatalogPids = [
+            [pid],
+            [pid],
+            [pid, newPid],
+            [pid, newPid, newerPid],
+            [pid, newPid, newerPid],
+            [pid, newPid, newerPid],
+        ];
+        if (gap) {
+            expectedAccountPids = [[pid], [pid], [pid, newPid], [pid, newPid]];
+            expectedCatalogPids = [[pid], [pid]];
+        }
+        expect(observed.accountPids).toEqual(expectedAccountPids);
+        expect(observed.catalogPids).toEqual(expectedCatalogPids);
         expect(observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)).toEqual(
             gap ? [5000, 5000] : [5000, 5000, 4900, 4800, 5000, 5000]
         );

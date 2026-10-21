@@ -1842,7 +1842,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     const sampleTimer = setInterval(sampleTick, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
-    const completion = await (async () => {
+    const completeSpawnedCommand = async () => {
         try {
             const result = await childCompletion;
             if (child.pid !== undefined && reason === undefined) {
@@ -1883,7 +1883,8 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             // The existing final attempt can prove removal after the first attempt could not.
             await cleanupStorage();
         }
-    })();
+    };
+    const completion = await completeSpawnedCommand();
     if (!completion.succeeded) {
         if (!storageRemoved) {
             throw new Error(
