@@ -293,13 +293,11 @@ describe('verified replay settlement read by the planner thread', () => {
             } else if (state === 'authority-mismatch') {
                 batch.authority.projectId = 'another-project';
             } else {
-                const envelope = { ...parsed.envelope };
                 if (state === 'run-mismatch') {
-                    envelope.runId = 'another-run';
+                    batch.serialized = JSON.stringify({ ...parsed.envelope, runId: 'another-run' });
                 } else {
-                    envelope.batchId = 'another-batch';
+                    batch.serialized = JSON.stringify({ ...parsed.envelope, batchId: 'another-batch' });
                 }
-                batch.serialized = JSON.stringify(envelope);
                 expect(parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority).status).toBe('valid');
             }
 
@@ -312,7 +310,7 @@ describe('verified replay settlement read by the planner thread', () => {
                 commandId: replay.receipt.commandOutcomes[0]?.commandId,
                 label: 'Approved setTempo 1',
                 executionKind: 'project',
-                affectedIds: [...(replay.receipt.commandOutcomes[0]?.affectedIds ?? [])],
+                affectedIds: replay.receipt.commandOutcomes[0]?.affectedIds ?? [],
                 outcome: 'committed',
             });
         }
@@ -414,6 +412,39 @@ describe('verified replay settlement read by the planner thread', () => {
             standing: 'unknown',
             commands: [{ name: 'setTempo' }],
         });
+    });
+
+    it('keeps canonical command labels when valid standalone command copies are swapped', async () => {
+        const replay = createReplay({ id: 'swapped-labels', actions: [TEMPO, TEMPO], status: 'committed' });
+        const standaloneCommands = replay.confirmation.approvalSnapshot.commandEnvelopes;
+        const first = standaloneCommands?.[0];
+        const second = standaloneCommands?.[1];
+        if (!standaloneCommands || !first || !second) {
+            throw new Error('Expected two standalone command copies.');
+        }
+        expect(parseVersionedCommandEnvelope(first).status).toBe('valid');
+        expect(parseVersionedCommandEnvelope(second).status).toBe('valid');
+        standaloneCommands[0] = second;
+        standaloneCommands[1] = first;
+
+        await settleVerifiedBatchReplay(replay);
+
+        const restored = getPendingActionConfirmation(replay.confirmation.id);
+        if (!restored) {
+            throw new Error('Expected restored confirmation.');
+        }
+        const firstCommandId = replay.receipt.commandOutcomes[0]?.commandId;
+        const secondCommandId = replay.receipt.commandOutcomes[1]?.commandId;
+        if (!firstCommandId || !secondCommandId) {
+            throw new Error('Expected two verified command outcomes.');
+        }
+        expect(restored.executedActions.map(({ commandId, label }) => ({ commandId, label }))).toEqual([
+            { commandId: firstCommandId, label: 'Approved setTempo 1' },
+            { commandId: secondCommandId, label: 'Approved setTempo 2' },
+        ]);
+        const presentation = projectSectionRenderConfirmation({ confirmation: restored });
+        expect(presentation.receipt).toContain(`**setTempo**: Approved setTempo 1\n  - Command: v1 ${firstCommandId}`);
+        expect(presentation.receipt).toContain(`**setTempo**: Approved setTempo 2\n  - Command: v1 ${secondCommandId}`);
     });
 
     it('records only receipt-positive commands, preserving their original approval labels past a no-op', async () => {

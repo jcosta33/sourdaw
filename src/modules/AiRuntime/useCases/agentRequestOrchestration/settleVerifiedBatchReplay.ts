@@ -31,24 +31,36 @@ type SettleVerifiedBatchReplayInput = {
     leaseSettlement?: ReturnType<typeof settleAgentRunWorkLeaseSafely>;
 };
 
+type ApprovedCommand = Extract<
+    ReturnType<typeof parseVersionedCommandBatchEnvelope>,
+    { status: 'valid' }
+>['envelope']['commands'][number];
+
 function restoreVerifiedExecutions(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt
 ): void {
     const current = getPendingActionConfirmation(confirmation.id) ?? confirmation;
     const recordedCommandIds = new Set(current.executedActions.map((execution) => execution.commandId));
-    const approvedLabels = confirmedBatchOutcomeSupport.getApprovalLabelsByCommandId(confirmation);
     const approvedBatch = confirmation.approvalSnapshot.commandBatch;
-    const parsedBatch = approvedBatch
-        ? parseVersionedCommandBatchEnvelope(approvedBatch.serialized, approvedBatch.authority)
-        : null;
-    const approvedCommands = new Map(
-        parsedBatch?.status === 'valid' &&
+    const approvedCommands = new Map<string, ApprovedCommand>();
+    const approvedLabels = new Map<string, string>();
+    if (approvedBatch) {
+        const parsedBatch = parseVersionedCommandBatchEnvelope(approvedBatch.serialized, approvedBatch.authority);
+        if (
+            parsedBatch.status === 'valid' &&
             parsedBatch.envelope.runId === receipt.runId &&
             parsedBatch.envelope.batchId === receipt.batchId
-            ? parsedBatch.envelope.commands.map((command) => [command.commandId, command] as const)
-            : []
-    );
+        ) {
+            for (const [index, command] of parsedBatch.envelope.commands.entries()) {
+                approvedCommands.set(command.commandId, command);
+                const label = confirmation.approvalSnapshot.actionLabels[index];
+                if (label !== undefined) {
+                    approvedLabels.set(command.commandId, label);
+                }
+            }
+        }
+    }
     for (const [index, command] of receipt.commandOutcomes.entries()) {
         if (
             (command.outcome !== 'committed' && command.outcome !== 'executed') ||
