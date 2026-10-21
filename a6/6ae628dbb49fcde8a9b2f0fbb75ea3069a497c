@@ -1,0 +1,25 @@
+src/infra/logger/__tests__/appLogger.spec.ts
+  s_d257b09300b1ad::t_3c5ec8d8961245 24-35
+src/infra/logger/__tests__/resolveConsoleWriterMode.spec.ts
+  s_d257b09300b1ad::t_5414ce7a25b718 1-17
+src/infra/logger/appLogger.ts
+  s_d257b09300b1ad::t_3034be3975839e 3,5
+src/infra/logger/resolveConsoleWriterMode.ts
+  s_d257b09300b1ad::t_68975adeb73de1 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a66ae628dbb49fcde8a9b2f0fbb75ea3069a497c",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
