@@ -1792,6 +1792,7 @@ describe('a stated name picks only the track whose name reads it best', () => {
 
     it.each([
         ['turn down the Drum Bus by 3 dB', ['Drum Bus', 'FX Bus'], 'Bus', 'FX Bus'],
+        ['turn down the Drum Bus by 3 dB', ['Drum-Bus', 'FX Bus'], 'Bus', 'FX Bus'],
         ['turn down the Drum Bus by 3 dB', ['Drums', 'Drum Bus'], 'Drum', 'Drums'],
     ])(
         'refuses "%s" among %j for the "%s" fragment it states only inside another name, %s',
@@ -1799,7 +1800,7 @@ describe('a stated name picks only the track whose name reads it best', () => {
             const { context, track } = namedTracksContext(names);
             const result = compileAndBridge(prompt, [nameFragmentItem(fragment, 2)], [], context);
 
-            expect(targetsOf(result)).toEqual([track('Drum Bus').id]);
+            expect(targetsOf(result)).toEqual(names.filter((name) => name !== sibling).map((name) => track(name).id));
             expect(result.rejections).toContainEqual({
                 index: names.indexOf(sibling),
                 name: 'setTrackGain',
@@ -1807,6 +1808,35 @@ describe('a stated name picks only the track whose name reads it best', () => {
             });
         }
     );
+
+    it.each([
+        ['turn down the guitars by 3 dB', ['Guitar', 'Guitar 2', "Bob's Guitar"], 'guitar'],
+        ['turn down the bass tracks by 3 dB', ['Bass', 'Bass Drum', 'Sub Bass'], 'bass'],
+        ['turn down the synths by 3 dB', ['Synth', 'Synth 2'], 'synth'],
+        ['turn down the vocals by 3 dB', ['Vocals', 'Vocal Lead'], 'vocal'],
+        ['turn down all vocal tracks by 3 dB', ['Vocals', 'Vocal Lead'], 'vocal'],
+    ])('grounds "%s" among %j for the "%s" fragment a whole name reads no further than', (prompt, names, fragment) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(prompt, [nameFragmentItem(fragment, names.length)], [], context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(names.map((name) => track(name).id));
+    });
+});
+
+describe('a name fragment stated only inside a restriction picks no target', () => {
+    it('refuses a "bass" fragment the request states only in what it leaves alone', () => {
+        const { context } = namedTracksContext(['Drums', 'Bass DI']);
+        const result = compileAndBridge(
+            'turn down the drums by 3 dB but leave Bass Verse alone',
+            [nameFragmentItem('bass', 1)],
+            [],
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
 });
 
 describe('a name stated with its punctuation folded picks its track as the shared resolver reads it', () => {

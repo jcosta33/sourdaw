@@ -1517,3 +1517,78 @@ describe('ranked candidates and effect gating', () => {
         );
     });
 });
+
+describe('sibling names the prompt states as closely as each other', () => {
+    function namedTracksProject(names: readonly string[]): ProjectContext {
+        const project = createProjectState();
+        const template = project.tracks[0]!;
+        return {
+            ...project,
+            tracks: names.map((name, index) => ({ ...template, id: `track-named-${index}`, name })),
+            selectedTrackId: null,
+        };
+    }
+
+    function trackIdNamed(project: ProjectContext, name: string): string {
+        return project.tracks.find((track) => track.name === name)!.id;
+    }
+
+    it.each([
+        ['can you mute Lead?', 'Lead', 'Lead?'],
+        ['Mute Pad. Then solo Drums', 'Pad', 'Pad.'],
+        ['Mute Pad!', 'Pad', 'Pad!'],
+        ['mute Gtr.', 'Gtr', 'Gtr.'],
+        ['mute Pad... and then Bass', 'Pad', 'Pad...'],
+        ['mute Synth 1.', 'Synth 1', 'Synth 1.'],
+    ])('keeps "%s" ambiguous between %s and %s', (prompt, bare, punctuated) => {
+        const project = namedTracksProject([bare, punctuated]);
+        const siblingIds = [trackIdNamed(project, bare), trackIdNamed(project, punctuated)];
+
+        for (const assertedId of siblingIds) {
+            const result = resolveTrack(prompt, assertedId, project);
+            expect(result).toMatchObject({ status: 'rejected', reason: 'ambiguous-target' });
+            expect(result.status === 'rejected' && [...(result.candidateIds ?? [])].sort()).toEqual(
+                [...siblingIds].sort()
+            );
+        }
+    });
+
+    it.each([
+        ['mute Kick (In)', ['Kick In', 'Kick (In)'], 'Kick (In)'],
+        ['mute Synth #1', ['Synth 1', 'Synth #1'], 'Synth #1'],
+        ['mute Synth+', ['Synth', 'Synth+'], 'Synth+'],
+        ['mute Vox.Dbl', ['Vox Dbl', 'Vox.Dbl'], 'Vox.Dbl'],
+        ['mute Vox Dbl', ['Vox Dbl', 'Vox.Dbl'], 'Vox Dbl'],
+        ['mute Cafe', ['Café', 'Cafe'], 'Cafe'],
+        ['mute café', ['Café', 'Cafe'], 'Café'],
+        ['mute Kick-In', ['Kick-In', 'Kick In', 'Kick (In)'], 'Kick-In'],
+        ['mute Kick In', ['Kick-In', 'Kick In', 'Kick (In)'], 'Kick In'],
+        ['mute Kick (In)', ['Kick-In', 'Kick In', 'Kick (In)'], 'Kick (In)'],
+        ['mute fine', ['ﬁne', 'fine'], 'fine'],
+    ])('resolves "%s" among %j to the name it types, %s', (prompt, names, typed) => {
+        const project = namedTracksProject(names);
+        const typedId = trackIdNamed(project, typed);
+
+        expect(resolveTrack(prompt, typedId, project)).toEqual(resolvedTo(typedId, typed, 'exact-name'));
+    });
+
+    it('keeps "mute Café and Cafe" ambiguous when each sibling is typed', () => {
+        const project = namedTracksProject(['Café', 'Cafe']);
+
+        expect(resolveTrack('mute Café and Cafe', trackIdNamed(project, 'Café'), project)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Café and Cafe', trackIdNamed(project, 'Cafe'), project)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it.each(['ΟΔΟΣ', 'οδος'])('resolves "mute ΟΔΟΣ" to the exact name %s despite its final sigma', (name) => {
+        const project = namedTracksProject([name, 'Bass']);
+        const id = trackIdNamed(project, name);
+
+        expect(resolveTrack('mute ΟΔΟΣ', id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
+    });
+});
