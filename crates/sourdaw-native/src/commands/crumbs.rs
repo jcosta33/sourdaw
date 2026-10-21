@@ -2175,6 +2175,62 @@ pub(crate) mod tests {
         assert!(sample.left.len() >= 128);
     }
 
+    pub(crate) fn replacement_native_take_probe(
+        state: Arc<CrumbsState>,
+        app: Arc<AppState>,
+        driver: daw_engine::CaptureLifecycleDriver,
+        instance_id: &str,
+    ) {
+        let mut f = NativeFixture {
+            state,
+            app,
+            driver,
+            events: Arc::new(LifecycleEvents::default()),
+        };
+        f.driver.render(128).unwrap();
+        f.driver.service_owner_commands();
+        assert_eq!(
+            f.driver.deliver_input(&[0.0; 1024], 2),
+            Err("Fixture input is not open".to_string()),
+            "reattaching an idle sampler must not acquire input"
+        );
+
+        crate::block_on_test(set_crumbs_mode(instance_id.into(), "record".into(), &f.state))
+            .unwrap();
+        let token = f.arm(instance_id, 0.1, 1.0);
+        f.driver.service_owner_commands();
+        let mut transient = [0.0f32; 1024];
+        transient[0] = 0.75;
+        transient[1] = 0.375;
+        f.driver.deliver_input(&transient, 2).unwrap();
+        for _ in 0..3 {
+            f.driver.deliver_input(&[0.0; 1024], 2).unwrap();
+        }
+        f.driver.render(128).unwrap();
+        f.events.wait(&token, "recording");
+        let snapshot = f.snapshot(instance_id);
+        assert_eq!(snapshot.take_id, token);
+        assert!(snapshot.first_input.is_some());
+
+        f.stop(instance_id, &token);
+        f.events.wait(&token, "completed");
+        // Terminal publication follows release admission, not the owner's close.
+        f.driver.service_owner_commands();
+        assert!(f.period(instance_id).snapshot().closed);
+        assert_eq!(
+            f.driver.deliver_input(&[0.0; 1024], 2),
+            Err("Fixture input is not open".to_string()),
+            "the replacement must close input after its last take holder"
+        );
+        assert!(instance_is_attached(&f.state, instance_id));
+        f.driver.render(128).unwrap();
+        let instances = f.state.instances.lock().unwrap();
+        let sample = instances[instance_id].samples.get(&1).unwrap();
+        assert_eq!(sample.left[0], 0.75);
+        assert_eq!(sample.right[0], 0.375);
+        assert!(sample.left.len() >= 128);
+    }
+
     pub(crate) fn joining_native_take_probe() {
         let mut f = NativeFixture::new(false);
         f.app
@@ -2963,9 +3019,8 @@ pub(crate) mod tests {
         assert!(!instances.contains_key("instance-overflow"));
     }
 
-    /// Pop the persistent slot batch one successful create queues.
-    /// fence, the detached slot, then its registration on the engine's input
-    /// bus — and return the engine plugin id both commands name.
+    /// Pop the fence and persistent detached slot one successful create queues,
+    /// returning the engine plugin id. Input belongs to a later accepted take.
     fn pop_create_commands(command_rx: &mut rtrb::Consumer<GraphCommand>) -> usize {
         assert!(matches!(
             command_rx.pop(),
@@ -3154,9 +3209,8 @@ pub(crate) mod tests {
 
         let state = CrumbsState::default();
         let app_state = AppState::default();
-        // Exactly the create's batch — fence plus two commands — so the ring is
-        // full when destroy asks for its removal, and admission finds the room
-        // it needs without reallocating the channel out from under this test.
+        // Idle create publishes a fence and slot. An explicit sentinel below
+        // fills the remaining position without reallocating the channel.
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(3);
         *app_state
@@ -3168,6 +3222,20 @@ pub(crate) mod tests {
             .expect("create should fill the scheduler ring");
 
         let original_engine_plugin_id = attached_plugin_id(&state, INSTANCE_ID);
+
+        {
+            let mut engine = app_state.engine.lock().unwrap();
+            let engine = engine.as_mut().unwrap();
+            engine
+                .set_bypass(original_engine_plugin_id, false)
+                .expect("the sentinel must fill the final scheduler position");
+            assert_eq!(
+                engine.set_bypass(original_engine_plugin_id, false),
+                Err("Audio command queue full".to_string()),
+                "a second sentinel independently proves admission is full"
+            );
+        }
+        assert_eq!(command_rx.slots(), command_rx.buffer().capacity());
 
         let refusal =
             crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
@@ -3181,6 +3249,10 @@ pub(crate) mod tests {
 
         let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
         assert_eq!(registered_engine_plugin_id, original_engine_plugin_id);
+        match command_rx.pop() {
+            Ok(GraphCommand::SetBypass(id, false)) => assert_eq!(id, original_engine_plugin_id),
+            _ => panic!("the saturation sentinel must follow the persistent slot"),
+        }
         assert!(
             command_rx.pop().is_err(),
             "failed destroy must not queue a removal command"

@@ -860,8 +860,8 @@ mod tests {
 
     #[test]
     fn a_crumbs_instance_reattaches_to_the_engine_that_replaces_the_retired_one() {
-        let state = AppState::default();
-        let crumbs_state = CrumbsState::default();
+        let state = Arc::new(AppState::default());
+        let crumbs_state = Arc::new(CrumbsState::default());
         let _lost_engine_commands = fill_slot_with_capture_engine(&state);
         block_on_test(crumbs::create_crumbs(
             "instance-1".to_string(),
@@ -882,7 +882,9 @@ mod tests {
             "an instance left attached holds rings the retired engine's slot side is gone from"
         );
 
-        let mut replacement_commands = fill_slot_with_capture_engine(&state);
+        let (replacement, driver) = daw_engine::capture_lifecycle_fixture(64, false)
+            .expect("the replacement fixture must drive its actual sampler and input");
+        *state.engine.lock().expect("the retired slot is empty") = Some(replacement);
         let applied = block_on_test(apply_graph_commands(empty_batch(), &state, &crumbs_state))
             .expect("the batch on the replacing engine resolves");
 
@@ -891,20 +893,7 @@ mod tests {
             crumbs::instance_is_attached(&crumbs_state, "instance-1"),
             "the first batch on the new engine is what re-registers the instance"
         );
-        let mut added_plugins = 0;
-        let mut registered_capture_consumers = 0;
-        while let Ok(command) = replacement_commands.pop() {
-            match command {
-                GraphCommand::AddHostedPlugin(..) => added_plugins += 1,
-                GraphCommand::RegisterCaptureConsumer(_) => registered_capture_consumers += 1,
-                _ => {}
-            }
-        }
-        assert_eq!(
-            (added_plugins, registered_capture_consumers),
-            (1, 1),
-            "the re-registration is the slot plus its capture tap, on the replacing engine's ring"
-        );
+        crumbs::tests::replacement_native_take_probe(crumbs_state, state, driver, "instance-1");
     }
 
     #[test]
