@@ -375,7 +375,6 @@ function findRestatementQuestion(input: {
 /** How the one figure a refinement clause states reads, beside the value it binds. */
 export const refinementFigure = {
     comparative: readFigureComparative,
-    comparativeWords: COMPARATIVE_WORDS,
     statesValue,
     canMean,
     restatementQuestion: findRestatementQuestion,

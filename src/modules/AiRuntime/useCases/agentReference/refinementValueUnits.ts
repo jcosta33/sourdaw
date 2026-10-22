@@ -17,6 +17,8 @@ const UNIT_WORDS: ReadonlyArray<{ unit: string; pattern: RegExp }> = [
     { unit: 'cents', pattern: /^\s*cents?(?![\p{L}\p{N}])/iu },
     { unit: 's', pattern: /^\s*(?:s|secs?|seconds?)(?![\p{L}\p{N}])/iu },
 ];
+/** A normalized word that is a figure's digits. */
+const FIGURE_WORD = /^\p{N}+$/u;
 
 /** The unit word a text opens with, by its canonical spelling, and how much of the text it takes. */
 function readUnitWord(text: string): { unit: string; length: number } | null {
@@ -29,9 +31,17 @@ function readUnitWord(text: string): { unit: string; length: number } | null {
     return null;
 }
 
-/** Whether the words name a unit a figure is read in. */
+/**
+ * Whether the words name a unit a figure is read in. A unit word reads apart from a figure too ("two
+ * dB", "a few dB"), except the bare `s`, which a contraction leaves ("that's" reads "that s") and which
+ * reads as seconds only directly after a figure.
+ */
 function statesUnitWord(words: string): boolean {
-    return words.split(' ').some((word) => readUnitWord(word)?.length === word.length);
+    const split = words.split(' ');
+    return split.some(
+        (word, index) =>
+            readUnitWord(word)?.length === word.length && (word !== 's' || FIGURE_WORD.test(split[index - 1] ?? ''))
+    );
 }
 
 /** The device parameter a pending command sets, when it sets one. */

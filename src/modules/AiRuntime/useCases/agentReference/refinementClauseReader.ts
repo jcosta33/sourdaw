@@ -15,6 +15,7 @@ import { type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { refinementActionWords } from './refinementActionWords';
 import { refinementCourtesy } from './refinementCourtesy';
+import { refinementProtectionForms } from './refinementProtectionForms';
 import { refinementRequestReading, type ReferenceCandidate, type StatedReference } from './refinementRequestReading';
 
 type ProtectedObject = ProposalGroundingBasis['protectedUnchanged'][number];
@@ -114,7 +115,7 @@ const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
  * which it consumes whole. Wherever a call inherits a pending command, any other clause naming nothing
  * and stating no figure is read for what it asks, never guessed to say nothing: "slower" or "double it"
  * asks for a change the batch must answer. Only beside a batch the refinement text grounds by itself is a
- * clause of courtesy alone outside this list read as asking for nothing.
+ * clause of the closed courtesy list also read as asking for nothing.
  */
 const FILLER_CLAUSES: ReadonlySet<string> = new Set([
     'please',
@@ -257,6 +258,10 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     if (negation === null && refinementRequestReading.statesNegation(clause)) {
         return readOtherNegation(clause, candidates);
     }
+    const protection = readProtection(input);
+    if (protection !== null) {
+        return protection;
+    }
     const statesFigure = findPromptNumbers(clause.masked).length > 0;
     const stated =
         (negation ?? alone)?.[1] ??
@@ -275,6 +280,31 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     const protects = alone !== null || negation !== null;
     const read = removeNamedObject(input, { stated, ...resolved, protects });
     return read.kind === 'read' ? { kind: 'read', removes: !protects } : read;
+}
+
+/**
+ * A protection in one of the closed forms. Keeping the rest of the mix as it is names nothing and is
+ * read; naming one project object in whole that no pending command acts on, it protects that object.
+ * One naming a pending object, an operation or anything else is left to the reading every other clause
+ * takes, which asks it.
+ */
+function readProtection(input: RemovalClauseInput): RemovalClauseRead | null {
+    const form = refinementProtectionForms.read(normalizedClause(input.clause));
+    if (form === null) {
+        return null;
+    }
+    if (form.kind === 'rest') {
+        return { kind: 'read', removes: false };
+    }
+    const resolved = refinementRequestReading.resolveReference(form.stated, input.candidates);
+    const ids =
+        resolved === null || resolved.reference.operations !== null ? [] : Array.from(resolved.candidate.denotes);
+    const [id] = ids;
+    if (id === undefined || ids.length !== 1 || input.commands.some((view) => view.denotes.has(id))) {
+        return null;
+    }
+    input.protectedTargets.push({ id, name: nameObject(input.context, id) });
+    return { kind: 'read', removes: false };
 }
 
 /**
@@ -662,8 +692,8 @@ function askUnreadNegation(input: {
  * The clauses a refinement asks for something the pending card does not carry in: each names an object
  * no pending command acts on, or an action no pending command it names takes, so a new command must
  * answer it. Removal clauses are read as removals, never as additions. With `readsCourtesy`, set only
- * when the refinement text grounded the whole batch by itself, a clause of courtesy alone asks for
- * nothing; otherwise only the closed filler list is consumed.
+ * when the refinement text grounded the whole batch by itself, a clause of the closed courtesy list
+ * asks for nothing too; otherwise only the closed filler list is consumed.
  */
 function readAdditionClauses(input: {
     text: string;
@@ -684,8 +714,15 @@ function readAdditionClauses(input: {
     if (!input.readsCourtesy) {
         return additions;
     }
-    const isCourtesy = refinementCourtesy.reader(scopeInput.catalog, scopeInput.candidates);
-    return additions.filter((clause) => !isCourtesy(clause));
+    return additions.filter((clause) => !statesCourtesy(clause));
+}
+
+/**
+ * Whether a clause is exactly one entry of the closed courtesy list, read from its words outside the
+ * object names it states, so a clause naming an object is never courtesy.
+ */
+function statesCourtesy(clause: RefinementClause): boolean {
+    return refinementCourtesy.clauses.has(normalizePromptText(clause.masked).replace(LEADING_CONNECTOR, ''));
 }
 
 /**

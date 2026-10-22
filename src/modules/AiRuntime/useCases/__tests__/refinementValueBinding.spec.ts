@@ -3360,8 +3360,6 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 `Hi, ${RESTATED}`,
                 `Hello, ${RESTATED}`,
                 `Sorry, ${RESTATED}`,
-                `Oops, ${RESTATED}`,
-                `No wait, ${RESTATED}`,
                 `Alright, ${RESTATED}`,
                 `Cool, ${RESTATED}`,
                 `Yes please, ${RESTATED}`,
@@ -3384,6 +3382,9 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 [`${RESTATED} Undo that.`, 'rejected'],
                 [`${RESTATED} Unmuted.`, 'clarify'],
                 [`${RESTATED} Add it.`, 'rejected'],
+                // A retraction is no courtesy: the closed courtesy list asks it.
+                [`Oops, ${RESTATED}`, 'rejected'],
+                [`No wait, ${RESTATED}`, 'rejected'],
             ] as const;
             expect(
                 asking.map(([refinement]) => ({
@@ -3441,6 +3442,132 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     status: refineStoredCard(tempoCard, refinement, [tempo(bpm)]).status,
                 }))
             ).toEqual(tempoRows.map(([refinement]) => ({ refinement, status: 'rejected' })));
+        });
+    });
+
+    describe('courtesy, retractions and protections beside a full restatement', () => {
+        const TWO_CUTS_CARD = { prompt: 'turn Vocals down 3 dB and turn Snare down 2 dB', calls: P1_PLAN };
+        const RESTATED = 'turn Vocals down 2 dB and turn Snare down 2 dB';
+        const RESTATED_PLAN = [vocalsBy(-2), snareBy(-2)];
+        const RESTATED_COMMANDS = [
+            { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 },
+            { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+        ];
+        const readOf = (card: { prompt: string; calls: readonly ProviderCall[] }, refinement: string) => {
+            const result = refine(card, refinement, RESTATED_PLAN);
+            if (result.status === 'rejected') {
+                return { status: result.status, said: result.rejectionReason };
+            }
+            if (result.status === 'clarify') {
+                return { status: result.status, said: result.planningOutcome.questions.join(' ') };
+            }
+            return { status: result.status, said: commandsOf(result) };
+        };
+
+        it('asks a clause that withdraws or qualifies the change beside it rather than consuming it as courtesy', () => {
+            const rows = [
+                [`${RESTATED}, forget that`, 'forget that'],
+                [`${RESTATED}, scratch that`, 'scratch that'],
+                [`${RESTATED}, no`, 'no'],
+                [`${RESTATED}, wait`, 'wait'],
+                [`${RESTATED}, just kidding`, 'just kidding'],
+                [`${RESTATED}, oops`, 'oops'],
+                [`${RESTATED}, twice`, 'twice'],
+                [`${RESTATED}, again`, 'again'],
+                [`${RESTATED}, slightly`, 'slightly'],
+                [`${RESTATED}, half`, 'half'],
+                [`No wait, ${RESTATED}`, 'No wait'],
+                [`Actually no, ${RESTATED}`, 'Actually no'],
+                [`Oops, ${RESTATED}`, 'Oops'],
+            ] as const;
+            expect(rows.map(([refinement]) => ({ refinement, read: readOf(TWO_CUTS_CARD, refinement) }))).toEqual(
+                rows.map(([refinement, clause]) => ({
+                    refinement,
+                    read: {
+                        status: 'rejected',
+                        said: expect.stringContaining(`No proposed change answers "${clause}"`),
+                    },
+                }))
+            );
+        });
+
+        it('consumes only a whole clause of the closed courtesy list', () => {
+            const rows = [
+                `Hi, ${RESTATED}`,
+                `Hello, ${RESTATED}`,
+                `Hi there, ${RESTATED}`,
+                `Sorry, ${RESTATED}`,
+                `Alright, ${RESTATED}`,
+                `Cool, ${RESTATED}`,
+                `Yes please, ${RESTATED}`,
+                `${RESTATED}, pls`,
+                `${RESTATED}. Thank you very much.`,
+                `${RESTATED}, thanks so much`,
+                `${RESTATED}, thx`,
+                `${RESTATED}, if possible`,
+                `${RESTATED}, if you can`,
+                `${RESTATED}. That should be better.`,
+                `${RESTATED}. That's better.`,
+                `${RESTATED}, that's all`,
+                `${RESTATED}, that's it`,
+            ];
+            expect(rows.map((refinement) => ({ refinement, read: readOf(TWO_CUTS_CARD, refinement) }))).toEqual(
+                rows.map((refinement) => ({ refinement, read: { status: 'grounded', said: RESTATED_COMMANDS } }))
+            );
+        });
+
+        it('reads no seconds unit in a contraction, so "That\'s" never asks what the value should be', () => {
+            // "That's too much" names nothing and states no figure outside every closed list: it is an
+            // addition the restated batch does not answer, refused rather than consumed or asked.
+            expect(readOf(TWO_CUTS_CARD, `That's too much, ${RESTATED}`)).toEqual({
+                status: 'rejected',
+                said: expect.stringContaining(`No proposed change answers "That's too much"`),
+            });
+            expect(readOf(TWO_CUTS_CARD, `${RESTATED}, that's all`)).toEqual({
+                status: 'grounded',
+                said: RESTATED_COMMANDS,
+            });
+        });
+
+        it('consumes each closed protection form beside a full restatement of a card protecting the Drum Bus', () => {
+            const rows = [
+                `${RESTATED}, the Drum Bus untouched`,
+                `${RESTATED}, leave the Drum Bus untouched`,
+                `${RESTATED}, keep the Drum Bus the same`,
+                `${RESTATED}, the Drum Bus stays as is`,
+                `${RESTATED}, the Drum Bus remains unchanged`,
+                `${RESTATED}, the Drum Bus stays the same`,
+                `${RESTATED}, no changes to the Drum Bus`,
+                `${RESTATED}, no change to the Drum Bus`,
+                `${RESTATED}, everything else the same`,
+                `${RESTATED}, keep everything else the same`,
+                `${RESTATED}, the rest unchanged`,
+                `${RESTATED}, no changes to anything else`,
+                `${RESTATED}, all else as is`,
+            ];
+            expect(rows.map((refinement) => ({ refinement, read: readOf(P1_CARD, refinement) }))).toEqual(
+                rows.map((refinement) => ({ refinement, read: { status: 'grounded', said: RESTATED_COMMANDS } }))
+            );
+        });
+
+        it('a closed protection form naming an object off the card protects it through the chain', () => {
+            const result = refine(TWO_CUTS_CARD, `${RESTATED}, keep the Bass the same`, RESTATED_PLAN);
+
+            expect(result.status === 'grounded' ? result.groundingBasis?.protectedUnchanged : result).toEqual([
+                { id: 'track-bass', name: 'Bass' },
+            ]);
+        });
+
+        it('a closed protection form naming a pending object is still asked', () => {
+            const rows = [
+                `${RESTATED}, keep the Snare the same`,
+                `${RESTATED}, the Snare untouched`,
+                `${RESTATED}, the Snare stays as is`,
+                `${RESTATED}, no changes to the Snare`,
+            ];
+            expect(rows.map((refinement) => ({ refinement, status: readOf(P1_CARD, refinement).status }))).toEqual(
+                rows.map((refinement) => ({ refinement, status: 'clarify' }))
+            );
         });
     });
 
