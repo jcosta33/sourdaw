@@ -142,33 +142,20 @@
           }
         ]
       },
-      "push-checks": {
-        "name": "Push checks result",
+      "validation": {
+        "name": "Validation",
         "needs": "scope",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 5,
-        "permissions": {
-          "contents": "read",
-          "actions": "read"
-        },
-        "steps": [
-          {
-            "name": "Require a green push checks run",
-            "env": {
-              "GH_TOKEN": "${{ github.token }}",
-              "REPOSITORY": "${{ github.repository }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "PR_NUMBER": "${{ github.event.pull_request.number }}"
-            },
-            "run": "set -euo pipefail\ngh api \"repos/$REPOSITORY/actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100\" > \"$RUNNER_TEMP/push-checks.json\"\nverdict=$(jq -r --arg sha \"$HEAD_SHA\" --argjson pr \"$PR_NUMBER\" --arg repo \"$REPOSITORY\" '\n  [.workflow_runs[]?\n    | select(.head_sha == $sha and .event == \"pull_request\"\n        and .head_repository.full_name == $repo\n        and (.pull_requests | length == 1 and .[0].number == $pr))]\n  | max_by(.id) as $run\n  | if $run == null then \"missing\"\n    elif $run.status != \"completed\" then \"\\($run.status)\"\n    else ($run.conclusion // \"unknown\") end' \"$RUNNER_TEMP/push-checks.json\")\nif [ \"$verdict\" != \"success\" ]; then\n  echo \"::error title=Push checks not green::the newest PR checks run of pull request $PR_NUMBER for head $HEAD_SHA is $verdict (missing means none exists)\"\n  exit 1\nfi\n"
-          }
-        ]
+        "uses": "./.github/workflows/validation.yml",
+        "with": {
+          "browser": "${{ needs.scope.outputs.browser == 'true' }}",
+          "profile": "${{ needs.scope.outputs.profile }}"
+        }
       },
       "affected": {
         "name": "Affected workflows",
         "needs": [
           "scope",
-          "push-checks"
+          "validation"
         ],
         "uses": "./.github/workflows/heavy-gates.yml",
         "with": {
@@ -212,7 +199,7 @@
         "needs": [
           "admission",
           "scope",
-          "push-checks",
+          "validation",
           "affected",
           "codeql"
         ],
@@ -225,7 +212,7 @@
             "env": {
               "RESULTS": "${{ toJSON(needs) }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"push-checks\", \"scope\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .[\"push-checks\"].result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
       }

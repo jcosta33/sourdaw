@@ -4,8 +4,6 @@ name: PR checks
 # required: the required Gate, the affected browser matrix, Browser AI hardware
 # admission and CodeQL run in health-gates.yml once the reviewer App approves
 # the exact head, so pushes from many lanes no longer queue the heavy suite.
-# That Gate does not repeat this validation: it requires this workflow's newest
-# run for the same head to have succeeded.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]

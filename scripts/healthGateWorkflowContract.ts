@@ -105,7 +105,7 @@ const STATIC_SUITE_STEPS = [
     'Health gate infrastructure',
 ] as const;
 // Release provenance (tracked sets, licenses, trademark, asset digests) is
-// checked nightly and at the release cut, never on a pull request: a pull
+// checked nightly and by the release proof, never on a pull request: a pull
 // request that edits package.json must not need a restamp to pass.
 const NIGHTLY_STATIC_SUITE_STEPS = [
     ...STATIC_SUITE_STEPS.slice(0, STATIC_SUITE_STEPS.indexOf('Test collection scope')),
@@ -163,7 +163,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'health-gates.yml': {
         admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
         scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
-        'push-checks': ['Require a green push checks run'],
+        validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         gate: ['Require selected checks to succeed'],
