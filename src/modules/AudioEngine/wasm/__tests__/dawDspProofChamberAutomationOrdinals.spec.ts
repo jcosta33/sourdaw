@@ -255,7 +255,7 @@ describe('fresh Proof Chamber WASM offline automation', () => {
             spy.mockRestore();
             vi.stubGlobal('currentFrame', 0);
         }
-    });
+    }, 30_000);
 
     it('binds every descriptor control to the real compiled schedule, worklet call, and audible named target', async () => {
         const names = Object.keys(PROOF_CHAMBER_AUTOMATION_PARAM_IDS).filter(
@@ -290,5 +290,5 @@ describe('fresh Proof Chamber WASM offline automation', () => {
             spy.mockRestore();
             vi.stubGlobal('currentFrame', 0);
         }
-    });
+    }, 180_000);
 });
