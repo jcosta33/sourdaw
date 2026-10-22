@@ -1,0 +1,43 @@
+src/components/daw/visualizers/__tests__/CompressorCurve.spec.tsx
+  s_59e31a5c6f3e31::t_e08a0ee1e81404 102-122,132-147,152-156,159-212
+  s_59e31a5c6f3e31::t_15244c851b0fa7 123-131,148-151,157-158,213-225
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_03cbd85514c4dc 196-217,224,344,365,370,410,481,725,730
+  s_59e31a5c6f3e31::t_32d5b6096c003a 611-613,617-618,622-623,625-627,631-632,634-635,639-642,644-646,651-654,656-657,663-668,675-680,693-696,707-708
+  s_59e31a5c6f3e31::t_64a6896dd3a68a 488-499,501-502,506-510,516-541,543-548,561-564,582-584,587-590,596-599,603-605
+  s_59e31a5c6f3e31::t_720ffcbdc1ffc5 86-89,162-169,184-194,236-238,241-257,263-268,285-287,309-311
+  s_59e31a5c6f3e31::t_c3b74bc94792c9 1-85,90-161,170-183,195,218-223,225-235,239-240,258-262,269-284,288-308,312-330,334-343,345,353-364,366-369,371-374,386-391,396-398,401,406-409,413-414,417,421,426,429-433,436,446-447,451-454,457-462,487,500,503-505,511-515,542,549-560,565-581,585-586,591-595,600-602,606-610,614,619-621,636-638,643,647-650,655,658-660,662,669-674,681-685,691-692,697-702,706,709-721,724,726-729,731-732
+  s_59e31a5c6f3e31::t_ed701939667281 615-616,624,628-630,633,661
+  s_59e31a5c6f3e31::t_bfaec87157a3b7 331-333,346-352,375-385,392-395,399-400,402-405,411-412,418-420,422-425,434-435,437-445,448-450,455-456,468-478
+  s_59e31a5c6f3e31::t_ec21733c6356ec 415-416,427-428,463-467,479-480,482-486,686-690,703-705,722-723
+  s_59e31a5c6f3e31::t_a2cee3d569ff0a 733-750
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx
+  s_59e31a5c6f3e31::t_ed7e19808fc49b 20,25,28,34-42,50-53,56-59,64-71,75,80
+  s_59e31a5c6f3e31::t_ec21733c6356ec 10
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_ec21733c6356ec 1,10,27,181-186,188-195,214,379
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/CompressorLayout.spec.tsx
+  s_59e31a5c6f3e31::t_be8c211ff54914 4-5,26-27,45-52,119-132,138,150-158,166-170,180-181
+  s_59e31a5c6f3e31::t_15244c851b0fa7 133-137,139-149,159-165,171-179
+src/components/daw/visualizers/CompressorCurve.tsx
+  s_59e31a5c6f3e31::t_15244c851b0fa7 55-73,260,310,325,330
+  s_59e31a5c6f3e31::t_001f693998fa6d 10,22-33,82-84,87,251,259,261-274,276,283-292,298-299,309,311-312,317-318,322,326-329,344-345
+src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts
+  s_59e31a5c6f3e31::t_71294df4f9da18 1-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cda0f5e0099315054f68d4d24763e9d2d0384fef",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
