@@ -142,94 +142,6 @@
           }
         ]
       },
-      "selection-shadow": {
-        "name": "E2E selection shadow",
-        "needs": "scope",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
-        "steps": [
-          {
-            "name": "Checkout candidate head",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.head.sha }}",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout immutable integration commit",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.sha }}",
-              "path": "shadow-integration",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout immutable shadow control",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.base.sha }}",
-              "path": "shadow-control",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Download authoritative scope",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-            "with": {
-              "name": "pr-validation-scope",
-              "path": "shadow-scope"
-            }
-          },
-          {
-            "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
-            "with": {
-              "package_json_file": "shadow-control/package.json"
-            }
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "24.19.0",
-              "cache": "pnpm",
-              "cache-dependency-path": "shadow-control/pnpm-lock.yaml"
-            }
-          },
-          {
-            "name": "Install dependencies",
-            "working-directory": "shadow-control",
-            "run": "pnpm install --frozen-lockfile"
-          },
-          {
-            "name": "Measure shadow selection",
-            "env": {
-              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "INTEGRATION_SHA": "${{ github.sha }}",
-              "INTEGRATION_ROOT": "shadow-integration",
-              "CONTROL_ROOT": "shadow-control"
-            },
-            "run": "node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
-          },
-          {
-            "name": "Upload shadow measurement",
-            "if": "${{ always() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-            "with": {
-              "name": "e2e-selection-shadow",
-              "path": "e2e-selection-shadow.json",
-              "if-no-files-found": "error",
-              "retention-days": 7
-            }
-          }
-        ]
-      },
       "validation": {
         "name": "Validation",
         "needs": "scope",
@@ -2659,6 +2571,35 @@
           "opened",
           "synchronize",
           "reopened"
+        ],
+        "paths": [
+          ".cargo/config.toml",
+          ".github/workflows/wasm-artifacts.yml",
+          "Cargo.lock",
+          "Cargo.toml",
+          "crates/daw-dsp/**",
+          "crates/daw-io/**",
+          "crates/daw-wasm-decoder/**",
+          "crates/proof-chamber/**",
+          "crates/scoring/**",
+          "package.json",
+          "pnpm-lock.yaml",
+          "public/wasm/manifest.json",
+          "rust-toolchain.toml",
+          "scripts/gen-daw-dsp-worklet.ts",
+          "scripts/gen-proof-chamber-worklet.ts",
+          "scripts/gen-scoring-worklet.ts",
+          "scripts/gen-wasm-manifest.ts",
+          "scripts/hostedWasmArtifacts.ts",
+          "scripts/hostedWasmSourceContext.ts",
+          "scripts/hostedWasmZip.ts",
+          "scripts/markWasmPackageInternal.ts",
+          "scripts/strictJson.ts",
+          "scripts/verify-wasm-artifacts.ts",
+          "scripts/wasm-artifacts.ts",
+          "scripts/wasmToolchainPins.ts",
+          "scripts/workletPolyfills.ts",
+          "scripts/workspaceManifestFingerprint.ts"
         ]
       }
     },

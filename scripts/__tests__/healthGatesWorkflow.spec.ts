@@ -29,7 +29,6 @@ import {
     CONDITIONAL_STEP_ALLOWLIST,
     type ConditionalStepPin,
     HEALTH_GATE_WORKFLOW_FILES,
-    JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
@@ -51,6 +50,7 @@ import {
     SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
     SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME,
 } from '../semanticReviewWorkflowContract';
+import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -1673,19 +1673,10 @@ function assertShardMatrices(set: WorkflowSet): void {
 }
 
 // A job-level `permissions` block reshapes one leg's token away from the
-// workflow-level pin the permission assertions verify, and no pin read it:
-// `contents: write` on a validation leg would hand every pull request a token
-// that can push. The heavy and nightly files keep their own exact job-level
-// pins (CodeQL, the nightly reporter); these two files must grant nothing.
+// workflow-level pin: `contents: write` on a validation leg would hand every
+// pull request a token that can push.
 function assertNoJobLevelPermissions(set: WorkflowSet): void {
-    for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
-        for (const [jobId, jobValue] of Object.entries(recordAt(workflowByFile(set, file), 'jobs'))) {
-            const job = asRecord(jobValue, `${file} job ${jobId}`);
-            if (job.permissions !== undefined) {
-                throw new Error(`${file} job ${jobId} must inherit the workflow-level permissions`);
-            }
-        }
-    }
+    assertJobLevelPermissions(Object.fromEntries(workflowFiles(set)));
 }
 
 // A deleted step fails nothing: the job goes green having never run the
@@ -2519,6 +2510,15 @@ describe('health gates workflow contract', () => {
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
+        // The paths filter must stay exactly the plan's selection inputs: a
+        // dropped crate would stop a stale package from ever being rebuilt.
+        const narrowed = structuredClone(hostedWasm);
+        const narrowedTrigger = recordAt(recordAt(narrowed, 'on'), 'pull_request');
+        narrowedTrigger.paths = arrayAt(narrowedTrigger, 'paths').filter((path) => path !== 'crates/daw-io/**');
+        expect(() => assertHostedWasmWorkflow(narrowed)).toThrow('filtered to the selection inputs');
+        const unfiltered = structuredClone(hostedWasm);
+        delete recordAt(recordAt(unfiltered, 'on'), 'pull_request').paths;
+        expect(() => assertHostedWasmWorkflow(unfiltered)).toThrow('filtered to the selection inputs');
         const omitted = structuredClone(hostedWasm);
         removeStepNamed(jobAt(omitted, 'build-artifacts'), 'Build and qualify complete artifact');
         expect(() => assertHostedWasmWorkflow(omitted)).toThrow('complete ordered build steps');
@@ -4635,78 +4635,6 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('keeps a failed or missing E2E shadow artifact outside every required result', () => {
-        const health = workflowSet().health;
-        const shadow = jobAt(health, 'selection-shadow');
-        expect(shadow.needs).toBe('scope');
-        expect(shadow.outputs).toBeUndefined();
-        expect(shadow['continue-on-error']).toBeUndefined();
-        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual([
-            'admission',
-            'scope',
-            'validation',
-            'affected',
-            'codeql',
-        ]);
-        expect(jobAt(health, 'validation').needs).toBe('scope');
-        expect(jobAt(health, 'affected').needs).toEqual(['scope', 'validation']);
-        expect(stepNamed(shadow, 'Checkout candidate head').with).toEqual({
-            ref: '${{ github.event.pull_request.head.sha }}',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Checkout immutable integration commit').with).toEqual({
-            ref: '${{ github.sha }}',
-            path: 'shadow-integration',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Checkout immutable shadow control').with).toEqual({
-            ref: '${{ github.event.pull_request.base.sha }}',
-            path: 'shadow-control',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
-            name: 'pr-validation-scope',
-            path: 'shadow-scope',
-        });
-        expect(stepNamed(shadow, 'Set up pnpm').with).toEqual({ package_json_file: 'shadow-control/package.json' });
-        expect(stepNamed(shadow, 'Set up Node').with).toMatchObject({
-            'cache-dependency-path': 'shadow-control/pnpm-lock.yaml',
-        });
-        expect(stepNamed(shadow, 'Install dependencies')['working-directory']).toBe('shadow-control');
-        expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
-            name: 'e2e-selection-shadow',
-            'if-no-files-found': 'error',
-        });
-        expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
-        expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
-            'node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
-        );
-        expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
-            BASE_SHA: '${{ github.event.pull_request.base.sha }}',
-            HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
-            INTEGRATION_SHA: '${{ github.sha }}',
-            INTEGRATION_ROOT: 'shadow-integration',
-            CONTROL_ROOT: 'shadow-control',
-        });
-        const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
-        const required = JSON.stringify({
-            admission: { result: 'success', outputs: { admitted: 'true' } },
-            scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },
-            validation: { result: 'success' },
-            affected: { result: 'success' },
-            codeql: { result: 'skipped' },
-        });
-        expect(runResultsGuard(gateScript, required)).toBe(0);
-        const diagnosticAsNeed = structuredClone(health);
-        arrayAt(jobAt(diagnosticAsNeed, 'gate'), 'needs').push('selection-shadow');
-        expect(() => assertJobGraph({ ...workflowSet(), health: diagnosticAsNeed })).toThrow(
-            'gate must depend on exactly the pinned member list'
-        );
-    });
-
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
         expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
         expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
@@ -4934,6 +4862,130 @@ export -f sudo timeout sleep apt-get
         expect(() => assertStepInventory(deletedStep)).toThrow(
             'validation.yml job static steps drifted from the pinned inventory'
         );
+    });
+
+    it('pins every registered workflow security surface by name', () => {
+        const surface = (set: WorkflowSet) => () =>
+            assertWorkflowSecuritySurface(Object.fromEntries(workflowFiles(set)));
+        expect(surface(workflowSet())).not.toThrow();
+
+        // Each mutation below passed every other pin once the whole-file
+        // snapshot was gone; each must fail here on its own.
+        const widenedHeavyLeg = cloneWorkflows('widened heavy e2e permissions');
+        jobAt(widenedHeavyLeg.heavy, 'e2e').permissions = { contents: 'write' };
+        expect(surface(widenedHeavyLeg)).toThrow('heavy-gates.yml job e2e must inherit the workflow-level permissions');
+
+        const widenedReporter = cloneWorkflows('widened nightly reporter permissions');
+        recordAt(jobAt(widenedReporter.nightly, 'nightly-report'), 'permissions').contents = 'write';
+        expect(surface(widenedReporter)).toThrow(
+            'nightly.yml job nightly-report must keep exactly its pinned permissions'
+        );
+
+        const leakedStepSecret = cloneWorkflows('step secret on the scope job');
+        stepNamed(jobAt(leakedStepSecret.health, 'scope'), 'Plan affected checks').env = {
+            ...recordAt(stepNamed(jobAt(leakedStepSecret.health, 'scope'), 'Plan affected checks'), 'env'),
+            TOKEN: '${{ secrets.VERCEL_TOKEN }}',
+        };
+        expect(surface(leakedStepSecret)).toThrow(
+            'health-gates.yml job scope must read exactly its pinned secrets: none'
+        );
+
+        const jobToken = cloneWorkflows('job token on static');
+        jobAt(jobToken.validation, 'static').env = { GH_TOKEN: '${{ github.token }}' };
+        expect(surface(jobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
+
+        const spacedJobToken = cloneWorkflows('spaced job token on static');
+        jobAt(spacedJobToken.validation, 'static').env = { GH_TOKEN: '${{ GitHub . Token }}' };
+        expect(surface(spacedJobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
+
+        for (const wholeGithub of ['${{ github }}', "${{ join(github.*, ',') }}", "${{ format('{0}', github) }}"]) {
+            const wholeContext = cloneWorkflows(`whole github context ${wholeGithub}`);
+            jobAt(wholeContext.validation, 'static').env = { CONTEXT: wholeGithub };
+            expect(surface(wholeContext), wholeGithub).toThrow(
+                'validation.yml job static must read exactly its pinned secrets: none'
+            );
+        }
+        const fieldRead = cloneWorkflows('github field read on static');
+        jobAt(fieldRead.validation, 'static').env = {
+            HEAD: '${{ github.event.pull_request.head.sha }}',
+            REPOSITORY: '${{ github.repository }}',
+        };
+        expect(surface(fieldRead)).not.toThrow();
+
+        const upperCaseContext = cloneWorkflows('upper-case secrets context on static');
+        jobAt(upperCaseContext.validation, 'static').env = { TOKEN: '${{ SECRETS.VERCEL_TOKEN }}' };
+        expect(surface(upperCaseContext)).toThrow(
+            'validation.yml job static must read exactly its pinned secrets: none'
+        );
+
+        const leakedWorkflowSecret = cloneWorkflows('workflow-level secret');
+        leakedWorkflowSecret.validation.env = { TOKEN: '${{ secrets.VERCEL_TOKEN }}' };
+        expect(surface(leakedWorkflowSecret)).toThrow('validation.yml must not read a secret outside a pinned job');
+
+        const wholeContext = cloneWorkflows('whole secrets context');
+        jobAt(wholeContext.heavy, 'heavy-gate').if = 'always() && toJSON(secrets) != null';
+        expect(surface(wholeContext)).toThrow(
+            'heavy-gates.yml job heavy-gate must read exactly its pinned secrets: none'
+        );
+
+        const extraDeploySecret = cloneWorkflows('extra deploy secret');
+        jobAt(extraDeploySecret.nightly, 'deploy-web').env = { EXTRA: '${{ secrets.JEV_KEY }}' };
+        expect(surface(extraDeploySecret)).toThrow('nightly.yml job deploy-web must read exactly its pinned secrets');
+
+        const inheritedSecrets = cloneWorkflows('secrets inherited by validation');
+        jobAt(inheritedSecrets.prChecks, 'validation').secrets = 'inherit';
+        expect(surface(inheritedSecrets)).toThrow(
+            'pr-checks.yml job validation must not pass secrets to a reusable workflow'
+        );
+
+        const environment = cloneWorkflows('environment on a validation leg');
+        jobAt(environment.validation, 'build').environment = 'Production';
+        expect(surface(environment)).toThrow('validation.yml job build must not name a deployment environment');
+
+        const credentialedDeploy = cloneWorkflows('credentialed deploy checkout');
+        delete recordAt(
+            stepNamed(jobAt(credentialedDeploy.nightly, 'deploy-web'), 'Checkout the validated revision'),
+            'with'
+        )['persist-credentials'];
+        expect(surface(credentialedDeploy)).toThrow(
+            'nightly.yml job deploy-web step Checkout the validated revision must check out with persist-credentials: false'
+        );
+
+        const floatingAction = cloneWorkflows('floating action ref on lint');
+        stepNamed(jobAt(floatingAction.validation, 'lint'), 'Set up pnpm').uses = 'some-org/action-setup@main';
+        expect(surface(floatingAction)).toThrow(
+            'validation.yml job lint must pin "some-org/action-setup@main" to a full commit SHA or a ./ path inside the repository'
+        );
+
+        const escapingLocalAction = cloneWorkflows('local action escaping the repository');
+        stepNamed(jobAt(escapingLocalAction.validation, 'lint'), 'Set up pnpm').uses = './../../evil';
+        expect(surface(escapingLocalAction)).toThrow(
+            'validation.yml job lint must pin "./../../evil" to a full commit SHA or a ./ path inside the repository'
+        );
+
+        const computedGate = cloneWorkflows('computed Gate name on push checks');
+        jobAt(computedGate.prChecks, 'scope').name = "${{ 'Ga' }}te";
+        expect(surface(computedGate)).toThrow(
+            'pr-checks.yml job scope must not compute its check name from an expression'
+        );
+
+        const computedShardName = cloneWorkflows('matrix-driven name change');
+        jobAt(computedShardName.validation, 'unit').name = '${{ matrix.shard }}';
+        expect(surface(computedShardName)).toThrow(
+            'validation.yml job unit must not compute its check name from an expression'
+        );
+
+        const emptyNamedGate = cloneWorkflows('empty-named Gate-keyed nightly job');
+        recordAt(emptyNamedGate.nightly, 'jobs').Gate = {
+            name: '',
+            'runs-on': 'ubuntu-latest',
+            steps: [{ name: 'Pass', run: 'true' }],
+        };
+        expect(surface(emptyNamedGate)).toThrow('nightly.yml job Gate must not be named Gate');
+
+        const secondGate = cloneWorkflows('second Gate in health gates');
+        jobAt(secondGate.health, 'admission').name = 'Gate';
+        expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
     });
 
     it('refuses a workflows directory that drifts from the recorded file inventory', () => {

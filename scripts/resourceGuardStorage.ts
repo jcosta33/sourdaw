@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { resolvePrimaryRoot } from './githubAppIdentity.ts';
 
-export const DEFAULT_DISK_RESERVE_BYTES = 20 * 1024 ** 3;
+export const DEFAULT_DISK_RESERVE_BYTES = 5 * 1024 ** 3;
 export const DISK_RESERVE_ENV = 'SOURDAW_GUARD_DISK_RESERVE_MIB';
 
 // startTicks is the Linux /proc start time, recorded for the supervisor that creates storage so a

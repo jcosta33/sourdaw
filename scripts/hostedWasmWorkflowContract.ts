@@ -3,7 +3,29 @@
  * both health-gate harnesses beside the registered workflows' structural pins.
  */
 
+import { relative } from 'node:path';
+
 import { STEP_INVENTORY } from './healthGateWorkflowContract.ts';
+import { generators, sharedInputs } from './hostedWasmArtifacts.ts';
+import { wasmArtifacts } from './wasm-artifacts.ts';
+
+/**
+ * Every path whose change can make the plan select or refuse a package: the shared generation
+ * inputs, each generator, the committed manifest, the workspace manifest and lockfile the closure
+ * hash reads, and every crate in a package's path-dependency closure. A pull request touching none
+ * of them plans no work, so the workflow's `paths` filter keeps it from starting at all.
+ */
+export function hostedWasmTriggerPaths(): string[] {
+    const crateDirs = new Set(wasmArtifacts.packages.flatMap((spec) => wasmArtifacts.pathDepClosure(spec.crateDir)));
+    return [
+        ...sharedInputs,
+        ...Object.values(generators),
+        relative(wasmArtifacts.repoRoot, wasmArtifacts.manifestPath),
+        'Cargo.toml',
+        'Cargo.lock',
+        ...Array.from(crateDirs, (dir) => `${dir}/**`),
+    ].sort();
+}
 
 function readHostedWasmWorkflowMapping(candidate: unknown): Record<string, unknown> {
     if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
@@ -54,8 +76,14 @@ export function assertHostedWasmWorkflow(value: unknown): void {
     const workflow = readHostedWasmWorkflowMapping(value);
     requireHostedWasmEqual(
         workflow.on,
-        { pull_request: { branches: ['main'], types: ['opened', 'synchronize', 'reopened'] } },
-        'the unprivileged PR trigger'
+        {
+            pull_request: {
+                branches: ['main'],
+                types: ['opened', 'synchronize', 'reopened'],
+                paths: hostedWasmTriggerPaths(),
+            },
+        },
+        'the unprivileged PR trigger filtered to the selection inputs'
     );
     requireHostedWasmEqual(workflow.permissions, { contents: 'read' }, 'read-only contents permission');
     requireHostedWasmEqual(
