@@ -235,7 +235,10 @@ describe('live store edits on the existing writer pass', () => {
     // At origin .02, the compiled step is .05 - .02 = .030000000000000002,
     // past the .03 slew tick, so movement starts at absolute frame 2880.
     // At origin 0, the .05 tick reaches the step at frame 2400.
-    function editedTrajectory(seedFrame: number, firstMovingFrame: number): readonly { frame: number; value: number }[] {
+    function editedTrajectory(
+        seedFrame: number,
+        firstMovingFrame: number
+    ): readonly { frame: number; value: number }[] {
         const deliveredTicks = [...Array.from({ length: 17 }, (_, index) => index + 1), 19];
         return [
             { frame: seedFrame, value: 0.1 },
