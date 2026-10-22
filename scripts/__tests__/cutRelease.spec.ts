@@ -44,6 +44,7 @@ type Overrides = {
     releaseTarget?: string;
     draft?: boolean;
     releaseId?: number;
+    inventoryError?: string;
 };
 
 function fakePort(overrides: Overrides = {}): CutReleasePort & { calls: string[]; notes: string[] } {
@@ -58,6 +59,12 @@ function fakePort(overrides: Overrides = {}): CutReleasePort & { calls: string[]
         commitIsOnMain: () => overrides.onMain ?? true,
         manifestVersionAt: () => overrides.manifestVersion ?? '0.3.0',
         changelogAt: () => overrides.changelog ?? changelogFor('0.3.0', range),
+        assertReleaseInventoryAt: (target) => {
+            calls.push(`inventory:${target}`);
+            if (overrides.inventoryError !== undefined) {
+                throw new Error(overrides.inventoryError);
+            }
+        },
         mergedPullRequests: () => overrides.range ?? range,
         releasePullRequestAt: () => ('releasePullRequest' in overrides ? overrides.releasePullRequest : 99),
         createTag: (tag, target, message) => {
@@ -107,6 +114,7 @@ describe('cutting a release', () => {
         const port = fakePort();
         expect(cut(port)).toBe(`release-cut:v0.3.0:${commit}`);
         expect(port.calls).toEqual([
+            `inventory:${commit}`,
             `createTag:v0.3.0:${commit}:${releaseTagMessage('v0.3.0')}`,
             `createRelease:v0.3.0:${commit}`,
             `log:release-cut:v0.3.0:${commit}`,
@@ -202,6 +210,12 @@ describe('cut refusals', () => {
         const port = fakePort({ changelog: changelogFor('0.3.0', [range[0] as MergedPullRequest]) });
         expect(() => cut(port)).toThrow('does not match the notes for the v0.3.0 range');
         expect(port.calls).toEqual([]);
+    });
+
+    it('refuses a revision whose release inventory fails, before any tag or release exists', () => {
+        const port = fakePort({ inventoryError: 'trademark digest drifted' });
+        expect(() => cut(port)).toThrow('trademark digest drifted');
+        expect(port.calls).toEqual([`inventory:${commit}`]);
     });
 
     it('refuses a tag receipt whose ref does not point at the tag object it just created', () => {

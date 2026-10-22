@@ -3,9 +3,10 @@ name: Health gates
 # Only pull_request may mint Gate. GitHub accepts skipped required checks, so
 # approval, schedule and dispatch must never create another Gate on this head.
 # Every selected check finishes before this required aggregate can succeed.
-# Pushes run only the cheap pr-checks.yml; this heavy run starts when a label is
-# added, and admission lets it proceed only for the reviewer App's approval
-# label on its approval of this exact head. Any other label event still ends
+# Pushes run only the cheap pr-checks.yml, whose verdict this run reuses; it
+# runs only the heavy checks. It starts when a label is added, and admission
+# lets it proceed only for the reviewer App's approval label on its approval
+# of this exact head. Any other label event still ends
 # in a failing Gate that names the reason, never a skipped one. review:publish
 # applies the label after its publication lock is released; if that write
 # fails, a plain review:publish re-run replays the review and re-applies it.
@@ -106,18 +107,43 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  validation:
-    name: Validation
+  # The cheap validation lane already ran on this exact head in pr-checks.yml,
+  # so Gate reuses that verdict instead of running validation.yml a second
+  # time. The job reads the head's newest PR checks run through the API with a
+  # read-only token and fails unless it is completed and successful: a missing,
+  # running, cancelled or red run refuses the head rather than passing it.
+  push-checks:
+    name: Push checks result
     needs: scope
-    uses: ./.github/workflows/validation.yml
-    with:
-      browser: ${{ needs.scope.outputs.browser == 'true' }}
-      profile: ${{ needs.scope.outputs.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require a green push checks run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" > "$RUNNER_TEMP/push-checks.json"
+          verdict=$(jq -r --arg sha "$HEAD_SHA" '
+            [.workflow_runs[]? | select(.head_sha == $sha and .event == "pull_request")]
+            | max_by(.id) as $run
+            | if $run == null then "missing"
+              elif $run.status != "completed" then "\($run.status)"
+              else ($run.conclusion // "unknown") end' "$RUNNER_TEMP/push-checks.json")
+          if [ "$verdict" != "success" ]; then
+            echo "::error title=Push checks not green::the newest PR checks run for head $HEAD_SHA is $verdict (missing means none exists)"
+            exit 1
+          fi
 
   affected:
     name: Affected workflows
-    # Run browser and hardware checks only after the faster required validation succeeds.
-    needs: [scope, validation]
+    # Run browser and hardware checks only after the faster push checks are known green.
+    needs: [scope, push-checks]
     uses: ./.github/workflows/heavy-gates.yml
     with:
       matrix: ${{ needs.scope.outputs.matrix }}
@@ -152,7 +178,7 @@ jobs:
     needs:
       - admission
       - scope
-      - validation
+      - push-checks
       - affected
       - codeql
     runs-on: ubuntu-latest
@@ -168,9 +194,9 @@ jobs:
             if .admission.result == "success" and .admission.outputs.admitted == "true" then empty
             else "::error title=Gate not admitted::\(.admission.outputs.reason // "approval admission did not decide")" end'
           printf '%s' "$RESULTS" | jq -e '
-            (keys | sort) == ["admission", "affected", "codeql", "scope", "validation"] and
+            (keys | sort) == ["admission", "affected", "codeql", "push-checks", "scope"] and
             .admission.result == "success" and .admission.outputs.admitted == "true" and
-            .scope.result == "success" and .validation.result == "success" and .affected.result == "success" and
+            .scope.result == "success" and .["push-checks"].result == "success" and .affected.result == "success" and
             (.scope.outputs.browser == "true" or .scope.outputs.browser == "false") and
             (.scope.outputs["browser-ai"] == "true" or .scope.outputs["browser-ai"] == "false") and
             (if .scope.outputs.codeql == "true" then .codeql.result == "success"

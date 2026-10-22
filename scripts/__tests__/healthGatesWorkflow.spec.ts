@@ -241,7 +241,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['admission', 'scope', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['admission', 'scope', 'push-checks', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -823,7 +823,9 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
         }
     }
     if (jobAt(candidate, 'static').if !== undefined) {
-        throw new Error('release inventory answers to prose changes, so static must stay unconditional');
+        throw new Error(
+            'wasm freshness and the script contracts answer to prose-classified changes, so static must stay unconditional'
+        );
     }
 }
 
@@ -1741,7 +1743,7 @@ function withWorkflowFiles(files: readonly string[]): () => void {
 // and dropping `security-events: write` would fail the upload on the head.
 function assertRequiredCodeQlPermissions(candidate: UnknownRecord): void {
     for (const [jobId, value] of Object.entries(recordAt(candidate, 'jobs'))) {
-        if (jobId !== 'codeql' && asRecord(value, jobId).permissions !== undefined) {
+        if (!['codeql', 'push-checks'].includes(jobId) && asRecord(value, jobId).permissions !== undefined) {
             throw new Error(`the ${jobId} job must inherit read-only workflow permissions`);
         }
     }
@@ -1795,6 +1797,41 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
     }
 }
 
+const PUSH_VALIDATION_INPUTS = {
+    browser: "${{ needs.scope.outputs.browser == 'true' }}",
+    profile: '${{ needs.scope.outputs.profile }}',
+};
+const PUSH_CHECKS_STEP = 'Require a green push checks run';
+
+// The admitted run does not repeat validation.yml: it reads the head's newest
+// pr-checks.yml run and fails closed unless that run completed successfully.
+function assertPushChecksJob(health: UnknownRecord): void {
+    const job = jobAt(health, 'push-checks');
+    if (job.needs !== 'scope' || job.if !== undefined) {
+        throw new Error('the push checks result must be read on every admitted pull request');
+    }
+    if (job.uses !== undefined || job['continue-on-error'] !== undefined) {
+        throw new Error('the push checks result must be a plain job that fails rather than warns');
+    }
+    if (JSON.stringify(job.permissions) !== JSON.stringify({ contents: 'read', actions: 'read' })) {
+        throw new Error('the push checks result must hold read-only contents and actions permissions');
+    }
+    const step = stepNamed(job, PUSH_CHECKS_STEP);
+    const run = stringAt(step, 'run');
+    if (
+        !run.includes('actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request') ||
+        !run.includes('max_by(.id)') ||
+        !run.includes('if [ "$verdict" != "success" ]; then') ||
+        !run.includes('exit 1')
+    ) {
+        throw new Error('the push checks result must require the newest pr-checks run of the head to have succeeded');
+    }
+    const env = recordAt(step, 'env');
+    if (env.HEAD_SHA !== '${{ github.event.pull_request.head.sha }}') {
+        throw new Error('the push checks result must read the event head SHA');
+    }
+}
+
 function assertJobGraph(set: WorkflowSet): void {
     assertRequiredScopePlan(set.health);
     const dependencyReview = jobAt(set.validation, 'dependency-review');
@@ -1805,17 +1842,9 @@ function assertJobGraph(set: WorkflowSet): void {
         throw new Error('dependency review action must remain pinned');
     }
     const health = set.health;
-    if (jobAt(health, 'validation').uses !== VALIDATION_CALL || jobAt(health, 'validation').needs !== 'scope') {
-        throw new Error('required validation must consume the affected scope');
-    }
-    if (jobAt(health, 'validation').if !== undefined) {
-        throw new Error('required validation must run on every pull request');
-    }
-    if (
-        recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}" ||
-        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}'
-    ) {
-        throw new Error('required browser smoke must consume the affected scope');
+    assertPushChecksJob(health);
+    if ('validation' in recordAt(health, 'jobs')) {
+        throw new Error('the admitted run must reuse the push checks result instead of repeating validation');
     }
     const browserInput = recordAt(recordAt(recordAt(set.validation, 'on'), 'workflow_call'), 'inputs');
     if (
@@ -1831,9 +1860,9 @@ function assertJobGraph(set: WorkflowSet): void {
     const affected = jobAt(health, 'affected');
     if (
         affected.uses !== './.github/workflows/heavy-gates.yml' ||
-        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation'])
+        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'push-checks'])
     ) {
-        throw new Error('required affected E2E must wait for scope and successful validation');
+        throw new Error('required affected E2E must wait for scope and the green push checks');
     }
     if (
         recordAt(affected, 'with').matrix !== '${{ needs.scope.outputs.matrix }}' ||
@@ -1864,9 +1893,9 @@ function assertJobGraph(set: WorkflowSet): void {
     if (
         pushValidation.uses !== VALIDATION_CALL ||
         pushValidation.needs !== 'scope' ||
-        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
+        JSON.stringify(pushValidation.with) !== JSON.stringify(PUSH_VALIDATION_INPUTS)
     ) {
-        throw new Error('push validation must consume the affected scope exactly as the required lane does');
+        throw new Error('push validation must consume the affected browser and profile scope');
     }
 }
 
@@ -3500,7 +3529,7 @@ describe('health gates workflow contract', () => {
         );
         jobAt(conditionalInventory, 'static').if = CODE_CONDITION;
         expect(() => assertProseSkippingJobs(conditionalInventory)).toThrow(
-            'release inventory answers to prose changes, so static must stay unconditional'
+            'wasm freshness and the script contracts answer to prose-classified changes, so static must stay unconditional'
         );
 
         const alwaysLinting = asRecord(structuredClone(validationWorkflow), 'unconditional lint validationWorkflow');
@@ -3590,7 +3619,6 @@ describe('health gates workflow contract', () => {
         for (const name of [
             'Script types',
             'Format',
-            'Release inventory',
             'Release proof',
             'Agent delivery scripts',
             'Health gate infrastructure',
@@ -4557,15 +4585,15 @@ export -f sudo timeout sleep apt-get
         arrayAt(jobAt(widenedSummary.health, 'gate'), 'needs').push('nightly-report');
         expect(() => assertJobGraph(widenedSummary)).toThrow('gate must depend on exactly the pinned member list');
 
-        const ungatedValidation = cloneWorkflows('ungated validation');
-        const ungatedNeeds = arrayAt(jobAt(ungatedValidation.health, 'gate'), 'needs');
-        ungatedNeeds.splice(ungatedNeeds.indexOf('validation'), 1);
-        expect(() => assertJobGraph(ungatedValidation)).toThrow('gate must depend on validation');
+        const ungatedPushChecks = cloneWorkflows('ungated push checks');
+        const ungatedNeeds = arrayAt(jobAt(ungatedPushChecks.health, 'gate'), 'needs');
+        ungatedNeeds.splice(ungatedNeeds.indexOf('push-checks'), 1);
+        expect(() => assertJobGraph(ungatedPushChecks)).toThrow('gate must depend on push-checks');
 
         const disconnectedAffected = cloneWorkflows('disconnected affected E2E');
-        jobAt(disconnectedAffected.health, 'affected').needs = 'validation';
+        jobAt(disconnectedAffected.health, 'affected').needs = 'push-checks';
         expect(() => assertJobGraph(disconnectedAffected)).toThrow(
-            'required affected E2E must wait for scope and successful validation'
+            'required affected E2E must wait for scope and the green push checks'
         );
 
         const unselectedCodeql = cloneWorkflows('unselected CodeQL');
@@ -4574,9 +4602,17 @@ export -f sudo timeout sleep apt-get
             'required CodeQL must answer to the selected security scope'
         );
 
-        const gatedPushLane = cloneWorkflows('gated push lane');
-        jobAt(gatedPushLane.health, 'validation').if = 'false';
-        expect(() => assertJobGraph(gatedPushLane)).toThrow('required validation must run on every pull request');
+        const gatedPushChecks = cloneWorkflows('gated push checks result');
+        jobAt(gatedPushChecks.health, 'push-checks').if = 'false';
+        expect(() => assertJobGraph(gatedPushChecks)).toThrow(
+            'the push checks result must be read on every admitted pull request'
+        );
+
+        const repeatedValidation = cloneWorkflows('repeated validation in the admitted run');
+        recordAt(repeatedValidation.health, 'jobs').validation = { uses: VALIDATION_CALL, needs: 'scope' };
+        expect(() => assertJobGraph(repeatedValidation)).toThrow(
+            'the admitted run must reuse the push checks result instead of repeating validation'
+        );
 
         // A leg dropped out of the shared lane leaves the required Gate without
         // failing anything: the summary still passes, on less evidence.
@@ -4584,14 +4620,22 @@ export -f sudo timeout sleep apt-get
         delete recordAt(strippedLane.validation, 'jobs').unit;
         expect(() => assertJobGraph(strippedLane)).toThrow('validation.yml must hold exactly the pinned job list');
 
-        const inlinedLane = cloneWorkflows('inlined lane');
-        delete jobAt(inlinedLane.health, 'validation').uses;
-        expect(() => assertJobGraph(inlinedLane)).toThrow('required validation must consume the affected scope');
+        const writablePushChecks = cloneWorkflows('writable push checks token');
+        recordAt(jobAt(writablePushChecks.health, 'push-checks'), 'permissions').actions = 'write';
+        expect(() => assertJobGraph(writablePushChecks)).toThrow(
+            'the push checks result must hold read-only contents and actions permissions'
+        );
+
+        const unverifiedPushChecks = cloneWorkflows('push checks that never fail');
+        stepNamed(jobAt(unverifiedPushChecks.health, 'push-checks'), PUSH_CHECKS_STEP).run = 'exit 0';
+        expect(() => assertJobGraph(unverifiedPushChecks)).toThrow(
+            'the push checks result must require the newest pr-checks run of the head to have succeeded'
+        );
 
         const wrongBrowserScope = cloneWorkflows('wrong browser scope');
-        recordAt(jobAt(wrongBrowserScope.health, 'validation'), 'with').browser = false;
+        recordAt(jobAt(wrongBrowserScope.prChecks, 'validation'), 'with').browser = false;
         expect(() => assertJobGraph(wrongBrowserScope)).toThrow(
-            'required browser smoke must consume the affected scope'
+            'push validation must consume the affected browser and profile scope'
         );
 
         const renamedHeavySummary = cloneWorkflows('renamed heavy summary');
@@ -4633,6 +4677,115 @@ export -f sudo timeout sleep apt-get
             jobAt(softenedJob[wiring.workflow], suite)['continue-on-error'] = true;
             expect(() => assertJobGraph(softenedJob)).toThrow(`${suite} must not use job-level continue-on-error`);
         }
+    });
+
+    it('keeps release provenance out of pull-request validation and in the nightly train', () => {
+        const validationStatic = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
+        const nightlyStatic = jobSteps('nightly.yml', 'static', jobAt(nightly, 'static'));
+        expect(validationStatic.map((step) => step.name)).not.toContain('Release inventory');
+        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(stringAt(stepNamed(jobAt(nightly, 'static'), 'Release inventory'), 'run')).toBe(
+            'pnpm test:release-inventory'
+        );
+        expect(stepNamed(jobAt(nightly, 'static'), 'Release inventory').if).toBeUndefined();
+        for (const workflowText of [
+            readFileSync(join(repositoryRoot, '.github/workflows/validation.yml'), 'utf8'),
+            readFileSync(join(repositoryRoot, '.github/workflows/pr-checks.yml'), 'utf8'),
+            readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8'),
+        ]) {
+            expect(workflowText).not.toMatch(/^\s+run: .*test:release-inventory/mu);
+        }
+
+        // Mutation: restoring the inventory step to pull-request validation (or
+        // dropping it from the nightly train) drifts from the pinned inventory.
+        const restored = cloneWorkflows('release inventory restored to validation');
+        const staticSteps = arrayAt(jobAt(restored.validation, 'static'), 'steps');
+        staticSteps.splice(staticSteps.length - 1, 0, {
+            name: 'Release inventory',
+            run: 'pnpm test:release-inventory',
+        });
+        expect(() => assertStepInventory(restored)).toThrow('validation.yml job static steps drifted');
+
+        const dropped = cloneWorkflows('release inventory dropped from nightly');
+        removeStepNamed(jobAt(dropped.nightly, 'static'), 'Release inventory');
+        expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
+    });
+
+    describe('the admitted run reuses the push checks result', () => {
+        const pushChecksRun = stringAt(stepNamed(jobAt(workflow, 'push-checks'), PUSH_CHECKS_STEP), 'run');
+        const HEAD = 'a'.repeat(40);
+
+        function runPushChecks(response: unknown): {
+            status: number | null;
+            stderr: string;
+            stdout: string;
+        } {
+            const directory = mkdtempSync(join(tmpdir(), 'sourdaw-push-checks-'));
+            try {
+                writeFileSync(join(directory, 'response.json'), JSON.stringify(response));
+                writeFileSync(
+                    join(directory, 'gh'),
+                    response === 'gh-fails'
+                        ? '#!/bin/sh\nexit 22\n'
+                        : `#!/bin/sh\nprintf '%s\\n' "$*" > "${directory}/gh-args"\ncat "${directory}/response.json"\n`,
+                    { mode: 0o755 }
+                );
+                const result = spawnSync('bash', ['-c', pushChecksRun], {
+                    cwd: directory,
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        HEAD_SHA: HEAD,
+                        REPOSITORY: 'owner/repository',
+                        RUNNER_TEMP: directory,
+                        PATH: `${directory}${delimiter}${process.env.PATH ?? ''}`,
+                    },
+                    timeout: 10_000,
+                });
+                expect(result.error).toBeUndefined();
+                return { status: result.status, stderr: result.stderr, stdout: result.stdout };
+            } finally {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        }
+
+        const run = (id: number, status: string, conclusion: string | null, headSha = HEAD) => ({
+            id,
+            head_sha: headSha,
+            event: 'pull_request',
+            status,
+            conclusion,
+        });
+
+        it('passes only when the newest run of the head completed successfully', () => {
+            expect(runPushChecks({ workflow_runs: [run(7, 'completed', 'success')] }).status).toBe(0);
+            // An older red run of the same head is superseded by a newer green one.
+            expect(
+                runPushChecks({ workflow_runs: [run(5, 'completed', 'failure'), run(7, 'completed', 'success')] })
+                    .status
+            ).toBe(0);
+        });
+
+        it('refuses a missing, running, cancelled or red run, and an unreadable answer', () => {
+            for (const response of [
+                { workflow_runs: [] },
+                { total_count: 0 },
+                { workflow_runs: [run(7, 'completed', 'success', 'b'.repeat(40))] },
+                { workflow_runs: [run(7, 'in_progress', null)] },
+                { workflow_runs: [run(7, 'queued', null)] },
+                { workflow_runs: [run(7, 'completed', 'failure')] },
+                { workflow_runs: [run(7, 'completed', 'cancelled')] },
+                { workflow_runs: [run(7, 'completed', 'skipped')] },
+                // A green older run never outvotes a newer run that has not finished or has failed.
+                { workflow_runs: [run(5, 'completed', 'success'), run(7, 'in_progress', null)] },
+                { workflow_runs: [run(5, 'completed', 'success'), run(7, 'completed', 'failure')] },
+                'gh-fails',
+            ] as const) {
+                const result = runPushChecks(response);
+                expect(result.status, JSON.stringify(response)).not.toBe(0);
+            }
+            expect(runPushChecks({ workflow_runs: [] }).stdout).toContain('Push checks not green');
+        });
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
@@ -5610,13 +5763,13 @@ export -f sudo timeout sleep apt-get
                     result: overrides.scope ?? 'success',
                     outputs: { browser: 'true', 'browser-ai': 'false', codeql },
                 },
-                validation: { result: overrides.validation ?? 'success' },
+                'push-checks': { result: overrides['push-checks'] ?? 'success' },
                 affected: { result: overrides.affected ?? 'success' },
                 codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
             });
         expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
-        for (const dependency of ['admission', 'scope', 'validation', 'affected', 'codeql']) {
+        for (const dependency of ['admission', 'scope', 'push-checks', 'affected', 'codeql']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
                 expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }
@@ -5628,7 +5781,7 @@ export -f sudo timeout sleep apt-get
                 outputs: { admitted: 'false', reason: 'the reviewer App has not approved head abc' },
             },
             scope: { result: 'skipped', outputs: {} },
-            validation: { result: 'skipped' },
+            'push-checks': { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         });

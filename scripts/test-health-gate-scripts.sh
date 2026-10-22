@@ -400,7 +400,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['admission', 'scope', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['admission', 'scope', 'push-checks', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -554,18 +554,16 @@ for (const exportName of ['heavy', 'rust', 'server', 'e2e', 'web', 'code', 'tool
         `the ${exportName} caller output must forward jobs.decide.outputs.${exportName}`
     );
 }
-expect(workflow.jobs?.validation?.uses === './.github/workflows/validation.yml', 'the PR workflow must call shared validation');
-expect(workflow.jobs?.validation?.needs === 'scope', 'validation must wait for selected scope');
-expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.browser == 'true' }}", 'validation smoke must use selected browser scope');
-expect(workflow.jobs?.validation?.with?.profile === '${{ needs.scope.outputs.profile }}', 'validation must use selected profile');
+expect(workflow.jobs?.validation === undefined, 'the admitted run must not repeat shared validation');
+expect(workflow.jobs?.['push-checks']?.needs === 'scope', 'push checks result must wait for selected scope');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
-expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation']),
-    'selected browser checks must wait for scope and successful validation');
+expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'push-checks']),
+    'selected browser checks must wait for scope and the green push checks');
 expect(workflow.jobs?.affected?.with?.matrix === '${{ needs.scope.outputs.matrix }}', 'selected browser checks must use scope matrix');
 expect(workflow.jobs?.affected?.with?.['browser-ai'] === "${{ needs.scope.outputs.browser-ai == 'true' }}", 'hardware proof must use selected scope');
 expect(
-    workflow.jobs?.validation?.if === undefined,
-    'the health validation lane must run on every pull request'
+    workflow.jobs?.['push-checks']?.if === undefined,
+    'the push checks result must be read on every admitted pull request'
 );
 expect(
     concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
@@ -659,7 +657,7 @@ expect(
     lint?.if === "needs.decide.outputs.code == 'true'" && boundaries?.if === "needs.decide.outputs.code == 'true'",
     'lint and boundaries must skip a head that carries only prose'
 );
-expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
+expect(staticJob?.if === undefined, 'static must stay unconditional so wasm freshness and script contracts observe prose-classified changes too');
 // The four scope conditions no other pin reads. Each is the whole definition
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
@@ -823,7 +821,7 @@ expect(
     'the required CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
 );
 for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
-    if (jobId !== 'codeql') {
+    if (jobId !== 'codeql' && jobId !== 'push-checks') {
         expect(job?.permissions === undefined, `required ${jobId} must inherit read-only workflow permissions`);
     }
 }
@@ -1298,7 +1296,7 @@ expect(expectedValidationJobs.includes('unit'), 'unit suite must stay inside the
 expect(gateNeeds.includes('affected') && gateNeeds.includes('codeql'), 'selected browser and CodeQL checks must decide Gate');
 expect(
     gateRun.includes('.scope.result == "success"') &&
-        gateRun.includes('.validation.result == "success"') &&
+        gateRun.includes('.["push-checks"].result == "success"') &&
         gateRun.includes('.affected.result == "success"') &&
         gateRun.includes('.codeql.result == "success"') &&
         gateRun.includes('.codeql.result == "skipped"'),
@@ -1313,7 +1311,7 @@ expect(
 const requiredResults = (codeql, overrides = {}) => JSON.stringify({
     admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
     scope: { result: overrides.scope ?? 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql } },
-    validation: { result: overrides.validation ?? 'success' },
+    'push-checks': { result: overrides['push-checks'] ?? 'success' },
     affected: { result: overrides.affected ?? 'success' },
     codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
 });
@@ -1330,7 +1328,7 @@ expect(
         RESULTS: JSON.stringify({
             admission: { result: 'success', outputs: { admitted: 'false', reason: 'not approved' } },
             scope: { result: 'skipped', outputs: {} },
-            validation: { result: 'skipped' },
+            'push-checks': { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         }),
