@@ -729,9 +729,9 @@ export async function scheduleTrackClips({
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            const sourceNotes = midi.notesByClipId[clip.id];
+            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            if (!sourceNotes || clipVisualLength <= 0) {
+            if (clipVisualLength <= 0) {
                 continue;
             }
             const loopProjection = projectClipLoopExpansion({
@@ -837,10 +837,8 @@ export async function scheduleTrackClips({
         });
 
         if (clip.type === 'midi') {
-            const sourceNotes = midi.notesByClipId[clip.id];
-            if (!sourceNotes) {
-                continue;
-            }
+            // A clip with no note list plays no notes; its stored controllers still play.
+            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
             const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;

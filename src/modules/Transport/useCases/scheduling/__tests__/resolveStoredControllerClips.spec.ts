@@ -22,11 +22,13 @@ function midiClip(overrides: Record<string, unknown> = {}): Clip {
 const pedal = [{ id: 'cc-1', controller: 64, value: 127, beat: 1, channel: 0 }];
 
 describe('resolveStoredControllerClips', () => {
-    it('admits a clip whose note list is empty, as a controller-only recorded take commits it', () => {
+    // The caller holds no note lists: a clip split, copied, duplicated or pasted
+    // from a controller-only clip has controller rows and no note list, and a
+    // recorded controller-only take has none either.
+    it('admits a MIDI clip by its stored controllers, whether or not it has a note list', () => {
         const clips = resolveStoredControllerClips({
             trackId: TRACK_ID,
             clips: [midiClip()],
-            notesByClipId: { 'clip-1': [] },
             ccByClipId: { 'clip-1': pedal },
         });
 
@@ -34,22 +36,10 @@ describe('resolveStoredControllerClips', () => {
         expect(clips[0]?.controlChanges).toEqual(pedal);
     });
 
-    it('skips a clip with no note list at all, so only a committed take carries its controllers', () => {
+    it('skips a clip that stores no controllers', () => {
         const clips = resolveStoredControllerClips({
             trackId: TRACK_ID,
             clips: [midiClip()],
-            notesByClipId: {},
-            ccByClipId: { 'clip-1': pedal },
-        });
-
-        expect(clips).toEqual([]);
-    });
-
-    it('skips a clip that has a note list and no controllers', () => {
-        const clips = resolveStoredControllerClips({
-            trackId: TRACK_ID,
-            clips: [midiClip()],
-            notesByClipId: { 'clip-1': [] },
             ccByClipId: {},
         });
 
@@ -60,7 +50,16 @@ describe('resolveStoredControllerClips', () => {
         const clips = resolveStoredControllerClips({
             trackId: TRACK_ID,
             clips: [midiClip({ muted: true })],
-            notesByClipId: { 'clip-1': [] },
+            ccByClipId: { 'clip-1': pedal },
+        });
+
+        expect(clips).toEqual([]);
+    });
+
+    it('skips a clip that is not a MIDI clip', () => {
+        const clips = resolveStoredControllerClips({
+            trackId: TRACK_ID,
+            clips: [midiClip({ type: 'audio' })],
             ccByClipId: { 'clip-1': pedal },
         });
 
