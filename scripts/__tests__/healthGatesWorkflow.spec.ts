@@ -210,7 +210,7 @@ const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
 const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
 const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
-const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 32;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 36;
 const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     BROWSER_AI_WEBGPU_LOG,
     'test-results/**/trace.zip',
@@ -221,8 +221,9 @@ const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
     // A slow merge-ref fetch timed out a 1-minute checkout (run 39588034702).
     ['Checkout', 3],
     ['Enable Corepack', 1],
-    ['Set up pnpm', 1],
-    ['Set up Node', 1],
+    // A 1-minute pnpm setup timed out on a slow runner (run 39703602835).
+    ['Set up pnpm', 3],
+    ['Set up Node', 3],
     ['Install dependencies', 2],
     ['Install Chromium', 2],
     ['Run Browser AI WebGPU admission', 18],

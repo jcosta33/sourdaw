@@ -410,7 +410,7 @@
         "name": "Browser AI WebGPU admission",
         "if": "inputs.browser-ai",
         "runs-on": "macos-14",
-        "timeout-minutes": 32,
+        "timeout-minutes": 36,
         "steps": [
           {
             "name": "Checkout",
@@ -424,7 +424,7 @@
           },
           {
             "name": "Set up pnpm",
-            "timeout-minutes": 1,
+            "timeout-minutes": 3,
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
               "package_json_file": "package.json"
@@ -432,7 +432,7 @@
           },
           {
             "name": "Set up Node",
-            "timeout-minutes": 1,
+            "timeout-minutes": 3,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
