@@ -669,7 +669,7 @@ function isTake(value: unknown): boolean {
     }
     const hasAnchor = Object.hasOwn(value, 'passAnchorSeconds');
     const hasDepth = Object.hasOwn(value, 'passDepthSeconds');
-    const finiteNonNegative = (field: unknown): boolean =>
+    const finiteNonNegative = (field: unknown): field is number =>
         typeof field === 'number' && Number.isFinite(field) && field >= 0;
     return (
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&

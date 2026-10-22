@@ -188,6 +188,7 @@ describe('isHydratableProjectData', () => {
                 sourceOffsetSeconds: 2,
                 passAnchorSeconds: -1,
                 passDepthSeconds: 2,
+                passSourceEndSeconds: 3,
             };
             const withTake = (value: Record<string, unknown>) => {
                 const takeLanes = {
@@ -226,6 +227,10 @@ describe('isHydratableProjectData', () => {
                 { passDepthSeconds: undefined },
                 { passAnchorSeconds: Number.POSITIVE_INFINITY },
                 { passDepthSeconds: -1 },
+                { passSourceEndSeconds: -1 },
+                { passSourceEndSeconds: Number.NaN },
+                { passSourceEndSeconds: 2 },
+                { passSourceEndSeconds: '3' },
             ]) {
                 expect(isHydratableProjectData(withTake({ ...take, ...malformed }))).toBe(false);
             }

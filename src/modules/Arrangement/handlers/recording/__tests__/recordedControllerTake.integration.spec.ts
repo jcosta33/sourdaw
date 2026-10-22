@@ -52,6 +52,13 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
 
+const inputClock = vi.hoisted(() => ({ currentTime: 1, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    audioEngine: { context: inputClock },
+    getAudioContext: () => inputClock,
+}));
+
 const TRACK_ID = 'track-midi';
 
 const noActionHistoryMetadataPort = {
@@ -89,6 +96,7 @@ describe('recorded controller take commit', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         transportStore.set({ ...transportStore.value!, playheadPosition: 4 });
+        inputClock.currentTime = 1;
     });
 
     afterEach(() => {
@@ -154,6 +162,7 @@ describe('recorded controller take commit', () => {
         transportStore.set({ ...transportStore.value!, isRecording: true });
 
         const send = (beat: number, ...bytes: number[]): void => {
+            inputClock.currentTime = 1 + (beat - 4) / 2;
             transportStore.set({ ...transportStore.value!, playheadPosition: beat });
             liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
         };

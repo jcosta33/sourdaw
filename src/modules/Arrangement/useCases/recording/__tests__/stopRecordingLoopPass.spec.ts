@@ -7,6 +7,7 @@ import type { TransportState } from '#/modules/Transport/stores';
 import type { Take } from '../../../models/TakeLane';
 import type { TrackState, getTrackState } from '../../../repositories/track/getTrackState';
 import type { setTrackState } from '../../../repositories/track/setTrackState';
+import type { commitRecording } from '../commitRecording';
 
 const mocks = vi.hoisted(
     (): {
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(
         takeLaneStoreValue: { value: TakeLaneStoreState | null };
         takeLaneStoreSet: Mock<typeof takeLaneStore.set>;
         activeRecordingRef: { current: string[] };
-        commitRecording: Mock<(clip: unknown) => Promise<void>>;
+        commitRecording: Mock<typeof commitRecording>;
     } => ({
         getTrackState: vi.fn<typeof import('../../../repositories/track/getTrackState').getTrackState>(),
         setTrackState: vi.fn<typeof import('../../../repositories/track/setTrackState').setTrackState>(),
@@ -24,7 +25,7 @@ const mocks = vi.hoisted(
         takeLaneStoreValue: { value: { lanes: [] } },
         takeLaneStoreSet: vi.fn<typeof import('#/modules/Arrangement/stores/takeLaneStore').takeLaneStore.set>(),
         activeRecordingRef: { current: ['c1'] },
-        commitRecording: vi.fn<(clip: unknown) => Promise<void>>(() => Promise.resolve()),
+        commitRecording: vi.fn<typeof commitRecording>(() => Promise.resolve()),
     })
 );
 
@@ -192,7 +193,11 @@ describe('stopRecording during a loop recording', () => {
 
         expect(writtenClip()).toMatchObject({ startBeat: 12, endBeat: 16 });
         expect(writtenClip()).not.toHaveProperty('midiOffsetBeats');
-        expect(mocks.commitRecording).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 12, endBeat: 16 }));
+        expect(mocks.commitRecording).toHaveBeenCalledWith(
+            expect.objectContaining({ startBeat: 12, endBeat: 16 }),
+            undefined,
+            undefined
+        );
     });
 
     it('does not place the takes of an audio recording, which its capture terminal owns', () => {
