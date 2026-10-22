@@ -28,6 +28,8 @@ const REMOVAL_VERBS: readonly string[] = ['remove', 'drop', 'omit', 'exclude', '
  * remove", "okay, let's drop"). The list is closed: any other word before the verb ("don't remove",
  * "you shouldn't remove", "no need to remove") may say the verb is not what the request asks, so the
  * clause removes nothing. Each opener asks for the removal or only softens it; none negates or defers it.
+ * No opener spans an `and`: the clause splitter cuts there, so "go ahead and remove" reaches the verb as
+ * its own clause.
  */
 const REMOVAL_OPENERS: readonly string[] = [
     'please',
@@ -46,7 +48,6 @@ const REMOVAL_OPENERS: readonly string[] = [
     'let s',
     'let us',
     'we should',
-    'go ahead and',
     'i want you to',
     'i d like you to',
     'i want to',
@@ -62,8 +63,9 @@ const REMOVAL = new RegExp(
 const INNER_REMOVAL_SEPARATOR = /\s+(?=(?:except(?:\s+for)?|without)\s)/giu;
 const REFERENCE_ARTICLE_WORDS: readonly string[] = ['the', 'a', 'an', 'my', 'its', 'their'];
 const REFERENCE_ARTICLES = new RegExp(`^(?:(?:${REFERENCE_ARTICLE_WORDS.join('|')})\\s+)+`, 'u');
+/** The words a removal may close on after its object ("too", "please", "from the card"), in normalized words. */
 const REFERENCE_TRAILERS =
-    /\s+(?:from\s+(?:the\s+|this\s+|that\s+)?(?:pending\s+)?(?:proposal|card|change|batch|list)|from\s+it|too|as\s+well|please)$/u;
+    /(?:^|\s+)(?:from\s+(?:the\s+|this\s+|that\s+)?(?:pending\s+)?(?:proposal|card|change|batch|list)|from\s+it|too|as\s+well|please)$/u;
 const OPERATION_WORDS: Readonly<Record<string, readonly string[]>> = {
     pan: ['setTrackPan'],
     panning: ['setTrackPan'],
@@ -188,9 +190,15 @@ function findReferences(clauseText: string, candidates: readonly ReferenceCandid
     return references.sort((left, right) => left.start - right.start);
 }
 
+/** Normalized words without every reference trailer they close on, however many ("from the card please"). */
+function stripReferenceTrailers(words: string): string {
+    const stripped = words.replace(REFERENCE_TRAILERS, '');
+    return stripped === words ? words : stripReferenceTrailers(stripped);
+}
+
 /** The ways a removal can state its object: its full name, then without a trailing generic noun or operation word. */
 function readReferenceForms(reference: string): StatedReference[] {
-    const name = reference.replace(REFERENCE_TRAILERS, '').replace(REFERENCE_ARTICLES, '').trim();
+    const name = stripReferenceTrailers(reference).replace(REFERENCE_ARTICLES, '').trim();
     const withoutGenericNoun = (text: string) => text.replace(GENERIC_REFERENCE_NOUNS, '').trim();
     const forms: StatedReference[] = [
         { name, operations: null },
@@ -240,6 +248,7 @@ export const refinementRequestReading = {
     operationWords: Object.keys(OPERATION_WORDS),
     removalObject: readRemovalObject,
     opensRemoval,
+    stripTrailers: stripReferenceTrailers,
     candidates: collectReferenceCandidates,
     references: findReferences,
     resolveReference,

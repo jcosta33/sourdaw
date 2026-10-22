@@ -26,7 +26,7 @@ type CommandView = { index: number; command: ProposalGroundingCommand; denotes: 
  * negation removes only in the form `not`/`except`/`except for`/`without` [the] <object> [operation
  * word]: naming a pending object it removes that object's changes (of the operation the word
  * states), naming a project object outside the card it protects that object; right before or after a
- * removal clause it is asked instead. Any other negated
+ * removal clause it is asked instead, as a "leave ... alone" there is. Any other negated
  * clause is asked, unless it names no project object and states no figure ("not too loud"), which is
  * read and left alone.
  */
@@ -196,23 +196,19 @@ function readOtherNegation(clause: RefinementClause, candidates: readonly Refere
 
 /**
  * A clause that is nothing but a whole object name right after a removal ("remove the guitar pan and
- * the vocal gain") continues that removal; any other clause there is read on its own.
+ * the vocal gain") continues that removal; any other clause there is read on its own. A clause stating
+ * a figure continues nothing, which the removal clause reading checks for every removal it reads.
  */
 function readRemovalContinuation(clause: RefinementClause, candidates: readonly ReferenceCandidate[]): string | null {
     const text = normalizedClause(clause);
-    if (
-        findPromptNumbers(clause.masked).length > 0 ||
-        refinementRequestReading.resolveReference(text, candidates) === null
-    ) {
-        return null;
-    }
-    return text;
+    return refinementRequestReading.resolveReference(text, candidates) === null ? null : text;
 }
 
 /**
- * A negation right before or after a removal ("remove the snare but not the drum bus", "remove snare
- * except snare bottom") may narrow that removal or keep another change, which no reading can tell
- * apart, so it is asked rather than read as a removal of its own.
+ * A negation or a "leave ... alone" right before or after a removal ("remove the snare but not the
+ * drum bus", "remove snare except snare bottom", "remove the snare but leave the bass alone") may
+ * narrow that removal or keep another change, which no reading can tell apart, so it is asked rather
+ * than read as a removal or protection of its own.
  */
 function askNegationBesideRemoval(clause: RefinementClause): RemovalClauseRead {
     return {
@@ -225,13 +221,13 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     const { clause, candidates } = input;
     const text = normalizedClause(clause);
     const negation = NEGATION_FORM.exec(text);
-    if (negation !== null && (input.continuesRemoval || input.precedesRemoval)) {
+    const alone = LEAVE_ALONE.exec(text);
+    if ((negation !== null || alone !== null) && (input.continuesRemoval || input.precedesRemoval)) {
         return askNegationBesideRemoval(clause);
     }
     if (negation === null && NEGATION_WORD.test(normalizePromptText(clause.masked))) {
         return readOtherNegation(clause, candidates);
     }
-    const alone = LEAVE_ALONE.exec(text);
     const statesFigure = findPromptNumbers(clause.masked).length > 0;
     const stated =
         (negation ?? alone)?.[1] ??
@@ -555,8 +551,8 @@ function readRefinementComparative(text: string, context: ProjectContext): 'less
  * pending value of the stated unit when it names none; the clause combination read first holds every
  * command to one such clause. Anything a clause leaves open — which command,
  * which unit, which way — is asked rather than guessed, and a clause naming an object outside the card
- * is an addition that a new command must answer. A negation naming no object ("not less", "not as
- * much") says something about the value no clause binds, so beside a bound value it is asked.
+ * is an addition that a new command must answer. A negation naming no object beside a bound value is
+ * asked, before any call is checked against it.
  */
 function bindRefinementValues(input: {
     text: string;
@@ -594,16 +590,41 @@ function bindRefinementValues(input: {
                 return { status: 'refused', reason: read.reason };
         }
     }
-    const [unreadNegation] = input.unreadNegations;
-    if (unreadNegation !== undefined && (values.size > 0 || comparative !== null)) {
-        const question = `"${unreadNegation.text.trim()}" does not say what the value should be. State the new value alone, for example "make it 1.5 dB".`;
-        return { status: 'clarify', reason: OPEN_VALUE_REASON, question };
+    const unreadNegation = askUnreadNegation({ ...input, bindsValue: values.size > 0 });
+    if (unreadNegation !== null) {
+        return { status: 'clarify', ...unreadNegation };
     }
     if (comparative !== null && values.size === 0) {
         const question = `How much ${comparative}? State the new value, for example "${comparative}, make it 1.5 dB".`;
         return { status: 'clarify', reason: OPEN_VALUE_REASON, question };
     }
     return { status: 'bound', values, comparative };
+}
+
+/**
+ * A negation naming no object ("not as much", "never mind", "not less") says something about a value
+ * no clause binds. On its own it is read and left alone; beside a value the refinement binds or changes,
+ * or a comparative it states, it is asked, whichever route grounded the batch: the inherited route asks
+ * it while binding, and the final check every route passes asks it beside a pending value the batch
+ * changes.
+ */
+function askUnreadNegation(input: {
+    text: string;
+    context: ProjectContext;
+    unreadNegations: readonly RefinementClause[];
+    bindsValue: boolean;
+}): { reason: string; question: string } | null {
+    const [unreadNegation] = input.unreadNegations;
+    if (unreadNegation === undefined) {
+        return null;
+    }
+    if (!input.bindsValue && readRefinementComparative(input.text, input.context) === null) {
+        return null;
+    }
+    return {
+        reason: OPEN_VALUE_REASON,
+        question: `"${unreadNegation.text.trim()}" does not say what the value should be. State the new value alone, for example "make it 1.5 dB".`,
+    };
 }
 
 /**
@@ -656,5 +677,6 @@ export const refinementClauseReader = {
     comparative: readRefinementComparative,
     figureComparative: statesFigureComparative,
     values: bindRefinementValues,
+    unreadNegation: askUnreadNegation,
     additions: readAdditionClauses,
 } as const;

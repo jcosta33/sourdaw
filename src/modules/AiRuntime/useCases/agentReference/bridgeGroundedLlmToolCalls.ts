@@ -5642,25 +5642,47 @@ function findProtectedChange(
     return null;
 }
 
+/** The pending commands of one type and full target tuple, by that tuple's key. */
+function groupPendingByTargetKey(basis: ProposalGroundingBasis): Map<string, number[]> {
+    const groups = new Map<string, number[]>();
+    for (const [index, command] of basis.commands.entries()) {
+        const key = proposalCommandShape.targetKey(command.type, command.payload);
+        groups.set(key, [...(groups.get(key) ?? []), index]);
+    }
+    return groups;
+}
+
 /**
  * For each call, the one pending command of the same type and full target tuple it continues, or
- * `null`. A call is never matched to a command another call already took, so a duplicate call on
- * one target grounds as a new command.
+ * `null` when no pending command or several share that tuple. No two calls continue one command: a
+ * batch where they would is refused before any route reads it.
  */
 function partitionRefinedCalls(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Array<number | null> {
-    const claimed = new Set<number>();
+    const groups = groupPendingByTargetKey(basis);
     return calls.map((call) => {
-        const key = proposalCommandShape.targetKey(call.name, call.arguments);
-        const matches = basis.commands.flatMap((command, index) =>
-            proposalCommandShape.targetKey(command.type, command.payload) === key ? [index] : []
-        );
-        const [only] = matches;
-        if (matches.length !== 1 || only === undefined || claimed.has(only)) {
-            return null;
-        }
-        claimed.add(only);
-        return only;
+        const [only, ...others] = groups.get(proposalCommandShape.targetKey(call.name, call.arguments)) ?? [];
+        return only !== undefined && others.length === 0 ? only : null;
     });
+}
+
+/**
+ * A refinement changes each pending command at most once. Two calls of the type and target tuple one
+ * pending command alone takes ("turn Vocals down 1 dB" as two -1 dB cuts) would apply its value twice
+ * on either route, so such a batch is refused, whatever its values.
+ */
+function findRepeatedPendingCommand(
+    inheritedCommandIndexes: ReadonlyArray<number | null>,
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): string | null {
+    const repeated = inheritedCommandIndexes.find(
+        (index, position) => index !== null && inheritedCommandIndexes.indexOf(index) !== position
+    );
+    const pending = repeated === undefined || repeated === null ? undefined : basis.commands[repeated];
+    if (pending === undefined) {
+        return null;
+    }
+    return `Refined proposal changes the pending ${describePendingCommand(pending, context)} command more than once`;
 }
 
 /** A pending command the batch leaves out stands only when the refinement removed it by name. */
@@ -5946,9 +5968,11 @@ function withRefinement(
  * Ground a batch that refines a pending card. A batch the refinement text grounds by itself is
  * admitted exactly as any request; otherwise each call continuing one pending command inherits that
  * command's target authority, re-read from the request text that granted it, and may change only the
- * value a refinement clause binds. Every other call grounds in the refinement text alone. Whichever
- * route grounds it, the result then passes one check: a pending command may leave the batch only by
- * name, every clause must be answered, and nothing the chain protects may change.
+ * value a refinement clause binds. Every other call grounds in the refinement text alone. A batch
+ * changing one pending command twice is refused before either route. Whichever route grounds it, the
+ * result then passes one check: a negation naming nothing stands beside no changed value, a pending
+ * command may leave the batch only by name, every clause must be answered, and nothing the chain
+ * protects may change.
  */
 function bridgeRefinedLlmToolCalls(
     input: BridgeGroundedLlmToolCallsInput,
@@ -5956,6 +5980,11 @@ function bridgeRefinedLlmToolCalls(
 ): BridgeGroundedLlmToolCallsResult {
     const { calls, context, prompt } = input;
     const unrefined: BridgeGroundedLlmToolCallsInput = { ...input, refinementBasis: undefined };
+    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis);
+    const repeated = findRepeatedPendingCommand(inheritedCommandIndexes, basis, context);
+    if (repeated !== null) {
+        return refuseRefinement(repeated);
+    }
     const removals = refinementClauseReader.removals({ text: prompt, basis, context });
     if (removals.status === 'refused') {
         return refuseRefinement(removals.reason);
@@ -5990,7 +6019,6 @@ function bridgeRefinedLlmToolCalls(
         removed: [...removals.removedTargets, ...removals.protectedTargets],
     });
     const direct = bridgeGroundedLlmToolCalls(unrefined);
-    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis);
     // "Turn Vocals down 2 dB more" grounds by itself as a plain 2 dB cut, which the comparative beside
     // its figure contradicts; such a batch is read against the pending values it compares with.
     const comparesFigure = refinementClauseReader.figureComparative({
@@ -5998,9 +6026,10 @@ function bridgeRefinedLlmToolCalls(
         context,
         removalClauseStarts: removals.removalClauseStarts,
     });
+    // Such a batch takes the inherited route even when no call continues a pending command, so every
+    // value clause beside it is still read against the card ("make Keys 2 dB quieter, less" asks).
     const groundsDirectly = direct.rejections.length === 0 && !comparesFigure;
-    const routesDirectly = groundsDirectly || inheritedCommandIndexes.every((index) => index === null);
-    const routed = routesDirectly
+    const routed = groundsDirectly
         ? withRefinement(direct, {
               inheritedCommandIndexes: direct.actions.map(() => null),
               protectedObjects,
@@ -6010,10 +6039,23 @@ function bridgeRefinedLlmToolCalls(
     if (routed.rejections.length > 0 || routed.clarification !== undefined) {
         return routed;
     }
+    const unreadNegation = refinementClauseReader.unreadNegation({
+        text: prompt,
+        context,
+        unreadNegations: removals.unreadNegations,
+        bindsValue: changesPendingValue(calls, inheritedCommandIndexes, basis),
+    });
+    if (unreadNegation !== null) {
+        return {
+            actions: [],
+            rejections: [],
+            clarification: { reason: unreadNegation.reason, questions: [unreadNegation.question] },
+        };
+    }
     const defect = findRefinementDefect({
         calls,
         inheritedCommandIndexes,
-        kept: routesDirectly
+        kept: groundsDirectly
             ? getCarriedCommandIndexes(calls, basis)
             : new Set(inheritedCommandIndexes.filter((index): index is number => index !== null)),
         basis,
@@ -6032,6 +6074,18 @@ function bridgeRefinedLlmToolCalls(
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
+
+/** Whether any call continuing a pending command carries other arguments than that command does. */
+function changesPendingValue(
+    calls: readonly ToolCallResult[],
+    inheritedCommandIndexes: ReadonlyArray<number | null>,
+    basis: ProposalGroundingBasis
+): boolean {
+    return calls.some((call, index) => {
+        const command = basis.commands[inheritedCommandIndexes[index] ?? -1];
+        return command !== undefined && canonicalJson(call.arguments) !== canonicalJson(command.payload);
+    });
+}
 
 /**
  * The one check every refinement result passes, whichever route grounded it: no pending command the

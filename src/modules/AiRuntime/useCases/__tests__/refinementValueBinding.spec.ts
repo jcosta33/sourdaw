@@ -2538,6 +2538,40 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 status: 'valid',
             });
         });
+
+        it('a removal closes on the reference trailers the refinement reader reads, and on nothing else', () => {
+            const context = projectContext([...PAIRING_CONTEXT.tracks, projectTrack('track-snare', 'Snare')]);
+            const bassMute: StoredCommand = { type: 'muteTrack', payload: { trackId: 'track-bass', muted: true } };
+            const snarePan: StoredCommand = { type: 'setTrackPan', payload: { trackId: 'track-snare', pan: 20 } };
+            const rows: Array<[readonly StoredCommand[], readonly StoredCommand[], string, string]> = [
+                [[vocalGain(0.5)], [], 'remove the Vocal gain too', 'valid'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain please', 'valid'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain as well', 'valid'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain from the proposal', 'valid'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain from the pending proposal', 'valid'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain from the card', 'valid'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain from it', 'valid'],
+                [[vocalGain(0.5)], [], 'Just remove the Vocal gain from the card please', 'valid'],
+                [[bassMute], [], 'remove the Bass mute too', 'valid'],
+                [
+                    [snarePan],
+                    [compressorOn('track-bass', 'device-command-1')],
+                    'Add a Compressor on Bass and remove the Snare pan too',
+                    'valid',
+                ],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain a bit', 'refused'],
+                [[vocalGain(0.5)], [], 'remove the Vocal gain a bit too', 'refused'],
+            ];
+            for (const [pending, next, prompt, status] of rows) {
+                expect({ prompt, status: admission(pending, next, prompt, context) }).toEqual({ prompt, status });
+            }
+        });
+
+        it('a removal continues into a bare object name with at most one operation word', () => {
+            expect(admission([guitarPan, vocalGain(0.5)], [], 'Remove the guitar pan and the vocal gain level')).toBe(
+                'refused'
+            );
+        });
     });
 
     describe('one final check on every route a refinement grounds by', () => {
@@ -2659,6 +2693,135 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     });
                 }
             }
+        });
+
+        it('a moving verb beside a pan figure and a side asks, with or without "to", while a landing verb binds', () => {
+            const bassPan = (pan: number): ProviderCall => ({
+                name: 'setTrackPan',
+                arguments: { trackId: 'track-bass', pan },
+            });
+            const card = { prompt: 'pan Bass left 30%', calls: [bassPan(-30)] };
+            for (const refinement of [
+                'bring it 10 right',
+                'turn it 10 right',
+                'move it 10 right',
+                'bring it 10% right',
+                'bring it right 10',
+                'shift it 10 right',
+                'nudge it 10 right',
+                'push it 10 right',
+            ]) {
+                for (const calls of [[bassPan(10)], [bassPan(-20)], [bassPan(-40)]]) {
+                    expect({ refinement, calls, status: refine(card, refinement, calls).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
+            for (const refinement of [
+                'make it 10 right',
+                'set it 10 right',
+                'put it 10 right',
+                'change it 10 right',
+                'make it 10 to the right',
+            ]) {
+                expect({ refinement, commands: commandsOf(refine(card, refinement, [bassPan(10)])) }).toEqual({
+                    refinement,
+                    commands: [{ type: 'setTrackPan', trackId: 'track-bass', pan: 10 }],
+                });
+            }
+        });
+
+        it('a batch acting on one pending target more than once is refused, on every route', () => {
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
+                [P0_CARD, 'turn Vocals down 1 dB', [vocalsBy(-1), vocalsBy(-1)]],
+                [P0_CARD, 'turn Vocals down 3 dB', [vocalsBy(-3), vocalsBy(-3)]],
+                [P0_CARD, 'make it 1 dB', [vocalsBy(-1), vocalsBy(-1)]],
+                [TWO_CUTS_CARD, 'turn Vocals down 1 dB', [vocalsBy(-1), vocalsBy(-1), snareBy(-2)]],
+                [TWO_CUTS_CARD, 'turn Snare down 2 dB', [vocalsBy(-3), snareBy(-2), snareBy(-2)]],
+            ];
+            for (const [card, refinement, calls] of rows) {
+                expect({ refinement, calls, result: refine(card, refinement, calls) }).toMatchObject({
+                    refinement,
+                    calls,
+                    result: { status: 'rejected', rejectionReason: expect.stringContaining('more than once') },
+                });
+            }
+        });
+
+        it('a pending command that targets nothing is continued at most once too', () => {
+            const verse: ProviderCall = { name: 'addMarker', arguments: { name: 'Verse', beat: 0 } };
+            const card = { prompt: 'add a marker at beat 0 named Verse', calls: [verse] };
+
+            expect(refine(card, 'keep the marker as it is', [verse, verse])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('more than once'),
+            });
+        });
+
+        it('a batch continuing no pending command beside a figure comparative still reads every value clause', () => {
+            const vocalsMute: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } };
+            const muteCard = { prompt: 'mute Vocals', calls: [vocalsMute] };
+            const keysCut = [trackBy('track-keys', -2)];
+
+            expect(refine(P0_CARD, 'remove the vocals, make Keys 2 dB quieter, 1 dB', keysCut)).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('can only mean a pending change the refinement removes'),
+            });
+            expect(refine(muteCard, 'remove the vocals mute, make Keys 2 dB quieter, 3 dB', keysCut)).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('has no value "3 dB" could change'),
+            });
+            expect(refine(P0_CARD, 'make Keys 2 dB quieter and remove the vocals, less', keysCut).status).toBe(
+                'clarify'
+            );
+            expect(commandsOf(refine(P0_CARD, 'remove the vocals, make Keys 2 dB quieter', keysCut))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-keys', deltaDb: -2 },
+            ]);
+        });
+
+        it('"leave ... alone" beside a removal asks like a negation there, while on its own it removes and protects', () => {
+            const card = {
+                prompt: 'turn Vocals down 3 dB, turn Snare down 2 dB and turn Bass up 1 dB',
+                calls: [vocalsBy(-3), snareBy(-2), trackBy('track-bass', 1)],
+            };
+            for (const refinement of [
+                'remove the snare but leave the bass alone',
+                'remove the snare, leave the bass alone',
+            ]) {
+                for (const calls of [[vocalsBy(-3), trackBy('track-bass', 1)], [vocalsBy(-3)]]) {
+                    expect({ refinement, calls, status: refine(card, refinement, calls).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
+            const alone = refine(card, 'leave the bass alone', [vocalsBy(-3), snareBy(-2)]);
+
+            expect(commandsOf(alone)).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+            ]);
+            expect(alone.status === 'grounded' ? alone.groundingBasis?.protectedUnchanged : null).toEqual(
+                expect.arrayContaining([{ id: 'track-bass', name: 'Bass' }])
+            );
+        });
+
+        it('a negation naming nothing beside a changed value asks on the route that grounds the text alone too', () => {
+            for (const refinement of ['turn Vocals down 4 dB, not as much', 'turn Vocals down 4 dB, never mind']) {
+                expect({ refinement, status: refine(P0_CARD, refinement, [vocalsBy(-4)]).status }).toEqual({
+                    refinement,
+                    status: 'clarify',
+                });
+            }
+        });
+
+        it('a negation before a removal verb stating a figure is read on its own, the verb changing a level', () => {
+            const result = refine(TWO_CUTS_CARD, 'not the snare, drop the Vocals by 1 dB', [vocalsBy(-1)]);
+
+            expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1 }]);
         });
     });
 

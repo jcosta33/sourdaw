@@ -46,8 +46,6 @@ type StatedFigure = {
     direction: -1 | 1 | null | 'conflicting';
     /** The words beside the figure, read from the clause with every object name masked. */
     words: string;
-    /** The words after the figure and its unit word, read the same way. */
-    wordsAfter: string;
     /** A symbol touching the figure that this reading does not read as its sign, decimal mark or percent. */
     symbol: string | null;
 };
@@ -70,11 +68,13 @@ const LEVEL_DIRECTION_WORDS: ReadonlySet<string> = new Set(
 
 const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
 /**
- * A side after `to` following the figure ("bring it 10 to the right", "move it 10 to the right") may
- * say how far a pan moves toward that side rather than where it lands, so such a clause is asked,
- * whatever action its verb would otherwise read as. Only a pan reads a side at all.
+ * The verbs that move what they act on. Beside a figure and a side ("bring it 10 right", "move it 10 to
+ * the right", "bring it right 10") they may say how far a pan moves toward that side rather than where
+ * it lands, so such a clause is asked, with or without `to`, whatever action the verb would otherwise
+ * read as. `make`, `set`, `put` and `change` name the value it becomes, so their side is where the pan
+ * lands. Only a pan reads a side at all.
  */
-const SIDE_AFTER_FIGURE = /(?:^|\s)to\s+(?:the\s+)?(?:left|right)(?:\s|$)/u;
+const MOVING_VERBS: ReadonlySet<string> = new Set(['bring', 'turn', 'move', 'shift', 'nudge', 'push']);
 /** Words a pan clause reads itself: the operation and the side it lands on. */
 const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WORDS]);
 /**
@@ -271,7 +271,6 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         ...readConnector(before),
         direction: readDirection(words),
         words,
-        wordsAfter: normalizePromptText(after.slice(unit.length)),
         symbol: findTouchingMark(before, after),
     };
 }
@@ -745,7 +744,7 @@ export function bindRefinementFigure(input: {
             question: `What should the value be? Words stand between "${figure.separatedConnector}" and ${figure.raw}; state it as "${figure.separatedConnector} ${figure.raw}".`,
         };
     }
-    if (SIDE_AFTER_FIGURE.test(figure.wordsAfter)) {
+    if (readSide(figure.words) !== null && figure.words.split(' ').some((word) => MOVING_VERBS.has(word))) {
         return {
             kind: 'clarify',
             question: `Should the pan land at ${figure.magnitude} or move ${figure.magnitude} toward that side? Say where it should land, as in "pan it ${figure.magnitude} right".`,

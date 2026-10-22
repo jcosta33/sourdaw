@@ -239,8 +239,9 @@ function isBareObjectClause(text: string, mentions: readonly Mention[]): boolean
 
 /**
  * Whether nothing but binding words and other object names follows a removal's object and its operation
- * word to the end of the clause. Any other word after them ("drop the snare gain a bit") says something
- * of the object a removal does not, so the clause keeps it rather than removing it.
+ * word to the end of the clause, past the reference trailers the refinement reader reads ("too",
+ * "please", "from the card"). Any other word after them ("drop the snare gain a bit") says something of
+ * the object a removal does not, so the clause keeps it rather than removing it.
  */
 function endsAtObject(clause: Pick<ClauseReading, 'text' | 'mentions'>, from: number): boolean {
     let rest = '';
@@ -253,7 +254,8 @@ function endsAtObject(clause: Pick<ClauseReading, 'text' | 'mentions'>, from: nu
         cursor = mention.end;
     }
     rest += ` ${clause.text.slice(cursor)}`;
-    return normalizePromptText(rest)
+    return refinementRequestReading
+        .stripTrailers(normalizePromptText(rest))
         .split(' ')
         .every((word) => word.length === 0 || BINDING_WORDS.has(word) || OPERATION_WORDS.has(word));
 }
