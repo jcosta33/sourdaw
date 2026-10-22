@@ -1,0 +1,28 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.keepLocalRuntimeState.spec.ts
+  s_3e7dea5cde3f9e::t_403aa3bb344ff3 112-151
+  s_3e7dea5cde3f9e::t_8d1b4b0d6cecf2 167,172-175
+  s_3e7dea5cde3f9e::t_e3dd4c644c2c87 7
+  s_3e7dea5cde3f9e::t_b4a5cf608359c1 37-38,40,49-50
+src/modules/CrdtDocument/AGENTS.md
+  s_3e7dea5cde3f9e::t_367ae579ad9b46 32
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_3e7dea5cde3f9e::t_ecd23b32e5e8e2 3-4
+  s_3e7dea5cde3f9e::t_30e5bb205fb54a 18,24,28,30,36
+  s_3e7dea5cde3f9e::t_af1d44a5f511e0 60-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "441267de4325926107db8d315697a8c4aa55d81a",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
