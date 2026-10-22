@@ -510,7 +510,9 @@ checkout may narrow feature-presentation changes through the resolved file depen
 explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Unknown,
 shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
 browser spec changes select those specs. Documentation and explicitly known review tooling avoid
-browser runs. Smoke runs separately for every browser plan; Browser AI hardware admission follows
+browser runs. Other `scripts/**`, `.agents/**`, `release/*.json`, and non-product Markdown select no
+browser suite but keep broad non-browser validation: scripts reach the browser only through outputs
+under `src/` or `public/`, which select it themselves, and nightly runs the full train. Smoke runs separately for every browser plan; Browser AI hardware admission follows
 selected browser-AI suites. Required selected jobs must succeed, and scope resolution or missing
 evidence fails closed. Nightly remains the unconditional full-load gate. The maintenance contract is
 in [affected E2E](./docs/affected-e2e.md).
