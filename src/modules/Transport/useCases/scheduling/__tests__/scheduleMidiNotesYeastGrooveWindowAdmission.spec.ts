@@ -109,6 +109,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getTrackStrip: vi.fn(),

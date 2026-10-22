@@ -67,6 +67,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getTrackStrip: vi.fn(),
@@ -92,6 +93,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
     projectClipControllerEvents: vi.fn(() => []),
     projectClipControllerRestore: vi.fn(() => ({ moves: [], held: new Set() })),
+    projectChannelBend: () => [],
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
     resolveMidiNoteArticulationId: ({ deviceType, articulation }: { deviceType: string; articulation?: string }) =>

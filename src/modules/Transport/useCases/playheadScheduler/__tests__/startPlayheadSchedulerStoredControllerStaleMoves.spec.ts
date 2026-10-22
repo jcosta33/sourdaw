@@ -237,6 +237,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleClick: vi.fn(),
     getCompensationDelay: () => 0,
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getDrumKitByIndex: () => null,
     ensureTrackStrip: () => trackStripStub,
     getTrackStrip: () => trackStripStub,

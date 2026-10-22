@@ -8,6 +8,7 @@ import {
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
+    getNoteExpressionDimensions,
     projectNoteExpressionCurves,
     registerScheduledSource,
     scheduleFaustNote,
@@ -17,6 +18,7 @@ import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Autom
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
+    projectChannelBend,
     projectClipMidiEvents,
     projectCommittedGroove,
     resolveMidiNoteArticulationId,
@@ -55,6 +57,7 @@ import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { listMutedMidiClips } from './listMutedMidiClips';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
+import { resolveChannelBendClips } from './resolveChannelBendClips';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
@@ -1237,6 +1240,22 @@ export async function scheduleMidiNotes(
             });
         }
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
+        // The track's channel pitch bend, projected when the first note that can bend starts. A bend in
+        // force when a note starts, and each move while it sounds, reach the voice as its expression: the
+        // engines bend a held voice and carry no channel bend of their own, so there is nothing to reset.
+        let channelBend: ReturnType<typeof projectChannelBend> | undefined;
+        const readChannelBend = () => {
+            channelBend ??= projectChannelBend({
+                clips: resolveChannelBendClips({
+                    trackId: track.id,
+                    clips: track.clips,
+                    ccByClipId: midiState.ccByClipId,
+                    pitchBendByClipId: midiState.pitchBendByClipId,
+                }),
+                frameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+            });
+            return channelBend;
+        };
         for (const clip of activeMidiClips) {
             // A clip with no note list plays no notes; its stored controllers still play.
             const notes = midiState.notesByClipId[clip.id] ?? [];
@@ -1600,21 +1619,34 @@ export async function scheduleMidiNotes(
                             // its place in a moved or cut note. This window
                             // posts the changes that fall in it; the rest
                             // wait for the windows that contain them.
-                            const curves = note.expression
-                                ? projectNoteExpressionCurves({
-                                      note,
-                                      startBeat: noteStartBeat,
-                                      beatsIntoNote: projectedNote.beatsIntoNote,
-                                      releaseFrame: endSampleFrame,
-                                      frameAtBeat: (beat) =>
-                                          placeSamplesOnClock({
-                                              startSamples: beatToSamples(changes, beat, transport.tempo, sr),
-                                              accumulatedSamples,
-                                              sampleRate: sr,
-                                              compensation,
-                                          }).sampleFrame,
-                                  })
-                                : undefined;
+                            //
+                            // The track's channel bend joins them: the
+                            // instrument is told what a live channel bend
+                            // tells it, the bend in force on each note it
+                            // voices, and only when it sounds a bend at all.
+                            const trackBend =
+                                workletSynthDevice &&
+                                !yeastDevice &&
+                                getNoteExpressionDimensions(workletSynthDevice.type).includes('pitchBend')
+                                    ? readChannelBend()
+                                    : undefined;
+                            const curves =
+                                note.expression || trackBend?.length
+                                    ? projectNoteExpressionCurves({
+                                          note,
+                                          channelBend: trackBend,
+                                          startBeat: noteStartBeat,
+                                          beatsIntoNote: projectedNote.beatsIntoNote,
+                                          releaseFrame: endSampleFrame,
+                                          frameAtBeat: (beat) =>
+                                              placeSamplesOnClock({
+                                                  startSamples: beatToSamples(changes, beat, transport.tempo, sr),
+                                                  accumulatedSamples,
+                                                  sampleRate: sr,
+                                                  compensation,
+                                              }).sampleFrame,
+                                      })
+                                    : undefined;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it

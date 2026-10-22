@@ -1,0 +1,482 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type Clip, trackStore } from '#/modules/Arrangement/stores';
+import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import {
+    applyNoteExpression,
+    ensureTrackStrip,
+    getCompensationDelay,
+    getCurrentTime,
+} from '#/modules/AudioEngine/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { processYeastMidi } from '#/modules/Yeast/useCases';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { forgetHeldNoteExpression } from '../../../services/heldNoteExpression';
+import { tempoMapStore } from '../../../stores/tempoMapStore';
+import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
+import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+// What a stored bend becomes at a frame is the contract under test: the engine's curve projection and
+// its dimension registry, and the MIDI module's channel bend projection, are the real ones, and only the
+// engine surface around them (the instrument nodes and the audio clock) is doubled.
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: { value: { tracks: [] }, subscribe: () => () => undefined },
+}));
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
+    midiStore: { value: null, subscribe: () => () => undefined },
+}));
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
+    automationStore: { value: null, subscribe: () => () => undefined },
+}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
+    getAutomationValueAtBeat: vi.fn(() => null),
+    isRecordingAutomation: vi.fn(() => false),
+}));
+vi.mock('#/modules/Toaster/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Toaster/stores')>()),
+    toasterStore: { value: null, subscribe: () => () => undefined },
+}));
+vi.mock('../../../stores/tempoMapStore', () => ({
+    tempoMapStore: { value: { changes: [] } },
+}));
+vi.mock('../../../stores/timeSignatureMapStore', () => ({
+    timeSignatureMapStore: { value: { changes: [] } },
+}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    resolveClipsWithComping: vi.fn((_trackId: string, clips: Clip[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        }))
+    ),
+    getSynthParamsForTrack: vi.fn(() => ({})),
+}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    applyNoteExpression: vi.fn(),
+    registerScheduledSource: vi.fn(),
+    getCompensationDelay: vi.fn(() => 0),
+    ensureTrackStrip: vi.fn(),
+    getCurrentTime: vi.fn(() => 0),
+    getAudioContext: vi.fn(() => ({ sampleRate: 48_000, createGain: vi.fn(() => ({ connect: vi.fn() })) })),
+    scheduleFaustNote: vi.fn(),
+}));
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Synth/useCases')>()),
+    getDrumKitDefByIndex: vi.fn(() => null),
+    scheduleDrumKitNote: vi.fn(),
+    scheduleKitNote: vi.fn(),
+    scheduleNote: vi.fn(),
+}));
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
+    processYeastMidi: vi.fn(),
+    getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
+}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    projectClipMidiEvents: vi.fn(),
+    projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
+    shouldPlayMidiEvent: () => true,
+}));
+
+/** At 120 BPM and 48 kHz a beat is half a second. */
+const FRAMES_PER_BEAT = 24_000;
+
+type InstrumentUnderTest = { type: string; controlsKey: string };
+
+const FERMENTER: InstrumentUnderTest = { type: 'fermenter', controlsKey: 'fermenterControls' };
+const LEVAIN: InstrumentUnderTest = { type: 'levain', controlsKey: 'levainControls' };
+const GRAND_BOULE: InstrumentUnderTest = { type: 'grand-boule', controlsKey: 'grandBouleControls' };
+const CRUMBS: InstrumentUnderTest = { type: 'builtin-crumbs', controlsKey: 'crumbsControls' };
+
+function midiTrack(instrument: InstrumentUnderTest, clips: Clip[], devices?: { id: string; type: string }[]) {
+    return {
+        id: 'track-1',
+        kind: 'midi',
+        muted: false,
+        parentId: null,
+        followChordTrack: false,
+        devices: devices ?? [{ id: 'device-1', type: instrument.type }],
+        clips,
+        sends: [],
+        freezeState: { status: 'unfrozen' },
+    } as never;
+}
+
+function midiClip(overrides: Record<string, unknown> = {}): Clip {
+    return {
+        id: 'clip-1',
+        type: 'midi',
+        muted: false,
+        startBeat: 0,
+        endBeat: 8,
+        gain: 1,
+        loopEnabled: false,
+        ...overrides,
+    } as Clip;
+}
+
+/** The strip the engine double hands the scheduler, and the note-on/off its instrument was asked to play. */
+function stripFor(instrument: InstrumentUnderTest) {
+    const noteOn = vi.fn();
+    const noteOff = vi.fn();
+    vi.mocked(ensureTrackStrip).mockImplementation(
+        () =>
+            ({
+                gainNode: {},
+                preFaderTap: { connect: vi.fn() },
+                deviceNodes: [
+                    {
+                        type: instrument.type,
+                        deviceId: 'device-1',
+                        [instrument.controlsKey]: { noteOn, noteOff, noteExpression: vi.fn() },
+                    },
+                ],
+            }) as never
+    );
+    return { noteOn, noteOff };
+}
+
+function bend(id: string, beat: number, value: number, channel = 0) {
+    return { id, beat, value, channel };
+}
+
+function controller(id: string, beat: number, cc: number, value: number, channel = 0) {
+    return { id, beat, controller: cc, value, channel };
+}
+
+function note(id: string, startBeat: number, duration: number, pitch = 64) {
+    return { id, pitch, startBeat, duration, velocity: 100 };
+}
+
+function setProject(input: {
+    track: unknown;
+    notes?: Record<string, unknown[]>;
+    bends?: Record<string, unknown[]>;
+    controllers?: Record<string, unknown[]>;
+}): void {
+    (trackStore as { value: unknown }).value = { tracks: [input.track] };
+    (midiStore as { value: unknown }).value = {
+        notesByClipId: input.notes ?? {},
+        ccByClipId: input.controllers ?? {},
+        pitchBendByClipId: input.bends ?? {},
+    };
+}
+
+/** What the engine was asked to apply, as frame, bend and depth, in the order it was asked. */
+function appliedBend() {
+    return vi.mocked(applyNoteExpression).mock.calls.map(([input]) => ({
+        sampleFrame: input.sampleFrame,
+        pitchBend: input.expression.pitchBend,
+        bendRangeSemitones: input.bendRangeSemitones,
+    }));
+}
+
+async function play(fromBeat: number, toBeat: number, opensAtRelocation = false): Promise<void> {
+    await scheduleMidiNotes(
+        fromBeat,
+        toBeat,
+        fromBeat,
+        new Set<string>(),
+        [],
+        defaultTransportState,
+        120,
+        undefined,
+        opensAtRelocation
+    );
+}
+
+describe('scheduleMidiNotes with a stored channel pitch bend', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        forgetHeldNoteExpression();
+        (trackStore as { value: unknown }).value = { tracks: [] };
+        (midiStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
+        (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: clip.startBeat,
+            }))
+        );
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+            input.events.map((event) => ({
+                ...event,
+                startBeat: input.iterationStartBeat + event.startBeat - input.midiOffsetBeats,
+            }))
+        );
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        vi.mocked(getCompensationDelay).mockReturnValue(0);
+    });
+
+    it.each([FERMENTER, LEVAIN, GRAND_BOULE])(
+        'bends a sounding $type note at the frames a note at the bend beats gets, through the live input surface',
+        async (instrument) => {
+            stripFor(instrument);
+            // The clip sits at 2 and plays from content beat 1, so content beat c lands on c + 1; the tempo
+            // halves at beat 4, where the bend returns, so its frame is not a flat-tempo multiple.
+            setProject({
+                track: midiTrack(instrument, [midiClip({ startBeat: 2, endBeat: 10, midiOffsetBeats: 1 })]),
+                notes: { 'clip-1': [note('n0', 1, 4)] },
+                bends: { 'clip-1': [bend('out', 2, 8191), bend('return', 3, 0)] },
+            });
+            (tempoMapStore as { value: unknown }).value = {
+                changes: [
+                    { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-1', beat: 3.5, tempo: 60, curve: 'instant' },
+                ],
+            };
+
+            await play(0, 10);
+
+            // Beat 3 is 3 beats at 120 BPM in; beat 4 adds 1.5 beats at 120 and half a beat at 60.
+            const out = 3 * FRAMES_PER_BEAT;
+            const back = 3.5 * FRAMES_PER_BEAT + 0.5 * 2 * FRAMES_PER_BEAT;
+            expect(appliedBend()).toEqual([
+                // The note's own start carries no bend, since none is in force yet.
+                { sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: undefined, bendRangeSemitones: undefined },
+                { sampleFrame: out, pitchBend: 8191, bendRangeSemitones: 2 },
+                { sampleFrame: back, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+            // Each move addresses the sounding note by pitch and channel, on the track's own instrument.
+            expect(
+                vi.mocked(applyNoteExpression).mock.calls.map(([input]) => [input.trackId, input.note, input.channel])
+            ).toEqual([
+                ['track-1', 64, 0],
+                ['track-1', 64, 0],
+                ['track-1', 64, 0],
+            ]);
+        }
+    );
+
+    it('reads the depth from the RPN 0 the clip stored, the live input state machine', async () => {
+        stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip()]),
+            notes: { 'clip-1': [note('n0', 0, 4)] },
+            // Select RPN 0, enter 12 semitones, then the Null RPN a controller sends after it.
+            controllers: {
+                'clip-1': [
+                    controller('rpn-msb', 0, 101, 0),
+                    controller('rpn-lsb', 0, 100, 0),
+                    controller('data', 0, 6, 12),
+                    controller('null-msb', 0, 101, 127),
+                    controller('null-lsb', 0, 100, 127),
+                ],
+            },
+            bends: { 'clip-1': [bend('out', 1, 4096)] },
+        });
+
+        await play(0, 8);
+
+        expect(appliedBend().at(-1)).toEqual({
+            sampleFrame: FRAMES_PER_BEAT,
+            pitchBend: 4096,
+            bendRangeSemitones: 12,
+        });
+    });
+
+    it('starts a note struck while the bend is out bent, from its first sample', async () => {
+        const { noteOn } = stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip()]),
+            notes: { 'clip-1': [note('n0', 2, 1)] },
+            bends: { 'clip-1': [bend('out', 1, 8191), bend('return', 4, 0)] },
+        });
+
+        await play(0, 8);
+
+        expect(appliedBend()).toEqual([{ sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 }]);
+        // The voice exists before the update that bends it, so the update finds it held.
+        expect(noteOn.mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(applyNoteExpression).mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('plays a bend struck on the frame of a note-on as that note-on own bend', async () => {
+        const { noteOn } = stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip()]),
+            notes: { 'clip-1': [note('n0', 2, 1)] },
+            bends: { 'clip-1': [bend('out', 2, -8192)] },
+        });
+
+        await play(0, 8);
+
+        expect(noteOn.mock.calls[0]![2]).toBe(2 * FRAMES_PER_BEAT);
+        expect(appliedBend()).toEqual([{ sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: -8192, bendRangeSemitones: 2 }]);
+    });
+
+    it('leaves a note released on the frame a bend moves untouched by it, and bends the note struck there', async () => {
+        stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip()]),
+            notes: { 'clip-1': [note('ending', 0, 2, 60), note('striking', 2, 1, 67)] },
+            bends: { 'clip-1': [bend('out', 2, 8191)] },
+        });
+
+        await play(0, 8);
+
+        const calls = vi
+            .mocked(applyNoteExpression)
+            .mock.calls.map(([input]) => [input.note, input.expression.pitchBend]);
+        expect(calls).toEqual([
+            [60, undefined],
+            [67, 8191],
+        ]);
+    });
+
+    it('bends the note after a clip that ended bent, and the clip with no note list bends the notes around it', async () => {
+        stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [
+                midiClip({ id: 'bend-only', startBeat: 0, endBeat: 2 }),
+                midiClip({ id: 'notes-only', startBeat: 4, endBeat: 8 }),
+            ]),
+            // The first clip has no note list at all and ends with the bend out; nothing resets it.
+            notes: { 'notes-only': [note('n0', 1, 1)] },
+            bends: { 'bend-only': [bend('out', 1, 8191)] },
+        });
+
+        await play(0, 8);
+
+        expect(appliedBend()).toEqual([{ sampleFrame: 5 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 }]);
+    });
+
+    it('bends nothing for a muted clip lane', async () => {
+        stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [
+                midiClip({ id: 'muted', muted: true, startBeat: 0, endBeat: 2 }),
+                midiClip({ id: 'notes-only', startBeat: 4, endBeat: 8 }),
+            ]),
+            notes: { 'notes-only': [note('n0', 1, 1)] },
+            bends: { muted: [bend('out', 1, 8191)] },
+        });
+
+        await play(0, 8);
+
+        expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined]);
+    });
+
+    it('bends nothing on a Yeast track, whose notes are the rack', async () => {
+        stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(
+                FERMENTER,
+                [midiClip()],
+                [
+                    { id: 'yeast-1', type: 'yeast' },
+                    { id: 'device-1', type: 'fermenter' },
+                ]
+            ),
+            notes: { 'clip-1': [note('n0', 2, 1)] },
+            bends: { 'clip-1': [bend('out', 1, 8191)] },
+        });
+
+        await play(0, 8);
+
+        expect(appliedBend().filter(({ pitchBend }) => pitchBend !== undefined)).toEqual([]);
+    });
+
+    it('sends an instrument that does not bend a held voice no bend', async () => {
+        const { noteOn } = stripFor(CRUMBS);
+        setProject({
+            track: midiTrack(CRUMBS, [midiClip()]),
+            notes: { 'clip-1': [note('n0', 2, 1)] },
+            bends: { 'clip-1': [bend('out', 1, 8191), bend('return', 2.5, 0)] },
+        });
+
+        await play(0, 8);
+
+        // The track played, so the silence is the instrument's, not the project's.
+        expect(noteOn).toHaveBeenCalledTimes(1);
+        expect(appliedBend().filter(({ pitchBend }) => pitchBend !== undefined)).toEqual([]);
+    });
+
+    describe('after playback is relocated or stopped', () => {
+        it('starts a note struck at a jump destination inside the bend-out span bent, and posts nothing parked from before', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [note('long', 0, 6), note('landing', 3.5, 1, 67)] },
+                bends: { 'clip-1': [bend('out', 3, 8191), bend('return', 4, 0)] },
+            });
+
+            // The first window starts the long note and parks its bend changes for the windows that own them.
+            await play(0, 1);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            // A follow-action jump lands at 3.5, inside the span: the note struck there is bent, and the
+            // long note, never started in this window, is not addressed.
+            await play(3.5, 4, true);
+
+            const calls = vi
+                .mocked(applyNoteExpression)
+                .mock.calls.map(([input]) => [input.note, input.expression.pitchBend]);
+            expect(calls).toEqual([[67, 8191]]);
+            expect(appliedBend()[0]).toMatchObject({ sampleFrame: 0, bendRangeSemitones: 2 });
+        });
+
+        it('starts a note struck at a destination past the return at centre', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [note('landing', 5, 1, 67)] },
+                bends: { 'clip-1': [bend('out', 3, 8191), bend('return', 4, 0)] },
+            });
+
+            await play(5, 6, true);
+
+            expect(appliedBend()).toEqual([{ sampleFrame: 0, pitchBend: 0, bendRangeSemitones: 2 }]);
+        });
+
+        it('posts none of a started note’s parked bend changes once playback stops', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [note('long', 0, 6)] },
+                bends: { 'clip-1': [bend('out', 3, 8191), bend('return', 4, 0)] },
+            });
+
+            await play(0, 1);
+            // The stop door of the scheduler is the one that forgets what a playback parked.
+            disposePlayheadScheduler();
+            vi.mocked(applyNoteExpression).mockClear();
+            await play(1, 5);
+
+            expect(appliedBend()).toEqual([]);
+        });
+    });
+
+    it('posts each bend move in the window that contains it, not with the note', async () => {
+        stripFor(FERMENTER);
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip()]),
+            notes: { 'clip-1': [note('long', 0, 6)] },
+            bends: { 'clip-1': [bend('out', 3, 8191), bend('return', 4, 0)] },
+        });
+
+        await play(0, 2);
+        expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined]);
+        await play(2, 3.5);
+        expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined, 8191]);
+        await play(3.5, 6);
+        expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined, 8191, 0]);
+    });
+});

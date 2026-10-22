@@ -146,6 +146,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     return {
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
+        projectChannelBend: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         addChordEvent: vi.fn(),
         appendMidiNotes: vi.fn(),
@@ -317,6 +318,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getCurrentTime: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
+    getNoteExpressionDimensions: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
     getDrumKitByIndex: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
