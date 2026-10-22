@@ -1,0 +1,35 @@
+tests/e2e/toasterPerPadParamsTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterPadDriveTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterBrightKnobTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterStepSequencerTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterTextureCharacterTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterPadMixerTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterEuclidTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+tests/e2e/toasterKitPresetTestId.spec.ts
+  s_59e31a5c6f3e31::t_eeec151dd52fd3 30-35
+tests/e2e/toasterTransportChipsTestId.spec.ts
+  s_59e31a5c6f3e31::t_a0a3227b87f950 11-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d77be36fd4cdbe2ccd59707a37165d84bff48449",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
