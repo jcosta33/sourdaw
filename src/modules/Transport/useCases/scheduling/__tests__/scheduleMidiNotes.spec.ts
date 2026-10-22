@@ -1731,6 +1731,38 @@ describe('scheduleMidiNotes', () => {
                 );
             });
 
+            it('plays the curve of a note recorded without any note-on expression', async () => {
+                // Aftertouch that arrives after key-down records a curve on a note whose key-down carried no
+                // pressure, slide or bend, so the note has no scalars to gate the curve on.
+                fermenterStripWithControls();
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 3,
+                        velocity: 100,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1.5, value: 90 },
+                            ],
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(
+                    appliedExpression().map(({ sampleFrame, expression }) => [sampleFrame, expression.pressure])
+                ).toEqual([
+                    // The note-on's own update is neutral, as for any note without expression.
+                    [frameAt(0.5), undefined],
+                    [frameAt(0.75), 40],
+                    [frameAt(1.25), 90],
+                ]);
+            });
+
             it('places each point at the compensated note-on frame plus its own offset', async () => {
                 const { noteOn } = fermenterStripWithControls();
                 // The track's plugin delay moves the whole note, so a point keeps its offset from the note-on.

@@ -2035,6 +2035,28 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             ]);
         });
 
+        it('plays the curve of a note recorded without any note-on expression', async () => {
+            // Aftertouch that arrives after key-down records a curve on a note whose key-down carried no pressure,
+            // slide or bend, so the note has no MPE scalars to gate the curve on.
+            const arrivals = await dispatchOneNote({
+                startBeat: 1,
+                duration: 3,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.5, value: 40 },
+                        { offsetBeats: 1.5, value: 90 },
+                    ],
+                },
+            });
+
+            expect(
+                arrivals.expression.map(({ sampleFrame, pressure }) => [sampleFrame, Math.round(pressure * 127)])
+            ).toEqual([
+                [36_000, 40],
+                [60_000, 90],
+            ]);
+        });
+
         it('sends no curve to Toaster, which has no voice to bend', async () => {
             const arrivals = await dispatchOneNote(curvedNote, { deviceType: 'toaster' });
 
