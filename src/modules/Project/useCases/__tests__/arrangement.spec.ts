@@ -262,6 +262,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         setMidiStoreState: actual.setMidiStoreState,
         setNotesForClip: vi.fn(),
         shouldPlayMidiEvent: vi.fn(),
+        shiftClipMidiNotes: vi.fn(),
         splitMidiNotesAtBeat: vi.fn(),
         transposeForChordTrack: vi.fn(),
     };

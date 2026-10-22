@@ -106,6 +106,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(),
     captureProjectRevision: vi.fn(),
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     createCrdtDoc: vi.fn(),
     createCrdtProject: vi.fn(),
     DOC_BRANCHES: '__branches__',

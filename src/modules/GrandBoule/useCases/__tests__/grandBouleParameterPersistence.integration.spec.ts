@@ -119,6 +119,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         serializeMidiStateForClips: vi.fn(),
         setMidiInputTrack: vi.fn(),
         setNotesForClip: vi.fn(),
+        shiftClipMidiNotes: vi.fn(),
         splitMidiNotesAtBeat: vi.fn(),
     };
 });
