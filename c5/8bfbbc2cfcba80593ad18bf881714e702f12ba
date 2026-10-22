@@ -1,0 +1,37 @@
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_ba8dd89de9aac7::t_cae43bd68aa8b0 3766,3805-3806,3817,4046-4084,4174-4192,4197,4203,4209,4215-4222,4224-4231,4237,4243-4300
+scripts/prContract.ts
+  s_ba8dd89de9aac7::t_521e3ea7475ae2 671-672,723-725,760
+scripts/resourceGuard.ts
+  s_1c08b47ac3792f::t_9671e365386da6 110-111,1811-1814,1919-1925,1943-1948,2260,2269,2272,2274,2276,2290-2291,2975,3022,3103
+scripts/resourceGuardDisk.ts
+  s_ba8dd89de9aac7::t_802565708fcdc6 1-36
+scripts/resourceGuardStorage.ts
+  s_1c08b47ac3792f::t_3ee097f27e55a4 411-412,464,550-551,577,580,605-609,616
+docs/06-testing.md
+  s_ba8dd89de9aac7::t_a5969c399f3a42 730-733,741-742
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c58bfbbc2cfcba80593ad18bf881714e702f12ba",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
