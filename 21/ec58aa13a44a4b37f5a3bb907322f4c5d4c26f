@@ -1,0 +1,20 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_59e31a5c6f3e31::t_1c299e5c5987b8 374-375
+  s_59e31a5c6f3e31::t_b7c0a466a2c711 371-373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "21ec58aa13a44a4b37f5a3bb907322f4c5d4c26f",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
