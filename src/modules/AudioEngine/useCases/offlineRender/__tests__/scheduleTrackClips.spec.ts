@@ -1904,6 +1904,20 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         };
         const bend = (1_000 / 8_192) * 12;
 
+        // The live scheduler's case: scheduleMidiNotes.spec.ts, "addresses every in-window update to the note pitch
+        // and channel".
+        it('addresses every curve update to the note pitch and channel, not only the note-on’s', async () => {
+            const arrivals = await dispatchOneNote(curvedNote);
+
+            // The note-on's own update and the three curve changes, all for pitch 60 on channel 3.
+            expect(arrivals.expression.map(({ noteOrPad, channel }) => [noteOrPad, channel])).toEqual([
+                [60, 3],
+                [60, 3],
+                [60, 3],
+                [60, 3],
+            ]);
+        });
+
         it('hands the instrument each curve point at its own frame, across a tempo change inside the note', async () => {
             // The live scheduler's case for the same note: 120 BPM to beat 2, 60
             // BPM after it, so the points at beats 1.5, 2.5 and 3.5 sit at 0.75 s,

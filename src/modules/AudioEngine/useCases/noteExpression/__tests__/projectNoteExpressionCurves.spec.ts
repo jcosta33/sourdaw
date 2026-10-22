@@ -225,6 +225,58 @@ describe('projectNoteExpressionCurves', () => {
         ]);
     });
 
+    it('starts the note on the last point a cut passed, not the first', () => {
+        // The note began at beat 0 and plays from beat 2: three points lie behind the cut, one ahead of it.
+        const { atStart, changes } = projectNoteExpressionCurves({
+            note: {
+                pressure: 10,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.5, value: 40 },
+                        { offsetBeats: 1, value: 60 },
+                        { offsetBeats: 1.5, value: 90 },
+                        { offsetBeats: 3, value: 20 },
+                    ],
+                },
+            },
+            startBeat: 2,
+            beatsIntoNote: 2,
+            releaseFrame: frameAtBeat(4),
+            frameAtBeat,
+        });
+
+        expect(atStart?.pressure).toBe(90);
+        expect(changes.map((change) => [change.beat, change.expression.pressure])).toEqual([[3, 20]]);
+    });
+
+    it('clamps a recorded bend range above 127 to 127', () => {
+        const { changes } = projectNoteExpressionCurves({
+            note: {
+                pitchBendRangeSemitones: 500,
+                expression: { pitchBend: [{ offsetBeats: 0.5, value: 100 }] },
+            },
+            startBeat: 0,
+            releaseFrame: frameAtBeat(2),
+            frameAtBeat,
+        });
+
+        expect(changes[0]?.expression.pitchBendRangeSemitones).toBe(127);
+    });
+
+    it('clamps a recorded bend range below 0 to 0', () => {
+        const { changes } = projectNoteExpressionCurves({
+            note: {
+                pitchBendRangeSemitones: -3,
+                expression: { pitchBend: [{ offsetBeats: 0.5, value: 100 }] },
+            },
+            startBeat: 0,
+            releaseFrame: frameAtBeat(2),
+            frameAtBeat,
+        });
+
+        expect(changes[0]?.expression.pitchBendRangeSemitones).toBe(0);
+    });
+
     it('projects nothing for a note without recorded curves', () => {
         expect(
             projectNoteExpressionCurves({
