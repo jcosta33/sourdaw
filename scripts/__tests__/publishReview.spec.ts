@@ -10,6 +10,7 @@ import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import {
     AUTHOR_BOT_NODE_ID,
+    CI_APPROVAL_LABEL,
     ORCHESTRATOR_USER_NODE_ID,
     REVIEWER_BOT_NODE_ID,
     type GhSession,
@@ -177,6 +178,8 @@ function fakePort(
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
+    // Label writes stay out of `calls`, whose exact read-then-post sequence many cases pin.
+    const labelWrites: string[] = [];
     const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
     let head = input.head ?? 'headsha';
     let state = input.state ?? 'OPEN';
@@ -240,9 +243,11 @@ function fakePort(
         },
         publicReviews: () => [],
         publicReviewComments: () => [],
+        applyApprovalLabel: (number) => labelWrites.push(`apply:${number}`),
+        removeApprovalLabel: (number) => labelWrites.push(`remove:${number}`),
         log: (message) => logs.push(message),
     };
-    return { port, calls, logs, posted };
+    return { port, calls, logs, posted, labelWrites };
 }
 
 function createJournaledRecoveryFixture(
@@ -1094,6 +1099,8 @@ describe('review publish', () => {
                         markRemoteMutationAttempt();
                         throw new Error('create review failed: HTTP 422');
                     },
+                    applyApprovalLabel: () => expect.fail('no label without a standing review'),
+                    removeApprovalLabel: () => expect.fail('no label without a standing review'),
                     log: () => undefined,
                 }),
                 publish: publishPreparedReview,
@@ -1247,6 +1254,28 @@ describe('review publish', () => {
         expect(calls[0]).toBe('read:/repo/.agents/review-bundles/42-headsha/review.json');
         expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
         expect(logs.at(-1)).toBe('99');
+    });
+
+    it('applies the CI approval label only once the APPROVE stands', () => {
+        const approved = fakePort();
+        approved.port.postReview = (review) => {
+            expect(approved.labelWrites).toEqual([]);
+            return { id: 99, actorNodeId: REVIEWER_BOT_NODE_ID, login: review.event };
+        };
+
+        publishReview(42, approved.port);
+
+        expect(approved.labelWrites).toEqual(['apply:42']);
+    });
+
+    it('takes the CI approval label off when it requests changes', () => {
+        const { port, labelWrites } = fakePort({
+            json: { event: 'REQUEST_CHANGES', body: 'Please fix the merge gate.', comments: [validComment] },
+        });
+
+        publishReview(42, port);
+
+        expect(labelWrites).toEqual(['remove:42']);
     });
 
     it('posts REQUEST_CHANGES body and comments when valid', () => {
@@ -2149,6 +2178,67 @@ describe('review publish', () => {
  * `openLane.spec.ts` documents why `vi.mock('node:child_process')` does not intercept a module
  * under `scripts/` and why a prior spec that trusted it filed a live issue on the public tracker.
  */
+describe('shellPort CI approval label', () => {
+    const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
+    const labelPath = `repos/jcosta33/sourdaw/labels/${encodeURIComponent(CI_APPROVAL_LABEL)}`;
+    const issueLabelPath = `repos/jcosta33/sourdaw/issues/42/labels/${encodeURIComponent(CI_APPROVAL_LABEL)}`;
+
+    function recordingCapture(answers: Record<string, () => string>) {
+        const requests: string[] = [];
+        const capture = (command: string, args: string[], options?: { input?: string }): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            const method = args.includes('--method') ? args[args.indexOf('--method') + 1] : 'GET';
+            const path = args.find((arg) => arg.startsWith('repos/')) ?? '';
+            const request = `${method ?? ''} ${path}${options?.input === undefined ? '' : ` ${options.input}`}`;
+            requests.push(request);
+            const answer = answers[`${method ?? ''} ${path}`];
+            return answer === undefined ? '{}' : answer();
+        };
+        return { requests, capture };
+    }
+
+    function notFound(): never {
+        throw new Error('gh: Not Found (HTTP 404)');
+    }
+
+    it('takes a stale label off before adding it, so every approval emits a fresh labeled event', () => {
+        const { requests, capture } = recordingCapture({});
+        shellPort(session, process.cwd(), capture).applyApprovalLabel(42);
+        expect(requests).toEqual([
+            `GET ${labelPath}`,
+            `DELETE ${issueLabelPath}`,
+            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`,
+        ]);
+    });
+
+    it('creates the label when the repository lacks it and tolerates its absence from the pull request', () => {
+        const { requests, capture } = recordingCapture({
+            [`GET ${labelPath}`]: notFound,
+            [`DELETE ${issueLabelPath}`]: notFound,
+        });
+        shellPort(session, process.cwd(), capture).applyApprovalLabel(42);
+        expect(requests[1]).toMatch(/^POST repos\/jcosta33\/sourdaw\/labels \{"name":"ci:approved",/u);
+        expect(requests.at(-1)).toBe(
+            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`
+        );
+    });
+
+    it('removes the label, succeeding when it is absent and failing on any other error', () => {
+        const absent = recordingCapture({ [`DELETE ${issueLabelPath}`]: notFound });
+        shellPort(session, process.cwd(), absent.capture).removeApprovalLabel(42);
+        expect(absent.requests).toEqual([`DELETE ${issueLabelPath}`]);
+
+        const denied = recordingCapture({
+            [`DELETE ${issueLabelPath}`]: () => {
+                throw new Error('gh: Resource not accessible by integration (HTTP 403)');
+            },
+        });
+        expect(() => shellPort(session, process.cwd(), denied.capture).removeApprovalLabel(42)).toThrow('HTTP 403');
+    });
+});
+
 describe('shellPort postReview state verification', () => {
     const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
 
@@ -4829,6 +4919,8 @@ describe('orchestrator acceptance', () => {
         expect(fixture.journal).toHaveBeenCalledWith(
             expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
         );
+        // Gate admission accepts only the reviewer App's approval, so the legacy acceptance never labels.
+        expect(fixture.labelWrites).toEqual([]);
     });
 
     it.each([
@@ -5248,6 +5340,7 @@ describe('fresh reviewer dossier publication', () => {
         const calls: string[] = [];
         const logs: string[] = [];
         const writes: { path: string; contents: string }[] = [];
+        const labelWrites: string[] = [];
         const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
         const port: PublishReviewPort = {
             primaryRoot: () => root,
@@ -5288,6 +5381,8 @@ describe('fresh reviewer dossier publication', () => {
             },
             publicReviews: () => input.publicReviews ?? [],
             publicReviewComments: () => input.publicReviewComments ?? [],
+            applyApprovalLabel: (labeledNumber) => labelWrites.push(`apply:${labeledNumber}`),
+            removeApprovalLabel: (labeledNumber) => labelWrites.push(`remove:${labeledNumber}`),
             log: (message) => logs.push(message),
         };
         if (input.writable !== false) {
@@ -5304,6 +5399,7 @@ describe('fresh reviewer dossier publication', () => {
             logs,
             writes,
             posted,
+            labelWrites,
             readDossier: () => readJsonFile(join(bundle, 'dossier.json')),
         };
     }
@@ -6848,6 +6944,8 @@ describe('fresh reviewer dossier publication', () => {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
             expect(fixture.logs.filter((line) => line.includes('review-round-warning'))).toHaveLength(1);
+            // The replay re-applies the label, so re-running the publication restarts a lost Gate run.
+            expect(fixture.labelWrites).toEqual([`apply:${number}`, `apply:${number}`]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

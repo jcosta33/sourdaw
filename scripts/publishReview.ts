@@ -44,6 +44,7 @@ import {
     readLiveApprovalContext,
 } from './reviewApprovalContext.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
+import { applyApprovalLabel, removeApprovalLabel } from './reviewApprovalLabel.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
 import {
     assertPublicationEvidence,
@@ -131,6 +132,14 @@ export type PublishReviewPort = {
      */
     publicReviews?: (number: number) => PublicReview[];
     publicReviewComments?: (number: number) => PublicReviewComment[];
+    /**
+     * Freshly applies `CI_APPROVAL_LABEL`, so its `labeled` event signals approval-gated CI for the
+     * approved head; `scripts/ciApprovalAdmission.ts` admits it only for this App's approval of that
+     * exact head.
+     */
+    applyApprovalLabel: (number: number) => void;
+    /** Takes `CI_APPROVAL_LABEL` off, succeeding when it was not applied. */
+    removeApprovalLabel: (number: number) => void;
     log: (message: string) => void;
 };
 
@@ -303,6 +312,7 @@ function publishPreparedReviewForActor(
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
         const replayed = recordedPublicationReplay(number, prepared.head, document, actorNodeId, port);
         if (replayed !== undefined) {
+            syncApprovalLabel(number, document.event, port);
             port.log(String(replayed));
             return replayed;
         }
@@ -330,11 +340,26 @@ function publishPreparedReviewForActor(
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
         recordPublicationBindings(number, prepared.head, document, posted.id, port, prepared.reviewReassessment);
+        syncApprovalLabel(number, document.event, port);
     } else {
         recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
     }
     port.log(String(posted.id));
     return posted.id;
+}
+
+/**
+ * Runs after the review stands and its binding is recorded, and again on an exact replay, so
+ * re-running `review:publish` re-applies a label a failed write left missing or another label
+ * event's failing `Gate` superseded. The orchestrator's legacy acceptance never labels: admission
+ * requires the reviewer App's own approval.
+ */
+function syncApprovalLabel(number: number, event: ReviewEvent, port: PublishReviewPort): void {
+    if (event === 'APPROVE') {
+        port.applyApprovalLabel(number);
+        return;
+    }
+    port.removeApprovalLabel(number);
 }
 
 function assertAcceptancePreconditions(
@@ -475,6 +500,8 @@ export function shellPort(
         remoteReview: (number, reviewId) => readRemoteReview(gh, number, reviewId),
         publicReviews: (number) => readPublicReviews(gh, number),
         publicReviewComments: (number) => readPublicReviewComments(gh, number),
+        applyApprovalLabel: (number) => applyApprovalLabel(gh, number),
+        removeApprovalLabel: (number) => removeApprovalLabel(gh, number),
         log: (message) => {
             console.log(message);
         },
