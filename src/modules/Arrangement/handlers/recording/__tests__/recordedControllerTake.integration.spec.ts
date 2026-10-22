@@ -15,6 +15,7 @@ const liveMidi = vi.hoisted(() => {
     return { input };
 });
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -56,6 +57,7 @@ import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
+import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 
 const TRACK_ID = 'track-midi';
 
@@ -665,6 +667,24 @@ describe('recorded controller take commit', () => {
                 await notesOnlyTake(provisional.id);
 
                 expect(midiStore.value?.ccByClipId[provisional.id]).toBeUndefined();
+            });
+
+            it('keeps a held pedal when the already-armed track is selected again', async () => {
+                injectDependencies(selectTrack, { eventBus: { emit: () => Promise.resolve() } });
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                sendLive(4, 0xb0, 64, 127);
+                selectTrack(TRACK_ID);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                await notesOnlyTake(provisional.id);
+
+                expect(pedalsOf(provisional.id)).toEqual([{ controller: 64, value: 127, beat: 0, channel: 0 }]);
             });
 
             it('adds no duplicate when the take records the pedal at beat 0 itself', async () => {
