@@ -600,7 +600,7 @@ describe('handleLoadPreset', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }],
         });
-        expect(handleRestorePresetDeviceChain.validate?.(inverse)).toBe(true);
+        expect(handleRestorePresetDeviceChain.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
         mocks.updateTrack.mockImplementation(
             (_id: string, update: (track: { devices: readonly DeviceSnapshot[] }) => { devices: DeviceSnapshot[] }) => {
                 expect(update({ devices: [newDevice] }).devices).toEqual([oldDevice]);

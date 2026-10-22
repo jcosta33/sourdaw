@@ -471,7 +471,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
             };
             const before = { ...base, devices: [instrument, eq] };
             const after = { ...base, devices: [instrument, eq, crust] };
-            trackStore.set({ tracks: [after] });
+            trackStore.set({ tracks: [after], selectedTrackId: after.id });
             applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' });
             expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
                 expect.objectContaining({
@@ -488,7 +488,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
             );
             expect(mocks.mirrorDeviceChainDelta).toHaveBeenLastCalledWith({ before, after });
             const reordered = { ...after, devices: [crust, instrument, eq] };
-            trackStore.set({ tracks: [reordered] });
+            trackStore.set({ tracks: [reordered], selectedTrackId: reordered.id });
             applyDeviceChainRuntimeDelta({ before: after, after: reordered, operation: 'reorder-device' });
             expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
                 expect.objectContaining({
@@ -498,7 +498,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
                     }),
                 })
             );
-            trackStore.set({ tracks: [before] });
+            trackStore.set({ tracks: [before], selectedTrackId: before.id });
             applyDeviceChainRuntimeDelta({ before: after, after: before, operation: 'remove-device' });
             expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
                 expect.objectContaining({
@@ -515,7 +515,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
             const before = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
             const drum = { id: 'drum', type: 'drum-kit', name: 'Drum', bypassed: false, parameterValues: { kit: 1 } };
             const after = { ...before, devices: [...before.devices, drum] };
-            trackStore.set({ tracks: [after] });
+            trackStore.set({ tracks: [after], selectedTrackId: after.id });
             mocks.getTrackStrip.mockReturnValue(warm ? {} : undefined);
             mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(warm);
             expect(applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' })).toMatchObject({
@@ -532,7 +532,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
         const synth = { id: 'synth', type: 'builtin-synth', name: 'Synth', bypassed: false, parameterValues: {} };
         const before = { ...base, devices: [synth, ...base.devices] };
         const after = { ...base, devices: [...base.devices, synth] };
-        trackStore.set({ tracks: [after] });
+        trackStore.set({ tracks: [after], selectedTrackId: after.id });
         mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(true);
         expect(applyDeviceChainRuntimeDelta({ before, after, operation: 'reorder-device' })).toMatchObject({
             application: 'discharged',
@@ -550,7 +550,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
                 { id: 'drum', type: 'drum-kit', name: 'Drum', bypassed: false, parameterValues: {} },
             ],
         };
-        trackStore.set({ tracks: [after] });
+        trackStore.set({ tracks: [after], selectedTrackId: after.id });
         mocks.getTrackStrip.mockReturnValue({});
         mocks.applyRuntimeGraphDelta.mockReturnValue({
             acceptance: 'rejected',
@@ -570,7 +570,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
         const drum = { id: 'drum', type: 'drum-kit', name: 'Drum', bypassed: false, parameterValues: {} };
         const intermediate = { ...before, devices: [...before.devices, crust] };
         const finalTrack = { ...intermediate, devices: [...intermediate.devices, drum] };
-        trackStore.set({ tracks: [finalTrack] });
+        trackStore.set({ tracks: [finalTrack], selectedTrackId: finalTrack.id });
         const batchContext = {
             actions: [
                 { type: 'addDevice' as const, payload: { trackId: before.id, deviceType: 'crust' } },

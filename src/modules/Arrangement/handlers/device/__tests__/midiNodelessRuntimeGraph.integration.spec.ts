@@ -144,7 +144,10 @@ describe('registered MIDI device actions with real AudioEngine and TrackNode', (
         '%s stays project-only beside a node-backed effect',
         async (type) => {
             const track = projectTrack();
-            trackStore.set({ tracks: [{ ...track, devices: [{ ...track.devices[0]!, type }] }] });
+            trackStore.set({
+                tracks: [{ ...track, devices: [{ ...track.devices[0]!, type }] }],
+                selectedTrackId: track.id,
+            });
             const action = compileAddDeviceAction(track.id, 'builtin-eq');
             if (!action) {
                 throw new Error('Missing effect action');
@@ -196,7 +199,7 @@ describe('registered MIDI device actions with real AudioEngine and TrackNode', (
     it('rejects a real node-backed identity mismatch after the project replaced its device', async () => {
         const track = projectTrack();
         const effect = { id: 'old-eq', type: 'builtin-eq', name: 'EQ', bypassed: false, parameterValues: {} };
-        trackStore.set({ tracks: [{ ...track, devices: [...track.devices, effect] }] });
+        trackStore.set({ tracks: [{ ...track, devices: [...track.devices, effect] }], selectedTrackId: track.id });
         expect(projectTrackToLiveStrip({ trackId: track.id })).toMatchObject({
             acceptance: 'accepted',
             application: 'applied',
@@ -204,6 +207,7 @@ describe('registered MIDI device actions with real AudioEngine and TrackNode', (
         const current = projectTrack();
         trackStore.set({
             tracks: [{ ...current, devices: [current.devices[0]!, { ...effect, id: 'replacement-eq' }] }],
+            selectedTrackId: current.id,
         });
         const action = compileAddDeviceAction(track.id, 'crust');
         if (!action) {
