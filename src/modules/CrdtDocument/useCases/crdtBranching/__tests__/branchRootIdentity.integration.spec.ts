@@ -26,6 +26,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     restoreUndoHistory: vi.fn(),
 }));
+// The switch stops the transport first; these cases pin root identity, not the stop.
+vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn(() => Promise.resolve()) }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
@@ -143,8 +145,11 @@ describe('branch root identity integration', () => {
         const originalAIdentity = captureProjectRootIdentity();
 
         const transition = switchBranch('b');
+        // The switch stops the transport before it swaps the root slot.
+        await vi.waitFor(() => {
+            expect(captureProjectRootIdentity()).not.toBe(originalAIdentity);
+        });
         const installedBIdentity = captureProjectRootIdentity();
-        expect(installedBIdentity).not.toBe(originalAIdentity);
         expect(requireRoot()).toMatchObject({ branch: 'B', bOnly: true });
 
         const failure = new Error('deferred persistence failed');

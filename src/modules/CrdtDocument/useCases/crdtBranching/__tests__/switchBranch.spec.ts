@@ -113,8 +113,10 @@ const mocks = vi.hoisted(() => ({
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
     clone: vi.fn((doc: unknown) => structuredClone(doc)),
+    stopPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
 }));
 
+vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: mocks.stopPlayback }));
 vi.mock('@automerge/automerge', () => ({ clone: mocks.clone }));
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
@@ -158,6 +160,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 describe('switchBranch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.stopPlayback.mockResolvedValue(undefined);
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         for (const id of Object.keys(docs)) {
             delete docs[id];
@@ -257,6 +260,43 @@ describe('switchBranch', () => {
         expect(mocks.flushAutomergeStorageWrites).toHaveBeenCalledTimes(2);
         expect(order[0]).toBe('flush');
         expect(order.indexOf('flush', 1)).toBeLessThan(order.indexOf('replace:root'));
+    });
+
+    it('stops the transport before it flushes storage or touches a document', async () => {
+        const order: string[] = [];
+        mocks.stopPlayback.mockImplementation(() => {
+            order.push('stop');
+            return Promise.resolve();
+        });
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => {
+            order.push('flush');
+        });
+        mocks.replaceDoc.mockImplementation((id: string) => {
+            order.push(`replace:${id}`);
+        });
+
+        await switchBranch('other');
+
+        expect(order[0]).toBe('stop');
+        expect(order.indexOf('stop')).toBeLessThan(order.indexOf('flush'));
+        expect(order.indexOf('stop')).toBeLessThan(order.indexOf('replace:root'));
+    });
+
+    it('leaves the branch, the documents and undo untouched when the transport cannot stop', async () => {
+        const stopFailure = new Error('recorder would not flush');
+        mocks.stopPlayback.mockRejectedValueOnce(stopFailure);
+
+        await expect(switchBranch('other')).rejects.toBe(stopFailure);
+
+        expect(mocks.replaceDoc).not.toHaveBeenCalled();
+        expect(mocks.commit).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not stop the transport when the target is already active', async () => {
+        await switchBranch('feat');
+
+        expect(mocks.stopPlayback).not.toHaveBeenCalled();
     });
 
     it('migrates an outgoing legacy main branch to an independent backing document', async () => {
