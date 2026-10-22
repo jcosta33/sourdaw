@@ -24,6 +24,13 @@ describe('isTransportIdle', () => {
         expect(isTransportIdle()).toBe(true);
     });
 
+    it('is idle when no transport state has been published', () => {
+        transportStore.clear();
+
+        expect(transportStore.value).toBeNull();
+        expect(isTransportIdle()).toBe(true);
+    });
+
     it('is not idle while playing', () => {
         transportStore.set({ ...defaultTransportState, isPlaying: true });
 
