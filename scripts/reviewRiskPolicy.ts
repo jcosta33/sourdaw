@@ -4,7 +4,8 @@
  * `planReviewRisk` derives, from a change's changed paths alone, which review stances that change
  * proportionally requires. `parseReviewRiskPlan` re-validates the `risk-plan.json` that
  * `review:prepare` writes, recomputing the stance union from `riskClasses` so a hand-edited plan can
- * neither widen nor narrow its own review.
+ * neither widen nor narrow its own review. `reviewStanceFloor` turns a plan into the minimum number
+ * of distinct stances a fresh reviewer publication must draw (ADR 0054).
  */
 
 import { fail } from './prContract.ts';
@@ -16,7 +17,9 @@ export const REVIEW_RISK_PLAN_FORMAT = 'risk-plan-v1';
 export const REVIEW_SMALL_CHANGE_LINE_BUDGET = 200;
 
 const REVIEW_RISK_CLASSES = [
+    'docs-only',
     'small',
+    'small-tooling',
     'ordinary',
     'test-only',
     'cross-domain',
@@ -54,7 +57,9 @@ export type ReviewRiskPlan = {
  * contributes a stance outside its own entry, which is the omission rule AC-011 tests.
  */
 const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
+    'docs-only': ['correctness'],
     small: ['correctness', 'test-validity'],
+    'small-tooling': ['correctness', 'module-boundaries', 'test-validity'],
     'test-only': ['test-validity'],
     ordinary: ['correctness', 'code-craft', 'module-boundaries', 'test-validity'],
     'cross-domain': ['correctness', 'module-boundaries', 'test-validity'],
@@ -63,7 +68,19 @@ const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
     undo: ['correctness', 'project-integrity-undo', 'test-validity'],
 };
 
-const REALTIME_AUDIO_PREFIXES = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 'public/wasm/'] as const;
+const REALTIME_AUDIO_PREFIXES = [
+    'crates/daw-dsp/',
+    'src/modules/AudioEngine/',
+    'public/wasm/',
+    'public/audio/worklets/',
+] as const;
+/** The generators and polyfills that emit the audio-thread worklet sources. */
+const REALTIME_AUDIO_PATHS = [
+    'scripts/gen-daw-dsp-worklet.ts',
+    'scripts/gen-scoring-worklet.ts',
+    'scripts/gen-proof-chamber-worklet.ts',
+    'scripts/workletPolyfills.ts',
+] as const;
 /**
  * Playback-timing surfaces (#3377 AC-009 calibration): the playhead scheduler is not on the audio
  * thread, but a defect there moves the audible playhead, so it earns the realtime-audio class the
@@ -71,7 +88,43 @@ const REALTIME_AUDIO_PREFIXES = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 
  */
 const REALTIME_TIMING_PREFIXES = ['src/modules/Transport/useCases/playheadScheduler/'] as const;
 const NATIVE_SECURITY_PREFIXES = ['electron/', 'crates/', '.github/workflows/'] as const;
-const NATIVE_SECURITY_PATHS = ['src/utils/desktopBridge.ts'] as const;
+/**
+ * The Cargo workspace root: every crate, the DSP engine included, resolves its dependencies through
+ * the root manifest and lockfile, so a dependency bump there moves both the audio engine and the
+ * native shell however few lines it touches.
+ */
+const CARGO_WORKSPACE_PATHS = ['Cargo.lock', 'Cargo.toml'] as const;
+/**
+ * Native toolchain, dependency and packaging surfaces outside `electron/` and `crates/`: the Rust
+ * toolchain and build flags, the JavaScript dependency manifests, the native addon build, the
+ * packaging config with its fuse and entitlement wiring, the bundled sandboxed preload, the pinned
+ * Electron runtime with its provenance check, and the review tooling that admits CI or feeds the
+ * review bundle. `.cargo/config` and `rust-toolchain` are the extensionless legacy names: Cargo
+ * still reads `.cargo/config` and prefers it when both forms exist, and rustup reads
+ * `rust-toolchain` and prefers it over `rust-toolchain.toml` in the same directory, so either name
+ * overrides the pinned toolchain.
+ */
+const NATIVE_SECURITY_PATHS = [
+    'src/utils/desktopBridge.ts',
+    '.cargo/config.toml',
+    '.cargo/config',
+    'rust-toolchain.toml',
+    'rust-toolchain',
+    'package.json',
+    'pnpm-workspace.yaml',
+    'scripts/buildNativeAddon.ts',
+    'scripts/ensurePinnedRustToolchain.sh',
+    'scripts/ciApprovalAdmission.ts',
+    'scripts/prepareReviewEntry.ts',
+    'scripts/semanticReviewContext.ts',
+    'electron-builder.yml',
+    'scripts/flipElectronFuses.ts',
+    'scripts/buildElectronPreload.ts',
+    'scripts/electronRuntimeContract.ts',
+    'scripts/checkElectronRuntimeProvenance.ts',
+] as const;
+/** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
+const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;
 /**
  * Privileged governance-transition surfaces (#3377 AC-009 calibration): a change to any member of
  * the pinned-origin trusted-write closure set — the union of what the privileged commands run from
@@ -117,7 +170,6 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewDossierChain.ts',
     'scripts/reviewDossierPublication.ts',
     'scripts/reviewDossierReassessed.ts',
-    'scripts/reviewDossierSemanticAssessment.ts',
     'scripts/reviewDossierViews.ts',
     'scripts/reviewPublicationBinding.ts',
     'scripts/reviewPublicationLegacyIncidents.ts',
@@ -175,8 +227,21 @@ function earnedStances(riskClasses: readonly ReviewRiskClass[]): ReviewStanceId[
  */
 type PathSide = Pick<ReviewChangedPath, 'path' | 'group'>;
 
+/**
+ * Repository-control paths classify as handwritten whatever the diff summary groups them as: a
+ * workflow named `*.test.yml` or a `.github/` template is never a test or a document to review
+ * lightly, so it can neither plan `test-only` or `docs-only` nor skip the specialist classes.
+ */
+const ALWAYS_HANDWRITTEN_PREFIXES = ['.github/'] as const;
+
+function riskSide(side: PathSide): PathSide {
+    const controlled = ALWAYS_HANDWRITTEN_PREFIXES.some((prefix) => side.path.startsWith(prefix));
+    return controlled ? { path: side.path, group: 'handwritten' } : side;
+}
+
 function sidesOf(entry: ReviewChangedPath): readonly PathSide[] {
-    return entry.previous === undefined ? [entry] : [entry, entry.previous];
+    const sides = entry.previous === undefined ? [entry] : [entry, entry.previous];
+    return sides.map(riskSide);
 }
 
 function prefixTriggers(rule: string, prefixes: readonly string[], sides: readonly PathSide[]): string[] {
@@ -193,6 +258,8 @@ function realtimeAudioFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
         ...prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, sides),
         ...prefixTriggers('realtime-audio', REALTIME_TIMING_PREFIXES, sides),
+        ...exactTriggers('realtime-audio', REALTIME_AUDIO_PATHS, sides),
+        ...exactTriggers('realtime-audio', CARGO_WORKSPACE_PATHS, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'realtime-audio', triggers }];
 }
@@ -201,6 +268,8 @@ function nativeSecurityFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
         ...prefixTriggers('native-security', NATIVE_SECURITY_PREFIXES, sides),
         ...exactTriggers('native-security', NATIVE_SECURITY_PATHS, sides),
+        ...exactTriggers('native-security', CARGO_WORKSPACE_PATHS, sides),
+        ...sides.filter((side) => ENTITLEMENTS_PATTERN.test(side.path)).map((side) => `native-security:${side.path}`),
         ...exactTriggers('native-security', GOVERNANCE_TRANSITION_PATHS, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
@@ -241,29 +310,53 @@ function crossDomainFindings(sides: readonly PathSide[]): RiskFinding[] {
     return [{ riskClass: 'cross-domain', triggers: ['cross-domain:multiple-surfaces'] }];
 }
 
+/**
+ * A small change keeps the light two-stance class only as product code: every handwritten side is
+ * under `src/`, or there is none (a generated-only change). Small tooling, configuration, build or
+ * server changes have no product surface to bound their reach, so they review like larger ones.
+ */
 function sizeFinding(paths: readonly ReviewChangedPath[]): RiskFinding {
     const lines = paths.reduce((total, entry) => total + entry.added + entry.deleted, 0);
     if (lines <= REVIEW_SMALL_CHANGE_LINE_BUDGET) {
-        return { riskClass: 'small', triggers: [`small:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
+        const handwritten = paths.flatMap((entry) => sidesOf(entry).filter((side) => side.group === 'handwritten'));
+        if (handwritten.every((side) => side.path.startsWith('src/'))) {
+            return { riskClass: 'small', triggers: [`small:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
+        }
+        return {
+            riskClass: 'small-tooling',
+            triggers: [`small-tooling:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}:outside-src`],
+        };
     }
     return { riskClass: 'ordinary', triggers: [`ordinary:handwritten-lines>${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
 }
 
-function specialistFindings(sides: readonly PathSide[]): RiskFinding[] {
+/**
+ * The specialist surfaces are what a path touches, not who wrote it: a lockfile or rebuilt wasm
+ * artifact under a specialist tree changes what that tree runs, so generated sides earn the
+ * realtime-audio, native-security and undo classes exactly as handwritten ones do. Cross-domain
+ * spread stays a handwritten-code measure.
+ */
+function specialistFindings(handwritten: readonly PathSide[], shipped: readonly PathSide[]): RiskFinding[] {
     return [
-        ...realtimeAudioFindings(sides),
-        ...nativeSecurityFindings(sides),
-        ...undoFindings(sides),
-        ...crossDomainFindings(sides),
+        ...realtimeAudioFindings(shipped),
+        ...nativeSecurityFindings(shipped),
+        ...undoFindings(shipped),
+        ...crossDomainFindings(handwritten),
     ];
 }
 
+function sidesInGroups(paths: readonly ReviewChangedPath[], groups: readonly ReviewChangedPath['group'][]): PathSide[] {
+    return paths.flatMap((entry) => sidesOf(entry).filter((side) => groups.includes(side.group)));
+}
+
 function decideFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    // A side joins the handwritten classification under its own group, so a rename record
-    // contributes its source side even when the destination landed elsewhere; the size budget still
-    // counts one numstat record once, so a record with either side handwritten counts its lines once.
-    const handwrittenSides = paths.flatMap((entry) => sidesOf(entry).filter((side) => side.group === 'handwritten'));
-    const findings = specialistFindings(handwrittenSides);
+    // A side joins the classification under its own group, so a rename record contributes its
+    // source side even when the destination landed elsewhere; the size budget still counts one
+    // numstat record once, so a record with either side handwritten counts its lines once.
+    const findings = specialistFindings(
+        sidesInGroups(paths, ['handwritten']),
+        sidesInGroups(paths, ['handwritten', 'generated'])
+    );
     if (findings.length > 0) {
         return findings;
     }
@@ -271,12 +364,26 @@ function decideFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
     return [sizeFinding(handwritten)];
 }
 
-function testOnlyFindings(): RiskFinding[] {
-    return [{ riskClass: 'test-only', triggers: ['test-only:all-paths-are-tests'] }];
+function allSidesInGroup(paths: readonly ReviewChangedPath[], group: ReviewChangedPath['group']): boolean {
+    return paths.length > 0 && paths.every((entry) => sidesOf(entry).every((side) => side.group === group));
 }
 
-function isTestOnly(paths: readonly ReviewChangedPath[]): boolean {
-    return paths.length > 0 && paths.every((entry) => sidesOf(entry).every((side) => side.group === 'tests'));
+/**
+ * `docs-only` is prose alone: Markdown outside `public/`, which ships to users. The docs group also
+ * holds any file under `docs/`, such as scripts and data, which earn an ordinary size class.
+ */
+function isDocsOnlySide(side: PathSide): boolean {
+    return /\.mdx?$/u.test(side.path) && !side.path.startsWith('public/');
+}
+
+function classifyFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
+    if (allSidesInGroup(paths, 'tests')) {
+        return [{ riskClass: 'test-only', triggers: ['test-only:all-paths-are-tests'] }];
+    }
+    if (allSidesInGroup(paths, 'docs') && paths.every((entry) => sidesOf(entry).every(isDocsOnlySide))) {
+        return [{ riskClass: 'docs-only', triggers: ['docs-only:all-paths-are-docs'] }];
+    }
+    return decideFindings(paths);
 }
 
 export function planReviewRisk(input: {
@@ -285,7 +392,7 @@ export function planReviewRisk(input: {
     baseSha: string;
     paths: readonly ReviewChangedPath[];
 }): ReviewRiskPlan {
-    const findings = isTestOnly(input.paths) ? testOnlyFindings() : decideFindings(input.paths);
+    const findings = classifyFindings(input.paths);
     const riskClasses = findings.map((finding) => finding.riskClass).sort();
     return {
         format: REVIEW_RISK_PLAN_FORMAT,
@@ -297,6 +404,31 @@ export function planReviewRisk(input: {
         triggers: [...new Set(findings.flatMap((finding) => finding.triggers))].sort(),
     };
 }
+
+/**
+ * Classes whose own review is narrow enough for a fixed floor below three. Every other plan needs
+ * three distinct stances, or every stance its classes earn when they earn fewer.
+ */
+const FIXED_STANCE_FLOORS: Partial<Record<ReviewRiskClass, number>> = {
+    'docs-only': 1,
+    'test-only': 1,
+    small: 2,
+};
+const DEFAULT_STANCE_FLOOR = 3;
+
+/** The minimum number of distinct stances a fresh reviewer publication on this plan must draw. */
+export function reviewStanceFloor(plan: Pick<ReviewRiskPlan, 'riskClasses'>): number {
+    const [only] = plan.riskClasses;
+    const fixed = plan.riskClasses.length === 1 && only !== undefined ? FIXED_STANCE_FLOORS[only] : undefined;
+    return fixed ?? Math.min(DEFAULT_STANCE_FLOOR, earnedStances(plan.riskClasses).length);
+}
+
+/** Specialist classes whose review must include at least one strongest-tier draw. */
+export const STRONGEST_DRAW_CLASSES: ReadonlySet<ReviewRiskClass> = new Set([
+    'native-security',
+    'realtime-audio',
+    'undo',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
