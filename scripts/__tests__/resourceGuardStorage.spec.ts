@@ -33,6 +33,7 @@ import {
     startTimeExcuseSupervisor,
     storageRecoveryPorts,
 } from '../resourceGuard';
+import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -3760,15 +3761,13 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
     it.skipIf(process.platform !== 'darwin').each([
         { scenario: 'unavailable utility', script: 'exit 127' },
         { scenario: 'malformed output', script: "printf 'malformed'" },
-        // The scoped read of the missed process is refused, so the proof is stably unavailable.
-        {
-            scenario: 'partial coverage',
-            script: "case \"$*\" in *' -p '*) exit 2;; esac; printf 'p1\\0\\nfcwd\\0tDIR\\0n/\\0\\n'",
-        },
+        // Which diagnostic ends this run depends on process churn: a refused scoped read is a leak,
+        // a catalog that keeps missing exited processes until the time bound is a transient warning.
+        { scenario: 'partial coverage', script: "printf 'p1\\0\\nfcwd\\0tDIR\\0n/\\0\\n'" },
         { scenario: 'permission diagnostic', script: "printf 'permission denied' >&2; exit 0" },
     ])(
         'retains owned payload for incomplete file census: $scenario',
-        async ({ script }) => {
+        async ({ scenario, script }) => {
             const root = fixture();
             const bin = join(root, 'bin');
             mkdirSync(bin);
@@ -3807,7 +3806,14 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
             await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1), 25_000);
             const started: { tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const result = JSON.parse(readFileSync(resultPath, 'utf8'));
-            expect(result.reason).toBe('leak');
+            const transient = scenario === 'partial coverage' && result.reason === undefined;
+            if (transient) {
+                expect(result.retainedStorage.path).toBe(dirname(started.tmp));
+                expect(areTransientProofReasons(result.retainedStorage.reason.split('; '))).toBe(true);
+            } else {
+                expect(result.reason).toBe('leak');
+                expect(result.retainedStorage).toBeUndefined();
+            }
             expect(result.code).toBe(0);
             expect(
                 await main(['--profile', 'focused', '--', process.execPath], {
@@ -3818,7 +3824,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                     log: () => {},
                     error: () => {},
                 })
-            ).not.toBe(0);
+            ).toBe(transient ? 0 : 1);
             expect(existsSync(started.tmp)).toBe(true);
             const recovery = await guarded(root);
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
