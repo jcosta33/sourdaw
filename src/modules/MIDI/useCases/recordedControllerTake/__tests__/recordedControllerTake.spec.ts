@@ -56,7 +56,6 @@ const { endRecordedControllerTake } = await import('../endRecordedControllerTake
 const { commitRecordedControllers } = await import('../commitRecordedControllers');
 const { discardRecordedControllers } = await import('../discardRecordedControllers');
 const { planRecordedControllers } = await import('../planRecordedControllers');
-const { setRecordedTakeEndBeat } = await import('../setRecordedTakeEndBeat');
 
 const CLIP = 'rec-clip-1';
 const NEXT_CLIP = 'rec-clip-2';
@@ -353,7 +352,7 @@ describe('recorded controller take', () => {
 
         it('gives the pedals to the clip the take opened on the input track, once', () => {
             holdPedal(0, 64, 127);
-            mocks.activeRecordingRef.current = [CLIP, 'rec-clip-other'];
+            mocks.activeRecordingRef.current = ['rec-clip-other', CLIP];
             mocks.targetTrackId.value = TRACK;
             mocks.trackState.value = {
                 tracks: [
@@ -437,10 +436,10 @@ describe('recorded controller take', () => {
         const press = (controller: number, value: number, beat: number, channel = 0): void => {
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller, value, beat, channel } });
         };
-        const plannedCc = (input: { takeEndBeat?: number; clip?: ReturnType<typeof spanOf> } = {}) =>
-            bare(planRecordedControllers({ clip: input.clip ?? spanOf(CLIP), takeEndBeat: input.takeEndBeat }).cc);
+        const plannedCc = (input: { clip?: ReturnType<typeof spanOf> } = {}) =>
+            bare(planRecordedControllers({ clip: input.clip ?? spanOf(CLIP) }).cc);
 
-        it('closes a sustain left down with a lift at the take end, on the clip closing line for a new clip', () => {
+        it('closes a sustain left down with a lift on the clip closing line', () => {
             beginTake();
             press(64, 127, 1);
 
@@ -538,15 +537,6 @@ describe('recorded controller take', () => {
             expect(plannedCc().at(-1)).toEqual({ controller: 64, value: 0, beat: 4, channel: 0 });
         });
 
-        it('places the lift at the last row by beat when the take ended before it', () => {
-            beginTake();
-            press(64, 0, 0);
-            press(64, 127, 3);
-            press(64, 127, 1);
-
-            expect(plannedCc({ takeEndBeat: 5 }).at(-1)).toEqual({ controller: 64, value: 0, beat: 3, channel: 0 });
-        });
-
         it('lifts a non-pedal controller never', () => {
             beginTake();
             press(1, 127, 1);
@@ -555,42 +545,12 @@ describe('recorded controller take', () => {
             expect(plannedCc()).toHaveLength(2);
         });
 
-        it('lifts at the beat the take ended in a clip the recorder did not open', () => {
-            beginTake();
-            press(64, 127, 1);
-
-            expect(plannedCc({ takeEndBeat: 6 })).toEqual([
-                { controller: 64, value: 127, beat: 1, channel: 0 },
-                { controller: 64, value: 0, beat: 2, channel: 0 },
-            ]);
-        });
-
-        it('keeps the lift on the closing line when the take ended past it', () => {
-            beginTake();
-            press(64, 127, 1);
-
-            expect(plannedCc({ takeEndBeat: 20 }).at(-1)).toEqual({ controller: 64, value: 0, beat: 4, channel: 0 });
-        });
-
-        it('never places the lift before the press it ends', () => {
-            beginTake();
-            press(64, 127, 3);
-
-            expect(plannedCc({ takeEndBeat: 5 }).at(-1)).toEqual({ controller: 64, value: 0, beat: 3, channel: 0 });
-        });
-
-        it('counts the closing line and the take end from the clip media origin, not the clip start', () => {
+        it('counts the closing line from the clip media origin, not the clip start', () => {
             beginTake();
             press(64, 127, 1);
             const trimmedHead = { ...spanOf(CLIP), midiOffsetBeats: 1 };
 
             expect(plannedCc({ clip: trimmedHead }).at(-1)).toEqual({ controller: 64, value: 0, beat: 5, channel: 0 });
-            expect(plannedCc({ clip: trimmedHead, takeEndBeat: 6 }).at(-1)).toEqual({
-                controller: 64,
-                value: 0,
-                beat: 3,
-                channel: 0,
-            });
         });
 
         it('names the same lift, id included, every time the same rows are planned', () => {
@@ -604,19 +564,17 @@ describe('recorded controller take', () => {
             expect(new Set(first.cc.map(({ id }) => id)).size).toBe(first.cc.length);
         });
 
-        it('writes the lift of a pedal still down when an overdub take ends, at the beat the transport reported', () => {
+        it('writes the lift of a pedal still down when an overdub take ends, on the clip closing line', () => {
             beginTake();
             setLiveClips(CLIP, 'existing-clip');
             bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 64, value: 127, beat: 1, channel: 0 } });
-            setRecordedTakeEndBeat({ beat: 6 });
 
             endRecordedControllerTake();
 
             expect(bare(mocks.midi.value?.ccByClipId['existing-clip'])).toEqual([
                 { controller: 64, value: 127, beat: 1, channel: 0 },
-                { controller: 64, value: 0, beat: 2, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 0 },
             ]);
-            expect(recordedControllerTakeState.takeEndBeat).toBeNull();
         });
     });
 

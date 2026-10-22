@@ -12,7 +12,7 @@ const liveMidi = vi.hoisted(() => {
         configurable: true,
         value: () => Promise.resolve(access),
     });
-    return { input };
+    return { input, inputs: access.inputs };
 });
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
@@ -47,6 +47,7 @@ import {
     planRecordedControllers,
     projectClipControllerEvents,
     resetMidiState,
+    selectMidiInput,
     setMidiInputTrack,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
@@ -100,6 +101,7 @@ describe('recorded controller take commit', () => {
             ...transportStore.value!,
             isRecording: false,
             overdubEnabled: false,
+            isLooping: false,
             playheadPosition: 4,
         });
     });
@@ -667,23 +669,33 @@ describe('recorded controller take commit', () => {
                 ]);
             });
 
-            it('loses a held pedal when the input device is reset', async () => {
+            // Switching the input leaves the target track alone, so only the device reset can clear the pedal.
+            it('loses a held pedal when another input device is selected', async () => {
                 setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
                 await initWebMidi();
                 setMidiInputTrack(TRACK_ID);
                 sendLive(4, 0xb0, 64, 127);
-                destroyWebMidi();
-                await initWebMidi();
-                setMidiInputTrack(TRACK_ID);
-                const [provisional] = startRecording(4);
-                if (!provisional) {
-                    throw new Error('expected a provisional recording clip');
+                const otherInput = Object.assign(new EventTarget(), {
+                    id: 'other-input',
+                    name: 'Other input',
+                    manufacturer: 'Test',
+                });
+                liveMidi.inputs.set(otherInput.id, otherInput);
+                try {
+                    selectMidiInput(otherInput.id);
+                    const [provisional] = startRecording(4);
+                    if (!provisional) {
+                        throw new Error('expected a provisional recording clip');
+                    }
+                    transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                    await notesOnlyTake(provisional.id);
+
+                    expect(midiStore.value?.ccByClipId[provisional.id]).toBeUndefined();
+                } finally {
+                    selectMidiInput(liveMidi.input.id);
+                    liveMidi.inputs.delete(otherInput.id);
                 }
-                transportStore.set({ ...transportStore.value!, isRecording: true });
-
-                await notesOnlyTake(provisional.id);
-
-                expect(midiStore.value?.ccByClipId[provisional.id]).toBeUndefined();
             });
 
             it('seeds no pedal that was pressed while another track was the input target', async () => {
@@ -864,7 +876,7 @@ describe('recorded controller take commit', () => {
                     transportStore.set({ ...transportStore.value!, isRecording: true });
                 };
 
-                it('lifts a pedal still down at the stop beat, mid-clip, not at the clip end', async () => {
+                it('lifts a pedal still down at the stop beat on the clip closing line, not mid-clip', async () => {
                     const clipId = await takeFirstPass();
                     beginOverdub(6);
                     sendLive(6.5, 0xb0, 64, 127);
@@ -876,7 +888,33 @@ describe('recorded controller take commit', () => {
                     expect(pedalsOf(clipId)).toEqual([
                         { controller: 1, value: 55, beat: 0.5, channel: 0 },
                         { controller: 64, value: 127, beat: 2.5, channel: 0 },
-                        { controller: 64, value: 0, beat: 4, channel: 0 },
+                        { controller: 64, value: 0, beat: 8, channel: 0 },
+                    ]);
+                    expect(liftsAtClosingLine(clipId, 12)).toEqual([
+                        { controller: 64, value: 0, beat: 12, closesClip: true },
+                    ]);
+                });
+
+                it('keeps a loop overdub press late in one pass held to the closing line when the stop lands after the wrap', async () => {
+                    const clipId = await takeFirstPass();
+                    transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 4, loopEnd: 12 });
+                    beginOverdub(6);
+                    sendLive(10, 0xb0, 64, 127);
+                    sendLive(6, 0xb0, 1, 60);
+
+                    await stopRecording(6);
+                    transportStore.set({ ...transportStore.value!, isRecording: false });
+                    flushAutomergeStorageWrites();
+
+                    // The stop beat is the wrapped playhead, before the press: a lift there would cancel it.
+                    expect(pedalsOf(clipId)).toEqual([
+                        { controller: 1, value: 55, beat: 0.5, channel: 0 },
+                        { controller: 64, value: 127, beat: 6, channel: 0 },
+                        { controller: 1, value: 60, beat: 2, channel: 0 },
+                        { controller: 64, value: 0, beat: 8, channel: 0 },
+                    ]);
+                    expect(liftsAtClosingLine(clipId, 12)).toEqual([
+                        { controller: 64, value: 0, beat: 12, closesClip: true },
                     ]);
                 });
 

@@ -47,12 +47,6 @@ type RecordedControllerTakeState = {
      * take opened on the input's track, as rows at the clip's beat 0.
      */
     heldPedalSeeds: Map<string, readonly MidiCC[]>;
-    /**
-     * The timeline beat the stopping recording reported, read once by the take's
-     * falling edge. The transport store's playhead is not it: a rolling stop
-     * resets that position before the edge is delivered.
-     */
-    takeEndBeat: number | null;
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
@@ -61,5 +55,4 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     committedClipIds: new Set(),
     carriedOverClipIds: new Set(),
     heldPedalSeeds: new Map(),
-    takeEndBeat: null,
 };

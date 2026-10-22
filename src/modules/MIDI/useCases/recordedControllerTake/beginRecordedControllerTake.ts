@@ -56,7 +56,6 @@ export function beginRecordedControllerTake(): void {
             heldPedalSeeds.delete(clipId);
         }
     }
-    recordedControllerTakeState.takeEndBeat = null;
     committedClipIds.clear();
     openedClipIds.clear();
     carriedOverClipIds.clear();

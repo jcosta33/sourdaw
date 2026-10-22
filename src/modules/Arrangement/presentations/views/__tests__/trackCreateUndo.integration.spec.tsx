@@ -99,7 +99,6 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         commitRecordedControllers: actual.commitRecordedControllers,
         discardRecordedControllers: actual.discardRecordedControllers,
         planRecordedControllers: actual.planRecordedControllers,
-        setRecordedTakeEndBeat: actual.setRecordedTakeEndBeat,
         duplicateClipNotes: actual.duplicateClipNotes,
         duplicateMidiClipData: actual.duplicateMidiClipData,
         getGrooveTemplate: vi.fn(),
