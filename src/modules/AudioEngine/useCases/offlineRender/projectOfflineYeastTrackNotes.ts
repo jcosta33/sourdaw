@@ -145,14 +145,18 @@ export function projectOfflineYeastTrackNotes({
                 projectPitch,
             });
             for (const projectedNote of projectedNotes) {
-                const sourceNote = sourceNotesByEventId.get(projectedNote.id) ?? iteration.sourceNotes[0];
+                const identifiedNote = sourceNotesByEventId.get(projectedNote.id);
+                const sourceNote = identifiedNote ?? iteration.sourceNotes[0];
+                // A generated note borrows the first source note's scalars, never its recorded curves, which
+                // would replay on a pitch they were not played on.
                 scheduledNotes.push({
                     ...projectedNote,
+                    beatsIntoNote: identifiedNote ? projectedNote.beatsIntoNote : undefined,
                     pressure: sourceNote?.pressure,
                     slide: sourceNote?.slide,
                     pitchBend: sourceNote?.pitchBend,
                     pitchBendRangeSemitones: sourceNote?.pitchBendRangeSemitones,
-                    expression: sourceNote?.expression,
+                    expression: identifiedNote?.expression,
                     clipGain: iteration.clipGain ?? 1,
                 });
             }

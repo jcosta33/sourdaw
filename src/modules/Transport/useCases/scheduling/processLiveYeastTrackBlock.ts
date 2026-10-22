@@ -1,3 +1,4 @@
+import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -24,6 +25,8 @@ export type LiveYeastNote = {
     /** Semitone range `pitchBend` was performed against; absent means ±48 (audit MD-8). */
     pitchBendRangeSemitones?: number;
     channel?: number;
+    /** Recorded curves; carried only to a note Yeast plays from this note's own instance. */
+    expression?: MidiNote['expression'];
     /**
      * How far into its note this one begins when the clip's head cut it off before Yeast saw it; the note's
      * recorded expression curves count from the uncut start. Absent when nothing was cut.
@@ -311,8 +314,11 @@ export async function processLiveYeastTrackBlock({
             // #4655 — the event time is already the audible beat; the
             // offset was applied once at ownership above and must not be
             // subtracted again here.
+            // A note Yeast generates has no recorded curve of its own. It borrows the first source note's scalars
+            // above, but never that note's curves, which would replay on a pitch they were not played on.
             const outputNote: LiveYeastNote = {
                 ...template,
+                expression: identifiedTemplate?.expression,
                 id: `${template.id}:yeast:${event.kind.note}:${event.timeSamples}:${ordinal}`,
                 sourceEventId: event.sourceEventId,
                 noteInstanceId: event.noteInstanceId,
@@ -321,7 +327,10 @@ export async function processLiveYeastTrackBlock({
                 startBeat: eventPpq,
                 duration,
             };
-            const headCutBeats = event.noteInstanceId ? headCutBeatsByInstance.get(event.noteInstanceId) : undefined;
+            const headCutBeats =
+                identifiedTemplate && event.noteInstanceId
+                    ? headCutBeatsByInstance.get(event.noteInstanceId)
+                    : undefined;
             if (headCutBeats !== undefined) {
                 outputNote.beatsIntoNote = headCutBeats;
             }

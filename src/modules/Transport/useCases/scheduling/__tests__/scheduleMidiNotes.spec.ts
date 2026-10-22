@@ -2173,6 +2173,69 @@ describe('scheduleMidiNotes', () => {
                 ]);
             });
 
+            // The export's case: scheduleTrackClips.spec.ts, "posts no curve for a note a Yeast track generates".
+            it('posts no curve for a note a Yeast track generates, which no curve was recorded on', async () => {
+                const { noteOn } = fermenterStripWithControls();
+                const routeId = 'live-yeast:track-1:clip-1:0';
+                const track = midiTrack({
+                    clips: [midiClip()],
+                    devices: [
+                        { id: 'y', type: 'yeast' },
+                        { id: 'device-1', type: 'fermenter' },
+                    ],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: {
+                        'clip-1': [
+                            {
+                                id: 'n0',
+                                pitch: 64,
+                                startBeat: 1,
+                                duration: 2,
+                                velocity: 100,
+                                pressure: 10,
+                                expression: {
+                                    pressure: [
+                                        { offsetBeats: 0.5, value: 40 },
+                                        { offsetBeats: 1, value: 90 },
+                                    ],
+                                },
+                            },
+                        ],
+                    },
+                };
+                // An arpeggiator step: a fresh instance and another pitch, struck while the source note is held.
+                vi.mocked(processYeastMidi).mockImplementation(({ events }) =>
+                    Promise.resolve([
+                        ...events,
+                        {
+                            timeSamples: frameAt(1.5),
+                            timePpq: 3,
+                            durationSamples: frameAt(0.5),
+                            trackId: routeId,
+                            noteInstanceId: 'arp-step-1',
+                            kind: { type: 'noteOn', channel: 0, note: 71, velocity: 100 },
+                        },
+                    ])
+                );
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(noteOn.mock.calls.map((call) => [call[0], call[2]])).toEqual([
+                    [64, frameAt(0.5)],
+                    [71, frameAt(1.5)],
+                ]);
+                const generatedUpdates = vi
+                    .mocked(applyNoteExpression)
+                    .mock.calls.map(([input]) => input)
+                    .filter((input) => input.note === 71);
+                expect(generatedUpdates.map((input) => [input.sampleFrame, input.expression.pressure])).toEqual([
+                    [frameAt(1.5), 10],
+                ]);
+                expect(appliedAddress().filter((address) => address.note === 64)).toHaveLength(3);
+            });
+
             describe('from the note’s own start when a cut took its head off', () => {
                 beforeEach(() => {
                     vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);

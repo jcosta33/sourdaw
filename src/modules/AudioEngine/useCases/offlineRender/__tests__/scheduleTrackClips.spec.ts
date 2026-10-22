@@ -91,10 +91,17 @@ const TrackDummy = {
 };
 
 const mocks = vi.hoisted(() => {
-    const projection: { startOffset: number; velocity: number | null; yeastTranspose: number } = {
+    const projection: {
+        startOffset: number;
+        velocity: number | null;
+        yeastTranspose: number;
+        /** Events the Yeast stand-in adds to the ones it was handed, as a generator would. */
+        yeastGenerated: Parameters<OfflineYeastMidiProcessor>[0]['events'];
+    } = {
         startOffset: 0,
         velocity: null,
         yeastTranspose: 0,
+        yeastGenerated: [],
     };
     return {
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
@@ -183,7 +190,7 @@ function projectMidiEvents<Event extends ProjectableMidiEvent>(
 
 function processYeastMidi(input: Parameters<OfflineYeastMidiProcessor>[0]): ReturnType<OfflineYeastMidiProcessor> {
     mocks.processYeastMidi(input);
-    const events = input.events.map((event) => ({
+    const events = [...input.events, ...mocks.projection.yeastGenerated].map((event) => ({
         ...event,
         timePpq: event.timePpq ?? event.timeSamples / 24_000,
     }));
@@ -2113,6 +2120,62 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                 [48_000, 90],
             ]);
             expect(arrivals.order).toEqual(['noteOn', 'expression', 'expression', 'expression', 'noteOff']);
+        });
+
+        // The live scheduler's case: scheduleMidiNotes.spec.ts, "posts no curve for a note a Yeast track generates".
+        it('posts no curve for a note a Yeast track generates, which no curve was recorded on', async () => {
+            // An arpeggiator step: a fresh instance and another pitch, struck while the source note is held.
+            mocks.projection.yeastGenerated = [
+                {
+                    timeSamples: 60_000,
+                    timePpq: 2.5,
+                    trackId: 'offline-yeast:track-inst:0',
+                    noteInstanceId: 'arp-step-1',
+                    kind: { type: 'noteOn', channel: 0, note: 71, velocity: 100 },
+                },
+                {
+                    timeSamples: 96_000,
+                    timePpq: 4,
+                    trackId: 'offline-yeast:track-inst:0',
+                    noteInstanceId: 'arp-step-1',
+                    kind: { type: 'noteOff', channel: 0, note: 71 },
+                },
+            ];
+            try {
+                const arrivals = await dispatchOneNote(
+                    {
+                        startBeat: 1,
+                        duration: 2,
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1, value: 90 },
+                            ],
+                        },
+                    },
+                    { withYeast: true }
+                );
+
+                expect(arrivals.noteOn.map(({ noteOrPad, sampleFrame }) => [noteOrPad, sampleFrame])).toEqual([
+                    [60, 24_000],
+                    [71, 60_000],
+                ]);
+                expect(
+                    arrivals.expression.map(({ noteOrPad, sampleFrame, pressure }) => [
+                        noteOrPad,
+                        sampleFrame,
+                        Math.round(pressure * 127),
+                    ])
+                ).toEqual([
+                    [60, 24_000, 10],
+                    [60, 36_000, 40],
+                    [60, 48_000, 90],
+                    [71, 60_000, 10],
+                ]);
+            } finally {
+                mocks.projection.yeastGenerated = [];
+            }
         });
     });
 });
