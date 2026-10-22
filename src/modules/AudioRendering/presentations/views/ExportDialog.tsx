@@ -461,6 +461,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         mime: resolveExportMime(archive, primaryExt),
                     };
                 }
+                let exportNormalization: Parameters<typeof streamExport>[0]['normalization'];
+                if (normalization === 'r128') {
+                    exportNormalization = { targetLufs: targetLufsSnapshot, ceilingDbTp: R128_CEILING_DB_TP };
+                }
                 output = await streamExport({
                     destination,
                     formats: Array.from(formats),
@@ -468,10 +472,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     mp3BitRate,
                     dither: resolveExportDither(dither),
                     metadata: metadataSnapshot,
-                    normalization:
-                        normalization === 'r128'
-                            ? { targetLufs: targetLufsSnapshot, ceilingDbTp: R128_CEILING_DB_TP }
-                            : undefined,
+                    normalization: exportNormalization,
                     checkCancelled,
                 });
             } catch (error) {
