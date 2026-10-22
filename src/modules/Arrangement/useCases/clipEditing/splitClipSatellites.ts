@@ -2,6 +2,7 @@ import { getAutomationLanes, getAutomationValueAtBeat } from '#/modules/Automati
 import { resolveBezierControls, subdivideBezierRightHalf } from '#/utils/automationCurve';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
+import { gainSeamPointId } from '../../models/GainSeamPointId';
 import { type WarpState } from '../../models/WarpMarker';
 import { type ClipSatelliteEntry, readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
@@ -54,6 +55,28 @@ const NO_GAIN_ENVELOPES: SplitGainEnvelopes = { left: null, right: null };
 const NO_WARP_STATES: SplitWarpStates = { left: null, right: null };
 
 /**
+ * A legacy project can still carry an authored point squatting on the derived
+ * seam id — the digest made the collision practically unautherable, not
+ * impossible. The seam keeps the derived id, so the authored copy is renamed
+ * out of the way: the fresh id is a pure function of the half's own point
+ * set, so the same restored source re-splits to the same names, and the
+ * envelope never holds the id twice.
+ */
+function renameSeamIdClash(points: GainEnvelopePoint[], seamId: string): GainEnvelopePoint[] {
+    const taken = new Set(points.map((point) => point.id));
+    if (!taken.has(seamId)) {
+        return points;
+    }
+    let renamedId = `${seamId}-authored`;
+    let attempt = 1;
+    while (taken.has(renamedId)) {
+        renamedId = `${seamId}-authored-${attempt}`;
+        attempt += 1;
+    }
+    return points.map((point) => (point.id === seamId ? { ...point, id: renamedId } : point));
+}
+
+/**
  * Place a point without disturbing `beatOffset` order: `sampleGainEnvelopePoints`
  * walks adjacent pairs, so an out-of-order list reads as a different curve.
  */
@@ -86,29 +109,33 @@ function splitGainEnvelope(
         beatOffset: point.beatOffset - clipRelativeSplitBeats,
     }));
     const seamIsAuthored = envelope.points.some((point) => point.beatOffset === clipRelativeSplitBeats);
+    if (seamIsAuthored) {
+        return {
+            left: { clipId, enabled: envelope.enabled, points: leftPoints },
+            right: { clipId: rightClipId, enabled: envelope.enabled, points: rightPoints },
+        };
+    }
 
+    const leftSeamId = gainSeamPointId(rightClipId, 'left');
+    const rightSeamId = gainSeamPointId(rightClipId, 'right');
     return {
         left: {
             clipId,
             enabled: envelope.enabled,
-            points: seamIsAuthored
-                ? leftPoints
-                : insertPointInOrder(leftPoints, {
-                      id: `gep-split-${rightClipId}-left`,
-                      beatOffset: clipRelativeSplitBeats,
-                      gainDb: seamGainDb,
-                  }),
+            points: insertPointInOrder(renameSeamIdClash(leftPoints, leftSeamId), {
+                id: leftSeamId,
+                beatOffset: clipRelativeSplitBeats,
+                gainDb: seamGainDb,
+            }),
         },
         right: {
             clipId: rightClipId,
             enabled: envelope.enabled,
-            points: seamIsAuthored
-                ? rightPoints
-                : insertPointInOrder(rightPoints, {
-                      id: `gep-split-${rightClipId}-right`,
-                      beatOffset: 0,
-                      gainDb: seamGainDb,
-                  }),
+            points: insertPointInOrder(renameSeamIdClash(rightPoints, rightSeamId), {
+                id: rightSeamId,
+                beatOffset: 0,
+                gainDb: seamGainDb,
+            }),
         },
     };
 }

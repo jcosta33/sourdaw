@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { getAutomationLanes, getAutomationValueAtBeat, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
 
+import { gainSeamPointId } from '../../../models/GainSeamPointId';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { prepareClipSplitSatellites } from '../splitClipSatellites';
@@ -106,14 +107,79 @@ describe('prepareClipSplitSatellites', () => {
         // half's edge back out later reveals the curve the musician drew.
         expect(plan.next[0]?.gainEnvelope?.points).toEqual([
             { id: 'p0', beatOffset: 0, gainDb: 0 },
-            { id: 'gep-split-c2-left', beatOffset: 4, gainDb: -8 },
+            { id: gainSeamPointId('c2', 'left'), beatOffset: 4, gainDb: -8 },
             { id: 'p6', beatOffset: 6, gainDb: -12 },
         ]);
         expect(plan.next[1]?.gainEnvelope?.points).toEqual([
             { id: 'p0', beatOffset: -4, gainDb: 0 },
-            { id: 'gep-split-c2-right', beatOffset: 0, gainDb: -8 },
+            { id: gainSeamPointId('c2', 'right'), beatOffset: 0, gainDb: -8 },
             { id: 'p6', beatOffset: 2, gainDb: -12 },
         ]);
+    });
+
+    it('keeps both halves valid when an authored point carries a legacy seam id (#5287)', () => {
+        // The bare literal the generator used to emit — a project that authored
+        // it used to split into a left envelope holding the id twice, and the
+        // project-wide duplicate census refused the result. The derived seam id
+        // no longer meets the authored literal, and the split stays valid.
+        setEnvelope('c1', {
+            clipId: 'c1',
+            enabled: true,
+            points: [
+                { id: 'gep-split-c2-left', beatOffset: 0, gainDb: -6 },
+                { id: 'gain-end', beatOffset: 3.75, gainDb: -12 },
+            ],
+        });
+
+        const plan = planFor(2.25);
+
+        const leftIds = plan.next[0]?.gainEnvelope?.points.map((point) => point.id) ?? [];
+        const rightIds = plan.next[1]?.gainEnvelope?.points.map((point) => point.id) ?? [];
+        expect(new Set(leftIds).size).toBe(leftIds.length);
+        expect(new Set(rightIds).size).toBe(rightIds.length);
+        // The authored point survives with its curve intact, beside the seam at
+        // the cut carrying the derived id.
+        expect(plan.next[0]?.gainEnvelope?.points).toEqual([
+            { id: 'gep-split-c2-left', beatOffset: 0, gainDb: -6 },
+            { id: gainSeamPointId('c2', 'left'), beatOffset: 2.25, gainDb: expect.any(Number) },
+            { id: 'gain-end', beatOffset: 3.75, gainDb: -12 },
+        ]);
+    });
+
+    it('renames an authored point squatting on the derived seam id instead of duplicating it', () => {
+        // Reachable only from a legacy (or adversarial) project: the point
+        // carries the full derived id. The seam keeps the derived id — the one a
+        // redo re-split must reproduce — and the authored copy is renamed out of
+        // the way, deterministically, with its curve data intact.
+        const squattedSeamId = gainSeamPointId('c2', 'left');
+        setEnvelope('c1', {
+            clipId: 'c1',
+            enabled: true,
+            points: [
+                { id: squattedSeamId, beatOffset: 0, gainDb: -6 },
+                { id: 'gain-end', beatOffset: 3.75, gainDb: -12 },
+            ],
+        });
+
+        const plan = planFor(2.25);
+        const replayedPlan = planFor(2.25);
+
+        const left = plan.next[0]?.gainEnvelope;
+        const leftIds = left?.points.map((point) => point.id) ?? [];
+        expect(new Set(leftIds).size).toBe(leftIds.length);
+        // The seam holds the canonical derived id at the cut; the authored point
+        // keeps its beat and value under the renamed id.
+        expect(left?.points).toEqual([
+            { id: `${squattedSeamId}-authored`, beatOffset: 0, gainDb: -6 },
+            { id: squattedSeamId, beatOffset: 2.25, gainDb: expect.any(Number) },
+            { id: 'gain-end', beatOffset: 3.75, gainDb: -12 },
+        ]);
+        // The right half never clashed: its copy keeps the authored id beside
+        // its own derived seam.
+        const rightIds = plan.next[1]?.gainEnvelope?.points.map((point) => point.id) ?? [];
+        expect(new Set(rightIds).size).toBe(rightIds.length);
+        // Redo re-splits the restored source to exactly the same plan.
+        expect(replayedPlan).toEqual(plan);
     });
 
     it('adds no seam point beside a source point that already sits on the cut', () => {
