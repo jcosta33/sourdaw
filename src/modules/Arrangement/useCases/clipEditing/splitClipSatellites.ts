@@ -55,25 +55,52 @@ const NO_GAIN_ENVELOPES: SplitGainEnvelopes = { left: null, right: null };
 const NO_WARP_STATES: SplitWarpStates = { left: null, right: null };
 
 /**
- * A legacy project can still carry an authored point squatting on the derived
- * seam id — the digest made the collision practically unautherable, not
- * impossible. The seam keeps the derived id, so the authored copy is renamed
- * out of the way: the fresh id is a pure function of the half's own point
- * set, so the same restored source re-splits to the same names, and the
- * envelope never holds the id twice.
+ * First free `-authored` name off `base`, counted against every id the half
+ * holds, so two renamed copies can never land on one name.
  */
-function renameSeamIdClash(points: GainEnvelopePoint[], seamId: string): GainEnvelopePoint[] {
-    const taken = new Set(points.map((point) => point.id));
-    if (!taken.has(seamId)) {
-        return points;
-    }
-    let renamedId = `${seamId}-authored`;
+function freshSeamClashId(base: string, taken: Set<string>): string {
+    let renamedId = `${base}-authored`;
     let attempt = 1;
     while (taken.has(renamedId)) {
-        renamedId = `${seamId}-authored-${attempt}`;
+        renamedId = `${base}-authored-${attempt}`;
         attempt += 1;
     }
-    return points.map((point) => (point.id === seamId ? { ...point, id: renamedId } : point));
+    taken.add(renamedId);
+    return renamedId;
+}
+
+/**
+ * A legacy project can still carry an authored point squatting on a derived
+ * seam id — the digest made the collision practically unautherable, not
+ * impossible — and a duplicated legacy envelope can even hold one twice. The
+ * half that inserts a seam reclaims its id from every squatting copy, one
+ * fresh id per copy; the other side's derived id has no seam to place here,
+ * so a lone copy stays untouched and only a repeat moves aside. Names come
+ * from one counter per envelope, so neither half ever emits an id twice, and
+ * the same restored source re-splits to the same names.
+ */
+function renameSeamIdClashes(
+    points: GainEnvelopePoint[],
+    insertedSeamId: string,
+    otherSeamId: string
+): GainEnvelopePoint[] {
+    const taken = new Set(points.map((point) => point.id));
+    if (!taken.has(insertedSeamId) && !taken.has(otherSeamId)) {
+        return points;
+    }
+    let retainedSeen = false;
+    return points.map((point) => {
+        if (point.id === insertedSeamId) {
+            return { ...point, id: freshSeamClashId(insertedSeamId, taken) };
+        }
+        if (point.id === otherSeamId) {
+            if (retainedSeen) {
+                return { ...point, id: freshSeamClashId(otherSeamId, taken) };
+            }
+            retainedSeen = true;
+        }
+        return point;
+    });
 }
 
 /**
@@ -122,7 +149,7 @@ function splitGainEnvelope(
         left: {
             clipId,
             enabled: envelope.enabled,
-            points: insertPointInOrder(renameSeamIdClash(leftPoints, leftSeamId), {
+            points: insertPointInOrder(renameSeamIdClashes(leftPoints, leftSeamId, rightSeamId), {
                 id: leftSeamId,
                 beatOffset: clipRelativeSplitBeats,
                 gainDb: seamGainDb,
@@ -131,7 +158,7 @@ function splitGainEnvelope(
         right: {
             clipId: rightClipId,
             enabled: envelope.enabled,
-            points: insertPointInOrder(renameSeamIdClash(rightPoints, rightSeamId), {
+            points: insertPointInOrder(renameSeamIdClashes(rightPoints, rightSeamId, leftSeamId), {
                 id: rightSeamId,
                 beatOffset: 0,
                 gainDb: seamGainDb,
