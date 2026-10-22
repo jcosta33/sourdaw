@@ -50,8 +50,28 @@ type ProjectedNoteExpressionCurves = {
     changes: ProjectedNoteExpressionChange[];
 };
 
+/**
+ * One move of the track's channel pitch bend (the MIDI module's `projectChannelBend`), on the
+ * caller's own clock: the same `frame` its notes are placed on.
+ */
+type ChannelBendPoint = {
+    beat: number;
+    frame: number;
+    /** Signed 14-bit wire delta, -8192..8191. */
+    value: number;
+    /** The depth `value` is read against, in semitones. */
+    rangeSemitones: number;
+};
+
 type ProjectNoteExpressionCurvesInput = {
     note: NoteExpressionCurveSource;
+    /**
+     * The track's channel pitch bend over the whole timeline, ordered by `frame` (posting order).
+     * A channel bend moves every note of the track, so a note sounds under the bend in force at its
+     * start and follows each move before its release; while one is in force it is the note's bend
+     * and range, as the live input applies a channel bend over the notes it finds sounding.
+     */
+    channelBend?: readonly ChannelBendPoint[];
     /** Where the caller plays the note from: grooved, looped and offset, so a curve moves with its note. */
     startBeat: number;
     /**
@@ -67,6 +87,24 @@ type ProjectNoteExpressionCurvesInput = {
 };
 
 type ExpressionReader = (offsetBeats: number) => number | undefined;
+
+/** A moment the note's expression may change at: where a curve point or a channel bend move lands. */
+type ExpressionMoment = { beat: number; frame: number; offsetBeats: number };
+
+/** The index of the first move placed after `frame`; every move before it is in force at `frame`. */
+function findFirstChannelBendAfter(channelBend: readonly ChannelBendPoint[], frame: number): number {
+    let low = 0;
+    let high = channelBend.length;
+    while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (channelBend[middle]!.frame <= frame) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
 
 function clampOptional(value: number | undefined, minimum: number, maximum: number): number | undefined {
     return value === undefined ? undefined : Math.min(maximum, Math.max(minimum, value));
@@ -96,6 +134,50 @@ function listCurveOffsets(curves: NoteExpressionCurves): number[] {
         }
     }
     return [...offsets].sort((left, right) => left - right);
+}
+
+type ListExpressionMomentsInput = {
+    curves: NoteExpressionCurves | undefined;
+    channelBend: readonly ChannelBendPoint[];
+    /** Where the note began before any cut, which the curve offsets count from. */
+    noteStartBeat: number;
+    /** Where the caller plays the note from, as a moment: the bend in force there is the note-on's own. */
+    cut: ExpressionMoment;
+    releaseFrame: number;
+    frameAtBeat: (beat: number) => number;
+};
+
+/**
+ * The moments before the release at which the note's expression may change, in time order: where its
+ * curve points land, where a channel bend move lands strictly inside the note, and the start itself when
+ * a channel bend is already in force there.
+ */
+function listExpressionMoments({
+    curves,
+    channelBend,
+    noteStartBeat,
+    cut,
+    releaseFrame,
+    frameAtBeat,
+}: ListExpressionMomentsInput): ExpressionMoment[] {
+    const moments: ExpressionMoment[] = [];
+    for (const offsetBeats of curves ? listCurveOffsets(curves) : []) {
+        const beat = noteStartBeat + offsetBeats;
+        const frame = frameAtBeat(beat);
+        if (frame >= releaseFrame) {
+            break;
+        }
+        moments.push({ beat, frame, offsetBeats });
+    }
+    const firstAfterStart = findFirstChannelBendAfter(channelBend, cut.frame);
+    if (firstAfterStart > 0) {
+        moments.push(cut);
+    }
+    for (let index = firstAfterStart; index < channelBend.length && channelBend[index]!.frame < releaseFrame; index++) {
+        const { beat, frame } = channelBend[index]!;
+        moments.push({ beat, frame, offsetBeats: beat - noteStartBeat });
+    }
+    return moments.sort((left, right) => left.frame - right.frame);
 }
 
 function clampScheduledExpression(
@@ -133,40 +215,51 @@ function clampScheduledExpression(
  * clip cut can shorten the note, and expression for a voice that has been released addresses nothing. A
  * change that lands on the start frame replaces the note-on's expression (`atStart`), and changes that share
  * a later frame collapse to the last, so no frame receives two.
+ *
+ * The track's channel bend (`channelBend`) adds moments of its own: one at the note's start when a bend is
+ * in force there, and one for each move strictly between the start and the release. While a move is in
+ * force its value and range are the note's bend (a channel bend over a note's own is what the live input
+ * does), and the note's pressure and slide stay its own, because an engine takes the three together. A
+ * move on the release frame is dropped with the voice, and one on the start frame is the note-on's own
+ * expression, so a bend struck with a note sounds under it from its first sample.
  */
 export function projectNoteExpressionCurves({
     note,
+    channelBend = [],
     startBeat,
     beatsIntoNote = 0,
     releaseFrame,
     frameAtBeat,
 }: ProjectNoteExpressionCurvesInput): ProjectedNoteExpressionCurves {
     const curves = note.expression;
-    if (!curves) {
+    if (!curves && channelBend.length === 0) {
         return { changes: [] };
     }
 
-    const noteStartBeat = startBeat - beatsIntoNote;
     const startFrame = frameAtBeat(startBeat);
-    const readPressure = createExpressionReader(note.pressure, curves.pressure ?? []);
-    const readSlide = createExpressionReader(note.slide, curves.slide ?? []);
-    const readPitchBend = createExpressionReader(note.pitchBend, curves.pitchBend ?? []);
+    const moments = listExpressionMoments({
+        curves,
+        channelBend,
+        noteStartBeat: startBeat - beatsIntoNote,
+        cut: { beat: startBeat, frame: startFrame, offsetBeats: beatsIntoNote },
+        releaseFrame,
+        frameAtBeat,
+    });
+    const readPressure = createExpressionReader(note.pressure, curves?.pressure ?? []);
+    const readSlide = createExpressionReader(note.slide, curves?.slide ?? []);
+    const readPitchBend = createExpressionReader(note.pitchBend, curves?.pitchBend ?? []);
 
     let atStart: ScheduledNoteExpression | undefined;
     const changes: ProjectedNoteExpressionChange[] = [];
-    for (const offsetBeats of listCurveOffsets(curves)) {
-        const beat = noteStartBeat + offsetBeats;
-        const frame = frameAtBeat(beat);
-        if (frame >= releaseFrame) {
-            break;
-        }
+    for (const { beat, frame, offsetBeats } of moments) {
+        const bend = channelBend[findFirstChannelBendAfter(channelBend, frame) - 1];
         const expression = clampScheduledExpression(
             {
                 pressure: readPressure(offsetBeats),
                 slide: readSlide(offsetBeats),
-                pitchBend: readPitchBend(offsetBeats),
+                pitchBend: bend ? bend.value : readPitchBend(offsetBeats),
             },
-            note.pitchBendRangeSemitones
+            bend ? bend.rangeSemitones : note.pitchBendRangeSemitones
         );
         if (frame <= startFrame) {
             atStart = expression;

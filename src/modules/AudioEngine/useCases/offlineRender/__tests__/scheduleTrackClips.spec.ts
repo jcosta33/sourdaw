@@ -6,7 +6,11 @@ import { setModulationDependencies } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 // The real projection, as the composition root injects it: a controller's
 // placement is the behaviour under test and it carries no store or groove state.
-import { createGrooveMidiEventProjector, projectClipControllerEvents } from '#/modules/MIDI/useCases';
+import {
+    createGrooveMidiEventProjector,
+    projectChannelBend,
+    projectClipControllerEvents,
+} from '#/modules/MIDI/useCases';
 import {
     beatAtSecondsFromAnchor,
     projectPpqEndpoints as projectTransportEndpoints,
@@ -347,6 +351,9 @@ function makeMidiTrack(): Track {
         ],
     });
 }
+
+type MidiPitchBendRow = NonNullable<MidiStoreState>['pitchBendByClipId'][string][number];
+type MidiControllerRow = NonNullable<MidiStoreState>['ccByClipId'][string][number];
 
 function makeMidi(): NonNullable<MidiStoreState> {
     return {
@@ -1731,6 +1738,14 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             /** Puts a Yeast device (which processes the notes unchanged here) on the track. */
             withYeast?: boolean;
             regionStartBeat?: number;
+            /** The stored channel pitch bend and controllers of the note's clip. */
+            lanes?: { bends?: MidiPitchBendRow[]; controllers?: MidiControllerRow[] };
+            /** Other clips of the track, with the lanes they store and, when they have one, a note list. */
+            otherClips?: {
+                clip: Partial<Track['clips'][number]> & { id: string };
+                bends?: MidiPitchBendRow[];
+                notes?: NonNullable<MidiStoreState>['notesByClipId'][string];
+            }[];
         } = {}
     ): Promise<Arrivals> {
         const {
@@ -1741,6 +1756,8 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             productionProjection = false,
             withYeast = false,
             regionStartBeat = 0,
+            lanes,
+            otherClips = [],
         } = options;
         const arrivals: Arrivals = { order: [], noteOn: [], expression: [] };
 
@@ -1780,6 +1797,21 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         Object.assign(track.clips[0]!, clip);
         const midi = makeMidi();
         Object.assign(midi.notesByClipId['clip-1']![0]!, { channel: 3 }, note);
+        if (lanes?.bends) {
+            midi.pitchBendByClipId['clip-1'] = lanes.bends;
+        }
+        if (lanes?.controllers) {
+            midi.ccByClipId['clip-1'] = lanes.controllers;
+        }
+        for (const other of otherClips) {
+            track.clips.push({ ...structuredClone(track.clips[0]!), ...other.clip });
+            if (other.bends) {
+                midi.pitchBendByClipId[other.clip.id] = other.bends;
+            }
+            if (other.notes) {
+                midi.notesByClipId[other.clip.id] = other.notes;
+            }
+        }
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
         const offlineCtx = makeOfflineCtx();
 
@@ -1803,6 +1835,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                 projectChordPitch: mocks.projectChordPitch,
                 evaluateAutomationValue: mocks.evaluateAutomationValue,
                 resolveArticulationId: mocks.resolveArticulationId,
+                projectChannelBend,
             },
             pendingWorkletEvents,
             allTracks: [track],
@@ -1895,6 +1928,166 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         );
 
         expect(arrivals.expression).toEqual([]);
+    });
+
+    describe('stored channel pitch bend', () => {
+        const bendRow = (id: string, beat: number, value: number, channel = 0): MidiPitchBendRow => ({
+            id,
+            beat,
+            value,
+            channel,
+        });
+        const controllerRow = (id: string, beat: number, controller: number, value: number): MidiControllerRow => ({
+            id,
+            beat,
+            controller,
+            value,
+            channel: 0,
+        });
+        const fullBend = (8_191 / 8_192) * 2;
+
+        /** The updates the instrument received, as the frame they applied at and the bend they carry. */
+        const bends = (arrivals: Arrivals) =>
+            arrivals.expression.map(({ sampleFrame, bendSemitones }) => ({ sampleFrame, bendSemitones }));
+
+        // The live scheduler's case: scheduleMidiNotesChannelBend.spec.ts, "bends a sounding fermenter note at the
+        // frames a note at the bend beats gets": the same clip offset, the same tempo change, the same frames.
+        it('hands a sounding note each move at the frame a note at that beat gets, across a clip offset and a tempo change', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 4 },
+                {
+                    productionProjection: true,
+                    clip: { startBeat: 2, endBeat: 10, midiOffsetBeats: 1 },
+                    changes: [
+                        { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'tempo-1', beat: 3.5, tempo: 60, curve: 'instant' },
+                    ],
+                    lanes: { bends: [bendRow('out', 2, 8_191), bendRow('return', 3, 0)] },
+                }
+            );
+
+            const { bendSemitones: out } = arrivals.expression[0]!;
+            expect(bends(arrivals)).toEqual([
+                { sampleFrame: 72_000, bendSemitones: out },
+                { sampleFrame: 108_000, bendSemitones: 0 },
+            ]);
+            expect(out).toBeCloseTo(fullBend, 6);
+            expect(arrivals.expression.map(({ noteOrPad, channel }) => [noteOrPad, channel])).toEqual([
+                [60, 3],
+                [60, 3],
+            ]);
+            expect(arrivals.order).toEqual(['noteOn', 'expression', 'expression', 'noteOff']);
+        });
+
+        it('reads the depth from the RPN 0 the clip stored, as the live scheduler does', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 3 },
+                {
+                    lanes: {
+                        bends: [bendRow('out', 2, 4_096)],
+                        controllers: [
+                            controllerRow('rpn-msb', 0, 101, 0),
+                            controllerRow('rpn-lsb', 0, 100, 0),
+                            controllerRow('data', 0, 6, 12),
+                            controllerRow('null-msb', 0, 101, 127),
+                            controllerRow('null-lsb', 0, 100, 127),
+                        ],
+                    },
+                }
+            );
+
+            expect(bends(arrivals)).toEqual([{ sampleFrame: 48_000, bendSemitones: 6 }]);
+        });
+
+        it('applies a bend on the note-on frame after the note-on, so the note sounds bent from its first sample', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 2 },
+                { lanes: { bends: [bendRow('out', 1, -8_192)] } }
+            );
+
+            expect(bends(arrivals)).toEqual([{ sampleFrame: 24_000, bendSemitones: -2 }]);
+            expect(arrivals.noteOn[0]?.sampleFrame).toBe(24_000);
+            expect(arrivals.order).toEqual(['noteOn', 'expression', 'noteOff']);
+        });
+
+        it('starts a note after a bend that began before the region bent, and one the clip with no note list left out', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 1 },
+                {
+                    productionProjection: true,
+                    regionStartBeat: 2.5,
+                    clip: { startBeat: 2, endBeat: 6 },
+                    // The first clip stores a bend and no note list; it ends before the region.
+                    otherClips: [
+                        { clip: { id: 'clip-2', startBeat: 0, endBeat: 2 }, bends: [bendRow('out', 1, 8_191)] },
+                    ],
+                }
+            );
+
+            // The note sits half a beat (a quarter second) into the region.
+            expect(arrivals.noteOn[0]?.sampleFrame).toBe(12_000);
+            expect(arrivals.expression).toHaveLength(1);
+            expect(arrivals.expression[0]!.sampleFrame).toBe(12_000);
+            expect(arrivals.expression[0]!.bendSemitones).toBeCloseTo(fullBend, 6);
+        });
+
+        it('lets a clip that is not a MIDI clip bend nothing', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 1 },
+                {
+                    productionProjection: true,
+                    clip: { startBeat: 2, endBeat: 6 },
+                    otherClips: [
+                        {
+                            clip: { id: 'clip-2', type: 'audio', startBeat: 0, endBeat: 2 },
+                            bends: [bendRow('out', 1, 8_191)],
+                        },
+                    ],
+                }
+            );
+
+            expect(arrivals.order).toEqual(['noteOn', 'noteOff']);
+        });
+
+        it('lets a muted clip bend nothing', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 1 },
+                {
+                    productionProjection: true,
+                    clip: { startBeat: 2, endBeat: 6 },
+                    otherClips: [
+                        {
+                            clip: { id: 'clip-2', startBeat: 0, endBeat: 2, muted: true },
+                            bends: [bendRow('out', 1, 8_191)],
+                        },
+                    ],
+                }
+            );
+
+            expect(arrivals.order).toEqual(['noteOn', 'noteOff']);
+        });
+
+        it('sends no bend for a Yeast track, whose notes are the rack', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 3 },
+                { withYeast: true, lanes: { bends: [bendRow('out', 2, 8_191)] } }
+            );
+
+            expect(arrivals.expression).toEqual([]);
+        });
+
+        it('sends no bend to an instrument with no expression surface, or to Toaster', async () => {
+            const lanes = { bends: [bendRow('out', 2, 8_191)] };
+
+            const noSurface = await dispatchOneNote(
+                { startBeat: 1, duration: 3 },
+                { deviceType: 'builtin-crumbs', withExpressionSurface: false, lanes }
+            );
+            const toaster = await dispatchOneNote({ startBeat: 1, duration: 3 }, { deviceType: 'toaster', lanes });
+
+            expect(noSurface.order).toEqual(['noteOn', 'noteOff']);
+            expect(toaster.expression).toEqual([]);
+        });
     });
 
     describe('recorded expression curves', () => {

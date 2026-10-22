@@ -298,4 +298,143 @@ describe('projectNoteExpressionCurves', () => {
             })
         ).toEqual({ changes: [] });
     });
+
+    describe('with the track channel pitch bend', () => {
+        const move = (beat: number, value: number, rangeSemitones = 2) => ({
+            beat,
+            frame: frameAtBeat(beat),
+            value,
+            rangeSemitones,
+        });
+        const plainNote = { pressure: 10, slide: 64 };
+
+        it('moves a sounding note at each move strictly between its start and its release', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: plainNote,
+                channelBend: [move(1, 8_191), move(2, 0), move(3, -4_096, 12)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(3),
+                frameAtBeat,
+            });
+
+            expect(atStart).toBeUndefined();
+            // The move on the release frame is dropped with the voice; pressure and slide stay the note's own.
+            expect(changes).toEqual([
+                {
+                    beat: 1,
+                    frame: frameAtBeat(1),
+                    expression: { pressure: 10, slide: 64, pitchBend: 8_191, pitchBendRangeSemitones: 2 },
+                },
+                {
+                    beat: 2,
+                    frame: frameAtBeat(2),
+                    expression: { pressure: 10, slide: 64, pitchBend: 0, pitchBendRangeSemitones: 2 },
+                },
+            ]);
+        });
+
+        it('starts a note on the bend in force at its start, the last move at or before the start frame', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: plainNote,
+                channelBend: [move(0.5, 8_191), move(1, 4_096, 12), move(1.5, 0)],
+                startBeat: 1,
+                releaseFrame: frameAtBeat(3),
+                frameAtBeat,
+            });
+
+            // The move on the start frame replaces the one before it: the note-on carries 4096 at 12.
+            expect(atStart).toEqual({ pressure: 10, slide: 64, pitchBend: 4_096, pitchBendRangeSemitones: 12 });
+            expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[1.5, 0]]);
+        });
+
+        it('lets a bend in force stand over the note’s own bend, and its curve moves nothing while it stands', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: {
+                    pressure: 10,
+                    pitchBend: 1_000,
+                    pitchBendRangeSemitones: 48,
+                    expression: {
+                        pitchBend: [{ offsetBeats: 1.5, value: -1_000 }],
+                        pressure: [{ offsetBeats: 1.5, value: 90 }],
+                    },
+                },
+                channelBend: [move(0.5, 2_000)],
+                startBeat: 1,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart).toEqual({ pressure: 10, slide: undefined, pitchBend: 2_000, pitchBendRangeSemitones: 2 });
+            // Only the pressure of the curve point reaches the engine: the channel bend still owns the bend.
+            expect(changes).toEqual([
+                {
+                    beat: 2.5,
+                    frame: frameAtBeat(2.5),
+                    expression: { pressure: 90, slide: undefined, pitchBend: 2_000, pitchBendRangeSemitones: 2 },
+                },
+            ]);
+        });
+
+        it('keeps the note’s own bend until the first move arrives', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: { pitchBend: 1_000, pitchBendRangeSemitones: 48, expression: { pressure: [] } },
+                channelBend: [move(2, 0)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart).toBeUndefined();
+            expect(changes.map((change) => change.expression.pitchBend)).toEqual([0]);
+        });
+
+        it('follows the move into a note a clip cut took the head off, from the cut start', () => {
+            const { atStart } = projectNoteExpressionCurves({
+                note: plainNote,
+                channelBend: [move(1, 8_191)],
+                startBeat: 2,
+                beatsIntoNote: 1.5,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart?.pitchBend).toBe(8_191);
+        });
+
+        it('interleaves the moves with the curve points of the note in time order', () => {
+            const { changes } = projectNoteExpressionCurves({
+                note: { pressure: 10, expression: { pressure: [{ offsetBeats: 1.5, value: 90 }] } },
+                channelBend: [move(1, 8_191), move(3, 0)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            // The pressure point between the two moves carries the bend then in force, and the move after
+            // it carries the pressure the point left.
+            expect(
+                changes.map((change) => [change.beat, change.expression.pressure, change.expression.pitchBend])
+            ).toEqual([
+                [1, 10, 8_191],
+                [1.5, 90, 8_191],
+                [3, 90, 0],
+            ]);
+        });
+
+        it('collapses moves that share a frame to the last in posting order', () => {
+            const { changes } = projectNoteExpressionCurves({
+                note: plainNote,
+                // Two moves on one frame: the later in posting order wins, as the instrument ends on it.
+                channelBend: [move(1, 100), { ...move(1, 200), beat: 1.00001 }, move(2, 300)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(changes.map((change) => [change.frame, change.expression.pitchBend])).toEqual([
+                [frameAtBeat(1), 200],
+                [frameAtBeat(2), 300],
+            ]);
+        });
+    });
 });
