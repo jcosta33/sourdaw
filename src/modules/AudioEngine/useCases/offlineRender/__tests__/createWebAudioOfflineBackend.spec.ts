@@ -535,3 +535,24 @@ describe('createWebAudioOfflineBackend', () => {
         expect(entry?.strategy.destroy).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('web offline native NAM protocol refusal', () => {
+    it('refuses the entire batch before applying a native-only model command', async () => {
+        const { backend, master } = backendUnderTest();
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    target: { trackId: 't', deviceId: 'd' },
+                    requestId: 'r',
+                    modelJson: null,
+                    values: {},
+                },
+            ],
+        });
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(master.connect).not.toHaveBeenCalled();
+        backend.dispose();
+    });
+});

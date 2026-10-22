@@ -130,6 +130,7 @@ import { readSessionProgramme } from './readSessionProgramme';
 import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { restoreNativeChains } from './restoreNativeChains';
+import { sendNativeGrinderNeuralPatch } from './sendNativeGrinderNeuralPatch';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
 import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
@@ -522,10 +523,25 @@ async function applyTopologyBatch(input: {
     commands: readonly AudioGraphCommand[];
 }): Promise<TopologyBatchOutcome> {
     const { transport, backend } = input;
+    const session = { backend: nativeLiveGraphSession.backend, epoch: nativeLiveGraphSession.rearmEpoch };
+    const project = trackStore.value;
+    const carriesModel = input.commands.some(
+        (command) =>
+            (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') &&
+            command.devices.some((device) => device.grinderModel !== undefined)
+    );
     const material = await registerNativeTimelineSamples({ transport, commands: input.commands });
     if (material.outcome === 'declined') {
         // No batch was sent, so nothing in the graph moved.
         return { outcome: 'refused', reason: material.reason };
+    }
+    if (
+        carriesModel &&
+        (trackStore.value !== project ||
+            nativeLiveGraphSession.rearmEpoch !== session.epoch ||
+            nativeLiveGraphSession.backend !== session.backend)
+    ) {
+        return { outcome: 'refused', reason: 'Native NAM project/session changed during material preparation' };
     }
     const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
@@ -548,6 +564,16 @@ async function applyTopologyBatch(input: {
     }
     if (result.application !== 'applied') {
         return { outcome: 'unreconciled', reason: result.reason };
+    }
+    if (result.grinderModels?.length) {
+        try {
+            await sendNativeGrinderNeuralPatch({ kind: 'drain', backend, result, session });
+            if (trackStore.value !== project) {
+                return { outcome: 'refused', reason: 'Native NAM project changed during callback drain' };
+            }
+        } catch (error) {
+            return { outcome: 'refused', reason: reasonOf(error) };
+        }
     }
     // Replaced rather than merged: this batch tore every strip down inside its
     // own fence, so a strip missing from these reports is a strip the engine no
@@ -1134,7 +1160,20 @@ export function startNativeLiveGraphSession(
                     programme: against,
                 });
             const backend = createSessionBackend(availability.transport);
-            const firstCommands = projectTopology(topology.attachedInstanceIds, programme);
+            let firstCommands: readonly AudioGraphCommand[];
+            try {
+                firstCommands = projectTopology(topology.attachedInstanceIds, programme);
+            } catch (error) {
+                backend.dispose();
+                const reason = reasonOf(error);
+                notifyNativeDecline(reason);
+                return { outcome: 'declined', reason };
+            }
+            const waitsForModels = firstCommands.some(
+                (command) =>
+                    (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') &&
+                    command.devices.some((device) => device.grinderModel !== undefined)
+            );
             // Everything past the claim, so that every way out of it reopens the
             // gates — a rejected sample registration, a bridge that drops mid-apply,
             // a reporter that throws. An unwind that left them shut would silence
@@ -1150,8 +1189,10 @@ export function startNativeLiveGraphSession(
                 // record — dropping it, restoring it, or replacing it with the
                 // applied batch's reports.
                 const chainsTheStartFound = nativeLiveGraphSession.nativeChainByStripId;
-                claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
-                if (audible) {
+                if (!waitsForModels) {
+                    claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
+                }
+                if (audible && !waitsForModels) {
                     replaceNativeChains(projectedChainReports(firstCommands));
                 }
                 const started = await applyTopologyBatch({
@@ -1165,6 +1206,9 @@ export function startNativeLiveGraphSession(
                     settleRefusedStartRecord(chainsTheStartFound);
                     notifyNativeDecline(started.reason);
                     return { outcome: 'declined', reason: started.reason };
+                }
+                if (waitsForModels && audible) {
+                    claimCarriedStrips(carriedStripIds(firstCommands));
                 }
                 const { resent, installed } = await bindAttachedPlugins({
                     transport: availability.transport,

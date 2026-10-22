@@ -202,6 +202,8 @@ pub struct NeuralCapture {
     /// network directly — the drive/asymmetry/contour/trim shaping and the
     /// tier layer clipping only apply to the legacy derived profile.
     model: Option<NamModel>,
+    #[cfg(not(target_arch = "wasm32"))]
+    native_model: Option<super::nam::native_admission::NativePreparedNam>,
     input_drive: f32,
     asymmetry: f32,
     output_trim: f32,
@@ -239,6 +241,8 @@ impl NeuralCapture {
             selected_model_slot: None,
             custom_profile_active: false,
             model: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            native_model: None,
             input_drive: 1.0,
             asymmetry: 0.0,
             output_trim: 1.0,
@@ -328,7 +332,26 @@ impl NeuralCapture {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn swap_native_model(&mut self, model: Option<super::nam::native_admission::NativePreparedNam>) -> Option<super::nam::native_admission::NativePreparedNam> {
+        let old = std::mem::replace(&mut self.native_model, model);
+        if self.native_model.is_some() {
+            self.selected_model_slot = None;
+            self.custom_profile_active = true;
+            self.model_loaded = true;
+            self.arm_warmup();
+        }
+        old
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn native_model(&self) -> Option<&super::nam::native_admission::NativePreparedNam> {
+        self.native_model.as_ref()
+    }
+
     pub fn has_loaded_model(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.native_model.is_some() { return true; }
         self.model.is_some()
     }
 
@@ -336,6 +359,13 @@ impl NeuralCapture {
         if self.engine_mode == EngineMode::Circuit || !self.has_active_model() || !self.model_loaded
         {
             return input;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(model) = &mut self.native_model {
+            let processed = model.process(input);
+            let activation = self.next_warmup_mix();
+            return input * (1.0 - activation) + processed * activation;
         }
 
         // A real imported model is the transfer function: run it on the raw

@@ -550,3 +550,73 @@ describe('createNativeLiveGraphBackend — claims scoped per instance (#4203)', 
         expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(true);
     });
 });
+
+describe('native Grinder model receipt parser', () => {
+    it('refuses old-native silent model omission and an unsafe fence', async () => {
+        for (const payload of [
+            { acceptance: 'accepted', application: 'applied', runtimeRevision: 1, admittedBatch: 3, reports: [] },
+            {
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 1,
+                admittedBatch: Number.MAX_SAFE_INTEGER + 1,
+                engineId: '1',
+                grinderModels: [],
+                reports: [],
+            },
+        ]) {
+            const backend = createNativeLiveGraphBackend({ transport: stubTransport(async () => payload) });
+            await expect(
+                backend.apply({
+                    schemaVersion: 1,
+                    commands: [
+                        {
+                            kind: 'set-grinder-model',
+                            target: { trackId: 't', deviceId: 'd' },
+                            modelJson: null,
+                            requestId: 'r',
+                            values: {},
+                        },
+                    ],
+                })
+            ).rejects.toThrow(/NAM/);
+            backend.dispose();
+        }
+    });
+
+    it('preserves real native model identity without rounding the engine id', async () => {
+        const receipt = {
+            trackId: 't',
+            deviceId: 'd',
+            engineId: '9007199254740993',
+            targetGeneration: '9',
+            requestId: 'r',
+            contentHash: 'a'.repeat(64),
+        };
+        const backend = createNativeLiveGraphBackend({
+            transport: stubTransport(async () => ({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 1,
+                admittedBatch: 3,
+                engineId: receipt.engineId,
+                grinderModels: [receipt],
+                reports: [],
+            })),
+        });
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    target: { trackId: 't', deviceId: 'd' },
+                    modelJson: null,
+                    requestId: 'r',
+                    values: {},
+                },
+            ],
+        });
+        expect(result).toMatchObject({ engineId: receipt.engineId, grinderModels: [receipt], admittedBatch: 3 });
+        backend.dispose();
+    });
+});

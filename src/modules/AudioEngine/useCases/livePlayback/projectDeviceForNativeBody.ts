@@ -44,6 +44,7 @@
  */
 
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
+import { captureNativeGrinderNeuralPatch } from '#/modules/Grinder/useCases';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { type AudioGraphDevice as NativeBodyDevice } from '../../models/AudioGraphBackend';
@@ -140,15 +141,21 @@ export function projectDeviceForNativeBody(
     if (!body) {
         return device;
     }
+    const grinderModel =
+        device.type.toLowerCase() === 'grinder' ? captureNativeGrinderNeuralPatch(device.parameterValues) : undefined;
+    const projected: NativeBodyDevice = { ...device };
+    if (grinderModel) {
+        projected.grinderModel = grinderModel;
+    }
     const patch = body.projectPatch(device.parameterValues);
     const bank = sampleBankKeyField(device.type, device.deviceState, projection);
     const modAssignments = modAssignmentsField(device.type, device.deviceState, projection);
     const projectedState = projectDeviceState(device.id, device.type, device.deviceState, projection);
     if (!projectedState) {
-        return { ...device, ...bank, ...modAssignments, parameterValues: patch };
+        return { ...projected, ...bank, ...modAssignments, parameterValues: patch };
     }
     return {
-        ...device,
+        ...projected,
         ...bank,
         ...modAssignments,
         parameterValues: { ...patch, ...shapedFiniteProjectedState(projectedState) },

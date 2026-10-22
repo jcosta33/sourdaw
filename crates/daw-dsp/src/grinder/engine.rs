@@ -699,6 +699,14 @@ impl GrinderEngine {
             .load_model_json(json)
             .map_err(|error| error.to_string())
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn swap_native_neural_model(&mut self, model: Option<super::nam::native_admission::NativePreparedNam>) -> Option<super::nam::native_admission::NativePreparedNam> {
+        self.neural.swap_native_model(model)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn native_neural_model(&self) -> Option<&super::nam::native_admission::NativePreparedNam> {
+        self.neural.native_model()
+    }
     pub fn has_loaded_neural_model(&self) -> bool {
         self.neural.has_loaded_model()
     }

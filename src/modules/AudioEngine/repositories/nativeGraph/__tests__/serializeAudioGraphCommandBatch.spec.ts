@@ -780,3 +780,34 @@ describe('collectBufferedClipSources', () => {
         expect(sources).toEqual([{ sourceId: 'take-1', buffer: first }]);
     });
 });
+
+describe('native NAM protocol migration', () => {
+    it('uses wire2 for full model and clear operations while keeping app batches at1', () => {
+        const batch: AudioGraphCommandBatch = {
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    target: { trackId: 't', deviceId: 'd' },
+                    requestId: 'r',
+                    modelJson: '{"architecture":"Linear"}',
+                    values: { gain: 3 },
+                },
+            ],
+        };
+        expect(serializeAudioGraphCommandBatch(batch)).toEqual({
+            schemaVersion: 2,
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    trackId: 't',
+                    deviceId: 'd',
+                    requestId: 'r',
+                    modelJson: '{"architecture":"Linear"}',
+                    values: { gain: 3 },
+                },
+            ],
+        });
+        expect(serializeAudioGraphCommandBatch({ schemaVersion: 1, commands: [] }).schemaVersion).toBe(1);
+    });
+});

@@ -144,6 +144,10 @@ pub struct TransportMapsApplied {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grinder_models: Vec<super::graph::GrinderModelReceipt>,
     pub running: bool,
     pub playing: bool,
     pub position_seconds: f64,
@@ -239,6 +243,8 @@ fn transport_position_payload(
     rendering: bool,
 ) -> EngineTransportPosition {
     EngineTransportPosition {
+        engine_id: None,
+        grinder_models: Vec::new(),
         running: rendering,
         playing: snapshot.playing,
         position_seconds: snapshot.playhead_frame as f64 / sample_rate,
@@ -516,14 +522,17 @@ pub async fn engine_transport_position(
     // here costs the callback nothing and needs no channel of its own.
     let tuner_telemetry = tuner_telemetry_payload(registry_guard.scoring_readings());
 
-    Ok(transport_position_payload(
+    let mut payload = transport_position_payload(
         snapshot,
         meter.master_peak,
         strip_peaks,
         tuner_telemetry,
         sample_rate,
         rendering,
-    ))
+    );
+    payload.engine_id = Some(engine.instance_id().to_string());
+    payload.grinder_models = registry_guard.native_grinder_readback(engine.instance_id());
+    Ok(payload)
 }
 
 #[cfg(test)]

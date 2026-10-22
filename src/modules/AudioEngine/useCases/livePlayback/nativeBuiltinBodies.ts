@@ -38,6 +38,7 @@ import {
     mapFermenterParamToDspParam,
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
+import { captureNativeGrinderNeuralPatch } from '#/modules/Grinder/useCases';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
@@ -62,6 +63,8 @@ export const BUILTIN_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,40}$/;
 export type NativeBuiltinBody = Readonly<{
     /** Whether the engine registers a note store for this body (mirror of `BuiltinEffectType::sounds_notes`). */
     soundsNotes: boolean;
+    /** Explicit full-network set/clear. Ordinary scalar writes return undefined. */
+    neuralPatch?: (patch: Readonly<Record<string, unknown>>) => string | null | undefined;
     /** The engine's name for one of this body's parameters, from the id a panel or lane authors. */
     parameterName: (paramId: string) => string;
     /** The engine's flat record for this body's patch, from project truth's `parameterValues`. */
@@ -146,9 +149,36 @@ function shapedNumericParametersOnly(
  * travels, because the worklet's structured patch applies only one source at
  * a time.
  */
+function grinderNeuralPatch(patch: Readonly<Record<string, unknown>>): string | null | undefined {
+    if (patch.neuralModelMode === 'imported') {
+        if (typeof patch.modelJson === 'string') {
+            return patch.modelJson;
+        }
+        const profile =
+            typeof patch.profile === 'object' && patch.profile !== null
+                ? (patch.profile as Record<string, unknown>)
+                : null;
+        if (typeof profile?.modelDigest === 'string') {
+            throw new Error('Imported Grinder NAM content is unavailable');
+        }
+        return null;
+    }
+    if (typeof patch.neuralModelMode === 'number' && patch.neuralModelMode > 0.5) {
+        return captureNativeGrinderNeuralPatch(patch)?.modelJson;
+    }
+    if (
+        patch.neuralModelMode === 'builtin' ||
+        typeof patch.neuralModelSlot === 'number' ||
+        (typeof patch.neuralModelMode === 'number' && patch.neuralModelMode <= 0.5)
+    ) {
+        return null;
+    }
+    return undefined;
+}
+
 function grinderNeuralSourceOnly(patch: Readonly<Record<string, unknown>>): Readonly<Record<string, number>> {
     const shaped = shapedNumericParametersOnly(patch);
-    const importedIsLive = (shaped.neuralModelMode ?? 0) > 0.5;
+    const importedIsLive = patch.neuralModelMode === 'imported' || (shaped.neuralModelMode ?? 0) > 0.5;
     return Object.fromEntries(
         Object.entries(shaped).filter(([key]) =>
             importedIsLive ? key !== 'neuralModelSlot' : !key.startsWith('neuralCustom')
@@ -397,6 +427,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
         'grinder',
         {
             soundsNotes: false,
+            neuralPatch: grinderNeuralPatch,
             /**
              * No table: Grinder's engine spells its own parameters in
              * camelCase, and project truth authors the same camelCase ids

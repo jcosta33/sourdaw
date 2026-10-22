@@ -28,6 +28,7 @@ import {
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
+import { getEngineTransportPosition } from '../../../repositories/engineTransport/getEngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
@@ -154,6 +155,9 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
         return Promise.resolve(mocks.availability as NativeGraphAvailability);
     },
 }));
+vi.mock('../../../repositories/engineTransport/getEngineTransportPosition', () => ({
+    getEngineTransportPosition: vi.fn(),
+}));
 vi.mock('../../../repositories/engineTransport/setEngineTransportMaps', () => ({
     setEngineTransportMaps: (maps: unknown) => mocks.setEngineTransportMaps(maps),
 }));
@@ -243,6 +247,9 @@ vi.mock('../../../repositories/nativeGraph/createNativeLiveGraphBackend', async 
             mocks.openedBackends.push(handle);
             return {
                 ...backend,
+                get disposed(): boolean {
+                    return backend.disposed ?? true;
+                },
                 dispose: () => {
                     handle.disposed = true;
                     backend.dispose();
@@ -2938,5 +2945,139 @@ describe('an edit issued while the start apply is pending (#4785)', () => {
             });
         });
         expect(mocks.wireCalls).toEqual(['apply', 'apply', 'apply']);
+    });
+});
+
+describe('native NAM initial ownership requires actual model drain', () => {
+    it('leaves Web Audio audible until the same engine and model target cross the admitted fence', async () => {
+        const receipt = {
+            trackId: 'audio-1',
+            deviceId: 'd-nam',
+            engineId: '9007199254740993',
+            targetGeneration: '42',
+            requestId: 'cold',
+            contentHash: 'a'.repeat(64),
+        };
+        const modelJson = '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}';
+        mocks.topologyOverride = [
+            {
+                ...CARRIED_STRIP,
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Lead',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'd-nam',
+                        name: 'Grinder',
+                        type: 'grinder',
+                        bypassed: false,
+                        parameterValues: { engineMode: 1 },
+                        grinderModel: { requestId: 'cold', modelJson },
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ];
+        mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+            const wire = batch as NativeGraphWireBatch;
+            if (wire.replaceTopology) {
+                expect(wire.schemaVersion).toBe(2);
+                return {
+                    ...APPLIED,
+                    admittedBatch: 7,
+                    engineId: receipt.engineId,
+                    grinderModels: [receipt],
+                    reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['d-nam'] }],
+                };
+            }
+            return APPLIED;
+        });
+        let observed!: () => void;
+        const firstReading = new Promise<void>((resolve) => {
+            observed = resolve;
+        });
+        let release!: (value: EngineTransportPosition) => void;
+        const matching = new Promise<EngineTransportPosition>((resolve) => {
+            release = resolve;
+        });
+        vi.mocked(getEngineTransportPosition)
+            .mockImplementationOnce(async () => {
+                observed();
+                return { ...rollingReading(0), engineId: receipt.engineId, batchesApplied: 6, grinderModels: [] };
+            })
+            .mockImplementation(() => matching);
+        const starting = startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            monitor: 'audible',
+        });
+        await firstReading;
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        release({ ...rollingReading(0), engineId: receipt.engineId, batchesApplied: 7, grinderModels: [receipt] });
+        await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).toContain('audio-1');
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+    });
+
+    it('refuses a model result from a successor engine at the same counter and retains the web carrier', async () => {
+        const receipt = {
+            trackId: 'audio-1',
+            deviceId: 'd-nam',
+            engineId: '1',
+            targetGeneration: '42',
+            requestId: 'cold',
+            contentHash: 'a'.repeat(64),
+        };
+        mocks.topologyOverride = [
+            {
+                ...CARRIED_STRIP,
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Lead',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'd-nam',
+                        name: 'Grinder',
+                        type: 'grinder',
+                        bypassed: false,
+                        parameterValues: {},
+                        grinderModel: {
+                            requestId: 'cold',
+                            modelJson:
+                                '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                        },
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ];
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            admittedBatch: 7,
+            engineId: '1',
+            grinderModels: [receipt],
+        });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingReading(0),
+            engineId: '2',
+            batchesApplied: 7,
+            grinderModels: [receipt],
+        });
+        await expect(
+            startHeldSession({
+                positionSeconds: 0,
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            })
+        ).resolves.toMatchObject({ outcome: 'declined', reason: expect.stringContaining('engine') });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
     });
 });
