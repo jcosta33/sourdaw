@@ -644,7 +644,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         expect(readFileSync(foreign, 'utf8')).toBe('foreign');
     });
 
-    it('blocks child startup when any monitored volume is low or cannot be measured', async () => {
+    it('blocks child startup when the system volume is low or cannot be measured', async () => {
         for (const unavailable of [false, true]) {
             const root = fixture();
             const marker = join(root, 'spawned');
@@ -654,19 +654,82 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                 diskReserveBytes: 100,
                 diskSampler: (path) => {
                     sampled.push(path);
-                    if (path !== '/') {
-                        return 1000;
-                    }
                     return unavailable ? undefined : 99;
                 },
             });
             expect(result.reason).toBe(unavailable ? 'monitor' : 'pressure');
             expect(result.output).toMatch(unavailable ? /disk space could not be measured/ : /disk space below/);
-            expect(sampled).toContain('/');
-            expect(sampled).toContain(process.cwd());
-            expect(sampled.some((path) => path.startsWith(join(root, 'storage')))).toBe(true);
+            if (!unavailable) {
+                expect(result.output).toContain(
+                    'AGENTS.md Resource Safety: "When the system volume is below the reserve"'
+                );
+                expect(readFileSync(join(process.cwd(), 'AGENTS.md'), 'utf8')).toContain(
+                    'When the system volume is below the reserve'
+                );
+            }
+            expect(result.refusedBeforeStart).toBe(unavailable ? undefined : true);
+            expect(sampled).toEqual(['/']);
             expect(existsSync(marker)).toBe(false);
         }
+    });
+
+    it('keeps the lane-stopping failure when admission pressure leaves the guard storage held', async () => {
+        const held: [string, 'alive' | 'unknown', ...string[]][] = [
+            ['a live process still holds it', 'alive'],
+            ['the census is unproved with a stable reason', 'unknown', 'storage-not-private-same-uid'],
+        ];
+        for (const [, verdict, ...reasons] of held) {
+            const root = fixture();
+            const marker = join(root, 'spawned');
+            const result = await guarded(root, {
+                args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`],
+                diskReserveBytes: 100,
+                diskSampler: () => 99,
+                storageHost: {
+                    fileState: (_tempDirectories, _ownedPids, report) => {
+                        for (const reason of reasons) {
+                            report(reason);
+                        }
+                        return verdict;
+                    },
+                },
+            });
+            expect(result.reason).toBe('pressure');
+            expect(result.output).toMatch(/guard storage retained/);
+            expect(result.refusedBeforeStart).toBeUndefined();
+            expect(existsSync(marker)).toBe(false);
+        }
+    });
+
+    it('admits a command when the system volume has room however full another volume is', async () => {
+        const root = fixture();
+        const sampled: string[] = [];
+        const result = await guarded(root, {
+            diskReserveBytes: 5 * 1024 ** 3,
+            diskSampler: (path) => {
+                sampled.push(path);
+                return path === '/' ? 6 * 1024 ** 3 : 1024 ** 3;
+            },
+        });
+        expect(result.code).toBe(0);
+        expect(result.reason).toBeUndefined();
+        expect(new Set(sampled)).toEqual(new Set(['/']));
+    });
+
+    it('does not mark disk pressure during the run as a refusal before start', async () => {
+        const root = fixture();
+        const marker = join(root, 'started');
+        const result = await guarded(root, {
+            args: [
+                '-e',
+                `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x'); setInterval(() => {}, 1000)`,
+            ],
+            hostSampleIntervalMs: 20,
+            sampleIntervalMs: 20,
+            diskSampler: () => (existsSync(marker) ? 0 : 1000),
+        });
+        expect(result.reason).toBe('pressure');
+        expect(result.refusedBeforeStart).toBeUndefined();
     });
 
     it('preserves pre-spawn failure and releases admission when storage cleanup rejects', async () => {
@@ -3991,8 +4054,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
 });
 
 describe('disk reserve contract', () => {
-    it('uses a 20 GiB default and refuses unavailable, invalid and throwing disk samples', () => {
-        expect(DEFAULT_DISK_RESERVE_BYTES).toBe(20 * 1024 ** 3);
+    it('uses a 5 GiB default and refuses unavailable, invalid and throwing disk samples', () => {
+        expect(DEFAULT_DISK_RESERVE_BYTES).toBe(5 * 1024 ** 3);
         for (const sample of [undefined, Number.NaN, -1, Number.POSITIVE_INFINITY]) {
             expect(diskStorageFailure(['/'], 1, () => sample)?.reason).toBe('monitor');
         }
