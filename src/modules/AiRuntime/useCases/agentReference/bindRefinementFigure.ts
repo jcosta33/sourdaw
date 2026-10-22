@@ -310,9 +310,9 @@ function readFigureComparative(clause: RefinementClause): string | null {
     return typeof figure === 'string' ? null : findComparativeWord(figure.words);
 }
 
-/** Whether the words name a unit a figure is read in, other than the `s` an apostrophe leaves ("let's"). */
+/** Whether the words name a unit a figure is read in. */
 function statesUnitWord(words: string): boolean {
-    return words.split(' ').some((word) => word !== 's' && readUnitWord(word)?.length === word.length);
+    return words.split(' ').some((word) => readUnitWord(word)?.length === word.length);
 }
 
 /** Whether a clause states anything of a value: a figure, a level direction, a pan side or a unit. */

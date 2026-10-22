@@ -322,7 +322,7 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
         return { kind: 'none' };
     }
     const reference = stripReference(stated);
-    const candidate = statesFigure ? undefined : candidates.find((entry) => entry.name === reference.name);
+    const candidate = candidates.find((entry) => entry.name === reference.name);
     if (candidate === undefined) {
         if (negation !== null) {
             return readOtherNegation(clause, candidates);

@@ -1663,28 +1663,37 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         }
 
-        it('a clause naming a VCA group no pending command acts on is an addition and never binds the Vocals', () => {
+        it('a clause naming an object no pending command acts on, by name or id, is an addition and never binds the Vocals', () => {
             const rows: Array<[string, string]> = [
                 ['Drums', 'turn Drums down 2 dB'],
                 ['Drums', 'make Drums 2 dB'],
                 ['Drums', 'raise Drums by 2 dB'],
                 ['Drums', 'put Drums at 2 dB'],
                 ['Drums VCA', 'turn Drums VCA down 2 dB'],
+                ['Drums', 'turn trk-7 down 2 dB'],
             ];
             for (const [name, refinement] of rows) {
                 const context: ProjectContext = {
-                    ...CONTEXT,
+                    ...projectContext([...BASE_TRACKS, projectTrack('trk-7', 'Lead')]),
                     vcaGroups: [
                         { id: 'vca-drums', name, gain: 1, muted: false, trackIds: ['track-snare', 'track-drum-bus'] },
                     ],
                 };
-                for (const calls of [...levelCalls(2), [vocalsBy(-3)]]) {
+                for (const calls of levelCalls(2)) {
                     expect({ refinement, calls, status: refine(P0_CARD, refinement, calls, context).status }).toEqual({
                         refinement,
                         calls,
                         status: 'rejected',
                     });
                 }
+                // The Vocals change carried unchanged leaves the clause about the other object unanswered.
+                expect({ refinement, result: refine(P0_CARD, refinement, [vocalsBy(-3)], context) }).toMatchObject({
+                    refinement,
+                    result: {
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining('No proposed change answers'),
+                    },
+                });
             }
         });
 
@@ -1706,6 +1715,18 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expectAsked(UP_CARD, ['turn Vocals down, make it 2 dB'], levelCalls(2));
         });
 
+        it('two clauses whose figures are in different units bind two different pending values', () => {
+            const card = {
+                prompt: 'turn Vocals down 3 dB and set Reverb mix to 40%',
+                calls: [vocalsBy(-3), reverbMix(40)],
+            };
+
+            expect(commandsOf(refine(card, 'make it 1.5 dB, make it 50%', [vocalsBy(-1.5), reverbMix(50)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+                { type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'mix', value: 50 },
+            ]);
+        });
+
         it('a clause with no figure keeps the pending value only in the direction it already takes', () => {
             expectAsked(
                 P0_CARD,
@@ -1713,16 +1734,27 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 [[vocalsBy(-3)], [vocalsBy(3)], [vocalsBy(-2)], [vocalsBy(2)]]
             );
             expectAsked(UP_CARD, ['turn Vocals up two dB'], [[vocalsBy(3)], [vocalsBy(2)]]);
+            expectAsked(P0_CARD, ['turn Vocals down left'], [[vocalsBy(-3)]]);
+            expectAsked(PAN_CARD, ['pan Bass right', 'pan Bass up'], [[bassPan(-30)], [bassPan(30)]]);
             expect(commandsOf(refine(P0_CARD, 'turn Vocals down', [vocalsBy(-3)]))).toEqual([
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
             ]);
+            expect(commandsOf(refine(PAN_CARD, 'pan Bass left', [bassPan(-30)]))).toEqual([
+                { type: 'setTrackPan', trackId: 'track-bass', pan: -30 },
+            ]);
         });
 
-        it('a conjunction opening the refinement opens its clause ahead of the verb', () => {
+        it('a conjunction opening the refinement, or "please", opens its clause ahead of the verb', () => {
             for (const refinement of ['and make it 1.5 dB', 'then make it 1.5 dB']) {
                 expect({ refinement, commands: commandsOf(refine(P0_CARD, refinement, [vocalsBy(-1.5)])) }).toEqual({
                     refinement,
                     commands: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 }],
+                });
+            }
+            for (const refinement of ['and lower it 2 dB', 'please lower it 2 dB']) {
+                expect({ refinement, commands: commandsOf(refine(UP_CARD, refinement, [vocalsBy(-2)])) }).toEqual({
+                    refinement,
+                    commands: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 }],
                 });
             }
         });
@@ -1857,6 +1889,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 [twoCompressors, [guitarCompressor, vocalGain(0.5)], 'Remove the compressor', 'refused'],
                 [twoCompressors, [guitarCompressor, vocalGain(0.5)], 'Remove the compressor from Keys', 'refused'],
                 [[guitarCompressor, vocalGain(0.5)], [vocalGain(0.5)], 'Remove the compressor', 'valid'],
+                [[guitarCompressor, vocalGain(0.5)], [vocalGain(0.5)], 'Remove the compressor from Keys', 'refused'],
             ];
             for (const [pending, next, prompt, status] of rows) {
                 expect({ prompt, status: admission(pending, next, prompt) }).toEqual({ prompt, status });
