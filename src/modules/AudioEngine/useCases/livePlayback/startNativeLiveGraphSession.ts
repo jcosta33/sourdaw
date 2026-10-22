@@ -87,7 +87,6 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
     type AudioGraphApplyResult,
-    type AudioGraphBackend,
     type AudioGraphCommand,
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
