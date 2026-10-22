@@ -75,6 +75,7 @@ describe('same-project graph repair during a real aborted version restore', () =
         registerHandlerMap({
             restoreProjectVersion: {
                 ...handlers.restoreProjectVersion,
+                previewExecution: undefined,
                 execute: async (action, context) => {
                     // The real handler writes synchronously before its promise returns.
                     await handlers.restoreProjectVersion.execute(action, context);
