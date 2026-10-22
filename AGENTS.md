@@ -170,8 +170,9 @@ A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five,
 refuses every fresh reviewer publication on it, approve or request changes, and no caller document
 lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
 `pr:supersede` once the replacement merges. `review:repair` and `review:confirm` stay open so
-unresolved threads remain resolvable; preparation and repair log
-`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>`.
+unresolved threads remain resolvable. `review:prepare` logs
+`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, and `review:repair` logs it
+only at or above the threshold.
 
 Every recorded value — draws, discards, and approval claims — is single-line, trimmed and bounded,
 and refused when it carries a credential-shaped value, a private-key header, a JWT, a bearer token,

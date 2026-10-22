@@ -266,9 +266,10 @@ unpublished record it already holds. `stances.json`, `discarded.json`,
 `reassessment.json`, and a caller-written `dossier.json` are ignored with one
 log line, and `semantic-ci.json` is information only.
 
-`review:prepare` and `review:repair` log
+`review:prepare` logs
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` from the pull
-request's public review history. At `REVIEW_ROUND_FREEZE_THRESHOLD` (five
+request's public review history on every run; `review:repair` logs it only at
+or above the threshold. At `REVIEW_ROUND_FREEZE_THRESHOLD` (five
 reviewer `REQUEST_CHANGES` rounds, `scripts/reviewRoundEscalation.ts`) the pull
 request is frozen: `review:publish` refuses every fresh reviewer publication,
 approve or request changes, before any remote write, and names the way out —

@@ -5745,7 +5745,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    describe('repair actor admission below the escalation threshold', () => {
+    describe('repair actor admission below the freeze threshold', () => {
         function malformedRepairFixture(actorNodeId: string | null) {
             const root: PublicReviewComment = {
                 id: 100,
