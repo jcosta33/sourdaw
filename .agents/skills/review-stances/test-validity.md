@@ -6,6 +6,18 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
+
+PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
+separate storage-proof allowances. A controlled pair of complete 4.6-second proofs finished actual
+forced cleanup after 16 seconds. The historical review prompt and tier are unestablished; the
+test-validity gap is the missing composition of stage deadlines.
+
+Keep the real-census case and a slow complete-proof row with actual termination, descendant death,
+live-storage and final-removal assertions. Require both proof calls, then restore only the case's
+old deadline in a committed private probe: the unchanged slow row must fail. Simulated proof timing
+does not identify the cause of an earlier uninstrumented macOS failure or prove census convergence.
+
 ### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
 
 The native mutation runner had no real-child fixture: direct-child close canceled KILL while a

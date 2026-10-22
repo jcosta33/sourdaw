@@ -788,28 +788,67 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         expect(existsSync(started.tmp)).toBe(false);
     });
 
-    it('keeps storage through SIGTERM resistance and removes it only after forced descendant exit', async () => {
-        const root = fixture();
-        const marker = join(root, 'started.json');
-        const terminated = join(root, 'term');
-        const lastLiveSample = join(root, 'live');
-        const descendant = `const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(terminated)}, 'received')); fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => { fs.writeFileSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, String(fs.existsSync(tmp))); fs.renameSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, ${JSON.stringify(lastLiveSample)}); }, 20);`;
-        const result = await guarded(root, {
-            args: [
-                '-e',
-                `process.on('SIGTERM', () => {}); require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000);`,
-            ],
-            timeoutMs: 1000,
-            sampleIntervalMs: 20,
-            hostSampleIntervalMs: 20,
-        });
-        const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
-        expect(result.reason).toBe('timeout');
-        expect(readFileSync(terminated, 'utf8')).toBe('received');
-        expect(readFileSync(lastLiveSample, 'utf8')).toBe('true');
-        expect(isAlive(started.pid)).toBe(false);
-        expect(existsSync(started.tmp)).toBe(false);
-    }, 15_000);
+    // Nominal timeout, escalation, tree waits and four file proofs can total 37s
+    // (1 + 5 + 7 + 2 * 2 + 4 * 5). Leave setup headroom; these are not hard wall-clock bounds.
+    it.each([
+        { proof: 'native census', slowProof: false },
+        { proof: 'controlled slow complete proof', slowProof: true },
+    ])(
+        'keeps storage through SIGTERM resistance and removes it only after forced descendant exit: $proof',
+        async ({ slowProof }) => {
+            const root = fixture();
+            const marker = join(root, 'started.json');
+            const terminated = join(root, 'term');
+            const lastLiveSample = join(root, 'live');
+            const proofDurations: number[] = [];
+            let storageHost: Parameters<typeof runGuardedCommand>[0]['storageHost'];
+            if (slowProof) {
+                storageHost = {
+                    // Simulate complete proofs within their individual five-second allowance.
+                    // Process termination, tree checks and storage ownership remain real.
+                    fileState: (): 'dead' => {
+                        const started = process.hrtime.bigint();
+                        const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+                        while (Number(process.hrtime.bigint() - started) / 1e6 < 4600) {
+                            const remainingMs = 4600 - Number(process.hrtime.bigint() - started) / 1e6;
+                            if (remainingMs > 0) {
+                                Atomics.wait(waitBuffer, 0, 0, remainingMs);
+                            }
+                        }
+                        proofDurations.push(Number(process.hrtime.bigint() - started) / 1e6);
+                        return 'dead';
+                    },
+                };
+            }
+            const descendant = `const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(terminated)}, 'received')); fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => { fs.writeFileSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, String(fs.existsSync(tmp))); fs.renameSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, ${JSON.stringify(lastLiveSample)}); }, 20);`;
+            const result = await guarded(root, {
+                args: [
+                    '-e',
+                    `process.on('SIGTERM', () => {}); require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000);`,
+                ],
+                timeoutMs: 1000,
+                sampleIntervalMs: 20,
+                hostSampleIntervalMs: 20,
+                storageHost,
+            });
+            const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+            expect(result.reason).toBe('timeout');
+            expect(result.signal).toBe('SIGKILL');
+            expect(readFileSync(terminated, 'utf8')).toBe('received');
+            expect(readFileSync(lastLiveSample, 'utf8')).toBe('true');
+            expect(isAlive(started.pid)).toBe(false);
+            expect(existsSync(started.tmp)).toBe(false);
+            expect(proofDurations).toHaveLength(slowProof ? 2 : 0);
+            for (const duration of proofDurations) {
+                expect(duration).toBeGreaterThanOrEqual(4600);
+                expect(duration).toBeLessThan(5000);
+            }
+            if (slowProof) {
+                expect(result.durationMs).toBeGreaterThan(15_000);
+            }
+        },
+        45_000
+    );
 
     it('preserves a killed supervisors storage while descendants live and reclaims it on a later start', async () => {
         const deadline = Date.now() + 30_000;
