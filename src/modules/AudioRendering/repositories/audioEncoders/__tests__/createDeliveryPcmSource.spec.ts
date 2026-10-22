@@ -20,7 +20,9 @@ describe('delivery PCM source', () => {
             channels: 1,
         });
         const read = converted.readChannels;
-        if (!read) throw new Error('Expected converted PCM provider');
+        if (!read) {
+            throw new Error('Expected converted PCM provider');
+        }
         for (const start of [Number.NaN, Number.POSITIVE_INFINITY, 0.5, -1, Number.MAX_SAFE_INTEGER]) {
             expect(() => read(start, 1)).toThrow(/window/i);
         }
@@ -108,8 +110,11 @@ describe('delivery PCM source', () => {
                 }
             }
             const gainDb = 10 * Math.log10(power / count / (0.5 ** 2 / 2));
-            if (hz < 20000) expect(Math.abs(gainDb)).toBeLessThanOrEqual(0.1);
-            else expect(gainDb).toBeLessThanOrEqual(-60);
+            if (hz < 20000) {
+                expect(Math.abs(gainDb)).toBeLessThanOrEqual(0.1);
+            } else {
+                expect(gainDb).toBeLessThanOrEqual(-60);
+            }
         }
     });
     it('uses zero padded edges and refuses unbounded converted read requests', () => {

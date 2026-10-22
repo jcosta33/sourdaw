@@ -595,7 +595,7 @@ describe('connected stem export output ownership', () => {
             fireEvent.click(screen.getByRole('checkbox', { name: 'Export Apple Music stereo master' }));
             fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
             fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
-            fireEvent.click(screen.getByRole('button', { name: 'Off', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: /^Off$/ }));
             fireEvent.click(screen.getByTestId('export-start'));
             await waitFor(() => expect(closed).toBe(true), { timeout: 15000 });
             expect(ownership.rendered).toBe(64);

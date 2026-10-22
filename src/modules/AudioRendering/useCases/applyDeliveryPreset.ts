@@ -6,6 +6,8 @@ export function applyDeliveryPreset(input: {
     current?: DeliverySettings;
     reset?: boolean;
 }): DeliverySettings {
-    if (input.current && !input.reset) return input.current;
+    if (input.current && !input.reset) {
+        return input.current;
+    }
     return { ...input.preset.settings, formats: [...input.preset.settings.formats] };
 }

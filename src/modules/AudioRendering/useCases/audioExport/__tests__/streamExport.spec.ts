@@ -35,10 +35,10 @@ describe('multi-target actual output', () => {
         }));
         const targets = resolveDeliveryTargets({
             targets: [-14, -20].map((lufs, index) => ({
-                id: 'target-' + index,
-                name: 'Target ' + index,
+                id: `target-${index}`,
+                name: `Target ${index}`,
                 settings: {
-                    ...DELIVERY_PRESETS[2]!.settings,
+                    ...DELIVERY_PRESETS[2].settings,
                     sampleRate: index === 0 ? 48000 : 44100,
                     channels: index === 0 ? (2 as const) : (1 as const),
                     targetLufs: lufs,
@@ -69,7 +69,7 @@ describe('multi-target actual output', () => {
         expect(Object.keys(entries)).toEqual(['mix__target-0.wav', 'mix__target-1.wav']);
         const peaks: number[] = [];
         for (let index = 0; index < 2; index++) {
-            const bytes = entries['mix__target-' + index + '.wav']!;
+            const bytes = entries[`mix__target-${index}.wav`]!;
             const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
             const channels = index === 0 ? 2 : 1;
             const rate = index === 0 ? 48000 : 44100;
@@ -211,9 +211,9 @@ describe('multi-target actual output', () => {
         }));
         const targets = resolveDeliveryTargets({
             targets: [0, 1].map((index) => ({
-                id: 'target-' + index,
+                id: `target-${index}`,
                 name: 'Target',
-                settings: { ...DELIVERY_PRESETS[2]!.settings, normalization: 'off' as const },
+                settings: { ...DELIVERY_PRESETS[2].settings, normalization: 'off' as const },
                 dither: { mode: 'none' as const },
             })),
         });
@@ -227,7 +227,9 @@ describe('multi-target actual output', () => {
                 archive: true,
             },
             checkCancelled: () => {
-                if (cancelled) throw new Error('Export cancelled');
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
             },
         });
         const samples = new Float32Array(4800);

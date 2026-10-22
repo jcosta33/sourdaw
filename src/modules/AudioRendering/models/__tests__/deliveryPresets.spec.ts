@@ -18,10 +18,10 @@ describe('factory delivery targets', () => {
             expect(preset.settings.ceilingDbTp).toBe(-1);
             expect(preset.description.length).toBeGreaterThan(0);
         }
-        expect(DELIVERY_PRESETS[0]!.settings.sampleRate).toBe('source');
-        expect(DELIVERY_PRESETS[1]!.settings.sampleRate).toBe('source');
-        expect(DELIVERY_PRESETS[2]!.name).toContain('for video');
-        expect(DELIVERY_PRESETS[3]!.metadataFields).toEqual(['title', 'artist', 'description']);
-        expect(DELIVERY_PRESETS[4]!.settings.normalization).toBe('off');
+        expect(DELIVERY_PRESETS[0].settings.sampleRate).toBe('source');
+        expect(DELIVERY_PRESETS[1].settings.sampleRate).toBe('source');
+        expect(DELIVERY_PRESETS[2].name).toContain('for video');
+        expect(DELIVERY_PRESETS[3].metadataFields).toEqual(['title', 'artist', 'description']);
+        expect(DELIVERY_PRESETS[4].settings.normalization).toBe('off');
     });
 });

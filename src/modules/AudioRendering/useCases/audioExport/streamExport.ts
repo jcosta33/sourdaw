@@ -30,15 +30,29 @@ type StreamExportInput = {
 
 /** Storage precedes rendering; each borrowed render drains all targets before its owner continues. */
 export async function streamExport(input: StreamExportInput) {
-    const targets =
-        'targets' in input
-            ? input.targets.map((target) => ({
-                  ...target,
-                  formats: [...target.formats],
-                  dither: { ...target.dither },
-                  metadata: target.metadata ? { ...target.metadata } : undefined,
-              }))
-            : undefined;
+    let targets: Target[] | undefined;
+    if ('targets' in input) {
+        targets = input.targets.map((target) => {
+            const dither: PcmDitherOptions = { mode: target.dither.mode };
+            if (Object.hasOwn(target.dither, 'seed')) {
+                dither.seed = target.dither.seed;
+            }
+            let metadata: Target['metadata'];
+            if (target.metadata) {
+                metadata = {
+                    title: target.metadata.title,
+                    artist: target.metadata.artist,
+                    description: target.metadata.description,
+                };
+            }
+            return {
+                ...target,
+                formats: [...target.formats],
+                dither,
+                metadata,
+            };
+        });
+    }
     let destination:
         Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
     if (input.destination.kind === 'native') {
@@ -54,26 +68,25 @@ export async function streamExport(input: StreamExportInput) {
             onLimited: (target: Target) => void;
         }) {
             input.checkCancelled();
-            const plan: readonly Target[] =
-                targets ??
-                ('formats' in input
-                    ? [
-                          {
-                              id: 'custom',
-                              name: 'Custom',
-                              formats: [...input.formats],
-                              sampleRate: options.source.sampleRate,
-                              channels: options.source.numberOfChannels,
-                              bitDepth: input.bitDepth,
-                              mp3BitRate: input.mp3BitRate,
-                              dither: input.dither,
-                              metadata: input.metadata,
-                              normalization: input.normalization ? 'r128' : 'off',
-                              targetLufs: input.normalization?.targetLufs ?? -14,
-                              ceilingDbTp: input.normalization?.ceilingDbTp ?? -1,
-                          },
-                      ]
-                    : []);
+            let plan: readonly Target[] = targets ?? [];
+            if (targets === undefined && 'formats' in input) {
+                plan = [
+                    {
+                        id: 'custom',
+                        name: 'Custom',
+                        formats: [...input.formats],
+                        sampleRate: options.source.sampleRate,
+                        channels: options.source.numberOfChannels,
+                        bitDepth: input.bitDepth,
+                        mp3BitRate: input.mp3BitRate,
+                        dither: input.dither,
+                        metadata: input.metadata,
+                        normalization: input.normalization ? 'r128' : 'off',
+                        targetLufs: input.normalization?.targetLufs ?? -14,
+                        ceilingDbTp: input.normalization?.ceilingDbTp ?? -1,
+                    },
+                ];
+            }
             for (const target of plan) {
                 input.checkCancelled();
                 const prepared = await prepareDeliveryTarget({

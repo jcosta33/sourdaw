@@ -21,7 +21,7 @@ function target(lufs: number, channels: 1 | 2 = 2) {
             {
                 id: 'target',
                 name: 'Target',
-                settings: { ...DELIVERY_PRESETS[2]!.settings, sampleRate: 44100, channels, targetLufs: lufs },
+                settings: { ...DELIVERY_PRESETS[2].settings, sampleRate: 44100, channels, targetLufs: lufs },
                 dither: { mode: 'none' },
             },
         ],
@@ -61,7 +61,9 @@ describe('prepareDeliveryTarget', () => {
             source,
             target: target(-14),
             checkCancelled: () => {
-                if (cancelled) throw new Error('Export cancelled');
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
             },
         });
         setTimeout(() => {

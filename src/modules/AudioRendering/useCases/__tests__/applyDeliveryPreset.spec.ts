@@ -5,7 +5,7 @@ import { applyDeliveryPreset } from '../applyDeliveryPreset';
 
 describe('applyDeliveryPreset', () => {
     it('fills all fields once and only explicit reset replaces an edited target', () => {
-        const preset = DELIVERY_PRESETS[3]!;
+        const preset = DELIVERY_PRESETS[3];
         const original = applyDeliveryPreset({ preset });
         expect(original).toEqual({
             formats: ['mp3'],

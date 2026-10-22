@@ -200,7 +200,9 @@ describe('incremental true peak', () => {
         const expected = measureTruePeak({ channels: [tone], length: tone.length });
         for (const size of [1, 997, 4096]) {
             const meter = createTruePeakAccumulator(1);
-            for (let start = 0; start < tone.length; start += size) meter.push([tone.subarray(start, start + size)]);
+            for (let start = 0; start < tone.length; start += size) {
+                meter.push([tone.subarray(start, start + size)]);
+            }
             expect(meter.finish()).toBeCloseTo(expected, 12);
             expect(meter.finish()).toBe(expected);
             expect(() => meter.push([new Float32Array(1)])).toThrow();

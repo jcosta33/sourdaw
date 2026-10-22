@@ -96,24 +96,36 @@ export function createTruePeakAccumulator(numberOfChannels: number) {
         for (let phase = 0; phase < PHASES; phase++) {
             const coefficients = PHASE_COEFFS[phase]!;
             let sum = 0;
-            for (let tap = 0; tap < TAPS; tap++) sum += history[tap]! * coefficients[tap]!;
+            for (let tap = 0; tap < TAPS; tap++) {
+                sum += history[tap]! * coefficients[tap]!;
+            }
             peak = Math.max(peak, Math.abs(sum));
         }
     };
     return {
         push(channels: readonly Float32Array[]) {
-            if (finished) throw new Error('True peak meter is finished.');
+            if (finished) {
+                throw new Error('True peak meter is finished.');
+            }
             const length = channels[0]?.length ?? 0;
-            if (channels.length !== numberOfChannels || channels.some((channel) => channel.length !== length))
+            if (channels.length !== numberOfChannels || channels.some((channel) => channel.length !== length)) {
                 throw new Error('Invalid true peak PCM block.');
-            channels.forEach((channel, index) => {
-                for (const sample of channel) accept(histories[index]!, sample);
-            });
+            }
+            for (const [index, channel] of channels.entries()) {
+                for (const sample of channel) {
+                    accept(histories[index]!, sample);
+                }
+            }
             frames += length;
         },
         finish() {
-            if (!finished && frames > 0)
-                for (const history of histories) for (let tail = 0; tail < TAPS - 1; tail++) accept(history, 0);
+            if (!finished && frames > 0) {
+                for (const history of histories) {
+                    for (let tail = 0; tail < TAPS - 1; tail++) {
+                        accept(history, 0);
+                    }
+                }
+            }
             finished = true;
             return peak;
         },
@@ -127,7 +139,9 @@ export function measureTruePeak({ channels, length }: { channels: readonly Float
         const count = Math.min(4096, length - start);
         meter.push(
             channels.map((channel) => {
-                if (channel.length >= start + count) return channel.subarray(start, start + count);
+                if (channel.length >= start + count) {
+                    return channel.subarray(start, start + count);
+                }
                 const padded = new Float32Array(count);
                 padded.set(channel.subarray(start, start + count));
                 return padded;
