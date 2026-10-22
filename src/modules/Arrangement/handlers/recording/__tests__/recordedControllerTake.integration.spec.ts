@@ -479,6 +479,35 @@ describe('recorded controller take commit', () => {
             });
         });
 
+        describe('a clip that already holds controller rows', () => {
+            it('commits and replays the stored rows followed by the take rows', async () => {
+                const clipId = await startLiveTake();
+                const stored = addMidiCC(clipId, 64, 127, 0.25, 0);
+                flushAutomergeStorageWrites();
+                sendLive(5, 0xb0, 1, 55);
+                sendLive(5.5, 0xb0, 1, 66);
+
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                const committed = midiStore.value?.ccByClipId[clipId];
+                expect(committed?.map(({ controller, value, beat }) => ({ controller, value, beat }))).toEqual([
+                    { controller: 64, value: 127, beat: 0.25 },
+                    { controller: 1, value: 55, beat: 1 },
+                    { controller: 1, value: 66, beat: 1.5 },
+                ]);
+                expect(committed?.[0]).toEqual(stored);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.ccByClipId[clipId]).toBeUndefined();
+
+                await redo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.ccByClipId[clipId]).toEqual(committed);
+            });
+        });
+
         describe('a pedal a learned mapping owns', () => {
             afterEach(() => {
                 midiLearnStore.set({ ...midiLearnStore.value!, mappings: [] });
