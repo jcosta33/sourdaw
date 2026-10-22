@@ -28,8 +28,8 @@ vi.mock('#/modules/Crumbs/useCases', () => ({ retractEveryCrumbsEngineAttachment
 
 function deferred() {
     let resolve!: () => void;
-    const promise = new Promise<void>((complete) => {
-        resolve = complete;
+    const promise = new Promise<void>((_resolve) => {
+        resolve = _resolve;
     });
     return { promise, resolve };
 }

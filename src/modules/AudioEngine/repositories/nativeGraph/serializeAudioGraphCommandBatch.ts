@@ -15,13 +15,15 @@ export function serializeAudioGraphCommandBatch(
     batch: AudioGraphCommandBatch,
     materials?: Readonly<{ lease: string; versions: ReadonlyMap<string, string> }>
 ): NativeGraphWireBatch & Readonly<{ timelineLease?: string }> {
+    let timelineLease: string | undefined;
+    if (materials) {
+        timelineLease = materials.lease;
+    } else if (batch.timelineLease) {
+        timelineLease = batch.timelineLease;
+    }
     return {
         schemaVersion: batch.schemaVersion,
-        ...(materials
-            ? { timelineLease: materials.lease }
-            : batch.timelineLease
-              ? { timelineLease: batch.timelineLease }
-              : {}),
+        ...(timelineLease !== undefined ? { timelineLease } : {}),
         ...(batch.correlation ? { correlation: { ...batch.correlation } } : {}),
         ...(batch.replaceTopology ? { replaceTopology: true } : {}),
         commands: batch.commands.map((command) => {

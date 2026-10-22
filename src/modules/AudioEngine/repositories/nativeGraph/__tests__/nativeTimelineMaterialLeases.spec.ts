@@ -9,8 +9,8 @@ import { audioBufferCache } from '../../../stores/audioBufferCache';
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>((complete) => {
-        resolve = complete;
+    const promise = new Promise<T>((_resolve) => {
+        resolve = _resolve;
     });
     return { promise, resolve };
 }
@@ -129,7 +129,9 @@ describe('native timeline consumer leases', () => {
         const stalled: NativeGraphTransport = {
             ...wire,
             timelineSampleLifecycle: vi.fn(async (request) => {
-                if (!lifecycle) throw new Error('missing lifecycle');
+                if (!lifecycle) {
+                    throw new Error('missing lifecycle');
+                }
                 const receipt = await lifecycle(request);
                 if (request.action === 'open') {
                     entered.resolve();
@@ -153,8 +155,9 @@ describe('native timeline consumer leases', () => {
     it('refuses a same-object republication while native preparation is pending without uploading stale bytes', async () => {
         const wire = transport();
         const command = clip(0.25);
-        if (command.kind !== 'schedule-clip' || !command.playback.source.buffer)
+        if (command.kind !== 'schedule-clip' || !command.playback.source.buffer) {
             throw new Error('expected fixture source');
+        }
         const buffer = command.playback.source.buffer;
         audioBufferCache.set('take', buffer);
         const entered = deferred<void>();
@@ -163,7 +166,9 @@ describe('native timeline consumer leases', () => {
         const stalled: NativeGraphTransport = {
             ...wire,
             timelineSampleLifecycle: vi.fn(async (request) => {
-                if (!lifecycle) throw new Error('missing lifecycle');
+                if (!lifecycle) {
+                    throw new Error('missing lifecycle');
+                }
                 const receipt = await lifecycle(request);
                 if (request.action === 'prepare') {
                     entered.resolve();
@@ -246,7 +251,9 @@ describe('native timeline consumer leases', () => {
         const observed: NativeGraphTransport = {
             ...wire,
             timelineSampleLifecycle: async (request) => {
-                if (!lifecycle) throw new Error('missing lifecycle');
+                if (!lifecycle) {
+                    throw new Error('missing lifecycle');
+                }
                 const receipt = await lifecycle(request);
                 if (request.action === 'retire' && !retirementObserved) {
                     expect(receipt).toMatchObject({ complete: false, remainingReaders: 1 });

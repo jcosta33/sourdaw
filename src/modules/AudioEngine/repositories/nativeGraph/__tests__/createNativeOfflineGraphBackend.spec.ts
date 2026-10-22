@@ -116,7 +116,9 @@ function scriptedTransport(options?: {
 }
 
 function clipCommand(sourceId: string, buffer?: AudioBuffer) {
-    if (buffer) nativeTimelineMaterialLeases.ownSnapshot(sourceId, buffer);
+    if (buffer) {
+        nativeTimelineMaterialLeases.ownSnapshot(sourceId, buffer);
+    }
     return {
         kind: 'schedule-clip',
         playback: {
@@ -599,7 +601,9 @@ describe('createNativeOfflineGraphBackend', () => {
             ...scripted,
             async registerTimelineMaterial(input) {
                 calls.push('register_timeline_sample');
-                if (!scripted.registerTimelineMaterial) throw new Error('missing fenced test transport');
+                if (!scripted.registerTimelineMaterial) {
+                    throw new Error('missing fenced test transport');
+                }
                 return scripted.registerTimelineMaterial(input);
             },
             async beginLevainBank() {

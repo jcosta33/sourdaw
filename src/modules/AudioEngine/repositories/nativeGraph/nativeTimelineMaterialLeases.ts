@@ -21,12 +21,27 @@ type Claim = Readonly<{
     sources: ReadonlyMap<string, CapturedMaterial>;
     sampleIds: readonly string[];
 }>;
+type MaterialConsumer = Readonly<{
+    capture(commands: readonly AudioGraphCommand[]): ReadonlyMap<string, CapturedMaterial>;
+    assertOpen(): void;
+    isClosed(): boolean;
+    run<T>(operation: () => Promise<T>): Promise<T>;
+    prepare(
+        commands: readonly AudioGraphCommand[],
+        replace?: boolean,
+        captured?: ReadonlyMap<string, CapturedMaterial>
+    ): Promise<Claim>;
+    accept(claim: Claim): Promise<void>;
+    decline(claim: Claim): Promise<void>;
+    context(): Readonly<{ lease: string }>;
+    dispose(): void;
+}>;
 type Owner = {
     closed: boolean;
     native?: Promise<string>;
     transport?: NativeGraphTransport;
     pending: Set<Promise<unknown>>;
-    consumers: Set<ReturnType<typeof createConsumer>>;
+    consumers: Set<MaterialConsumer>;
     retirement?: Promise<void>;
 };
 
@@ -120,7 +135,13 @@ function captureMaterial(sourceId: string, buffer: AudioBuffer, owner: Owner): C
         throw new Error(`Native clip source "${sourceId}" must be mono or stereo`);
     }
     const version = publication === undefined ? snapshot?.version : `publication-${publication}`;
-    if (!version) throw new Error('Native timeline snapshot has no material version');
+    if (!version) {
+        throw new Error('Native timeline snapshot has no material version');
+    }
+    let isCurrent = (): boolean => !owner.closed;
+    if (publication !== undefined) {
+        isCurrent = () => audioBufferCache.readRuntimeMaterialPublication(sourceId, buffer) === publication;
+    }
     return {
         buffer,
         descriptor: {
@@ -130,14 +151,11 @@ function captureMaterial(sourceId: string, buffer: AudioBuffer, owner: Owner): C
             frames: buffer.length,
             sampleRate: buffer.sampleRate,
         },
-        isCurrent:
-            publication === undefined
-                ? () => !owner.closed
-                : () => audioBufferCache.readRuntimeMaterialPublication(sourceId, buffer) === publication,
+        isCurrent,
     };
 }
 
-function createConsumer(transport: NativeGraphTransport, owner: Owner = currentOwner) {
+function createConsumer(transport: NativeGraphTransport, owner: Owner = currentOwner): MaterialConsumer {
     let closed = false;
     let accepted: Claim | undefined;
     const claims = new Set<Claim>();
@@ -150,17 +168,20 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
         await control(transport, { action: 'release', lease: claim.lease });
     }
 
-    const consumer = {
+    const consumer: MaterialConsumer = {
         capture(commands: readonly AudioGraphCommand[]): ReadonlyMap<string, CapturedMaterial> {
             requireOpen(owner, closed);
             const captured = new Map<string, CapturedMaterial>();
             for (const command of commands) {
-                if (command.kind !== 'schedule-clip' || !command.playback.source.buffer) continue;
+                if (command.kind !== 'schedule-clip' || !command.playback.source.buffer) {
+                    continue;
+                }
                 const { sourceId, buffer } = command.playback.source;
                 const row = captureMaterial(sourceId, buffer, owner);
                 const previous = captured.get(sourceId);
-                if (previous && previous.descriptor.version !== row.descriptor.version)
+                if (previous && previous.descriptor.version !== row.descriptor.version) {
                     throw new Error(`Native batch carries conflicting versions of "${sourceId}"`);
+                }
                 captured.set(sourceId, row);
             }
             return captured;
@@ -191,9 +212,12 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
                     continue;
                 }
                 const { sourceId, buffer } = command.playback.source;
-                const source = buffer
-                    ? captured.get(sourceId)
-                    : [...sources.values()].findLast((row) => row.descriptor.sourceId === sourceId);
+                let source: CapturedMaterial | undefined;
+                if (buffer) {
+                    source = captured.get(sourceId);
+                } else {
+                    source = [...sources.values()].findLast((row) => row.descriptor.sourceId === sourceId);
+                }
                 if (!source) {
                     throw new Error(`Native clip source "${sourceId}" needs its exact decoded material`);
                 }
@@ -212,7 +236,7 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
             const receipt = await control(transport, {
                 action: 'prepare',
                 owner: nativeOwner,
-                materials: [...sources.values()].map((row) => row.descriptor),
+                materials: Array.from(sources.values(), (row) => row.descriptor),
             });
             const lease = token(receipt.lease);
             const sent: string[] = [];
@@ -221,7 +245,7 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
             try {
                 requireOpen(owner, closed);
                 if (!Array.isArray(receipt.missing)) {
-                    throw new Error('Native timeline lease has no missing-material receipt');
+                    throw new TypeError('Native timeline lease has no missing-material receipt');
                 }
                 const seen = new Set<string>();
                 for (const value of receipt.missing) {
@@ -244,8 +268,9 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
                     if (!transport.registerTimelineMaterial) {
                         throw new Error('Native host does not support fenced timeline upload');
                     }
-                    if (!source.isCurrent())
+                    if (!source.isCurrent()) {
                         throw new Error(`Native clip source "${sourceId}" publication changed before upload`);
+                    }
                     // No await between authentication, reading PCM and handing the
                     // owned raw bytes to IPC. Native material is immutable afterward.
                     const material = interleaveAudioBufferPcm({ sourceId, buffer: source.buffer });
@@ -315,7 +340,7 @@ async function untilDeadline<T>(promise: Promise<T>, deadline: number): Promise<
     try {
         return await Promise.race([
             promise,
-            new Promise<never>((_, reject) => {
+            new Promise<never>((_resolve, reject) => {
                 timer = setTimeout(
                     () => reject(new Error('Native timeline retirement did not reach its last reader')),
                     Math.max(0, deadline - Date.now())
@@ -355,7 +380,7 @@ function retire(owner: Owner = currentOwner): Promise<void> {
                 typeof receipt.remainingReaders !== 'number' ||
                 typeof receipt.pendingFence !== 'boolean'
             ) {
-                throw new Error('Native timeline retirement returned a malformed last-reader witness');
+                throw new TypeError('Native timeline retirement returned a malformed last-reader witness');
             }
             if (receipt.complete) {
                 if (receipt.remainingReaders !== 0 || receipt.pendingFence) {

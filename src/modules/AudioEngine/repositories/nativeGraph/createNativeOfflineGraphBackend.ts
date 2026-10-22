@@ -329,9 +329,11 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                         }
 
                         await material.accept(claim);
-                        wireCommands = batch.replaceTopology
-                            ? [...incoming.commands]
-                            : [...wireCommands, ...incoming.commands];
+                        if (batch.replaceTopology) {
+                            wireCommands = [...incoming.commands];
+                        } else {
+                            wireCommands = [...wireCommands, ...incoming.commands];
+                        }
                         sessionId = nextSessionId;
                         retained = true;
                         runtimeRevision += 1;

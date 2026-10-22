@@ -973,23 +973,44 @@ describe('renderOffline — native/web export parity (#2225)', () => {
                     ],
                 })
             );
-            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
-            await runLeg('native');
-            const [render] = capturedRenders;
-            if (!render) {
-                throw new Error('the native leg rendered nothing to compare against');
-            }
             const sparseEndSeconds = 0.1 * SECONDS_PER_BEAT;
             expect(sparseEndSeconds).toBeLessThan(AUTOMATION_WINDOW_SECONDS);
 
-            const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
             const host = requireNativeHost();
-            const fromExport = await host.renderGraphOffline(render.batch, render.frames, render.sampleRate);
-            const fromWriter = await host.renderGraphOffline(
-                withWriterAutomation(render, written),
-                render.frames,
-                render.sampleRate
-            );
+            const transport = inProcessNativeTransport(host);
+            const comparison: {
+                rendered?: Readonly<{
+                    render: CapturedRender;
+                    fromExport: Uint8Array;
+                    fromWriter: Uint8Array;
+                }>;
+            } = {};
+            mocks.probe.transport = {
+                ...transport,
+                async renderGraphOffline(input) {
+                    // Both renders borrow the backend's admitted lease, before
+                    // renderOffline's finally disposes that backend.
+                    const fromExport = await transport.renderGraphOffline(input);
+                    const render: CapturedRender = {
+                        batch: input.batch,
+                        frames: input.frames,
+                        sampleRate: input.sampleRate,
+                    };
+                    const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
+                    const fromWriter = await host.renderGraphOffline(
+                        withWriterAutomation(render, written),
+                        render.frames,
+                        render.sampleRate
+                    );
+                    comparison.rendered = { render, fromExport, fromWriter };
+                    return fromExport;
+                },
+            };
+            await runLeg('native');
+            if (!comparison.rendered) {
+                throw new Error('the native leg rendered nothing to compare against');
+            }
+            const { render, fromExport, fromWriter } = comparison.rendered;
 
             const result = nullTest({
                 a: toRenderedBuffer(fromExport, render),

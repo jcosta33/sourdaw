@@ -670,7 +670,7 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
             changes: [],
             projectPpqEndpoints,
             resolveTempoAtBeat,
-            readBuffer: (bufferId) => mocks.audioBuffers.get(bufferId) as AudioBuffer | undefined,
+            readBuffer: (bufferId) => mocks.audioBuffers.get(bufferId),
             compensationDelaySeconds: () => 0,
         }),
     });
@@ -757,7 +757,9 @@ describe('live and export projections render one project the same way (#3068)', 
             ['mat-b', createMaterial(1.25, 330)],
             ['bake-1', createMaterial(BAKE_SECONDS, 110)],
         ]);
-        for (const [id, buffer] of mocks.audioBuffers) nativeTimelineMaterialLeases.ownSnapshot(id, buffer);
+        for (const [id, buffer] of mocks.audioBuffers) {
+            nativeTimelineMaterialLeases.ownSnapshot(id, buffer);
+        }
     });
 
     afterEach(() => {

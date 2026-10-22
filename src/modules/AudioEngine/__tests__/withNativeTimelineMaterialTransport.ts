@@ -24,19 +24,25 @@ function key(owner: string, sourceId: string, version: string): string {
 
 function requireLease(token: string): Lease {
     const lease = leases.get(token);
-    if (!lease || !owners.has(lease.owner)) throw new Error('Timeline material lease is closed');
+    if (!lease || !owners.has(lease.owner)) {
+        throw new Error('Timeline material lease is closed');
+    }
     return lease;
 }
 
 function release(token: string): void {
     const lease = leases.get(token);
-    if (!lease) return;
+    if (!lease) {
+        return;
+    }
     leases.delete(token);
     for (const id of lease.keys) {
         const row = materials.get(id);
         if (row) {
             row.pins -= 1;
-            if (!row.pcm && row.pins === 0) materials.delete(id);
+            if (!row.pcm && row.pins === 0) {
+                materials.delete(id);
+            }
         }
     }
 }
@@ -46,13 +52,19 @@ function bytes(row: Material): number {
 }
 
 function validateBatch(batch: Parameters<NativeGraphTransport['renderGraphOffline']>[0]['batch']): string[] {
-    if (!batch.timelineLease) throw new Error('Graph batch requires a timeline material lease');
+    if (!batch.timelineLease) {
+        throw new Error('Graph batch requires a timeline material lease');
+    }
     const lease = requireLease(batch.timelineLease);
     for (const id of lease.keys) {
-        if (!materials.get(id)?.pcm) throw new Error('Timeline material lease has pending uploads');
+        if (!materials.get(id)?.pcm) {
+            throw new Error('Timeline material lease has pending uploads');
+        }
     }
     for (const command of batch.commands) {
-        if (command.kind !== 'schedule-clip') continue;
+        if (command.kind !== 'schedule-clip') {
+            continue;
+        }
         const source = command.playback.source;
         const version: unknown = Reflect.get(source, 'materialVersion');
         if (typeof version !== 'string' || !lease.keys.includes(key(lease.owner, source.sourceId, version))) {
@@ -79,22 +91,34 @@ export function withNativeTimelineMaterialTransport(transport: NativeGraphTransp
             if (request.action === 'retire') {
                 owners.delete(request.owner);
                 for (const [token, lease] of leases) {
-                    if (lease.owner === request.owner) release(token);
+                    if (lease.owner === request.owner) {
+                        release(token);
+                    }
                 }
                 let remainingReaders = 0;
                 for (const [id, row] of materials) {
-                    if (row.owner !== request.owner) continue;
+                    if (row.owner !== request.owner) {
+                        continue;
+                    }
                     row.retired = true;
-                    if (row.readers) remainingReaders += 1;
-                    else materials.delete(id);
+                    if (row.readers) {
+                        remainingReaders += 1;
+                    } else {
+                        materials.delete(id);
+                    }
                 }
                 return { complete: remainingReaders === 0, remainingReaders, pendingFence: false };
             }
-            if (!owners.has(request.owner)) throw new Error('Timeline material owner is closed');
-            if (leases.size >= 256 || request.materials.length > 8192)
+            if (!owners.has(request.owner)) {
+                throw new Error('Timeline material owner is closed');
+            }
+            if (leases.size >= 256 || request.materials.length > 8192) {
                 throw new Error('Timeline material capacity exceeded');
+            }
             const keys = request.materials.map((row) => key(request.owner, row.sourceId, row.version));
-            if (new Set(keys).size !== keys.length) throw new Error('Duplicate material descriptor');
+            if (new Set(keys).size !== keys.length) {
+                throw new Error('Duplicate material descriptor');
+            }
             let total = [...materials.values()].reduce((sum, row) => sum + bytes(row), 0);
             for (const descriptor of request.materials) {
                 if (
@@ -109,22 +133,31 @@ export function withNativeTimelineMaterialTransport(transport: NativeGraphTransp
                     throw new Error('Invalid material descriptor');
                 }
                 const existing = materials.get(key(request.owner, descriptor.sourceId, descriptor.version));
-                if (existing && JSON.stringify(existing.descriptor) !== JSON.stringify(descriptor))
+                if (existing && JSON.stringify(existing.descriptor) !== JSON.stringify(descriptor)) {
                     throw new Error('Material version changed shape');
-                if (!existing) total += descriptor.frames * descriptor.channels * 4;
+                }
+                if (!existing) {
+                    total += descriptor.frames * descriptor.channels * 4;
+                }
             }
             const eviction: string[] = [];
             for (const [id, row] of materials) {
-                if (total <= MAX_BYTES) break;
+                if (total <= MAX_BYTES) {
+                    break;
+                }
                 if (!keys.includes(id) && row.pins === 0 && row.readers === 0) {
                     eviction.push(id);
                     total -= bytes(row);
                 }
             }
-            if (total > MAX_BYTES) throw new Error('Timeline material working set exceeds native pool budget');
-            for (const id of eviction) materials.delete(id);
+            if (total > MAX_BYTES) {
+                throw new Error('Timeline material working set exceeds native pool budget');
+            }
+            for (const id of eviction) {
+                materials.delete(id);
+            }
             const missing: NativeTimelineMaterialDescriptor[] = [];
-            request.materials.forEach((descriptor, index) => {
+            for (const [index, descriptor] of request.materials.entries()) {
                 const id = keys[index]!;
                 let row = materials.get(id);
                 if (!row) {
@@ -132,8 +165,10 @@ export function withNativeTimelineMaterialTransport(transport: NativeGraphTransp
                     materials.set(id, row);
                 }
                 row.pins += 1;
-                if (!row.pcm) missing.push(descriptor);
-            });
+                if (!row.pcm) {
+                    missing.push(descriptor);
+                }
+            }
             const lease = `test-lease-${++sequence}`;
             leases.set(lease, { owner: request.owner, keys });
             return { lease, missing };
@@ -152,8 +187,9 @@ export function withNativeTimelineMaterialTransport(transport: NativeGraphTransp
                 throw new Error('Upload does not match timeline reservation');
             }
             if (row.pcm) {
-                if (row.pcm.some((value, index) => value !== input.pcm[index]))
+                if (row.pcm.some((value, index) => value !== input.pcm[index])) {
                     throw new Error('Timeline material version is immutable');
+                }
                 return { frames: row.descriptor.frames };
             }
             const result = await transport.registerTimelineSample({
@@ -176,13 +212,17 @@ export function withNativeTimelineMaterialTransport(transport: NativeGraphTransp
         },
         async renderGraphOffline(input) {
             const held = validateBatch(input.batch).map((id) => ({ id, row: materials.get(id)! }));
-            for (const { row } of held) row.readers += 1;
+            for (const { row } of held) {
+                row.readers += 1;
+            }
             try {
                 return await transport.renderGraphOffline(input);
             } finally {
                 for (const { id, row } of held) {
                     row.readers -= 1;
-                    if (row.retired && row.readers === 0) materials.delete(id);
+                    if (row.retired && row.readers === 0) {
+                        materials.delete(id);
+                    }
                 }
             }
         },
