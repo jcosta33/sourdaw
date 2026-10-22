@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
+import { holdNoteExpression, takeHeldNoteExpression } from '../../../services/heldNoteExpression';
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
 import { postStoredControllerMove } from '../../scheduling/postStoredControllerMove';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
@@ -146,5 +147,20 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         stopPlayheadScheduler();
 
         expect(getTrackStrip).not.toHaveBeenCalled();
+    });
+});
+
+describe('stopPlayheadScheduler forgetting parked note expression', () => {
+    it('drops the changes a started note parked, which a stop, a pause and a seek would otherwise replay', () => {
+        holdNoteExpression({
+            trackId: 'track-1',
+            pitch: 64,
+            channel: 0,
+            changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+        });
+
+        stopPlayheadScheduler();
+
+        expect(takeHeldNoteExpression('track-1', 0, 8)).toEqual([]);
     });
 });

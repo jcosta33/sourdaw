@@ -34,6 +34,11 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import {
+    forgetHeldNoteExpression,
+    holdNoteExpression,
+    takeHeldNoteExpression,
+} from '../../services/heldNoteExpression';
+import {
     forgetStoredControllersClipMuteWithheld,
     forgetStoredControllersTrackMuteWithheld,
     hasStoredControllersTrackMuteWithheld,
@@ -850,6 +855,11 @@ export async function scheduleMidiNotes(
     opensAtRelocation = false
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
+    // A relocation is not a continuation: a note sounding at the old position has no changes in the new one,
+    // and a loop pass's notes must not bend the notes the next pass starts at their pitch.
+    if (opensAtRelocation) {
+        forgetHeldNoteExpression();
+    }
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -1204,6 +1214,18 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
+        // The changes of notes an earlier window started that fall in this window. Taken before the clips
+        // schedule, so a note starting now holds only the changes of windows after this one.
+        for (const { pitch, channel, change } of takeHeldNoteExpression(track.id, fromBeat, toBeat)) {
+            postNoteExpression({
+                posts,
+                trackId: track.id,
+                pitch,
+                channel,
+                sampleFrame: change.frame,
+                expression: change.expression,
+            });
+        }
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
@@ -1389,7 +1411,7 @@ export async function scheduleMidiNotes(
                     }
 
                     const iterationStart = clip.startBeat + iterOffset;
-                    let projectedNotes: readonly LiveYeastNote[];
+                    let projectedNotes: readonly (LiveYeastNote & { beatsIntoNote?: number })[];
                     if (isTrackScopedYeastNote) {
                         projectedNotes = [note];
                     } else {
@@ -1564,16 +1586,17 @@ export async function scheduleMidiNotes(
                             // member default — the range they were actually
                             // performed under (audit MD-8).
                             const mpe = resolveScheduledMpeParams(note);
-                            // The recorded curves ride in the note's window,
-                            // ahead of it like its release, so a stop or seek
-                            // drops them where it drops the release. Placed
-                            // through the clock the note's own start and
-                            // release used, from the projected start, so a
-                            // curve keeps its place in a moved note.
+                            // The recorded curves are placed through the
+                            // clock the note's own start and release used,
+                            // from the note's uncut start, so a curve keeps
+                            // its place in a moved or cut note. This window
+                            // posts the changes that fall in it; the rest
+                            // wait for the windows that contain them.
                             const curves = note.expression
                                 ? projectNoteExpressionCurves({
                                       note,
                                       startBeat: noteStartBeat,
+                                      beatsIntoNote: projectedNote.beatsIntoNote,
                                       releaseFrame: endSampleFrame,
                                       frameAtBeat: (beat) =>
                                           placeSamplesOnClock({
@@ -1596,7 +1619,11 @@ export async function scheduleMidiNotes(
                                 sampleFrame,
                                 expression: curves?.atStart ?? mpe,
                             });
-                            for (const change of curves?.changes ?? []) {
+                            const curveChanges = curves?.changes ?? [];
+                            for (const change of curveChanges) {
+                                if (change.beat >= toBeat) {
+                                    break;
+                                }
                                 postNoteExpression({
                                     posts,
                                     trackId: track.id,
@@ -1606,6 +1633,12 @@ export async function scheduleMidiNotes(
                                     expression: change.expression,
                                 });
                             }
+                            holdNoteExpression({
+                                trackId: track.id,
+                                pitch,
+                                channel: noteChannel,
+                                changes: curveChanges.filter((change) => change.beat >= toBeat),
+                            });
                             // Grand Boule is the one worklet synth whose
                             // `noteOff` reads a release velocity in slot 3 and
                             // its member channel in slot 4; Fermenter, Levain
