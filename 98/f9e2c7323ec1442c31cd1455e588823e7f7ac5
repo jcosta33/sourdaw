@@ -1,0 +1,19 @@
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_3e7dea5cde3f9e::t_12d94abec9c68a 528-531,562,624,626
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98f9e2c7323ec1442c31cd1455e588823e7f7ac5",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
