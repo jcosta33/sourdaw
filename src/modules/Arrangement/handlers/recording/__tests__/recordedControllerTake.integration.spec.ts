@@ -621,6 +621,23 @@ describe('recorded controller take commit', () => {
                 expect(midiStore.value?.ccByClipId[provisional.id]).toBeUndefined();
             });
 
+            it('seeds no pedal that was pressed while another track was the input target', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack('track-other');
+                sendLive(4, 0xb0, 64, 127);
+                setMidiInputTrack(TRACK_ID);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                await notesOnlyTake(provisional.id);
+
+                expect(midiStore.value?.ccByClipId[provisional.id]).toBeUndefined();
+            });
+
             it('adds no duplicate when the take records the pedal at beat 0 itself', async () => {
                 setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
                 await initWebMidi();
