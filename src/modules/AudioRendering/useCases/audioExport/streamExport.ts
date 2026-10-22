@@ -39,7 +39,9 @@ export function validateWavReportPlan(
     input: Pick<StreamExportInput, 'destination' | 'includeWavLoudnessReports' | 'exportMode'>,
     targets: readonly Pick<Target, 'formats' | 'bitDepth' | 'sampleRate' | 'channels'>[]
 ) {
-    if (!input.includeWavLoudnessReports) return;
+    if (!input.includeWavLoudnessReports) {
+        return;
+    }
     if (
         input.exportMode !== 'stems' ||
         targets.length === 0 ||
@@ -148,7 +150,9 @@ export async function streamExport(input: StreamExportInput) {
                     const progress = (fraction: number) => options.onProgress(format, fraction, target.id);
                     if (format === 'wav') {
                         if (input.includeWavLoudnessReports) {
-                            if (!options.stemId) throw new Error('WAV report stem identity is unavailable.');
+                            if (!options.stemId) {
+                                throw new Error('WAV report stem identity is unavailable.');
+                            }
                             const seed = target.dither.seed ?? Math.floor(Math.random() * 0x100000000);
                             const dither = { ...target.dither, seed };
                             const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());

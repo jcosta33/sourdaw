@@ -41,10 +41,14 @@ describe('emitted WAV loudness analysis', () => {
     it.each(depths)('parses every header and sample partition for %i-bit actual output', async (depth) => {
         const bytes = new Uint8Array(await audioBufferToWav(source(48000, 0.41), depth, undefined, { mode: 'none' }));
         const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());
-        for (let offset = 0; offset < bytes.length; offset++) first.write(bytes.subarray(offset, offset + 1));
+        for (let offset = 0; offset < bytes.length; offset++) {
+            first.write(bytes.subarray(offset, offset + 1));
+        }
         const threshold = first.finish();
         const second = createWavLoudnessReportAnalyzer(createIncrementalMd5(), threshold.relativeGatePower);
-        for (let offset = 0; offset < bytes.length; offset += 17) second.write(bytes.subarray(offset, offset + 17));
+        for (let offset = 0; offset < bytes.length; offset += 17) {
+            second.write(bytes.subarray(offset, offset + 17));
+        }
         const result = second.finish();
         expect(result.wav).toEqual(threshold.wav);
         expect(result.wav).toMatchObject({
@@ -102,7 +106,9 @@ describe('emitted WAV loudness analysis', () => {
         const bytes = new Uint8Array(await audioBufferToWav(pcm, 32, undefined, { mode: 'none' }));
         const decoded = new Float32Array(pcm.length);
         const view = new DataView(bytes.buffer);
-        for (let frame = 0; frame < decoded.length; frame++) decoded[frame] = view.getFloat32(46 + frame * 4, true);
+        for (let frame = 0; frame < decoded.length; frame++) {
+            decoded[frame] = view.getFloat32(46 + frame * 4, true);
+        }
         const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());
         first.write(bytes);
         const second = createWavLoudnessReportAnalyzer(createIncrementalMd5(), first.finish().relativeGatePower);

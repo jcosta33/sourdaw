@@ -44,9 +44,12 @@ describe('measureMaxWindowedLoudness', () => {
         writeTone(tone, { dbfs: -28, hz: 1000 });
         writeTone(tone, { dbfs: -5, hz: 1000, startFrame: length - 18000 });
         const meter = createMaxWindowedLoudnessAccumulator({ numberOfChannels: 2, sampleRate: SAMPLE_RATE });
-        for (let offset = 0; offset < length; offset += 173)
+        for (let offset = 0; offset < length; offset += 173) {
             meter.push([tone.subarray(offset, offset + 173), tone.subarray(offset, offset + 173)]);
-        const [momentary, shortTerm] = meter.finish();
+        }
+        const readings = meter.finish();
+        expect(readings).toHaveLength(2);
+        const [momentary, shortTerm] = readings;
         expect(momentary).toBeCloseTo(
             measureMaxWindowedLoudness({
                 channels: [tone, tone],

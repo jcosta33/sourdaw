@@ -84,9 +84,13 @@ export async function streamExportToNative(input: {
             ) {
                 throw new Error('WAV report pairs are incomplete.');
             }
-            const commitTokens = input.requireReportPairs
-                ? [...pairs].flatMap(([audio, report]) => [tokenByName.get(report)!, tokenByName.get(audio)!])
-                : tokens;
+            let commitTokens = tokens;
+            if (input.requireReportPairs) {
+                commitTokens = [...pairs].flatMap(([audio, report]) => [
+                    tokenByName.get(report)!,
+                    tokenByName.get(audio)!,
+                ]);
+            }
             onCommitBegin();
             await commitExportFiles(commitTokens);
             closed = true;

@@ -40,7 +40,7 @@ export function createMaxWindowedLoudnessAccumulator(input: { numberOfChannels: 
             }
             for (let start = 0; start < length; start += 4096) {
                 const count = Math.min(4096, length - start);
-                filters.forEach((filter, channel) => {
+                for (const [channel, filter] of filters.entries()) {
                     const samples = filter.samples.subarray(0, count);
                     for (let frame = 0; frame < count; frame++) {
                         const value = channels[channel]![start + frame]!;
@@ -48,12 +48,12 @@ export function createMaxWindowedLoudnessAccumulator(input: { numberOfChannels: 
                     }
                     applyBiquad(samples, shelf, filter.shelf);
                     applyBiquad(samples, highPass, filter.highPass);
-                });
+                }
                 for (let frame = 0; frame < count; frame++) {
                     let power = 0;
-                    filters.forEach((filter, channel) => {
+                    for (const [channel, filter] of filters.entries()) {
                         power += loudnessChannelWeight(channel) * filter.samples[frame]! ** 2;
-                    });
+                    }
                     for (let window = 0; window < lengths.length; window++) {
                         const windowFrames = lengths[window]!;
                         const old = frames >= windowFrames ? history[(frames - windowFrames) % history.length]! : 0;
@@ -67,12 +67,15 @@ export function createMaxWindowedLoudnessAccumulator(input: { numberOfChannels: 
                 }
             }
         },
-        finish() {
-            return lengths.map((windowFrames, index) => {
-                if (frames < windowFrames) return null;
+        finish(): readonly [number | null, number | null] {
+            const reading = (windowFrames: number, index: number): number | null => {
+                if (frames < windowFrames) {
+                    return null;
+                }
                 const power = Math.max(maxima[index]!, sums[index]! / windowFrames);
                 return power > 0 ? LOUDNESS_OFFSET + 10 * Math.log10(power) : null;
-            });
+            };
+            return [reading(lengths[0]!, 0), reading(lengths[1]!, 1)];
         },
     };
 }

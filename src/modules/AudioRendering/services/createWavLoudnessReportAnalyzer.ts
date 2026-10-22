@@ -36,7 +36,9 @@ export function createWavLoudnessReportAnalyzer(
     let windows: ReturnType<typeof createMaxWindowedLoudnessAccumulator> | undefined;
     let truePeak: ReturnType<typeof createTruePeakAccumulator> | undefined;
     const flush = () => {
-        if (blockUsed === 0) return;
+        if (blockUsed === 0) {
+            return;
+        }
         const block = channels.map((channel) => channel.subarray(0, blockUsed));
         integrated!.push(block);
         windows?.push(block);
@@ -45,8 +47,9 @@ export function createWavLoudnessReportAnalyzer(
     };
     const parseHeader = () => {
         const view = new DataView(header.buffer);
-        if (text(header, 0, 4) !== 'RIFF' || text(header, 8, 16) !== 'WAVEfmt ')
+        if (text(header, 0, 4) !== 'RIFF' || text(header, 8, 16) !== 'WAVEfmt ') {
             throw new Error('Malformed WAV report input.');
+        }
         const fmtSize = view.getUint32(16, true);
         const encoding = view.getUint16(20, true);
         const count = view.getUint16(22, true);
@@ -65,18 +68,43 @@ export function createWavLoudnessReportAnalyzer(
             throw new Error('Unsupported WAV report shape.');
         }
         headerLength = 28 + fmtSize;
-        if (headerUsed < headerLength) return;
-        if (fmtSize === 18 && view.getUint16(36, true) !== 0) throw new Error('Malformed WAV extension.');
+        if (headerUsed < headerLength) {
+            return;
+        }
+        if (fmtSize === 18 && view.getUint16(36, true) !== 0) {
+            throw new Error('Malformed WAV extension.');
+        }
         const chunkOffset = 20 + fmtSize;
-        if (text(header, chunkOffset, chunkOffset + 4) !== 'data') throw new Error('Missing WAV data chunk.');
+        if (text(header, chunkOffset, chunkOffset + 4) !== 'data') {
+            throw new Error('Missing WAV data chunk.');
+        }
         dataLength = view.getUint32(chunkOffset + 4, true);
-        if (view.getUint32(4, true) !== headerLength + dataLength - 8 || dataLength % ((count * depth) / 8) !== 0)
+        if (view.getUint32(4, true) !== headerLength + dataLength - 8 || dataLength % ((count * depth) / 8) !== 0) {
             throw new Error('Invalid WAV data length.');
+        }
+        let sampleRate: WavShape['sampleRate'];
+        if (rate === 44100) {
+            sampleRate = 44100;
+        } else if (rate === 48000) {
+            sampleRate = 48000;
+        } else if (rate === 88200) {
+            sampleRate = 88200;
+        } else {
+            sampleRate = 96000;
+        }
+        let bitDepth: WavShape['bitDepth'];
+        if (depth === 16) {
+            bitDepth = 16;
+        } else if (depth === 24) {
+            bitDepth = 24;
+        } else {
+            bitDepth = 32;
+        }
         shape = {
             encoding: encoding === 1 ? 'PCM' : 'IEEE_FLOAT',
             channels: count === 1 ? 1 : 2,
-            sampleRate: rate === 44100 ? 44100 : rate === 48000 ? 48000 : rate === 88200 ? 88200 : 96000,
-            bitDepth: depth === 16 ? 16 : depth === 24 ? 24 : 32,
+            sampleRate,
+            bitDepth,
         };
         channels = Array.from({ length: count }, () => new Float32Array(4096));
         integrated = createIntegratedLoudnessAccumulator({
@@ -91,33 +119,50 @@ export function createWavLoudnessReportAnalyzer(
     };
     return {
         write(bytes: Uint8Array) {
-            if (byteCount + bytes.length > 0xffffffff + 8) throw new Error('WAV report exceeds RIFF32.');
+            if (byteCount + bytes.length > 0xffffffff + 8) {
+                throw new Error('WAV report exceeds RIFF32.');
+            }
             md5.update(bytes);
             byteCount += bytes.length;
             for (const byte of bytes) {
                 if (!shape) {
-                    if (headerUsed >= header.length) throw new Error('Malformed WAV header.');
+                    if (headerUsed >= header.length) {
+                        throw new Error('Malformed WAV header.');
+                    }
                     header[headerUsed++] = byte;
-                    if (headerUsed === 44 || (headerLength === 46 && headerUsed === 46)) parseHeader();
+                    if (headerUsed === 44 || (headerLength === 46 && headerUsed === 46)) {
+                        parseHeader();
+                    }
                     continue;
                 }
-                if (++dataBytes > dataLength) throw new Error('WAV carries trailing bytes.');
+                if (++dataBytes > dataLength) {
+                    throw new Error('WAV carries trailing bytes.');
+                }
                 sample[sampleUsed++] = byte;
-                if (sampleUsed < shape.bitDepth / 8) continue;
+                if (sampleUsed < shape.bitDepth / 8) {
+                    continue;
+                }
                 let value: number;
-                if (shape.bitDepth === 16) value = sampleView.getInt16(0, true) / 32768;
-                else if (shape.bitDepth === 24) {
+                if (shape.bitDepth === 16) {
+                    value = sampleView.getInt16(0, true) / 32768;
+                } else if (shape.bitDepth === 24) {
                     const raw = sample[0]! | (sample[1]! << 8) | (sample[2]! << 16);
                     value = (raw >= 0x800000 ? raw - 0x1000000 : raw) / 8388608;
-                } else value = sampleView.getFloat32(0, true);
-                if (!Number.isFinite(value)) throw new Error('WAV report input has nonfinite audio.');
+                } else {
+                    value = sampleView.getFloat32(0, true);
+                }
+                if (!Number.isFinite(value)) {
+                    throw new Error('WAV report input has nonfinite audio.');
+                }
                 channels[channelIndex]![blockUsed] = value;
                 sampleUsed = 0;
                 channelIndex++;
                 if (channelIndex === shape.channels) {
                     channelIndex = 0;
                     blockUsed++;
-                    if (blockUsed === 4096) flush();
+                    if (blockUsed === 4096) {
+                        flush();
+                    }
                 }
             }
         },
@@ -136,35 +181,45 @@ export function createWavLoudnessReportAnalyzer(
             const identity: WavShape = { ...shape, frames, bytes: byteCount, md5: hex(md5.digest()) };
             const gate = integrated!.relativeGatePower();
             const lufs = integrated!.integratedLufs();
-            const [momentary, shortTerm] = windows?.finish() ?? [null, null];
+            let readings: readonly [number | null, number | null] = [null, null];
+            if (windows) {
+                readings = windows.finish();
+            }
+            const [momentary, shortTerm] = readings;
             const peak = truePeak?.finish();
             const reason = frames === 0 ? 'empty' : 'silence';
-            const reading = (value: number | null, windowFrames: number): LoudnessReading =>
-                value === null
-                    ? unavailable(frames < windowFrames ? (frames === 0 ? 'empty' : 'short-window') : 'silence', 'LUFS')
-                    : available(value, 'LUFS');
+            const reading = (value: number | null, windowFrames: number): LoudnessReading => {
+                if (value !== null) {
+                    return available(value, 'LUFS');
+                }
+                if (frames < windowFrames) {
+                    return unavailable(frames === 0 ? 'empty' : 'short-window', 'LUFS');
+                }
+                return unavailable('silence', 'LUFS');
+            };
+            let integratedReading: LoudnessReading;
+            if (lufs !== null) {
+                integratedReading = available(lufs, 'LUFS');
+            } else if (frames < Math.round(0.4 * shape.sampleRate)) {
+                integratedReading = unavailable(frames === 0 ? 'empty' : 'short-window', 'LUFS');
+            } else if (peak === 0) {
+                integratedReading = unavailable('silence', 'LUFS');
+            } else {
+                integratedReading = unavailable('below-gate', 'LUFS');
+            }
+            let truePeakReading: LoudnessReading;
+            if (peak === undefined || peak === 0) {
+                truePeakReading = unavailable(reason, 'dBTP');
+            } else {
+                truePeakReading = available(20 * Math.log10(peak), 'dBTP');
+            }
             return {
                 wav: identity,
                 relativeGatePower: gate,
-                integrated:
-                    lufs === null
-                        ? unavailable(
-                              frames < Math.round(0.4 * shape.sampleRate)
-                                  ? frames === 0
-                                      ? 'empty'
-                                      : 'short-window'
-                                  : peak === 0
-                                    ? 'silence'
-                                    : 'below-gate',
-                              'LUFS'
-                          )
-                        : available(lufs, 'LUFS'),
+                integrated: integratedReading,
                 maxMomentary: reading(momentary, Math.round(0.4 * shape.sampleRate)),
                 maxShortTerm: reading(shortTerm, Math.round(3 * shape.sampleRate)),
-                truePeak:
-                    peak === undefined || peak === 0
-                        ? unavailable(reason, 'dBTP')
-                        : available(20 * Math.log10(peak), 'dBTP'),
+                truePeak: truePeakReading,
             };
         },
     };

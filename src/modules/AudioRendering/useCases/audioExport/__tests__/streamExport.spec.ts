@@ -28,7 +28,7 @@ describe('multi-target actual output', () => {
         const targets = resolveDeliveryTargets({
             targets: [48000, 44100].map((rate, index) => {
                 const settings: DeliverySettings = {
-                    ...DELIVERY_PRESETS[2]!.settings,
+                    ...DELIVERY_PRESETS[2].settings,
                     formats: ['wav'],
                     sampleRate: rate,
                     channels: index === 0 ? 2 : 1,
@@ -78,11 +78,11 @@ describe('multi-target actual output', () => {
         }
         const files = unzipSync(archive);
         expect(Object.keys(files)).toHaveLength(8);
-        for (const stemId of ['track-a', 'track-b'])
+        for (const stemId of ['track-a', 'track-b']) {
             for (let index = 0; index < 2; index++) {
                 const audioName = `${stemId}__target-${index}.wav`;
                 const audio = files[audioName]!;
-                const report = JSON.parse(new TextDecoder().decode(files[`${audioName}.loudness.json`]!));
+                const report = JSON.parse(new TextDecoder().decode(files[`${audioName}.loudness.json`]));
                 const wav = new DataView(audio.buffer, audio.byteOffset, audio.byteLength);
                 expect(report).toMatchObject({
                     stemId,
@@ -102,6 +102,7 @@ describe('multi-target actual output', () => {
                 expect(report.maxMomentary).toHaveProperty('value');
                 expect(report.maxShortTerm).toEqual({ unavailable: 'short-window', unit: 'LUFS' });
             }
+        }
     });
 
     it('refuses unsupported report plans before selecting storage', async () => {
@@ -112,7 +113,7 @@ describe('multi-target actual output', () => {
                 {
                     id: 'mixed',
                     name: 'Mixed',
-                    settings: { ...DELIVERY_PRESETS[2]!.settings, formats: ['wav', 'mp3'] },
+                    settings: { ...DELIVERY_PRESETS[2].settings, formats: ['wav', 'mp3'] },
                     dither: { mode: 'none' },
                 },
             ],
@@ -146,7 +147,7 @@ describe('multi-target actual output', () => {
                     id: 'wav',
                     name: 'WAV',
                     settings: {
-                        ...DELIVERY_PRESETS[2]!.settings,
+                        ...DELIVERY_PRESETS[2].settings,
                         formats: ['wav'],
                         sampleRate: 48000,
                         channels: 1,

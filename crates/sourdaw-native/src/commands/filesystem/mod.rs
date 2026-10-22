@@ -1776,7 +1776,9 @@ mod tests {
         let report_token = registry
             .begin(report.to_string_lossy().into_owned(), 7)
             .unwrap();
-        registry.append(&report_token, b"unattested report", 7).unwrap();
+        registry
+            .append(&report_token, b"unattested report", 7)
+            .unwrap();
         registry.seal(&report_token, 7).unwrap();
 
         // The first rename succeeds, then the real manifest persistence fails.
