@@ -65,6 +65,9 @@ function operationPattern(actionType: string): RegExp | null {
     if (actionType === 'muteTrack') {
         return /\bmute\b/i;
     }
+    if (actionType === 'soloTrack') {
+        return /\bsolo\b/i;
+    }
     const operation = actionType
         .match(/[A-Z][a-z]+|^[a-z]+/g)
         ?.at(-1)

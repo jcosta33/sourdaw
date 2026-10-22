@@ -242,11 +242,33 @@ function getCreatedObject(
     return { idFields, names };
 }
 
+/**
+ * The key a refinement pairs a call with a pending command by: its type and full target tuple, or, for
+ * a creation with no target tuple ("add a marker", "add an audio track"), its whole payload without the
+ * ids the application minted for what it creates, so two such creations pair only when they ask for the
+ * same thing. A command that creates nothing and targets nothing acts on the one object of the project
+ * its type names (the tempo), so its type alone pairs it, whatever value it states.
+ */
+function getPairingKey(
+    actionType: string,
+    argumentsRecord: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): string {
+    const creates = getExecutableAppActionEffect(actionType)?.creates ?? [];
+    if (getTargets(actionType, argumentsRecord).length > 0 || creates.length === 0) {
+        return getTargetKey(actionType, argumentsRecord);
+    }
+    const minted = new Set(getCreatedObject(actionType, argumentsRecord, context)?.idFields ?? []);
+    const stated = Object.entries(argumentsRecord).filter(([field]) => !minted.has(field));
+    return canonicalJson([actionType, 'payload', Object.fromEntries(stated)]);
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
     createdObject: getCreatedObject,
     identity: getIdentity,
     objectIds: getObjectIds,
+    pairingKey: getPairingKey,
     targetObjects: getTargetObjects,
     targets: getTargets,
     targetKey: getTargetKey,

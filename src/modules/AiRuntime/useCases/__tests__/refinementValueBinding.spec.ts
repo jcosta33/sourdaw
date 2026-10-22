@@ -508,7 +508,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(workflowBatch.status).toBe('rejected');
         });
 
-        it('a call matching two pending commands of one type and target tuple continues neither', () => {
+        it('calls of one type and an empty target tuple each continue the pending command of their own payload', () => {
             const marker = (name: string, beat: number): ProviderCall => ({
                 name: 'addMarker',
                 arguments: { name, beat },
@@ -523,17 +523,18 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 basis.commands.map((command) => proposalCommandShape.targetKey(command.type, command.payload))
             ).toEqual([markerKey, markerKey]);
 
-            // Neither call says which marker it continues, so the batch inherits nothing and is
-            // refused exactly as the same request with no pending card.
-            const refinement = 'keep the markers as they are';
-            const unrelated = ground(refinement, card.calls);
-            const result = ground(refinement, card.calls, basis);
+            // The target tuple names neither marker, so each call continues the one pending marker
+            // whose payload it carries, in whatever order the batch lists them.
+            const result = ground('thanks', [marker('Chorus', 16), marker('Verse', 0)], basis);
 
-            expect(unrelated.status).toBe('rejected');
-            expect(result).toMatchObject({
-                status: 'rejected',
-                rejectionReason: unrelated.status === 'rejected' ? unrelated.rejectionReason : '',
-            });
+            const commands = result.status === 'grounded' ? result.groundingBasis?.commands : undefined;
+
+            expect(ground('thanks', card.calls).status).toBe('rejected');
+            expect(result.status).toBe('grounded');
+            expect(commands?.map((command) => [command.source, command.sourceCallIndex])).toEqual([
+                [0, 1],
+                [0, 0],
+            ]);
         });
 
         it('row 18: the chain keeps its root request even once no command reads it', () => {
@@ -1922,23 +1923,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
 
         it('asks when any word but the pending action words and articles stands beside the names', () => {
             const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[][]]> = [
-                [MUTE_CARD, 'unmute Bass', [[bassMute(false)], [bassMute(true)]]],
                 [MUTE_CARD, 'Bass mute off', [[bassMute(false)], [bassMute(true)]]],
                 [MUTE_CARD, 'mute Bass off', [[bassMute(false)], [bassMute(true)]]],
-                [SOLO_CARD, 'unsolo Bass', [[bassSolo(false)], [bassSolo(true)]]],
-                [ARM_CARD, 'disarm Bass', [[bassArm(false)], [bassArm(true)]]],
+                [MUTE_CARD, 'mute Bass only', [[bassMute(false)], [bassMute(true)]]],
                 [TWO_MUTES_CARD, 'mute Bass only', [[bassMute(true)], [bassMute(true), keysMute(true)]]],
                 [TWO_MUTES_CARD, 'mute just Bass', [[bassMute(true)], [bassMute(true), keysMute(true)]]],
                 [TWO_MUTES_CARD, 'mute Bass instead of Keys', [[bassMute(true)], [bassMute(true), keysMute(false)]]],
                 [TWO_MUTES_CARD, 'mute Bass excluding Keys', [[bassMute(true)], [bassMute(true), keysMute(true)]]],
-                [
-                    TWO_MUTES_CARD,
-                    'mute Bass and unmute Keys',
-                    [
-                        [bassMute(true), keysMute(false)],
-                        [bassMute(true), keysMute(true)],
-                    ],
-                ],
                 [P1_CARD, 'turn Vocals down only', [[...P1_PLAN], [vocalsBy(-3)]]],
             ];
             for (const [card, refinement, callSets] of rows) {
@@ -1956,6 +1947,46 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     });
                 }
             }
+        });
+
+        it('a toggle word binds the value it states for the pending toggle on the object it names', () => {
+            const togglesOf = (result: ReturnType<typeof refine>) => {
+                if (result.status !== 'grounded') {
+                    return result.status;
+                }
+                return result.actions.map((action) => {
+                    const { trackId, muted, soloed, armed } = payloadOf(action);
+                    return { type: action.type, trackId, muted, soloed, armed };
+                });
+            };
+            const rows: Array<
+                [{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall, ProviderCall]
+            > = [
+                [MUTE_CARD, 'unmute Bass', bassMute(false), bassMute(true)],
+                [SOLO_CARD, 'unsolo Bass', bassSolo(false), bassSolo(true)],
+                [ARM_CARD, 'disarm Bass', bassArm(false), bassArm(true)],
+            ];
+            for (const [card, refinement, stated, pending] of rows) {
+                expect({ refinement, commands: togglesOf(refine(card, refinement, [stated])) }).toEqual({
+                    refinement,
+                    commands: [
+                        expect.objectContaining({ type: stated.name, trackId: 'track-bass', ...stated.arguments }),
+                    ],
+                });
+                expect({ refinement, status: refine(card, refinement, [pending]).status }).toEqual({
+                    refinement,
+                    status: 'rejected',
+                });
+            }
+            expect(
+                togglesOf(refine(TWO_MUTES_CARD, 'mute Bass and unmute Keys', [bassMute(true), keysMute(false)]))
+            ).toEqual([
+                expect.objectContaining({ type: 'muteTrack', trackId: 'track-bass', muted: true }),
+                expect.objectContaining({ type: 'muteTrack', trackId: 'track-keys', muted: false }),
+            ]);
+            expect(refine(TWO_MUTES_CARD, 'mute Bass and unmute Keys', [bassMute(true), keysMute(true)]).status).toBe(
+                'rejected'
+            );
         });
 
         it('the pending action words alone, with articles, restate it', () => {
@@ -2202,6 +2233,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             for (const [pending, prompt, status] of rows) {
                 expect({ prompt, status: admission(pending, [], prompt) }).toEqual({ prompt, status });
             }
+        });
+
+        it('a solo is removed by its own operation word', () => {
+            const keysSolo: StoredCommand = { type: 'soloTrack', payload: { trackId: 'track-keys', soloed: true } };
+
+            expect(admission([keysSolo, vocalGain(0.5)], [vocalGain(0.5)], 'remove the keys solo')).toBe('valid');
+            expect(admission([keysSolo, vocalGain(0.5)], [vocalGain(0.5)], 'remove the keys track')).toBe('refused');
         });
 
         it('a creation the request removes is refused when the batch creates it again under a fresh id', () => {
@@ -2742,6 +2780,33 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
+        it('a comparative against a pending pan asks which way it moves, on either side and either route', () => {
+            const bassPan = (pan: number): ProviderCall => ({
+                name: 'setTrackPan',
+                arguments: { trackId: 'track-bass', pan },
+            });
+            for (const side of ['left', 'right'] as const) {
+                const sign = side === 'left' ? -1 : 1;
+                const card = { prompt: `pan Bass 30% ${side}`, calls: [bassPan(sign * 30)] };
+                const rows: Array<[string, number]> = [
+                    [`less, pan it 40 ${side}`, 40],
+                    [`more, pan it 20 ${side}`, 20],
+                    [`less, pan it 20 ${side}`, 20],
+                    [`more, pan it 40 ${side}`, 40],
+                    [`less, pan Bass 20% ${side}`, 20],
+                ];
+                for (const [refinement, magnitude] of rows) {
+                    expect({
+                        refinement,
+                        status: refine(card, refinement, [bassPan(sign * magnitude)]).status,
+                    }).toEqual({
+                        refinement,
+                        status: 'clarify',
+                    });
+                }
+            }
+        });
+
         it('a batch acting on one pending target more than once is refused, on every route', () => {
             const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
                 [P0_CARD, 'turn Vocals down 1 dB', [vocalsBy(-1), vocalsBy(-1)]],
@@ -2767,6 +2832,52 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('more than once'),
             });
+        });
+
+        it('a pending command with no target pairs only with a call of the same payload, minted ids aside', () => {
+            const marker = (name: string, beat: number): ProviderCall => ({
+                name: 'addMarker',
+                arguments: { name, beat },
+            });
+            const audioTrack = (name: string): ProviderCall => ({
+                name: 'addTrack',
+                arguments: { name, kind: 'audio' },
+            });
+            const twoMarkers = {
+                prompt: 'add a marker at beat 0 named Verse and add a marker at beat 16 named Chorus',
+                calls: [marker('Verse', 0), marker('Chorus', 16)],
+            };
+            const twoTracks = {
+                prompt: 'add an audio track named Drums and add an audio track named Bass Guitar',
+                calls: [audioTrack('Drums'), audioTrack('Bass Guitar')],
+            };
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
+                [twoMarkers, 'add a marker at beat 0 named Verse', [marker('Verse', 0)]],
+                [twoMarkers, 'add a marker at beat 32 named Chorus', [marker('Chorus', 32)]],
+                [twoTracks, 'add an audio track named Drums', [audioTrack('Drums')]],
+            ];
+            for (const [card, refinement, calls] of rows) {
+                expect({ refinement, result: refine(card, refinement, calls) }).toMatchObject({
+                    refinement,
+                    result: { status: 'rejected', rejectionReason: expect.stringContaining('omits a pending') },
+                });
+            }
+            const verseAndCut = {
+                prompt: 'add a marker at beat 0 named Verse and turn Vocals down 3 dB',
+                calls: [marker('Verse', 0), vocalsBy(-3)],
+            };
+            const addsChorus =
+                'add a marker at beat 0 named Verse, add a marker at beat 16 named Chorus and turn Vocals down 3 dB';
+            const grounded = refine(verseAndCut, addsChorus, [marker('Verse', 0), marker('Chorus', 16), vocalsBy(-3)]);
+
+            expect(grounded.status === 'grounded' ? grounded.actions.map((action) => action.type) : grounded).toEqual([
+                'addMarker',
+                'addMarker',
+                'setTrackGain',
+            ]);
+            expect(
+                refine(verseAndCut, addsChorus, [marker('Verse', 0), marker('Verse', 0), vocalsBy(-3)])
+            ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('more than once') });
         });
 
         it('a batch continuing no pending command beside a figure comparative still reads every value clause', () => {
@@ -2798,6 +2909,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
             for (const refinement of [
                 'remove the snare but leave the bass alone',
                 'remove the snare, leave the bass alone',
+                'leave the bass alone, remove the snare',
             ]) {
                 for (const calls of [[vocalsBy(-3), trackBy('track-bass', 1)], [vocalsBy(-3)]]) {
                     expect({ refinement, calls, status: refine(card, refinement, calls).status }).toEqual({
@@ -2831,6 +2943,68 @@ describe('binding a terse refinement to the pending card it refines', () => {
             const result = refine(TWO_CUTS_CARD, 'not the snare, drop the Vocals by 1 dB', [vocalsBy(-1)]);
 
             expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1 }]);
+        });
+    });
+
+    describe('a full restatement of a four-command mix card', () => {
+        const MIX_CONTEXT = projectContext([
+            projectTrack('track-lead-vocal', 'Lead Vocal'),
+            projectTrack('track-guitar-left', 'Guitar Left'),
+            projectTrack('track-guitar-right', 'Guitar Right'),
+            projectTrack('track-room-mic', 'Room Mic'),
+            projectTrack('track-drum-bus', 'Drum Bus'),
+            projectTrack('track-bass', 'Bass'),
+        ]);
+        const roomMicMute = (muted: boolean): ProviderCall => ({
+            name: 'muteTrack',
+            arguments: { trackId: 'track-room-mic', muted },
+        });
+        const mixPlan = (gain: number, muted: boolean): ProviderCall[] => [
+            { name: 'setTrackGain', arguments: { trackId: 'track-lead-vocal', gain } },
+            { name: 'setTrackPan', arguments: { trackId: 'track-guitar-left', pan: -20 } },
+            { name: 'setTrackPan', arguments: { trackId: 'track-guitar-right', pan: 20 } },
+            roomMicMute(muted),
+        ];
+        const MIX_CARD = {
+            prompt: 'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
+            calls: mixPlan(0.7, true),
+        };
+        const RESTATED =
+            'Set Lead Vocal gain to 80%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
+
+        it('binds the toggle a restated clause states', () => {
+            const unmuted = RESTATED.replace('mute Room Mic', 'unmute Room Mic');
+            const result = refine(MIX_CARD, unmuted, mixPlan(0.8, false), MIX_CONTEXT);
+
+            expect(
+                result.status === 'grounded' ? result.actions.map((action) => payloadOf(action).muted ?? null) : result
+            ).toEqual([null, null, null, false]);
+            expect(refine(MIX_CARD, unmuted, mixPlan(0.8, true), MIX_CONTEXT).status).not.toBe('grounded');
+        });
+
+        it('ignores a clause that names nothing and states no figure, action, direction or negation', () => {
+            const rows = [
+                `Actually, ${RESTATED}`,
+                `Hmm, ${RESTATED}`,
+                `Well, ${RESTATED}`,
+                `Sure, ${RESTATED}`,
+                `Yes, ${RESTATED}`,
+                `${RESTATED} Cheers.`,
+                `${RESTATED} Thanks a lot.`,
+                `${RESTATED} Looks good.`,
+            ];
+            for (const refinement of rows) {
+                expect({
+                    refinement,
+                    status: refine(MIX_CARD, refinement, mixPlan(0.8, true), MIX_CONTEXT).status,
+                }).toEqual({ refinement, status: 'grounded' });
+            }
+            for (const refinement of [`${RESTATED} I need it quieter.`, `${RESTATED} Don't apply yet.`]) {
+                expect({
+                    refinement,
+                    status: refine(MIX_CARD, refinement, mixPlan(0.8, true), MIX_CONTEXT).status,
+                }).toEqual({ refinement, status: 'clarify' });
+            }
         });
     });
 

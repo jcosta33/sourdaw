@@ -13,6 +13,7 @@ import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
+import { refinementActionWords } from './refinementActionWords';
 import { refinementRequestReading, type ReferenceCandidate, type StatedReference } from './refinementRequestReading';
 
 type ProtectedObject = ProposalGroundingBasis['protectedUnchanged'][number];
@@ -78,6 +79,8 @@ type ClauseScopeInput = {
     removedCommandIndexes: ReadonlySet<number>;
     candidates: readonly ReferenceCandidate[];
     catalog: ReturnType<typeof getExecutableAppActionGroundingCatalog>;
+    /** Every word a clause states an action by: the registry's intent phrase words, value and removal verbs. */
+    actionWords: ReadonlySet<string>;
     /** Each pending command's own action words, as the source clause that grounded it states them. */
     ownActionWords: (index: number) => readonly string[] | null;
 };
@@ -355,11 +358,41 @@ function readRefinementRemovals(input: {
     };
 }
 
+/** Every word a clause may state an action by, articles aside. */
+function readActionWordVocabulary(catalog: ClauseScopeInput['catalog']): ReadonlySet<string> {
+    const phrases = [
+        ...catalog.flatMap((entry) => entry.intentPhrases.concat(entry.levelIntentPhrases ?? [])),
+        ...refinementActionWords.valueVerbs,
+        ...refinementActionWords.movingVerbs,
+        ...refinementRequestReading.removalVerbs,
+    ];
+    return new Set(
+        phrases
+            .flatMap((phrase) => normalizePromptText(phrase).split(' '))
+            .filter((word) => word.length > 0 && !refinementRequestReading.articles.includes(word))
+    );
+}
+
+/**
+ * Whether a clause naming no project object and no action intent says nothing a batch could answer:
+ * it states no figure, direction, side or unit, no negation and no action word ("Actually", "Thanks a
+ * lot", "Looks good").
+ */
+function isInertClause(clause: RefinementClause, actionWords: ReadonlySet<string>): boolean {
+    const words = normalizePromptText(clause.masked);
+    return (
+        !refinementFigure.statesValue(clause) &&
+        !NEGATION_WORD.test(words) &&
+        !words.split(' ').some((word) => actionWords.has(word))
+    );
+}
+
 /**
  * What one clause the refinement does not remove can mean on the pending card. A clause naming any
  * object no pending command acts on is an addition, grounded from the refinement text alone, and never
- * binds a pending command; otherwise it means the kept commands it names, narrowed to the action it
- * states, or every kept command when it names none.
+ * binds a pending command; one naming nothing and stating nothing is inert and consumed; otherwise it
+ * means the kept commands it names, narrowed to the action it states, or every kept command when it
+ * names none.
  */
 function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): ClauseScope {
     const { commands, candidates } = input;
@@ -377,6 +410,9 @@ function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): Cla
         return { kind: 'addition' };
     }
     const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
+    if (references.length === 0 && intent === null && isInertClause(clause, input.actionWords)) {
+        return { kind: 'consumed' };
+    }
     const meant = commands.filter(
         (view) =>
             (intent === null || view.command.type === intent) &&
@@ -457,6 +493,7 @@ function createClauseScopeInput(input: {
         removedCommandIndexes: input.removedCommandIndexes,
         candidates,
         catalog,
+        actionWords: readActionWordVocabulary(catalog),
         ownActionWords: readOwnActionWordsOf(input.basis, input.context, commands, candidates, catalog),
     };
 }
@@ -526,7 +563,7 @@ function findClauseCombinationQuestion(input: {
             if (restated !== null) {
                 return restated;
             }
-            if (!statesValue) {
+            if (!statesValue && refinementActionWords.toggle(clause, view.command) === null) {
                 continue;
             }
             if (stating.has(view.index)) {

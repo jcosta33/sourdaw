@@ -5642,25 +5642,30 @@ function findProtectedChange(
     return null;
 }
 
-/** The pending commands of one type and full target tuple, by that tuple's key. */
-function groupPendingByTargetKey(basis: ProposalGroundingBasis): Map<string, number[]> {
+/** The pending commands of one pairing key: one type and full target tuple, or one target-less payload. */
+function groupPendingByPairingKey(basis: ProposalGroundingBasis, context: ProjectContext): Map<string, number[]> {
     const groups = new Map<string, number[]>();
     for (const [index, command] of basis.commands.entries()) {
-        const key = proposalCommandShape.targetKey(command.type, command.payload);
+        const key = proposalCommandShape.pairingKey(command.type, command.payload, context);
         groups.set(key, [...(groups.get(key) ?? []), index]);
     }
     return groups;
 }
 
 /**
- * For each call, the one pending command of the same type and full target tuple it continues, or
- * `null` when no pending command or several share that tuple. No two calls continue one command: a
- * batch where they would is refused before any route reads it.
+ * For each call, the one pending command it continues: of the same type and full target tuple, or, with
+ * no target tuple, of the same payload, minted ids aside. `null` when no pending command or several
+ * share that key. No two calls continue one command: a batch where they would is refused before any
+ * route reads it.
  */
-function partitionRefinedCalls(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Array<number | null> {
-    const groups = groupPendingByTargetKey(basis);
+function partitionRefinedCalls(
+    calls: readonly ToolCallResult[],
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): Array<number | null> {
+    const groups = groupPendingByPairingKey(basis, context);
     return calls.map((call) => {
-        const [only, ...others] = groups.get(proposalCommandShape.targetKey(call.name, call.arguments)) ?? [];
+        const [only, ...others] = groups.get(proposalCommandShape.pairingKey(call.name, call.arguments, context)) ?? [];
         return only !== undefined && others.length === 0 ? only : null;
     });
 }
@@ -5714,12 +5719,19 @@ function findSilentOmission(input: {
     return null;
 }
 
-/** The pending commands a batch the refinement text grounded by itself still carries, by type and target. */
-function getCarriedCommandIndexes(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Set<number> {
-    const keys = new Set(calls.map((call) => proposalCommandShape.targetKey(call.name, call.arguments)));
+/**
+ * The pending commands a batch the refinement text grounded by itself still carries, by type and target,
+ * or by payload for a command with no target.
+ */
+function getCarriedCommandIndexes(
+    calls: readonly ToolCallResult[],
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): Set<number> {
+    const keys = new Set(calls.map((call) => proposalCommandShape.pairingKey(call.name, call.arguments, context)));
     return new Set(
         basis.commands.flatMap((command, index) =>
-            keys.has(proposalCommandShape.targetKey(command.type, command.payload)) ? [index] : []
+            keys.has(proposalCommandShape.pairingKey(command.type, command.payload, context)) ? [index] : []
         )
     );
 }
@@ -5778,6 +5790,24 @@ function validateComparative(input: {
     return `"${input.comparative}" asks for a ${asked} than the pending ${description}, and the stated value is not`;
 }
 
+/** A toggle word binds its one boolean argument to the value it states; every other argument stays as pending. */
+function validateBoundToggle(
+    call: ToolCallResult,
+    command: ProposalGroundingCommand,
+    argument: string,
+    toggled: boolean
+): string | null {
+    const changedArgument = [...new Set([...Object.keys(call.arguments), ...Object.keys(command.payload)])].find(
+        (candidate) =>
+            candidate !== argument &&
+            canonicalJson(call.arguments[candidate]) !== canonicalJson(command.payload[candidate])
+    );
+    if (changedArgument !== undefined) {
+        return getValueMismatchReason(changedArgument);
+    }
+    return call.arguments[argument] === toggled ? null : getValueMismatchReason(argument);
+}
+
 /**
  * Hold an inherited call to the value its refinement clause binds: every argument no value rule
  * reads stays as pending, and the values are checked by the same unit, level-law, form, direction
@@ -5789,6 +5819,9 @@ function validateBoundValue(
     bound: BoundRefinementValue,
     context: ProjectContext
 ): string | null {
+    if (bound.toggled !== null) {
+        return validateBoundToggle(call, command, bound.argument, bound.toggled);
+    }
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (groundingRules === null) {
         return getValueMismatchReason(bound.argument);
@@ -5923,21 +5956,45 @@ function groundInheritedCall(input: {
 }
 
 /**
- * A "less" or "more" beside a batch the refinement text grounded by itself still compares: each
- * pending value the batch changes must be smaller or larger than the pending one, as it reads there.
+ * A "less" or "more" against a pending pan does not say which way it goes: toward the centre, or along
+ * the signed value. It is asked whichever side the pan is on.
  */
-function findDirectComparativeRejection(
+function askPanComparative(
+    comparative: 'less' | 'more',
+    commands: readonly ProposalGroundingCommand[]
+): BridgeGroundedLlmToolCallsResult | null {
+    if (!commands.some((command) => command.type === 'setTrackPan')) {
+        return null;
+    }
+    return {
+        actions: [],
+        rejections: [],
+        clarification: {
+            reason: 'The refinement compares a pan without saying which way it should move.',
+            questions: [
+                `Should "${comparative}" move the pan toward the centre or further to its side? Say where it should land, as in "pan it 20 left".`,
+            ],
+        },
+    };
+}
+
+/**
+ * A "less" or "more" beside a batch the refinement text grounded by itself still compares: each
+ * pending value the batch changes must be smaller or larger than the pending one, as it reads there,
+ * and a pending pan it changes is asked.
+ */
+function findDirectComparativeOutcome(
     calls: readonly ToolCallResult[],
     inheritedCommandIndexes: ReadonlyArray<number | null>,
     basis: ProposalGroundingBasis,
     input: BridgeGroundedLlmToolCallsInput
-): string | null {
+): BridgeGroundedLlmToolCallsResult | null {
     const comparative = refinementClauseReader.comparative(input.prompt, input.context);
     if (comparative === null) {
         return null;
     }
     if (comparative === 'both') {
-        return 'The refinement asks for both less and more';
+        return refuseRefinement('The refinement asks for both less and more');
     }
     const compared = calls.flatMap((call, index) => {
         const command = basis.commands[inheritedCommandIndexes[index] ?? -1];
@@ -5946,12 +6003,19 @@ function findDirectComparativeRejection(
         return command === undefined || argument === undefined || !changed ? [] : [{ call, command, argument }];
     });
     if (compared.length === 0) {
-        return `"${comparative}" names no pending value the batch changes`;
+        return refuseRefinement(`"${comparative}" names no pending value the batch changes`);
+    }
+    const panQuestion = askPanComparative(
+        comparative,
+        compared.map((entry) => entry.command)
+    );
+    if (panQuestion !== null) {
+        return panQuestion;
     }
     for (const { call, command, argument } of compared) {
         const rejectionReason = validateComparative({ comparative, command, call, argument, context: input.context });
         if (rejectionReason !== null) {
-            return rejectionReason;
+            return refuseRefinement(rejectionReason);
         }
     }
     return null;
@@ -5980,7 +6044,7 @@ function bridgeRefinedLlmToolCalls(
 ): BridgeGroundedLlmToolCallsResult {
     const { calls, context, prompt } = input;
     const unrefined: BridgeGroundedLlmToolCallsInput = { ...input, refinementBasis: undefined };
-    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis);
+    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis, context);
     const repeated = findRepeatedPendingCommand(inheritedCommandIndexes, basis, context);
     if (repeated !== null) {
         return refuseRefinement(repeated);
@@ -6056,7 +6120,7 @@ function bridgeRefinedLlmToolCalls(
         calls,
         inheritedCommandIndexes,
         kept: groundsDirectly
-            ? getCarriedCommandIndexes(calls, basis)
+            ? getCarriedCommandIndexes(calls, basis, context)
             : new Set(inheritedCommandIndexes.filter((index): index is number => index !== null)),
         basis,
         removals,
@@ -6066,11 +6130,14 @@ function bridgeRefinedLlmToolCalls(
     if (defect !== null) {
         return refuseRefinement(defect);
     }
-    const comparativeRejection = groundsDirectly
-        ? findDirectComparativeRejection(calls, inheritedCommandIndexes, basis, input)
+    const comparativeOutcome = groundsDirectly
+        ? findDirectComparativeOutcome(calls, inheritedCommandIndexes, basis, input)
         : null;
-    const rejectionReason = comparativeRejection ?? findProtectedChange(routed.actions, protectedObjects, context);
-    return rejectionReason === null ? routed : refuseRefinement(rejectionReason);
+    if (comparativeOutcome !== null) {
+        return comparativeOutcome;
+    }
+    const protectedChange = findProtectedChange(routed.actions, protectedObjects, context);
+    return protectedChange === null ? routed : refuseRefinement(protectedChange);
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
@@ -6164,6 +6231,16 @@ function groundInheritedRefinement(route: {
     }
     if (binding.status === 'refused') {
         return refuseRefinement(binding.reason);
+    }
+    const panQuestion =
+        binding.comparative === null
+            ? null
+            : askPanComparative(
+                  binding.comparative,
+                  [...binding.values.keys()].map((index) => basis.commands[index]!)
+              );
+    if (panQuestion !== null) {
+        return panQuestion;
     }
     const inherited = new Set(inheritedCommandIndexes.filter((index): index is number => index !== null));
     const unboundValue = [...binding.values.keys()].find((index) => !inherited.has(index));

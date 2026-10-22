@@ -8,6 +8,7 @@ import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import { type PromptClause } from './groundingStrategies/promptScope';
+import { refinementActionWords } from './refinementActionWords';
 import { refinementValueUnits } from './refinementValueUnits';
 
 export type RefinementClause = PromptClause & { start: number; end: number };
@@ -23,6 +24,8 @@ export type BoundRefinementValue = {
     expected: number | null;
     /** Set when the clause kept the pending command's direction because it stated none of its own. */
     keptPendingDirection: boolean;
+    /** The boolean a toggle word states for `argument` ("unmute" is `false`), or `null` for a figure. */
+    toggled: boolean | null;
 };
 
 type PendingCommandView = { index: number; command: ProposalGroundingCommand };
@@ -67,14 +70,7 @@ const LEVEL_DIRECTION_WORDS: ReadonlySet<string> = new Set(
 );
 
 const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
-/**
- * The verbs that move what they act on. Beside a figure and a side ("bring it 10 right", "move it 10 to
- * the right", "bring it right 10") they may say how far a pan moves toward that side rather than where
- * it lands, so such a clause is asked, with or without `to`, whatever action the verb would otherwise
- * read as. `make`, `set`, `put` and `change` name the value it becomes, so their side is where the pan
- * lands. Only a pan reads a side at all.
- */
-const MOVING_VERBS: ReadonlySet<string> = new Set(['bring', 'turn', 'move', 'shift', 'nudge', 'push']);
+const MOVING_VERBS: ReadonlySet<string> = new Set(refinementActionWords.movingVerbs);
 /** Words a pan clause reads itself: the operation and the side it lands on. */
 const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WORDS]);
 /**
@@ -107,12 +103,6 @@ const COMPARATIVE_WORDS: ReadonlySet<string> = new Set([
     'quieter',
     'softer',
 ]);
-/**
- * Words that may open a clause ahead of its verb. The clause splitter consumes a conjunction between
- * two clauses, so `and`, `but` and `then` open only the refinement's first clause ("and lower it 2 dB").
- */
-const CLAUSE_OPENING_WORDS: ReadonlySet<string> = new Set(['and', 'but', 'then', 'please']);
-const ARTICLE_WORDS: ReadonlySet<string> = new Set(['the', 'a', 'an']);
 /** The connectors a figure is read after, which belong to the figure rather than the action. */
 const CONNECTOR_WORDS: ReadonlySet<string> = new Set(['to', 'at', 'by']);
 /** A quotation mark: a value clause quoting anything states words this reading never reads. */
@@ -127,13 +117,7 @@ const QUOTE_MARK = /["'“”‘’«»`]/u;
  * value this reading cannot tell, so the clause is asked rather than bound by the words it does know.
  */
 const VALUE_CLAUSE_WORDS: ReadonlySet<string> = new Set([
-    'make',
-    'set',
-    'put',
-    'turn',
-    'bring',
-    'move',
-    'change',
+    ...refinementActionWords.valueVerbs,
     'it',
     'its',
     'the',
@@ -194,8 +178,7 @@ function readDirection(words: string): StatedFigure['direction'] {
 /** The first word beside the figure outside the closed vocabulary a value clause is read in, if any. */
 function findUnreadWord(words: string, alsoRead: ReadonlySet<string>): string | null {
     const tokens = words.split(' ').filter((word) => word.length > 0);
-    const opening = tokens.findIndex((word) => !CLAUSE_OPENING_WORDS.has(word));
-    const verbIndex = opening < 0 ? tokens.length : opening;
+    const verbIndex = refinementActionWords.verbIndex(tokens);
     return (
         tokens.find(
             (word, index) =>
@@ -227,7 +210,7 @@ function readSide(words: string): -1 | 1 | null | 'conflicting' {
  */
 function findComparativeWord(words: string): string | null {
     const tokens = words.split(' ').filter((word) => word.length > 0);
-    const verbIndex = tokens.findIndex((word) => !CLAUSE_OPENING_WORDS.has(word));
+    const verbIndex = refinementActionWords.verbIndex(tokens);
     return (
         tokens.find((word, index) => COMPARATIVE_WORDS.has(word) && !(word === 'lower' && index === verbIndex)) ?? null
     );
@@ -326,15 +309,6 @@ function readPendingDirection(command: ProposalGroundingCommand): -1 | 1 | null 
     return value.value < 0 ? -1 : 1;
 }
 
-/** The words of a clause with every object name masked, its opening words and articles left out. */
-function readActionWords(masked: string): string[] {
-    const tokens = normalizePromptText(masked)
-        .split(' ')
-        .filter((word) => word.length > 0);
-    const verbIndex = tokens.findIndex((word) => !CLAUSE_OPENING_WORDS.has(word));
-    return tokens.slice(verbIndex < 0 ? tokens.length : verbIndex).filter((word) => !ARTICLE_WORDS.has(word));
-}
-
 /**
  * The words a pending command's source clause states its action in: the clause's words beside its one
  * figure, without the unit and connector that figure is read in ("turn Vocals down 3 dB" is "turn
@@ -343,26 +317,24 @@ function readActionWords(masked: string): string[] {
 function readOwnActionWords(sourceClause: RefinementClause): string[] | null {
     const figure = readFigure(sourceClause);
     if (figure === 'none') {
-        return readActionWords(sourceClause.masked);
+        return refinementActionWords.actionWords(sourceClause.masked);
     }
     if (typeof figure === 'string') {
         return null;
     }
-    return readActionWords(figure.words).filter((word) => !CONNECTOR_WORDS.has(word));
-}
-
-function isSameWords(left: readonly string[], right: readonly string[]): boolean {
-    return left.length === right.length && left.every((word, index) => word === right[index]);
+    return refinementActionWords.actionWords(figure.words).filter((word) => !CONNECTOR_WORDS.has(word));
 }
 
 /**
  * What to ask of a clause that states no figure for a pending command it can mean. Naming a pending
  * object, it restates that command only in the pending command's own action words, as its source
- * clause stated them, plus articles: any other word ("unmute", "off", "only", "just", "instead of",
- * "excluding", a direction against it, a unit) says something about the change this reading cannot
- * bind, so it is asked. Naming none, it restates the command only in the direction the command already
- * takes ("turn it down" against a pending cut); a direction against it, a direction for a value that
- * takes none, a level direction beside a pan, or a unit with no figure leaves the value open.
+ * clause stated them, plus articles, or states the toggle's own value in one of its type's toggle words
+ * ("unmute Bass" against a pending mute), which binds that value: any other word ("off", "only",
+ * "just", "instead of", "excluding", a direction against it, a unit) says something about the change
+ * this reading cannot bind, so it is asked. Naming none, it restates the command only in the direction
+ * the command already takes ("turn it down" against a pending cut); a direction against it, a direction
+ * for a value that takes none, a level direction beside a pan, or a unit with no figure leaves the
+ * value open.
  */
 function findRestatementQuestion(input: {
     clause: RefinementClause;
@@ -377,7 +349,11 @@ function findRestatementQuestion(input: {
     }
     if (input.namesObjects) {
         const own = input.ownActionWords;
-        if (own !== null && isSameWords(readActionWords(clause.masked), own)) {
+        const words = refinementActionWords.actionWords(clause.masked);
+        if (
+            (own !== null && refinementActionWords.isSame(words, own)) ||
+            refinementActionWords.toggle(clause, command) !== null
+        ) {
             return null;
         }
         const asProposed = own === null || own.length === 0 ? '' : ` ("${own.join(' ')}")`;
@@ -679,15 +655,14 @@ function resolveFigure(
         return { kind: 'refused', reason: resolution.reason };
     }
     const { argument, expected, keptPendingDirection } = resolution;
-    return { kind: 'value', index: view.index, value: { clause, argument, expected, keptPendingDirection } };
+    return {
+        kind: 'value',
+        index: view.index,
+        value: { clause, argument, expected, keptPendingDirection, toggled: null },
+    };
 }
 
-/**
- * What the figure one refinement clause states binds to among the pending commands the clause can
- * mean: exactly one of them of the stated unit, or nothing guessed. A clause with no figure restates
- * the commands it names by their own action, or asks for something the card does not carry.
- */
-export function bindRefinementFigure(input: {
+type FigureClauseInput = {
     clause: RefinementClause;
     /** The pending commands the clause can mean: the ones it names, else all it keeps, narrowed to its action. */
     scoped: readonly PendingCommandView[];
@@ -698,24 +673,47 @@ export function bindRefinementFigure(input: {
     /** Each pending command's own action words, by its index, or `null` when its source states none. */
     ownActionWords: (index: number) => readonly string[] | null;
     context: ProjectContext;
-}): FigureRead {
+};
+
+/**
+ * A clause with no figure restates the pending commands it names by their own action, binds the value
+ * a toggle word states, or asks for something the card does not carry.
+ */
+function readFigurelessClause(input: FigureClauseInput): FigureRead {
+    const { clause, scoped } = input;
+    if (!input.namesObjects || scoped.length === 0) {
+        return { kind: 'addition' };
+    }
+    const toggled = refinementActionWords.toggledChange(clause, scoped);
+    if (toggled.status === 'several') {
+        return { kind: 'clarify', question: `Which pending change should "${clause.text.trim()}" apply to?` };
+    }
+    if (toggled.status === 'one') {
+        const value = { clause, ...toggled.value, expected: null, keptPendingDirection: false };
+        return { kind: 'value', index: toggled.index, value };
+    }
+    const question = scoped
+        .map((view) =>
+            findRestatementQuestion({
+                clause,
+                command: view.command,
+                namesObjects: true,
+                ownActionWords: input.ownActionWords(view.index),
+            })
+        )
+        .find((candidate) => candidate !== null);
+    return question === undefined ? { kind: 'restated' } : { kind: 'clarify', question };
+}
+
+/**
+ * What the figure one refinement clause states binds to among the pending commands the clause can
+ * mean: exactly one of them of the stated unit, or nothing guessed.
+ */
+export function bindRefinementFigure(input: FigureClauseInput): FigureRead {
     const { clause, scoped } = input;
     const figure = readFigure(clause);
     if (figure === 'none') {
-        if (!input.namesObjects || scoped.length === 0) {
-            return { kind: 'addition' };
-        }
-        const question = scoped
-            .map((view) =>
-                findRestatementQuestion({
-                    clause,
-                    command: view.command,
-                    namesObjects: true,
-                    ownActionWords: input.ownActionWords(view.index),
-                })
-            )
-            .find((candidate) => candidate !== null);
-        return question === undefined ? { kind: 'restated' } : { kind: 'clarify', question };
+        return readFigurelessClause(input);
     }
     if (figure === 'several') {
         return {
