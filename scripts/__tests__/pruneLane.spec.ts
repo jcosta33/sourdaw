@@ -273,24 +273,32 @@ describe('prune shell boundary', () => {
 });
 
 describe('prune lane-in-use detection', () => {
+    // A cwd-restricted lsof lists only the working-directory entries, as the real tool does for `-d cwd`.
     const portWithLsof = (output: string) =>
         shellPort({
-            capture: (command: string) => {
+            capture: (command: string, args: string[]) => {
                 if (command === 'lsof') {
-                    return output;
+                    return args.includes('cwd')
+                        ? output
+                              .split('\n')
+                              .filter((line, index, lines) => !line.startsWith('n') || lines[index - 1] === 'fcwd')
+                              .join('\n')
+                        : output;
                 }
                 throw new Error(`unexpected capture: ${command}`);
             },
         });
 
     it('treats a lane as in use when another process holds a file open under it from elsewhere', () => {
-        const port = portWithLsof(`p999\nn/elsewhere/build\nf12\nn${target}/target/debug/deps/lib.rlib`);
+        const port = portWithLsof(`p999\nfcwd\nn/elsewhere/build\nf12\nn${target}/target/debug/deps/lib.rlib`);
 
         expect(port.active(target)).toBe(true);
     });
 
     it('ignores open files outside the lane and this process own descriptors', () => {
-        const port = portWithLsof(`p999\nn/elsewhere/build\nn${target}-sibling/file\np${process.pid}\nn${target}/x`);
+        const port = portWithLsof(
+            `p999\nfcwd\nn/elsewhere/build\nf3\nn${target}-sibling/file\np${process.pid}\nf4\nn${target}/x`
+        );
 
         expect(port.active(target)).toBe(false);
     });
