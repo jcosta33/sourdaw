@@ -455,7 +455,7 @@ export async function scheduleTrackClips({
         pitchBend?: number;
         pitchBendRangeSemitones?: number;
         /** The note's projected start, from which its recorded expression curves are placed. */
-        startBeat?: number;
+        startBeat: number;
         /** How far into the note `startBeat` is when a clip cut took its head off; the curves count from the note's start. */
         beatsIntoNote?: number;
         expression?: NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
@@ -622,16 +622,15 @@ export async function scheduleTrackClips({
                 // The curves change the note after its note-on, placed as the
                 // note's own start and release are and by the same projection
                 // live playback uses. A pad has no voice to bend.
-                const curves =
-                    isToaster || !note.expression || note.startBeat === undefined
-                        ? undefined
-                        : projectNoteExpressionCurves({
-                              note,
-                              startBeat: note.startBeat,
-                              beatsIntoNote: note.beatsIntoNote,
-                              releaseFrame: frameAtSeconds(endTime),
-                              frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
-                          });
+                const curves = isToaster
+                    ? undefined
+                    : projectNoteExpressionCurves({
+                          note,
+                          startBeat: note.startBeat,
+                          beatsIntoNote: note.beatsIntoNote,
+                          releaseFrame: frameAtSeconds(endTime),
+                          frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
+                      });
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
