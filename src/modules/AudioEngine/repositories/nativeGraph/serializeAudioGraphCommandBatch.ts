@@ -21,9 +21,8 @@ export function serializeAudioGraphCommandBatch(
     } else if (batch.timelineLease) {
         timelineLease = batch.timelineLease;
     }
-    return {
+    const serialized: NativeGraphWireBatch & { timelineLease?: string } = {
         schemaVersion: batch.schemaVersion,
-        ...(timelineLease !== undefined ? { timelineLease } : {}),
         ...(batch.correlation ? { correlation: { ...batch.correlation } } : {}),
         ...(batch.replaceTopology ? { replaceTopology: true } : {}),
         commands: batch.commands.map((command) => {
@@ -38,4 +37,8 @@ export function serializeAudioGraphCommandBatch(
             return { ...wire, playback: { ...wire.playback, source: { ...wire.playback.source, materialVersion } } };
         }),
     };
+    if (timelineLease !== undefined) {
+        serialized.timelineLease = timelineLease;
+    }
+    return serialized;
 }
