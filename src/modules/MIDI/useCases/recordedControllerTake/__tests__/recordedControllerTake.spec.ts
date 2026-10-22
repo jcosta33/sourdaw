@@ -5,7 +5,9 @@ import { type MidiStoreStateInput } from '../../../stores/midiStore';
 const mocks = vi.hoisted(() => ({
     midi: { value: null as MidiStoreStateInput | null },
     activeRecordingRef: { current: [] as string[] },
-    trackState: { value: null as { tracks: { id: string; clips: { id: string }[] }[] } | null },
+    trackState: {
+        value: null as { tracks: { id: string; clips: { id: string; startBeat: number; endBeat: number }[] }[] } | null,
+    },
     targetTrackId: { value: null as string | null },
     learnState: {
         value: null as {
@@ -54,10 +56,14 @@ const { endRecordedControllerTake } = await import('../endRecordedControllerTake
 const { commitRecordedControllers } = await import('../commitRecordedControllers');
 const { discardRecordedControllers } = await import('../discardRecordedControllers');
 const { planRecordedControllers } = await import('../planRecordedControllers');
+const { setRecordedTakeEndBeat } = await import('../setRecordedTakeEndBeat');
 
 const CLIP = 'rec-clip-1';
 const NEXT_CLIP = 'rec-clip-2';
 const TRACK = 'track-1';
+
+/** A clip on the timeline from beat 4 to beat 8: its closing line sits at clip beat 4. */
+const spanOf = (id: string) => ({ id, startBeat: 4, endBeat: 8 });
 
 const bare = <TRow extends { id: string }>(rows: readonly TRow[] | undefined) =>
     (rows ?? []).map(({ id: _id, ...row }) => row);
@@ -69,7 +75,7 @@ function holdPedal(channel: number, controller: number, value: number): void {
 }
 
 function setLiveClips(...clipIds: string[]): void {
-    mocks.trackState.value = { tracks: [{ id: TRACK, clips: clipIds.map((id) => ({ id })) }] };
+    mocks.trackState.value = { tracks: [{ id: TRACK, clips: clipIds.map((id) => spanOf(id)) }] };
 }
 
 /** Begin a take that opened `clipId` on `TRACK`, the live input routed to that track. */
@@ -135,7 +141,7 @@ describe('recorded controller take', () => {
 
         it('drops a message arriving after its clip committed', () => {
             beginTake();
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 9, channel: 0 } });
             bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 5, beat: 9, channel: 0 } });
@@ -150,15 +156,15 @@ describe('recorded controller take', () => {
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
             bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 7, beat: 1, channel: 0 } });
 
-            const plan = planRecordedControllers({ clipId: CLIP });
-            const again = planRecordedControllers({ clipId: CLIP });
+            const plan = planRecordedControllers({ clip: spanOf(CLIP) });
+            const again = planRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(midiStore.set).not.toHaveBeenCalled();
             expect(recordedControllerTakeState.buffers.has(CLIP)).toBe(true);
             expect(recordedControllerTakeState.committedClipIds.has(CLIP)).toBe(false);
             expect(again).toEqual(plan);
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(mocks.midi.value?.ccByClipId[CLIP]).toEqual(plan.cc);
             expect(mocks.midi.value?.pitchBendByClipId[CLIP]).toEqual(plan.pitchBend);
@@ -167,7 +173,7 @@ describe('recorded controller take', () => {
         it('is empty for a clip with nothing buffered', () => {
             beginTake();
 
-            expect(planRecordedControllers({ clipId: CLIP })).toEqual({ cc: [], pitchBend: [] });
+            expect(planRecordedControllers({ clip: spanOf(CLIP) })).toEqual({ cc: [], pitchBend: [] });
         });
     });
 
@@ -178,7 +184,7 @@ describe('recorded controller take', () => {
             bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 7, beat: 1, channel: 0 } });
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 20, beat: 1, channel: 0 } });
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(midiStore.set).toHaveBeenCalledTimes(1);
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
@@ -192,7 +198,7 @@ describe('recorded controller take', () => {
         it('writes nothing for a take that recorded no controller', () => {
             beginTake();
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(midiStore.set).not.toHaveBeenCalled();
         });
@@ -220,7 +226,7 @@ describe('recorded controller take', () => {
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 { controller: 64, value: 127, beat: 0, channel: 0 },
@@ -228,6 +234,10 @@ describe('recorded controller take', () => {
                 { controller: 66, value: 90, beat: 0, channel: 2 },
                 { controller: 67, value: 1, beat: 0, channel: 2 },
                 { controller: 1, value: 10, beat: 1, channel: 0 },
+                // Soft pedal at 1 is below its latch threshold: it holds nothing to lift.
+                { controller: 64, value: 0, beat: 4, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 1 },
+                { controller: 66, value: 0, beat: 4, channel: 2 },
             ]);
         });
 
@@ -236,7 +246,7 @@ describe('recorded controller take', () => {
             holdPedal(0, 66, 0);
             beginTake();
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(midiStore.set).not.toHaveBeenCalled();
         });
@@ -247,11 +257,25 @@ describe('recorded controller take', () => {
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 0, channel: 0 } });
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 { controller: 64, value: 127, beat: 0, channel: 1 },
                 { controller: 64, value: 0, beat: 0, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 1 },
+            ]);
+        });
+
+        it('keeps the pedal held at the start when the take lifts it later than beat 0', () => {
+            holdPedal(0, 64, 127);
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 2, channel: 0 } });
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
+                { controller: 64, value: 127, beat: 0, channel: 0 },
+                { controller: 64, value: 0, beat: 2, channel: 0 },
             ]);
         });
 
@@ -260,10 +284,11 @@ describe('recorded controller take', () => {
             beginTake();
             holdPedal(0, 64, 0);
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 { controller: 64, value: 127, beat: 0, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 0 },
             ]);
         });
 
@@ -273,20 +298,21 @@ describe('recorded controller take', () => {
             mocks.targetTrackId.value = TRACK;
             mocks.trackState.value = {
                 tracks: [
-                    { id: TRACK, clips: [{ id: CLIP }] },
-                    { id: 'track-other', clips: [{ id: 'rec-clip-other' }] },
+                    { id: TRACK, clips: [spanOf(CLIP)] },
+                    { id: 'track-other', clips: [spanOf('rec-clip-other')] },
                 ],
             };
             beginRecordedControllerTake();
 
-            commitRecordedControllers({ clipId: 'rec-clip-other' });
+            commitRecordedControllers({ clip: spanOf('rec-clip-other') });
             expect(midiStore.set).not.toHaveBeenCalled();
 
-            commitRecordedControllers({ clipId: CLIP });
-            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toHaveLength(1);
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+            // The pedal seeded at beat 0 and the lift that ends it.
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toHaveLength(2);
 
             recordedControllerTakeState.openedClipIds.add('rec-clip-again');
-            commitRecordedControllers({ clipId: 'rec-clip-again' });
+            commitRecordedControllers({ clip: spanOf('rec-clip-again') });
             expect(mocks.midi.value?.ccByClipId['rec-clip-again']).toBeUndefined();
         });
 
@@ -294,7 +320,7 @@ describe('recorded controller take', () => {
             holdPedal(0, 64, 127);
             beginTake();
 
-            commitRecordedControllers({ clipId: 'existing-clip' });
+            commitRecordedControllers({ clip: spanOf('existing-clip') });
 
             expect(midiStore.set).not.toHaveBeenCalled();
         });
@@ -303,10 +329,10 @@ describe('recorded controller take', () => {
             holdPedal(0, 64, 127);
             beginTake();
 
-            const plan = planRecordedControllers({ clipId: CLIP });
-            commitRecordedControllers({ clipId: CLIP });
+            const plan = planRecordedControllers({ clip: spanOf(CLIP) });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
-            expect(plan.cc).toHaveLength(1);
+            expect(plan.cc).toHaveLength(2);
             expect(mocks.midi.value?.ccByClipId[CLIP]).toEqual(plan.cc);
         });
 
@@ -316,10 +342,11 @@ describe('recorded controller take', () => {
             mocks.learnState.value = { isLearning: false, learningTarget: null, mappings: [{ channel: 0, cc: 64 }] };
             beginTake();
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 { controller: 66, value: 90, beat: 0, channel: 0 },
+                { controller: 66, value: 0, beat: 4, channel: 0 },
             ]);
         });
 
@@ -328,10 +355,11 @@ describe('recorded controller take', () => {
             mocks.learnState.value = { isLearning: false, learningTarget: null, mappings: [{ channel: 0, cc: 64 }] };
             beginTake();
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 { controller: 64, value: 127, beat: 0, channel: 1 },
+                { controller: 64, value: 0, beat: 4, channel: 1 },
             ]);
         });
 
@@ -340,9 +368,144 @@ describe('recorded controller take', () => {
             mocks.learnState.value = { isLearning: true, learningTarget: 'track-pan', mappings: [] };
             beginTake();
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(midiStore.set).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('pedals the take leaves engaged', () => {
+        const press = (controller: number, value: number, beat: number, channel = 0): void => {
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller, value, beat, channel } });
+        };
+        const plannedCc = (input: { takeEndBeat?: number; clip?: ReturnType<typeof spanOf> } = {}) =>
+            bare(planRecordedControllers({ clip: input.clip ?? spanOf(CLIP), takeEndBeat: input.takeEndBeat }).cc);
+
+        it('closes a sustain left down with a lift at the take end, on the clip closing line for a new clip', () => {
+            beginTake();
+            press(64, 127, 1);
+
+            expect(plannedCc()).toEqual([
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 0 },
+            ]);
+        });
+
+        it('adds no lift to a pedal whose last row lifts it', () => {
+            beginTake();
+            press(64, 127, 1);
+            press(64, 0, 2);
+            press(66, 127, 1);
+            press(66, 63, 2);
+
+            expect(plannedCc()).toEqual([
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 2, channel: 0 },
+                { controller: 66, value: 127, beat: 1, channel: 0 },
+                { controller: 66, value: 63, beat: 2, channel: 0 },
+            ]);
+        });
+
+        it.each([
+            { controller: 64, value: 1, engaged: true },
+            { controller: 64, value: 0, engaged: false },
+            { controller: 66, value: 64, engaged: true },
+            { controller: 66, value: 63, engaged: false },
+            { controller: 67, value: 64, engaged: true },
+            { controller: 67, value: 63, engaged: false },
+        ])('reads $controller at $value as engaged: $engaged', ({ controller, value, engaged }) => {
+            beginTake();
+            press(controller, value, 1);
+
+            expect(plannedCc()).toHaveLength(engaged ? 2 : 1);
+        });
+
+        it('lifts each pedal and channel on its own, by the pedal state its last row left', () => {
+            beginTake();
+            press(64, 127, 1, 0);
+            press(64, 127, 1, 1);
+            press(64, 0, 2, 1);
+            press(1, 100, 2, 0);
+
+            expect(plannedCc()).toEqual([
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+                { controller: 64, value: 127, beat: 1, channel: 1 },
+                { controller: 64, value: 0, beat: 2, channel: 1 },
+                { controller: 1, value: 100, beat: 2, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 0 },
+            ]);
+        });
+
+        it('lifts a non-pedal controller never', () => {
+            beginTake();
+            press(1, 127, 1);
+            press(68, 127, 1);
+
+            expect(plannedCc()).toHaveLength(2);
+        });
+
+        it('lifts at the beat the take ended in a clip the recorder did not open', () => {
+            beginTake();
+            press(64, 127, 1);
+
+            expect(plannedCc({ takeEndBeat: 6 })).toEqual([
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 2, channel: 0 },
+            ]);
+        });
+
+        it('keeps the lift on the closing line when the take ended past it', () => {
+            beginTake();
+            press(64, 127, 1);
+
+            expect(plannedCc({ takeEndBeat: 20 }).at(-1)).toEqual({ controller: 64, value: 0, beat: 4, channel: 0 });
+        });
+
+        it('never places the lift before the press it ends', () => {
+            beginTake();
+            press(64, 127, 3);
+
+            expect(plannedCc({ takeEndBeat: 5 }).at(-1)).toEqual({ controller: 64, value: 0, beat: 3, channel: 0 });
+        });
+
+        it('counts the closing line and the take end from the clip media origin, not the clip start', () => {
+            beginTake();
+            press(64, 127, 1);
+            const trimmedHead = { ...spanOf(CLIP), midiOffsetBeats: 1 };
+
+            expect(plannedCc({ clip: trimmedHead }).at(-1)).toEqual({ controller: 64, value: 0, beat: 5, channel: 0 });
+            expect(plannedCc({ clip: trimmedHead, takeEndBeat: 6 }).at(-1)).toEqual({
+                controller: 64,
+                value: 0,
+                beat: 3,
+                channel: 0,
+            });
+        });
+
+        it('names the same lift, id included, every time the same rows are planned', () => {
+            beginTake();
+            press(64, 127, 1);
+
+            const first = planRecordedControllers({ clip: spanOf(CLIP) });
+            const second = planRecordedControllers({ clip: spanOf(CLIP) });
+
+            expect(second).toEqual(first);
+            expect(new Set(first.cc.map(({ id }) => id)).size).toBe(first.cc.length);
+        });
+
+        it('writes the lift of a pedal still down when an overdub take ends, at the beat the transport reported', () => {
+            beginTake();
+            setLiveClips(CLIP, 'existing-clip');
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 64, value: 127, beat: 1, channel: 0 } });
+            setRecordedTakeEndBeat({ beat: 6 });
+
+            endRecordedControllerTake();
+
+            expect(bare(mocks.midi.value?.ccByClipId['existing-clip'])).toEqual([
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 2, channel: 0 },
+            ]);
+            expect(recordedControllerTakeState.takeEndBeat).toBeNull();
         });
     });
 
@@ -381,8 +544,8 @@ describe('recorded controller take', () => {
             beginRecordedControllerTake();
 
             expect(recordedControllerTakeState.buffers.size).toBe(0);
-            commitRecordedControllers({ clipId: NEXT_CLIP });
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(NEXT_CLIP) });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
@@ -396,7 +559,7 @@ describe('recorded controller take', () => {
             beginRecordedControllerTake();
 
             expect(recordedControllerTakeState.buffers.size).toBe(0);
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
@@ -414,14 +577,15 @@ describe('recorded controller take', () => {
             beginRecordedControllerTake();
             bufferRecordedMidiCC({ clipId: NEXT_CLIP, row: { controller: 1, value: 7, beat: 2, channel: 0 } });
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 { controller: 64, value: 127, beat: 0, channel: 0 },
                 { controller: 1, value: 55, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 0 },
             ]);
             expect(bare(mocks.midi.value?.pitchBendByClipId[CLIP])).toEqual([{ value: 9, beat: 1, channel: 0 }]);
 
-            commitRecordedControllers({ clipId: NEXT_CLIP });
+            commitRecordedControllers({ clip: spanOf(NEXT_CLIP) });
             expect(bare(mocks.midi.value?.ccByClipId[NEXT_CLIP])).toEqual([
                 { controller: 66, value: 33, beat: 0, channel: 0 },
                 { controller: 1, value: 7, beat: 2, channel: 0 },
@@ -430,7 +594,7 @@ describe('recorded controller take', () => {
 
         it('lets the next take record into a clip an earlier take already committed', () => {
             beginTake();
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
             beginTake(NEXT_CLIP);
             expect(recordedControllerTakeState.committedClipIds.has(CLIP)).toBe(false);
@@ -446,17 +610,19 @@ describe('recorded controller take', () => {
             beginRecordedControllerTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 127, beat: 2, channel: 0 } });
 
-            commitRecordedControllers({ clipId: CLIP });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 3, channel: 0 } });
-            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
+            const committed = [
                 { controller: 1, value: 10, beat: 1, channel: 0 },
                 { controller: 64, value: 127, beat: 2, channel: 0 },
-            ]);
+                // The commit closes the pedal it found down on the clip's end.
+                { controller: 64, value: 0, beat: 4, channel: 0 },
+            ];
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual(committed);
             endRecordedControllerTake();
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
-                { controller: 1, value: 10, beat: 1, channel: 0 },
-                { controller: 64, value: 127, beat: 2, channel: 0 },
+                ...committed,
                 { controller: 64, value: 0, beat: 3, channel: 0 },
             ]);
         });

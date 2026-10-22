@@ -1,11 +1,12 @@
 import { recordedControllerTakeState } from '../../repositories/webMidi/recordedControllerTakeState';
 
 import { discardRecordedControllers } from './discardRecordedControllers';
-import { planRecordedControllers } from './planRecordedControllers';
+import { planRecordedControllers, type RecordedClipSpan } from './planRecordedControllers';
 import { writeRecordedControllerRows } from './writeRecordedControllerRows';
 
 type CommitRecordedControllersInput = {
-    clipId: string;
+    /** The clip as the commit lands it: the take ended where this clip does. */
+    clip: RecordedClipSpan;
 };
 
 /**
@@ -22,8 +23,9 @@ type CommitRecordedControllersInput = {
  * commit that does not land writes nothing. The rows written are the ones
  * `planRecordedControllers` named while the commit described its redo snapshot.
  */
-export function commitRecordedControllers({ clipId }: CommitRecordedControllersInput): void {
-    const rows = planRecordedControllers({ clipId });
+export function commitRecordedControllers({ clip }: CommitRecordedControllersInput): void {
+    const clipId = clip.id;
+    const rows = planRecordedControllers({ clip });
     discardRecordedControllers(clipId);
     const { openedClipIds, committedClipIds, carriedOverClipIds } = recordedControllerTakeState;
     if (carriedOverClipIds.delete(clipId)) {

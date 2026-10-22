@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { setRecordedTakeEndBeat } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -71,12 +72,20 @@ export async function stopRecording(atBeat?: number): Promise<void> {
     const clipIds = activeRecordingRef.current;
     activeRecordingRef.current = [];
 
+    const transportState = transportStore.value;
+    // An overdub opens no clip, yet its controller rows still need the beat the
+    // take ends at: it is only known here, before the transport's recording
+    // flag falls.
+    const stopBeat = atBeat ?? transportState?.playheadPosition;
+    if (stopBeat !== undefined) {
+        setRecordedTakeEndBeat({ beat: stopBeat });
+    }
+
     if (clipIds.length === 0) {
         return;
     }
 
     const trackState = getTrackState();
-    const transportState = transportStore.value;
     if (!trackState || !transportState) {
         return;
     }

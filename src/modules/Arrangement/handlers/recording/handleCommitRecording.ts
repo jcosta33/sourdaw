@@ -87,7 +87,7 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
         // inside the commit's storage transaction, so a commit that does not
         // land leaves none of them in the store.
         if (clip.type === 'midi') {
-            commitRecordedControllers({ clipId: clip.id });
+            commitRecordedControllers({ clip: withMinimumRecordingLength(clip) });
         }
         return toHandlerExecutionResult(true);
     },
@@ -100,7 +100,8 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
         // are not in the store yet; they are added from the buffer, which this
         // only reads, so the snapshot holds the rows `execute` then writes.
         const midiState = getMidiStoreState();
-        const planned = clip.type === 'midi' ? planRecordedControllers({ clipId: clip.id }) : null;
+        const planned =
+            clip.type === 'midi' ? planRecordedControllers({ clip: withMinimumRecordingLength(clip) }) : null;
         const notes = midiState?.notesByClipId[clip.id];
         const cc = snapshotRows(midiState?.ccByClipId[clip.id], planned?.cc ?? []);
         const pitchBend = snapshotRows(midiState?.pitchBendByClipId[clip.id], planned?.pitchBend ?? []);

@@ -45,6 +45,7 @@ import {
     destroyWebMidi,
     initWebMidi,
     planRecordedControllers,
+    projectClipControllerEvents,
     resetMidiState,
     setMidiInputTrack,
     setWebMidiRuntimeEventBus,
@@ -187,6 +188,7 @@ describe('recorded controller take commit', () => {
             { controller: 64, value: 127, beat: 0.5, channel: 0 },
             { controller: 64, value: 0, beat: 1.5, channel: 0 },
             { controller: 64, value: 127, beat: 1.5, channel: 0 },
+            { controller: 64, value: 0, beat: 4, channel: 0 },
         ]);
         expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0 }]);
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
@@ -219,6 +221,9 @@ describe('recorded controller take commit', () => {
             transportStore.set({ ...transportStore.value!, playheadPosition: beat });
             liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
         };
+
+        /** A clip spanning the take, for planning rows of a clip no longer on the timeline. */
+        const spanOf = (clipId: string) => ({ id: clipId, startBeat: 4, endBeat: 8 });
 
         const pedalsOf = (clipId: string) =>
             (midiStore.value?.ccByClipId[clipId] ?? []).map(({ controller, value, beat, channel }) => ({
@@ -421,9 +426,12 @@ describe('recorded controller take commit', () => {
                 transportStore.set({ ...transportStore.value!, isRecording: false });
                 flushAutomergeStorageWrites();
 
+                // The commit that landed while the overdub's pedal was down closes it on the
+                // clip's end; the overdub's own release follows when its take ends.
                 expect(pedalsOf(clipId)).toEqual([
                     { controller: 1, value: 55, beat: 0.5, channel: 0 },
                     { controller: 64, value: 127, beat: 2.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 0 },
                     { controller: 64, value: 0, beat: 3, channel: 0 },
                 ]);
             });
@@ -432,21 +440,30 @@ describe('recorded controller take commit', () => {
                 const clipId = await startLiveTake();
                 sendLive(4.5, 0xb0, 1, 55);
                 sendLive(5, 0xe0, 104, 71);
-                expect(planRecordedControllers({ clipId }).cc).toHaveLength(1);
+                expect(planRecordedControllers({ clip: spanOf(clipId) }).cc).toHaveLength(1);
                 const held = await holdSnapshotTransaction();
                 transportStore.set({ ...transportStore.value!, isRecording: false });
+                // The refused commit rolls its transaction back, so the stored rows
+                // end up unchanged either way: a write that landed and was undone
+                // still published to the store's subscribers.
+                let storeNotifications = 0;
+                const stopCounting = midiStore.subscribe(() => {
+                    storeNotifications += 1;
+                });
                 const stopping = stopRecording(8);
 
                 trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
                 held.release();
                 await held.settled;
                 await stopping;
+                stopCounting();
                 flushAutomergeStorageWrites();
 
+                expect(storeNotifications).toBe(0);
                 expect(midiStore.value?.ccByClipId[clipId]).toBeUndefined();
                 expect(midiStore.value?.pitchBendByClipId[clipId]).toBeUndefined();
                 expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
-                expect(planRecordedControllers({ clipId })).toEqual({ cc: [], pitchBend: [] });
+                expect(planRecordedControllers({ clip: spanOf(clipId) })).toEqual({ cc: [], pitchBend: [] });
             });
         });
 
@@ -455,7 +472,11 @@ describe('recorded controller take commit', () => {
                 const clipId = await startLiveTake();
                 sendLive(4.5, 0xb0, 64, 127);
                 sendLive(5, 0xe0, 104, 71);
-                const clip = trackStore.value!.tracks.flatMap((track) => track.clips).find(({ id }) => id === clipId)!;
+                // The clip as the commit lands it: the lift closing the held pedal sits on its end.
+                const liveClip = trackStore
+                    .value!.tracks.flatMap((track) => track.clips)
+                    .find(({ id }) => id === clipId)!;
+                const clip = { ...liveClip, endBeat: 8 };
                 const { commitRecording: handler } = getArrangementHandlers();
                 const action = { type: 'commitRecording' as const, payload: { clip } };
 
@@ -464,13 +485,14 @@ describe('recorded controller take commit', () => {
 
                 expect(midiStore.value?.ccByClipId[clipId]).toBeUndefined();
                 expect(midiStore.value?.pitchBendByClipId[clipId]).toBeUndefined();
-                expect(planRecordedControllers({ clipId }).cc).toHaveLength(1);
+                expect(planRecordedControllers({ clip }).cc).toHaveLength(2);
                 expect(describedAgain).toEqual(described);
                 const redo = described.redoAction;
                 if (redo?.type !== 'restoreRecording') {
                     throw new Error('expected a restoreRecording redo');
                 }
-                expect(redo.payload.midiCcSnapshot).toHaveLength(1);
+                // The held pedal's press and the lift that closes it on the clip's end.
+                expect(redo.payload.midiCcSnapshot).toHaveLength(2);
                 expect(redo.payload.midiPitchBendSnapshot).toHaveLength(1);
 
                 await stopRecording(8);
@@ -590,6 +612,8 @@ describe('recorded controller take commit', () => {
                 const expected = [
                     { controller: 66, value: 90, beat: 0, channel: 0 },
                     { controller: 64, value: 127, beat: 0, channel: 3 },
+                    { controller: 66, value: 0, beat: 4, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 3 },
                 ];
                 expect(pedalsOf(provisional.id)).toEqual(expected);
 
@@ -630,7 +654,10 @@ describe('recorded controller take commit', () => {
 
                 await notesOnlyTake(provisional.id);
 
-                expect(pedalsOf(provisional.id)).toEqual([{ controller: 64, value: 127, beat: 0, channel: 0 }]);
+                expect(pedalsOf(provisional.id)).toEqual([
+                    { controller: 64, value: 127, beat: 0, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 0 },
+                ]);
             });
 
             it('loses a held pedal when the input device is reset', async () => {
@@ -684,7 +711,10 @@ describe('recorded controller take commit', () => {
 
                 await notesOnlyTake(provisional.id);
 
-                expect(pedalsOf(provisional.id)).toEqual([{ controller: 64, value: 127, beat: 0, channel: 0 }]);
+                expect(pedalsOf(provisional.id)).toEqual([
+                    { controller: 64, value: 127, beat: 0, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 0 },
+                ]);
             });
 
             it('adds no duplicate when the take records the pedal at beat 0 itself', async () => {
@@ -702,6 +732,189 @@ describe('recorded controller take commit', () => {
                 await notesOnlyTake(provisional.id);
 
                 expect(pedalsOf(provisional.id)).toEqual([{ controller: 64, value: 0, beat: 0, channel: 0 }]);
+            });
+
+            it('keeps the starting pedal when the take lifts it later than beat 0', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                sendLive(4, 0xb0, 64, 127);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+                sendLive(6, 0xb0, 64, 0);
+
+                await notesOnlyTake(provisional.id);
+
+                expect(pedalsOf(provisional.id)).toEqual([
+                    { controller: 64, value: 127, beat: 0, channel: 0 },
+                    { controller: 64, value: 0, beat: 2, channel: 0 },
+                ]);
+            });
+        });
+
+        describe('a pedal the take leaves engaged', () => {
+            const liftsAtClosingLine = (clipId: string, clipEndBeat: number) => {
+                const clip = trackStore.value!.tracks.flatMap((track) => track.clips).find(({ id }) => id === clipId)!;
+                return projectClipControllerEvents({
+                    controlChanges: midiStore.value?.ccByClipId[clipId] ?? [],
+                    clip,
+                    fromBeat: clipEndBeat - 1,
+                    toBeat: clipEndBeat + 1,
+                }).map(({ controller, value, beat, closesClip }) => ({ controller, value, beat, closesClip }));
+            };
+
+            it('lifts a pedal still down at user stop on the clip closing line, and replays the lift through undo and redo', async () => {
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 64, 127);
+
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                const expected = [
+                    { controller: 64, value: 127, beat: 0.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 0 },
+                ];
+                expect(pedalsOf(clipId)).toEqual(expected);
+                expect(liftsAtClosingLine(clipId, 8)).toEqual([
+                    { controller: 64, value: 0, beat: 8, closesClip: true },
+                ]);
+
+                await undo();
+                await redo();
+                flushAutomergeStorageWrites();
+                expect(pedalsOf(clipId)).toEqual(expected);
+            });
+
+            it('lifts every engaged pedal, each on its own channel', async () => {
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 66, 100);
+                sendLive(5, 0xb0, 67, 30);
+                sendLive(5.5, 0xb2, 64, 1);
+
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(pedalsOf(clipId)).toEqual([
+                    { controller: 66, value: 100, beat: 0.5, channel: 0 },
+                    { controller: 67, value: 30, beat: 1, channel: 0 },
+                    { controller: 64, value: 1, beat: 1.5, channel: 2 },
+                    { controller: 66, value: 0, beat: 4, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 2 },
+                ]);
+            });
+
+            it('lifts a pedal still down at punch-out in the commit that runs while the transport is still recording', async () => {
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 64, 127);
+
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                const committed = [
+                    { controller: 64, value: 127, beat: 0.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 4, channel: 0 },
+                ];
+                expect(pedalsOf(clipId)).toEqual(committed);
+
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+                expect(pedalsOf(clipId)).toEqual(committed);
+            });
+
+            it('adds no lift to a pedal the take lifted itself', async () => {
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 64, 127);
+                sendLive(5.5, 0xb0, 64, 0);
+
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(pedalsOf(clipId)).toEqual([
+                    { controller: 64, value: 127, beat: 0.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 1.5, channel: 0 },
+                ]);
+            });
+
+            describe('in a clip the recorder did not open', () => {
+                const takeFirstPass = async (): Promise<string> => {
+                    const clipId = await startLiveTake();
+                    sendLive(4.5, 0xb0, 1, 55);
+                    await stopRecording(12);
+                    transportStore.set({ ...transportStore.value!, isRecording: false });
+                    flushAutomergeStorageWrites();
+                    return clipId;
+                };
+
+                const beginOverdub = (atBeat: number): void => {
+                    transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+                    expect(startRecording(atBeat)).toEqual([]);
+                    transportStore.set({ ...transportStore.value!, isRecording: true });
+                };
+
+                it('lifts a pedal still down at the stop beat, mid-clip, not at the clip end', async () => {
+                    const clipId = await takeFirstPass();
+                    beginOverdub(6);
+                    sendLive(6.5, 0xb0, 64, 127);
+
+                    await stopRecording(8);
+                    transportStore.set({ ...transportStore.value!, isRecording: false });
+                    flushAutomergeStorageWrites();
+
+                    expect(pedalsOf(clipId)).toEqual([
+                        { controller: 1, value: 55, beat: 0.5, channel: 0 },
+                        { controller: 64, value: 127, beat: 2.5, channel: 0 },
+                        { controller: 64, value: 0, beat: 4, channel: 0 },
+                    ]);
+                });
+
+                it('adds no lift to a pedal the overdub lifted itself', async () => {
+                    const clipId = await takeFirstPass();
+                    beginOverdub(6);
+                    sendLive(6.5, 0xb0, 64, 127);
+                    sendLive(7, 0xb0, 64, 0);
+
+                    await stopRecording(8);
+                    transportStore.set({ ...transportStore.value!, isRecording: false });
+                    flushAutomergeStorageWrites();
+
+                    expect(pedalsOf(clipId)).toEqual([
+                        { controller: 1, value: 55, beat: 0.5, channel: 0 },
+                        { controller: 64, value: 127, beat: 2.5, channel: 0 },
+                        { controller: 64, value: 0, beat: 3, channel: 0 },
+                    ]);
+                });
+            });
+        });
+
+        describe('an overdub into a clip an earlier take already committed', () => {
+            it('writes the rows the overdub records when it ends', async () => {
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 1, 55);
+                await stopRecording(12);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+                expect(pedalsOf(clipId)).toEqual([{ controller: 1, value: 55, beat: 0.5, channel: 0 }]);
+
+                transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+                expect(startRecording(6)).toEqual([]);
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+                sendLive(6.5, 0xb0, 64, 127);
+                sendLive(7, 0xb0, 64, 0);
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(pedalsOf(clipId)).toEqual([
+                    { controller: 1, value: 55, beat: 0.5, channel: 0 },
+                    { controller: 64, value: 127, beat: 2.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 3, channel: 0 },
+                ]);
             });
         });
     });

@@ -7,6 +7,8 @@ import {
     DEFAULT_TEMPO_BPM,
 } from '#/modules/Transport/stores';
 
+import { clipMediaOriginBeat } from '../../services/clipMediaOriginBeat';
+
 import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { type RecordingPlacementDependencies } from './recordingPlacementDependencies';
 
@@ -162,7 +164,7 @@ export function resolveRecordingPlacement(
         .getTrackStoreState()
         ?.tracks.find((candidate) => candidate.id === trackId)
         ?.clips.find((candidate) => candidate.id === clipId);
-    const clipMediaOrigin = recordingClip ? recordingClip.startBeat - (recordingClip.midiOffsetBeats ?? 0) : 0;
+    const clipMediaOrigin = recordingClip ? clipMediaOriginBeat(recordingClip) : 0;
 
     return {
         clipId,
