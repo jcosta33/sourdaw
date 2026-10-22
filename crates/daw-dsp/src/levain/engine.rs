@@ -3239,6 +3239,108 @@ mod tests {
         assert!(is_releasing(&engine, 64));
     }
 
+    fn is_note_releasing(engine: &LevainEngine, note: u8) -> bool {
+        engine
+            .voice_pool
+            .voices
+            .iter()
+            .any(|v| v.active && v.note == note && v.amp_env.is_releasing())
+    }
+
+    /// Sustain is a continuous position, not a halfway latch: a note-off
+    /// under CC64=63 defers, CC64=1 still holds, and only 0 lifts — firing
+    /// the deferred note-offs through the same staggered release path a
+    /// full-pedal lift uses.
+    #[test]
+    fn partial_sustain_position_holds_until_zero_then_releases_with_stagger() {
+        let mut engine = engine_with_sawtooth_zone_voices(4);
+        // Disable legato so three overlapping notes keep one voice each
+        // (as in `pedal_release_staggers_deferred_note_offs`).
+        engine.set_param("legato_enabled", 0.0);
+
+        engine.handle_cc(64, 63); // a partial pedal position
+        engine.note_on(60, 100);
+        engine.note_on(62, 100);
+        engine.note_on(64, 100);
+        engine.note_off(60);
+        engine.note_off(62);
+        engine.note_off(64);
+        render(&mut engine, 1);
+
+        assert!(
+            engine.expression.sustain_pedal,
+            "a partial CC64 position must hold the pedal"
+        );
+        assert!(
+            !is_note_releasing(&engine, 60) && !is_note_releasing(&engine, 62),
+            "a note-off under a partial pedal position must defer"
+        );
+
+        engine.handle_cc(64, 1); // near-zero but still nonzero: still held
+        render(&mut engine, 1);
+        assert!(
+            engine.expression.sustain_pedal,
+            "CC64=1 is still a nonzero position and must hold the pedal"
+        );
+        assert!(
+            !is_note_releasing(&engine, 60) && !is_note_releasing(&engine, 62),
+            "the note-offs must stay deferred while any nonzero value holds"
+        );
+
+        engine.handle_cc(64, 0); // only 0 lifts the pedal
+
+        assert!(
+            !engine.expression.sustain_pedal,
+            "only CC64=0 releases the pedal"
+        );
+        assert!(
+            is_note_releasing(&engine, 60),
+            "the first deferred note-off must fire immediately on the lift"
+        );
+        assert!(
+            !is_note_releasing(&engine, 62) || !is_note_releasing(&engine, 64),
+            "later deferred note-offs must be staggered rather than releasing \
+             in the same instant as the first"
+        );
+
+        // The largest computed stagger is well under 30 ms; render past it.
+        render(&mut engine, 20);
+        assert!(is_note_releasing(&engine, 62));
+        assert!(is_note_releasing(&engine, 64));
+    }
+
+    /// The pedal's falling edge fires exactly on a nonzero → 0 transition.
+    /// A descent between nonzero positions (127 → 63 → 1) crosses the old
+    /// `>= 64` latch threshold on the way and must not release anything.
+    #[test]
+    fn sustain_release_fires_only_on_the_nonzero_to_zero_edge() {
+        let mut engine = engine_with_sawtooth_zone_voices(2);
+        engine.set_param("legato_enabled", 0.0);
+        engine.handle_cc(64, 127);
+        engine.note_on(60, 100);
+        engine.note_off(60);
+        render(&mut engine, 1);
+        assert!(
+            !is_note_releasing(&engine, 60),
+            "the pedal defers the note-off"
+        );
+
+        for value in [63, 1, 127] {
+            engine.handle_cc(64, value);
+            assert!(
+                !is_note_releasing(&engine, 60),
+                "CC64={value} is still a held position; the falling edge must \
+                 not fire between nonzero values"
+            );
+        }
+
+        engine.handle_cc(64, 0);
+        assert!(
+            is_note_releasing(&engine, 60),
+            "the deferred note-off must fire exactly when the value reaches 0"
+        );
+    }
+
     // ── #1848: modelled release and crossfade legato, for banks that ship
     //    no recorded release or interval samples ──────────────────────────
 
