@@ -14,8 +14,8 @@ import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../engine/ProofChamberNode';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { NativeDspDeviceStrategy } from '../../repositories/deviceStrategy/NativeDspDeviceStrategy';
-import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { constantTempoProjector } from '../../repositories/offlineScheduler/__tests__/constantTempoProjector';
+import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { initSync, ProofChamberInstance } from '../../wasm/proof_chamber.js';
 
 import { installWorkletGlobals } from './wasmViewGrowthHarness';
