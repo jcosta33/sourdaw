@@ -1,0 +1,25 @@
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_59e31a5c6f3e31::t_28f54c26fcdfb2 55-61,99,165
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_59e31a5c6f3e31::t_0ae7fe45336e68 10,20,28,196-200
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_59e31a5c6f3e31::t_97aecf2a0096db 191,230-233
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_59e31a5c6f3e31::t_295bc3fd2de560 672
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad5908a69c2725a7e1b995f026b0586984b0ada1",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
