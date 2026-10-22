@@ -2416,6 +2416,8 @@ describe('binding a terse refinement to the pending card it refines', () => {
 
             expect(admission(eqAndCompressor, [compressorOn('track-keys', 'device-command-3')], prompt)).toBe('valid');
             expect(admission(eqAndCompressor, [], prompt)).toBe('refused');
+            // A host phrase is more than a bare object name, so the clause continues no removal.
+            expect(admission(eqAndCompressor, [], 'remove the eq on bass, the compressor on keys')).toBe('refused');
         });
 
         it('a project object named by a binding word is never read as an object', () => {
