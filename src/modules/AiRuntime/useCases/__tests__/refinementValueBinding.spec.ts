@@ -3571,6 +3571,246 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('one closed protection reader, decided by what each protection names', () => {
+        const TWO_CUTS_CARD = { prompt: 'turn Vocals down 3 dB and turn Snare down 2 dB', calls: P1_PLAN };
+        const RESTATED = 'turn Vocals down 2 dB and turn Snare down 2 dB';
+        const RESTATED_PLAN = [vocalsBy(-2), snareBy(-2)];
+        const RESTATED_COMMANDS = [
+            { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 },
+            { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+        ];
+        const bassBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-bass', deltaDb },
+        });
+        const drumBusBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-drum-bus', deltaDb },
+        });
+        const BASS = { id: 'track-bass', name: 'Bass' };
+        const DRUM_BUS = { id: 'track-drum-bus', name: 'Drum Bus' };
+
+        function protectedBy(result: ReturnType<typeof ground>) {
+            return result.status === 'grounded' ? (result.groundingBasis?.protectedUnchanged ?? null) : result.status;
+        }
+
+        /** The refinement's own outcome, and what a later refinement changing `later` reads against its card. */
+        function chainOf(
+            card: { prompt: string; calls: readonly ProviderCall[] },
+            refinement: string,
+            calls: readonly ProviderCall[],
+            later: { prompt: string; calls: readonly ProviderCall[] }
+        ) {
+            const first = refine(card, refinement, calls);
+            if (first.status !== 'grounded' || first.groundingBasis === undefined) {
+                return { refinement, status: first.status, later: null };
+            }
+            const next = ground(later.prompt, later.calls, first.groundingBasis);
+            return {
+                refinement,
+                status: first.status,
+                later: next.status === 'rejected' ? next.rejectionReason : next.status,
+            };
+        }
+
+        it('asks a protection naming a pending object, one the refinement removes, "it" or "everything"', () => {
+            const rows: Array<[string, readonly ProviderCall[]]> = [
+                ['turn Vocals down 3 dB, drop the snare gain, keep the snare gain as proposed', [vocalsBy(-3)]],
+                ['turn Vocals down 3 dB, drop the snare gain, leave the snare gain as proposed', [vocalsBy(-3)]],
+                ['turn Vocals down 3 dB, drop the snare gain, keep the snare as is', [vocalsBy(-3)]],
+                ['turn Vocals down 3 dB, drop the snare gain, keep it as proposed', [vocalsBy(-3)]],
+                ['turn Vocals down 3 dB, drop the snare gain, keep everything as proposed', [vocalsBy(-3)]],
+                ['remove the snare. Keep the snare as proposed.', [vocalsBy(-3)]],
+                ['not the snare, keep the snare as is', [vocalsBy(-3)]],
+                ['make the vocals 1.5 dB, keep the vocals as proposed', [vocalsBy(-1.5), snareBy(-2)]],
+                ['make the vocals 1.5 dB, keep the vocals unchanged', [vocalsBy(-1.5), snareBy(-2)]],
+                ['turn Vocals down 1.5 dB and turn Snare down 5 dB, keep Snare as is', [vocalsBy(-1.5), snareBy(-5)]],
+                [`${RESTATED}, leaving the Snare alone`, RESTATED_PLAN],
+                [`${RESTATED}, leaving the Drum Bus and Snare unchanged`, RESTATED_PLAN],
+                [`${RESTATED}, keep the Snare and Bass unchanged`, RESTATED_PLAN],
+            ];
+            expect(
+                rows.map(([refinement, calls]) => ({ refinement, status: refine(P1_CARD, refinement, calls).status }))
+            ).toEqual(rows.map(([refinement]) => ({ refinement, status: 'clarify' })));
+        });
+
+        it('protects an object off the card kept "as is" or "as proposed" through the chain, as "unchanged" does', () => {
+            const rows = [
+                'make the vocals 1.5 dB, keep the Bass as is',
+                'make the vocals 1.5 dB, keep the Bass as proposed',
+                'make the vocals 1.5 dB, leave the Bass as it is',
+                'make the vocals 1.5 dB, preserve the Bass as is',
+                'make the vocals 1.5 dB, keep the Bass unchanged',
+            ];
+            const later = { prompt: 'turn Bass up 2 dB', calls: [vocalsBy(-1.5), snareBy(-2), bassBy(2)] };
+            expect(
+                rows.map((refinement) => chainOf(P1_CARD, refinement, [vocalsBy(-1.5), snareBy(-2)], later))
+            ).toEqual(
+                rows.map((refinement) => ({
+                    refinement,
+                    status: 'grounded',
+                    later: expect.stringContaining('changes "Bass", which the request chain leaves unchanged'),
+                }))
+            );
+            // A Bass change the same refinement grounds is refused beside it too.
+            expect(
+                refine(P1_CARD, 'make the vocals 1.5 dB, turn Bass up 2 dB, keep the Bass as is', [
+                    vocalsBy(-1.5),
+                    snareBy(-2),
+                    bassBy(2),
+                ])
+            ).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('changes "Bass", which the request chain leaves unchanged'),
+            });
+        });
+
+        it('reads a protection naming several objects off the card as one protection of each, rejoining the splitter cuts', () => {
+            const card = {
+                prompt: 'turn Vocals down 3 dB and turn Snare down 2 dB, leaving the Drum Bus and Bass unchanged',
+                calls: P1_PLAN,
+            };
+            expect(commandsOf(refine(card, card.prompt, P1_PLAN))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+            ]);
+            const rows = [
+                `${RESTATED}, leaving the Drum Bus and Bass unchanged`,
+                `${RESTATED}, leaving the Drum Bus and the Bass unchanged`,
+                `${RESTATED}, leaving the Drum Bus, the Bass unchanged`,
+                `${RESTATED}, leaving the Drum Bus, and the Bass unchanged`,
+                `${RESTATED}, keep the Drum Bus and Bass unchanged`,
+                `${RESTATED}, leave the Drum Bus and Bass alone`,
+                `${RESTATED}, the Drum Bus and the Bass as is`,
+            ];
+            expect(
+                rows.map((refinement) => ({
+                    refinement,
+                    commands: commandsOf(refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN)),
+                    protects: protectedBy(refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN)),
+                }))
+            ).toEqual(
+                rows.map((refinement) => ({
+                    refinement,
+                    commands: RESTATED_COMMANDS,
+                    protects: expect.arrayContaining([DRUM_BUS, BASS]),
+                }))
+            );
+            const laterBass = { prompt: 'turn Bass up 2 dB', calls: [...RESTATED_PLAN, bassBy(2)] };
+            const laterDrumBus = { prompt: 'turn Drum Bus up 2 dB', calls: [...RESTATED_PLAN, drumBusBy(2)] };
+            const refused = (name: string) => expect.stringContaining(`changes "${name}"`);
+            expect(chainOf(TWO_CUTS_CARD, rows[0]!, RESTATED_PLAN, laterBass).later).toEqual(refused('Bass'));
+            expect(chainOf(TWO_CUTS_CARD, rows[2]!, RESTATED_PLAN, laterDrumBus).later).toEqual(refused('Drum Bus'));
+            // Only list separators rejoin: across a full stop the parts are read as clauses of their own.
+            expect(
+                refine(TWO_CUTS_CARD, `${RESTATED}, leaving the Drum Bus. Bass unchanged`, RESTATED_PLAN).status
+            ).toBe('rejected');
+            // Beside a removal, "leave … alone" naming several objects asks as one naming one does.
+            expect(
+                refine(TWO_CUTS_CARD, 'remove the snare, leave the Drum Bus and Bass alone', [vocalsBy(-3)]).status
+            ).toBe('clarify');
+        });
+
+        it('protects an object off the card in each further closed form', () => {
+            const rows = [
+                `${RESTATED}, leaving the Bass alone`,
+                `${RESTATED}, with the Bass unchanged`,
+                `${RESTATED}, the Bass the way it is`,
+                `${RESTATED}, leaving the Bass the way it is`,
+                `${RESTATED}, the Bass should stay the same`,
+            ];
+            const later = { prompt: 'turn Bass up 2 dB', calls: [...RESTATED_PLAN, bassBy(2)] };
+            expect(rows.map((refinement) => chainOf(TWO_CUTS_CARD, refinement, RESTATED_PLAN, later))).toEqual(
+                rows.map((refinement) => ({
+                    refinement,
+                    status: 'grounded',
+                    later: expect.stringContaining('changes "Bass", which the request chain leaves unchanged'),
+                }))
+            );
+            // The gerund beside a removal asks, as "leave … alone" there does.
+            for (const refinement of [
+                'remove the snare, leaving the Bass alone',
+                'leaving the Bass alone, remove the snare',
+            ]) {
+                expect({ refinement, status: refine(TWO_CUTS_CARD, refinement, [vocalsBy(-3)]).status }).toEqual({
+                    refinement,
+                    status: 'clarify',
+                });
+            }
+        });
+
+        it('consumes each closed phrase for the rest of the mix, protecting nothing', () => {
+            const rows = [
+                `${RESTATED}, nothing else should change`,
+                `${RESTATED}, no other changes`,
+                `${RESTATED} and nothing else`,
+                `${RESTATED}, leave the rest alone`,
+                `${RESTATED}, leaving everything else alone`,
+                `${RESTATED}, keep everything else`,
+            ];
+            expect(
+                rows.map((refinement) => ({
+                    refinement,
+                    commands: commandsOf(refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN)),
+                    protects: protectedBy(refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN)),
+                }))
+            ).toEqual(rows.map((refinement) => ({ refinement, commands: RESTATED_COMMANDS, protects: [] })));
+            // A removal beside the rest of the mix still removes, the rest naming nothing it could narrow.
+            expect(commandsOf(refine(TWO_CUTS_CARD, 'remove the snare, leave the rest alone', [vocalsBy(-3)]))).toEqual(
+                [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }]
+            );
+            // "keep" with no form after it names no rest of the mix, so it is no protection.
+            expect(refine(TWO_CUTS_CARD, `${RESTATED}, keep the Bass`, RESTATED_PLAN).status).not.toBe('grounded');
+        });
+
+        it('asks a protection whose object is stated with an operation word or named by several objects', () => {
+            const reverbOnPads: ProjectTrack['devices'][number] = { ...reverbDevice, id: 'device-reverb-pads' };
+            const context = projectContext([
+                ...BASE_TRACKS,
+                projectTrack('track-pads', 'Pads', { deviceCount: 1, devices: [reverbOnPads] }),
+            ]);
+            const rows = [`${RESTATED}, keep the Bass pan as is`, `${RESTATED}, keep the Reverb as is`];
+            expect(
+                rows.map((refinement) => ({
+                    refinement,
+                    status: refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN, context).status,
+                }))
+            ).toEqual(rows.map((refinement) => ({ refinement, status: 'clarify' })));
+            // The same form naming one whole object off the card protects it.
+            expect(
+                protectedBy(refine(TWO_CUTS_CARD, `${RESTATED}, keep the Bass as is`, RESTATED_PLAN, context))
+            ).toEqual([BASS]);
+        });
+
+        it('consumes each further closed courtesy entry, after any leading connector', () => {
+            const rows = [
+                `${RESTATED}, that is all`,
+                `${RESTATED}, that is it`,
+                `${RESTATED}, thank you so much`,
+                `${RESTATED}, thanks a bunch`,
+                `${RESTATED}, many thanks`,
+                `${RESTATED}, much appreciated`,
+                `${RESTATED}, appreciate it`,
+                `${RESTATED}, no rush`,
+                `${RESTATED},\nand thanks so much`,
+                `${RESTATED}, ok thanks so much`,
+            ];
+            expect(
+                rows.map((refinement) => ({
+                    refinement,
+                    commands: commandsOf(refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN)),
+                }))
+            ).toEqual(rows.map((refinement) => ({ refinement, commands: RESTATED_COMMANDS })));
+        });
+
+        it('reads a bare "s" as seconds directly after a figure the value reading does not read', () => {
+            // A full-width figure is no figure this reading binds; the "s" after it still states a unit, so
+            // the clause asks what the value should be instead of standing as an unanswered addition.
+            expect(refine(P0_CARD, 'make it ２ s', [vocalsBy(-3)]).status).toBe('clarify');
+            expect(refine(P0_CARD, 'make it so', [vocalsBy(-3)]).status).toBe('rejected');
+        });
+    });
+
     describe('row 20: without a basis', () => {
         it('grounds byte-identically to a call that names no refinement basis', () => {
             const requests: Array<[string, readonly ProviderCall[]]> = [

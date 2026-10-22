@@ -451,7 +451,10 @@ describe('refining the pending proposal', () => {
 
         expect(proposedIds()).toEqual([pendingId]);
         expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
-        expect(lastAssistantMessage()?.content).toContain('omits');
+        // A protection naming a pending change is asked rather than consumed, so the dropped pan never stands.
+        expect(lastAssistantMessage()?.content).toContain(
+            '"leave Guitar Left pan exactly as proposed" keeps something a pending change acts on'
+        );
         expectMixUntouched();
         expect(captureProjectRevision()).toBe(revision);
     });

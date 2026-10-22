@@ -1,7 +1,7 @@
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
+import { type ProposalGroundingBasis } from '../../models/ProposalGroundingBasis';
 
 import {
     bindRefinementFigure,
@@ -14,13 +14,14 @@ import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { refinementActionWords } from './refinementActionWords';
+import { refinementCardCommands, type CommandView } from './refinementCardCommands';
 import { refinementCourtesy } from './refinementCourtesy';
 import { refinementProtectionForms } from './refinementProtectionForms';
 import { refinementRequestReading, type ReferenceCandidate, type StatedReference } from './refinementRequestReading';
 
 type ProtectedObject = ProposalGroundingBasis['protectedUnchanged'][number];
 
-type CommandView = { index: number; command: ProposalGroundingCommand; denotes: ReadonlySet<string> };
+type ProtectionRead = NonNullable<ReturnType<typeof refinementProtectionForms.read>>;
 
 /**
  * What a refinement removes from the pending card. A removal names one object of that card in whole,
@@ -59,8 +60,9 @@ type RefinementValueBinding =
 
 /**
  * How one clause the refinement does not remove reads against the pending card, before its figure is
- * read: filler or a protection it consumes, a comparative of its own, an addition naming an object no
- * pending command acts on, or the kept pending commands it can mean.
+ * read: filler it consumes, a comparative of its own, an addition naming an object no pending command
+ * acts on, or the kept pending commands it can mean. A protection is consumed only where the removal
+ * reading reads it, never here.
  */
 type ClauseScope =
     | { kind: 'consumed' }
@@ -91,12 +93,14 @@ type RemovalClauseRead =
     | { kind: 'read'; removes: boolean }
     | { kind: 'unread-negation' }
     | { kind: 'refused'; reason: string }
-    | { kind: 'clarify'; question: string };
+    | { kind: 'clarify'; question: string; reason?: string };
 
 type RemovalClauseInput = {
     clause: RefinementClause;
     commands: readonly CommandView[];
     candidates: readonly ReferenceCandidate[];
+    /** Every object id a pending command acts on, the removed ones included. */
+    pendingIds: ReadonlySet<string>;
     context: ProjectContext;
     removed: Set<number>;
     removedTargets: ProtectedObject[];
@@ -109,98 +113,19 @@ type RemovalClauseInput = {
 
 const OPEN_VALUE_REASON = 'The refinement leaves part of the change it asks for open.';
 const NEGATED_CLAUSE_REASON = 'The refinement says what not to do without naming one pending change to remove.';
+const PROTECTION_REASON =
+    'The refinement keeps something unchanged that it cannot protect apart from the pending changes.';
 const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
-/**
- * The closed list of clauses a refinement states only as courtesy, hesitation or acknowledgement,
- * which it consumes whole. Wherever a call inherits a pending command, any other clause naming nothing
- * and stating no figure is read for what it asks, never guessed to say nothing: "slower" or "double it"
- * asks for a change the batch must answer. Only beside a batch the refinement text grounds by itself is a
- * clause of the closed courtesy list also read as asking for nothing.
- */
-const FILLER_CLAUSES: ReadonlySet<string> = new Set([
-    'please',
-    'thanks',
-    'thank you',
-    'thanks a lot',
-    'cheers',
-    'ok',
-    'okay',
-    'instead',
-    'go ahead',
-    'actually',
-    'hmm',
-    'well',
-    'sure',
-    'yes',
-    'yeah',
-    'hey',
-    'looks good',
-    'sounds good',
-    'great',
-    'perfect',
-    'nice',
-]);
 const COMPARATIVE =
     /^(?:(?:make it|go|do it)\s+)?(?:(?:a\s+)?(?:bit|little|touch|tad|lot)\s+|slightly\s+|much\s+|even\s+)?(less|more)(?:\s+please)?$/u;
 /** The one form a negation removes or protects in: `not`/`except`/`except for`/`without` and what follows. */
 const NEGATION_FORM = /^(?:not|except(?:\s+for)?|without)\s+(.+)$/u;
 const LEAVE_ALONE = /^leave\s+(.+?)\s+alone$/u;
-const PROTECTION =
-    /\b(?:leave|leaving|keep|keeping|preserve|preserving)\b.*\b(?:unchanged|as\s+(?:it\s+is|is|proposed))\b/u;
+/** What may stand between two clauses the splitter cut inside one protection's list of objects. */
+const LIST_SEPARATOR = /^\s*(?:,\s*(?:and\s+)?|and\s+)$/iu;
 
 function normalizedClause(clause: PromptClause): string {
     return normalizePromptText(clause.text).replace(LEADING_CONNECTOR, '');
-}
-
-function findOwnerTrackId(context: ProjectContext, objectId: string): string | null {
-    const owner = context.tracks.find(
-        (track) =>
-            track.devices.some((device) => device.id === objectId) || track.clips.some((clip) => clip.id === objectId)
-    );
-    return owner?.id ?? null;
-}
-
-/** Every object id a pending command acts on, its device parameter, and the track that owns it. */
-function getCommandDenotation(command: ProposalGroundingCommand, context: ProjectContext): Set<string> {
-    const ids = new Set<string>();
-    const deviceId = command.targets.find((target) => target.argument === 'deviceId')?.id;
-    for (const target of command.targets) {
-        if (target.argument === 'paramId' && deviceId !== undefined) {
-            ids.add(`${deviceId}:${target.id}`);
-            continue;
-        }
-        ids.add(target.id);
-        const owner = findOwnerTrackId(context, target.id);
-        if (owner !== null) {
-            ids.add(owner);
-        }
-    }
-    return ids;
-}
-
-function intersects(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
-    for (const id of left) {
-        if (right.has(id)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function nameObject(context: ProjectContext, id: string): string {
-    return (
-        context.tracks.find((track) => track.id === id)?.name ??
-        context.vcaGroups?.find((group) => group.id === id)?.name ??
-        id
-    );
-}
-
-function viewCommands(basis: ProposalGroundingBasis, context: ProjectContext): CommandView[] {
-    return basis.commands.map((command, index) => ({
-        index,
-        command,
-        denotes: getCommandDenotation(command, context),
-    }));
 }
 
 function describeUnresolvedRemoval(reference: string, what: 'object' | 'change'): string {
@@ -250,18 +175,12 @@ function askNegationBesideRemoval(clause: RefinementClause): RemovalClauseRead {
 function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     const { clause, candidates } = input;
     const text = normalizedClause(clause);
+    const early = readProtectionOrNegation(input, text);
+    if (early !== null) {
+        return early;
+    }
     const negation = NEGATION_FORM.exec(text);
     const alone = LEAVE_ALONE.exec(text);
-    if ((negation !== null || alone !== null) && (input.continuesRemoval || input.precedesRemoval)) {
-        return askNegationBesideRemoval(clause);
-    }
-    if (negation === null && refinementRequestReading.statesNegation(clause)) {
-        return readOtherNegation(clause, candidates);
-    }
-    const protection = readProtection(input);
-    if (protection !== null) {
-        return protection;
-    }
     const statesFigure = findPromptNumbers(clause.masked).length > 0;
     const stated =
         (negation ?? alone)?.[1] ??
@@ -282,29 +201,64 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     return read.kind === 'read' ? { kind: 'read', removes: !protects } : read;
 }
 
-/**
- * A protection in one of the closed forms. Keeping the rest of the mix as it is names nothing and is
- * read; naming one project object in whole that no pending command acts on, it protects that object.
- * One naming a pending object, an operation or anything else is left to the reading every other clause
- * takes, which asks it.
- */
-function readProtection(input: RemovalClauseInput): RemovalClauseRead | null {
-    const form = refinementProtectionForms.read(normalizedClause(input.clause));
-    if (form === null) {
-        return null;
+function askProtection(clause: RefinementClause): RemovalClauseRead {
+    return {
+        kind: 'clarify',
+        reason: PROTECTION_REASON,
+        question: `"${clause.text.trim()}" keeps something a pending change acts on, or names no one object. Name each object off the proposal to keep, as in "keep the Bass unchanged", or the pending change to remove, as in "remove the snare".`,
+    };
+}
+
+/** Protect each object off the card a protection names through the chain, or ask one it cannot protect. */
+function applyProtection(
+    input: RemovalClauseInput,
+    clause: RefinementClause,
+    protection: Extract<ProtectionRead, { kind: 'protects' | 'asked' }>
+): RemovalClauseRead {
+    if (protection.kind === 'asked') {
+        return askProtection(clause);
     }
-    if (form.kind === 'rest') {
+    for (const id of protection.ids) {
+        input.protectedTargets.push({ id, name: refinementCardCommands.name(input.context, id) });
+    }
+    return { kind: 'read', removes: false };
+}
+
+/**
+ * A protection or a negation, read before any removal: the rest of the mix wherever it stands, then a
+ * negation or `leave`/`leaving` … `alone` beside a removal, which is asked, any other negation, and
+ * any other protection by what it names.
+ */
+function readProtectionOrNegation(input: RemovalClauseInput, text: string): RemovalClauseRead | null {
+    const { clause, candidates } = input;
+    const protection = refinementProtectionForms.read(text, input);
+    if (protection?.kind === 'rest') {
         return { kind: 'read', removes: false };
     }
-    const resolved = refinementRequestReading.resolveReference(form.stated, input.candidates);
-    const ids =
-        resolved === null || resolved.reference.operations !== null ? [] : Array.from(resolved.candidate.denotes);
-    const [id] = ids;
-    if (id === undefined || ids.length !== 1 || input.commands.some((view) => view.denotes.has(id))) {
+    const negation = NEGATION_FORM.exec(text);
+    const leftAlone = LEAVE_ALONE.test(text) || protection?.leaveAlone === true;
+    if ((negation !== null || leftAlone) && (input.continuesRemoval || input.precedesRemoval)) {
+        return askNegationBesideRemoval(clause);
+    }
+    if (negation === null && refinementRequestReading.statesNegation(clause)) {
+        return readOtherNegation(clause, candidates);
+    }
+    if (protection === null || protection.kind === 'removal') {
         return null;
     }
-    input.protectedTargets.push({ id, name: nameObject(input.context, id) });
-    return { kind: 'read', removes: false };
+    return applyProtection(input, clause, protection);
+}
+
+/** The clauses from `index` on that follow one another across nothing but list separators. */
+function readListStretch(clauses: readonly RefinementClause[], index: number, text: string): RefinementClause[] {
+    const stretch = [clauses[index]!];
+    for (const next of clauses.slice(index + 1)) {
+        if (!LIST_SEPARATOR.test(text.slice(stretch.at(-1)!.end, next.start))) {
+            break;
+        }
+        stretch.push(next);
+    }
+    return stretch;
 }
 
 /**
@@ -324,7 +278,7 @@ function removeNamedObject(
     const { stated, reference, candidate } = named;
     const onTarget = commands.filter(
         (view) =>
-            intersects(view.denotes, candidate.denotes) &&
+            refinementCardCommands.intersects(view.denotes, candidate.denotes) &&
             (reference.operations === null || reference.operations.includes(view.command.type))
     );
     const pendingObjectIds = Array.from(candidate.denotes).filter((id) =>
@@ -339,7 +293,7 @@ function removeNamedObject(
             candidate.denotes.size === 1 &&
             outsideId !== undefined
         ) {
-            input.protectedTargets.push({ id: outsideId, name: nameObject(context, outsideId) });
+            input.protectedTargets.push({ id: outsideId, name: refinementCardCommands.name(context, outsideId) });
             return { kind: 'read' };
         }
         return { kind: 'refused', reason: describeUnresolvedRemoval(stated, 'change') };
@@ -348,9 +302,38 @@ function removeNamedObject(
         input.removed.add(view.index);
     }
     if (reference.operations === null) {
-        input.removedTargets.push({ id: pendingObjectId, name: nameObject(context, pendingObjectId) });
+        input.removedTargets.push({ id: pendingObjectId, name: refinementCardCommands.name(context, pendingObjectId) });
     }
     return { kind: 'read' };
+}
+
+/** Whether the clause after this one opens with a removal verb. */
+function precedesRemoval(clauses: readonly RefinementClause[], index: number): boolean {
+    const next = clauses[index + 1];
+    return next !== undefined && refinementRequestReading.removalObject(next) !== null;
+}
+
+/**
+ * Read the clause at `index`, or the run of clauses from it that one protection naming several
+ * objects spans, and the index of the last clause read.
+ */
+function readRemovalStep(
+    clauses: readonly RefinementClause[],
+    index: number,
+    text: string,
+    input: RemovalClauseInput
+): { outcome: RemovalClauseRead; last: number } {
+    const stretch = readListStretch(clauses, index, text);
+    const list = refinementProtectionForms.readList(stretch.map(normalizedClause), input);
+    if (list === null) {
+        return { outcome: readRemovalClause(input), last: index };
+    }
+    const last = index + list.count - 1;
+    const stated = { ...input.clause, text: text.slice(input.clause.start, clauses[last]!.end) };
+    if (list.read.leaveAlone && (input.continuesRemoval || precedesRemoval(clauses, last))) {
+        return { outcome: askNegationBesideRemoval(stated), last };
+    }
+    return { outcome: applyProtection(input, stated, list.read), last };
 }
 
 /** Read every removal clause of a refinement against the pending card it refines. */
@@ -359,28 +342,33 @@ function readRefinementRemovals(input: {
     basis: ProposalGroundingBasis;
     context: ProjectContext;
 }): RefinementRemovals {
-    const commands = viewCommands(input.basis, input.context);
+    const commands = refinementCardCommands.view(input.basis, input.context);
     const candidates = refinementRequestReading.candidates(input.context);
     const removed = new Set<number>();
     const removedTargets: ProtectedObject[] = [];
     const protectedTargets: ProtectedObject[] = [];
     const removalClauseStarts = new Set<number>();
     const unreadNegations: RefinementClause[] = [];
+    const pendingIds = new Set(commands.flatMap((view) => Array.from(view.denotes)));
     let continuesRemoval = false;
     const clauses = refinementRequestReading.clauses(input.text, input.context);
-    for (const [index, clause] of clauses.entries()) {
-        const next = clauses[index + 1];
-        const outcome = readRemovalClause({
+    let index = 0;
+    while (index < clauses.length) {
+        const clause = clauses[index]!;
+        const { outcome, last } = readRemovalStep(clauses, index, input.text, {
             clause,
             commands,
             candidates,
+            pendingIds,
             context: input.context,
             removed,
             removedTargets,
             protectedTargets,
             continuesRemoval,
-            precedesRemoval: next !== undefined && refinementRequestReading.removalObject(next) !== null,
+            precedesRemoval: precedesRemoval(clauses, index),
         });
+        const read = clauses.slice(index, last + 1);
+        index = last + 1;
         continuesRemoval = outcome.kind === 'read' && outcome.removes;
         if (outcome.kind === 'none') {
             continue;
@@ -389,12 +377,14 @@ function readRefinementRemovals(input: {
             return { status: 'refused', reason: outcome.reason };
         }
         if (outcome.kind === 'clarify') {
-            return { status: 'clarify', reason: NEGATED_CLAUSE_REASON, question: outcome.question };
+            return { status: 'clarify', reason: outcome.reason ?? NEGATED_CLAUSE_REASON, question: outcome.question };
         }
         if (outcome.kind === 'unread-negation') {
             unreadNegations.push(clause);
         }
-        removalClauseStarts.add(clause.start);
+        for (const consumed of read) {
+            removalClauseStarts.add(consumed.start);
+        }
     }
     return {
         status: 'read',
@@ -417,7 +407,7 @@ function readRefinementRemovals(input: {
 function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): ClauseScope {
     const { commands, candidates } = input;
     const text = normalizedClause(clause);
-    if (text.length === 0 || FILLER_CLAUSES.has(text) || PROTECTION.test(text)) {
+    if (text.length === 0 || refinementCourtesy.filler.has(text)) {
         return { kind: 'consumed' };
     }
     const comparative = COMPARATIVE.exec(text)?.[1];
@@ -426,14 +416,15 @@ function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): Cla
     }
     const references = refinementRequestReading.references(clause.text, candidates);
     const pendingIds = new Set(commands.flatMap((view) => Array.from(view.denotes)));
-    if (references.some((reference) => !intersects(reference.denotes, pendingIds))) {
+    if (references.some((reference) => !refinementCardCommands.intersects(reference.denotes, pendingIds))) {
         return { kind: 'addition' };
     }
     const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
     const meant = commands.filter(
         (view) =>
             (intent === null || view.command.type === intent) &&
-            (references.length === 0 || references.some((reference) => intersects(reference.denotes, view.denotes)))
+            (references.length === 0 ||
+                references.some((reference) => refinementCardCommands.intersects(reference.denotes, view.denotes)))
     );
     return {
         kind: 'scoped',
@@ -465,7 +456,7 @@ function findSourceClause(
             (clause) =>
                 refinementRequestReading
                     .references(clause.text, candidates)
-                    .some((reference) => intersects(reference.denotes, view.denotes)) &&
+                    .some((reference) => refinementCardCommands.intersects(reference.denotes, view.denotes)) &&
                 resolveClauseActionIntent(clause.masked, catalog)?.actionType === view.command.type
         );
 }
@@ -502,7 +493,7 @@ function createClauseScopeInput(input: {
     context: ProjectContext;
     removedCommandIndexes: ReadonlySet<number>;
 }): ClauseScopeInput {
-    const commands = viewCommands(input.basis, input.context);
+    const commands = refinementCardCommands.view(input.basis, input.context);
     const candidates = refinementRequestReading.candidates(input.context);
     const catalog = getExecutableAppActionGroundingCatalog();
     return {
