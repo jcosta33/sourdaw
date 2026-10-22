@@ -1,13 +1,22 @@
 import { webMidiSubscriptionState } from './webMidiSubscriptionState';
 
 export function disposeWebMidiSubscriptions(): void {
-    const { disposeTrackStoreSubscription, disposeYeastNotesOffSubscription } = webMidiSubscriptionState;
+    const {
+        disposeTrackStoreSubscription,
+        disposeYeastNotesOffSubscription,
+        disposeRecordedControllerTakeSubscription,
+    } = webMidiSubscriptionState;
     webMidiSubscriptionState.disposeTrackStoreSubscription = null;
     webMidiSubscriptionState.disposeYeastNotesOffSubscription = null;
+    webMidiSubscriptionState.disposeRecordedControllerTakeSubscription = null;
 
     try {
         disposeTrackStoreSubscription?.();
     } finally {
-        disposeYeastNotesOffSubscription?.();
+        try {
+            disposeYeastNotesOffSubscription?.();
+        } finally {
+            disposeRecordedControllerTakeSubscription?.();
+        }
     }
 }

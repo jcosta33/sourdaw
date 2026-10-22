@@ -51,6 +51,7 @@ const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string 
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     trackStore: { value: { tracks: [] } },
     // Pulled in transitively: the real MIDI use-case barrel below reaches
     // Levain's param bridge, whose dependency bundle destructures these off

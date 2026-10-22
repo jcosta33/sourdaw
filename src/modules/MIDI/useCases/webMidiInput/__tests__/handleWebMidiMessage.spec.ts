@@ -372,4 +372,73 @@ describe('handleWebMidiMessage', () => {
             });
         }
     });
+
+    it.each([
+        { name: 'controller', bytes: [0xb1, 64, 127], handler: handle_cc, expectedArgs: [1, 64, 127] },
+        { name: 'pitch bend', bytes: [0xe1, 0, 96], handler: handle_pitch_bend, expectedArgs: [1, 0, 96] },
+    ])(
+        'stamps a queued $name with the beat of its arrival, not the beat its pending note-on resolves at',
+        async ({ bytes, handler, expectedArgs }) => {
+            const previous = transportStore.value;
+            let nativeBeat = 0.12;
+            transportStore.set({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: true,
+                playheadPosition: 7.95,
+            });
+            playheadPositionRef.current = 7.95;
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => nativeBeat,
+            });
+            let finishNoteOn!: () => void;
+            const noteOnPending = new Promise<void>((resolve) => {
+                finishNoteOn = resolve;
+            });
+            handle_note_on.mockReset();
+            handle_note_on.mockImplementationOnce(() => noteOnPending);
+            handler.mockReset();
+            try {
+                handleWebMidiMessage(midi_event([0x91, 60, 100]));
+                nativeBeat = 0.15;
+                const queued = handleWebMidiMessage(midi_event(bytes));
+                nativeBeat = 1.25;
+                finishNoteOn();
+                await queued;
+
+                expect(handler).toHaveBeenCalledTimes(1);
+                expect(handler).toHaveBeenCalledWith(...expectedArgs, { audioTime: 2, recordingBeat: 0.15 });
+            } finally {
+                transportStore.set(previous);
+                setGestureClockSource({
+                    getAudioTimeSeconds: () => audio_clock.currentTime,
+                    readNativeCursorBeats: () => null,
+                });
+            }
+        }
+    );
+
+    it("stamps a recording take's controller and bend with the beat of their own arrival", () => {
+        const previous = transportStore.value;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        playheadPositionRef.current = 7.95;
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => 3.5,
+        });
+        try {
+            handleWebMidiMessage(midi_event([0xb3, 64, 127]));
+            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+
+            expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, { audioTime: 2, recordingBeat: 3.5 });
+            expect(handle_pitch_bend).toHaveBeenCalledWith(2, 0, 96, { audioTime: 2, recordingBeat: 3.5 });
+        } finally {
+            transportStore.set(previous);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
+    });
 });

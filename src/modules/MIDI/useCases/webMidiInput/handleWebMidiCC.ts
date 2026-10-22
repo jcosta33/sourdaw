@@ -15,7 +15,10 @@ import { memberExpressionState, setMemberExpression } from '../../repositories/w
 import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
+import { isCapturedByMidiLearn } from './isCapturedByMidiLearn';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordChannelEvent } from './recordChannelEvent';
+import { admitsRecordedControlChange } from './recordedControlChangeAdmission';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
@@ -36,7 +39,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             timeStamp?: number | CapturedInputEventTime
         ): void {
             const learnState = deps.getMidiLearnState();
-            if (learnState?.isLearning && learnState.learningTarget) {
+            if (isCapturedByMidiLearn(learnState)) {
                 deps.completeMidiLearn(channel, cc);
                 return;
             }
@@ -87,6 +90,28 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         });
                     }
                 }
+            }
+
+            // The raw controller and byte, before anything below consumes them:
+            // a replayed RPN/NRPN sequence or pedal needs the wire messages, not
+            // the decoded meaning. What the take admits is decided by the one
+            // rule the take's starting pedal state is read by as well.
+            if (
+                admitsRecordedControlChange({
+                    learnState,
+                    mpeEnabled,
+                    channel,
+                    cc,
+                    resolvedCc: controlChange.cc,
+                    consumed: controlChange.consumed,
+                })
+            ) {
+                recordChannelEvent(deps, {
+                    trackId: getTargetTrackId(),
+                    channel,
+                    event: { kind: 'controlChange', controller: cc, value },
+                    timeStamp,
+                });
             }
             if (controlChange.consumed) {
                 return;
