@@ -1,0 +1,14 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStart.spec.ts
+  h_beb54bf43b47b7 30,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41ebbf55fc0018e30baa9a72611b2964c9094001",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
