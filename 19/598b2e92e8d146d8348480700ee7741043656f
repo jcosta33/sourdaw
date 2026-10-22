@@ -1,0 +1,47 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_ba8dd89de9aac7::t_8bc25ae4792e22 34,381,394,414
+src/modules/Arrangement/models/GainSeamPointId.ts
+  s_1c08b47ac3792f::t_a7b7002cf754b8 1-16
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  s_ba8dd89de9aac7::t_8f8499c7e3b986 16,285
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_ba8dd89de9aac7::t_b00efc0585634b 29,355,364
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  s_59e31a5c6f3e31::t_ab67a7d5c90010 5,110,115,120-184
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_1c08b47ac3792f::t_1a820bbd8b56b5 42,237,247
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_1c08b47ac3792f::t_93a8c83a691164 5,57-78,112-117,119-120,125-129,134-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19598b2e92e8d146d8348480700ee7741043656f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
