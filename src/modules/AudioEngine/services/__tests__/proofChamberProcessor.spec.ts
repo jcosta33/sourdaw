@@ -211,6 +211,39 @@ describe('ProofChamberProcessor param automation', () => {
         resetRecording();
     });
 
+    it('preserves the stored value until the first segment starts', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'param', name: 'damping', value: 0.6 });
+        resetRecording();
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 256, endFrame: 512, startValue: 0.2, endValue: 0.8 }],
+        });
+
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toEqual([]);
+
+        vi.stubGlobal('currentFrame', 256);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 384);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 512);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 640);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toEqual([
+            { id: 2, value: 0.2 },
+            { id: 2, value: 0.5 },
+            { id: 2, value: 0.8 },
+        ]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     it('rejects automation for an out-of-range, non-integer, or empty-segment paramId', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
@@ -220,7 +253,7 @@ describe('ProofChamberProcessor param automation', () => {
         // table membership can express: a non-integer and a negative id.
         send(proc, {
             type: 'paramAutomation',
-            paramId: 2,
+            paramId: 23,
             segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
         });
         send(proc, {

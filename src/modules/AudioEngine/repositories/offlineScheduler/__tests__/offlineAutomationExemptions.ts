@@ -23,12 +23,8 @@
  *  - **Parameter-level** — the device *does* schedule, but this parameter is not
  *    in its ordinal map. Every row needs its own reason. This table.
  *
- * The reasons here are honest about their own state: AC-1 of
- * SPEC-parameter-automation-coverage — the per-parameter classification that
- * decides which of these are engine work and which are descriptor defects — has
- * not been run. Recording 105 rows as "unclassified, and here is what would
- * settle it" is the point: before this table existed the census could not see
- * them at all.
+ * The remaining rows state why their binding is absent; an unclassified row
+ * continues to expose work that the census could otherwise miss.
  *
  * Generated from the registry walk, then committed. Regenerate by re-running the
  * census; do not hand-edit a row without changing the code it describes.
@@ -56,54 +52,6 @@ export const PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<stri
         },
         toaster: {
             swing: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-        },
-        'dutch-oven': {
-            damping:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            predelay:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            size: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            mod_rate:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            mod_depth:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            diffusion:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            high_cut:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            low_cut:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            width: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            freeze: 'unclassified: declared `bool` — AC-1 must decide class (b) vs class (c); a reverb switch is automated in shipping hosts',
-            shimmer:
-                'unclassified: declared `bool` — AC-1 must decide class (b) vs class (c); a reverb switch is automated in shipping hosts',
-            shimmer_amount:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            gravity:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            early_late:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            density:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ...Object.fromEntries(
-                [0, 1, 2, 3, 4, 5].map((band) => [
-                    `decay_eq_${band}`,
-                    'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired. ' +
-                        'New in #1539, which wired the six Decay EQ bands to `ProofChamber`, `FdnReverb` and `SpringReverb` through the string ' +
-                        '`set_param` every live write already uses, so an automation lane on one of these plays in the monitor path. ' +
-                        '`PROOF_CHAMBER_AUTOMATION_PARAM_IDS` still declares two ordinals (`mix`, `decay`) and `set_param_by_id` still ' +
-                        'answers to those two, so a *bounce* freezes these at their stored value — exactly as it does for the fifteen rows ' +
-                        'above. The drop is silent: `automationScheduling.ts` skips a lane the strategy will not bind with a bare `continue`, ' +
-                        'no warning and no log, so the monitor and the bounce differ with no signal that they have.\n\n' +
-                        'Deliberately not fixed here, and the reason is a **scheduling choice rather than a structural obstacle** — worth ' +
-                        'stating plainly so nobody reads this row as "cannot be done". Ordinals 2..7 are purely additive: the table is a ' +
-                        '`Record` with no density requirement, the worklet guards on membership in the declared set rather than on a bound, ' +
-                        'and `dawDspFermenterAutomationOrdinals.spec.ts` is a directly copyable weld for the Rust side. What stops it here is ' +
-                        'scope: the ordinal is a wire format shared with the crate, this device has no weld spec for it yet, and wiring six of ' +
-                        'twenty-one while the other fifteen stay dark would add an unchecked contract to close a sixth of a defect this table ' +
-                        'already owns end to end. The whole device wants doing at once, with the weld.',
-                ])
-            ),
         },
     };
 
