@@ -1,0 +1,116 @@
+crates/daw-engine/src/timeline.rs
+  s_59e31a5c6f3e31::t_8826139363e096 3899-3903,3913-3922,3924-3925
+  s_59e31a5c6f3e31::t_5e4aaf9746afe5 856-870
+  s_59e31a5c6f3e31::t_8167b3301a1387 3883-3898,3904-3912,3923,3926-3928
+  s_59e31a5c6f3e31::t_b846d995d35690 3882
+crates/sourdaw-native/src/commands/graph.rs
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 457,7119,9341,9369,9433,9530
+  s_59e31a5c6f3e31::t_f3ffc4006897e4 7138-7142,7168-7169,7176,7187-7191,7211-7218,7234,7236-7243,7251-7256,7261,7266-7267,7276-7282,7313-7318,7327-7330
+  s_59e31a5c6f3e31::t_005bb4d77868f3 6960-6966,7006-7009,7012-7019,7022-7032,7036-7040,7043-7063,7065-7082
+  s_59e31a5c6f3e31::t_69ec118816f6a8 7090-7108,7111-7115,7121-7132,7143-7167,7170-7175,7177-7186,7192-7210
+  s_59e31a5c6f3e31::t_5e4aaf9746afe5 448-449,827,830-831,1789-1790,1793,1909-1912,1933,3651-3655,3659-3665,3699-3700,3703,3709-3710,3713,3716,3723-3724
+  s_59e31a5c6f3e31::t_3583a5a8109472 1913,6999-7005,7010-7011,7020-7021,7035,7041,7083-7089,7109-7110,7116-7118,7120,7133-7134,7366-7367
+  s_59e31a5c6f3e31::t_d6294c0afea0b7 1915-1920,3656-3658,3701-3702,3704-3708,3711-3712,3714-3715,3717-3722
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 1943-1944
+  s_59e31a5c6f3e31::t_194ec436e3c3ef 7219-7233,7235,7244-7250,7257-7260,7262-7265,7268-7275,7283-7312,7319-7326,7333-7364
+  s_59e31a5c6f3e31::t_7ae97235bb8ec9 7033-7034,7042,7064,7135-7137,7331-7332,7365
+  s_1c08b47ac3792f::t_481534a93dbeb4 1914
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSessionSplice.spec.ts
+  s_59e31a5c6f3e31::t_86f5bcdb4843be 20,71-76
+  s_59e31a5c6f3e31::t_12dded73faf3f8 77-83,119
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 95,102,771-797,802,826-827,832
+  s_59e31a5c6f3e31::t_923ca2357e0274 190
+  s_59e31a5c6f3e31::t_5e3d3d64948eff 798-801,803-825,828-831,833-853
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_59e31a5c6f3e31::t_3583a5a8109472 30-45
+  s_59e31a5c6f3e31::t_b052de9d8aa3ac 46-75
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_163497891f660d 43,639,722
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_59e31a5c6f3e31::t_163497891f660d 78,97
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_59e31a5c6f3e31::t_20ef9026e29ab6 1037-1062,1346
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 1067,1343-1345,1347-1363
+  s_59e31a5c6f3e31::t_923ca2357e0274 25,330-333
+  s_59e31a5c6f3e31::t_2d8869d4bf0936 335,1063-1066,1364-1375
+crates/daw-engine/src/scheduler.rs
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 7044-7045
+  s_59e31a5c6f3e31::t_8826139363e096 7033-7037,14385-14390,14393-14403,14405-14414,14424-14434,14436-14437
+  s_59e31a5c6f3e31::t_8167b3301a1387 14376-14384,14391-14392,14404,14415-14423,14435,14438-14442
+  s_59e31a5c6f3e31::t_5e4aaf9746afe5 898-903,1025,1113,7038-7043,7046
+  s_59e31a5c6f3e31::t_fec045641f4e62 7047-7048
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_59e31a5c6f3e31::t_9df6c200854945 479-480
+  s_59e31a5c6f3e31::t_fffb36101b4197 138-143
+src/modules/AudioEngine/useCases/livePlayback/__tests__/abandonNativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_86f5bcdb4843be 15,60-65
+  s_59e31a5c6f3e31::t_89ff3ff8b39eee 66-72,114
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 229-231,518-519
+  s_59e31a5c6f3e31::t_9df6c200854945 524-531,858
+src/modules/AudioEngine/useCases/livePlayback/disarmNativeLiveAutomationWriter.ts
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 18
+  s_59e31a5c6f3e31::t_5e68ef54809f08 19-20
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_59e31a5c6f3e31::t_8b94775f48e42a 41-48,193-202,204-214,218-220,222-224,227-238,245-249,253-258,264-265,285-287,292-297,299-301
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 49-50,52,55,60,191-192,203,215-217,221,225-226,239-244,250-252,259-262,266,288-291,298,302
+  s_59e31a5c6f3e31::t_c9e0a14fbc16e8 267-268,303-304,321
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 324,327,329,655
+  s_59e31a5c6f3e31::t_f1ee68e7623746 769,773,776-778
+  s_59e31a5c6f3e31::t_804a7be0d2d38f 100-101,373-374,415,418-419,429,469,502,564-566,570,579-581
+  s_59e31a5c6f3e31::t_64292be38bbff8 640-648,656-660,664-671,691-692,698-701,705-708,712-715,721-726,732-734,738-741,745-751,755,762,767-768,774-775,787-789,798-802,806-811,815-816,824,835-836,853,869-872,895-896,901,908
+  s_59e31a5c6f3e31::t_8b94775f48e42a 48-53,409-414,420-422,554-558,567-569,571-578,649-654,661-663,672-690,693-697,702-704,709-711,716-720,727-731,735-737,742-744,752-754,756-761,763-766,770-772,779-786,790-797,803-805,812-814,846-850,854-861,864-868,875-880,897-898,906-907
+src/modules/AudioEngine/useCases/livePlayback/carryQueuedStamps.ts
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 12,15,17
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 26-27
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 16,89,91
+  s_59e31a5c6f3e31::t_3583a5a8109472 15,82-88,90,92-96,99
+  s_59e31a5c6f3e31::t_2b4cd5caf26ee5 97-98,100-116
+src/modules/AudioEngine/useCases/offlineRender/automationWriteCommand.ts
+  s_59e31a5c6f3e31::t_9df6c200854945 22,25-26
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 8,12-15
+  s_59e31a5c6f3e31::t_17df7cbd5bd451 27-29,40
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_59e31a5c6f3e31::t_9df6c200854945 99,115-117,360-362,401
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  s_59e31a5c6f3e31::t_569bab0ea5cc2d 31-46,203-216,218-222,229-243,250-258,261-267,270-272,275-277,280-286,289-302,311-317,330-332,335-343,368-374,376-391,393-395,397-411,425-426,434-438,441-442,452-460,464-472,475-501,510-512,514-519,535-541,552-559,561-567,576-582,586-595,606-610,613-615,617-624,630-638,640-649,662-664,677-680,690-699,704-706,719-723,725-803,806-817
+  s_59e31a5c6f3e31::t_cce436d5e85b84 600-605,611-612,616,625-629,639,650-661,665-673
+  s_59e31a5c6f3e31::t_866674455d5d68 709
+  s_59e31a5c6f3e31::t_8de3dd9900e34d 187-188,228,560
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 327,333-334,344-346,353,356
+  s_59e31a5c6f3e31::t_c89e9068836e0d 25-26,30,224,260,268,278-279,306-309,319,710-718,724,804-805
+  s_59e31a5c6f3e31::t_cb3790b5b659a6 674-676,681-689,700-703,707-708
+  s_59e31a5c6f3e31::t_afdf8c7d9eb111 23,27-28,48,55,58,186,189,202,217,223,226-227,244-249,259,269,273-274,287-288,303-305,310,318,320-326,328-329,347-352,354-355,357-363,598-599,818-819,829
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 225,364-367,375,392,396,412-423,570-575,583-585,596-597
+  s_59e31a5c6f3e31::t_8da13ef53f59b6 424,427-433,439-440,443-451,461-463,473-474,502-509,513,520-534,542-551,568-569
+  s_59e31a5c6f3e31::t_f810193f4ec543 820-828
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 147-155,157-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "108191c6f32680cc6b196e751d11572a1450b1a7",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
