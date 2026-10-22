@@ -2,8 +2,8 @@ import { type KeyboardEvent, type MouseEvent, type ReactElement, useRef, useStat
 
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
-import { Fader } from '#/components/daw/Fader';
 import { DawMenuButton } from '#/components/daw/DawMenuParts';
+import { Fader } from '#/components/daw/Fader';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { undoHistoryStore } from '#/modules/Command/stores';
@@ -11,9 +11,9 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { type AppAction } from '#/utils/handlerContract';
 import { cn } from '#/utils/Styles/cn';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
 
@@ -38,8 +38,12 @@ async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?
     }
 }
 
-export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
-    const masterGain = useStore(transportStore, defaultTransportState).masterGain;
+type MasterGainControlProps = {
+    value: number;
+    onChange: (value: number, isTransient?: boolean) => void;
+};
+
+const MasterGainControl = ({ value, onChange }: MasterGainControlProps): ReactElement => {
     const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
     const masterGainControlRef = useRef<HTMLDivElement>(null);
     const masterGainMenuRef = useRef<HTMLDivElement>(null);
@@ -67,6 +71,55 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         const bounds = masterGainControlRef.current?.querySelector('[role="slider"]')?.getBoundingClientRect();
         openMasterGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
     };
+
+    return (
+        <>
+            <div
+                ref={masterGainControlRef}
+                className="shrink-0"
+                data-testid="master-gain"
+                role="presentation"
+                onContextMenu={handleMasterGainContextMenu}
+                onKeyDown={handleMasterGainMenuKeyDown}
+            >
+                <Fader
+                    value={value}
+                    onChange={onChange}
+                    min={0}
+                    max={FADER_MAX_GAIN}
+                    step={0.01}
+                    fineStep={0.001}
+                    defaultValue={defaultTransportState.masterGain / 100}
+                    height={100}
+                    aria-label="Master gain"
+                />
+            </div>
+            {masterGainMenu ? (
+                <DawContextMenuSurface
+                    ref={masterGainMenuRef}
+                    role="menu"
+                    aria-label="Master gain actions"
+                    x={masterGainMenu.x}
+                    y={masterGainMenu.y}
+                    onClose={closeMasterGainMenu}
+                >
+                    <DawMenuButton
+                        role="menuitem"
+                        onClick={() => {
+                            onChange(defaultTransportState.masterGain / 100, false);
+                            closeMasterGainMenu();
+                        }}
+                    >
+                        Reset to Default
+                    </DawMenuButton>
+                </DawContextMenuSurface>
+            ) : null}
+        </>
+    );
+};
+
+export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
+    const masterGain = useStore(transportStore, defaultTransportState).masterGain;
 
     // Mid-gesture fader value, in 0–1 fader units, held only for the duration of
     // a drag — same precedent as `useChannelStripActions`'s `gestureGain`. The
@@ -213,50 +266,9 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <MixerLevelReadout
                 trackId={null}
                 clusterClassName="mt-1"
-                control={
-                    <div
-                        ref={masterGainControlRef}
-                        className="shrink-0"
-                        data-testid="master-gain"
-                        role="presentation"
-                        onContextMenu={handleMasterGainContextMenu}
-                        onKeyDown={handleMasterGainMenuKeyDown}
-                    >
-                        <Fader
-                            value={displayGain}
-                            onChange={handleFaderChange}
-                            min={0}
-                            max={FADER_MAX_GAIN}
-                            step={0.01}
-                            fineStep={0.001}
-                            defaultValue={defaultTransportState.masterGain / 100}
-                            height={100}
-                            aria-label="Master gain"
-                        />
-                    </div>
-                }
+                control={<MasterGainControl value={displayGain} onChange={handleFaderChange} />}
                 value={`${formatGainDb(displayGain)} dB`}
             />
-            {masterGainMenu ? (
-                <DawContextMenuSurface
-                    ref={masterGainMenuRef}
-                    role="menu"
-                    aria-label="Master gain actions"
-                    x={masterGainMenu.x}
-                    y={masterGainMenu.y}
-                    onClose={closeMasterGainMenu}
-                >
-                    <DawMenuButton
-                        role="menuitem"
-                        onClick={() => {
-                            handleFaderChange(defaultTransportState.masterGain / 100, false);
-                            closeMasterGainMenu();
-                        }}
-                    >
-                        Reset to Default
-                    </DawMenuButton>
-                </DawContextMenuSurface>
-            ) : null}
         </DawChannelStripShell>
     );
 };
