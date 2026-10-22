@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_c432ce413e2ee5 1795-1803
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_1b1cf809f3028c 110-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b07d736dca6ad9173abc9ff29b0ef7791657261",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
