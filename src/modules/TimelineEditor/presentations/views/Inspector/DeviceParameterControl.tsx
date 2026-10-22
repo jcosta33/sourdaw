@@ -19,8 +19,8 @@ import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/us
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
@@ -262,6 +262,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const gestureRef = useRef<ParameterGesture | null>(null);
     const gestureSequence = useRef(0);
+    const [gestureOwner, setGestureOwner] = useState<number | undefined>(undefined);
     const mounted = useRef(true);
     const cancelOnUnmount = useRef<() => void>(() => undefined);
     const [draft, setDraft] = useState<{
@@ -298,6 +299,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             notifyUser(error instanceof Error ? error.message : 'Device parameter preview restoration failed', 'error');
         }
         if (mounted.current) {
+            if (gestureRef.current === gesture) {
+                setGestureOwner(undefined);
+            }
             setDraft(null);
         }
     };
@@ -360,6 +364,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             committed: false,
         };
         gestureRef.current = gesture;
+        setGestureOwner(gesture.id);
         if (!readGestureDevice(gesture, true)) {
             gesture.invalidated = true;
             notifyUser('Device parameter target changed; edit was not applied', 'warning');
@@ -381,6 +386,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         if (gestureRef.current === gesture) {
             gestureRef.current = null;
             if (mounted.current) {
+                setGestureOwner(undefined);
                 setDraft(null);
             }
         }
@@ -629,6 +635,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 deviceId={device.id}
                 value={mappedValue}
                 onChange={onChange}
+                gestureOwner={gestureOwner}
                 gestureAuthority={{
                     acquire: startGesture,
                     isCurrent: (token) => {

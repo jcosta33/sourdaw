@@ -8,6 +8,9 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import * as automationUseCases from '#/modules/Automation/useCases';
+import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -17,10 +20,6 @@ import {
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
-import { automationStore } from '#/modules/Automation/stores';
-import * as automationUseCases from '#/modules/Automation/useCases';
-import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
-import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
@@ -32,6 +31,7 @@ import {
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
@@ -351,7 +351,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 80, clientY: 10 });
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
-        expect(writes(compressor.id)).toEqual([-36, -12, -48]);
+        expect(writes(compressor.id)).toEqual([-36, expect.closeTo(-12, 12), -48]);
         expect(screen.getByText('-48.0 dB')).toBeInTheDocument();
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
@@ -565,16 +565,23 @@ describe('Inspector continuous parameter gestures through real history', () => {
             });
             write.commit();
         });
-        await entered.promise;
-        endKnob();
-        await act(async () => {
-            release.resolve();
-            await snapshot;
-        });
-        await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
-        expect(rawValues()?.detune).toBe(5);
-        expect(depth()).toBe(0);
-        expect(writes().at(-1)).toBe(5);
+        try {
+            await entered.promise;
+            endKnob();
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+            await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
+            expect(rawValues()?.detune).toBe(5);
+            expect(depth()).toBe(0);
+            expect(writes().at(-1)).toBe(5);
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
     });
 
     it('fences a queued final commit against a same-id project transition', async () => {
@@ -588,19 +595,26 @@ describe('Inspector continuous parameter gestures through real history', () => {
             entered.resolve();
             await release.promise;
         });
-        await entered.promise;
-        endKnob(control);
-        await activateProject();
-        engineWrites.length = 0;
-        release.resolve();
-        await snapshot;
-        await executeUserAppAction({
-            type: 'setDeviceParameter',
-            payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 },
-        });
-        expect(rawValues()?.detune).toBe(5);
-        expect(depth()).toBe(0);
-        expect(writes()).toEqual([]);
+        try {
+            await entered.promise;
+            endKnob(control);
+            await activateProject();
+            engineWrites.length = 0;
+            release.resolve();
+            await snapshot;
+            await executeUserAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 },
+            });
+            expect(rawValues()?.detune).toBe(5);
+            expect(depth()).toBe(0);
+            expect(writes()).toEqual([]);
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
     });
 
     it('restores authoritative runtime and UI after a refused final commit', async () => {
@@ -672,40 +686,47 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 entered.resolve();
                 await release.promise;
             });
-            await entered.promise;
-            beat = 4;
-            endKnob();
-            const expectedSamples = [
-                ['track-1', 'synth-1:detune', 25, 1],
-                ['track-1', 'synth-1:detune', -15, 2],
-                ['track-1', 'synth-1:detune', 65, 3],
-                ['track-1', 'synth-1:detune', 65, 4],
-            ];
-            // This spy calls the actual owner; its real buffered curve is flushed below.
-            expect(recording.mock.calls).toEqual(expectedSamples);
-            expect(rawValues()?.detune).toBe(5);
-            expect(automationStore.value?.lanes[0]?.points).toEqual([]);
-            expect(depth()).toBe(0);
-            beat = 19;
-            await act(async () => {
-                release.resolve();
-                await snapshot;
-            });
-            await expectCommitted('detune', 65, 1);
-            expect(recording.mock.calls).toEqual(expectedSamples);
-            await act(() => undo());
-            expect(rawValues()?.detune).toBe(5);
-            await act(() => redo());
-            expect(rawValues()?.detune).toBe(65);
-            expect(recording.mock.calls).toEqual(expectedSamples);
-            stopAutomationRecording(4);
-            const points = automationStore.value?.lanes[0]?.points ?? [];
-            expect(points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual([
-                [1, 25],
-                [2, -15],
-                [3, 65],
-                [4, 65],
-            ]);
+            try {
+                await entered.promise;
+                beat = 4;
+                endKnob();
+                const expectedSamples = [
+                    ['track-1', 'synth-1:detune', 25, 1],
+                    ['track-1', 'synth-1:detune', -15, 2],
+                    ['track-1', 'synth-1:detune', 65, 3],
+                    ['track-1', 'synth-1:detune', 65, 4],
+                ];
+                // This spy calls the actual owner; its real buffered curve is flushed below.
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                expect(rawValues()?.detune).toBe(5);
+                expect(automationStore.value?.lanes[0]?.points).toEqual([]);
+                expect(depth()).toBe(0);
+                beat = 19;
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+                await expectCommitted('detune', 65, 1);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                await act(() => undo());
+                expect(rawValues()?.detune).toBe(5);
+                await act(() => redo());
+                expect(rawValues()?.detune).toBe(65);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                stopAutomationRecording(4);
+                const points = automationStore.value?.lanes[0]?.points ?? [];
+                expect(points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual([
+                    [1, 25],
+                    [2, -15],
+                    [3, 65],
+                    [4, 65],
+                ]);
+            } finally {
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+            }
         }
     );
 
@@ -750,37 +771,44 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 entered.resolve();
                 await release.promise;
             });
-            await entered.promise;
-            beat = 4;
-            fireEvent.pointerUp(root, { pointerId: 2 });
-            const expectedSamples = [
-                ['track-1', 'compressor-1:comp-threshold', -36, 1],
-                ['track-1', 'compressor-1:comp-threshold', -12, 2],
-                ['track-1', 'compressor-1:comp-threshold', -48, 3],
-            ];
-            expect(recording.mock.calls).toEqual(expectedSamples);
-            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
-            expect(automationStore.value?.lanes[0]?.points).toEqual([]);
-            expect(depth()).toBe(0);
-            beat = 19;
-            await act(async () => {
-                release.resolve();
-                await snapshot;
-            });
-            await expectCommitted('comp-threshold', -48, 1, compressor.id);
-            await act(() => undo());
-            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
-            await act(() => redo());
-            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-48);
-            expect(recording.mock.calls).toEqual(expectedSamples);
-            stopAutomationRecording(3);
-            expect(
-                automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
-            ).toEqual([
-                [1, -36],
-                [2, -12],
-                [3, -48],
-            ]);
+            try {
+                await entered.promise;
+                beat = 4;
+                fireEvent.pointerUp(root, { pointerId: 2 });
+                const expectedSamples = [
+                    ['track-1', 'compressor-1:comp-threshold', -36, 1],
+                    ['track-1', 'compressor-1:comp-threshold', expect.closeTo(-12, 12), 2],
+                    ['track-1', 'compressor-1:comp-threshold', -48, 3],
+                ];
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+                expect(automationStore.value?.lanes[0]?.points).toEqual([]);
+                expect(depth()).toBe(0);
+                beat = 19;
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+                await expectCommitted('comp-threshold', -48, 1, compressor.id);
+                await act(() => undo());
+                expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+                await act(() => redo());
+                expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-48);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                stopAutomationRecording(3);
+                expect(
+                    automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
+                ).toEqual([
+                    [1, -36],
+                    [2, expect.closeTo(-12, 12)],
+                    [3, -48],
+                ]);
+            } finally {
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+            }
         }
     );
 
@@ -871,29 +899,36 @@ describe('Inspector continuous parameter gestures through real history', () => {
             });
             write.commit();
         });
-        await entered.promise;
-        beat = 4;
-        endKnob();
-        beat = 19;
-        await act(async () => {
-            release.resolve();
-            await snapshot;
-        });
-        await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
-        await waitFor(() => expect(knob()).toHaveAttribute('aria-valuenow', '5'));
-        expect(rawValues()?.detune).toBe(5);
-        expect(depth()).toBe(0);
-        expect(writes().at(-1)).toBe(5);
-        expect(recording.mock.calls).toEqual([
-            ['track-1', 'synth-1:detune', 25, 1],
-            ['track-1', 'synth-1:detune', 25, 4],
-        ]);
-        stopAutomationRecording();
-        expect(automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual(
-            [
+        try {
+            await entered.promise;
+            beat = 4;
+            endKnob();
+            beat = 19;
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+            await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
+            await waitFor(() => expect(knob()).toHaveAttribute('aria-valuenow', '5'));
+            expect(rawValues()?.detune).toBe(5);
+            expect(depth()).toBe(0);
+            expect(writes().at(-1)).toBe(5);
+            expect(recording.mock.calls).toEqual([
+                ['track-1', 'synth-1:detune', 25, 1],
+                ['track-1', 'synth-1:detune', 25, 4],
+            ]);
+            stopAutomationRecording();
+            expect(
+                automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
+            ).toEqual([
                 [1, 25],
                 [4, 25],
-            ]
-        );
+            ]);
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
     });
 });

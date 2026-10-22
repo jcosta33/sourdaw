@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import * as Command from '#/modules/Command/useCases';
 import {
     clearUndoHistory,
     resetActionReplayAuthority,
@@ -18,14 +20,11 @@ import {
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
-import * as Command from '#/modules/Command/useCases';
-import { automationStore } from '#/modules/Automation/stores';
 
-import { applyAutomation } from '../applyAutomation';
-import { defaultTransportState, transportStore } from '../../../../stores/transportStore';
 import { tempoMapStore } from '../../../../stores/tempoMapStore';
+import { defaultTransportState, transportStore } from '../../../../stores/transportStore';
+import { applyAutomation } from '../applyAutomation';
 
 // Command, Arrangement, Automerge and history stay real. This is the engine's
 // shared Web Audio/native parameter boundary; no live graph exists in Vitest.

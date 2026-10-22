@@ -18,6 +18,31 @@ type BipolarSliderProps = {
     className?: string;
 };
 
+function useBipolarSliderCompletion(hasCommitHandler: boolean, commitPending: () => void): void {
+    const commitRef = useRef<() => void>(() => undefined);
+    useLayoutEffect(() => {
+        commitRef.current = commitPending;
+    });
+    useEffect(() => {
+        if (!hasCommitHandler) {
+            return undefined;
+        }
+        const finish = (): void => commitRef.current();
+        const visibilityChanged = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finish();
+            }
+        };
+        window.addEventListener('blur', finish);
+        document.addEventListener('visibilitychange', visibilityChanged);
+        return () => {
+            window.removeEventListener('blur', finish);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            finish();
+        };
+    }, [hasCommitHandler]);
+}
+
 export const BipolarSlider = ({
     value,
     onValueChange,
@@ -41,7 +66,6 @@ export const BipolarSlider = ({
 
     const pendingValue = useRef<number | null>(null);
     const activePointerId = useRef<number | null>(null);
-    const commitRef = useRef<() => void>(() => undefined);
     const commitPending = (): void => {
         const pending = pendingValue.current;
         pendingValue.current = null;
@@ -50,28 +74,7 @@ export const BipolarSlider = ({
             onValueCommit?.(pending);
         }
     };
-    useLayoutEffect(() => {
-        commitRef.current = commitPending;
-    });
-    const hasCommitHandler = onValueCommit !== undefined;
-    useEffect(() => {
-        if (!hasCommitHandler) {
-            return;
-        }
-        const finish = (): void => commitRef.current();
-        const visibilityChanged = (): void => {
-            if (document.visibilityState === 'hidden') {
-                finish();
-            }
-        };
-        window.addEventListener('blur', finish);
-        document.addEventListener('visibilitychange', visibilityChanged);
-        return () => {
-            window.removeEventListener('blur', finish);
-            document.removeEventListener('visibilitychange', visibilityChanged);
-            finish();
-        };
-    }, [hasCommitHandler]);
+    useBipolarSliderCompletion(onValueCommit !== undefined, commitPending);
 
     const handleChange = ([v]: number[]) => {
         if (v === undefined) {
