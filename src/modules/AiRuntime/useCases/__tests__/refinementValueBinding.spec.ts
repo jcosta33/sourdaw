@@ -28,6 +28,7 @@ import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { validateRefinedProposalActions } from '../../validators/admitProposalRefinement';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
@@ -355,8 +356,17 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(result).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('removes') });
         });
 
-        it('row 8: a removal naming nothing on the card, or only part of a name, is refused', () => {
-            expect(refine(P1_CARD, 'not the bass', [vocalsBy(-3), snareBy(-2)])).toMatchObject({
+        it('row 8: a removal naming only part of a name is refused, and "not" an object off the card protects it', () => {
+            const bassKept = refine(P1_CARD, 'not the bass', [vocalsBy(-3), snareBy(-2)]);
+
+            expect(commandsOf(bassKept)).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+            ]);
+            expect(bassKept.status === 'grounded' ? bassKept.groundingBasis?.protectedUnchanged : null).toEqual(
+                expect.arrayContaining([{ id: 'track-bass', name: 'Bass' }])
+            );
+            expect(refine(P1_CARD, 'drop the bass', [vocalsBy(-3), snareBy(-2)])).toMatchObject({
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('names no single'),
             });
@@ -714,6 +724,43 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 status: 'clarify',
             });
         });
+
+        it('a negated level clause removes only the level of the object it names, keeping its pan', () => {
+            const snarePan = { name: 'setTrackPan', arguments: { trackId: 'track-snare', pan: -30 } };
+            const card = {
+                prompt: 'turn Vocals down 3 dB, turn Snare down 2 dB and pan Snare 30% left',
+                calls: [vocalsBy(-3), snareBy(-2), snarePan],
+            };
+            const result = refine(card, "don't turn the snare down 2 dB", [vocalsBy(-3), snarePan]);
+
+            expect(commandsOf(result)).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                { type: 'setTrackPan', trackId: 'track-snare', pan: -30 },
+            ]);
+            expect(refine(card, "don't turn the snare down 2 dB", [vocalsBy(-3)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('omits a pending setTrackPan'),
+            });
+        });
+
+        it('a negation with no figure naming nothing in the project is left alone, and one naming an object off the card protects it', () => {
+            for (const restated of [`${P1}, not too loud`, `${P1} without changing anything else`]) {
+                expect({ restated, commands: commandsOf(refine(P1_CARD, restated, P1_PLAN)) }).toEqual({
+                    restated,
+                    commands: [
+                        { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                        { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                    ],
+                });
+            }
+            const bassProtected = refine(P1_CARD, `${P1}, but not the Bass`, P1_PLAN);
+
+            expect(bassProtected.status).toBe('grounded');
+            expect(
+                bassProtected.status === 'grounded' ? bassProtected.groundingBasis?.protectedUnchanged : null
+            ).toEqual(expect.arrayContaining([{ id: 'track-bass', name: 'Bass' }]));
+            expect(refine(P1_CARD, `${P1}, not at 2 dB`, P1_PLAN).status).toBe('clarify');
+        });
     });
 
     describe('a comparative checks the bound value against the pending one', () => {
@@ -760,6 +807,108 @@ describe('binding a terse refinement to the pending card it refines', () => {
         it('against a pending move of -3 dB, "less" and "more" compare how far it moves', () => {
             expect(refine(P0_CARD, 'more, make it 4 dB', [vocalsBy(-4)]).status).toBe('grounded');
             expect(refine(P0_CARD, 'more, make it 1.5 dB', [vocalsBy(-1.5)]).status).toBe('rejected');
+        });
+
+        it('a landing has no move to compare with a pending move, so "less, at -1 dB" is refused', () => {
+            expect(refine(P0_CARD, 'less, at -1 dB', [vocalsAt(-1)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('"less" cannot be compared with the pending'),
+            });
+        });
+
+        it('against a pending move, a comparative beside the figure asks whether it replaces or adds to the move', () => {
+            const rows: Array<[string, number]> = [
+                ['turn Vocals down 2 dB more', -2],
+                ['turn Vocals down 2 dB more', -5],
+                ['turn Vocals down 5 dB less', -5],
+                ['turn Vocals down 5 dB less', 2],
+                ['make it 1 dB quieter', -1],
+                ['make it 1 dB quieter', -4],
+                ['make it 3 dB louder', 3],
+                ['make it 3 dB louder', 0],
+            ];
+            for (const [refinement, deltaDb] of rows) {
+                expect({
+                    refinement,
+                    deltaDb,
+                    status: refine(P0_CARD, refinement, [vocalsBy(deltaDb)]).status,
+                }).toEqual({ refinement, deltaDb, status: 'clarify' });
+            }
+        });
+
+        it('against a pending absolute level, a comparative beside a landing asks, while a move lands from it', () => {
+            expect(refine(AT_CARD, 'put Vocals at -9 dB more', [vocalsAt(-9)]).status).toBe('clarify');
+            expect(commandsOf(refine(AT_CARD, 'make it 3 dB quieter', [vocalsAt(-9)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', gainDb: -9 },
+            ]);
+        });
+    });
+
+    describe('a value that is no level binds only an unsigned figure in its own unit', () => {
+        const bassPan = (pan: number): ProviderCall => ({
+            name: 'setTrackPan',
+            arguments: { trackId: 'track-bass', pan },
+        });
+        const PAN_CARD = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
+        const toneDevice: ProjectTrack['devices'][number] = {
+            id: 'device-tone',
+            type: 'Tone',
+            bypassed: false,
+            parameters: [{ id: 'tilt', name: 'Tilt', type: 'float', value: 0, minValue: -6, maxValue: 6, unit: 'dB' }],
+        };
+        const TONE_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-piano', 'Piano', { deviceCount: 1, devices: [toneDevice] }),
+        ]);
+        const tilt = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-tone', paramId: 'tilt', value },
+        });
+        const TONE_CARD = { prompt: 'set Tone tilt to 3', calls: [tilt(3)] };
+        const tempo = (bpm: number): ProviderCall => ({ name: 'setTempo', arguments: { bpm } });
+        const TEMPO_CARD = { prompt: 'set tempo to 120', calls: [tempo(120)] };
+
+        it('a signed pan figure asks for the side, whichever minus or dash signs it', () => {
+            for (const refinement of [
+                'put it at minus 20',
+                'put it at -20',
+                'put it at −20',
+                'put it at - 20',
+                'put it at – 20',
+                'put it at ‑20',
+            ]) {
+                for (const pan of [20, -20]) {
+                    expect({ refinement, pan, status: refine(PAN_CARD, refinement, [bassPan(pan)]).status }).toEqual({
+                        refinement,
+                        pan,
+                        status: 'clarify',
+                    });
+                }
+            }
+            expect(commandsOf(refine(PAN_CARD, 'make it 20 left', [bassPan(-20)]))).toEqual([
+                { type: 'setTrackPan', trackId: 'track-bass', pan: -20 },
+            ]);
+        });
+
+        it('a signed figure for a bipolar device parameter asks, while an unsigned landing binds', () => {
+            for (const value of [5, -5]) {
+                expect(refine(TONE_CARD, 'make it to minus 5', [tilt(value)], TONE_CONTEXT).status).toBe('clarify');
+            }
+            expect(commandsOf(refine(TONE_CARD, 'make it to 5', [tilt(5)], TONE_CONTEXT))).toEqual([
+                { type: 'setDeviceParameter', deviceId: 'device-tone', paramId: 'tilt', value: 5 },
+            ]);
+        });
+
+        it('a tempo figure in another unit than bpm asks', () => {
+            for (const [refinement, bpm] of [
+                ['make it 100 Hz', 100],
+                ['make it 50 percent', 50],
+            ] as const) {
+                const result = refine(TEMPO_CARD, refinement, [tempo(bpm)]);
+
+                expect({ refinement, status: result.status }).toEqual({ refinement, status: 'clarify' });
+                expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('in bpm');
+            }
         });
     });
 
@@ -1110,8 +1259,11 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(refine(PD_CARD, '150%', [reverbMix(100)]).status).toBe('rejected');
         });
 
-        it('row 14: "3 dB" is not the unit the Mix parameter takes and is refused', () => {
-            expect(refine(PD_CARD, '3 dB', [reverbMix(3)]).status).toBe('rejected');
+        it('row 14: "3 dB" is not the unit the Mix parameter takes and is asked', () => {
+            const result = refine(PD_CARD, '3 dB', [reverbMix(3)]);
+
+            expect(result.status).toBe('clarify');
+            expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('in %');
         });
 
         it('a figure beside a relative word never lands as an absolute value', () => {
@@ -1248,6 +1400,71 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 { type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'mix', value: 50 },
                 { type: 'muteTrack', trackId: 'track-bass' },
             ]);
+        });
+    });
+
+    describe('a card that creates a device carries no basis, and pairs its creation by what it creates', () => {
+        const compressor: ProviderCall = {
+            name: 'addDevice',
+            arguments: { trackId: 'track-vocals', deviceType: 'Compressor', binding: 'vocal-compressor' },
+        };
+        const CREATING = 'add a Compressor to Vocals and turn Vocals down 3 dB';
+        const DEVICE_CONTEXT: ProjectContext = {
+            ...CONTEXT,
+            availableDeviceTypes: [
+                {
+                    id: 'builtin-compressor',
+                    name: 'Compressor',
+                    parameters: [
+                        {
+                            id: 'comp-ratio',
+                            name: 'Ratio',
+                            type: 'float',
+                            value: 4,
+                            minValue: 1,
+                            maxValue: 20,
+                            unit: ':1',
+                        },
+                    ],
+                },
+            ],
+        };
+
+        function groundedActions(prompt: string, calls: readonly ProviderCall[]) {
+            const grounded = ground(prompt, calls, undefined, DEVICE_CONTEXT);
+            if (grounded.status !== 'grounded') {
+                throw new Error(`Expected "${prompt}" to ground: ${JSON.stringify(grounded)}`);
+            }
+            return grounded.actions;
+        }
+
+        function admission(prompt: string, calls: readonly ProviderCall[]) {
+            return validateRefinedProposalActions({
+                pendingActions: groundedActions(CREATING, [compressor, vocalsBy(-3)]),
+                actions: groundedActions(prompt, calls),
+                prompt,
+                context: DEVICE_CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+            });
+        }
+
+        it('keeps a created device the refinement creates again under a freshly minted id', () => {
+            expect(ground(CREATING, [compressor, vocalsBy(-3)], undefined, DEVICE_CONTEXT)).toMatchObject({
+                status: 'grounded',
+                groundingBasis: undefined,
+            });
+
+            expect(
+                admission('add a Compressor to Vocals and turn Vocals down 2 dB', [compressor, vocalsBy(-2)])
+            ).toEqual({ status: 'valid' });
+        });
+
+        it('removes a created device only when the refinement names it', () => {
+            expect(admission('turn Vocals down 2 dB, not the compressor', [vocalsBy(-2)])).toEqual({ status: 'valid' });
+            expect(admission('turn Vocals down 2 dB', [vocalsBy(-2)])).toMatchObject({
+                status: 'refused',
+                reason: expect.stringContaining('omits a pending addDevice'),
+            });
         });
     });
 

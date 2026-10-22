@@ -83,6 +83,26 @@ describe('diffProposalCommands', () => {
         });
     });
 
+    it('pairs neither of two changed peers on one object with the one command they could replace', () => {
+        const pending = { type: 'setTrackGain', payload: { trackId: 'track-vocals', deltaDb: -3 } };
+        const smaller = { type: 'setTrackGain', payload: { trackId: 'track-vocals', deltaDb: -1 } };
+        const larger = { type: 'setTrackGain', payload: { trackId: 'track-vocals', deltaDb: -6 } };
+
+        expect(
+            diff(
+                { actions: [pending], actionLabels: ['Vocals -3 dB'] },
+                { actions: [smaller, larger], actionLabels: ['Vocals -1 dB', 'Vocals -6 dB'] }
+            )
+        ).toEqual({
+            changes: [
+                { kind: 'added', actionType: 'setTrackGain', label: 'Vocals -1 dB' },
+                { kind: 'added', actionType: 'setTrackGain', label: 'Vocals -6 dB' },
+                { kind: 'removed', actionType: 'setTrackGain', label: 'Vocals -3 dB' },
+            ],
+            unchangedCount: 0,
+        });
+    });
+
     it('uses clip identity for moves while keeping a different removal target separate', () => {
         const moveFromTrackA = {
             type: 'moveClip',

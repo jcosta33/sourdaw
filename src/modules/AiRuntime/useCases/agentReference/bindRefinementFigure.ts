@@ -37,7 +37,8 @@ type StatedFigure = {
     magnitude: number;
     sign: -1 | 1 | null;
     raw: string;
-    unit: 'dB' | '%' | 'other' | null;
+    /** The unit the figure is stated in, by its canonical spelling (`%`, `dB`, `Hz`, `bpm`, ...). */
+    unit: string | null;
     connector: 'absolute' | 'relative' | null;
     direction: -1 | 1 | null | 'conflicting';
     /** The words beside the figure, read from the clause with every object name masked. */
@@ -56,7 +57,7 @@ const LOWERING_PHRASES: readonly string[] = [...QUIETER_SCOPE_PHRASES, 'down'];
 const RAISING_PHRASES: readonly string[] = [...LOUDER_SCOPE_PHRASES, 'up'];
 export const LEVEL_DIRECTION_PHRASES: readonly string[] = [...LOWERING_PHRASES, ...RAISING_PHRASES];
 
-const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
+export const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
 /** Words a pan clause reads itself: the operation and the side it lands on. */
 const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WORDS]);
 /**
@@ -74,6 +75,31 @@ const SIGN_MARK = /(?:\b(minus|plus)\s+|([\p{Pd}−])\s*)$/iu;
  * "10% more", "decrease it 10%". A plain value only lands where it says, so such a clause is asked.
  */
 const RELATIVE_WORDS: ReadonlySet<string> = new Set(['bigger', 'decrease', 'increase', 'less', 'more', 'smaller']);
+/**
+ * Words that compare the figure with something: "2 dB more", "1 dB quieter". Against a pending move
+ * they cannot say whether the figure replaces that move or adds to it, so such a clause is asked.
+ */
+const COMPARATIVE_WORDS: ReadonlySet<string> = new Set([
+    'higher',
+    'hotter',
+    'less',
+    'louder',
+    'lower',
+    'more',
+    'quieter',
+    'softer',
+]);
+/** Words that may open a clause ahead of its verb, so "and lower it 2 dB" still opens on the verb "lower". */
+const CLAUSE_OPENING_WORDS: ReadonlySet<string> = new Set([
+    'also',
+    'and',
+    'but',
+    'just',
+    'ok',
+    'okay',
+    'please',
+    'then',
+]);
 /**
  * Words that state no direction, so a clause made only of them, its figure, unit and connector keeps
  * the pending change's direction. Any other word may be a direction this reading cannot tell ("bump",
@@ -119,27 +145,38 @@ const DIRECTIONLESS_WORDS: ReadonlySet<string> = new Set([
     'volume',
 ]);
 
-const UNIT_WORDS: ReadonlyArray<{ unit: NonNullable<StatedFigure['unit']>; pattern: RegExp }> = [
-    { unit: '%', pattern: /^\s*(?:percent|per\s+cent)(?![\p{L}\p{N}])/iu },
+/** Each unit a figure may be stated in, by its canonical spelling, and the words that spell it. */
+const UNIT_WORDS: ReadonlyArray<{ unit: string; pattern: RegExp }> = [
+    { unit: '%', pattern: /^\s*(?:%|percent|per\s+cent)(?![\p{L}\p{N}])/iu },
     { unit: 'dB', pattern: /^\s*(?:d\s?b|decibels?)(?![\p{L}\p{N}])/iu },
-    {
-        unit: 'other',
-        pattern: /^\s*(?:k?hz|bpm|ms|s|sec|seconds?|beats?|bars?|semitones?|cents?)(?![\p{L}\p{N}])/iu,
-    },
+    { unit: 'kHz', pattern: /^\s*(?:khz|kilohertz)(?![\p{L}\p{N}])/iu },
+    { unit: 'Hz', pattern: /^\s*(?:hz|hertz)(?![\p{L}\p{N}])/iu },
+    { unit: 'bpm', pattern: /^\s*bpm(?![\p{L}\p{N}])/iu },
+    { unit: 'ms', pattern: /^\s*(?:ms|milliseconds?)(?![\p{L}\p{N}])/iu },
+    { unit: 'beats', pattern: /^\s*beats?(?![\p{L}\p{N}])/iu },
+    { unit: 'bars', pattern: /^\s*bars?(?![\p{L}\p{N}])/iu },
+    { unit: 'semitones', pattern: /^\s*semitones?(?![\p{L}\p{N}])/iu },
+    { unit: 'cents', pattern: /^\s*cents?(?![\p{L}\p{N}])/iu },
+    { unit: 's', pattern: /^\s*(?:s|secs?|seconds?)(?![\p{L}\p{N}])/iu },
 ];
+
+/** The unit word a text opens with, by its canonical spelling, and how much of the text it takes. */
+function readUnitWord(text: string): { unit: string; length: number } | null {
+    for (const { unit, pattern } of UNIT_WORDS) {
+        const match = pattern.exec(text);
+        if (match !== null) {
+            return { unit, length: match[0].length };
+        }
+    }
+    return null;
+}
 
 /** The unit a figure is stated in, and how much of the text after it the unit word takes. */
 function readUnit(raw: string, after: string): { unit: StatedFigure['unit']; length: number } {
     if (raw.endsWith('%')) {
         return { unit: '%', length: 0 };
     }
-    for (const { unit, pattern } of UNIT_WORDS) {
-        const match = pattern.exec(after);
-        if (match !== null) {
-            return { unit, length: match[0].length };
-        }
-    }
-    return { unit: null, length: 0 };
+    return readUnitWord(after) ?? { unit: null, length: 0 };
 }
 
 function readConnector(before: string): StatedFigure['connector'] {
@@ -188,6 +225,18 @@ function statesWord(words: string, vocabulary: ReadonlySet<string>): boolean {
     return words.split(' ').some((word) => vocabulary.has(word));
 }
 
+/**
+ * The comparative the words beside a figure state, if any. "Lower" opening the clause is its verb
+ * ("lower it 2 dB"), a move like "drop", not a comparison.
+ */
+function findComparativeWord(words: string): string | null {
+    const tokens = words.split(' ').filter((word) => word.length > 0);
+    const verbIndex = tokens.findIndex((word) => !CLAUSE_OPENING_WORDS.has(word));
+    return (
+        tokens.find((word, index) => COMPARATIVE_WORDS.has(word) && !(word === 'lower' && index === verbIndex)) ?? null
+    );
+}
+
 /** The one figure a clause states, with its unit, connector and direction, read from the masked clause. */
 function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several' | 'unreadable' {
     const numbers = findPromptNumbers(clause.masked);
@@ -225,6 +274,24 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         words,
     };
 }
+
+/** The comparative a clause states beside its one figure ("2 dB more", "1 dB quieter"), if it states both. */
+function readFigureComparative(clause: RefinementClause): string | null {
+    const figure = readFigure(clause);
+    return typeof figure === 'string' ? null : findComparativeWord(figure.words);
+}
+
+/** The unit a clause's one figure is stated in, or `null` when it states no unit or not exactly one figure. */
+function readFigureUnit(clause: RefinementClause): string | null {
+    const figure = readFigure(clause);
+    return typeof figure === 'string' ? null : figure.unit;
+}
+
+/** How the one figure a refinement clause states reads, beside the value it binds. */
+export const refinementFigure = {
+    comparative: readFigureComparative,
+    unit: readFigureUnit,
+} as const;
 
 function getLevelArguments(actionType: string): { absolute: string | null; relative: string | null } {
     const rules = getExecutableAppActionGroundingRules(actionType)?.valueRules ?? [];
@@ -314,10 +381,28 @@ function movePendingLevel(
 }
 
 /**
+ * A comparative beside a decibel figure compares it with something the clause does not name. Against a
+ * pending move, "2 dB more" or "1 dB quieter" could replace that move or add to it; beside a landing
+ * ("at -9 dB more") it contradicts the landing. Only a pending absolute level gives a moving comparative
+ * ("3 dB quieter") its anchor, which the move from the pending level reads.
+ */
+function findComparativeQuestion(
+    value: NonNullable<ProposalGroundingCommand['value']>,
+    figure: StatedFigure
+): string | null {
+    const comparative = findComparativeWord(figure.words);
+    if (comparative === null || (value.form === 'absolute' && figure.connector !== 'absolute')) {
+        return null;
+    }
+    const example = value.form === 'relative' ? `make it ${figure.raw} dB` : `put it at ${figure.raw} dB`;
+    return `"${comparative}" beside ${figure.raw} dB does not say whether it replaces the pending change or adds to it. State the new value, for example "${example}".`;
+}
+
+/**
  * A decibel figure against a pending level: `at`/`to` lands it, `by`/`up`/`down` moves it — from the
  * pending level when that is absolute — and an unsigned figure with neither keeps the pending change's
- * form and sign. A signed figure with no connector, or an unsigned one against a pending absolute
- * level, could be either and is asked.
+ * form and sign. A signed figure with no connector, an unsigned one against a pending absolute level,
+ * or a comparative beside the figure against a pending move could be either and is asked.
  */
 function resolveLevelValue(
     command: ProposalGroundingCommand,
@@ -329,6 +414,10 @@ function resolveLevelValue(
     }
     if (figure.direction === 'conflicting') {
         return clarify(`Should ${figure.raw} dB go up or down?`);
+    }
+    const comparativeQuestion = findComparativeQuestion(value, figure);
+    if (comparativeQuestion !== null) {
+        return clarify(comparativeQuestion);
     }
     const levels = getLevelArguments(command.type);
     if (figure.connector === 'absolute') {
@@ -383,10 +472,10 @@ function getReadWords(command: ProposalGroundingCommand, context: ProjectContext
 }
 
 /**
- * Any other figure lands where it says, read by the clause's own wording; a relative change, a
- * signed figure with no connector, an unsigned one in a signed range, or a figure with no connector
- * beside a word this reading cannot tell is asked instead. Side and direction words are read only
- * outside object names, so a track named "Left Guitar" states no side.
+ * Any other figure lands only where it says: unsigned, after `to`/`at` or standing bare, read by the
+ * clause's own wording. A signed figure, a relative change, a bare figure in a signed range or beside a
+ * word this reading cannot tell, and a pan with neither a side nor `to`/`at` are asked instead. Side and
+ * direction words are read only outside object names, so a track named "Left Guitar" states no side.
  */
 function resolvePlainValue(
     command: ProposalGroundingCommand,
@@ -394,33 +483,94 @@ function resolvePlainValue(
     figure: StatedFigure,
     context: ProjectContext
 ): ValueResolution {
-    if (figure.sign !== null && figure.connector === null) {
-        return clarify(`Is ${figure.raw} where the value should land? Say "to ${figure.raw}".`);
+    const isPan = command.type === 'setTrackPan';
+    if (figure.sign !== null) {
+        const unsigned = String(figure.magnitude);
+        return clarify(
+            isPan
+                ? `Which side should it pan to? Say "${unsigned} left" or "${unsigned} right".`
+                : `Is ${figure.raw} where the value should land? A refinement reads no signed value; restate the change with its target, as in "set ... to ${figure.raw}".`
+        );
     }
     const moveQuestion = `Say where the value should land instead of how far it should move from ${figure.raw}.`;
     if (figure.connector === 'relative' || figure.direction !== null || statesWord(figure.words, RELATIVE_WORDS)) {
         return clarify(moveQuestion);
     }
-    const isPan = command.type === 'setTrackPan';
+    if (figure.connector === 'absolute') {
+        return { status: 'bound', argument: value.argument, expected: null, keptPendingDirection: false };
+    }
     const unreadWord = findUnreadWord(figure.words, getReadWords(command, context));
-    if (figure.connector === null && unreadWord !== null) {
+    if (unreadWord !== null) {
         return clarify(`Where should the value land? "${unreadWord}" beside ${figure.raw} does not say.`);
     }
     const statesSide = isPan && statesWord(figure.words, PAN_SIDE_WORDS);
-    if (figure.connector === null && figure.sign === null && isSignedDomain(command, context) && !statesSide) {
+    if (isSignedDomain(command, context) && !statesSide) {
         return clarify(`Should ${figure.raw} be positive or negative?`);
     }
     return { status: 'bound', argument: value.argument, expected: null, keptPendingDirection: false };
 }
 
-function isUnitCompatible(command: ProposalGroundingCommand, figure: StatedFigure): boolean {
+/**
+ * The unit a pending value is stated in: dB for a level, a device parameter's own declared unit, a
+ * percentage for a pan or a linear level the registry scales, and otherwise the unit a value argument
+ * is named for (`bpm`, `semitones`, `beats`); `null` when it takes none.
+ */
+function getOwnUnit(command: ProposalGroundingCommand, context: ProjectContext): string | null {
+    const { value } = command;
+    if (value === null) {
+        return null;
+    }
+    if (value.unit === 'dB') {
+        return 'dB';
+    }
+    const parameter = findPendingParameter(command, context);
+    if (parameter !== undefined) {
+        return parameter.unit.trim().length === 0 ? null : (readUnitWord(parameter.unit)?.unit ?? parameter.unit);
+    }
+    const rule = getExecutableAppActionGroundingRules(command.type)?.valueRules.find(
+        (candidate) => candidate.argument === value.argument
+    );
+    if (
+        rule?.kind === 'number-if-present' &&
+        (rule.direction === 'pan' || rule.scale === 'unit-interval' || rule.scale === 'percentage-only')
+    ) {
+        return '%';
+    }
+    return readUnitWord(value.argument)?.unit ?? null;
+}
+
+/** A figure can mean a pending value it states no unit for, or one stated in the value's own unit. */
+function isUnitCompatible(command: ProposalGroundingCommand, figure: StatedFigure, context: ProjectContext): boolean {
     if (command.value === null) {
         return false;
     }
-    if (command.value.unit === 'dB') {
-        return figure.unit === 'dB' || figure.unit === null;
+    return figure.unit === null || figure.unit === getOwnUnit(command, context);
+}
+
+/**
+ * A figure in another unit than the one pending value the clause can mean: asked for a plain value,
+ * whose figure may only be in its own unit, and refused for a level, as any figure in a unit no pending
+ * value takes is.
+ */
+function readUnitMismatch(
+    scoped: readonly PendingCommandView[],
+    figure: StatedFigure,
+    context: ProjectContext
+): FigureRead {
+    const valued = scoped.filter((view) => view.command.value !== null);
+    const [only] = valued;
+    if (valued.length === 1 && only !== undefined && only.command.value?.unit !== 'dB') {
+        const own = getOwnUnit(only.command, context);
+        const stated = `${figure.raw} ${figure.unit ?? ''}`.trim();
+        return {
+            kind: 'clarify',
+            question:
+                own === null
+                    ? `The pending value takes no unit. What should it be instead of ${stated}?`
+                    : `The pending value is in ${own}. What should it be in ${own} instead of ${stated}?`,
+        };
     }
-    return figure.unit !== 'dB' || command.type === 'setDeviceParameter';
+    return { kind: 'refused', reason: `The pending proposal has no value stated in the unit of ${figure.raw}.` };
 }
 
 function resolveFigure(
@@ -476,8 +626,11 @@ export function bindRefinementFigure(input: {
         return { kind: 'refused', reason: `The refinement clause "${clause.text.trim()}" states more than one value.` };
     }
     const unit = figure.unit === 'dB' ? ' dB' : '';
-    const compatible = scoped.filter((view) => isUnitCompatible(view.command, figure));
-    if (compatible.length === 0 && input.removed.some((view) => isUnitCompatible(view.command, figure))) {
+    const compatible = scoped.filter((view) => isUnitCompatible(view.command, figure, input.context));
+    if (
+        compatible.length === 0 &&
+        input.removed.some((view) => isUnitCompatible(view.command, figure, input.context))
+    ) {
         return {
             kind: 'refused',
             reason: `${figure.raw}${unit} in "${clause.text.trim()}" can only mean a pending change the refinement removes.`,
@@ -491,7 +644,7 @@ export function bindRefinementFigure(input: {
     }
     const [only] = compatible;
     if (only === undefined) {
-        return { kind: 'refused', reason: `The pending proposal has no value stated in the unit of ${figure.raw}.` };
+        return readUnitMismatch(scoped, figure, input.context);
     }
     if (compatible.length > 1) {
         return { kind: 'clarify', question: `Which pending change should ${figure.raw}${unit} apply to?` };

@@ -6,6 +6,8 @@ import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../.
 import {
     bindRefinementFigure,
     LEVEL_DIRECTION_PHRASES,
+    PAN_SIDE_WORDS,
+    refinementFigure,
     type BoundRefinementValue,
     type RefinementClause,
 } from './bindRefinementFigure';
@@ -32,8 +34,11 @@ type CommandView = { index: number; command: ProposalGroundingCommand; denotes: 
 /**
  * What a refinement removes from the pending card. A removal names one object of that card in whole,
  * after its article and an optional operation word; a name merely contained in the phrase never
- * counts, and a removal that names no pending object refuses the refinement. A negated clause is a
- * removal of the one pending object it names, and is asked when it names none.
+ * counts, and a removal that names no pending object refuses the refinement, except a `not`, `except`
+ * or `without` with no figure: naming a project object outside the card it protects that object, and
+ * naming no project object at all it is read and left alone. A negated clause with a figure or a
+ * negated change removes the changes of the operation it states on the one pending object it names,
+ * and is asked when it names none.
  */
 type RefinementRemovals =
     | { status: 'refused'; reason: string }
@@ -271,9 +276,31 @@ function negatesChange(clause: RefinementClause, changePhrases: readonly string[
 }
 
 /**
+ * Which pending commands the operation a negated clause states can mean: a level word or a figure in
+ * dB means the levels, a pan word or side the pan, and an operation word ("gain", "mute") its own
+ * commands, as a removal's trailing operation word does. `null` when the clause states no operation,
+ * so it means every change on the object it names.
+ */
+function readNegatedOperation(clause: RefinementClause): ((command: ProposalGroundingCommand) => boolean) | null {
+    const words = normalizePromptText(clause.masked);
+    const types = new Set(words.split(' ').flatMap((word) => OPERATION_WORDS[word] ?? []));
+    if (words.split(' ').some((word) => PAN_SIDE_WORDS.has(word))) {
+        types.add('setTrackPan');
+    }
+    const statesLevel =
+        refinementFigure.unit(clause) === 'dB' ||
+        LEVEL_DIRECTION_PHRASES.some((phrase) => ` ${words} `.includes(` ${phrase} `));
+    if (types.size === 0 && !statesLevel) {
+        return null;
+    }
+    return (command) => types.has(command.type) || (statesLevel && command.value?.unit === 'dB');
+}
+
+/**
  * A negated clause ("don't turn the snare down 2 dB", "not the snare at 2 dB") states what not to do,
  * so it binds no value and restates no change: naming one pending object, it removes that object's
- * pending changes and protects it; naming none, or anything else, it is asked.
+ * pending changes of the operation it states, and protects the object once none of its changes is
+ * left; naming none, or anything else, it is asked.
  */
 function readNegatedClause(input: RemovalClauseInput): RemovalClauseRead {
     const { clause, commands, context } = input;
@@ -288,12 +315,18 @@ function readNegatedClause(input: RemovalClauseInput): RemovalClauseRead {
     if (pendingObjectId === undefined || pendingObjectIds.length !== 1) {
         return { kind: 'clarify', question };
     }
-    for (const view of commands) {
-        if (view.denotes.has(pendingObjectId)) {
-            input.removed.add(view.index);
-        }
+    const onObject = commands.filter((view) => view.denotes.has(pendingObjectId));
+    const operation = readNegatedOperation(clause);
+    const negated = operation === null ? onObject : onObject.filter((view) => operation(view.command));
+    if (negated.length === 0) {
+        return { kind: 'clarify', question };
     }
-    input.removedTargets.push({ id: pendingObjectId, name: nameObject(context, pendingObjectId) });
+    for (const view of negated) {
+        input.removed.add(view.index);
+    }
+    if (onObject.every((view) => input.removed.has(view.index))) {
+        input.removedTargets.push({ id: pendingObjectId, name: nameObject(context, pendingObjectId) });
+    }
     return { kind: 'read' };
 }
 
@@ -308,9 +341,15 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
         const negated = EXCLUSION.test(text) || negatesChange(clause, input.changePhrases, statesFigure);
         return negated ? readNegatedClause(input) : { kind: 'none' };
     }
+    const excludes = EXCLUSION.test(text);
     const reference = stripReference(stated);
     const candidate = candidates.find((entry) => entry.name === reference.name);
     if (candidate === undefined) {
+        // "not too loud", "without changing anything else": a negation naming no object of the project
+        // removes nothing and asks for nothing this reading can hold, so it is read and left alone.
+        if (excludes && findReferences(clause.text, candidates).length === 0) {
+            return { kind: 'read' };
+        }
         return { kind: 'refused', reason: describeUnresolvedRemoval(stated, 'object') };
     }
     const onTarget = commands.filter(
@@ -325,7 +364,7 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     if (onTarget.length === 0 || pendingObjectId === undefined || pendingObjectIds.length !== 1) {
         const [outsideId] = Array.from(candidate.denotes);
         if (
-            alone !== null &&
+            (alone !== null || excludes) &&
             pendingObjectIds.length === 0 &&
             candidate.denotes.size === 1 &&
             outsideId !== undefined
@@ -504,11 +543,28 @@ function bindRefinementValues(input: {
 }
 
 /**
+ * Whether a clause the refinement does not remove states a comparative beside its figure ("2 dB more",
+ * "1 dB quieter"). Such a clause is read against the pending value it compares with, never admitted
+ * as the plain figure a request reading the refinement text alone would take it for.
+ */
+function statesFigureComparative(input: {
+    text: string;
+    context: ProjectContext;
+    removalClauseStarts: ReadonlySet<number>;
+}): boolean {
+    return readClauseSpans(input.text, input.context).some(
+        (clause) => !input.removalClauseStarts.has(clause.start) && refinementFigure.comparative(clause) !== null
+    );
+}
+
+/**
  * How a refinement's own text reads against the pending card it refines: what it removes, the
- * comparative it states, and the value each of its clauses binds to a pending command.
+ * comparative it states on its own or beside a figure, and the value each of its clauses binds to a
+ * pending command.
  */
 export const refinementClauseReader = {
     removals: readRefinementRemovals,
     comparative: readRefinementComparative,
+    figureComparative: statesFigureComparative,
     values: bindRefinementValues,
 } as const;

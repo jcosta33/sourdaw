@@ -1,6 +1,12 @@
-import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+import {
+    getExecutableAppActionEffect,
+    getExecutableAppActionGroundingRules,
+    getExecutableAppActionProviderSchema,
+    isExecutableAppActionType,
+} from '#/modules/Command/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
+import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingTarget, type ProposalGroundingValue } from '../../models/ProposalGroundingBasis';
 
 /** The arguments the action registry declares as this type's targets, in registry order. */
@@ -195,8 +201,50 @@ function getValue(
     };
 }
 
+/**
+ * What a creating command creates, as its payload carries it: the id fields the application minted for
+ * the new object — present in the payload, yet no argument the provider may state — and the names its
+ * provider arguments give it (a bus's name, a device type both by its id and as the project's device
+ * catalogue names it, "Compressor"). `null` for a command that creates nothing, or whose payload
+ * carries no minted id.
+ */
+function getCreatedObject(
+    actionType: string,
+    argumentsRecord: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): { idFields: string[]; names: string[] } | null {
+    if (
+        !isExecutableAppActionType(actionType) ||
+        (getExecutableAppActionEffect(actionType)?.creates ?? []).length === 0
+    ) {
+        return null;
+    }
+    const declared = getExecutableAppActionProviderSchema(actionType).properties;
+    const idFields = Object.keys(argumentsRecord).filter(
+        (field) =>
+            field.endsWith('Id') &&
+            !field.startsWith('expected') &&
+            typeof argumentsRecord[field] === 'string' &&
+            !Object.hasOwn(declared, field)
+    );
+    if (idFields.length === 0) {
+        return null;
+    }
+    const names = (getExecutableAppActionGroundingRules(actionType)?.valueRules ?? []).flatMap((rule) => {
+        const value = argumentsRecord[rule.argument];
+        const namesObject = rule.kind === 'string-literal' || rule.kind === 'text-after-keyword-if-present';
+        if (!namesObject || typeof value !== 'string' || value.trim().length === 0) {
+            return [];
+        }
+        const catalogueName = context.availableDeviceTypes?.find((deviceType) => deviceType.id === value)?.name;
+        return catalogueName === undefined ? [value] : [value, catalogueName];
+    });
+    return { idFields, names };
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
+    createdObject: getCreatedObject,
     identity: getIdentity,
     objectIds: getObjectIds,
     targetObjects: getTargetObjects,

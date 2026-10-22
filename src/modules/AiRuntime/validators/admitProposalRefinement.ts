@@ -41,6 +41,19 @@ export function admitProposalRefinement(
 
 type Command = { type: string; payload?: unknown };
 
+/**
+ * What a creating command creates, read from the action registry by the caller: the id fields the
+ * application minted for the new object, and the names its provider arguments give it. `null` when
+ * the command creates nothing.
+ */
+export type ReadCreatedObject = (
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+) => { idFields: readonly string[]; names: readonly string[] } | null;
+
+type CreatedObjectOf = (command: Command) => ReturnType<ReadCreatedObject>;
+
 function payloadOf(command: Command): Record<string, unknown> {
     if (typeof command.payload === 'object' && command.payload !== null && !Array.isArray(command.payload)) {
         return command.payload as Record<string, unknown>;
@@ -48,12 +61,31 @@ function payloadOf(command: Command): Record<string, unknown> {
     return {};
 }
 
-/** A target is identified by the command's explicit object ids, not by its place in the batch. */
-function targetOf(command: Command): string {
-    const ids = Object.entries(payloadOf(command))
-        .filter(([field, value]) => field.endsWith('Id') && !field.startsWith('expected') && typeof value === 'string')
-        .map(([field, value]) => `${field}=${String(value)}`);
-    return [command.type, ...ids].join('|');
+function readsCreatedObjects(createdObject: ReadCreatedObject, context: ProjectContext): CreatedObjectOf {
+    return (command) => createdObject(command.type, payloadOf(command), context);
+}
+
+/** The object ids a command's payload states, without the ids the application minted for what it creates. */
+function statedIdEntries(command: Command, createdObjectOf: CreatedObjectOf): Array<[string, string]> {
+    const minted = new Set(createdObjectOf(command)?.idFields ?? []);
+    const entries: Array<[string, string]> = [];
+    for (const [field, value] of Object.entries(payloadOf(command))) {
+        if (field.endsWith('Id') && !field.startsWith('expected') && typeof value === 'string' && !minted.has(field)) {
+            entries.push([field, value]);
+        }
+    }
+    return entries;
+}
+
+/**
+ * A target is identified by the command's explicit object ids, not by its place in the batch. A
+ * creation is identified by where it creates and what it names, never by the id minted for it, which
+ * every grounding mints afresh.
+ */
+function targetOf(command: Command, createdObjectOf: CreatedObjectOf): string {
+    const ids = statedIdEntries(command, createdObjectOf).map(([field, value]) => `${field}=${value}`);
+    const names = (createdObjectOf(command)?.names ?? []).map((name) => `name=${name.toLowerCase()}`);
+    return [command.type, ...ids, ...names].join('|');
 }
 
 function operationPattern(actionType: string): RegExp | null {
@@ -80,10 +112,11 @@ function isNegatedRemoval(clause: string, removalIndex: number): boolean {
     );
 }
 
-const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|keep|retain|preserve|leave)\b/gi;
-const REMOVAL = /^(?:remove|drop|omit|exclude|skip)$/i;
+const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|not|except|without|keep|retain|preserve|leave)\b/gi;
+const REMOVAL = /^(?:remove|drop|omit|exclude|skip|not|except|without)$/i;
 const BINDING_WORDS = new Set([
     'the',
+    'new',
     'its',
     'pending',
     'proposed',
@@ -208,7 +241,8 @@ function intentionForMention(input: {
     mentions: ReturnType<typeof targetMentions>;
     directives: RegExpMatchArray[];
     index: number;
-    operation: RegExp;
+    /** The word the operation is named by, or `null` when the mention names the whole change, as a created object's name does. */
+    operation: RegExp | null;
 }): 'remove' | 'preserve' | null {
     const { clause, mentions, directives, index, operation } = input;
     const mention = mentions[index]!;
@@ -225,6 +259,10 @@ function intentionForMention(input: {
     if (!onlyBindingWords(beforeTarget)) {
         return null;
     }
+    const intention = REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';
+    if (operation === null) {
+        return intention;
+    }
     const nextDirective = directives.find((entry) => (entry.index ?? 0) > mention.end)?.index;
     const nextTarget = mentions[index + 1]?.start;
     const end = Math.min(nextDirective ?? clause.length, nextTarget ?? clause.length);
@@ -237,16 +275,54 @@ function intentionForMention(input: {
     ) {
         return null;
     }
-    return REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';
+    return intention;
 }
 
-/** Whether the request expressly drops this pending command, by its own target and operation. */
-export function explicitlyRemovesCommand(prompt: string, command: Command, context: ProjectContext): boolean {
-    const payload = payloadOf(command);
-    const targetIds = Object.entries(payload)
-        .filter(([field, value]) => field.endsWith('Id') && !field.startsWith('expected') && typeof value === 'string')
-        .map(([, value]) => String(value));
-    const clauses = clausesOf(prompt);
+/** Whether every clause naming this id with a directive removes it, and at least one does. */
+function removesMentioned(input: {
+    prompt: string;
+    context: ProjectContext;
+    candidateIds: readonly string[];
+    id: string;
+    operation: RegExp | null;
+}): boolean {
+    const intentions = clausesOf(input.prompt).flatMap((clause) => {
+        const mentions = targetMentions(clause, input.context, input.candidateIds);
+        const quotes = quotedRanges(clause);
+        const directives = Array.from(clause.matchAll(DIRECTIVE)).filter(
+            (entry) => !quotes.some((quote) => (entry.index ?? 0) >= quote.start && (entry.index ?? 0) < quote.end)
+        );
+        return mentions.flatMap((mention, index) => {
+            if (mention.id !== input.id) {
+                return [];
+            }
+            const intention = intentionForMention({ clause, mentions, directives, index, operation: input.operation });
+            return intention === null ? [] : [intention];
+        });
+    });
+    return intentions.includes('remove') && !intentions.includes('preserve');
+}
+
+/**
+ * Whether the request expressly drops this pending command, by its own target and operation. A
+ * creation is dropped by the name of what it creates ("not the compressor"), which names the whole
+ * change; the id minted for it names nothing the user can say.
+ */
+export function explicitlyRemovesCommand(
+    prompt: string,
+    command: Command,
+    context: ProjectContext,
+    createdObject: ReadCreatedObject
+): boolean {
+    const createdObjectOf = readsCreatedObjects(createdObject, context);
+    const created = createdObjectOf(command);
+    if (created !== null) {
+        const { names } = created;
+        return names.some((name) =>
+            removesMentioned({ prompt, context, candidateIds: names, id: name, operation: null })
+        );
+    }
+    const targetIds = statedIdEntries(command, createdObjectOf).map(([, value]) => value);
     if (targetIds.length === 0) {
         return false;
     }
@@ -254,21 +330,7 @@ export function explicitlyRemovesCommand(prompt: string, command: Command, conte
     if (operation === null) {
         return false;
     }
-    return targetIds.every((id) => {
-        const intentions = clauses.flatMap((clause) => {
-            const mentions = targetMentions(clause, context, targetIds);
-            const quotes = quotedRanges(clause);
-            const directives = Array.from(clause.matchAll(DIRECTIVE)).filter(
-                (entry) => !quotes.some((quote) => (entry.index ?? 0) >= quote.start && (entry.index ?? 0) < quote.end)
-            );
-            return mentions.flatMap((mention, index) => {
-                const intention =
-                    mention.id === id ? intentionForMention({ clause, mentions, directives, index, operation }) : null;
-                return intention === null ? [] : [intention];
-            });
-        });
-        return intentions.includes('remove') && !intentions.includes('preserve');
-    });
+    return targetIds.every((id) => removesMentioned({ prompt, context, candidateIds: targetIds, id, operation }));
 }
 
 /**
@@ -281,6 +343,7 @@ export function validateRefinedProposalActions(input: {
     actions: readonly Command[];
     prompt: string;
     context: ProjectContext;
+    createdObject: ReadCreatedObject;
 }): { status: 'valid' } | { status: 'refused'; reason: string } {
     // Persistence rechecks live authority. A card cancelled during planning receives that
     // authoritative reason there, even when its displayed status has not settled.
@@ -298,16 +361,17 @@ export function validateRefinedProposalActions(input: {
             changed.push(old);
         }
     }
+    const createdObjectOf = readsCreatedObjects(input.createdObject, input.context);
     for (const old of changed) {
-        const identity = targetOf(old);
-        const changedIndex = remaining.findIndex((next) => targetOf(next) === identity);
+        const identity = targetOf(old, createdObjectOf);
+        const changedIndex = remaining.findIndex((next) => targetOf(next, createdObjectOf) === identity);
         if (changedIndex >= 0) {
             // The ordinary grounding route has already checked this changed command against the
             // new request's target and value; keep its paired occurrence out of addition matching.
             remaining.splice(changedIndex, 1);
             continue;
         }
-        if (!explicitlyRemovesCommand(input.prompt, old, input.context)) {
+        if (!explicitlyRemovesCommand(input.prompt, old, input.context, input.createdObject)) {
             return {
                 status: 'refused',
                 reason: `Refined proposal omits a pending ${old.type} command without an explicit request to remove it.`,

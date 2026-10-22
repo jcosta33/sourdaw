@@ -56,6 +56,7 @@ import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVoca
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
+import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -1062,6 +1063,7 @@ const planPromptIntent = inject({ logger })(
                             actions: [stemImport.action],
                             prompt,
                             context,
+                            createdObject: proposalCommandShape.createdObject,
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1132,6 +1134,7 @@ const planPromptIntent = inject({ logger })(
                             actions: grounded.actions,
                             prompt,
                             context,
+                            createdObject: proposalCommandShape.createdObject,
                         });
                         if (preservation.status === 'refused') {
                             return {

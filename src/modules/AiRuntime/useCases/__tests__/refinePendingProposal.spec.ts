@@ -34,6 +34,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
 import { validateRefinedProposalActions } from '../../validators/admitProposalRefinement';
+import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
@@ -470,7 +471,13 @@ describe('refining the pending proposal', () => {
         const leftGain = { type: 'setTrackGain', payload: { trackId: 'track-guitar-left', gain: 0.8 } };
         const dottedMute = { type: 'muteTrack', payload: { trackId: 'track-room-dot', muted: true } };
         const admission = (prompt: string, pendingAction: { type: string; payload: Record<string, unknown> }) =>
-            validateRefinedProposalActions({ pendingActions: [pendingAction], actions: [], prompt, context }).status;
+            validateRefinedProposalActions({
+                pendingActions: [pendingAction],
+                actions: [],
+                prompt,
+                context,
+                createdObject: proposalCommandShape.createdObject,
+            }).status;
 
         expect(admission('Drop Guitar Left pan and leave Guitar pan as proposed.', guitarPan)).toBe('refused');
         expect(admission('Drop Room Mic mute and leave Guitar Left pan as proposed.', leftPan)).toBe('refused');

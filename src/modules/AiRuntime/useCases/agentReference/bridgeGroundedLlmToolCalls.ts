@@ -5675,7 +5675,10 @@ function findSilentOmission(input: {
         if (input.inheritedOrRestated.has(index) || input.removed.has(index)) {
             continue;
         }
-        if (!explicitlyRemovesCommand(input.prompt, { type: command.type, payload: command.payload }, input.context)) {
+        const pendingCommand = { type: command.type, payload: command.payload };
+        if (
+            !explicitlyRemovesCommand(input.prompt, pendingCommand, input.context, proposalCommandShape.createdObject)
+        ) {
             return `Refined proposal omits a pending ${describePendingCommand(command, input.context)} command without an explicit request to remove it`;
         }
     }
@@ -5969,7 +5972,14 @@ function bridgeRefinedLlmToolCalls(
     });
     const direct = bridgeGroundedLlmToolCalls(unrefined);
     const inheritedCommandIndexes = partitionRefinedCalls(calls, basis);
-    if (direct.rejections.length === 0) {
+    // "Turn Vocals down 2 dB more" grounds by itself as a plain 2 dB cut, which the comparative beside
+    // its figure contradicts; such a batch is read against the pending values it compares with.
+    const comparesFigure = refinementClauseReader.figureComparative({
+        text: prompt,
+        context,
+        removalClauseStarts: removals.removalClauseStarts,
+    });
+    if (direct.rejections.length === 0 && !comparesFigure) {
         const carried = getCarriedCommandIndexes(calls, basis);
         const keptRemoval = [...carried].find((index) => removals.removedCommandIndexes.has(index));
         if (keptRemoval !== undefined) {
