@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -9,6 +10,14 @@ import type { executeAppAction } from '#/modules/Command/useCases';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<typeof executeAppAction>(),
+    rolling: false,
+    stopPlayback: vi.fn<() => Promise<void>>(),
+}));
+
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    isTransportIdle: () => !mocks.rolling,
+    stopPlayback: mocks.stopPlayback,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -37,6 +46,8 @@ function setRepairRequired(): void {
 describe('repairProjectData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.rolling = false;
+        mocks.stopPlayback.mockResolvedValue(undefined);
         agentProjectRepairStateStore.set(null);
     });
 
@@ -78,6 +89,53 @@ describe('repairProjectData', () => {
             'The repair could not clear the problem - ask the assistant to repair the project',
             'warning'
         );
+    });
+
+    it('stops the transport and waits for its take commit before it dispatches the repair', async () => {
+        setRepairRequired();
+        const settle = Promise.withResolvers<void>();
+        mocks.stopPlayback.mockReturnValue(settle.promise);
+        mocks.executeAppAction.mockResolvedValue(undefined);
+
+        const repair = repairProjectData();
+        await Promise.resolve();
+        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        settle.resolve();
+
+        await expect(repair).resolves.toBe('repaired');
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+    });
+
+    it('does not stop a transport when there is nothing to repair', async () => {
+        await expect(repairProjectData()).resolves.toBe('nothing-to-repair');
+
+        expect(mocks.stopPlayback).not.toHaveBeenCalled();
+    });
+
+    it('does not dispatch the repair when the stop fails, and tells the user', async () => {
+        setRepairRequired();
+        mocks.stopPlayback.mockRejectedValue(new Error('recorder flush failed'));
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+        await expect(repairProjectData()).resolves.toBe('refused');
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith('Playback could not be stopped - stop it and repair again', 'warning');
+        expect(warn).toHaveBeenCalledOnce();
+        warn.mockRestore();
+    });
+
+    it('names a transport that started again as the reason a repair was refused', async () => {
+        setRepairRequired();
+        mocks.rolling = true;
+        mocks.executeAppAction.mockImplementation(async () => {
+            throw conflictError();
+        });
+
+        await expect(repairProjectData()).resolves.toBe('refused');
+
+        expect(notifyUser).toHaveBeenCalledWith('Playback started during the repair - stop it and repair again', 'warning');
     });
 
     it('propagates a real failure unchanged', async () => {

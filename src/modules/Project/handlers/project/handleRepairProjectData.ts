@@ -1,7 +1,6 @@
-import { logger } from '#/infra/logger/appLogger';
 import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { DOC_PREFIX_ROOT, mutateCrdtDoc, projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
-import { isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
+import { isTransportIdle } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 type ConflictRepairCandidate = Extract<
@@ -67,14 +66,14 @@ export const handleRepairProjectData = createHandler<'repairProjectData'>({
 
         // The projection below resets the transport store, which says nothing
         // to the scheduler or the engine: a roll still running would play on
-        // against a store that reads stopped. The halt itself is synchronous,
-        // so nothing can restart between it and the projection; only the
-        // take's commit outlives it, and that is awaited after the write.
-        const teardown = isTransportIdle() ? Promise.resolve() : stopPlayback();
-        // A refused repair or a throw never reaches the awaiting hooks below.
-        teardown.catch((error: unknown) => {
-            logger.warn(new Error('Transport teardown failed during project repair', { cause: error }));
-        });
+        // against a store that reads stopped, and a take still closing would
+        // lose its pending close to the reset. The dispatcher stops the
+        // transport and lands the take's commit first (`repairProjectData`), so
+        // a transport that rolls again by now is the user's newer gesture:
+        // refuse rather than stop it under them.
+        if (!isTransportIdle()) {
+            return { status: 'conflict', reason: 'The transport started while the repair was dispatched.' };
+        }
 
         const conflictPaths = repairState.repairCandidates
             .filter(
@@ -99,11 +98,7 @@ export const handleRepairProjectData = createHandler<'repairProjectData'>({
         // A repair that leaves the gate up fixed nothing the user can act on:
         // report it as a conflict so the dispatch refuses rather than claiming
         // success over a project that still cannot be edited.
-        if (agentProjectRepairStateStore.value !== null) {
-            return { status: 'conflict' };
-        }
-        const settleTeardown = (): Promise<void> => teardown;
-        return { status: 'written', afterCommit: settleTeardown, afterAmbiguousCommit: settleTeardown };
+        return agentProjectRepairStateStore.value === null ? { status: 'written' } : { status: 'conflict' };
     },
     describe: () => ({ label: 'Repair project data' }),
     batchExecution: 'singleton',

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
@@ -14,13 +13,11 @@ const mocks = vi.hoisted(() => ({
     mutateCrdtDoc: vi.fn(),
     projectCrdtToStores: vi.fn(),
     rolling: false,
-    stopPlayback: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     isTransportIdle: () => !mocks.rolling,
-    stopPlayback: mocks.stopPlayback,
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
@@ -50,10 +47,6 @@ describe('handleRepairProjectData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.rolling = false;
-        mocks.stopPlayback.mockImplementation(() => {
-            mocks.rolling = false;
-            return Promise.resolve();
-        });
         mocks.agentProjectRepairStateStore.value = null;
         clearHandlerRegistry();
         clearUndoHistory();
@@ -161,77 +154,38 @@ describe('handleRepairProjectData', () => {
         );
     });
 
-    it('stops a rolling transport before the projection resets the transport store', async () => {
-        setRepairState([{ kind: 'repair-project-invariants', targetIds: [] }]);
+    it('refuses a transport that is rolling when it executes, without writing or re-projecting', async () => {
+        setRepairState([
+            {
+                kind: 'choose-automerge-conflict-value',
+                conflictIds: ['conflict-gain'],
+                path: ['targets', 'track-bass', 'gain'],
+                targetIds: ['track-bass'],
+            },
+        ]);
         mocks.rolling = true;
-        let rollingAtProjection: boolean | null = null;
-        mocks.projectCrdtToStores.mockImplementation(() => {
-            rollingAtProjection = mocks.rolling;
-            mocks.agentProjectRepairStateStore.value = null;
-        });
-
-        await expect(executeAppAction({ type: 'repairProjectData' })).resolves.toBeUndefined();
-
-        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
-        expect(rollingAtProjection).toBe(false);
-        expect(mocks.stopPlayback.mock.invocationCallOrder[0]!).toBeLessThan(
-            mocks.projectCrdtToStores.mock.invocationCallOrder[0]!
-        );
-    });
-
-    it('waits for the take commit of the stopped transport before the repair resolves', async () => {
-        setRepairState([{ kind: 'repair-project-invariants', targetIds: [] }]);
-        mocks.rolling = true;
-        const flush = Promise.withResolvers<void>();
-        mocks.stopPlayback.mockImplementationOnce(() => {
-            mocks.rolling = false;
-            return flush.promise;
-        });
-        mocks.projectCrdtToStores.mockImplementation(() => {
-            mocks.agentProjectRepairStateStore.value = null;
-        });
-        let settled = false;
-
-        const repair = executeAppAction({ type: 'repairProjectData' }).then(() => {
-            settled = true;
-        });
-        await vi.waitFor(() => expect(mocks.projectCrdtToStores).toHaveBeenCalledOnce());
-        await Promise.resolve();
-        expect(settled).toBe(false);
-        flush.resolve();
-
-        await repair;
-        expect(settled).toBe(true);
-    });
-
-    it('reports a failed transport teardown when the repair itself is refused', async () => {
-        setRepairState([{ kind: 'repair-project-invariants', targetIds: [] }]);
-        mocks.rolling = true;
-        mocks.stopPlayback.mockRejectedValueOnce(new Error('recorder flush failed'));
-        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-        // The re-projection leaves the gate up, so the dispatch never reaches the awaiting hooks.
-        mocks.projectCrdtToStores.mockImplementation(() => undefined);
 
         await expect(executeAppAction({ type: 'repairProjectData' })).rejects.toThrow(
-            'Action conflicts with current project state: repairProjectData'
+            'Action conflicts with current project state: repairProjectData: The transport started while the repair was dispatched.'
         );
-        await vi.waitFor(() => expect(warn).toHaveBeenCalledOnce());
 
-        expect(warn.mock.calls[0]?.[0]).toMatchObject({
-            message: 'Transport teardown failed during project repair',
-        });
-        warn.mockRestore();
+        expect(mocks.mutateCrdtDoc).not.toHaveBeenCalled();
+        expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        expect(mocks.agentProjectRepairStateStore.value).not.toBeNull();
     });
 
-    it('leaves an idle transport alone', async () => {
+    it('repairs once the transport is idle again', async () => {
         setRepairState([{ kind: 'repair-project-invariants', targetIds: [] }]);
         mocks.projectCrdtToStores.mockImplementation(() => {
             mocks.agentProjectRepairStateStore.value = null;
         });
+        mocks.rolling = true;
+        await expect(executeAppAction({ type: 'repairProjectData' })).rejects.toThrow('transport started');
+        mocks.rolling = false;
 
         await expect(executeAppAction({ type: 'repairProjectData' })).resolves.toBeUndefined();
 
-        expect(mocks.stopPlayback).not.toHaveBeenCalled();
+        expect(mocks.projectCrdtToStores).toHaveBeenCalledOnce();
     });
 
     it('is admitted through the repair gate while every other action is refused', async () => {
