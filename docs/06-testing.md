@@ -723,8 +723,25 @@ Each guarded command inherits `TMPDIR`, `TMP`, and `TEMP` before startup, pointi
 private directory under the primary repository's `.agents/guard-storage/` on the repository's
 volume. Nested guards use separate directories and retain the shared memory admission registry.
 Normal exits, spawn errors, signals, and forced termination release storage only after the entire
-tracked process tree is proven stopped. A surviving process or unavailable process census retains
-the ownership record and reports failure; the guard never deletes old unowned system-temp caches.
+tracked process tree is proven stopped. A process that survives forced cleanup is a leak: it fails the run and records a guard-failure
+receipt that stops the lane. So is every storage verdict that names a cause rather than a lost
+proof: a census that proves a holder alive (such as a detached descendant with a working directory
+inside it), storage that is not private, denied or unusable inspection, a record the guard cannot
+read (the command deleted its own temp directory), and a release that throws. The first such census of a run is
+sticky: a later attempt that only hit the time bound never clears it, because the holder may still
+run. A leak records its final census in the receipt's `census` field, and `pnpm guard --recover`
+prints it. These never clear
+on their own and a later start cannot reclaim them, so reporting success would leave the directory
+forever. Only a census that could not finish a pass right now, with every diagnostic on the transient list
+in `areTransientProofReasons` (`scripts/resourceGuardProofReasons.ts`: a missed live process, an `lsof`
+catalog that lost a descriptor type, the census time bound, an unavailable `ps` list), after the
+tracked tree is proved exited, is retained without failing: the guard keeps the directory, prints
+one warning naming its path and the census reason, returns the command's own status, and records no
+receipt, because the lost proof says nothing about the work and keeping the files is the safe
+outcome. When the reclaim had already moved the payload under `.claims/`, the warning names that
+path and the retry resumes from the claim. Every later guarded start reclaims retained storage whose supervisor is dead once the
+census proves it free (`recoverGuardStorage`, run by `createGuardStorage`), and keeps what it still
+cannot prove. The guard never deletes old unowned system-temp caches.
 Before claiming or deleting storage, Unix command/environment census also vetoes removal when a
 process references its original temp path. This protects detached descendants that replace their
 environment and drop the session token. Argument references conservatively retain files too;
