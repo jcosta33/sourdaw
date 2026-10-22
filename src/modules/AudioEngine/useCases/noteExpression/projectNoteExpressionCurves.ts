@@ -52,8 +52,14 @@ type ProjectedNoteExpressionCurves = {
 
 type ProjectNoteExpressionCurvesInput = {
     note: NoteExpressionCurveSource;
-    /** The note's start as the caller plays it: grooved, looped and offset, so a curve moves with its note. */
+    /** Where the caller plays the note from: grooved, looped and offset, so a curve moves with its note. */
     startBeat: number;
+    /**
+     * How far into the note `startBeat` is when a clip trim or a loop pass cut its head off (the tail of a
+     * note that wraps a loop seam starts a part of the way through it). The curve is measured from the
+     * note's uncut start, `startBeat - beatsIntoNote`. Absent when the note plays from its start.
+     */
+    beatsIntoNote?: number;
     /** The frame the note's release is posted on; nothing at or after it is projected. */
     releaseFrame: number;
     /** The caller's beat-to-frame conversion, the same one that places the note's own start and release. */
@@ -119,7 +125,9 @@ function clampScheduledExpression(
  * for all three dimensions (each dimension's last point at or before the offset, else its scalar), because
  * the engines read a missing dimension as neutral and would otherwise reset a bend the note still holds.
  * The moment is the frame the caller's own clock gives the note's start beat plus the offset, so a curve
- * keeps its place in the note under a tempo map, a groove, a loop pass or a clip offset.
+ * keeps its place in the note under a tempo map, a groove, a loop pass or a clip offset. When a cut took the
+ * head off the note (`beatsIntoNote`), offsets still count from where the note began, so the points the cut
+ * passed fold into `atStart` and the rest keep their absolute positions, as `sliceMidiNoteExtent` re-cuts them.
  *
  * A change at or past `releaseFrame` is dropped: the model keeps every point inside the note, but a loop or
  * clip cut can shorten the note, and expression for a voice that has been released addresses nothing. A
@@ -129,6 +137,7 @@ function clampScheduledExpression(
 export function projectNoteExpressionCurves({
     note,
     startBeat,
+    beatsIntoNote = 0,
     releaseFrame,
     frameAtBeat,
 }: ProjectNoteExpressionCurvesInput): ProjectedNoteExpressionCurves {
@@ -137,6 +146,7 @@ export function projectNoteExpressionCurves({
         return { changes: [] };
     }
 
+    const noteStartBeat = startBeat - beatsIntoNote;
     const startFrame = frameAtBeat(startBeat);
     const readPressure = createExpressionReader(note.pressure, curves.pressure ?? []);
     const readSlide = createExpressionReader(note.slide, curves.slide ?? []);
@@ -145,7 +155,7 @@ export function projectNoteExpressionCurves({
     let atStart: ScheduledNoteExpression | undefined;
     const changes: ProjectedNoteExpressionChange[] = [];
     for (const offsetBeats of listCurveOffsets(curves)) {
-        const beat = startBeat + offsetBeats;
+        const beat = noteStartBeat + offsetBeats;
         const frame = frameAtBeat(beat);
         if (frame >= releaseFrame) {
             break;

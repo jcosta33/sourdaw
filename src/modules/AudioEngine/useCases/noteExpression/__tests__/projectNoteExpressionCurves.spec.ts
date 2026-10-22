@@ -175,6 +175,34 @@ describe('projectNoteExpressionCurves', () => {
         ]);
     });
 
+    it('measures offsets from the uncut note start, folding the points a cut passed into the start', () => {
+        // The note began at beat 1 but plays from beat 2, one beat in.
+        const { atStart, changes } = projectNoteExpressionCurves({
+            note: {
+                pressure: 10,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.5, value: 40 },
+                        { offsetBeats: 2, value: 20 },
+                    ],
+                },
+            },
+            startBeat: 2,
+            beatsIntoNote: 1,
+            releaseFrame: frameAtBeat(5),
+            frameAtBeat,
+        });
+
+        expect(atStart).toEqual({ pressure: 40, slide: undefined, pitchBend: undefined });
+        expect(changes).toEqual([
+            {
+                beat: 3,
+                frame: frameAtBeat(3),
+                expression: { pressure: 20, slide: undefined, pitchBend: undefined },
+            },
+        ]);
+    });
+
     it('projects nothing for a note without recorded curves', () => {
         expect(
             projectNoteExpressionCurves({
