@@ -19,8 +19,8 @@ import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/us
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
