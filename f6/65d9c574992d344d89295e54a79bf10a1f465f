@@ -1,0 +1,83 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_56a724e2dee29d 15,38,71,81,152-154,173-177,228-240,3312-3313,3322-3327,3699-3700,3718-3719,3842-3843,3866-3867,5932-6668
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_e310f835da537d 44-45
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_d8291e8d680bce 9,69-74
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_695d8994099051 1-53
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1c08b47ac3792f::t_d644c59cdbfba7 10,128-132,335,381
+src/modules/AiRuntime/transformers/__tests__/diffProposalCommands.spec.ts
+  s_1c08b47ac3792f::t_738abced24f183 3,6-14,22,39,72,86-105,120,154,166,182-530
+src/modules/AiRuntime/transformers/diffProposalCommands.ts
+  s_1c08b47ac3792f::t_64fc24993f54ff 19-21,23-26,28-36,43,46,48-51,92-103,105-136,138-141,143-150,153,157,162-163,167-172,175-176,181-182,186
+src/modules/AiRuntime/transformers/unionProtectedObjects.ts
+  s_1c08b47ac3792f::t_8cae2c6b925d92 1-12
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_24f3d12f3aa9f1 37-38,454-457,478-485,516-517
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_230de5ef29eb08 1-4639
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_5926a61fa36aa6 1-777
+src/modules/AiRuntime/useCases/agentReference/findTargetOwnerTrackIds.ts
+  s_1c08b47ac3792f::t_238a38d592358b 1-74
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_1c08b47ac3792f::t_0c3d8d6ef03624 56,67
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/maskProjectReferences.ts
+  s_1c08b47ac3792f::t_18d00d7d50b48b 6
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_1c08b47ac3792f::t_5889e80ac90576 1-251
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_122eb6999c9934 1-93
+src/modules/AiRuntime/useCases/agentReference/readStoredCardRemoval.ts
+  s_1c08b47ac3792f::t_9daf822f12c49d 1-493
+src/modules/AiRuntime/useCases/agentReference/refinementActionWords.ts
+  s_1c08b47ac3792f::t_b17cddeb9daef7 1-174
+src/modules/AiRuntime/useCases/agentReference/refinementCardCommands.ts
+  s_1c08b47ac3792f::t_bf75cbfc3f8c0d 1-63
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_059c0b842d7ce5 1-758
+src/modules/AiRuntime/useCases/agentReference/refinementCourtesy.ts
+  s_1c08b47ac3792f::t_2995e6ddb4827e 1-76
+src/modules/AiRuntime/useCases/agentReference/refinementProtectionForms.ts
+  s_1c08b47ac3792f::t_e05a41ba19d843 1-211
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_1c08b47ac3792f::t_50658728a44de3 1-269
+src/modules/AiRuntime/useCases/agentReference/refinementValueUnits.ts
+  s_1c08b47ac3792f::t_500a314711192a 1-92
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_6d161b5f7fc7f7 457-460,467-472,474-477,534
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_1c08b47ac3792f::t_6754ed39b0ef9e 40-41,130
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_1c08b47ac3792f::t_b76112217b6ae9 40,463-464,466
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_1c08b47ac3792f::t_d32b01d4532f09 15,27-30,33-34,309-310,312-315,336-345
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_1c08b47ac3792f::t_78a9b05597c141 11,332-336
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_1c08b47ac3792f::t_d388227752de50 10,15,19,21-22,42-52,62-64,103-116,119,133,135-144,256-268,281-282,286-343
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_c4309b5c655651 59-60,867-872,1067-1068,1104,1130-1132,1139-1140,1174-1182
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_726b57533f57fa 379-380
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_6e2aa2028bf42f 44-68,76-77,80-86,89,92-105,108-123,128-131,138-139,148-154,158,160-164,166-169,172-177,179-183,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f665d9c574992d344d89295e54a79bf10a1f465f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
