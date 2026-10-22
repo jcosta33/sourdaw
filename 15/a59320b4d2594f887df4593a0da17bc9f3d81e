@@ -1,0 +1,21 @@
+src/modules/BrowserAi/useCases/__tests__/renderDdspInstrument.spec.ts
+  s_29d8df116c5b92::t_31a72140ae615e 448-484,486-494,496-503
+  s_29d8df116c5b92::t_8f3f42f9294650 485
+  s_29d8df116c5b92::t_b1d4743a5f7970 495
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15a59320b4d2594f887df4593a0da17bc9f3d81e",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
