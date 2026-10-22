@@ -568,11 +568,44 @@ describe('planReviewRisk', () => {
 
     it.each([
         [['5\t5\tpnpm-lock.yaml'], 'pnpm-lock.yaml alone'],
-        [['5\t5\tCargo.lock'], 'the root Cargo.lock alone'],
+        [['5\t5\tserver/package-lock.json'], 'the server package-lock.json alone'],
         [['5\t5\tscripts/__tests__/x.spec.ts', '5\t5\tpnpm-lock.yaml'], 'a test plus the lockfile'],
         [['5\t5\tdocs/06-testing.md', '5\t5\tpnpm-lock.yaml'], 'docs plus the lockfile'],
     ])('should keep %j (%s) small', (records) => {
         expect(planNumstat(records).riskClasses).toEqual(['small']);
+    });
+
+    it.each(['Cargo.lock', 'Cargo.toml'])(
+        'should plan the workspace root %s alone native-security and realtime-audio, since every crate resolves through it',
+        (path) => {
+            const result = planNumstat([`5\t5\t${path}`]);
+
+            expect(result.riskClasses).toEqual(['native-security', 'realtime-audio']);
+            expect(result.triggers).toEqual([`native-security:${path}`, `realtime-audio:${path}`]);
+            expect(reviewStanceFloor(result)).toBe(3);
+            expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(true);
+        }
+    );
+
+    it.each([
+        'electron-builder.yml',
+        'build/entitlements.mac.plist',
+        'build/entitlements.mas.inherit.plist',
+        'scripts/flipElectronFuses.ts',
+        'scripts/buildElectronPreload.ts',
+        'scripts/electronRuntimeContract.ts',
+        'scripts/checkElectronRuntimeProvenance.ts',
+        '.cargo/config.toml',
+        'rust-toolchain.toml',
+    ])('should plan the packaging or toolchain surface %s alone native-security', (path) => {
+        const result = planNumstat([`5\t5\t${path}`]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual([`native-security:${path}`]);
+    });
+
+    it('should not take a build/ icon for an entitlements file', () => {
+        expect(planNumstat(['-\t-\tbuild/icons/icon.png']).riskClasses).toEqual(['small']);
     });
 
     it('should earn nothing light from a rename whose source was a .github/ template', () => {

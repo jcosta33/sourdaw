@@ -247,7 +247,11 @@ Every `.github/` path classifies as handwritten whatever its name, so it never
 plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
 lockfiles and rebuilt wasm artifacts — earn the `realtime-audio`,
 `native-security`, and `undo` classes of the tree they sit in, but never count
-toward the size budget. A plan of several classes needs three distinct
+toward the size budget. The Cargo workspace root `Cargo.lock` and `Cargo.toml`
+earn both `realtime-audio` and `native-security`, and the Rust toolchain and
+desktop packaging files (`rust-toolchain.toml`, `.cargo/config.toml`,
+`electron-builder.yml`, `build/entitlements*.plist`, the fuse, preload and
+Electron runtime scripts) earn `native-security`. A plan of several classes needs three distinct
 stances, or every stance its classes earn when they earn fewer, plus one
 `strongest` draw when any of them is a specialist class.
 

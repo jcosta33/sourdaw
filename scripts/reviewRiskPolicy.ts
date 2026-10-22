@@ -74,7 +74,29 @@ const REALTIME_AUDIO_PREFIXES = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 
  */
 const REALTIME_TIMING_PREFIXES = ['src/modules/Transport/useCases/playheadScheduler/'] as const;
 const NATIVE_SECURITY_PREFIXES = ['electron/', 'crates/', '.github/workflows/'] as const;
-const NATIVE_SECURITY_PATHS = ['src/utils/desktopBridge.ts'] as const;
+/**
+ * The Cargo workspace root: every crate, the DSP engine included, resolves its dependencies through
+ * the root manifest and lockfile, so a dependency bump there moves both the audio engine and the
+ * native shell however few lines it touches.
+ */
+const CARGO_WORKSPACE_PATHS = ['Cargo.lock', 'Cargo.toml'] as const;
+/**
+ * Native toolchain and desktop packaging surfaces outside `electron/` and `crates/`: the Rust
+ * toolchain and build flags, the packaging config with its fuse and entitlement wiring, the bundled
+ * sandboxed preload, and the pinned Electron runtime with its provenance check.
+ */
+const NATIVE_SECURITY_PATHS = [
+    'src/utils/desktopBridge.ts',
+    '.cargo/config.toml',
+    'rust-toolchain.toml',
+    'electron-builder.yml',
+    'scripts/flipElectronFuses.ts',
+    'scripts/buildElectronPreload.ts',
+    'scripts/electronRuntimeContract.ts',
+    'scripts/checkElectronRuntimeProvenance.ts',
+] as const;
+/** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
+const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;
 /**
  * Privileged governance-transition surfaces (#3377 AC-009 calibration): a change to any member of
  * the pinned-origin trusted-write closure set — the union of what the privileged commands run from
@@ -208,6 +230,7 @@ function realtimeAudioFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
         ...prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, sides),
         ...prefixTriggers('realtime-audio', REALTIME_TIMING_PREFIXES, sides),
+        ...exactTriggers('realtime-audio', CARGO_WORKSPACE_PATHS, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'realtime-audio', triggers }];
 }
@@ -216,6 +239,8 @@ function nativeSecurityFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
         ...prefixTriggers('native-security', NATIVE_SECURITY_PREFIXES, sides),
         ...exactTriggers('native-security', NATIVE_SECURITY_PATHS, sides),
+        ...exactTriggers('native-security', CARGO_WORKSPACE_PATHS, sides),
+        ...sides.filter((side) => ENTITLEMENTS_PATTERN.test(side.path)).map((side) => `native-security:${side.path}`),
         ...exactTriggers('native-security', GOVERNANCE_TRANSITION_PATHS, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
