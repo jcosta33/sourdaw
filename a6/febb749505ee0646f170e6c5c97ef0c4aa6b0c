@@ -1,0 +1,40 @@
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_59e31a5c6f3e31::t_46c47391b8f231 1779-1781
+src/modules/AudioRendering/repositories/audioEncoders/createDeliveryPcmSource.ts
+  s_59e31a5c6f3e31::t_07f252500d05d2 48
+src/utils/audioMetering/__tests__/measureMaxWindowedLoudness.spec.ts
+  s_59e31a5c6f3e31::t_28fc7b5d4dc567 47,49-52
+src/modules/AudioRendering/services/__tests__/createWavLoudnessReportAnalyzer.spec.ts
+  s_59e31a5c6f3e31::t_165c3f6dc43304 44-46,49-51,109-111
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_07f252500d05d2 42-44,153-155
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  s_59e31a5c6f3e31::t_07f252500d05d2 87-90
+  s_59e31a5c6f3e31::t_35d250669436f0 91-93
+src/utils/audioMetering/measureMaxWindowedLoudness.ts
+  s_59e31a5c6f3e31::t_9d147a98fbc52d 43,51,54,56,70-74,77-78
+src/modules/AudioRendering/services/createWavLoudnessReportAnalyzer.ts
+  s_59e31a5c6f3e31::t_60d64655bddbe5 191-215,219,222
+  s_59e31a5c6f3e31::t_e78ad5a14bc5d4 39-41,50,52,71-76,78-80,82,84-102,106-107
+  s_59e31a5c6f3e31::t_d72c5626ac2bb4 122-124,129-131,133-135,138-140,142-144,146-148,151-156,163-165
+  s_59e31a5c6f3e31::t_26d7069f4e0206 188
+  s_59e31a5c6f3e31::t_53613cdeb5313e 184-187
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_59e31a5c6f3e31::t_39e8dd520e2e55 31,81,85,105,116,150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6febb749505ee0646f170e6c5c97ef0c4aa6b0c",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
