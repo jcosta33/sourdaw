@@ -1,0 +1,23 @@
+docs/06-testing.md
+  s_d1c4d73ddcb30e::t_6dc5ae6c16f49e 872-873
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_d1c4d73ddcb30e::t_0d6f21f9a792ac 663-664
+scripts/resourceGuardDisk.ts
+  s_d1c4d73ddcb30e::t_2f563b48745743 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "06a072e0106d0d59bcb9d6664c68746f9f774af2",
+  "prompts": {},
+  "sessions": {
+    "s_d1c4d73ddcb30e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7be8ac89-29b4-4f74-a6af-cf644a6dc60d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
