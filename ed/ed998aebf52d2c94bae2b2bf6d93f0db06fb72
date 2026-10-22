@@ -1,0 +1,53 @@
+scripts/ciApprovalAdmission.ts
+  s_ba8dd89de9aac7::t_fa323ad73e9e68 106-109,111
+  s_ba8dd89de9aac7::t_ff29d1ec91206b 1-58,67-68,70-87,89-90,95-105,110,112-138
+  s_ba8dd89de9aac7::t_575364ccaecd04 139-144
+scripts/__tests__/ciApprovalAdmission.spec.ts
+  s_ba8dd89de9aac7::t_4df27e93b4d5f8 1-87,104-105,109-156
+scripts/githubAppIdentity.ts
+  s_ba8dd89de9aac7::t_96c213fe1db62c 26,30-32
+.agents/skills/delivery-orchestration/SKILL.md
+  s_ba8dd89de9aac7::t_43ec8ab107dbbe 102-104,106,118,122-129
+.github/workflows/health-gates.yml
+  s_ba8dd89de9aac7::t_17e7b434955758 6-8,14,28-63,66-67,214,228-230,232-233
+.github/workflows/heavy-gates.yml
+  s_ba8dd89de9aac7::t_7fb28f1422d0b0 3-4
+.github/workflows/pr-checks.yml
+  s_ba8dd89de9aac7::t_9a9af7e2ff0d76 1-69
+.github/workflows/validation.yml
+  s_ba8dd89de9aac7::t_86b7f4356318db 3-5
+AGENTS.md
+  s_ba8dd89de9aac7::t_eb47498adc3387 563,567-571,582,584-585
+docs/06-testing.md
+  s_ba8dd89de9aac7::t_d42fcadc1710af 903-906
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_ba8dd89de9aac7::t_f2e9c1bf29ba04 1041,3528-3529
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ba8dd89de9aac7::t_4f272087236d6b 7,16-20,31-78,81-82,288,303,309-404
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_ba8dd89de9aac7::t_52639c6e050a82 244,474,1480,1493,1508,1539,1787-1789,1791,1868-1879,3181,3184-3197,3202-3277,3346-3351,4644-4650,4696,5547-5551,5553-5556,5567,5572-5588
+scripts/__tests__/publishReview.spec.ts
+  s_ba8dd89de9aac7::t_9c53d4e3cb2e94 13,181-182,246-247,250,1102-1103,1261-1263,1265-1266,2167-2213,2237-2250,4931-4932,5352,5393-5394,5411
+scripts/healthGateWorkflowContract.ts
+  s_ba8dd89de9aac7::t_c00db3e6ae94ac 36,71,173,191-194
+scripts/publishReview.ts
+  s_ba8dd89de9aac7::t_517d628a8b230a 7,136,140-143,350,355,369,370-371
+scripts/test-health-gate-scripts.sh
+  s_ba8dd89de9aac7::t_fb5b7f768bf027 213,400,444-447,452-467,503,1166,1295,1309-1320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eded998aebf52d2c94bae2b2bf6d93f0db06fb72",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
