@@ -159,7 +159,7 @@ function grinderNeuralPatch(patch: Readonly<Record<string, unknown>>): string | 
                 ? (patch.profile as Record<string, unknown>)
                 : null;
         if (typeof profile?.modelDigest === 'string') {
-            throw new Error('Imported Grinder NAM content is unavailable');
+            throw new TypeError('Imported Grinder NAM content is unavailable');
         }
         return null;
     }

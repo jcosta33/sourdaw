@@ -143,11 +143,11 @@ export function projectDeviceForNativeBody(
     }
     const grinderModel =
         device.type.toLowerCase() === 'grinder' ? captureNativeGrinderNeuralPatch(device.parameterValues) : undefined;
-    const projected: NativeBodyDevice = { ...device };
+    const patch = body.projectPatch(device.parameterValues);
+    const projected: NativeBodyDevice = { ...device, parameterValues: patch };
     if (grinderModel) {
         projected.grinderModel = grinderModel;
     }
-    const patch = body.projectPatch(device.parameterValues);
     const bank = sampleBankKeyField(device.type, device.deviceState, projection);
     const modAssignments = modAssignmentsField(device.type, device.deviceState, projection);
     const projectedState = projectDeviceState(device.id, device.type, device.deviceState, projection);

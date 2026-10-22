@@ -195,13 +195,16 @@ describe('native Grinder queued request ownership', () => {
                     firstApply();
                     await gate;
                 }
+                let contentHash: string;
+                if (command.modelJson === null) {
+                    contentHash = '0'.repeat(64);
+                } else {
+                    contentHash = createHash('sha256').update(command.modelJson).digest('hex');
+                }
                 latest = {
                     ...receipt,
                     requestId: command.requestId,
-                    contentHash:
-                        command.modelJson === null
-                            ? '0'.repeat(64)
-                            : createHash('sha256').update(command.modelJson).digest('hex'),
+                    contentHash,
                 };
                 return { ...admitted, grinderModels: [latest] };
             },

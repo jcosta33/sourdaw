@@ -1201,6 +1201,9 @@ describe('native Grinder full-network patch classification', () => {
         expect(() => body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: 'hint' } })).toThrow(
             /unavailable/
         );
+        expect(() => body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: 'hint' } })).toThrow(
+            TypeError
+        );
         expect(body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: null } })).toBeNull();
         expect(body.neuralPatch?.({ neuralModelMode: 'builtin', neuralModelSlot: 2 })).toBeNull();
         expect(body.neuralPatch?.({ gain: 5, neuralModelMode: 1 })).toBeUndefined();
