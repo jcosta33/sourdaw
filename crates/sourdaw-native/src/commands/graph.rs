@@ -7106,7 +7106,10 @@ mod tests {
             &samples,
         )
         .unwrap();
-        assert!(renderer.render(64).iter().all(|value| *value == 0.0));
+        let (zero_left, zero_right) = renderer.render(64);
+        assert_eq!(zero_left.len(), 64);
+        assert_eq!(zero_right.len(), 64);
+        assert!(zero_left.iter().chain(&zero_right).all(|value| *value == 0.0));
         let change = json!([
             { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
             { "kind": "write-parameter", "target": { "kind": "track-fader", "trackId": "t1" },
@@ -7116,7 +7119,13 @@ mod tests {
         ]);
         admit_and_send(&mut registry, &mut renderer, change, &samples).unwrap();
         assert_eq!(registry.strips["t1"].vca_multiplier, 0.5);
-        assert!(renderer.render(64).iter().all(|value| (*value - 0.75).abs() < 1e-6));
+        let (half_left, half_right) = renderer.render(64);
+        assert_eq!(half_left.len(), 64);
+        assert_eq!(half_right.len(), 64);
+        assert!(half_left
+            .iter()
+            .chain(&half_right)
+            .all(|value| (*value - 0.75).abs() < 1e-6));
         let before = registry.batches_sent;
         assert!(admit_and_send(
             &mut registry,
@@ -7166,7 +7175,13 @@ mod tests {
             )
             .unwrap();
             let automated = (0.125 * multiplier) as f32;
-            assert!(renderer.render(64).iter().all(|value| (*value - automated).abs() < 1e-6));
+            let (automated_left, automated_right) = renderer.render(64);
+            assert_eq!(automated_left.len(), 64);
+            assert_eq!(automated_right.len(), 64);
+            assert!(automated_left
+                .iter()
+                .chain(&automated_right)
+                .all(|value| (*value - automated).abs() < 1e-6));
             let hold = json!({ "kind": "write-parameter",
                 "target": { "kind": "track-fader", "trackId": "t1" },
                 "write": { "shape": "hold", "time": 64.0 / 48_000.0 } });
@@ -7185,10 +7200,22 @@ mod tests {
             )
             .is_err());
             assert_eq!(registry.batches_sent, before);
-            assert!(renderer.render(64).iter().all(|value| (*value - automated).abs() < 1e-6));
+            let (rejected_left, rejected_right) = renderer.render(64);
+            assert_eq!(rejected_left.len(), 64);
+            assert_eq!(rejected_right.len(), 64);
+            assert!(rejected_left
+                .iter()
+                .chain(&rejected_right)
+                .all(|value| (*value - automated).abs() < 1e-6));
             admit_and_send(&mut registry, &mut renderer, json!([hold, replay]), &samples).unwrap();
             let restored = (0.75 * multiplier) as f32;
-            assert!(renderer.render(64).iter().all(|value| (*value - restored).abs() < 1e-6));
+            let (restored_left, restored_right) = renderer.render(64);
+            assert_eq!(restored_left.len(), 64);
+            assert_eq!(restored_right.len(), 64);
+            assert!(restored_left
+                .iter()
+                .chain(&restored_right)
+                .all(|value| (*value - restored).abs() < 1e-6));
             admit_and_send(
                 &mut registry,
                 &mut renderer,
@@ -7204,8 +7231,14 @@ mod tests {
                 &samples,
             )
             .unwrap();
+            let (final_left, final_right) = renderer.render(512);
+            assert_eq!(final_left.len(), 512);
+            assert_eq!(final_right.len(), 512);
             assert!(
-                renderer.render(512).iter().all(|value| (*value - 0.375).abs() < 1e-6),
+                final_left
+                    .iter()
+                    .chain(&final_right)
+                    .all(|value| (*value - 0.375).abs() < 1e-6),
                 "the removed lane's old .8 Step must not return at frame 480"
             );
         }
