@@ -11,6 +11,8 @@ import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMo
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TrackHeader } from '../TrackHeader';
 
+vi.unmock('#/components/ui/tooltip');
+
 // Mock external dependencies
 vi.mock('../../../useCases/toggleTrackState/muteTrack', () => ({
     muteTrack: vi.fn<(...args: unknown[]) => void>(),
@@ -258,6 +260,89 @@ describe('TrackHeader', () => {
         expect(screen.getByText('FROZEN')).toBeInTheDocument();
         expect(screen.getByText('STALE')).toBeInTheDocument();
     });
+
+    it.each(['audio', 'midi', 'bus', 'master'] as const)(
+        'shows the stored freeze error on a %s track, even when its old frozen flag remains set',
+        (kind) => {
+            const reason = `Freeze failed for ${kind}`;
+            const failedTrack = {
+                ...mockTrack,
+                kind,
+                frozen: true,
+                freezeState: { status: 'error' as const, errorMessage: reason },
+            };
+            renderWithTooltip(<TrackHeader track={failedTrack} isSelected={false} />);
+
+            expect(screen.getByTestId('track-freeze-error-badge')).toBeInTheDocument();
+            expect(screen.getByLabelText(`Freeze error: ${reason}`)).toBeInTheDocument();
+            expect(screen.queryByTestId('track-frozen-badge')).not.toBeInTheDocument();
+        }
+    );
+
+    it('shows the stored freeze error on the folder early-return branch', () => {
+        const reason = 'Folder freeze failed';
+        const failedFolder = {
+            ...mockFolderTrack,
+            freezeState: { status: 'error' as const, errorMessage: reason },
+        };
+        renderWithTooltip(<TrackHeader track={failedFolder} isSelected={false} />);
+
+        expect(screen.getByTestId('track-freeze-error-badge')).toBeInTheDocument();
+        expect(screen.getByLabelText(`Freeze error: ${reason}`)).toBeInTheDocument();
+    });
+
+    it.each([
+        ['stored message', 'The rendered audio was silent.', 'The rendered audio was silent.'],
+        ['missing legacy message', undefined, 'Freeze failed. Try again.'],
+        ['empty legacy message', '', 'Freeze failed. Try again.'],
+    ])('exposes the %s through the real tooltip on hover and keyboard focus', async (_case, errorMessage, expected) => {
+        const failedTrack = {
+            ...mockTrack,
+            freezeState: { status: 'error' as const, errorMessage },
+        };
+        const renderTooltip = () =>
+            render(
+                <TooltipProvider delayDuration={0}>
+                    <TrackHeader track={failedTrack} isSelected={false} />
+                </TooltipProvider>
+            );
+        const hoverRender = renderTooltip();
+        const hoverBadge = screen.getByTestId('track-freeze-error-badge');
+        fireEvent.pointerMove(hoverBadge, { pointerType: 'mouse' });
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(expected);
+        hoverRender.unmount();
+
+        renderTooltip();
+        const focusBadge = screen.getByTestId('track-freeze-error-badge');
+        fireEvent.focus(focusBadge);
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(expected);
+    });
+
+    it.each(['freezing', 'unfrozen', 'frozen', 'stale'] as const)(
+        'clears the freeze error indicator when the state transitions to %s',
+        (status) => {
+            const failedTrack = {
+                ...mockTrack,
+                frozen: true,
+                freezeState: { status: 'error' as const, errorMessage: 'Render failed' },
+            };
+            const { rerender } = renderWithTooltip(<TrackHeader track={failedTrack} isSelected={false} />);
+            expect(screen.getByTestId('track-freeze-error-badge')).toBeInTheDocument();
+
+            const nextTrack = {
+                ...failedTrack,
+                frozen: status === 'frozen' || status === 'stale',
+                freezeState: { status },
+            };
+            rerender(
+                <TooltipProvider>
+                    <TrackHeader track={nextTrack} isSelected={false} />
+                </TooltipProvider>
+            );
+
+            expect(screen.queryByTestId('track-freeze-error-badge')).not.toBeInTheDocument();
+        }
+    );
 
     it('toggles variation lanes on click', async () => {
         const { toggleVariationLanes } = await import('../../../useCases/toggleTrackState/toggleVariationLanes');

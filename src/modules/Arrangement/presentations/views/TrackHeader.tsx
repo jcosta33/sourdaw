@@ -63,6 +63,26 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     const trackHeight = track.height;
     const isFreezing = track.freezeState.status === 'freezing';
     const isStale = track.freezeState.status === 'stale';
+    const freezeErrorMessage =
+        track.freezeState.status === 'error' ? track.freezeState.errorMessage || 'Freeze failed. Try again.' : null;
+    const freezeErrorContent = freezeErrorMessage ? (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    aria-label={`Freeze error: ${freezeErrorMessage}`}
+                    data-testid="track-freeze-error-badge"
+                    className="ml-1 inline-flex items-center gap-0.5 rounded bg-state-danger/20 px-1 text-[8px] font-bold text-state-danger outline-none focus-visible:ring-1 focus-visible:ring-state-danger"
+                >
+                    <AlertCircle className="size-2.5" aria-hidden="true" />
+                    ERROR
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent>{freezeErrorMessage}</TooltipContent>
+        </Tooltip>
+    ) : null;
 
     if (track.kind === 'folder') {
         const isDrumMachine = track.devices.some((data) => data.type === 'toaster');
@@ -111,7 +131,12 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             />
                         </>
                     }
-                    endSlot={<ResizeHandle trackId={track.id} />}
+                    endSlot={
+                        <>
+                            {freezeErrorContent}
+                            <ResizeHandle trackId={track.id} />
+                        </>
+                    }
                     style={{
                         height: 26,
                         boxShadow: isSelected
@@ -133,7 +158,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     ) : null;
 
     let freezeStateContent = null;
-    if (isFreezing) {
+    if (freezeErrorContent) {
+        freezeStateContent = freezeErrorContent;
+    } else if (isFreezing) {
         freezeStateContent = (
             <Stack gap={1} className="w-16 ml-2" data-testid="track-freezing-badge">
                 <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
