@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { stageAndCommitBank, WIDE_ZONE } from './levainZoneTableHarness';
 import { installWorkletGlobals, makeChannels } from './wasmViewGrowthHarness';
 
 type LevainProcessorLike = {
@@ -29,14 +30,15 @@ function stageBank(processor: LevainProcessorLike, loadToken: number, instrument
     send(processor, { type: 'beginSampleBank', bankKey: `bank-${loadToken}`, instrumentId, loadToken });
     const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => Math.sin(frame * 0.05) * 0.5);
     send(processor, {
-        type: 'addSample',
+        type: 'beginSample',
         loadToken,
         sampleId: 0,
-        data,
         frameCount: SAMPLE_FRAMES,
         channels: 1,
         sampleRate: 48_000,
     });
+    send(processor, { type: 'sampleChunk', loadToken, sampleId: 0, data });
+    send(processor, { type: 'sealSample', loadToken, sampleId: 0 });
     send(processor, {
         type: 'addZone',
         loadToken,
@@ -74,7 +76,11 @@ function stageBank(processor: LevainProcessorLike, loadToken: number, instrument
 
 function loadBank(processor: LevainProcessorLike, loadToken: number, instrumentId: string): void {
     stageBank(processor, loadToken, instrumentId);
-    send(processor, { type: 'buildZoneMap', loadToken, numArticulations: 1, numMics: 1 });
+    stageAndCommitBank((data) => send(processor, data), wasmModule, loadToken, {
+        zones: [WIDE_ZONE],
+        numArticulations: 1,
+        numMics: 1,
+    });
 }
 
 function hasRetiredBank(processor: LevainProcessorLike): boolean {

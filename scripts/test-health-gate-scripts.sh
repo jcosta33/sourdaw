@@ -181,18 +181,24 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
 );
 // The structural pins live in one shared module so this harness and the
 // vitest spec can never drift apart: the whole-file snapshot, the shard
-// matrices, the permission-free files, and every job's step inventory.
+// matrices, and every job's step inventory.
 const {
-    assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
-    JOB_LEVEL_PERMISSION_FREE_FILES,
+    HEALTH_GATE_WORKFLOW_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
+const { assertWorkflowSecuritySurface } = await import(
+    `${process.env.REPO_ROOT}/scripts/workflowSecuritySurfaceContract.ts`
+);
+const { assertHostedWasmWorkflow } = await import(`${process.env.REPO_ROOT}/scripts/hostedWasmWorkflowContract.ts`);
+const { assertApprovalGatedRequiredCheck } = await import(
+    `${process.env.REPO_ROOT}/scripts/approvalGatedWorkflowContract.ts`
+);
 const { assertHostedQuantumMeasurementWorkflow } = await import(
     `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
 );
@@ -207,6 +213,7 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
 const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
@@ -393,7 +400,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['scope', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['admission', 'scope', 'validation', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -437,12 +444,30 @@ expect(workflow.name === 'Health gates', 'workflow name must stay Health gates')
 // conclusion is `skipped` as satisfying a required status check, and prefers
 // the newest run of that name, so an event that can reach `gate` and skip it
 // mints a passing `Gate` over a red head. A `pull_request_review` trigger did
-// exactly that in production. `pull_request` is the only event here, and it can
-// never skip `gate`.
+// exactly that in production. A labeled `pull_request` is the only event here,
+// it can never skip `gate`, and `gate` fails unless the trusted admission
+// admitted the reviewer App's approval of the exact head. The shared contract
+// holds the whole boundary, including the cheap per-push workflow's lack of Gate.
 expect(
     JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
 );
+let approvalGateError;
+try {
+    assertApprovalGatedRequiredCheck({
+        'health-gates.yml': workflow,
+        'pr-checks.yml': prChecks,
+        'validation.yml': validationWorkflow,
+        'heavy-gates.yml': heavyWorkflow,
+        'nightly.yml': nightly,
+        'quantum-measurements.yml': hostedQuantumMeasurement,
+        'wasm-artifacts.yml': hostedWasm,
+        'semantic-review.yml': semanticReview,
+    });
+} catch (error) {
+    approvalGateError = error;
+}
+expect(approvalGateError === undefined, `the approval-gated Gate boundary must hold: ${approvalGateError?.message ?? ''}`);
 expect(gate?.if === '${{ always() }}', 'Gate must evaluate cancelled upstream jobs rather than become a skipped required check');
 expect(gateStep?.if === '${{ always() }}', 'Gate assertion must run even after cancellation');
 // The heavy lane is reusable and only the pull-request workflow calls it.
@@ -469,7 +494,7 @@ expect(
 function gateNameViolations(file, jobs) {
     const violations = [];
     for (const [id, job] of Object.entries(jobs ?? {})) {
-        if ((job?.name ?? id) === 'Gate') {
+        if ((typeof job?.name === 'string' && job.name !== '' ? job.name : id) === 'Gate') {
             violations.push(
                 `${file} job ${id} must not be named Gate; only a pull_request run of health-gates.yml may mint that check`
             );
@@ -478,6 +503,7 @@ function gateNameViolations(file, jobs) {
     return violations;
 }
 for (const [file, parsed] of [
+    ['pr-checks.yml', prChecks],
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
@@ -494,6 +520,10 @@ for (const [file, parsed] of [
 expect(
     gateNameViolations('mutant.yml', { Gate: { needs: ['decide'] } }).length === 1,
     'the Gate-name guard must catch an unnamed Gate-keyed job'
+);
+expect(
+    gateNameViolations('mutant.yml', { Gate: { name: '', needs: ['decide'] } }).length === 1,
+    'the Gate-name guard must catch an empty-named Gate-keyed job'
 );
 expect(heavyGate?.name === 'HeavyGate', 'the heavy summary must keep its own distinct, non-required name');
 expect(
@@ -950,9 +980,80 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(
-    unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+    unitRun === 'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
+    'unit shard must delegate its exact matrix shard through the isolated account context'
 );
+// Exercise the producer rather than searching source: helper metadata must never
+// reach the zero-test wrapper, and pnpm must receive the explicit run subcommand.
+const { runUnitPhase } = await import(`${process.env.REPO_ROOT}/scripts/runIsolatedUnitShard.ts`);
+const shardContext = {
+    workspace: process.env.REPO_ROOT, uid: 20000, gid: 20000, runnerUid: 1001,
+    account: 'sdaw-unit-20000', home: '/unit-shard-contract/home',
+    store: '/unit-shard-contract/store', temp: '/unit-shard-contract/tmp',
+    node: '/tools/node', pnpm: '/tools/pnpm',
+};
+const shardEnvironment = {
+    HOME: shardContext.home, PATH: '/tools:/tools:/usr/local/bin:/usr/bin:/bin',
+    PNPM_CONFIG_STORE_DIR: shardContext.store,
+    CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_WORKSPACE: shardContext.workspace,
+    VITEST_MAX_WORKERS: '4', TMPDIR: shardContext.temp, TMP: shardContext.temp, TEMP: shardContext.temp,
+};
+const shardStatus = [
+    'Uid:\t20000\t20000\t20000\t20000', 'Gid:\t20000\t20000\t20000\t20000',
+    'Groups:\t', 'CapInh:\t0', 'CapPrm:\t0', 'CapEff:\t0', 'CapBnd:\t0', 'CapAmb:\t0', 'NoNewPrivs:\t1', '',
+].join('\n');
+const wholeGuardSpecs = [
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+];
+for (const shard of ['1/4', '2/4', '3/4', '4/4']) {
+    const commands = [];
+    const commandOptions = [];
+    const result = runUnitPhase(shardContext, 'shard', shard, {
+        env: shardEnvironment, platform: 'linux', uid: 20000,
+        read: () => shardStatus, canonical: (path) => path,
+        metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+        executable: () => {},
+        run: (file, args, options) => {
+            commands.push([file, args]); commandOptions.push(options);
+            return { status: commands.length <= wholeGuardSpecs.length ? 0 : 7 };
+        },
+    });
+    expect(
+        JSON.stringify(commands) === JSON.stringify([
+            ...wholeGuardSpecs.map((spec) => [shardContext.pnpm, ['run', 'test:run', spec]]),
+            [shardContext.pnpm, ['run', 'test:run', `--shard=${shard}`, ...wholeGuardSpecs.map((spec) => `--exclude=${spec}`)]],
+        ]),
+        `isolated unit shard ${shard} must run all three whole guard specs sequentially before the precise excluded shard through explicit pnpm run`
+    );
+    expect(JSON.stringify(commandOptions) === JSON.stringify([
+        ...wholeGuardSpecs.map(() => ({
+            cwd: shardContext.workspace, env: { ...shardEnvironment, VITEST_MAX_WORKERS: '1' }, inheritOutput: true,
+        })),
+        { cwd: shardContext.workspace, env: shardEnvironment, inheritOutput: true },
+    ]), `isolated unit shard ${shard} must preserve its private store and account with one worker for all three guard commands then four workers`);
+    expect(result === 7, `isolated unit shard ${shard} must propagate pnpm failure`);
+    for (const [index, spec] of wholeGuardSpecs.entries()) {
+        for (const guardStatus of [7, null]) {
+            const aborted = [];
+            const failure = runUnitPhase(shardContext, 'shard', shard, {
+                env: shardEnvironment, platform: 'linux', uid: 20000,
+                read: () => shardStatus, canonical: (path) => path,
+                metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+                executable: () => {},
+                run: (file, args) => {
+                    aborted.push([file, args]);
+                    return { status: aborted.length <= index ? 0 : guardStatus };
+                },
+            });
+            expect(JSON.stringify(aborted) === JSON.stringify(
+                wholeGuardSpecs.slice(0, index + 1).map((reached) => [shardContext.pnpm, ['run', 'test:run', reached]])
+            ), `isolated unit shard ${shard} must not start remaining proof or its shard after ${spec} returns ${guardStatus}`);
+            expect(failure === (guardStatus ?? 1), `isolated unit shard ${shard} must propagate ${spec} status ${guardStatus}`);
+        }
+    }
+}
 expect(
     e2eRunStep?.run === 'node scripts/prValidationScope.ts run' &&
         e2eRunStep?.env?.E2E_SPECS === '${{ toJSON(matrix.specs) }}' &&
@@ -961,8 +1062,8 @@ expect(
     'required end-to-end jobs must run only the selected validated spec groups'
 );
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'nightly unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    'nightly unit shard must delegate its exact matrix shard through the same isolated account as the required unit suite'
 );
 expect(
     stepNamed(nightlyE2e, 'Run shard')?.run === 'pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob',
@@ -1069,6 +1170,7 @@ expect(
 
 const workflowsByFile = {
     'health-gates.yml': workflow,
+    'pr-checks.yml': prChecks,
     'validation.yml': validationWorkflow,
     'heavy-gates.yml': heavyWorkflow,
     'nightly.yml': nightly,
@@ -1087,13 +1189,25 @@ for (const [file, jobId, shards] of SHARD_MATRIX_JOBS) {
         `${file} job ${jobId} must shard across exactly ${shards.join(', ')}`
     );
 }
-// A job-level permissions block reshapes one leg's token away from the
-// workflow-level pin; these two files must grant nothing at job level.
-for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
-    for (const [jobId, job] of Object.entries(workflowsByFile[file]?.jobs ?? {})) {
-        expect(job?.permissions === undefined, `${file} job ${jobId} must inherit the workflow-level permissions`);
-    }
+// Job-level permissions, secret reads, deployment environments, credentialless
+// checkouts, and the one job that may be named Gate, over every registered file.
+let securitySurfaceError;
+try {
+    assertWorkflowSecuritySurface(
+        Object.fromEntries(
+            HEALTH_GATE_WORKFLOW_FILES.map((file) => [
+                file,
+                parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/${file}`, 'utf8')),
+            ])
+        )
+    );
+} catch (error) {
+    securitySurfaceError = error;
 }
+expect(
+    securitySurfaceError === undefined,
+    `the registered workflows must keep their pinned security surface: ${securitySurfaceError?.message ?? ''}`
+);
 // A deleted proof step leaves its job green while the proof never runs, and
 // an added one runs unpinned; the inventory refuses both directions.
 for (const [file, parsed] of Object.entries(workflowsByFile)) {
@@ -1119,8 +1233,8 @@ for (const [file, parsed] of Object.entries(workflowsByFile)) {
     }
 }
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'nightly unit Run shard must run through the test:run wrapper that applies the census exclusion'
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    'nightly unit Run shard must reach the test:run wrapper that applies the census exclusion through the isolated account'
 );
 expect(
     unitFailureWarning?.if === shardFailureCondition,
@@ -1197,6 +1311,7 @@ expect(
     'HeavyGate must require the exact outcomes for selected browser jobs'
 );
 const requiredResults = (codeql, overrides = {}) => JSON.stringify({
+    admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
     scope: { result: overrides.scope ?? 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql } },
     validation: { result: overrides.validation ?? 'success' },
     affected: { result: overrides.affected ?? 'success' },
@@ -1210,6 +1325,18 @@ for (const job of expectedGateNeeds) {
 }
 expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('false', { codeql: 'success' }) }) !== 0,
     'unexpected CodeQL execution must fail Gate');
+expect(
+    workflowShellStatus(gateRun, {
+        RESULTS: JSON.stringify({
+            admission: { result: 'success', outputs: { admitted: 'false', reason: 'not approved' } },
+            scope: { result: 'skipped', outputs: {} },
+            validation: { result: 'skipped' },
+            affected: { result: 'skipped' },
+            codeql: { result: 'skipped' },
+        }),
+    }) !== 0,
+    'a refused approval admission must fail Gate rather than pass on skipped checks'
+);
 const browserResults = (e2e, report, hardware) => JSON.stringify({
     e2e: { result: e2e }, 'e2e-report': { result: report }, 'browser-ai-webgpu': { result: hardware },
 });

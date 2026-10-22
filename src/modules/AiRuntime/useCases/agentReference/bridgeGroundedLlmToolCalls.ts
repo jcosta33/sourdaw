@@ -44,6 +44,12 @@ import {
     validateArbitraryCommandListEvidence,
 } from '../validateArbitraryCommandListEvidence';
 
+import {
+    admitsCompiledTargets,
+    type CompiledSelectorTerms,
+    type CompiledTargetAuthority,
+    type CompiledTargetAuthorityInput,
+} from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
@@ -68,6 +74,7 @@ import {
     SPENT_CREATION_BUDGET_INFIX,
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
+import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -132,7 +139,7 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
-import { splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
+import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
@@ -163,8 +170,14 @@ type GroundToolCallInput = {
     /** Whether the batch as a whole may take the plan-created object evidence route. */
     admitsPlanCreatedObjects: boolean;
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    /** The text values every call of the batch writes, which never pick a compiled target. */
+    batchWrittenValueTexts: readonly string[];
     call: ToolCallResult;
     catalog: GroundingCatalog;
+    /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
+    compilerExcludedIds: ReadonlySet<string>;
+    /** The selector this call's compiled targets came from, when the compiler resolved one. */
+    compiledSelectorTerms?: CompiledSelectorTerms;
     context: ProjectContext;
     /** What the admitted creative authority says about this call, when the run has one. */
     creativeAdmission?: CreativeCallAdmission;
@@ -1246,6 +1259,164 @@ function mergeLevelContinuation(
     };
 }
 
+/** A coordinated track list that states this action's level change, and the scope it grounds, if any. */
+type CoordinatedLevelList = {
+    firstClauseIndex: number;
+    lastClauseIndex: number;
+    /** Null when a member is unresolved or named outside the list: the list then grounds nothing. */
+    scope: PromptClauseScope | null;
+};
+
+/** The one track target a level action's coordinated list may fill, when the action has one. */
+function getCoordinatedListTargetRule(
+    groundingRules: GroundingRules,
+    decibelLevelForms: readonly string[]
+): GroundingRules['targetRules'][number] | undefined {
+    const [targetRule, ...otherRules] = groundingRules.targetRules;
+    if (
+        decibelLevelForms.length === 0 ||
+        targetRule === undefined ||
+        otherRules.length > 0 ||
+        targetRule.capability !== 'track' ||
+        targetRule.promptRole !== undefined ||
+        targetRule.cardinality === 'many'
+    ) {
+        return undefined;
+    }
+    return targetRule;
+}
+
+/** The head may contain only the action carrier before the first whole target. */
+function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
+    const commandLead = lead
+        .trim()
+        .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
+        .replace(/^please\s+/iu, '');
+    const normalizedLead = normalizePromptText(commandLead);
+    const normalizedIntent = normalizePromptText(intentPhrase);
+    return (
+        normalizedLead.length > 0 &&
+        (normalizedIntent === normalizedLead ||
+            normalizedIntent.startsWith(`${normalizedLead} `) ||
+            // "set Drums and Bass volume to -6 dB" states its gain intent after the list.
+            (/^(?:set|make)$/u.test(normalizedLead) && /^(?:gain|volume|louder|quieter)$/u.test(normalizedIntent)))
+    );
+}
+
+/** The scope a coordinated list grounds: one slot per member, each bound to its own whole span. */
+function getCoordinatedListScope(
+    list: CoordinatedTrackList,
+    memberIds: readonly string[],
+    clause: PromptClause,
+    intentPhrase: string
+): PromptClauseScope {
+    return {
+        ...clause,
+        start: list.start,
+        end: list.end,
+        directional: false,
+        matchedIntentPhrase: intentPhrase,
+        referenceSlots: memberIds.length,
+        coordinatedTargets: {
+            memberIds,
+            references: list.members.map((member, index) => ({
+                id: memberIds[index]!,
+                start: member.start - list.start,
+                end: member.end - list.start,
+            })),
+        },
+    };
+}
+
+/** The decibel unit after a list's one figure, then nothing but punctuation to the list's end. */
+const LIST_FIGURE_ENDING_PATTERN = /^\s*d\s?b[\p{P}\s]*$/iu;
+
+/** Whether the list's own text states exactly one figure, in decibels, and ends on it. */
+function endsOnItsOneFigure(maskedList: string): boolean {
+    const numbers = findPromptNumbers(maskedList);
+    return numbers.length === 1 && LIST_FIGURE_ENDING_PATTERN.test(maskedList.slice(numbers[0]!.end));
+}
+
+/**
+ * Coordinated track lists that state this action's level change: read with the list as one member,
+ * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
+ * a single track lacks.
+ *
+ * A list grounds one slot per member only when the request cannot be singling a member out. Its own
+ * text must end on its one decibel figure, and every other clause must name a track outside the list
+ * through the same whole-reference reading the members get. Words after the figure ("except the last
+ * one", "(6 dB for the second)") or a clause naming no other track ("but not the latter", "and 6 dB
+ * respectively", "then up 1 dB") can single out a member without naming it, which no word list can
+ * enumerate, so either grounds nothing for any member. So does an unresolved member, or any other
+ * clause naming a member, whatever that clause asks of it.
+ */
+function getCoordinatedLevelLists(input: {
+    actionName: string;
+    catalog: GroundingCatalog;
+    clauses: readonly PromptClauseSpan[];
+    context: ProjectContext;
+    decibelLevelForms: readonly string[];
+    groundingRules: GroundingRules;
+    maskedPrompt: string;
+    prompt: string;
+}): CoordinatedLevelList[] {
+    const targetRule = getCoordinatedListTargetRule(input.groundingRules, input.decibelLevelForms);
+    if (targetRule === undefined) {
+        return [];
+    }
+    const lists = findCoordinatedTrackLists({
+        capability: targetRule.capability,
+        clauses: input.clauses,
+        context: input.context,
+        prompt: input.prompt,
+        risk: getAppActionExecutionPolicy(input.actionName).risk,
+    });
+    return lists.flatMap((list) => {
+        const clause = {
+            masked: input.maskedPrompt.slice(list.start, list.end),
+            text: input.prompt.slice(list.start, list.end),
+        };
+        const intent = resolveClauseActionIntent(list.collapsedMasked, input.catalog, input.actionName);
+        if (
+            intent?.actionType !== input.actionName ||
+            !hasCompleteListHead(list.lead, intent.phrase) ||
+            namesLevelOutsideActionFader(input.actionName, clause, input.context)
+        ) {
+            return [];
+        }
+        const scope =
+            list.memberIds === null ||
+            list.memberNamedOutsideList ||
+            !list.everyOtherClauseNamesAnotherTrack ||
+            !endsOnItsOneFigure(clause.masked)
+                ? null
+                : getCoordinatedListScope(list, list.memberIds, clause, intent.phrase);
+        return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
+    });
+}
+
+/**
+ * Whether the calls a coordinated scope grounds are exactly its targets, one call each, all making
+ * the same change: a list states one figure, so a call that differs from its siblings, a call for a
+ * track the list does not name, or a listed track left out refuses the whole list.
+ */
+function matchesCoordinatedTargets(input: {
+    assignedArguments: readonly Readonly<Record<string, unknown>>[];
+    targetArgument: string;
+    targetIds: readonly string[];
+}): boolean {
+    const assertedIds = input.assignedArguments.map((arguments_) => arguments_[input.targetArgument]);
+    const [first, ...siblings] = input.assignedArguments.map((arguments_) =>
+        canonicalJson({ ...arguments_, [input.targetArgument]: null })
+    );
+    return (
+        assertedIds.length === input.targetIds.length &&
+        new Set(assertedIds).size === assertedIds.length &&
+        assertedIds.every((id) => typeof id === 'string' && input.targetIds.includes(id)) &&
+        siblings.every((change) => change === first)
+    );
+}
+
 /** The scope grounding the call at `actionOrdinal`, counting each scope once per reference slot. */
 function getScopeAtOrdinal(scopes: readonly PromptClauseScope[], actionOrdinal: number): PromptClauseScope | undefined {
     let firstOrdinal = 0;
@@ -1346,7 +1517,11 @@ function resolveActionPromptScope({
     sameActionCallCount,
     workflowCapabilityId,
 }: ResolveActionPromptScopeInput):
-    (ActionPromptScope & { compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[] }) | null {
+    | (ActionPromptScope &
+          Partial<Pick<PromptClauseScope, 'start'>> & {
+              compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[];
+          })
+    | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const hasActionCancellation = isActionCancelledByPrompt({
         actionName,
@@ -1400,11 +1575,31 @@ function resolveActionPromptScope({
     }
     const proposedNames = getProposedCreationNames(actionName, sameActionAssertedArguments);
     const decibelLevelForms = catalog.find((entry) => entry.actionType === actionName)?.decibelLevelForms ?? [];
+    const clauses = splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog);
+    const coordinatedLevelLists = getCoordinatedLevelLists({
+        actionName,
+        catalog,
+        clauses,
+        context,
+        decibelLevelForms,
+        groundingRules,
+        maskedPrompt,
+        prompt,
+    });
     const matchingScopes: PromptClauseScope[] = [];
     let takesContinuation = false;
-    for (const clause of splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog)) {
+    for (const [clauseIndex, clause] of clauses.entries()) {
         const continuesScope = takesContinuation;
         takesContinuation = false;
+        const coordinatedList = coordinatedLevelLists.find(
+            (list) => clauseIndex >= list.firstClauseIndex && clauseIndex <= list.lastClauseIndex
+        );
+        if (coordinatedList) {
+            if (clauseIndex === coordinatedList.firstClauseIndex && coordinatedList.scope) {
+                matchingScopes.push(coordinatedList.scope);
+            }
+            continue;
+        }
         const controlTargetReferences = getAssertedControlTargetReferences(
             groundingRules,
             sameActionAssertedArguments,
@@ -1489,6 +1684,26 @@ function resolveActionPromptScope({
             : getScopeAtOrdinal(matchingScopes, actionOrdinal));
     if (!selectedScope) {
         return null;
+    }
+    const coordinatedTargets = selectedScope.coordinatedTargets;
+    if (coordinatedTargets) {
+        const scopeIndex = matchingScopes.indexOf(selectedScope);
+        const firstOrdinal = matchingScopes
+            .slice(0, scopeIndex)
+            .reduce((count, scope) => count + (scope.referenceSlots ?? 1), 0);
+        const assignedArguments = appliesOneExplicitScopeToCompilerExpansion
+            ? sameActionAssertedArguments
+            : sameActionAssertedArguments.slice(firstOrdinal, firstOrdinal + coordinatedTargets.memberIds.length);
+        if (
+            scopeIndex < 0 ||
+            !matchesCoordinatedTargets({
+                assignedArguments,
+                targetArgument: groundingRules.targetRules[0]!.argument,
+                targetIds: coordinatedTargets.memberIds,
+            })
+        ) {
+            return null;
+        }
     }
     if (compilerExpandedTargets) {
         selectedScope = extendCompiledTargetListScope({
@@ -2409,10 +2624,12 @@ function getReferenceBoundDecibelFigures(
             .filter((targetRule) => targetRule !== anchorRule)
             .map((targetRule) => groundedArguments[targetRule.argument])
     );
-    const references = getTrackReferenceSpans(
-        actionScope.text,
-        context.tracks.filter((track) => !otherTargetIds.has(track.id))
-    );
+    const references =
+        actionScope.coordinatedTargets?.references ??
+        getTrackReferenceSpans(
+            actionScope.text,
+            context.tracks.filter((track) => !otherTargetIds.has(track.id))
+        );
     if (new Set(references.map((reference) => reference.id)).size < 2) {
         return undefined;
     }
@@ -3809,6 +4026,63 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
+function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argument: string): string | null {
+    if (authority.status === 'admitted') {
+        return null;
+    }
+    return `Compiled target ${argument} is not authorized by the user request`;
+}
+
+/**
+ * The selector each compiled call's targets came from, keyed by call index across the whole batch:
+ * a `match` selector's compiled fields, a set slice's replay fields, or a `where`-only selector's own.
+ */
+function getCompiledSelectorTermsByCallIndex(
+    evidence: ArbitraryCommandListEvidence | undefined,
+    callIndexOffset: number
+): ReadonlyMap<number, CompiledSelectorTerms> {
+    const termsByCallIndex = new Map<number, CompiledSelectorTerms>();
+    for (const item of evidence?.items ?? []) {
+        const selector = evidence?.selectors.find((candidate) => candidate.itemId === item.itemId);
+        if (selector === undefined) {
+            continue;
+        }
+        const replay = selector.slice?.selector;
+        const terms: CompiledSelectorTerms = {
+            targetArgument: item.targetArgument,
+            where: selector.where ?? selector.predicate?.where ?? replay?.where,
+            match: selector.predicate?.match ?? replay?.match,
+        };
+        const ownIndexes = Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset);
+        for (const commandIndex of new Set([...ownIndexes, ...item.representativeCommandIndexes])) {
+            termsByCallIndex.set(commandIndex + callIndexOffset, terms);
+        }
+    }
+    return termsByCallIndex;
+}
+
+/**
+ * The text values a call writes: its string arguments that are not target references, and not the
+ * batch-local binding a creation names its result by, which nothing writes.
+ */
+function getWrittenValueTexts(call: ToolCallResult): string[] {
+    const targetArguments = new Set(
+        getExecutableAppActionGroundingRules(call.name)?.targetRules.map((rule) => rule.argument) ?? []
+    );
+    return Object.entries(stripBatchLocalBinding(call).arguments).flatMap(([argument, value]) =>
+        typeof value === 'string' && !targetArguments.has(argument) ? [value] : []
+    );
+}
+
+/**
+ * Every text value any call of the batch writes, whatever its action, so neither "Rename Keys to
+ * Pads and Vocals to Piano Lead" nor "rename Kick to Snare 2 and set Vocals volume to 75%" reads a
+ * written name as a target.
+ */
+function getBatchWrittenValueTexts(calls: readonly ToolCallResult[]): string[] {
+    return [...new Set(calls.flatMap(getWrittenValueTexts))];
+}
+
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
     if (actionName === 'renameClip') {
         return false;
@@ -4108,8 +4382,11 @@ function groundToolCall({
     actionOrdinal,
     admitsPlanCreatedObjects,
     batchLocalCreationBindings,
+    batchWrittenValueTexts,
     call,
     catalog,
+    compiledSelectorTerms,
+    compilerExcludedIds,
     context,
     creativeAdmission,
     creativeAuthorityMode,
@@ -4262,6 +4539,14 @@ function groundToolCall({
         } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
             targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog, context.tracks);
         }
+        if (targetRule.promptRole === undefined && typeof assertedValue === 'string') {
+            const member = actionScope.coordinatedTargets?.references.find(
+                (reference) => reference.id === assertedValue
+            );
+            if (member) {
+                targetPrompt = actionScope.text.slice(member.start, member.end);
+            }
+        }
         if (
             articulationTransferScope?.status === 'request' &&
             call.name === 'copyMidiArticulations' &&
@@ -4394,6 +4679,24 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
+            const setRefusal = compiledTargetRefusalReason(
+                admitsCompiledTargets({
+                    argument: targetRule.argument,
+                    capability: targetRule.capability,
+                    catalog,
+                    compilerExcludedIds,
+                    context,
+                    prompt,
+                    referenceResolved: false,
+                    selectorTerms: compiledSelectorTerms,
+                    valueTexts: batchWrittenValueTexts,
+                    targetIds: compilerTargetOverride.stableIds,
+                }),
+                targetRule.argument
+            );
+            if (setRefusal !== null) {
+                return rejection(index, call.name, setRefusal);
+            }
             groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
             continue;
         }
@@ -4509,7 +4812,24 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
+        const compiledTargetAuthority: CompiledTargetAuthorityInput | null =
+            compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
+                ? {
+                      argument: targetRule.argument,
+                      capability: targetRule.capability,
+                      catalog,
+                      compilerExcludedIds,
+                      context,
+                      dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
+                      prompt,
+                      referenceResolved: false,
+                      selectorTerms: compiledSelectorTerms,
+                      targetIds: compilerTargetOverride.stableIds,
+                      valueTexts: batchWrittenValueTexts,
+                  }
+                : null;
         if (
+            compiledTargetAuthority !== null &&
             compilerTargetOverride !== undefined &&
             'stableIds' in compilerTargetOverride &&
             admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt)
@@ -4525,6 +4845,13 @@ function groundToolCall({
                     call.name,
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
+            }
+            const compiledRefusal = compiledTargetRefusalReason(
+                admitsCompiledTargets(compiledTargetAuthority),
+                targetRule.argument
+            );
+            if (compiledRefusal !== null) {
+                return rejection(index, call.name, compiledRefusal);
             }
             groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
             continue;
@@ -4542,13 +4869,21 @@ function groundToolCall({
                   return [siblingId];
               })
             : [];
+        // A coordinated list names every member in one scope, so each call resolves against its own
+        // member with the others set aside.
+        const coordinatedSiblingIds =
+            actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
             capability: targetRule.capability,
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-            excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
+            excludedIds: [
+                ...(typeof distinctValue === 'string' ? [distinctValue] : []),
+                ...bulkSiblingTargetIds,
+                ...coordinatedSiblingIds,
+            ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });
         if (result.status === 'rejected') {
@@ -4563,6 +4898,18 @@ function groundToolCall({
                 );
             }
             return rejection(index, call.name, `Target ${targetRule.argument} is not grounded in the user request`);
+        }
+        // An action that resolves compiled targets against the request like a direct call has its
+        // naming evidence from that resolution, and still answers to the request's protections.
+        const resolvedRefusal =
+            compiledTargetAuthority === null
+                ? null
+                : compiledTargetRefusalReason(
+                      admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true }),
+                      targetRule.argument
+                  );
+        if (resolvedRefusal !== null) {
+            return rejection(index, call.name, resolvedRefusal);
         }
 
         groundedArguments[targetRule.argument] = result.id;
@@ -5590,6 +5937,14 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
+    const compiledSelectorTermsByCallIndex = getCompiledSelectorTermsByCallIndex(
+        compilerEvidence,
+        transformCalls.length
+    );
+    const compilerExcludedIds: ReadonlySet<string> = new Set(
+        compilerEvidence?.selectors.flatMap((selector) => [...selector.excludedIds, ...selector.protectedExclusions]) ??
+            []
+    );
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
     let compilerActionCommandGraph: ActionCommandGraph | undefined;
     if (compilerEvidence !== undefined) {
@@ -6301,6 +6656,7 @@ export function bridgeGroundedLlmToolCalls({
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalCreationBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
+    const batchWrittenValueTexts = getBatchWrittenValueTexts(effectiveCalls);
     let prospectiveContext = context;
     for (const [index, providerCall] of effectiveCalls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -6371,8 +6727,11 @@ export function bridgeGroundedLlmToolCalls({
                         createdObjectRequestIndexes.has(index) ||
                         createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
+                batchWrittenValueTexts,
                 call,
                 catalog,
+                compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
+                compilerExcludedIds,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),

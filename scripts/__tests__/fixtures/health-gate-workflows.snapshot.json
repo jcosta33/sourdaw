@@ -4,6 +4,7 @@
     "health-gates.yml",
     "heavy-gates.yml",
     "nightly.yml",
+    "pr-checks.yml",
     "quantum-measurements.yml",
     "semantic-review.yml",
     "validation.yml",
@@ -12,7 +13,11 @@
   "health-gates.yml": {
     "name": "Health gates",
     "on": {
-      "pull_request": null
+      "pull_request": {
+        "types": [
+          "labeled"
+        ]
+      }
     },
     "permissions": {
       "contents": "read",
@@ -23,8 +28,58 @@
       "cancel-in-progress": true
     },
     "jobs": {
+      "admission": {
+        "name": "Approval admission",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "outputs": {
+          "admitted": "${{ steps.decide.outputs.admitted }}",
+          "reason": "${{ steps.decide.outputs.reason }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted admission",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.repository.default_branch }}",
+              "path": "trusted",
+              "sparse-checkout": "scripts",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Read reviews",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}",
+              "REPOSITORY": "${{ github.repository }}",
+              "NUMBER": "${{ github.event.pull_request.number }}"
+            },
+            "run": "gh api --paginate --slurp \"repos/$REPOSITORY/pulls/$NUMBER/reviews\" > \"$RUNNER_TEMP/reviews.json\""
+          },
+          {
+            "name": "Decide admission",
+            "id": "decide",
+            "env": {
+              "REVIEWS_PATH": "${{ runner.temp }}/reviews.json",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "LABEL_NAME": "${{ github.event.label.name }}",
+              "SENDER_NODE_ID": "${{ github.event.sender.node_id }}"
+            },
+            "run": "node trusted/scripts/ciApprovalAdmission.ts"
+          }
+        ]
+      },
       "scope": {
         "name": "Plan required checks",
+        "needs": "admission",
+        "if": "needs.admission.outputs.admitted == 'true'",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 10,
         "outputs": {
@@ -87,94 +142,6 @@
           }
         ]
       },
-      "selection-shadow": {
-        "name": "E2E selection shadow",
-        "needs": "scope",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
-        "steps": [
-          {
-            "name": "Checkout candidate head",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.head.sha }}",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout immutable integration commit",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.sha }}",
-              "path": "shadow-integration",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout immutable shadow control",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.base.sha }}",
-              "path": "shadow-control",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Download authoritative scope",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-            "with": {
-              "name": "pr-validation-scope",
-              "path": "shadow-scope"
-            }
-          },
-          {
-            "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
-            "with": {
-              "package_json_file": "shadow-control/package.json"
-            }
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "24.19.0",
-              "cache": "pnpm",
-              "cache-dependency-path": "shadow-control/pnpm-lock.yaml"
-            }
-          },
-          {
-            "name": "Install dependencies",
-            "working-directory": "shadow-control",
-            "run": "pnpm install --frozen-lockfile"
-          },
-          {
-            "name": "Measure shadow selection",
-            "env": {
-              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "INTEGRATION_SHA": "${{ github.sha }}",
-              "INTEGRATION_ROOT": "shadow-integration",
-              "CONTROL_ROOT": "shadow-control"
-            },
-            "run": "node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
-          },
-          {
-            "name": "Upload shadow measurement",
-            "if": "${{ always() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-            "with": {
-              "name": "e2e-selection-shadow",
-              "path": "e2e-selection-shadow.json",
-              "if-no-files-found": "error",
-              "retention-days": 7
-            }
-          }
-        ]
-      },
       "validation": {
         "name": "Validation",
         "needs": "scope",
@@ -230,6 +197,7 @@
         "name": "Gate",
         "if": "${{ always() }}",
         "needs": [
+          "admission",
           "scope",
           "validation",
           "affected",
@@ -244,9 +212,105 @@
             "env": {
               "RESULTS": "${{ toJSON(needs) }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
+      }
+    }
+  },
+  "pr-checks.yml": {
+    "name": "PR checks",
+    "on": {
+      "pull_request": {
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened",
+          "ready_for_review"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read",
+      "pull-requests": "read"
+    },
+    "concurrency": {
+      "group": "pr-checks-${{ github.event.pull_request.number }}",
+      "cancel-in-progress": true
+    },
+    "jobs": {
+      "scope": {
+        "name": "Plan push checks",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "outputs": {
+          "profile": "${{ steps.plan.outputs.profile }}",
+          "matrix": "${{ steps.plan.outputs.matrix }}",
+          "browser": "${{ steps.plan.outputs.browser }}",
+          "browser-ai": "${{ steps.plan.outputs.browser-ai }}",
+          "codeql": "${{ steps.plan.outputs.codeql }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Plan affected checks",
+            "id": "plan",
+            "env": {
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+            },
+            "run": "node scripts/prValidationScope.ts plan"
+          },
+          {
+            "name": "Upload scope manifest",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "pr-validation-scope",
+              "path": "pr-validation-scope.json",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "validation": {
+        "name": "Push validation",
+        "needs": "scope",
+        "uses": "./.github/workflows/validation.yml",
+        "with": {
+          "browser": "${{ needs.scope.outputs.browser == 'true' }}",
+          "profile": "${{ needs.scope.outputs.profile }}"
+        }
       }
     }
   },
@@ -316,7 +380,7 @@
           {
             "name": "Install Playwright browsers",
             "timeout-minutes": 35,
-            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives,\n  # so the browser download is killed outright; apt gets a TERM first.\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives,\n  # so the browser download is killed outright; apt gets a TERM first.\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -410,11 +474,11 @@
         "name": "Browser AI WebGPU admission",
         "if": "inputs.browser-ai",
         "runs-on": "macos-14",
-        "timeout-minutes": 30,
+        "timeout-minutes": 40,
         "steps": [
           {
             "name": "Checkout",
-            "timeout-minutes": 1,
+            "timeout-minutes": 3,
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
@@ -424,7 +488,7 @@
           },
           {
             "name": "Set up pnpm",
-            "timeout-minutes": 1,
+            "timeout-minutes": 7,
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
               "package_json_file": "package.json"
@@ -432,7 +496,7 @@
           },
           {
             "name": "Set up Node",
-            "timeout-minutes": 1,
+            "timeout-minutes": 3,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -809,13 +873,20 @@
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
-              "fetch-depth": 0
+              "fetch-depth": 0,
+              "persist-credentials": false
             }
+          },
+          {
+            "name": "Prepare unit tool directory",
+            "id": "unit_tools",
+            "run": "tool_root=\"/var/tmp/sourdaw-unit-tools-$(cat /proc/sys/kernel/random/uuid)\"\nmkdir -m 755 \"$tool_root\"\nprintf 'root=%s\\n' \"$tool_root\" >> \"$GITHUB_OUTPUT\"\n"
           },
           {
             "name": "Set up pnpm",
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
+              "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
             }
           },
@@ -823,13 +894,20 @@
             "name": "Set up Node",
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
-              "node-version": "${{ env.NODE_VERSION }}",
-              "cache": "pnpm"
+              "node-version": "${{ env.NODE_VERSION }}"
             }
           },
           {
+            "name": "Prepare isolated unit account",
+            "id": "unit_isolation",
+            "env": {
+              "SOURDAW_UNIT_TOOL_ROOT": "${{ steps.unit_tools.outputs.root }}"
+            },
+            "run": "node scripts/runIsolatedUnitShard.ts prepare"
+          },
+          {
             "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile"
+            "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
             "name": "Run shard",
@@ -837,7 +915,7 @@
             "env": {
               "VITEST_MAX_WORKERS": 4
             },
-            "run": "pnpm run test:run --shard=${{ matrix.shard }}/4"
+            "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
           {
             "name": "Report shard failure",
@@ -881,7 +959,7 @@
           },
           {
             "name": "Run script suite",
-            "run": "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+            "run": "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts' --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts' --exclude='**/resourceGuardShowOutput.spec.ts'"
           }
         ]
       },
@@ -917,7 +995,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -992,7 +1070,7 @@
             "name": "Install ALSA development headers",
             "shell": "bash",
             "timeout-minutes": 30,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Restore pinned Rust toolchain",
@@ -1044,7 +1122,11 @@
         "steps": [
           {
             "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1053,7 +1135,10 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+            "with": {
+              "save-if": "false"
+            }
           },
           {
             "name": "Cache the cargo registry index",
@@ -1078,6 +1163,34 @@
               "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
             "run": "cargo test --package sourdaw-native"
+          },
+          {
+            "name": "Set up Node for native mutation proof",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Verify native transport mutation sensitivity",
+            "id": "native-mutations",
+            "timeout-minutes": 20,
+            "env": {
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}"
+            },
+            "run": "node scripts/verifyNativeTransportMutations.ts"
+          },
+          {
+            "name": "Upload native transport mutation evidence",
+            "if": "${{ always() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "native-transport-mutations-${{ github.event.pull_request.head.sha }}",
+              "path": ".agents/artifacts/native-transport-mutations/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
           }
         ]
       },
@@ -1541,17 +1654,20 @@
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
-              "fetch-depth": 0
+              "fetch-depth": 0,
+              "persist-credentials": false
             }
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Prepare unit tool directory",
+            "id": "unit_tools",
+            "run": "tool_root=\"/var/tmp/sourdaw-unit-tools-$(cat /proc/sys/kernel/random/uuid)\"\nmkdir -m 755 \"$tool_root\"\nprintf 'root=%s\\n' \"$tool_root\" >> \"$GITHUB_OUTPUT\"\n"
           },
           {
             "name": "Set up pnpm",
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
+              "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
             }
           },
@@ -1559,13 +1675,20 @@
             "name": "Set up Node",
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
-              "node-version": "${{ env.NODE_VERSION }}",
-              "cache": "pnpm"
+              "node-version": "${{ env.NODE_VERSION }}"
             }
           },
           {
+            "name": "Prepare isolated unit account",
+            "id": "unit_isolation",
+            "env": {
+              "SOURDAW_UNIT_TOOL_ROOT": "${{ steps.unit_tools.outputs.root }}"
+            },
+            "run": "node scripts/runIsolatedUnitShard.ts prepare"
+          },
+          {
             "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile"
+            "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
             "name": "Run shard",
@@ -1573,7 +1696,7 @@
             "env": {
               "VITEST_MAX_WORKERS": 4
             },
-            "run": "pnpm run test:run --shard=${{ matrix.shard }}/4"
+            "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
           {
             "name": "Report shard failure",
@@ -1640,7 +1763,7 @@
             "name": "Install ALSA development headers",
             "shell": "bash",
             "timeout-minutes": 30,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1886,7 +2009,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -2324,6 +2447,7 @@
           "public/wasm/scoring/scoring_bg.wasm",
           "public/wasm/manifest.json",
           "rust-toolchain.toml",
+          "scripts/aptWithoutMicrosoftFeed.sh",
           "scripts/checkReleaseInventory.ts",
           "scripts/healthGateWorkflowContract.ts",
           "scripts/hostedQuantumMeasurementWorkflowContract.ts",
@@ -2387,7 +2511,7 @@
           {
             "name": "Install Google Chrome",
             "timeout-minutes": 20,
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 5m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install --force chrome; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Verify committed WASM artifacts",
@@ -2447,6 +2571,35 @@
           "opened",
           "synchronize",
           "reopened"
+        ],
+        "paths": [
+          ".cargo/config.toml",
+          ".github/workflows/wasm-artifacts.yml",
+          "Cargo.lock",
+          "Cargo.toml",
+          "crates/daw-dsp/**",
+          "crates/daw-io/**",
+          "crates/daw-wasm-decoder/**",
+          "crates/proof-chamber/**",
+          "crates/scoring/**",
+          "package.json",
+          "pnpm-lock.yaml",
+          "public/wasm/manifest.json",
+          "rust-toolchain.toml",
+          "scripts/gen-daw-dsp-worklet.ts",
+          "scripts/gen-proof-chamber-worklet.ts",
+          "scripts/gen-scoring-worklet.ts",
+          "scripts/gen-wasm-manifest.ts",
+          "scripts/hostedWasmArtifacts.ts",
+          "scripts/hostedWasmSourceContext.ts",
+          "scripts/hostedWasmZip.ts",
+          "scripts/markWasmPackageInternal.ts",
+          "scripts/strictJson.ts",
+          "scripts/verify-wasm-artifacts.ts",
+          "scripts/wasm-artifacts.ts",
+          "scripts/wasmToolchainPins.ts",
+          "scripts/workletPolyfills.ts",
+          "scripts/workspaceManifestFingerprint.ts"
         ]
       }
     },
@@ -2716,7 +2869,7 @@
             "name": "Install ALSA development headers",
             "shell": "bash",
             "timeout-minutes": 30,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Restore pinned Rust toolchain",

@@ -3,7 +3,7 @@ import { desktopInvoke } from '#/utils/desktopBridge';
 import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getNativeEventUnlisten } from '../getNativeEventUnlisten';
 import { mapNativeMidiTimestamp } from '../mapNativeMidiTimestamp';
-import { resetChannelControllerState } from '../resetChannelControllerState';
+import { resetInputDeviceControllerState } from '../resetInputDeviceControllerState';
 import { resetNativeMidiTimeAnchor } from '../resetNativeMidiTimeAnchor';
 import { setNativeEventUnlisten } from '../setNativeEventUnlisten';
 
@@ -92,7 +92,7 @@ export async function selectMidiInputNative({
 }: SelectMidiInputNativeInput): Promise<void> {
     selectionGeneration += 1;
     const generation = selectionGeneration;
-    resetChannelControllerState();
+    resetInputDeviceControllerState();
 
     const currentUnlisten = getNativeEventUnlisten();
     if (currentUnlisten) {

@@ -90,6 +90,7 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 
 // loadRecentProject side effects — none touch the round-trip storage path.
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     defaultTransportState: { masterGain: 75, isPlaying: false },
     stopPlayback: vi.fn(),
     ensureTrackStrips: vi.fn(),

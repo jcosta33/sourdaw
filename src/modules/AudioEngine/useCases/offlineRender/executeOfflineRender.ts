@@ -86,6 +86,7 @@ export async function executeOfflineRender(
                 instruments: input.instruments,
                 loadedExternalInstanceIds: input.loadedExternalInstanceIds,
                 cancellationSignal,
+                refuseFailedFaustDevices: holder === 'musician-export',
             });
             const graph = await buildOfflineWebAudioGraph({
                 input,

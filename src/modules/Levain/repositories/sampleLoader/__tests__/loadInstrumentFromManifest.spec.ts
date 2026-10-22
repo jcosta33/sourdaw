@@ -1,8 +1,30 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
+import { LEVAIN_SAMPLE_CHUNK_FLOATS, LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT } from '#/infra/audioWorklet/levainSampleChunk';
+import { LEVAIN_ZONE_TABLE_CHUNK_ENTRIES } from '#/infra/audioWorklet/levainZoneTableChunk';
+
 import { decodedBankResource } from '../decodedBankResource';
 import { fetchAndDecode } from '../fetchAndDecode';
 import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
+
+/**
+ * The zone-table builder port, standing in for the Worker: tables of the right
+ * LUT size for the request, every slot empty except the first, which lists
+ * every zone. Synchronous work behind a resolved promise.
+ */
+const buildZoneTables = vi.fn(
+    (
+        request: { zones: readonly { zoneId: number }[]; numArticulations: number; numMics: number },
+        _signal?: AbortSignal
+    ): Promise<{ lut: Uint32Array; arena: Uint32Array }> => {
+        const lut = new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2);
+        lut[1] = request.zones.length;
+        return Promise.resolve({ lut, arena: Uint32Array.from(request.zones, (zone) => zone.zoneId) });
+    }
+);
+
+/** Table chunks a load of the fake builder's tables posts: one LUT chunk and one arena chunk. */
+const FAKE_TABLE_CHUNKS = 2;
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -70,6 +92,10 @@ function mockFetchOk(): void {
 type FakePort = MessagePort & {
     postMessage: ReturnType<typeof vi.fn>;
     emit: (message: unknown) => void;
+    /** The most chunks that were ever posted and not yet answered at once. */
+    peakUnacknowledgedChunks: () => number;
+    /** Run the answers a 'queued' worklet holds, in arrival order. */
+    drainWorklet: () => void;
 };
 
 type MakePortOptions = {
@@ -77,7 +103,7 @@ type MakePortOptions = {
     autoComplete?: boolean;
     commitError?: string;
     /**
-     * Model the processor's own commit timing: `buildZoneMap` clears the
+     * Model the processor's own commit timing: `commitSampleBank` clears the
      * pending token synchronously (as `_completeSampleBankLoad` does,
      * levainProcessor.ts ~:285-291) but the test emits the terminal
      * `sampleBankLoaded` itself, later — so a race between an abort and that
@@ -112,7 +138,25 @@ type MakePortOptions = {
      * (levainProcessor.ts `_answerAfterFault`) and nothing else.
      */
     faultedBeforeLoad?: string;
+    /**
+     * How the fake worklet answers a `sampleChunk`: 'now' with a microtask,
+     * 'later' with a macrotask (so a loader that does not wait piles chunks
+     * up), 'never' (a processor that stopped answering mid-sample), or
+     * 'queued' (a worklet reading its port in order: each answer, and the
+     * reply to a later abort, wait in a queue until `drainWorklet` runs them
+     * in the order the messages arrived).
+     */
+    chunkAnswers?: 'now' | 'later' | 'never' | 'queued';
+    /**
+     * Model a port that is closed by the time the loader aborts: posting
+     * `abortSampleBank` throws.
+     */
+    abortPostThrows?: boolean;
+    /** Share the count of unanswered chunks between ports, to bound them across concurrent loads. */
+    chunkTally?: ChunkTally;
 };
+
+type ChunkTally = { unanswered: number; peak: number };
 
 /**
  * A fake worklet port modelled on `levainProcessor.ts`'s own token bookkeeping
@@ -126,6 +170,8 @@ function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
     let releaseRequests = 0;
+    const workletQueue: Array<() => void> = [];
+    const tally: ChunkTally = options.chunkTally ?? { unanswered: 0, peak: 0 };
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -145,6 +191,27 @@ function makePort(options: MakePortOptions = {}): FakePort {
             });
             return;
         }
+        if (message.type === 'sampleChunk' || message.type === 'zoneTableChunk') {
+            tally.unanswered++;
+            tally.peak = Math.max(tally.peak, tally.unanswered);
+            const answer = (): void => {
+                tally.unanswered--;
+                if (message.type === 'sampleChunk') {
+                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
+                    return;
+                }
+                emit({ type: 'zoneTableChunkWritten', loadToken: message.loadToken });
+            };
+            const answers = options.chunkAnswers ?? 'now';
+            if (answers === 'now') {
+                queueMicrotask(answer);
+            } else if (answers === 'later') {
+                setTimeout(answer, 0);
+            } else if (answers === 'queued') {
+                workletQueue.push(answer);
+            }
+            return;
+        }
         if (message.type === 'beginSampleBank') {
             pendingToken = message.loadToken;
             queueMicrotask(() => {
@@ -156,7 +223,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
             });
             return;
         }
-        if (message.type === 'buildZoneMap') {
+        if (message.type === 'commitSampleBank') {
             if (options.autoComplete === false) {
                 // Models a commit still in flight (e.g. a shared-bank
                 // follower awaiting its owner) — the token stays pending.
@@ -168,13 +235,20 @@ function makePort(options: MakePortOptions = {}): FakePort {
             if (options.deferCommit) {
                 return;
             }
-            queueMicrotask(() => {
+            // The worklet handles messages in order, so its commit reply never
+            // overtakes the acknowledgement of a chunk posted before it.
+            const replyToCommit = (): void => {
                 if (options.commitError) {
                     emit({ type: 'sampleBankError', loadToken: message.loadToken, message: options.commitError });
                     return;
                 }
                 emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
-            });
+            };
+            if (options.chunkAnswers === 'later') {
+                setTimeout(replyToCommit, 0);
+            } else {
+                queueMicrotask(replyToCommit);
+            }
             return;
         }
         if (message.type === 'releaseRetiredBank') {
@@ -183,12 +257,20 @@ function makePort(options: MakePortOptions = {}): FakePort {
             }
             releaseRequests++;
             const done = releaseRequests >= (options.releaseSteps ?? 1);
-            queueMicrotask(() => {
+            const replyToRelease = (): void => {
                 emit({ type: 'retiredBankReleased', loadToken: message.loadToken, done });
-            });
+            };
+            if (options.chunkAnswers === 'queued') {
+                workletQueue.push(replyToRelease);
+            } else {
+                queueMicrotask(replyToRelease);
+            }
             return;
         }
         if (message.type === 'abortSampleBank') {
+            if (options.abortPostThrows) {
+                throw new Error('port is closed');
+            }
             if (message.loadToken !== pendingToken) {
                 // Matches `msg.loadToken === this._bankLoadToken` failing on
                 // the real processor: already committed, or a stale token.
@@ -198,18 +280,29 @@ function makePort(options: MakePortOptions = {}): FakePort {
             if (options.silenceAbortReply) {
                 return;
             }
-            queueMicrotask(() => {
+            const replyToAbort = (): void => {
                 emit({
                     type: 'sampleBankError',
                     loadToken: message.loadToken,
                     message: 'Levain sample bank load was aborted',
                 });
-            });
+            };
+            if (options.chunkAnswers === 'queued') {
+                workletQueue.push(replyToAbort);
+            } else {
+                queueMicrotask(replyToAbort);
+            }
         }
     });
     return {
         postMessage,
         emit,
+        peakUnacknowledgedChunks: () => tally.peak,
+        drainWorklet: () => {
+            for (const run of workletQueue.splice(0)) {
+                run();
+            }
+        },
         addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
             if (typeof listener === 'function') {
                 listeners.add(listener);
@@ -223,6 +316,10 @@ function makePort(options: MakePortOptions = {}): FakePort {
     } as unknown as FakePort;
 }
 
+function pause(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function postedTypes(port: { postMessage: ReturnType<typeof vi.fn> }): string[] {
     return port.postMessage.mock.calls.map((c) => (c[0] as { type: string }).type);
 }
@@ -233,10 +330,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getPostedSampleData(call: unknown[] | undefined): Float32Array {
     const message: unknown = call?.[0];
-    if (!isRecord(message) || message.type !== 'addSample' || !(message.data instanceof Float32Array)) {
-        throw new Error('Expected an addSample message with Float32Array data');
+    if (!isRecord(message) || message.type !== 'sampleChunk' || !(message.data instanceof Float32Array)) {
+        throw new Error('Expected a sampleChunk message with Float32Array data');
     }
     return message.data;
+}
+
+/** Messages that upload one sample's PCM, in the order the loader posts them. */
+const UPLOAD_TYPES = ['beginSample', 'sampleChunk', 'sealSample'];
+
+function postedMessages(port: { postMessage: ReturnType<typeof vi.fn> }): Record<string, unknown>[] {
+    return port.postMessage.mock.calls.map(([message]) => message as Record<string, unknown>);
 }
 
 describe('loadInstrumentFromManifest', () => {
@@ -256,6 +360,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -264,26 +369,31 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
         const types = postedTypes(port);
         expect(types).toContain('beginSampleBank');
-        expect(types).toContain('addSample');
-        expect(types).toContain('buildZoneMap');
-        expect(types.indexOf('beginSampleBank')).toBeLessThan(types.indexOf('addSample'));
+        expect(types).toContain('commitSampleBank');
+        expect(types.filter((type) => UPLOAD_TYPES.includes(type))).toEqual(UPLOAD_TYPES);
+        expect(types.indexOf('beginSampleBank')).toBeLessThan(types.indexOf('beginSample'));
+        expect(types.indexOf('sealSample')).toBeLessThan(types.indexOf('commitSampleBank'));
         const beginCall = port.postMessage.mock.calls.find(([message]) => {
             return (message as { type: string }).type === 'beginSampleBank';
         });
-        const addSampleCall = port.postMessage.mock.calls.find(([message]) => {
-            return (message as { type: string }).type === 'addSample';
+        const beginSampleCall = port.postMessage.mock.calls.find(([message]) => {
+            return (message as { type: string }).type === 'beginSample';
         });
         const beginMessage: unknown = beginCall?.[0];
-        const addSampleMessage: unknown = addSampleCall?.[0];
-        if (!isRecord(beginMessage) || !isRecord(addSampleMessage)) {
-            throw new Error('Expected beginSampleBank and addSample messages');
+        const beginSampleMessage: unknown = beginSampleCall?.[0];
+        if (!isRecord(beginMessage) || !isRecord(beginSampleMessage)) {
+            throw new Error('Expected beginSampleBank and beginSample messages');
         }
-        expect(addSampleCall).toHaveLength(1);
+        expect(beginSampleCall).toHaveLength(1);
         expect(beginMessage.instrumentId).toBe('violin-1');
-        expect(addSampleMessage.loadToken).toBe(beginMessage.loadToken);
+        expect(beginSampleMessage.loadToken).toBe(beginMessage.loadToken);
+        const uploadMessages = postedMessages(port).filter(
+            (message) => typeof message.type === 'string' && UPLOAD_TYPES.includes(message.type)
+        );
+        expect(uploadMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
         const zoneAndBuildMessages = port.postMessage.mock.calls
             .map(([message]) => message as { type: string; loadToken?: number })
-            .filter((message) => message.type === 'addZone' || message.type === 'buildZoneMap');
+            .filter((message) => message.type === 'addZone' || message.type === 'commitSampleBank');
         expect(zoneAndBuildMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
     });
 
@@ -309,6 +419,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -350,13 +461,14 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
         });
 
         const messages = port.postMessage.mock.calls.map(([message]) => message as Record<string, unknown>);
-        const uploaded = messages.filter((message) => message.type === 'addSample');
+        const uploaded = messages.filter((message) => message.type === 'beginSample');
         // The transition's PCM is a second file the bank would otherwise never
         // fetch: the zone list only names `a.wav`.
         expect(uploaded).toHaveLength(2);
@@ -379,6 +491,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -387,25 +500,574 @@ describe('loadInstrumentFromManifest', () => {
         expect(postedTypes(port)).not.toContain('addLegatoTransition');
     });
 
+    describe('uploading a sample in bounded chunks', () => {
+        const FRAMES = 2 * LEVAIN_SAMPLE_CHUNK_FLOATS + 5;
+
+        /** A decoded sample the way the bank holds it: PCM in a SharedArrayBuffer. */
+        function stubLargeSample(): Float32Array {
+            const data = new Float32Array(new SharedArrayBuffer(FRAMES * Float32Array.BYTES_PER_ELEMENT));
+            for (let index = 0; index < FRAMES; index++) {
+                data[index] = index + 1;
+            }
+            vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                data,
+                frameCount: FRAMES,
+                channels: 1,
+                sampleRate: 44100,
+            });
+            return data;
+        }
+
+        function load(port: FakePort, signal?: AbortSignal): Promise<unknown> {
+            return loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal,
+            });
+        }
+
+        it('posts a begin, chunks no longer than the ceiling in order, then a seal', async () => {
+            const source = stubLargeSample();
+            const port = makePort();
+
+            await load(port);
+
+            const upload = postedMessages(port).filter(
+                (message) => typeof message.type === 'string' && UPLOAD_TYPES.includes(message.type)
+            );
+            expect(upload.map((message) => message.type)).toEqual([
+                'beginSample',
+                'sampleChunk',
+                'sampleChunk',
+                'sampleChunk',
+                'sealSample',
+            ]);
+            expect(upload[0]).toMatchObject({ sampleId: 0, frameCount: FRAMES, channels: 1, sampleRate: 44100 });
+            const chunks = upload.filter((message) => message.type === 'sampleChunk');
+            expect(chunks.map((message) => (message.data as Float32Array).length)).toEqual([
+                LEVAIN_SAMPLE_CHUNK_FLOATS,
+                LEVAIN_SAMPLE_CHUNK_FLOATS,
+                5,
+            ]);
+            expect(chunks.every((message) => message.sampleId === 0)).toBe(true);
+            const rejoined = chunks.flatMap((message) => [...(message.data as Float32Array)]);
+            expect(rejoined).toEqual([...source]);
+        });
+
+        it('transfers each chunk as its own copy and leaves the cached bank intact', async () => {
+            const source = stubLargeSample();
+            const port = makePort();
+
+            await load(port);
+
+            const chunkCalls = port.postMessage.mock.calls.filter(
+                ([message]) => (message as { type: string }).type === 'sampleChunk'
+            );
+            expect(chunkCalls).toHaveLength(3);
+            for (const [message, transfer] of chunkCalls) {
+                const data = (message as { data: Float32Array }).data;
+                expect(transfer).toEqual([data.buffer]);
+                expect(data.buffer).not.toBe(source.buffer);
+            }
+            expect(source.buffer.byteLength).toBe(FRAMES * Float32Array.BYTES_PER_ELEMENT);
+        });
+
+        describe('waiting for the worklet to acknowledge chunks', () => {
+            const MANY_FRAMES = 7 * LEVAIN_SAMPLE_CHUNK_FLOATS + 5;
+
+            function stubManyChunks(): void {
+                const data = new Float32Array(new SharedArrayBuffer(MANY_FRAMES * Float32Array.BYTES_PER_ELEMENT));
+                vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                    data,
+                    frameCount: MANY_FRAMES,
+                    channels: 1,
+                    sampleRate: 44100,
+                });
+            }
+
+            function chunkCount(port: FakePort): number {
+                return postedTypes(port).filter((type) => type === 'sampleChunk').length;
+            }
+
+            it('never has more chunks unacknowledged than the in-flight limit, and still posts them all', async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'later' });
+
+                await load(port);
+
+                expect(chunkCount(port)).toBe(8);
+                expect(port.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                expect(postedTypes(port)).toContain('sealSample');
+            });
+
+            /** A load of its own bank (its own `basePath`, so the decoded bank is not shared). */
+            function loadOwnBank(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {
+                return loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    buildZoneTables,
+                    basePath: `/${name}`,
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal,
+                });
+            }
+
+            it('bounds the unacknowledged chunks of concurrent loads on different ports together', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const ports = [1, 2, 3].map(() => makePort({ chunkAnswers: 'later', chunkTally: tally }));
+                for (const _port of ports) {
+                    stubManyChunks();
+                }
+
+                await Promise.all(ports.map((port, index) => loadOwnBank(port, `bank-${index}`)));
+
+                expect(ports.map(chunkCount)).toEqual([8, 8, 8]);
+                expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+            });
+
+            it('frees the credits of a load that is aborted, so the loads queued behind it finish', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const holder = makePort({ chunkAnswers: 'never', chunkTally: tally });
+                const second = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                const third = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                for (let loads = 0; loads < 3; loads++) {
+                    stubManyChunks();
+                }
+                const controller = new AbortController();
+                const holding = loadOwnBank(holder, 'holder', controller.signal);
+                void holding.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const secondLoad = loadOwnBank(second, 'second');
+                await vi.waitFor(() => {
+                    expect(postedTypes(second)).toContain('beginSample');
+                });
+                const thirdLoad = loadOwnBank(third, 'third');
+                await vi.waitFor(() => {
+                    expect(postedTypes(third)).toContain('beginSample');
+                });
+                expect([chunkCount(second), chunkCount(third)]).toEqual([0, 0]);
+
+                controller.abort();
+
+                await expect(holding).rejects.toMatchObject({ name: 'AbortError' });
+                await Promise.all([secondLoad, thirdLoad]);
+                expect([chunkCount(second), chunkCount(third)]).toEqual([8, 8]);
+            }, 5000);
+
+            it('returns exactly the credits it held, however the loads ended, so the budget never grows', async () => {
+                const holder = makePort({ chunkAnswers: 'never' });
+                const waiting = makePort({ chunkAnswers: 'never' });
+                const next = makePort({ chunkAnswers: 'never' });
+                for (let loads = 0; loads < 3; loads++) {
+                    stubManyChunks();
+                }
+                const holderController = new AbortController();
+                const waitingController = new AbortController();
+                const holding = loadOwnBank(holder, 'budget-holder', holderController.signal);
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                // The fake worklet answers this abort with a sampleBankError, so
+                // the load's wait is both aborted and failed.
+                const queued = loadOwnBank(waiting, 'budget-waiting', waitingController.signal);
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiting)).toContain('beginSample');
+                });
+                waitingController.abort();
+                holderController.abort();
+                await Promise.allSettled([holding, queued]);
+                const controller = new AbortController();
+
+                const fresh = loadOwnBank(next, 'budget-next', controller.signal);
+                void fresh.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                await pause(20);
+
+                expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                controller.abort();
+                await Promise.allSettled([fresh]);
+            }, 5000);
+
+            it('keeps the credits of an aborted load until the worklet has passed its queued chunks', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const aborted = makePort({ chunkAnswers: 'queued', chunkTally: tally });
+                const waiting = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                stubManyChunks();
+                stubManyChunks();
+                const controller = new AbortController();
+                const first = loadOwnBank(aborted, 'passed-a', controller.signal);
+                void first.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(aborted)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const second = loadOwnBank(waiting, 'passed-b');
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiting)).toContain('beginSample');
+                });
+
+                controller.abort();
+
+                await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+                await pause(20);
+                // The worklet still holds the four chunks ahead of the abort.
+                expect(chunkCount(waiting)).toBe(0);
+
+                aborted.drainWorklet();
+
+                await second;
+                expect(chunkCount(waiting)).toBe(8);
+                expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+            }, 5000);
+
+            it("hands back an aborted load's credits at once when its port is closed", async () => {
+                const closed = makePort({ chunkAnswers: 'never', abortPostThrows: true });
+                const waiting = makePort({ chunkAnswers: 'now' });
+                stubManyChunks();
+                stubManyChunks();
+                const controller = new AbortController();
+                const first = loadOwnBank(closed, 'closed-a', controller.signal);
+                void first.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(closed)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const second = loadOwnBank(waiting, 'closed-b');
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiting)).toContain('beginSample');
+                });
+
+                controller.abort();
+
+                await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+                await second;
+                expect(chunkCount(waiting)).toBe(8);
+            }, 5000);
+
+            it('passes on a credit granted to a waiter in the turn the waiter is aborted', async () => {
+                // A holder that posted exactly the limit (its sample chunks and
+                // its zone-table chunks) and then waits on its commit, a waiter queued behind it, and a credit freed in the
+                // same turn the waiter is aborted.
+                const holderData = new Float32Array(
+                    new SharedArrayBuffer(
+                        (LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - FAKE_TABLE_CHUNKS) *
+                            LEVAIN_SAMPLE_CHUNK_FLOATS *
+                            Float32Array.BYTES_PER_ELEMENT
+                    )
+                );
+                vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                    data: holderData,
+                    frameCount: holderData.length,
+                    channels: 1,
+                    sampleRate: 44100,
+                });
+                stubManyChunks();
+                stubManyChunks();
+                const holder = makePort({ chunkAnswers: 'never', autoComplete: false });
+                const waiter = makePort({ chunkAnswers: 'never' });
+                const holderController = new AbortController();
+                const waiterController = new AbortController();
+                const holding = loadOwnBank(holder, 'handoff-holder', holderController.signal);
+                void holding.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(postedTypes(holder)).toContain('commitSampleBank');
+                });
+                const waiting = loadOwnBank(waiter, 'handoff-waiter', waiterController.signal);
+                void waiting.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiter)).toContain('beginSample');
+                });
+                const holderToken = (postedMessages(holder)[0] as { loadToken: number }).loadToken;
+
+                waiterController.abort();
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+
+                await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+                holderController.abort();
+                await expect(holding).rejects.toBeDefined();
+                const next = makePort({ chunkAnswers: 'never' });
+                const controller = new AbortController();
+                const fresh = loadOwnBank(next, 'handoff-next', controller.signal);
+                void fresh.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                controller.abort();
+                await Promise.allSettled([fresh]);
+            }, 5000);
+
+            it.each(['sampleBankError', 'error', 'disposed', 'abort'] as const)(
+                'returns a granted credit without posting PCM when %s ends the waiter before continuation',
+                async (terminal) => {
+                    const holderData = new Float32Array(
+                        new SharedArrayBuffer(
+                            (LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - FAKE_TABLE_CHUNKS) *
+                                LEVAIN_SAMPLE_CHUNK_FLOATS *
+                                Float32Array.BYTES_PER_ELEMENT
+                        )
+                    );
+                    vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                        data: holderData,
+                        frameCount: holderData.length,
+                        channels: 1,
+                        sampleRate: 44100,
+                    });
+                    const holder = makePort({ chunkAnswers: 'never', autoComplete: false });
+                    const waiter = makePort({ chunkAnswers: 'never' });
+                    const next = makePort({ chunkAnswers: 'never' });
+                    const holderController = new AbortController();
+                    const waiterController = new AbortController();
+                    const nextController = new AbortController();
+                    const settled: Promise<unknown>[] = [];
+                    const holding = loadOwnBank(holder, `grant-${terminal}-holder`, holderController.signal);
+                    settled.push(holding);
+                    void holding.catch(() => {});
+                    try {
+                        await vi.waitFor(() => {
+                            expect(postedTypes(holder)).toContain('commitSampleBank');
+                        });
+                        stubManyChunks();
+                        const waiting = loadOwnBank(waiter, `grant-${terminal}-waiter`, waiterController.signal);
+                        settled.push(waiting);
+                        void waiting.catch(() => {});
+                        await vi.waitFor(() => {
+                            expect(postedTypes(waiter)).toContain('beginSample');
+                        });
+                        const holderToken = postedMessages(holder)[0]!.loadToken;
+                        const waiterToken = postedMessages(waiter)[0]!.loadToken;
+
+                        // Grant the queued reservation, then end its load in the
+                        // same turn, before the reservation continuation can run.
+                        holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                        if (terminal === 'abort') {
+                            waiterController.abort();
+                        } else {
+                            waiter.emit({ type: terminal, loadToken: waiterToken, message: 'ended after grant' });
+                        }
+
+                        await expect(waiting).rejects.toBeDefined();
+                        expect(chunkCount(waiter)).toBe(0);
+                        expect(postedTypes(waiter)).not.toContain('sealSample');
+                        holderController.abort();
+                        await expect(holding).rejects.toBeDefined();
+
+                        stubManyChunks();
+                        const fresh = loadOwnBank(next, `grant-${terminal}-next`, nextController.signal);
+                        settled.push(fresh);
+                        void fresh.catch(() => {});
+                        await vi.waitFor(() => {
+                            expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                        });
+                        nextController.abort();
+                        await expect(fresh).rejects.toMatchObject({ name: 'AbortError' });
+                        expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                        expect(next.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                    } finally {
+                        holderController.abort();
+                        waiterController.abort();
+                        nextController.abort();
+                        await Promise.allSettled(settled);
+                    }
+                },
+                5000
+            );
+
+            it('serves loads waiting for a credit in the order they asked', async () => {
+                const holder = makePort({ chunkAnswers: 'never' });
+                const early = makePort({ chunkAnswers: 'never' });
+                const late = makePort({ chunkAnswers: 'never' });
+                for (let loads = 0; loads < 3; loads++) {
+                    stubManyChunks();
+                }
+                const controller = new AbortController();
+                const earlyController = new AbortController();
+                const lateController = new AbortController();
+                const settled = [loadOwnBank(holder, 'fifo-holder', controller.signal)];
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                settled.push(loadOwnBank(early, 'fifo-early', earlyController.signal));
+                await vi.waitFor(() => {
+                    expect(postedTypes(early)).toContain('beginSample');
+                });
+                settled.push(loadOwnBank(late, 'fifo-late', lateController.signal));
+                await vi.waitFor(() => {
+                    expect(postedTypes(late)).toContain('beginSample');
+                });
+                for (const load of settled) {
+                    void load.catch(() => {});
+                }
+                expect([chunkCount(early), chunkCount(late)]).toEqual([0, 0]);
+
+                // The holder asked first (its fifth chunk waits), then early, then late:
+                // each credit it gives back goes to the oldest asker, in turn.
+                const holderToken = (postedMessages(holder)[0] as { loadToken: number }).loadToken;
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT + 1);
+                });
+                expect([chunkCount(early), chunkCount(late)]).toEqual([0, 0]);
+
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                await vi.waitFor(() => {
+                    expect(chunkCount(early)).toBe(1);
+                });
+                expect(chunkCount(late)).toBe(0);
+
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                await vi.waitFor(() => {
+                    expect(chunkCount(late)).toBe(1);
+                });
+                expect(chunkCount(early)).toBe(1);
+                controller.abort();
+                earlyController.abort();
+                lateController.abort();
+                await Promise.allSettled(settled);
+            }, 5000);
+
+            it("ignores an acknowledgement and an error that carry another load's token", async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'never' });
+                let outcome: 'pending' | 'resolved' | 'rejected' = 'pending';
+                const pending = load(port).then(
+                    () => {
+                        outcome = 'resolved';
+                    },
+                    () => {
+                        outcome = 'rejected';
+                    }
+                );
+                await vi.waitFor(() => {
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const loadToken = (postedMessages(port)[0] as { loadToken: number }).loadToken;
+                const foreignToken = loadToken + 1000;
+
+                port.emit({ type: 'sampleChunkWritten', loadToken: foreignToken, sampleId: 0 });
+                port.emit({ type: 'sampleBankError', loadToken: foreignToken, message: 'someone else failed' });
+                await pause(20);
+
+                expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                expect(outcome).toBe('pending');
+
+                while (outcome === 'pending') {
+                    port.emit({ type: 'sampleChunkWritten', loadToken, sampleId: 0 });
+                    await pause(0);
+                }
+                await pending;
+
+                expect(outcome).toBe('resolved');
+                expect(chunkCount(port)).toBe(8);
+            }, 5000);
+
+            it.each(['disposed', 'error'] as const)(
+                'settles the load when the processor ends (%s) while it waits for an acknowledgement',
+                async (type) => {
+                    stubManyChunks();
+                    const port = makePort({ chunkAnswers: 'never' });
+                    const pending = load(port);
+                    void pending.catch(() => {});
+                    await vi.waitFor(() => {
+                        expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                    });
+
+                    port.emit({ type, message: 'trapped' });
+
+                    await expect(pending).rejects.toThrow(/processor ended/);
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                    expect(postedTypes(port)).not.toContain('sealSample');
+                },
+                2000
+            );
+
+            it('settles the load when the worklet refuses a chunk while it waits for an acknowledgement', async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'never' });
+                const pending = load(port);
+                void pending.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const loadToken = (postedMessages(port)[0] as { loadToken: number }).loadToken;
+
+                port.emit({ type: 'sampleBankError', loadToken, message: 'Levain sample chunk does not fit' });
+
+                await expect(pending).rejects.toThrow(/does not fit/);
+                expect(postedTypes(port)).not.toContain('sealSample');
+            }, 2000);
+
+            it('settles the load when it is aborted while it waits for an acknowledgement', async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'never' });
+                const controller = new AbortController();
+                const pending = load(port, controller.signal);
+                void pending.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+
+                controller.abort();
+
+                await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+                expect(postedTypes(port)).toContain('abortSampleBank');
+                expect(postedTypes(port)).not.toContain('sealSample');
+            }, 2000);
+        });
+
+        it('stops posting chunks once the load is aborted mid-sample, and never seals', async () => {
+            stubLargeSample();
+            const port = makePort();
+            const controller = new AbortController();
+            const forward = port.postMessage.getMockImplementation();
+            if (!forward) {
+                throw new Error('Expected the fake port to model the worklet');
+            }
+            let chunks = 0;
+            port.postMessage.mockImplementation((message: unknown, transfer?: unknown) => {
+                if (isRecord(message) && message.type === 'sampleChunk' && ++chunks === 2) {
+                    controller.abort();
+                }
+                return Reflect.apply(forward, undefined, [message, transfer]);
+            });
+
+            await expect(load(port, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+
+            const types = postedTypes(port);
+            expect(types.filter((type) => type === 'sampleChunk')).toHaveLength(2);
+            expect(types).not.toContain('sealSample');
+            expect(types).not.toContain('commitSampleBank');
+            expect(types).toContain('abortSampleBank');
+        });
+    });
+
     it('skips PCM upload when the worklet assigns this loader as a shared-bank follower', async () => {
         const port = makePort({ uploadRequired: false });
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
         });
 
-        expect(postedTypes(port)).not.toContain('addSample');
+        for (const type of UPLOAD_TYPES) {
+            expect(postedTypes(port)).not.toContain(type);
+        }
         expect(postedTypes(port)).toContain('addZone');
-        expect(postedTypes(port)).toContain('buildZoneMap');
+        expect(postedTypes(port)).toContain('commitSampleBank');
     });
 
     describe('freeing the bank the commit displaced', () => {
         function load(port: FakePort): Promise<unknown> {
             return loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -425,7 +1087,7 @@ describe('loadInstrumentFromManifest', () => {
                 expect(releaseCount(port)).toBe(3);
             });
             const types = postedTypes(port);
-            expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+            expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('commitSampleBank'));
             const begin = port.postMessage.mock.calls[0]?.[0] as { loadToken: number };
             const releases = port.postMessage.mock.calls
                 .map(([message]) => message as { type: string; loadToken: number })
@@ -441,13 +1103,13 @@ describe('loadInstrumentFromManifest', () => {
             const pending = load(port);
 
             await vi.waitFor(() => {
-                expect(postedTypes(port)).toContain('buildZoneMap');
+                expect(postedTypes(port)).toContain('commitSampleBank');
             });
             expect(releaseCount(port)).toBe(0);
 
             const buildMessage = port.postMessage.mock.calls
                 .map(([message]) => message as { type: string; loadToken: number })
-                .find((message) => message.type === 'buildZoneMap');
+                .find((message) => message.type === 'commitSampleBank');
             port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage!.loadToken });
             await pending;
 
@@ -528,6 +1190,7 @@ describe('loadInstrumentFromManifest', () => {
 
             const second = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -556,13 +1219,14 @@ describe('loadInstrumentFromManifest', () => {
             const controller = new AbortController();
             const first = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
                 signal: controller.signal,
             });
             await vi.waitFor(() => {
-                expect(postedTypes(port)).toContain('buildZoneMap');
+                expect(postedTypes(port)).toContain('commitSampleBank');
             });
             const [firstToken] = beginTokens(port);
             // The user switches instrument: the first load is aborted after its
@@ -606,6 +1270,7 @@ describe('loadInstrumentFromManifest', () => {
             const controller = new AbortController();
             const middle = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -668,7 +1333,7 @@ describe('loadInstrumentFromManifest', () => {
                 });
                 const [firstToken] = beginTokens(port);
                 const types = postedTypes(port);
-                expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+                expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('commitSampleBank'));
 
                 const second = load(port).catch((error: unknown) => error);
                 await settle();
@@ -698,6 +1363,7 @@ describe('loadInstrumentFromManifest', () => {
                 });
                 const first = loadInstrumentFromManifest({
                     manifestUrl: '/m.json',
+                    buildZoneTables,
                     basePath: '/base',
                     expectedInstrumentId: 'violin-1',
                     nodePort: port,
@@ -715,12 +1381,16 @@ describe('loadInstrumentFromManifest', () => {
 
                 port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
                 await expect(second).resolves.toBeDefined();
-                expect(postedTypes(port).filter((type) => type !== 'addSample' && type !== 'addZone')).toEqual([
+                expect(postedTypes(port).filter((type) => !UPLOAD_TYPES.includes(type) && type !== 'addZone')).toEqual([
                     'beginSampleBank',
                     'abortSampleBank',
                     'releaseRetiredBank',
                     'beginSampleBank',
-                    'buildZoneMap',
+                    'reserveZoneTables',
+                    'zoneTableChunk',
+                    'zoneTableChunk',
+                    'sealZoneTables',
+                    'commitSampleBank',
                     'releaseRetiredBank',
                 ]);
             });
@@ -731,7 +1401,7 @@ describe('loadInstrumentFromManifest', () => {
                     const port = makePort({ autoComplete: false, manualRelease: true });
                     const first = load(port);
                     await vi.waitFor(() => {
-                        expect(postedTypes(port)).toContain('buildZoneMap');
+                        expect(postedTypes(port)).toContain('commitSampleBank');
                     });
                     const second = load(port);
                     await settle();
@@ -755,6 +1425,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -768,6 +1439,7 @@ describe('loadInstrumentFromManifest', () => {
         let settled = false;
         const pending = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -777,15 +1449,15 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         await vi.waitFor(() => {
-            expect(postedTypes(port)).toContain('buildZoneMap');
+            expect(postedTypes(port)).toContain('commitSampleBank');
         });
         expect(settled).toBe(false);
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
         const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
-            return isRecord(message) && message.type === 'buildZoneMap';
+            return isRecord(message) && message.type === 'commitSampleBank';
         })?.[0];
         if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
-            throw new Error('Expected a buildZoneMap message');
+            throw new Error('Expected a commitSampleBank message');
         }
         port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage.loadToken });
 
@@ -796,7 +1468,7 @@ describe('loadInstrumentFromManifest', () => {
 
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
         // The token is still pending on this fake port when the abort lands
-        // (buildZoneMap has not committed — `autoComplete: false`), so the
+        // (commitSampleBank has not committed — `autoComplete: false`), so the
         // port answers `abortSampleBank` with `sampleBankError` the way the
         // real processor's matched abort does; the promise settles from that
         // answer rather than from an immediate local rejection.
@@ -804,13 +1476,14 @@ describe('loadInstrumentFromManifest', () => {
         const controller = new AbortController();
         const pending = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
             signal: controller.signal,
         });
         await vi.waitFor(() => {
-            expect(postedTypes(port)).toContain('buildZoneMap');
+            expect(postedTypes(port)).toContain('commitSampleBank');
         });
 
         controller.abort();
@@ -820,10 +1493,10 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
-    it('rejects with the abort reason when the abort lands before buildZoneMap is posted, needing no worklet reply', async () => {
+    it('rejects with the abort reason when the abort lands before commitSampleBank is posted, needing no worklet reply', async () => {
         // `silenceAbortReply` proves this settles from the abort itself:
         // `markZoneMapPosted` has not run yet (it only runs right after
-        // `buildZoneMap` is posted), so `onAbort` must reject locally rather
+        // `commitSampleBank` is posted), so `onAbort` must reject locally rather
         // than wait for a worklet answer that never comes.
         const port = makePort({ autoComplete: false, silenceAbortReply: true });
         const controller = new AbortController();
@@ -837,6 +1510,7 @@ describe('loadInstrumentFromManifest', () => {
 
         const pending = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -844,10 +1518,10 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-        expect(postedTypes(port)).not.toContain('buildZoneMap');
+        expect(postedTypes(port)).not.toContain('commitSampleBank');
     });
 
-    describe('an abort after buildZoneMap defers to the worklet', () => {
+    describe('an abort after commitSampleBank defers to the worklet', () => {
         it('resolves with the committed bank when the worklet already committed before the abort lands', async () => {
             const twoMicManifest = {
                 ...MANIFEST,
@@ -871,7 +1545,7 @@ describe('loadInstrumentFromManifest', () => {
                 })
             );
             // `deferCommit` clears the port's pending token synchronously on
-            // `buildZoneMap` (as the real processor's commit does) but leaves
+            // `commitSampleBank` (as the real processor's commit does) but leaves
             // the terminal `sampleBankLoaded` reply for this test to deliver,
             // so the abort-vs-reply race is driven deterministically instead
             // of by timer ordering.
@@ -879,19 +1553,20 @@ describe('loadInstrumentFromManifest', () => {
             const controller = new AbortController();
             const pending = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
                 signal: controller.signal,
             });
             await vi.waitFor(() => {
-                expect(postedTypes(port)).toContain('buildZoneMap');
+                expect(postedTypes(port)).toContain('commitSampleBank');
             });
             const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
-                return isRecord(message) && message.type === 'buildZoneMap';
+                return isRecord(message) && message.type === 'commitSampleBank';
             })?.[0];
             if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
-                throw new Error('Expected a buildZoneMap message');
+                throw new Error('Expected a commitSampleBank message');
             }
 
             controller.abort();
@@ -906,7 +1581,7 @@ describe('loadInstrumentFromManifest', () => {
             expect(bank?.micPositions).toEqual(['close', 'room']);
         });
 
-        // "abort after buildZoneMap while the fake worklet has not committed;
+        // "abort after commitSampleBank while the fake worklet has not committed;
         // it answers the abort with sampleBankError → rejects with the abort
         // reason" is the same scenario the pre-existing
         // 'aborts the active worklet transaction while waiting for its commit
@@ -924,13 +1599,14 @@ describe('loadInstrumentFromManifest', () => {
                 const controller = new AbortController();
                 const pending = loadInstrumentFromManifest({
                     manifestUrl: '/m.json',
+                    buildZoneTables,
                     basePath: '/base',
                     expectedInstrumentId: 'violin-1',
                     nodePort: port,
                     signal: controller.signal,
                 });
                 await vi.waitFor(() => {
-                    expect(postedTypes(port)).toContain('buildZoneMap');
+                    expect(postedTypes(port)).toContain('commitSampleBank');
                 });
 
                 controller.abort();
@@ -948,12 +1624,14 @@ describe('loadInstrumentFromManifest', () => {
         await Promise.all([
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: firstPort,
             }),
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: secondPort,
@@ -963,14 +1641,17 @@ describe('loadInstrumentFromManifest', () => {
         expect(fetch).toHaveBeenCalledTimes(1);
         expect(fetchAndDecode).toHaveBeenCalledTimes(1);
         const firstSample = firstPort.postMessage.mock.calls.find(([message]) => {
-            return (message as { type: string }).type === 'addSample';
+            return (message as { type: string }).type === 'sampleChunk';
         });
         const secondSample = secondPort.postMessage.mock.calls.find(([message]) => {
-            return (message as { type: string }).type === 'addSample';
+            return (message as { type: string }).type === 'sampleChunk';
         });
-        expect(firstSample?.[0]).toMatchObject({ type: 'addSample', sampleId: 0 });
-        expect(secondSample?.[0]).toMatchObject({ type: 'addSample', sampleId: 0 });
-        expect(getPostedSampleData(firstSample).buffer).toBe(getPostedSampleData(secondSample).buffer);
+        expect(firstSample?.[0]).toMatchObject({ type: 'sampleChunk', sampleId: 0 });
+        expect(secondSample?.[0]).toMatchObject({ type: 'sampleChunk', sampleId: 0 });
+        // Each port gets its own copy of the one decoded sample's PCM: a chunk
+        // is transferred, so two ports cannot be handed the same buffer.
+        expect(getPostedSampleData(firstSample)).toEqual(getPostedSampleData(secondSample));
+        expect(getPostedSampleData(firstSample).buffer).not.toBe(getPostedSampleData(secondSample).buffer);
         const firstBegin = firstPort.postMessage.mock.calls.find(([message]) => {
             return (message as { type: string }).type === 'beginSampleBank';
         });
@@ -1003,13 +1684,14 @@ describe('loadInstrumentFromManifest', () => {
         const port = makePort({ autoComplete: false });
         const first = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
         });
 
         await vi.waitFor(() => {
-            expect(postedTypes(port)).toContain('buildZoneMap');
+            expect(postedTypes(port)).toContain('commitSampleBank');
         });
         const beginCall = port.postMessage.mock.calls.find(
             ([message]) => isRecord(message) && message.type === 'beginSampleBank'
@@ -1055,6 +1737,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1072,6 +1755,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1095,6 +1779,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1119,6 +1804,7 @@ describe('loadInstrumentFromManifest', () => {
 
             await loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1127,7 +1813,7 @@ describe('loadInstrumentFromManifest', () => {
 
             const types = postedTypes(port);
             expect(types).not.toContain('beginSampleBank');
-            expect(types).not.toContain('buildZoneMap');
+            expect(types).not.toContain('commitSampleBank');
         });
 
         it('does not let one consumer signal abort the shared manifest fetch', async () => {
@@ -1144,6 +1830,7 @@ describe('loadInstrumentFromManifest', () => {
 
             await loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1155,6 +1842,410 @@ describe('loadInstrumentFromManifest', () => {
             expect(request?.[0]).toBe('/m.json');
             expect(request?.[1]?.signal).toBeInstanceOf(AbortSignal);
             expect(request?.[1]?.signal).not.toBe(controller.signal);
+        });
+    });
+
+    describe('staging the zone tables', () => {
+        /** Every table chunk the port saw, in order. */
+        function tableChunks(port: FakePort): { table: string; start: number; data: Uint32Array }[] {
+            return postedMessages(port)
+                .filter((message) => message.type === 'zoneTableChunk')
+                .map((message) => ({
+                    table: message.table as string,
+                    start: message.start as number,
+                    data: message.data as Uint32Array,
+                }));
+        }
+
+        function reassembled(port: FakePort, table: 'lut' | 'arena'): number[] {
+            return tableChunks(port)
+                .filter((chunk) => chunk.table === table)
+                .flatMap((chunk) => [...chunk.data]);
+        }
+
+        it('hands the builder every zone as its addZone numbers it, and stages its tables before the commit', async () => {
+            const port = makePort();
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const zoneIds = postedMessages(port)
+                .filter((message) => message.type === 'addZone')
+                .map((message) => message.zoneId);
+            expect(buildZoneTables).toHaveBeenCalledTimes(1);
+            const [request] = buildZoneTables.mock.calls[0]!;
+            expect(request).toEqual({
+                zones: [{ zoneId: 0, articulationId: 0, micId: 0, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127 }],
+                numArticulations: 1,
+                numMics: 1,
+            });
+            expect(request.zones.map((zone) => zone.zoneId)).toEqual(zoneIds);
+            const types = postedTypes(port).filter((type) => type !== 'releaseRetiredBank');
+            expect(types.slice(types.indexOf('reserveZoneTables'))).toEqual([
+                'reserveZoneTables',
+                'zoneTableChunk',
+                'zoneTableChunk',
+                'sealZoneTables',
+                'commitSampleBank',
+            ]);
+            expect(types.lastIndexOf('addZone')).toBeLessThan(types.indexOf('reserveZoneTables'));
+            const reserve = postedMessages(port).find((message) => message.type === 'reserveZoneTables');
+            expect(reserve).toMatchObject({ numArticulations: 1, numMics: 1, lutEntries: 2_048, arenaEntries: 1 });
+        });
+
+        it('posts the largest bank in transferred chunks of at most one chunk that reassemble to the builder tables', async () => {
+            const lut = Uint32Array.from({ length: 28 * 8 * 128 * 16 * 2 }, (_, index) => index * 7);
+            const arena = Uint32Array.from({ length: 3 * LEVAIN_ZONE_TABLE_CHUNK_ENTRIES + 11 }, (_, index) => index);
+            buildZoneTables.mockResolvedValueOnce({ lut, arena });
+            const port = makePort({ chunkAnswers: 'later' });
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const chunks = tableChunks(port);
+            const entries = chunks.map((chunk) => (chunk.table === 'lut' ? chunk.data.length / 2 : chunk.data.length));
+            expect(Math.max(...entries)).toBe(LEVAIN_ZONE_TABLE_CHUNK_ENTRIES);
+            expect(chunks).toHaveLength(lut.length / 2 / LEVAIN_ZONE_TABLE_CHUNK_ENTRIES + 4);
+            expect(reassembled(port, 'lut')).toEqual([...lut]);
+            expect(reassembled(port, 'arena')).toEqual([...arena]);
+            let lutStart = 0;
+            let arenaStart = 0;
+            for (const chunk of chunks) {
+                if (chunk.table === 'lut') {
+                    expect(chunk.start).toBe(lutStart);
+                    lutStart += chunk.data.length / 2;
+                } else {
+                    expect(chunk.start).toBe(arenaStart);
+                    arenaStart += chunk.data.length;
+                }
+            }
+            const transfers = port.postMessage.mock.calls.filter(
+                ([message]) => (message as { type: string }).type === 'zoneTableChunk'
+            );
+            for (const [message, transfer] of transfers) {
+                const data = (message as { data: Uint32Array }).data;
+                expect(transfer).toEqual([data.buffer]);
+                expect(data.buffer).not.toBe(lut.buffer);
+            }
+            expect(port.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+        });
+
+        it('stages the tables on a load that uploads no PCM, as a follower or ready processor does', async () => {
+            const port = makePort({ uploadRequired: false });
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const types = postedTypes(port);
+            expect(types).not.toContain('sampleChunk');
+            expect(types.filter((type) => type === 'zoneTableChunk')).toHaveLength(2);
+            expect(types).toContain('sealZoneTables');
+        });
+
+        it('rejects the load when the builder fails, without hanging, committing or building elsewhere', async () => {
+            buildZoneTables.mockRejectedValueOnce(new Error('Levain zone-table worker failed: it crashed'));
+            const port = makePort();
+
+            await expect(
+                loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    buildZoneTables,
+                    basePath: '/base',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                })
+            ).rejects.toThrow('Levain zone-table worker failed: it crashed');
+
+            const types = postedTypes(port);
+            expect(types).not.toContain('reserveZoneTables');
+            expect(types).not.toContain('commitSampleBank');
+            expect(types.indexOf('abortSampleBank')).toBeGreaterThan(types.indexOf('addZone'));
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('releaseRetiredBank');
+            });
+        });
+
+        it('stops waiting for the builder at once on an abort, and tells the builder to stop', async () => {
+            const building = Promise.withResolvers<{ lut: Uint32Array; arena: Uint32Array }>();
+            buildZoneTables.mockReturnValueOnce(building.promise);
+            const port = makePort();
+            const controller = new AbortController();
+            const reason = new Error('superseded');
+
+            const pending = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await vi.waitFor(() => {
+                expect(buildZoneTables).toHaveBeenCalledTimes(1);
+            });
+            const builderSignal = buildZoneTables.mock.calls[0]![1];
+            expect(builderSignal?.aborted).toBe(false);
+            controller.abort(reason);
+
+            await expect(pending).rejects.toBe(reason);
+            expect(builderSignal?.reason).toBe(reason);
+            expect(postedTypes(port)).not.toContain('reserveZoneTables');
+            expect(postedTypes(port)).toContain('abortSampleBank');
+        });
+
+        it('hands the builder each zone of a bank of several articulations and mics with the ids and ranges its addZone carries', async () => {
+            const zone = (file: string, span: Record<string, number>): Record<string, unknown> => ({
+                ...MANIFEST.articulations[0]!.zones[0]!,
+                file,
+                ...span,
+            });
+            const manifest = {
+                ...MANIFEST,
+                micPositions: ['close', 'decca-tree', 'room'],
+                articulations: [
+                    {
+                        type: 'sustain',
+                        id: 0,
+                        zones: [
+                            zone('sus-close.wav', {
+                                micId: 0,
+                                rootNote: 48,
+                                loKey: 36,
+                                hiKey: 59,
+                                loVel: 0,
+                                hiVel: 63,
+                            }),
+                            zone('sus-room.wav', {
+                                micId: 2,
+                                rootNote: 72,
+                                loKey: 60,
+                                hiKey: 84,
+                                loVel: 64,
+                                hiVel: 127,
+                            }),
+                        ],
+                    },
+                    {
+                        type: 'spiccato',
+                        id: 7,
+                        zones: [
+                            zone('spic-tree.wav', {
+                                micId: 1,
+                                rootNote: 50,
+                                loKey: 40,
+                                hiKey: 52,
+                                loVel: 16,
+                                hiVel: 95,
+                            }),
+                            zone('spic-room.wav', {
+                                micId: 2,
+                                rootNote: 64,
+                                loKey: 53,
+                                hiKey: 70,
+                                loVel: 96,
+                                hiVel: 127,
+                            }),
+                        ],
+                    },
+                    {
+                        type: 'pizzicato',
+                        id: 10,
+                        zones: [
+                            zone('pizz-close.wav', {
+                                micId: 0,
+                                rootNote: 45,
+                                loKey: 30,
+                                hiKey: 47,
+                                loVel: 32,
+                                hiVel: 111,
+                            }),
+                            zone('pizz-tree.wav', {
+                                micId: 1,
+                                rootNote: 67,
+                                loKey: 61,
+                                hiKey: 77,
+                                loVel: 0,
+                                hiVel: 31,
+                            }),
+                        ],
+                    },
+                ],
+            };
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(manifest) })
+            );
+            const port = makePort();
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/spans',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const addZoneSpans = postedMessages(port)
+                .filter((message) => message.type === 'addZone')
+                .map(({ zoneId, articulationId, micId, loKey, hiKey, loVel, hiVel }) => ({
+                    zoneId,
+                    articulationId,
+                    micId,
+                    loKey,
+                    hiKey,
+                    loVel,
+                    hiVel,
+                }));
+            expect(addZoneSpans.map(({ zoneId, articulationId, micId }) => [zoneId, articulationId, micId])).toEqual([
+                [0, 0, 0],
+                [1, 0, 2],
+                [2, 7, 1],
+                [3, 7, 2],
+                [4, 10, 0],
+                [5, 10, 1],
+            ]);
+            expect(buildZoneTables).toHaveBeenCalledTimes(1);
+            const [request] = buildZoneTables.mock.calls[0]!;
+            expect(request.zones).toEqual(addZoneSpans);
+            expect(request).toMatchObject({ numArticulations: 11, numMics: 3 });
+        });
+
+        it('reserves the tables of a bank whose articulation count differs from its mic count at both dimensions', async () => {
+            const zone = (file: string, micId: number): Record<string, unknown> => ({
+                ...MANIFEST.articulations[0]!.zones[0]!,
+                file,
+                micId,
+            });
+            const manifest = {
+                ...MANIFEST,
+                micPositions: ['close', 'room'],
+                articulations: [
+                    { type: 'sustain', id: 0, zones: [zone('sus-close.wav', 0), zone('sus-room.wav', 1)] },
+                    { type: 'spiccato', id: 7, zones: [zone('spic-close.wav', 0), zone('spic-room.wav', 1)] },
+                ],
+            };
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(manifest) })
+            );
+            const port = makePort();
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/dimensions',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const reserve = postedMessages(port).find((message) => message.type === 'reserveZoneTables');
+            // Ids 0 and 7 span eight articulations; the fake builder sizes the LUT 8 x 2 x 128 x 16 entries.
+            expect(reserve).toMatchObject({ numArticulations: 8, numMics: 2, lutEntries: 32_768, arenaEntries: 4 });
+        });
+
+        describe('a load that uploads no PCM, ended while its builder works', () => {
+            /** A follower or ready load of its own bank: it posts no chunk before its tables. */
+            function loadWithoutPcm(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {
+                return loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    buildZoneTables,
+                    basePath: `/${name}`,
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal,
+                });
+            }
+
+            /** Tables of more chunks than the in-flight budget: six LUT chunks and one arena chunk. */
+            function tablesOfManyChunks(): { lut: Uint32Array; arena: Uint32Array } {
+                return { lut: new Uint32Array(6 * 2 * LEVAIN_ZONE_TABLE_CHUNK_ENTRIES), arena: new Uint32Array(1) };
+            }
+
+            function tableChunkCount(port: FakePort): number {
+                return postedTypes(port).filter((type) => type === 'zoneTableChunk').length;
+            }
+
+            type HeldLoad = {
+                building: PromiseWithResolvers<{ lut: Uint32Array; arena: Uint32Array }>;
+                port: FakePort;
+                pending: Promise<unknown>;
+                loadToken: unknown;
+                builderSignal: AbortSignal | undefined;
+            };
+
+            /** Start a load that uploads no PCM on a processor that has stopped answering chunks, held at its build. */
+            async function loadHeldAtItsBuild(name: string, signal?: AbortSignal): Promise<HeldLoad> {
+                const building = Promise.withResolvers<{ lut: Uint32Array; arena: Uint32Array }>();
+                buildZoneTables.mockReturnValueOnce(building.promise);
+                const port = makePort({ uploadRequired: false, chunkAnswers: 'never' });
+                const pending = loadWithoutPcm(port, name, signal);
+                void pending.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(buildZoneTables).toHaveBeenCalledTimes(1);
+                });
+                const loadToken = postedMessages(port)[0]!.loadToken;
+                return { building, port, pending, loadToken, builderSignal: buildZoneTables.mock.calls[0]![1] };
+            }
+
+            it('rejects as processor ended and stages nothing when the processor is disposed during the build', async () => {
+                const { building, port, pending, builderSignal } = await loadHeldAtItsBuild('ended-during-build');
+
+                port.emit({ type: 'disposed' });
+
+                await expect(pending).rejects.toThrow('Levain processor ended during sample-bank loading');
+                expect(builderSignal?.aborted).toBe(true);
+                building.resolve(tablesOfManyChunks());
+                await pause(20);
+                expect(postedTypes(port)).not.toContain('reserveZoneTables');
+                expect(tableChunkCount(port)).toBe(0);
+            }, 2000);
+
+            it('rejects with the refusal and stages nothing when its sampleBankError arrives during the build', async () => {
+                const { building, port, pending, loadToken, builderSignal } =
+                    await loadHeldAtItsBuild('refused-during-build');
+
+                port.emit({ type: 'sampleBankError', loadToken, message: 'Levain DSP rejected the zone' });
+
+                await expect(pending).rejects.toThrow('Levain sample-bank load failed: Levain DSP rejected the zone');
+                expect(builderSignal?.aborted).toBe(true);
+                building.resolve(tablesOfManyChunks());
+                await pause(20);
+                expect(postedTypes(port)).not.toContain('reserveZoneTables');
+                expect(tableChunkCount(port)).toBe(0);
+            }, 2000);
+
+            it('returns its chunk credits when the processor ends during the build, so a later load of more chunks than the budget completes', async () => {
+                const controller = new AbortController();
+                const { building, port, pending } = await loadHeldAtItsBuild('credits-after-end', controller.signal);
+                port.emit({ type: 'disposed' });
+                building.resolve(tablesOfManyChunks());
+                await pause(20);
+                // The device goes away too: its load is aborted.
+                controller.abort();
+                await Promise.allSettled([pending]);
+
+                buildZoneTables.mockResolvedValueOnce(tablesOfManyChunks());
+                const healthy = makePort({ uploadRequired: false });
+                await loadWithoutPcm(healthy, 'credits-healthy');
+
+                expect(tableChunkCount(healthy)).toBe(7);
+                expect(postedTypes(healthy)).toContain('commitSampleBank');
+            }, 2000);
         });
     });
 });

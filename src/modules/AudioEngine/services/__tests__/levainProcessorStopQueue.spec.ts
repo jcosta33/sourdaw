@@ -28,11 +28,9 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
-let addSampleShouldThrow = false;
 let abortSampleBankShouldThrow = false;
 let allNotesOffShouldThrow = false;
 let setParamShouldThrow = false;
-let zoneMapShouldBuild = true;
 const sharedBanks = new Set<string>();
 
 class LevainInstanceMock {
@@ -56,6 +54,9 @@ class LevainInstanceMock {
     note_off(note: number): void {
         calls.push({ method: 'note_off', args: [note] });
     }
+    note_expression(...args: unknown[]): void {
+        calls.push({ method: 'note_expression', args });
+    }
     all_notes_off(): void {
         calls.push({ method: 'all_notes_off', args: [] });
         if (allNotesOffShouldThrow) {
@@ -71,25 +72,11 @@ class LevainInstanceMock {
     handle_cc(cc: number, value: number): void {
         calls.push({ method: 'handle_cc', args: [cc, value] });
     }
-    add_sample(data: Float32Array, frameCount: number, channels: number, sampleRate: number): number {
-        if (addSampleShouldThrow) {
-            // Sample loading is the likeliest place for this device to fail
-            // after startup: the copy into linear memory is hundreds of MiB for
-            // a single instrument, with no dedup between instances.
-            throw new Error('memory allocation failed');
-        }
-        calls.push({ method: 'add_sample', args: [Array.from(data), frameCount, channels, sampleRate] });
-        return calls.filter((call) => call.method === 'add_sample').length - 1;
-    }
     add_zone(...args: unknown[]): void {
         calls.push({ method: 'add_zone', args });
     }
     add_legato_transition(...args: unknown[]): void {
         calls.push({ method: 'add_legato_transition', args });
-    }
-    build_zone_map(numArticulations: number, numMics: number): boolean {
-        calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
-        return zoneMapShouldBuild;
     }
     bankStaged = false;
     begin_sample_bank(instrumentId: string): void {
@@ -169,11 +156,9 @@ describe('LevainProcessor queued notes across allNotesOff', () => {
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
         processShouldThrow = false;
-        addSampleShouldThrow = false;
         abortSampleBankShouldThrow = false;
         allNotesOffShouldThrow = false;
         setParamShouldThrow = false;
-        zoneMapShouldBuild = true;
         sharedBanks.clear();
         vi.stubGlobal('currentFrame', 0);
     });
@@ -184,6 +169,31 @@ describe('LevainProcessor queued notes across allNotesOff', () => {
         calls.length = 0;
 
         send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 64 });
+        send(proc, { type: 'noteOff', note: 60, sampleFrame: 96_000 });
+        send(proc, { type: 'allNotesOff' });
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.map((call) => call.method).filter((name) => name !== 'process')).toEqual(['all_notes_off']);
+    });
+
+    it('does not apply an expression change that was queued before Stop released every voice', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        // A recorded bend rides in the window of its note, due inside this block
+        // here, so a surviving one would apply to whatever voice holds the pitch.
+        send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 32 });
+        send(proc, {
+            type: 'noteExpression',
+            note: 60,
+            channel: 0,
+            bendSemitones: 2,
+            pressure: 0.5,
+            slide: 0,
+            sampleFrame: 64,
+        });
         send(proc, { type: 'noteOff', note: 60, sampleFrame: 96_000 });
         send(proc, { type: 'allNotesOff' });
 
