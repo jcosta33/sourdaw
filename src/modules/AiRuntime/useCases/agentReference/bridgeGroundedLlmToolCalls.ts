@@ -6012,7 +6012,15 @@ function bridgeRefinedLlmToolCalls(
         );
     }
     if (inheritedCommandIndexes.every((index) => index === null)) {
-        return direct;
+        return withRefinement(
+            direct,
+            {
+                inheritedCommandIndexes: direct.actions.map(() => null),
+                protectedObjects,
+                keptDirectionActionIndexes: [],
+            },
+            context
+        );
     }
     const binding = refinementClauseReader.values({
         text: prompt,
@@ -6020,6 +6028,7 @@ function bridgeRefinedLlmToolCalls(
         context,
         removalClauseStarts: removals.removalClauseStarts,
         removedCommandIndexes: removals.removedCommandIndexes,
+        unreadNegations: removals.unreadNegations,
     });
     if (binding.status === 'clarify') {
         return {

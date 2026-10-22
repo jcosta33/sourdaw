@@ -1468,6 +1468,273 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('a value clause binds only in the closed vocabulary it is read in', () => {
+        const UP_CARD = { prompt: 'turn Vocals up 3 dB', calls: [vocalsBy(3)] };
+        const AT_CARD = {
+            prompt: 'put Vocals at -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        };
+        const vocalsAt = (gainDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', gainDb },
+        });
+        /** Every call a figure could have been read into against a pending level: either sign, moved or landed. */
+        const levelCalls = (figure: number): ProviderCall[][] => [
+            [vocalsBy(-figure)],
+            [vocalsBy(figure)],
+            [vocalsBy(-3 - figure)],
+            [vocalsAt(-figure)],
+            [vocalsAt(figure)],
+        ];
+        const pitcherDevice: ProjectTrack['devices'][number] = {
+            id: 'device-pitcher',
+            type: 'Pitcher',
+            bypassed: false,
+            parameters: [
+                {
+                    id: 'pitch',
+                    name: 'Pitch',
+                    type: 'float',
+                    value: 0,
+                    minValue: -24,
+                    maxValue: 24,
+                    unit: 'semitones',
+                },
+            ],
+        };
+        const PITCH_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-lead', 'Lead', { deviceCount: 1, devices: [pitcherDevice] }),
+        ]);
+        const pitch = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-pitcher', paramId: 'pitch', value },
+        });
+        const PITCH_CARD = { prompt: 'set Pitcher pitch to 3 semitones', calls: [pitch(3)] };
+
+        it('a pitch landing beside a word outside the vocabulary asks, whatever value the call carries', () => {
+            expect(commandsOf(refine(PITCH_CARD, 'set it to 5 semitones', [pitch(5)], PITCH_CONTEXT))).toEqual([
+                { type: 'setDeviceParameter', deviceId: 'device-pitcher', paramId: 'pitch', value: 5 },
+            ]);
+            for (const refinement of [
+                'set it to 5 semitones negative',
+                'set it to 5 semitones below zero',
+                'set it to 2 octaves',
+            ]) {
+                for (const value of [5, -5, 2, 24]) {
+                    expect({
+                        refinement,
+                        value,
+                        status: refine(PITCH_CARD, refinement, [pitch(value)], PITCH_CONTEXT).status,
+                    }).toEqual({ refinement, value, status: 'clarify' });
+                }
+            }
+        });
+
+        it('against a pending move, a level clause with a word outside the vocabulary asks on every path', () => {
+            const rows: Array<[string, number]> = [
+                ['put it at 6 dB negative', 6],
+                ['bring it down to 2 dB', 2],
+                ['go down to 2 dB', 2],
+                ['put it at 3 dB below', 3],
+                ['turn it down another 2 dB', 2],
+                ['an extra 2 dB', 2],
+                ['a further 2 dB', 2],
+                ['an additional 2 dB', 2],
+                ['2 dB again', 2],
+                ['2 dB on top', 2],
+                ['not less, make it 1.5 dB', 1.5],
+                ['not more, make it 5 dB', 5],
+                ['not as much, make it 5 dB', 5],
+            ];
+            for (const [refinement, figure] of rows) {
+                for (const calls of levelCalls(figure)) {
+                    expect({ refinement, calls, status: refine(P0_CARD, refinement, calls).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
+        });
+
+        it('a direction beside a landing asks, while either alone still binds', () => {
+            expect(commandsOf(refine(P0_CARD, 'bring it to -2 dB', [vocalsAt(-2)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', gainDb: -2 },
+            ]);
+            expect(commandsOf(refine(P0_CARD, 'bring it down 2 dB', [vocalsBy(-2)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 },
+            ]);
+            for (const calls of levelCalls(2)) {
+                expect(refine(P0_CARD, 'bring it down to 2 dB', calls).status).toBe('clarify');
+            }
+        });
+
+        it('a symbol touching the figure that is no read sign asks, whichever way the call moves', () => {
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string]> = [
+                [UP_CARD, 'by ➖1.5 dB'],
+                [UP_CARD, 'by ⁻1.5 dB'],
+                [UP_CARD, 'by ˗1.5 dB'],
+                [P0_CARD, 'by ＋1.5 dB'],
+                [P0_CARD, 'by ➕1.5 dB'],
+                [P0_CARD, 'by ⁺1.5 dB'],
+            ];
+            for (const [card, refinement] of rows) {
+                for (const calls of [[vocalsBy(-1.5)], [vocalsBy(1.5)]]) {
+                    expect({ refinement, calls, status: refine(card, refinement, calls).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
+            expect(commandsOf(refine(UP_CARD, 'by -1.5 dB', [vocalsBy(-1.5)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+            ]);
+        });
+
+        it('"lower" opening the clause is its verb: it moves a pending move down, and a pending level from where it was proposed', () => {
+            expect(commandsOf(refine(P0_CARD, 'lower it 2 dB', [vocalsBy(-2)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 },
+            ]);
+            expect(refine(P0_CARD, 'lower it 2 dB', [vocalsBy(2)]).status).toBe('rejected');
+            expect(commandsOf(refine(AT_CARD, 'lower it 2 dB', [vocalsAt(-8)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', gainDb: -8 },
+            ]);
+            expect(refine(AT_CARD, 'lower it 2 dB', [vocalsAt(-2)]).status).toBe('rejected');
+            expect(refine(AT_CARD, 'lower it 2 dB', [vocalsBy(-2)]).status).toBe('rejected');
+        });
+
+        it('a refinement whose batch inherits nothing still keeps what the chain protects', () => {
+            const drumBus = { name: 'setTrackGain', arguments: { trackId: 'track-drum-bus', deltaDb: -2 } };
+
+            expect(refine(P1_CARD, 'turn Drum Bus down 2 dB more', [drumBus])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('"Drum Bus", which the request chain leaves unchanged'),
+            });
+        });
+    });
+
+    describe('pairing a refined batch with the stored card it refines', () => {
+        const PAIRING_CONTEXT = projectContext([
+            projectTrack('track-guitar', 'Guitar'),
+            projectTrack('track-vocal', 'Vocal'),
+            projectTrack('track-bass', 'Bass'),
+            projectTrack('track-keys', 'Keys'),
+        ]);
+        type StoredCommand = { type: string; payload: Record<string, unknown> };
+        const compressorOn = (trackId: string, deviceId: string): StoredCommand => ({
+            type: 'addDevice',
+            payload: { trackId, deviceType: 'Compressor', deviceId },
+        });
+        const eqOn = (trackId: string, deviceId: string): StoredCommand => ({
+            type: 'addDevice',
+            payload: { trackId, deviceType: 'EQ', deviceId },
+        });
+        const guitarPan: StoredCommand = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: 20 } };
+        const vocalGain = (gain: number): StoredCommand => ({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-vocal', gain },
+        });
+
+        function admission(
+            pendingActions: readonly StoredCommand[],
+            actions: readonly StoredCommand[],
+            prompt: string
+        ): string {
+            return validateRefinedProposalActions({
+                pendingActions,
+                actions,
+                prompt,
+                context: PAIRING_CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+            }).status;
+        }
+
+        it('a negation before a verb removes nothing, while one naming the object directly removes it', () => {
+            const compressor = compressorOn('track-guitar', 'd1');
+            const rows: Array<[readonly StoredCommand[], readonly StoredCommand[], string, string]> = [
+                [
+                    [compressor],
+                    [eqOn('track-guitar', 'd2')],
+                    'Add an EQ after it, but do not change the compressor.',
+                    'refused',
+                ],
+                [
+                    [compressor],
+                    [eqOn('track-guitar', 'd2')],
+                    'Add an EQ, do not change the compressor ratio.',
+                    'refused',
+                ],
+                [[guitarPan], [], 'Do not change the guitar pan from the pending proposal.', 'refused'],
+                [
+                    [guitarPan, vocalGain(0.5)],
+                    [vocalGain(0.6)],
+                    'Set the vocal gain to 60%, but do not change the guitar pan.',
+                    'refused',
+                ],
+                [[compressor], [eqOn('track-guitar', 'd2')], 'Add an EQ, not the compressor.', 'valid'],
+                [[guitarPan], [], 'not the guitar pan', 'valid'],
+            ];
+            for (const [pending, next, prompt, status] of rows) {
+                expect({ prompt, status: admission(pending, next, prompt) }).toEqual({ prompt, status });
+            }
+        });
+
+        it('a creation that names nothing pairs only with the same creation under a fresh id', () => {
+            const split = (beat: number, rightClipId: string): StoredCommand => ({
+                type: 'splitClip',
+                payload: { clipId: 'clip-1', beat, rightClipId },
+            });
+            expect(
+                proposalCommandShape.createdObject('splitClip', split(12, 'clip-command-a').payload, PAIRING_CONTEXT)
+            ).toEqual({ idFields: ['rightClipId'], names: [] });
+
+            expect(
+                admission([split(12, 'clip-command-a')], [split(28, 'clip-command-b')], 'Also split clip-1 at bar 8')
+            ).toBe('refused');
+            expect(
+                admission([split(12, 'clip-command-a')], [split(12, 'clip-command-b')], 'Split clip-1 at bar 4')
+            ).toBe('valid');
+        });
+
+        it('a named creation pairs by the name it gives what it creates', () => {
+            const bus = (name: string, busId: string): StoredCommand => ({
+                type: 'createBus',
+                payload: { name, busId },
+            });
+
+            expect(
+                admission([bus('Reverb', 'bus-command-a')], [bus('Delay', 'bus-command-b')], 'Make it a delay.')
+            ).toBe('refused');
+            expect(admission([bus('Reverb', 'bus-command-a')], [bus('Reverb', 'bus-command-b')], 'Keep it.')).toBe(
+                'valid'
+            );
+        });
+
+        it('two creations of one type on different hosts each pair with their own host', () => {
+            const pending = [
+                compressorOn('track-guitar', 'device-command-1'),
+                compressorOn('track-bass', 'device-command-2'),
+            ];
+
+            expect(
+                admission(
+                    pending,
+                    [compressorOn('track-bass', 'device-command-3'), compressorOn('track-guitar', 'device-command-4')],
+                    'Add the compressors again'
+                )
+            ).toBe('valid');
+            expect(
+                admission(
+                    pending,
+                    [compressorOn('track-guitar', 'device-command-3'), compressorOn('track-keys', 'device-command-4')],
+                    'Put the second compressor on Keys'
+                )
+            ).toBe('refused');
+        });
+    });
+
     describe('row 20: without a basis', () => {
         it('grounds byte-identically to a call that names no refinement basis', () => {
             const requests: Array<[string, readonly ProviderCall[]]> = [
@@ -1925,6 +2192,60 @@ describe('refining a held card through the chat', () => {
 
         expect(proposedIds()).toEqual([secondRefinementId]);
         expect(lastAssistantText()).toContain('Drum Bus');
+    });
+
+    it('walks the pull request How to test steps in order and applies only the last card, once', async () => {
+        let pendingId = '';
+        const drumBus = { name: 'setTrackGain', arguments: { trackId: 'track-drum-bus', deltaDb: -1 } };
+        scriptProvider([
+            { calls: P1_PLAN, protectedTargetIds: ['track-drum-bus'] },
+            { calls: [vocalsBy(-1.5), snareBy(-2)], refines: () => pendingId },
+            { calls: [vocalsBy(-1.5)], refines: () => pendingId },
+            { calls: [vocalsBy(-1)], refines: () => pendingId },
+        ]);
+        await sendChatMessage(P1);
+        pendingId = onlyProposedId();
+
+        await sendChatMessage('make the vocals 1.5 dB');
+        pendingId = onlyProposedId();
+        expect(pendingLevels(pendingId).map(({ trackId, deltaDb }) => [trackId, deltaDb])).toEqual([
+            ['track-vocals', -1.5],
+            ['track-snare', -2],
+        ]);
+        expect(getPendingActionConfirmation(pendingId)?.actionLabels[0]).toContain(
+            'direction kept from the pending proposal'
+        );
+
+        await sendChatMessage('not the snare');
+        pendingId = onlyProposedId();
+        expect(pendingLevels(pendingId).map(({ trackId, deltaDb }) => [trackId, deltaDb])).toEqual([
+            ['track-vocals', -1.5],
+        ]);
+        expect(getPendingActionConfirmation(pendingId)?.protectedUnchanged.map((object) => object.id)).toEqual(
+            expect.arrayContaining(['track-snare', 'track-drum-bus'])
+        );
+
+        await sendChatMessage('less, make it 1 dB');
+        pendingId = onlyProposedId();
+        expect(pendingLevels(pendingId).map(({ trackId, deltaDb }) => [trackId, deltaDb])).toEqual([
+            ['track-vocals', -1],
+        ]);
+
+        scriptProvider([{ calls: [vocalsBy(-4)], refines: () => pendingId }]);
+        await sendChatMessage('less, make it 4 dB');
+        expect(proposedIds()).toEqual([pendingId]);
+
+        scriptProvider([{ calls: [vocalsBy(-1), drumBus], refines: () => pendingId }]);
+        await sendChatMessage('make the vocals 1 dB and turn the Drum Bus down 1 dB');
+        expect(proposedIds()).toEqual([pendingId]);
+        expect(lastAssistantText()).toContain('Drum Bus');
+
+        await expect(confirmPendingChatActions({ confirmationId: pendingId })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(getTrack('track-vocals').gain).toBeCloseTo(10 ** (-1 / 20), 6);
+        expect(getTrack('track-snare').gain).toBe(1);
+        expect(getTrack('track-drum-bus').gain).toBe(1);
     });
 
     it('row 19: refuses an inherited command whose target was deleted from the project', async () => {

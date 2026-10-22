@@ -80,11 +80,18 @@ function statedIdEntries(command: Command, createdObjectOf: CreatedObjectOf): Ar
 /**
  * A target is identified by the command's explicit object ids, not by its place in the batch. A
  * creation is identified by where it creates and what it names, never by the id minted for it, which
- * every grounding mints afresh.
+ * every grounding mints afresh. A creation that names nothing ("split clip-1 at bar 4") has nothing
+ * else a changed one could keep, so it pairs only with the same creation under a fresh id.
  */
 function targetOf(command: Command, createdObjectOf: CreatedObjectOf): string {
+    const created = createdObjectOf(command);
+    if (created !== null && created.names.length === 0) {
+        const minted = new Set(created.idFields);
+        const stated = Object.entries(payloadOf(command)).filter(([field]) => !minted.has(field));
+        return [command.type, canonicalJson(Object.fromEntries(stated))].join('|');
+    }
     const ids = statedIdEntries(command, createdObjectOf).map(([field, value]) => `${field}=${value}`);
-    const names = (createdObjectOf(command)?.names ?? []).map((name) => `name=${name.toLowerCase()}`);
+    const names = (created?.names ?? []).map((name) => `name=${name.toLowerCase()}`);
     return [command.type, ...ids, ...names].join('|');
 }
 
@@ -114,6 +121,12 @@ function isNegatedRemoval(clause: string, removalIndex: number): boolean {
 
 const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|not|except|without|keep|retain|preserve|leave)\b/gi;
 const REMOVAL = /^(?:remove|drop|omit|exclude|skip|not|except|without)$/i;
+/**
+ * A negation removes only the object it names directly ("not the compressor", "except for the snare");
+ * one before a verb ("do not change the compressor") negates that verb and removes nothing.
+ */
+const NEGATION = /^(?:not|except|without)$/i;
+const NEGATED_REFERENCE_LEAD = /^(?:for\b\s*)?(?:the|a|an)?$/i;
 const BINDING_WORDS = new Set([
     'the',
     'new',
@@ -236,6 +249,14 @@ function onlyBindingWords(text: string): boolean {
     );
 }
 
+/** Whether the words between a directive and the object it names leave the directive acting on that object. */
+function directsAtTarget(directive: string, beforeTarget: string): boolean {
+    if (NEGATION.test(directive)) {
+        return NEGATED_REFERENCE_LEAD.test(beforeTarget);
+    }
+    return onlyBindingWords(beforeTarget);
+}
+
 function intentionForMention(input: {
     clause: string;
     mentions: ReturnType<typeof targetMentions>;
@@ -256,7 +277,7 @@ function intentionForMention(input: {
     }
     const at = directive.index ?? 0;
     const beforeTarget = clause.slice(at + directive[0].length, mention.start).trim();
-    if (!onlyBindingWords(beforeTarget)) {
+    if (!directsAtTarget(directive[0], beforeTarget)) {
         return null;
     }
     const intention = REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';

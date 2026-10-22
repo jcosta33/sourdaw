@@ -51,6 +51,8 @@ type RefinementRemovals =
           /** Objects outside the card the refinement asks to leave alone. */
           protectedTargets: ProtectedObject[];
           removalClauseStarts: ReadonlySet<number>;
+          /** Negations naming no project object ("not too loud", "not less"), read and left alone. */
+          unreadNegations: readonly RefinementClause[];
       };
 
 type RefinementValueBinding =
@@ -70,7 +72,11 @@ type ClauseRead =
     | ReturnType<typeof bindRefinementFigure>;
 
 type RemovalClauseRead =
-    { kind: 'none' } | { kind: 'read' } | { kind: 'refused'; reason: string } | { kind: 'clarify'; question: string };
+    | { kind: 'none' }
+    | { kind: 'read' }
+    | { kind: 'unread-negation' }
+    | { kind: 'refused'; reason: string }
+    | { kind: 'clarify'; question: string };
 
 type RemovalClauseInput = {
     clause: RefinementClause;
@@ -348,7 +354,7 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
         // "not too loud", "without changing anything else": a negation naming no object of the project
         // removes nothing and asks for nothing this reading can hold, so it is read and left alone.
         if (excludes && findReferences(clause.text, candidates).length === 0) {
-            return { kind: 'read' };
+            return { kind: 'unread-negation' };
         }
         return { kind: 'refused', reason: describeUnresolvedRemoval(stated, 'object') };
     }
@@ -395,6 +401,7 @@ function readRefinementRemovals(input: {
     const removedTargets: ProtectedObject[] = [];
     const protectedTargets: ProtectedObject[] = [];
     const removalClauseStarts = new Set<number>();
+    const unreadNegations: RefinementClause[] = [];
     const changePhrases = getChangePhrases(getExecutableAppActionGroundingCatalog());
     for (const clause of readClauseSpans(input.text, input.context)) {
         const outcome = readRemovalClause({
@@ -416,9 +423,19 @@ function readRefinementRemovals(input: {
         if (outcome.kind === 'clarify') {
             return { status: 'clarify', reason: NEGATED_CLAUSE_REASON, question: outcome.question };
         }
+        if (outcome.kind === 'unread-negation') {
+            unreadNegations.push(clause);
+        }
         removalClauseStarts.add(clause.start);
     }
-    return { status: 'read', removedCommandIndexes: removed, removedTargets, protectedTargets, removalClauseStarts };
+    return {
+        status: 'read',
+        removedCommandIndexes: removed,
+        removedTargets,
+        protectedTargets,
+        removalClauseStarts,
+        unreadNegations,
+    };
 }
 
 function readValueClause(input: {
@@ -479,7 +496,8 @@ function readRefinementComparative(text: string, context: ProjectContext): 'less
  * one value to one pending command the refinement keeps: the command it names, or the only kept
  * pending value of the stated unit when it names none. Anything a clause leaves open — which command,
  * which unit, which way — is asked rather than guessed, and a clause naming an object outside the card
- * is an addition that a new command must answer.
+ * is an addition that a new command must answer. A negation naming no object ("not less", "not as
+ * much") says something about the value no clause binds, so beside a bound value it is asked.
  */
 function bindRefinementValues(input: {
     text: string;
@@ -487,6 +505,7 @@ function bindRefinementValues(input: {
     context: ProjectContext;
     removalClauseStarts: ReadonlySet<number>;
     removedCommandIndexes: ReadonlySet<number>;
+    unreadNegations: readonly RefinementClause[];
 }): RefinementValueBinding {
     const commands = viewCommands(input.basis, input.context);
     const candidates = collectReferenceCandidates(input.context);
@@ -534,6 +553,11 @@ function bindRefinementValues(input: {
             case 'refused':
                 return { status: 'refused', reason: read.reason };
         }
+    }
+    const [unreadNegation] = input.unreadNegations;
+    if (unreadNegation !== undefined && (values.size > 0 || comparative !== null)) {
+        const question = `"${unreadNegation.text.trim()}" does not say what the value should be. State the new value alone, for example "make it 1.5 dB".`;
+        return { status: 'clarify', reason: OPEN_VALUE_REASON, question };
     }
     if (comparative !== null && values.size === 0) {
         const question = `How much ${comparative}? State the new value, for example "${comparative}, make it 1.5 dB".`;
