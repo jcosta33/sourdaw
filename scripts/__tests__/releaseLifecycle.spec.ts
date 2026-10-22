@@ -118,7 +118,6 @@ function cutPort(repo: Repository): CutReleasePort {
         commitIsOnMain: (commit) => indexOf(commit) < repo.main.length,
         manifestVersionAt: (commit) => parseVersionOf(repo.trees[indexOf(commit)]?.manifest ?? ''),
         changelogAt: (commit) => repo.trees[indexOf(commit)]?.changelog ?? '',
-        assertReleaseInventoryAt: () => undefined,
         mergedPullRequests: (previousTag, commit) =>
             repo.main.slice(tagIndex(repo, previousTag) + 1, indexOf(commit) + 1),
         releasePullRequestAt: (commit) => repo.main[indexOf(commit)]?.number,

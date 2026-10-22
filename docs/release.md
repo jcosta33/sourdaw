@@ -54,10 +54,11 @@ git fetch origin main --tags
 pnpm release:cut <X.Y.Z> --commit <merge-sha>
 ```
 
-Check out the squash commit first (`git checkout --detach <merge-sha>`) with a clean tree: before it
-tags anything, the cut runs the release inventory (`scripts/checkReleaseInventory.ts`: tracked sets,
-licenses, trademark, and asset digests) against the working tree and refuses any other checkout. Pull
-requests do not run that check; it runs here and in the nightly train.
+Pull requests do not run the release inventory (tracked sets, licenses, trademark, and asset
+digests); the nightly train does. Before cutting, prove the release candidate with
+`pnpm release:proof:assemble` as described under Release proof below: it runs the aggregate release
+inventory (`checkReleaseInventory` in `scripts/releaseProof.ts`) for the unchanged revision before
+it publishes the candidate. `release:cut` itself does not run it.
 
 It creates the annotated tag on that exact revision and one GitHub Release bound to it, through the
 same author App the delivery scripts mint.

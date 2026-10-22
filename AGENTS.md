@@ -479,7 +479,8 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
   native checks, scoped smoke, PR diff secret scanning and dependency review on each push through
   `pr-checks.yml`; the admitted run reuses that verdict. Release provenance (`pnpm test:release-inventory`)
-  is not a pull-request check: it runs in `nightly.yml` and in `release:cut`.
+  is not a pull-request check: it runs in `nightly.yml` and in `release:proof:assemble`, which
+  `docs/release.md` has the release owner run before `release:cut`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
   only in the admitted run. CodeQL has a separately permissioned required

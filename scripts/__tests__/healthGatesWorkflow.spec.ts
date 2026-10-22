@@ -1821,6 +1821,8 @@ function assertPushChecksJob(health: UnknownRecord): void {
     if (
         !run.includes('actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request') ||
         !run.includes('max_by(.id)') ||
+        !run.includes('.head_repository.full_name == $repo') ||
+        !run.includes('any(.pull_requests[]?; .number == $pr)') ||
         !run.includes('if [ "$verdict" != "success" ]; then') ||
         !run.includes('exit 1')
     ) {
@@ -1829,6 +1831,9 @@ function assertPushChecksJob(health: UnknownRecord): void {
     const env = recordAt(step, 'env');
     if (env.HEAD_SHA !== '${{ github.event.pull_request.head.sha }}') {
         throw new Error('the push checks result must read the event head SHA');
+    }
+    if (env.PR_NUMBER !== '${{ github.event.pull_request.number }}') {
+        throw new Error('the push checks result must read the event pull request number');
     }
 }
 
@@ -4714,6 +4719,7 @@ export -f sudo timeout sleep apt-get
     describe('the admitted run reuses the push checks result', () => {
         const pushChecksRun = stringAt(stepNamed(jobAt(workflow, 'push-checks'), PUSH_CHECKS_STEP), 'run');
         const HEAD = 'a'.repeat(40);
+        const PULL_REQUEST = 42;
 
         function runPushChecks(response: unknown): {
             status: number | null;
@@ -4736,6 +4742,7 @@ export -f sudo timeout sleep apt-get
                     env: {
                         ...process.env,
                         HEAD_SHA: HEAD,
+                        PR_NUMBER: String(PULL_REQUEST),
                         REPOSITORY: 'owner/repository',
                         RUNNER_TEMP: directory,
                         PATH: `${directory}${delimiter}${process.env.PATH ?? ''}`,
@@ -4749,12 +4756,20 @@ export -f sudo timeout sleep apt-get
             }
         }
 
-        const run = (id: number, status: string, conclusion: string | null, headSha = HEAD) => ({
+        const run = (
+            id: number,
+            status: string,
+            conclusion: string | null,
+            headSha = HEAD,
+            origin: { repository?: string; pullRequests?: number[] } = {}
+        ) => ({
             id,
             head_sha: headSha,
             event: 'pull_request',
             status,
             conclusion,
+            head_repository: { full_name: origin.repository ?? 'owner/repository' },
+            pull_requests: (origin.pullRequests ?? [PULL_REQUEST]).map((number) => ({ number })),
         });
 
         it('passes only when the newest run of the head completed successfully', () => {
@@ -4763,6 +4778,16 @@ export -f sudo timeout sleep apt-get
             expect(
                 runPushChecks({ workflow_runs: [run(5, 'completed', 'failure'), run(7, 'completed', 'success')] })
                     .status
+            ).toBe(0);
+            // Runs of other pull requests or forks at the same head are ignored, not counted against it.
+            expect(
+                runPushChecks({
+                    workflow_runs: [
+                        run(5, 'completed', 'success'),
+                        run(7, 'completed', 'failure', HEAD, { pullRequests: [43] }),
+                        run(9, 'in_progress', null, HEAD, { repository: 'fork/repository', pullRequests: [] }),
+                    ],
+                }).status
             ).toBe(0);
         });
 
@@ -4779,6 +4804,27 @@ export -f sudo timeout sleep apt-get
                 // A green older run never outvotes a newer run that has not finished or has failed.
                 { workflow_runs: [run(5, 'completed', 'success'), run(7, 'in_progress', null)] },
                 { workflow_runs: [run(5, 'completed', 'success'), run(7, 'completed', 'failure')] },
+                // Another pull request's green run at the same head SHA is not this pull request's.
+                {
+                    workflow_runs: [
+                        run(5, 'completed', 'failure'),
+                        run(7, 'completed', 'success', HEAD, { pullRequests: [43] }),
+                    ],
+                },
+                // A fork's green run carries the head SHA but a foreign repository and no pull request.
+                {
+                    workflow_runs: [
+                        run(5, 'completed', 'failure'),
+                        run(7, 'completed', 'success', HEAD, { repository: 'fork/repository', pullRequests: [] }),
+                    ],
+                },
+                // The repository bound independently of the pull request number.
+                {
+                    workflow_runs: [
+                        run(5, 'completed', 'failure'),
+                        run(7, 'completed', 'success', HEAD, { repository: 'fork/repository' }),
+                    ],
+                },
                 'gh-fails',
             ] as const) {
                 const result = runPushChecks(response);

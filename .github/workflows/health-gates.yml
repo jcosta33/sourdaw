@@ -109,7 +109,8 @@ jobs:
 
   # The cheap validation lane already ran on this exact head in pr-checks.yml,
   # so Gate reuses that verdict instead of running validation.yml a second
-  # time. The job reads the head's newest PR checks run through the API with a
+  # time. The job reads this pull request's newest PR checks run of the head
+  # (same repository, same pull request number) through the API with a
   # read-only token and fails unless it is completed and successful: a missing,
   # running, cancelled or red run refuses the head rather than passing it.
   push-checks:
@@ -126,17 +127,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           gh api "repos/$REPOSITORY/actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" > "$RUNNER_TEMP/push-checks.json"
-          verdict=$(jq -r --arg sha "$HEAD_SHA" '
-            [.workflow_runs[]? | select(.head_sha == $sha and .event == "pull_request")]
+          verdict=$(jq -r --arg sha "$HEAD_SHA" --argjson pr "$PR_NUMBER" --arg repo "$REPOSITORY" '
+            [.workflow_runs[]?
+              | select(.head_sha == $sha and .event == "pull_request"
+                  and .head_repository.full_name == $repo
+                  and any(.pull_requests[]?; .number == $pr))]
             | max_by(.id) as $run
             | if $run == null then "missing"
               elif $run.status != "completed" then "\($run.status)"
               else ($run.conclusion // "unknown") end' "$RUNNER_TEMP/push-checks.json")
           if [ "$verdict" != "success" ]; then
-            echo "::error title=Push checks not green::the newest PR checks run for head $HEAD_SHA is $verdict (missing means none exists)"
+            echo "::error title=Push checks not green::the newest PR checks run of pull request $PR_NUMBER for head $HEAD_SHA is $verdict (missing means none exists)"
             exit 1
           fi
 

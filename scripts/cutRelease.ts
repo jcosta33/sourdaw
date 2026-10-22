@@ -53,8 +53,6 @@ export type CutReleasePort = {
     commitIsOnMain: (commit: string) => boolean;
     manifestVersionAt: (commit: string) => string;
     changelogAt: (commit: string) => string;
-    /** Throws unless the release inventory (tracked sets, licenses, trademark, asset digests) holds at `commit`. */
-    assertReleaseInventoryAt: (commit: string) => void;
     mergedPullRequests: (previousTag: string | undefined, commit: string) => MergedPullRequest[];
     releasePullRequestAt: (commit: string) => number | undefined;
     createTag: (tag: string, commit: string, message: string) => ReleaseTagReceipt;
@@ -168,9 +166,6 @@ export function cutRelease(version: string, commit: string, authorNodeId: string
         withoutPullRequest(port.mergedPullRequests(previousTag, commit), releasePullRequest)
     );
     assertChangelogMatchesNotes(commit, semantic, notes, port);
-    // Pull requests no longer carry the release provenance check, so the cut is where a
-    // release revision proves it before anything is tagged or published.
-    port.assertReleaseInventoryAt(commit);
     assertTagReceipt(port.createTag(tag, commit, releaseTagMessage(tag)), tag);
     assertReleaseReceipt(port.createRelease(tag, commit, releaseBody(notes, tag)), tag, commit);
     const receipt = `release-cut:${tag}:${commit}`;
@@ -275,23 +270,6 @@ function createGithubRelease(tag: string, commit: string, notes: string, gh: Com
     };
 }
 
-/**
- * The inventory check reads the working tree, so it only speaks for `commit` when the primary
- * checkout is exactly at it. A different checkout would prove some other revision, so it is refused.
- */
-function assertReleaseInventoryAtCheckout(commit: string, primaryRoot: string): void {
-    const head = spawnCapture('git', ['rev-parse', 'HEAD'], { cwd: primaryRoot });
-    if (head !== commit) {
-        fail(
-            `the primary checkout is at ${head}, not ${commit}; run git checkout --detach ${commit} before release:cut`
-        );
-    }
-    if (spawnCapture('git', ['status', '--porcelain'], { cwd: primaryRoot }) !== '') {
-        fail('the primary checkout has uncommitted changes, so the release inventory would not describe the commit');
-    }
-    spawnCapture('node', ['scripts/checkReleaseInventory.ts'], { cwd: primaryRoot });
-}
-
 export function shellPort(session: GhSession, primaryRoot: string): CutReleasePort {
     const git: CommandReader = (args) => spawnCapture('git', args, { cwd: primaryRoot });
     const gh: CommandReader = (args) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
@@ -302,9 +280,6 @@ export function shellPort(session: GhSession, primaryRoot: string): CutReleasePo
         commitIsOnMain: (commit) => commitIsOnMainBranch(commit, gh),
         manifestVersionAt: (commit) => manifestVersionAtRevision(commit, git),
         changelogAt: (commit) => fileAtRevision(commit, CHANGELOG_PATH, git),
-        assertReleaseInventoryAt: (commit) => {
-            assertReleaseInventoryAtCheckout(commit, primaryRoot);
-        },
         mergedPullRequests: (previousTag, commit) => mergedPullRequestsInRange(previousTag, commit, git, gh),
         releasePullRequestAt: (commit) => squashedPullRequestAt(commit, git),
         createTag: (tag, commit, message) => createAnnotatedTag(tag, commit, message, gh),

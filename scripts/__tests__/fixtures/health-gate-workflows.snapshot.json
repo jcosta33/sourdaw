@@ -157,9 +157,10 @@
             "env": {
               "GH_TOKEN": "${{ github.token }}",
               "REPOSITORY": "${{ github.repository }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "PR_NUMBER": "${{ github.event.pull_request.number }}"
             },
-            "run": "set -euo pipefail\ngh api \"repos/$REPOSITORY/actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100\" > \"$RUNNER_TEMP/push-checks.json\"\nverdict=$(jq -r --arg sha \"$HEAD_SHA\" '\n  [.workflow_runs[]? | select(.head_sha == $sha and .event == \"pull_request\")]\n  | max_by(.id) as $run\n  | if $run == null then \"missing\"\n    elif $run.status != \"completed\" then \"\\($run.status)\"\n    else ($run.conclusion // \"unknown\") end' \"$RUNNER_TEMP/push-checks.json\")\nif [ \"$verdict\" != \"success\" ]; then\n  echo \"::error title=Push checks not green::the newest PR checks run for head $HEAD_SHA is $verdict (missing means none exists)\"\n  exit 1\nfi\n"
+            "run": "set -euo pipefail\ngh api \"repos/$REPOSITORY/actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100\" > \"$RUNNER_TEMP/push-checks.json\"\nverdict=$(jq -r --arg sha \"$HEAD_SHA\" --argjson pr \"$PR_NUMBER\" --arg repo \"$REPOSITORY\" '\n  [.workflow_runs[]?\n    | select(.head_sha == $sha and .event == \"pull_request\"\n        and .head_repository.full_name == $repo\n        and any(.pull_requests[]?; .number == $pr))]\n  | max_by(.id) as $run\n  | if $run == null then \"missing\"\n    elif $run.status != \"completed\" then \"\\($run.status)\"\n    else ($run.conclusion // \"unknown\") end' \"$RUNNER_TEMP/push-checks.json\")\nif [ \"$verdict\" != \"success\" ]; then\n  echo \"::error title=Push checks not green::the newest PR checks run of pull request $PR_NUMBER for head $HEAD_SHA is $verdict (missing means none exists)\"\n  exit 1\nfi\n"
           }
         ]
       },
