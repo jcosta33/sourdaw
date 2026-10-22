@@ -1,6 +1,7 @@
+import { change, from } from '@automerge/automerge';
 import { describe, it, expect } from 'vitest';
 
-import { reconcileCrdtSlot } from '../reconcileCrdtSlot';
+import { reconcileCrdtSlot, type CrdtSlotPresence } from '../reconcileCrdtSlot';
 
 type Doc = { [key: string]: unknown };
 
@@ -634,4 +635,267 @@ describe('reconcileCrdtSlot', () => {
 
         expect(slotOf(doc).rows).toStrictEqual([]);
     });
+});
+
+type AutomergeSlotDoc = { slot: { rows: Row[]; title?: string } };
+
+/**
+ * Reconciles inside a real Automerge `change()`, where every list read goes
+ * through a proxy and the WASM document rather than a plain array.
+ */
+function reconcileInAutomerge(input: {
+    initial: AutomergeSlotDoc;
+    baseValue: unknown;
+    value: unknown;
+    documentPresence?: CrdtSlotPresence;
+}): AutomergeSlotDoc {
+    const initial = from<AutomergeSlotDoc>(structuredClone(input.initial));
+    return change(initial, (draft) => {
+        reconcileCrdtSlot({
+            doc: draft,
+            key: 'slot',
+            baseValue: input.baseValue,
+            value: input.value,
+            documentPresence: input.documentPresence,
+        });
+    });
+}
+
+function plainRows(doc: AutomergeSlotDoc): Row[] {
+    return structuredClone(doc.slot.rows);
+}
+
+/** mulberry32: a small seeded generator so a failing case replays exactly. */
+function createRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+        state = (state + 0x6d2b79f5) | 0;
+        let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+        mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+type RowScenario = { base: Row[]; desired: Row[] };
+
+function randomScenario(seed: number): RowScenario {
+    const random = createRandom(seed);
+    const pick = (limit: number): number => Math.floor(random() * limit);
+    let nextId = 0;
+    const freshRow = (): Row => {
+        nextId += 1;
+        return { id: `r${nextId}`, name: `n${nextId}` };
+    };
+
+    const base = Array.from({ length: pick(61) }, freshRow);
+    const desired = structuredClone(base);
+    const operations = 1 + pick(8);
+    for (let step = 0; step < operations; step += 1) {
+        const operation = pick(4);
+        if (operation === 0 || desired.length === 0) {
+            desired.splice(pick(desired.length + 1), 0, freshRow());
+        } else if (operation === 1) {
+            desired.splice(pick(desired.length), 1);
+        } else if (operation === 2) {
+            const row = desired[pick(desired.length)];
+            if (row) {
+                row.name = `${row.name}-edit${step}`;
+                row.beat = pick(16);
+            }
+        } else {
+            const [moved] = desired.splice(pick(desired.length), 1);
+            if (moved) {
+                desired.splice(pick(desired.length + 1), 0, moved);
+            }
+        }
+    }
+    return { base, desired };
+}
+
+describe('reconcileCrdtSlot placement against a live Automerge list', () => {
+    it('converges a single writer onto its desired list after random inserts, removals, edits and reorders', () => {
+        for (let index = 0; index < 200; index += 1) {
+            const { base, desired } = randomScenario(0x5eed + index);
+            const result = reconcileInAutomerge({
+                initial: { slot: { rows: base } },
+                baseValue: { rows: base },
+                value: { rows: desired },
+            });
+
+            expect({ scenario: index, rows: plainRows(result) }).toStrictEqual({ scenario: index, rows: desired });
+        }
+    });
+
+    it('places rows inserted between and after pinned rows at their desired positions', () => {
+        const result = reconcileInAutomerge({
+            initial: {
+                slot: {
+                    rows: [
+                        { id: 'a', name: 'a0' },
+                        { id: 'b', name: 'b0' },
+                    ],
+                },
+            },
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'x', name: 'x0' },
+                    { id: 'a', name: 'a0' },
+                    { id: 'y', name: 'y0' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'z', name: 'z0' },
+                ],
+            },
+        });
+
+        expect(plainRows(result).map((row) => row.id)).toStrictEqual(['x', 'a', 'y', 'b', 'z']);
+    });
+
+    it('keeps the order a peer reordered into while the writer appends rows and edits one', () => {
+        // Base [A, B, C, D]; a peer has since reordered the document to
+        // [D, B, C, A]. The writer appends E and F and edits C, so its
+        // placement applies over a non-monotone set of pinned rows.
+        const result = reconcileInAutomerge({
+            initial: {
+                slot: {
+                    rows: [
+                        { id: 'D', name: 'D0' },
+                        { id: 'B', name: 'B0' },
+                        { id: 'C', name: 'C0' },
+                        { id: 'A', name: 'A0' },
+                    ],
+                },
+            },
+            baseValue: {
+                rows: [
+                    { id: 'A', name: 'A0' },
+                    { id: 'B', name: 'B0' },
+                    { id: 'C', name: 'C0' },
+                    { id: 'D', name: 'D0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'A', name: 'A0' },
+                    { id: 'B', name: 'B0' },
+                    { id: 'C', name: 'C1' },
+                    { id: 'D', name: 'D0' },
+                    { id: 'E', name: 'E0' },
+                    { id: 'F', name: 'F0' },
+                ],
+            },
+        });
+
+        // Only B and C are already in the writer's relative order, so they
+        // stay pinned and A and D are removed and re-inserted around them.
+        expect(plainRows(result)).toStrictEqual([
+            { id: 'A', name: 'A0' },
+            { id: 'B', name: 'B0' },
+            { id: 'C', name: 'C1' },
+            { id: 'D', name: 'D0' },
+            { id: 'E', name: 'E0' },
+            { id: 'F', name: 'F0' },
+        ]);
+    });
+
+    it('keeps the peer order while re-inserting a peer-deleted row the writer edited', () => {
+        // The writer carries no order delta, so every row it sees is pinned in
+        // the document's own order, and the re-inserted `C` lands after the
+        // previously placed row.
+        const result = reconcileInAutomerge({
+            initial: {
+                slot: {
+                    rows: [
+                        { id: 'D', name: 'D0' },
+                        { id: 'A', name: 'A0' },
+                        { id: 'B', name: 'B0' },
+                    ],
+                },
+            },
+            baseValue: {
+                rows: [
+                    { id: 'A', name: 'A0' },
+                    { id: 'B', name: 'B0' },
+                    { id: 'C', name: 'C0' },
+                    { id: 'D', name: 'D0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'A', name: 'A0' },
+                    { id: 'B', name: 'B0' },
+                    { id: 'C', name: 'C1' },
+                    { id: 'D', name: 'D0' },
+                ],
+            },
+        });
+
+        expect(plainRows(result)).toStrictEqual([
+            { id: 'D', name: 'D0' },
+            { id: 'A', name: 'A0' },
+            { id: 'B', name: 'B0' },
+            { id: 'C', name: 'C1' },
+        ]);
+    });
+});
+
+describe('reconcileCrdtSlot cost against a large live Automerge list', () => {
+    const rowCount = 3000;
+    const budgetMs = 3000;
+    const testTimeoutMs = 20_000;
+
+    const largeRows = (): Row[] =>
+        Array.from({ length: rowCount }, (_, index) => ({ id: `row-${index}`, name: `name-${index}`, beat: index }));
+
+    it(
+        'appends rows to a list of thousands without rescanning the live list per row',
+        () => {
+            const rows = largeRows();
+            const appended: Row[] = [
+                ...rows,
+                { id: 'extra-0', name: 'extra-0' },
+                { id: 'extra-1', name: 'extra-1' },
+                { id: 'extra-2', name: 'extra-2' },
+            ];
+
+            const startedAt = performance.now();
+            const result = reconcileInAutomerge({
+                initial: { slot: { rows } },
+                baseValue: { rows },
+                value: { rows: appended },
+            });
+            const elapsedMs = performance.now() - startedAt;
+
+            expect(plainRows(result).map((row) => row.id)).toStrictEqual(appended.map((row) => row.id));
+            expect(elapsedMs).toBeLessThan(budgetMs);
+        },
+        testTimeoutMs
+    );
+
+    it(
+        'edits a small key beside an unchanged list of thousands without walking that list per row',
+        () => {
+            const rows = largeRows();
+            const slot = { rows, title: 'before' };
+
+            const startedAt = performance.now();
+            const result = reconcileInAutomerge({
+                initial: { slot },
+                baseValue: slot,
+                value: { rows, title: 'after' },
+                documentPresence: { slot },
+            });
+            const elapsedMs = performance.now() - startedAt;
+
+            expect(result.slot.title).toBe('after');
+            expect(result.slot.rows).toHaveLength(rowCount);
+            expect(elapsedMs).toBeLessThan(budgetMs);
+        },
+        testTimeoutMs
+    );
 });

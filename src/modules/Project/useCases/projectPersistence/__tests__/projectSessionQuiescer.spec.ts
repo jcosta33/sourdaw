@@ -26,6 +26,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     repairRuntimeGraphFromProject: mocks.repairRuntimeGraphFromProject,
     stopPlayback: mocks.stopPlayback,
 }));

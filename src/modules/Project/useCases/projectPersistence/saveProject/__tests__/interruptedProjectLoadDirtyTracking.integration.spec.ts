@@ -234,6 +234,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { masterGain: 75, isPlaying: false },
     restoreTimelineMapSnapshot: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
+    preferencesSeededTransportState: vi.fn(),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mockSetAutoSaveHandle }));

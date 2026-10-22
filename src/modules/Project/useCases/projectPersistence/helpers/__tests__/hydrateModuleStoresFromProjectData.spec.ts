@@ -54,6 +54,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     restoreTransportSnapshot: mocks.restoreTransportSnapshot,
 }));
 
@@ -154,10 +155,14 @@ describe('hydrateModuleStoresFromProjectData', () => {
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith(sidechainRoutes);
     });
 
-    it('preserves the absent-transport guard while delegating empty owner snapshots', () => {
+    it('restores transport unconditionally: an absent block reaches the sanitizer instead of staying seeded', () => {
+        // A transport-less project file (e.g. a foreign import) must land on the
+        // model defaults, not on the preference-seeded transport the preceding
+        // reset installed; `restoreTransportSnapshot(undefined)` sanitizes the
+        // absent block to those defaults.
         hydrateModuleStoresFromProjectData(createHydratableProjectData());
 
-        expect(mocks.restoreTransportSnapshot).not.toHaveBeenCalled();
+        expect(mocks.restoreTransportSnapshot).toHaveBeenCalledWith(undefined);
         expect(mocks.restoreAdjustmentLayerSnapshot).toHaveBeenCalledWith(undefined);
         expect(mocks.replaceChordTrackState).toHaveBeenCalledWith(undefined);
         expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });

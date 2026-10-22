@@ -22,6 +22,26 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-21 — a capped catalog count could not converge on a busy Mac (introduced by PR #5274, retained by PR #5331)
+
+PR #5274 allowed two Darwin `lsof` observations and PR #5331 three, within one five-second
+deadline. `lsof` intermittently omits live same-UID processes, newborn or already listed, so under
+real load every allowed catalog could miss one: guarded runs whose own work succeeded ended
+`FAILED (leak)` and stopped their lanes (issue #5337). Both reviews accepted a fixed catalog count
+as the conservative bound; no stance measured availability under natural process churn. This
+supersedes the three-observation limit in the 2026-10-12 Darwin lesson below.
+
+Probe: omit a listed live same-UID process from one whole catalog and require reclamation from a
+fresh one; omit it from every catalog and require retention naming it at the deadline; alternate
+the omission of two processes and require retention, never pooled coverage. For a missed holder
+that forks into storage and exits before its liveness check, state sample, or scoped read, require
+a fresh whole observation that finds the heir; one that forks after the closing process list and
+stays an unreaped zombie must still reach the closing parent listing. Require a missed process gone
+before the closing list to cost no fresh observation. Require the closing parent listing to catch a
+heir handed storage by a live missed holder, including one reparented to launchd, and to ignore an
+unrelated newcomer and another account's launchd children. Measure convergence with repeated
+guarded real specs beside the base guard.
+
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 
 PR #5345 excused an uninspectable same-UID process only when it predated the run's live

@@ -47,6 +47,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     addTimeSignatureChange: vi.fn(),
     defaultTransportState: {},
     ensureTrackStrips: vi.fn(),
+    preferencesSeededTransportState: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
     replaceTempoMap: vi.fn(),
     replaceTimeSignatureMap: vi.fn(),

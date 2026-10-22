@@ -1,6 +1,7 @@
 import { createTrack, resetArrangementStoresForProject } from '#/modules/Arrangement/useCases';
 import { hydrateGrooveTemplates, replaceChordTrackState } from '#/modules/MIDI/useCases';
-import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
+import { transportStore } from '#/modules/Transport/stores';
+import { preferencesSeededTransportState } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
@@ -24,8 +25,11 @@ export function initProject(input: InitProjectInput): Track {
     replaceChordTrackState({ enabled: false, events: [] });
     hydrateGrooveTemplates({ templates: [], assignments: [] });
 
+    // The Recording preferences are the new-project count-in/pre-roll default;
+    // the preceding store reset seeded them, and this full-state replace must
+    // build on that seed rather than silently dropping back to model defaults.
     transportStore.set({
-        ...defaultTransportState,
+        ...preferencesSeededTransportState(),
         tempo: input.bpm,
         timeSignatureNumerator: timeSigNum,
         timeSignatureDenominator: timeSigDen,

@@ -1,20 +1,24 @@
 version: 2
 updates:
-  # Version pull requests are open again: hosted checks verify an update now,
-  # which is what made them not worth opening before.
+  # Routine version PRs are off: package.json and pnpm-lock.yaml are byte-pinned
+  # in release/dependency-license-proofs.json and release/open-source-inventory.json,
+  # and Dependabot cannot run `pnpm release:restamp`, so its PRs can never pass
+  # CI. Limit 0 leaves security updates (a separate GitHub setting) unaffected.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     labels:
       - "security"
 
-  # Same for the Cargo tree.
+  # Same pins for the Cargo tree: Cargo.lock and every Cargo.toml hash are
+  # recorded in release/dependency-license-proofs.json, and wasm artifacts
+  # follow them.
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     labels:
       - "security"

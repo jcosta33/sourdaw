@@ -318,6 +318,16 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Lessons from escapes
 
+### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
+
+PR #5331's controlled Darwin census cases asserted retention after exactly three catalogs for
+persistent descriptor omissions and PID gaps. Those expectations encoded the cap that stopped
+lanes under real load, so they would fail any convergent census while proving nothing about
+whether a later complete catalog could be reached. This supersedes the three-observation bound in
+the 2026-10-12 Darwin lesson below. Probe persistent omission through the whole simulated
+deadline: every whole and PID-scoped `lsof` call must receive the remaining deadline as its
+timeout, and expiry must name the last uncovered process. A reintroduced count cap must fail.
+
 ### 2026-10-21 — final storage cleanup outlived the returned leak verdict
 
 PR #5274 (`40baa0716b`) recorded a retained-storage verdict before an existing final cleanup

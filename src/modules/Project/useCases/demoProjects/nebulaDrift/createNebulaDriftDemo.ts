@@ -26,8 +26,8 @@ import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/
 import {
     addTempoChange,
     addTimeSignatureChange,
-    defaultTransportState,
     ensureTrackStrips,
+    preferencesSeededTransportState,
 } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -1393,7 +1393,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         pitchBendByClipId: {},
     });
 
-    transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
+    transportStore.set({ ...preferencesSeededTransportState(), tempo: bpm, loopEnd: TB, isLooping: true });
 
     function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
         return createAutomationLane(trackId, param, label, min, max);

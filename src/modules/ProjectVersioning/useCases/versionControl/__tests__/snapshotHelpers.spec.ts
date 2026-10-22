@@ -58,6 +58,7 @@ vi.mock('#/modules/Transport/stores', () => ({
     },
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     restoreTransportSnapshot: mocks.restoreTransportSnapshot,
     restoreTimelineMapSnapshot: mocks.restoreTimelineMapSnapshot,
 }));

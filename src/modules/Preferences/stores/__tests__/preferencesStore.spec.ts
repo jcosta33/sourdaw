@@ -109,7 +109,7 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
         expect(fresh.value).toMatchObject({
-            preferencesSchemaVersion: 2,
+            preferencesSchemaVersion: 3,
             showMinimap: true,
             timelineMinimapHeight: 28,
         });
@@ -133,7 +133,7 @@ describe('preferencesStore — legacy minimap visibility migration', () => {
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
         expect(fresh.value).toMatchObject({
-            preferencesSchemaVersion: 2,
+            preferencesSchemaVersion: 3,
             showMinimap: true,
             timelineMinimapHeight: 28,
         });
@@ -143,6 +143,50 @@ describe('preferencesStore — legacy minimap visibility migration', () => {
         const reloaded = (await import('../preferencesStore')).preferencesStore;
 
         expect(reloaded.value?.showMinimap).toBe(false);
-        expect(reloaded.value?.preferencesSchemaVersion).toBe(2);
+        expect(reloaded.value?.preferencesSchemaVersion).toBe(3);
+    });
+});
+
+describe('preferencesStore — legacy count-in default migration', () => {
+    const STORAGE_KEY = 'sourdaw-preferences';
+
+    beforeEach(() => {
+        window.localStorage.clear();
+    });
+
+    afterEach(() => {
+        window.localStorage.clear();
+    });
+
+    it('rewrites the retired inert recordCountIn default to Off at boot, then honors an explicit later choice', async () => {
+        // A schema-2 blob carrying recordCountIn: 1 holds the never-consumed
+        // old default; boot must not turn it into a live count-in. After the
+        // migrated blob is written back under the current schema, an explicit
+        // 1 recorded by the user survives the next boot.
+        window.localStorage.setItem(
+            STORAGE_KEY,
+            stringify({ preferencesSchemaVersion: 2, recordCountIn: 1, theme: 'light' })
+        );
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        expect(fresh.value).toMatchObject({ recordCountIn: 0, theme: 'light' });
+
+        fresh.set({ ...fresh.value!, recordCountIn: 1 });
+        vi.resetModules();
+        const reloaded = (await import('../preferencesStore')).preferencesStore;
+
+        expect(reloaded.value?.recordCountIn).toBe(1);
+    });
+
+    it('preserves explicit recordCountIn choices of 2 and 4 stored under the retired schema', async () => {
+        window.localStorage.setItem(
+            STORAGE_KEY,
+            stringify({ preferencesSchemaVersion: 2, recordCountIn: 2, theme: 'dark' })
+        );
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        expect(fresh.value?.recordCountIn).toBe(2);
     });
 });

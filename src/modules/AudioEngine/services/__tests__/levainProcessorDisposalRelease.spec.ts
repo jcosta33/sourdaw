@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { oneNoteZones, stageAndCommitBank } from './levainZoneTableHarness';
 import { installWorkletGlobals, makeChannels } from './wasmViewGrowthHarness';
 
 type DisposalEngine = {
@@ -99,7 +100,11 @@ function loadBank(processor: LevainProcessorLike, loadToken: number, instrumentI
             release: 0.3,
         });
     }
-    send(processor, { type: 'buildZoneMap', loadToken, numArticulations: 1, numMics: 1 });
+    stageAndCommitBank((data) => send(processor, data), wasmModule, loadToken, {
+        zones: oneNoteZones(samples),
+        numArticulations: 1,
+        numMics: 1,
+    });
     expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken });
 }
 

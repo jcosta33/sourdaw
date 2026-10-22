@@ -15,7 +15,7 @@ import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { toasterStore, resetToasterDeviceLifecycleState } from '#/modules/Toaster/stores';
 import { disposeEveryToasterDevice } from '#/modules/Toaster/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
+import { defaultTransportState, preferencesSeededTransportState } from '#/modules/Transport/useCases';
 import { tunerStore } from '#/modules/Tuner/stores';
 import { hydrateYeastState } from '#/modules/Yeast/useCases';
 
@@ -60,7 +60,10 @@ export function resetModuleStoresToDefault({
     // expiry timer) through the composition-root-registered seam — see
     // `agentMeasurementArtifactClearingState.ts` for why this cannot be a direct barrel import.
     agentMeasurementArtifactsClearerRef.current?.();
-    transportStore.set(defaultTransportState);
+    // Recording preferences seed the count-in/pre-roll default of the incoming
+    // project only; a loaded project restores its own saved transport values
+    // through `restoreTransportSnapshot`, which never passes here.
+    transportStore.set(preferencesSeededTransportState());
     setMasterGainValue(defaultTransportState.masterGain / 100);
     automationStore.set({ lanes: [] });
     if (resetMidiState) {
