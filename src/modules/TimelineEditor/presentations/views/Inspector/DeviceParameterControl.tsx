@@ -1,7 +1,7 @@
 import { type ReactElement, type ChangeEvent, type DragEvent, useRef, useState } from 'react';
 
-import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { TRACK_COLOR_PRESETS } from '#/components/daw/colorPresets';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row, Stack } from '#/components/layout';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { Button } from '#/components/ui/button';
