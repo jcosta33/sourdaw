@@ -155,6 +155,10 @@
 use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
+use daw_dsp::grinder::nam::native_admission::{
+    next_native_nam_request, NativeGrinderModelRequest, NativeNamLease, NativeNamPlan,
+    NativeNamReservation, NativeNamTarget, NativeNamTransaction, NativePreparedNam,
+};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
@@ -172,13 +176,12 @@ use daw_engine::timeline::{
     MAX_TRACK_SENDS,
 };
 use daw_engine::GraphBatchError;
-use daw_dsp::grinder::nam::native_admission::{next_native_nam_request, NativeGrinderModelRequest, NativeNamLease, NativeNamPlan, NativeNamReservation, NativeNamTarget, NativeNamTransaction, NativePreparedNam};
-use sha2::{Digest, Sha256};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Weak;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
@@ -1371,13 +1374,26 @@ struct NativeGrinderInput<'a> {
 fn command_has_native_model(command: &GraphCommandPayload) -> bool {
     match command {
         GraphCommandPayload::SetGrinderModel { .. } => true,
-        GraphCommandPayload::CreateTrackStrip { devices, .. } | GraphCommandPayload::CreateBusStrip { devices, .. } => devices.iter().any(|d| d.grinder_model.is_some()),
+        GraphCommandPayload::CreateTrackStrip { devices, .. }
+        | GraphCommandPayload::CreateBusStrip { devices, .. } => {
+            devices.iter().any(|d| d.grinder_model.is_some())
+        }
         GraphCommandPayload::InsertDevice { device, .. } => device.grinder_model.is_some(),
         _ => false,
     }
 }
-fn push_native_grinder_input<'a>(inputs: &mut Vec<NativeGrinderInput<'a>>, input: NativeGrinderInput<'a>) -> Result<(), String> {
-    if input.request.is_empty() || input.request.len() > 128 || input.device.is_empty() || input.device.len() > 128 || input.strip.is_empty() || input.strip.len() > 128 || input.text.is_some_and(|text| text.len() > 1_048_576) {
+fn push_native_grinder_input<'a>(
+    inputs: &mut Vec<NativeGrinderInput<'a>>,
+    input: NativeGrinderInput<'a>,
+) -> Result<(), String> {
+    if input.request.is_empty()
+        || input.request.len() > 128
+        || input.device.is_empty()
+        || input.device.len() > 128
+        || input.strip.is_empty()
+        || input.strip.len() > 128
+        || input.text.is_some_and(|text| text.len() > 1_048_576)
+    {
         return Err("Native NAM payload identity/byte limit".into());
     }
     if inputs.len() >= 16 || inputs.iter().any(|old| old.device == input.device) {
@@ -1386,62 +1402,159 @@ fn push_native_grinder_input<'a>(inputs: &mut Vec<NativeGrinderInput<'a>>, input
     inputs.push(input);
     Ok(())
 }
-fn push_initial_grinder_input<'a>(inputs: &mut Vec<NativeGrinderInput<'a>>, strip: &'a str, device: &'a DevicePayload) -> Result<(), String> {
-    let Some(model) = &device.grinder_model else { return Ok(()); };
-    if device.device_type != "grinder" || device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
+fn push_initial_grinder_input<'a>(
+    inputs: &mut Vec<NativeGrinderInput<'a>>,
+    strip: &'a str,
+    device: &'a DevicePayload,
+) -> Result<(), String> {
+    let Some(model) = &device.grinder_model else {
+        return Ok(());
+    };
+    if device.device_type != "grinder"
+        || device.external_instance_id.is_some()
+        || device.external_plugin_id.is_some()
+    {
         return Err("Native NAM payload requires a plain built-in Grinder".into());
     }
-    push_native_grinder_input(inputs, NativeGrinderInput { strip, device: &device.id, request: &model.request_id, text: Some(&model.model_json), initial: true })
+    push_native_grinder_input(
+        inputs,
+        NativeGrinderInput {
+            strip,
+            device: &device.id,
+            request: &model.request_id,
+            text: Some(&model.model_json),
+            initial: true,
+        },
+    )
 }
 fn native_grinder_inputs(batch: &GraphBatchPayload) -> Result<Vec<NativeGrinderInput<'_>>, String> {
-    if batch.commands.len() > MAX_BATCH_COMMANDS { return Err("Native graph batch command limit".into()); }
+    if batch.commands.len() > MAX_BATCH_COMMANDS {
+        return Err("Native graph batch command limit".into());
+    }
     let mut inputs = Vec::with_capacity(16);
     for command in &batch.commands {
         match command {
-            GraphCommandPayload::CreateTrackStrip { track_id: strip, devices, .. } | GraphCommandPayload::CreateBusStrip { bus_id: strip, devices, .. } => {
-                for device in devices { push_initial_grinder_input(&mut inputs, strip, device)?; }
+            GraphCommandPayload::CreateTrackStrip {
+                track_id: strip,
+                devices,
+                ..
             }
-            GraphCommandPayload::InsertDevice { track_id, device, .. } => push_initial_grinder_input(&mut inputs, track_id, device)?,
-            GraphCommandPayload::SetGrinderModel { track_id, device_id, request_id, model_json, .. } => push_native_grinder_input(&mut inputs, NativeGrinderInput { strip: track_id, device: device_id, request: request_id, text: model_json.as_deref(), initial: false })?,
+            | GraphCommandPayload::CreateBusStrip {
+                bus_id: strip,
+                devices,
+                ..
+            } => {
+                for device in devices {
+                    push_initial_grinder_input(&mut inputs, strip, device)?;
+                }
+            }
+            GraphCommandPayload::InsertDevice {
+                track_id, device, ..
+            } => push_initial_grinder_input(&mut inputs, track_id, device)?,
+            GraphCommandPayload::SetGrinderModel {
+                track_id,
+                device_id,
+                request_id,
+                model_json,
+                ..
+            } => push_native_grinder_input(
+                &mut inputs,
+                NativeGrinderInput {
+                    strip: track_id,
+                    device: device_id,
+                    request: request_id,
+                    text: model_json.as_deref(),
+                    initial: false,
+                },
+            )?,
             _ => (),
         }
     }
-    let bytes = inputs.iter().try_fold(0usize, |sum, input| sum.checked_add(input.text.map_or(0, str::len))).ok_or_else(|| "Native NAM byte sum overflow".to_string())?;
-    if bytes > 8 * 1_048_576 { return Err("Native NAM transaction byte limit".into()); }
+    let bytes = inputs
+        .iter()
+        .try_fold(0usize, |sum, input| {
+            sum.checked_add(input.text.map_or(0, str::len))
+        })
+        .ok_or_else(|| "Native NAM byte sum overflow".to_string())?;
+    if bytes > 8 * 1_048_576 {
+        return Err("Native NAM transaction byte limit".into());
+    }
     Ok(inputs)
 }
 
 /// All network constructors and prewarm run here, after releasing every
 /// registry/engine/sample/bank guard. The caller revalidates before any send.
-fn prepare_native_grinders(inputs: &[NativeGrinderInput<'_>], plans: &[Option<NativeNamPlan>], transaction: &NativeNamTransaction, mapped: &mut MappedBatch, working: &mut GraphRegistry, engine_id: u64, sample_rate: f32) -> Result<Vec<GrinderModelReceipt>, String> {
+fn prepare_native_grinders(
+    inputs: &[NativeGrinderInput<'_>],
+    plans: &[Option<NativeNamPlan>],
+    transaction: &NativeNamTransaction,
+    mapped: &mut MappedBatch,
+    working: &mut GraphRegistry,
+    engine_id: u64,
+    sample_rate: f32,
+) -> Result<Vec<GrinderModelReceipt>, String> {
     let mut reservations = Vec::with_capacity(inputs.len());
     let mut metadata = Vec::with_capacity(inputs.len());
     for (input, plan) in inputs.iter().zip(plans) {
-        let device = working.devices.get(input.device).ok_or_else(|| "Native NAM target was removed or not mapped".to_string())?;
-        if device.strip_id != input.strip || device.builtin() != Some(BuiltinEffectType::Grinder) { return Err("Native NAM target generation mismatch".into()); }
+        let device = working
+            .devices
+            .get(input.device)
+            .ok_or_else(|| "Native NAM target was removed or not mapped".to_string())?;
+        if device.strip_id != input.strip || device.builtin() != Some(BuiltinEffectType::Grinder) {
+            return Err("Native NAM target generation mismatch".into());
+        }
         let (authority, request, applied) = if input.initial {
             let request = next_native_nam_request()?;
             (Arc::new(AtomicU64::new(request)), request, None)
         } else {
-            let command = mapped.ops.iter().find_map(|op| match op { GraphCommand::SetGrinderModel { effect_id, request } if *effect_id == device.native_effect_id => Some(request), _ => None }).ok_or_else(|| "Native NAM request command absent".to_string())?;
-            (Arc::clone(&command.authority), command.request, Some(Arc::clone(&command.applied)))
+            let command = mapped
+                .ops
+                .iter()
+                .find_map(|op| match op {
+                    GraphCommand::SetGrinderModel { effect_id, request }
+                        if *effect_id == device.native_effect_id =>
+                    {
+                        Some(request)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| "Native NAM request command absent".to_string())?;
+            (
+                Arc::clone(&command.authority),
+                command.request,
+                Some(Arc::clone(&command.applied)),
+            )
         };
         if let Some(plan) = plan {
-            if plan.sample_rate() != sample_rate as u64 { return Err("Native NAM capture/actual engine sample-rate mismatch".into()); }
-            reservations.push(NativeNamReservation { plan: plan.clone(), target: NativeNamTarget { engine: engine_id, effect: device.native_effect_id }, authority: Arc::clone(&authority), request });
+            if plan.sample_rate() != sample_rate as u64 {
+                return Err("Native NAM capture/actual engine sample-rate mismatch".into());
+            }
+            reservations.push(NativeNamReservation {
+                plan: plan.clone(),
+                target: NativeNamTarget {
+                    engine: engine_id,
+                    effect: device.native_effect_id,
+                },
+                authority: Arc::clone(&authority),
+                request,
+            });
         }
         metadata.push((device.native_effect_id, authority, request, applied));
     }
     // Reserve the whole atomic transaction before the first parser/constructor.
     let mut leases = transaction.reserve(&reservations)?.into_iter();
     let mut receipts = Vec::with_capacity(inputs.len());
-    for ((input, plan), (effect, authority, request, applied)) in inputs.iter().zip(plans).zip(metadata) {
+    for ((input, plan), (effect, authority, request, applied)) in
+        inputs.iter().zip(plans).zip(metadata)
+    {
         let mut hash = [0u8; 32];
         let mut witness = None;
         let prepared = match (input.text, plan) {
             (Some(text), Some(plan)) => {
                 hash.copy_from_slice(&Sha256::digest(text.as_bytes()));
-                let lease = leases.next().ok_or_else(|| "Native NAM reservation absent".to_string())?;
+                let lease = leases
+                    .next()
+                    .ok_or_else(|| "Native NAM reservation absent".to_string())?;
                 witness = Some(Arc::downgrade(&lease));
                 Some(NativePreparedNam::build(text, plan, lease, hash)?)
             }
@@ -1449,17 +1562,58 @@ fn prepare_native_grinders(inputs: &[NativeGrinderInput<'_>], plans: &[Option<Na
             _ => return Err("Native NAM preflight plan absent".into()),
         };
         if input.initial {
-            let body = mapped.ops.iter_mut().find_map(|op| match op { GraphCommand::AddDetachedEffect(id, PluginCore::Grinder(body), _) if *id == effect => Some(body), _ => None }).ok_or_else(|| "Native NAM initial Grinder body absent".to_string())?;
+            let body = mapped
+                .ops
+                .iter_mut()
+                .find_map(|op| match op {
+                    GraphCommand::AddDetachedEffect(id, PluginCore::Grinder(body), _)
+                        if *id == effect =>
+                    {
+                        Some(body)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| "Native NAM initial Grinder body absent".to_string())?;
             drop(body.swap_native_model(prepared));
         } else {
-            let command = mapped.ops.iter_mut().find_map(|op| match op { GraphCommand::SetGrinderModel { effect_id, request } if *effect_id == effect => Some(request), _ => None }).ok_or_else(|| "Native NAM replacement command absent".to_string())?;
+            let command = mapped
+                .ops
+                .iter_mut()
+                .find_map(|op| match op {
+                    GraphCommand::SetGrinderModel { effect_id, request }
+                        if *effect_id == effect =>
+                    {
+                        Some(request)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| "Native NAM replacement command absent".to_string())?;
             command.model = prepared;
         }
-        let receipt = GrinderModelReceipt { track_id: input.strip.into(), device_id: input.device.into(), engine_id: engine_id.to_string(), target_generation: effect.to_string(), request_id: input.request.into(), content_hash: hash.iter().map(|byte| format!("{byte:02x}")).collect() };
-        working.grinder_models.insert(input.device.into(), NativeGrinderEntry { effect, authority, request, lease: witness, applied, receipt: receipt.clone() });
+        let receipt = GrinderModelReceipt {
+            track_id: input.strip.into(),
+            device_id: input.device.into(),
+            engine_id: engine_id.to_string(),
+            target_generation: effect.to_string(),
+            request_id: input.request.into(),
+            content_hash: hash.iter().map(|byte| format!("{byte:02x}")).collect(),
+        };
+        working.grinder_models.insert(
+            input.device.into(),
+            NativeGrinderEntry {
+                effect,
+                authority,
+                request,
+                lease: witness,
+                applied,
+                receipt: receipt.clone(),
+            },
+        );
         receipts.push(receipt);
     }
-    if working.grinder_models.len() > 64 { return Err("Native NAM receipt metadata limit".into()); }
+    if working.grinder_models.len() > 64 {
+        return Err("Native NAM receipt metadata limit".into());
+    }
     Ok(receipts)
 }
 
@@ -1517,15 +1671,30 @@ pub(crate) struct EngineReleaseResult {
 
 impl GraphRegistry {
     pub(crate) fn native_grinder_readback(&self, engine_id: u64) -> Vec<GrinderModelReceipt> {
-        self.grinder_models.iter().filter_map(|(id, entry)| {
-            let device = self.devices.get(id)?;
-            if device.native_effect_id != entry.effect || entry.receipt.engine_id != engine_id.to_string() || entry.authority.load(Ordering::Acquire) != entry.request { return None; }
-            let applied = match &entry.lease {
-                Some(lease) => lease.upgrade().is_some_and(|lease| lease.is_live()),
-                None => entry.applied.as_ref().is_some_and(|applied| applied.load(Ordering::Acquire)),
-            };
-            if applied { Some(entry.receipt.clone()) } else { None }
-        }).collect()
+        self.grinder_models
+            .iter()
+            .filter_map(|(id, entry)| {
+                let device = self.devices.get(id)?;
+                if device.native_effect_id != entry.effect
+                    || entry.receipt.engine_id != engine_id.to_string()
+                    || entry.authority.load(Ordering::Acquire) != entry.request
+                {
+                    return None;
+                }
+                let applied = match &entry.lease {
+                    Some(lease) => lease.upgrade().is_some_and(|lease| lease.is_live()),
+                    None => entry
+                        .applied
+                        .as_ref()
+                        .is_some_and(|applied| applied.load(Ordering::Acquire)),
+                };
+                if applied {
+                    Some(entry.receipt.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Number a fence this process published outside [`map_batch`] — the
@@ -1714,7 +1883,9 @@ impl GraphRegistry {
     /// stamps against a horizon the new echo never reaches, so the ledger
     /// would over-refuse for the rest of the session.
     pub(crate) fn reset_for_engine_restart(&mut self) {
-        for entry in self.grinder_models.values() { entry.authority.store(0, Ordering::Release); }
+        for entry in self.grinder_models.values() {
+            entry.authority.store(0, Ordering::Release);
+        }
         self.grinder_models.clear();
         let _ops_for_an_engine_that_is_gone = self.take_topology_down();
         self.batches_sent = 0;
@@ -3856,18 +4027,48 @@ fn map_command(
             Ok(())
         }
 
-        GraphCommandPayload::SetGrinderModel { track_id, device_id, request_id: _, model_json: _, values } => {
-            let device = registry.devices.get(device_id).ok_or_else(|| "set-grinder-model: unknown device".to_string())?;
-            if device.strip_id != *track_id || device.builtin() != Some(BuiltinEffectType::Grinder) {
+        GraphCommandPayload::SetGrinderModel {
+            track_id,
+            device_id,
+            request_id: _,
+            model_json: _,
+            values,
+        } => {
+            let device = registry
+                .devices
+                .get(device_id)
+                .ok_or_else(|| "set-grinder-model: unknown device".to_string())?;
+            if device.strip_id != *track_id || device.builtin() != Some(BuiltinEffectType::Grinder)
+            {
                 return Err("set-grinder-model: target is not the requested Grinder".into());
             }
             let effect_id = device.native_effect_id;
-            map_command(&GraphCommandPayload::SetDeviceParameters { track_id: track_id.clone(), device_id: device_id.clone(), values: values.clone() }, registry, samples, sample_rate, engine_owned_devices, attached_crumbs, levain_banks, budgets, ops, touched)?;
+            map_command(
+                &GraphCommandPayload::SetDeviceParameters {
+                    track_id: track_id.clone(),
+                    device_id: device_id.clone(),
+                    values: values.clone(),
+                },
+                registry,
+                samples,
+                sample_rate,
+                engine_owned_devices,
+                attached_crumbs,
+                levain_banks,
+                budgets,
+                ops,
+                touched,
+            )?;
             let request = next_native_nam_request()?;
-            ops.push(GraphCommand::SetGrinderModel { effect_id, request: Box::new(NativeGrinderModelRequest {
-                model: None, authority: Arc::new(AtomicU64::new(request)), request,
-                applied: Arc::new(AtomicBool::new(false)),
-            }) });
+            ops.push(GraphCommand::SetGrinderModel {
+                effect_id,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: None,
+                    authority: Arc::new(AtomicU64::new(request)),
+                    request,
+                    applied: Arc::new(AtomicBool::new(false)),
+                }),
+            });
             Ok(())
         }
 
@@ -4726,10 +4927,17 @@ pub async fn apply_graph_commands(
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
     };
     if !native_inputs.is_empty() && batch.schema_version != 2 {
-        return result_json(&GraphApplyResultPayload::rejected("Native NAM payload requires schemaVersion 2".into()));
+        return result_json(&GraphApplyResultPayload::rejected(
+            "Native NAM payload requires schemaVersion 2".into(),
+        ));
     }
-    let native_transaction = if native_inputs.is_empty() { None } else {
-        let bytes = native_inputs.iter().map(|input| input.text.map_or(0, str::len)).sum();
+    let native_transaction = if native_inputs.is_empty() {
+        None
+    } else {
+        let bytes = native_inputs
+            .iter()
+            .map(|input| input.text.map_or(0, str::len))
+            .sum();
         match NativeNamTransaction::begin(bytes, native_inputs.len()) {
             Ok(transaction) => Some(transaction),
             Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
@@ -4742,7 +4950,9 @@ pub async fn apply_graph_commands(
     for input in &native_inputs {
         let plan = match input.text {
             None => None,
-            Some(text) => match NativeNamPlan::capture_rate(text).and_then(|rate| NativeNamPlan::inspect(text, rate)) {
+            Some(text) => match NativeNamPlan::capture_rate(text)
+                .and_then(|rate| NativeNamPlan::inspect(text, rate))
+            {
                 Ok(plan) => Some(plan),
                 Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
             },
@@ -4915,7 +5125,9 @@ pub async fn apply_graph_commands(
     let baseline_revision = registry_guard.runtime_revision;
     let baseline_fence = registry_guard.batches_sent;
     if !native_inputs.is_empty() && baseline_fence >= 9_007_199_254_740_991 {
-        return result_json(&GraphApplyResultPayload::rejected("Native NAM fence exceeds JSON safe integer range".into()));
+        return result_json(&GraphApplyResultPayload::rejected(
+            "Native NAM fence exceeds JSON safe integer range".into(),
+        ));
     }
     let correlation = batch.correlation.clone();
     let mut working = registry_guard.clone();
@@ -4940,14 +5152,27 @@ pub async fn apply_graph_commands(
         }
     };
 
-    working.grinder_models.retain(|id, entry| working.devices.get(id).is_some_and(|device| device.native_effect_id == entry.effect));
+    working.grinder_models.retain(|id, entry| {
+        working
+            .devices
+            .get(id)
+            .is_some_and(|device| device.native_effect_id == entry.effect)
+    });
     drop(levain_banks);
     drop(samples);
     drop(engine_guard);
     drop(registry_guard);
     let native_receipts = match &native_transaction {
         None => Vec::new(),
-        Some(transaction) => match prepare_native_grinders(&native_inputs, &native_plans, transaction, &mut mapped, &mut working, engine_id, sample_rate) {
+        Some(transaction) => match prepare_native_grinders(
+            &native_inputs,
+            &native_plans,
+            transaction,
+            &mut mapped,
+            &mut working,
+            engine_id,
+            sample_rate,
+        ) {
             Ok(receipts) => receipts,
             Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
         },
@@ -4955,13 +5180,27 @@ pub async fn apply_graph_commands(
     // A scalar batch, removal, engine restart or another command producer can
     // advance while preparation runs. Nothing prepared against that old view
     // is admitted into its successor. Losing work is destroyed control-side.
-    let mut registry_guard = state.graph.lock().map_err(|error| format!("Failed to lock graph registry: {error}"))?;
-    let mut engine_guard = state.engine.lock().map_err(|error| format!("Failed to lock engine: {error}"))?;
+    let mut registry_guard = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+    let mut engine_guard = state
+        .engine
+        .lock()
+        .map_err(|error| format!("Failed to lock engine: {error}"))?;
     let Some(engine) = engine_guard.as_mut() else {
-        return result_json(&GraphApplyResultPayload::rejected("Native engine retired during model preparation".into()));
+        return result_json(&GraphApplyResultPayload::rejected(
+            "Native engine retired during model preparation".into(),
+        ));
     };
-    if engine.instance_id() != engine_id || engine.sample_rate() != sample_rate || registry_guard.runtime_revision != baseline_revision || registry_guard.batches_sent != baseline_fence {
-        return result_json(&GraphApplyResultPayload::rejected("Native graph/engine generation changed during preparation".into()));
+    if engine.instance_id() != engine_id
+        || engine.sample_rate() != sample_rate
+        || registry_guard.runtime_revision != baseline_revision
+        || registry_guard.batches_sent != baseline_fence
+    {
+        return result_json(&GraphApplyResultPayload::rejected(
+            "Native graph/engine generation changed during preparation".into(),
+        ));
     }
 
     // Whole-batch admission and visibility: `send_graph_batch` provisions a
@@ -5065,20 +5304,27 @@ pub async fn apply_graph_commands(
     // — the same number the ledger stamped every write in it with.
     let admitted_batch = working.batches_sent;
     for (id, old) in &registry_guard.grinder_models {
-        if !working.grinder_models.get(id).is_some_and(|new| Arc::ptr_eq(&new.authority, &old.authority)) {
+        if !working
+            .grinder_models
+            .get(id)
+            .is_some_and(|new| Arc::ptr_eq(&new.authority, &old.authority))
+        {
             old.authority.store(0, Ordering::Release);
         }
     }
     *registry_guard = working;
     let mut applied = GraphApplyResultPayload::applied(
-            correlation,
-            revision,
-            admitted_batch,
-            mapped.reports,
-            attached_plugins,
-        ).reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch));
+        correlation,
+        revision,
+        admitted_batch,
+        mapped.reports,
+        attached_plugins,
+    )
+    .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch));
     applied.engine_id = Some(engine_id.to_string());
-    if !native_receipts.is_empty() { applied.grinder_models = Some(native_receipts); }
+    if !native_receipts.is_empty() {
+        applied.grinder_models = Some(native_receipts);
+    }
     result_json(&applied)
 }
 
@@ -5283,8 +5529,13 @@ pub async fn map_graph_batch(
         Ok(batch) => batch,
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
     };
-    if batch.schema_version == 2 || !native_grinder_inputs(&batch)?.is_empty() || prior_commands.iter().any(command_has_native_model) {
-        return result_json(&GraphApplyResultPayload::rejected("Imported native NAM is live-only; offline NAM remains gated".into()));
+    if batch.schema_version == 2
+        || !native_grinder_inputs(&batch)?.is_empty()
+        || prior_commands.iter().any(command_has_native_model)
+    {
+        return result_json(&GraphApplyResultPayload::rejected(
+            "Imported native NAM is live-only; offline NAM remains gated".into(),
+        ));
     }
     let prior_len = prior_commands.len() as u64;
 
@@ -5556,7 +5807,6 @@ mod tests {
         samples: &TimelineSamplePool,
         sample_rate: f32,
     ) -> Result<MappedBatch, String> {
-
         map_bound_batch(batch, registry, samples, sample_rate, &HashMap::new())
     }
 
@@ -7717,26 +7967,61 @@ mod tests {
         use daw_dsp::grinder::engine::GrinderEngine;
         const FRAMES: usize = 4096;
         let state = AppState::default();
-        let (engine, mut command_rx, _adoption) = daw_engine::engine_handle_for_command_capture(128);
+        let (engine, mut command_rx, _adoption) =
+            daw_engine::engine_handle_for_command_capture(128);
         let engine_id = engine.instance_id();
         *state.engine.lock().unwrap() = Some(engine);
-        let material: Vec<f32> = (0..FRAMES).map(|frame| (frame as f32 * 0.017).sin() * 0.1).collect();
-        let pcm = material.iter().flat_map(|sample| sample.to_le_bytes()).collect();
-        block_on_test(register_timeline_sample("nam-material".into(), 48_000.0, 1, pcm, &state)).unwrap();
+        let material: Vec<f32> = (0..FRAMES)
+            .map(|frame| (frame as f32 * 0.017).sin() * 0.1)
+            .collect();
+        let pcm = material
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect();
+        block_on_test(register_timeline_sample(
+            "nam-material".into(),
+            48_000.0,
+            1,
+            pcm,
+            &state,
+        ))
+        .unwrap();
         let first = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}"#;
         let second = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[-0.25]}"#;
         let mut commands = strip_with_device("d-nam", "grinder", json!({"engineMode":1}));
-        commands[0]["devices"][0]["grinderModel"] = json!({"requestId":"initial", "modelJson":first});
+        commands[0]["devices"][0]["grinderModel"] =
+            json!({"requestId":"initial", "modelJson":first});
         commands.as_array_mut().unwrap().push(json!({"kind":"schedule-clip", "playback": {"trackId":"t1", "source":{"sourceId":"nam-material"}, "startTime":0, "sourceOffsetSeconds":0, "durationSeconds":FRAMES as f64 / 48_000.0, "playbackRate":1, "gain":1, "fade":{"microFadeSeconds":0}}}));
-        commands.as_array_mut().unwrap().push(json!({"kind":"set-transport", "playing":true, "positionSeconds":0}));
-        let refused = block_on_test(apply_graph_commands(json!({"schemaVersion":1,"commands":commands}), &state, &CrumbsState::default())).unwrap();
+        commands
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"kind":"set-transport", "playing":true, "positionSeconds":0}));
+        let refused = block_on_test(apply_graph_commands(
+            json!({"schemaVersion":1,"commands":commands}),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .unwrap();
         assert_eq!(refused["acceptance"], "rejected");
         assert!(command_rx.pop().is_err());
-        let accepted = block_on_test(apply_graph_commands(json!({"schemaVersion":2,"commands":commands}), &state, &CrumbsState::default())).unwrap();
+        let accepted = block_on_test(apply_graph_commands(
+            json!({"schemaVersion":2,"commands":commands}),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .unwrap();
         assert_eq!(accepted["application"], "applied");
         assert_eq!(accepted["engineId"], engine_id.to_string());
         assert_eq!(accepted["grinderModels"][0]["requestId"], "initial");
-        assert!(state.graph.lock().unwrap().native_grinder_readback(engine_id).is_empty(), "queued JSON cannot claim callback activation");
+        assert!(
+            state
+                .graph
+                .lock()
+                .unwrap()
+                .native_grinder_readback(engine_id)
+                .is_empty(),
+            "queued JSON cannot claim callback activation"
+        );
 
         // Consume the actual public live command path with the very scheduler
         // the stream drives, without opening a hardware device. This does not
@@ -7750,41 +8035,96 @@ mod tests {
             }
             renderer.push(command).unwrap();
         }
-        assert!(effect_id.is_some(), "real map must prepare the existing GrinderBody");
+        assert!(
+            effect_id.is_some(),
+            "real map must prepare the existing GrinderBody"
+        );
         let (actual, _) = renderer.render(FRAMES);
         let mut reference = GrinderEngine::new(48_000.0);
         reference.set_param("engineMode", 1.0);
         reference.load_neural_model(first).unwrap();
         let mut expected = material.clone();
         let mut right = material.clone();
-        for (left, right) in expected.chunks_mut(128).zip(right.chunks_mut(128)) { reference.process_block(left, right); }
+        for (left, right) in expected.chunks_mut(128).zip(right.chunks_mut(128)) {
+            reference.process_block(left, right);
+        }
         assert!(actual.iter().any(|sample| sample.abs() > 1e-5));
-        assert!(actual.iter().zip(&expected).all(|(a, b)| (a - b).abs() < 1e-6));
-        assert_eq!(renderer.graph_progress().batches_applied, accepted["admittedBatch"].as_u64().unwrap());
-        assert_eq!(state.graph.lock().unwrap().native_grinder_readback(engine_id).len(), 1);
+        assert!(actual
+            .iter()
+            .zip(&expected)
+            .all(|(a, b)| (a - b).abs() < 1e-6));
+        assert_eq!(
+            renderer.graph_progress().batches_applied,
+            accepted["admittedBatch"].as_u64().unwrap()
+        );
+        assert_eq!(
+            state
+                .graph
+                .lock()
+                .unwrap()
+                .native_grinder_readback(engine_id)
+                .len(),
+            1
+        );
 
         let replaced = block_on_test(apply_graph_commands(json!({"schemaVersion":2,"commands":[
             {"kind":"set-grinder-model", "trackId":"t1", "deviceId":"d-nam", "requestId":"replacement", "modelJson":second, "values":{}},
             {"kind":"set-transport", "playing":true, "positionSeconds":0}
         ]}), &state, &CrumbsState::default())).unwrap();
         assert_eq!(replaced["application"], "applied");
-        assert_ne!(replaced["grinderModels"][0]["contentHash"], accepted["grinderModels"][0]["contentHash"]);
-        assert_eq!(replaced["grinderModels"][0]["targetGeneration"], effect_id.unwrap().to_string());
+        assert_ne!(
+            replaced["grinderModels"][0]["contentHash"],
+            accepted["grinderModels"][0]["contentHash"]
+        );
+        assert_eq!(
+            replaced["grinderModels"][0]["targetGeneration"],
+            effect_id.unwrap().to_string()
+        );
         while let Ok(command) = command_rx.pop() {
-            assert!(!matches!(&command, GraphCommand::AddDetachedEffect(..)), "rolling replacement rebuilt unrelated amp state");
+            assert!(
+                !matches!(&command, GraphCommand::AddDetachedEffect(..)),
+                "rolling replacement rebuilt unrelated amp state"
+            );
             renderer.push(command).unwrap();
         }
         let (replacement, _) = renderer.render(FRAMES);
         reference.load_neural_model(second).unwrap();
         let mut expected_replacement = material.clone();
         let mut right = material;
-        for (left, right) in expected_replacement.chunks_mut(128).zip(right.chunks_mut(128)) { reference.process_block(left, right); }
-        assert!(replacement.iter().zip(&expected_replacement).all(|(a, b)| (a - b).abs() < 1e-6));
-        assert!(replacement.iter().zip(&actual).any(|(a, b)| (a - b).abs() > 1e-3), "different full models collapsed to the same native sound");
-        let readback = state.graph.lock().unwrap().native_grinder_readback(engine_id);
+        for (left, right) in expected_replacement
+            .chunks_mut(128)
+            .zip(right.chunks_mut(128))
+        {
+            reference.process_block(left, right);
+        }
+        assert!(replacement
+            .iter()
+            .zip(&expected_replacement)
+            .all(|(a, b)| (a - b).abs() < 1e-6));
+        assert!(
+            replacement
+                .iter()
+                .zip(&actual)
+                .any(|(a, b)| (a - b).abs() > 1e-3),
+            "different full models collapsed to the same native sound"
+        );
+        let readback = state
+            .graph
+            .lock()
+            .unwrap()
+            .native_grinder_readback(engine_id);
         assert_eq!(readback[0].request_id, "replacement");
-        assert_eq!(renderer.graph_progress().batches_applied, replaced["admittedBatch"].as_u64().unwrap());
-        assert!(block_on_test(render_graph_offline(json!({"schemaVersion":2,"commands":commands}), 64, 48_000.0, &state)).is_err());
+        assert_eq!(
+            renderer.graph_progress().batches_applied,
+            replaced["admittedBatch"].as_u64().unwrap()
+        );
+        assert!(block_on_test(render_graph_offline(
+            json!({"schemaVersion":2,"commands":commands}),
+            64,
+            48_000.0,
+            &state
+        ))
+        .is_err());
     }
 
     /// The honesty slice (#3635): an `EngineHandle` can outlive its output

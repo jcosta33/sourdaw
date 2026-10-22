@@ -1555,8 +1555,8 @@ pub fn engine_handle_for_command_capture(
 #[cfg(test)]
 mod tests {
     use super::{
-        engine_handle_fixture, engine_handle_for_command_capture, reserve_engine_instance_id, spawn_with_fallback,
-        GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+        engine_handle_fixture, engine_handle_for_command_capture, reserve_engine_instance_id,
+        spawn_with_fallback, GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_thread::{observed_audio_thread_handle, OwnerCommand};
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
@@ -1586,7 +1586,10 @@ mod tests {
         assert!(next.instance_id() > id);
         let exhausted = std::sync::atomic::AtomicU64::new(u64::MAX);
         assert!(reserve_engine_instance_id(&exhausted).is_err());
-        assert_eq!(exhausted.load(std::sync::atomic::Ordering::Relaxed), u64::MAX);
+        assert_eq!(
+            exhausted.load(std::sync::atomic::Ordering::Relaxed),
+            u64::MAX
+        );
     }
 
     /// The pre-built instance a detached-effect batch carries, built here on

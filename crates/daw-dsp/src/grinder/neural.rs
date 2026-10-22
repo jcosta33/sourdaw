@@ -333,7 +333,10 @@ impl NeuralCapture {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn swap_native_model(&mut self, model: Option<super::nam::native_admission::NativePreparedNam>) -> Option<super::nam::native_admission::NativePreparedNam> {
+    pub fn swap_native_model(
+        &mut self,
+        model: Option<super::nam::native_admission::NativePreparedNam>,
+    ) -> Option<super::nam::native_admission::NativePreparedNam> {
         let old = std::mem::replace(&mut self.native_model, model);
         if self.native_model.is_some() {
             self.selected_model_slot = None;
@@ -351,7 +354,9 @@ impl NeuralCapture {
 
     pub fn has_loaded_model(&self) -> bool {
         #[cfg(not(target_arch = "wasm32"))]
-        if self.native_model.is_some() { return true; }
+        if self.native_model.is_some() {
+            return true;
+        }
         self.model.is_some()
     }
 

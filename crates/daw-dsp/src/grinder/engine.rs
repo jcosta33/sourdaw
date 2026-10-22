@@ -700,7 +700,10 @@ impl GrinderEngine {
             .map_err(|error| error.to_string())
     }
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn swap_native_neural_model(&mut self, model: Option<super::nam::native_admission::NativePreparedNam>) -> Option<super::nam::native_admission::NativePreparedNam> {
+    pub fn swap_native_neural_model(
+        &mut self,
+        model: Option<super::nam::native_admission::NativePreparedNam>,
+    ) -> Option<super::nam::native_admission::NativePreparedNam> {
         self.neural.swap_native_model(model)
     }
     #[cfg(not(target_arch = "wasm32"))]
