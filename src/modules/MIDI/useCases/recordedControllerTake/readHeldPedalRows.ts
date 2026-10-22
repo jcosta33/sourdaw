@@ -30,9 +30,10 @@ export function readHeldPedalRows(): MidiCC[] {
                 resolvedCc: controller,
                 consumed: false,
             });
-            return admitted && !isPedalControllerLift(controller, value)
-                ? [createMidiCC(controller, value, 0, channel)]
-                : [];
+            if (!admitted || isPedalControllerLift(controller, value)) {
+                return [];
+            }
+            return [createMidiCC(controller, value, 0, channel)];
         })
     );
 }
