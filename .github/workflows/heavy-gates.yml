@@ -1,7 +1,7 @@
 name: Heavy gates
 
-# Required affected browser checks, called once from the pull-request workflow.
-# Approval does not launch another suite. The full scheduled train is nightly.yml.
+# Required affected browser checks, called once from health-gates.yml after the
+# reviewer App's approval admits the head. The full scheduled train is nightly.yml.
 on:
   workflow_call:
     inputs:

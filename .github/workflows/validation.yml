@@ -1,7 +1,8 @@
 name: Validation
 
-# Required validation called only by health-gates.yml. Browser smoke uses the
-# same deterministic affected plan as the browser matrix. Nightly owns full-load validation.
+# Validation called by pr-checks.yml on every push and by health-gates.yml for
+# the required Gate. Browser smoke uses the same deterministic affected plan as
+# the browser matrix. Nightly owns full-load validation.
 
 on:
   workflow_call:
