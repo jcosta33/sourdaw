@@ -723,11 +723,17 @@ Each guarded command inherits `TMPDIR`, `TMP`, and `TEMP` before startup, pointi
 private directory under the primary repository's `.agents/guard-storage/` on the repository's
 volume. Nested guards use separate directories and retain the shared memory admission registry.
 Normal exits, spawn errors, signals, and forced termination release storage only after the entire
-tracked process tree is proven stopped. A process that survives forced cleanup is a leak: it fails
-the run and records a guard-failure receipt that stops the lane. Storage the census cannot prove free
-after the tree has exited (an unavailable or incomplete census, a foreign process holding a path
-inside it) is retained but is not a command failure: the guard keeps the directory, prints one
-warning naming its path and the census reason, returns the command's own status, and records no
+tracked process tree is proven stopped. A process that survives forced cleanup is a leak: it fails the run and records a guard-failure
+receipt that stops the lane. So is every storage verdict that names a cause rather than a lost
+proof: a census that proves a holder alive (such as a detached descendant with a working directory
+inside it), storage that is not private, denied or unusable inspection, a record the guard cannot
+read (the command deleted its own temp directory), and a release that throws. These never clear
+on their own and a later start cannot reclaim them, so reporting success would leave the directory
+forever. Only a census that could not finish a pass right now, with every diagnostic on the transient list
+in `areTransientProofReasons` (`scripts/resourceGuardProofReasons.ts`: a missed live process, an `lsof`
+catalog that lost a descriptor type, the census time bound, an unavailable `ps` list), after the
+tracked tree is proved exited, is retained without failing: the guard keeps the directory, prints
+one warning naming its path and the census reason, returns the command's own status, and records no
 receipt, because the lost proof says nothing about the work and keeping the files is the safe
 outcome. Every later guarded start reclaims retained storage whose supervisor is dead once the
 census proves it free (`recoverGuardStorage`, run by `createGuardStorage`), and keeps what it still

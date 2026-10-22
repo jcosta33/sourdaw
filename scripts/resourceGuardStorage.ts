@@ -321,7 +321,7 @@ export function resolveGuardStorageRoot(cwd: string): string {
     return join(primary, '.agents', 'guard-storage');
 }
 
-function readStorageOwner(path: string, token: string): StorageOwner | undefined {
+export function readStorageOwner(path: string, token: string): StorageOwner | undefined {
     const identity = directoryIdentity(path);
     directoryIdentity(join(path, 'tmp'));
     const ownerMetadata = lstatSync(join(path, 'owner.json'));

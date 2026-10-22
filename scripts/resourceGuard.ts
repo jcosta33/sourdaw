@@ -32,6 +32,7 @@ import {
     readGuardFailureReceipt,
     type GuardFailureReceipt,
 } from './prContract.ts';
+import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -39,6 +40,7 @@ import {
     storageReferenceState,
     sameUserProcessIds,
     parseLsofCensus,
+    readStorageOwner,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
@@ -128,6 +130,8 @@ type GuardedCommandInput = {
     diskReserveBytes?: number;
     diskSampler?: (path: string) => number | undefined;
     storageFactory?: typeof createGuardStorage;
+    // Test seam for the census host (file-use proof, identity probes).
+    storageHost?: Partial<StorageRecoveryHost>;
 };
 
 const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number }> = {
@@ -1801,6 +1805,15 @@ function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessE
     return bytes;
 }
 
+// A directory whose owner record cannot be read is skipped by every later recovery, so it never reclaims.
+function storageRecordReadable(path: string, token: string): boolean {
+    try {
+        return readStorageOwner(path, token) !== undefined;
+    } catch {
+        return false;
+    }
+}
+
 export async function runGuardedCommand(input: GuardedCommandInput): Promise<GuardedCommandResult> {
     const profile = profiles[input.profile];
     const cwd = input.cwd ?? process.cwd();
@@ -1895,14 +1908,31 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         };
     }
     let storageEvidenceReported = false;
-    let storageProofUnavailableReason: string | undefined;
-    const storagePorts = storageRecoveryPorts((reason) => {
-        storageProofUnavailableReason ??= reason;
-        if (!storageEvidenceReported) {
-            output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
-            storageEvidenceReported = true;
-        }
-    });
+    // The last census verdict and its diagnostics, kept per sessionState call so the final release
+    // attempt can tell a proved holder or a stable obstruction from a transient lost proof.
+    const storageProof: { verdict: 'alive' | 'dead' | 'unknown' | undefined; reasons: string[] } = {
+        verdict: undefined,
+        reasons: [],
+    };
+    const storagePorts = storageRecoveryPorts(
+        (reason) => {
+            storageProof.reasons.push(reason);
+            if (!storageEvidenceReported) {
+                output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
+                storageEvidenceReported = true;
+            }
+        },
+        { ...storageRecoveryHost, ...input.storageHost }
+    );
+    const censusSessionState = storagePorts.sessionState;
+    // localReleaseAllowed reads ports.sessionState at call time, so replacing it observes both paths.
+    storagePorts.sessionState = (...args) => {
+        storageProof.reasons = [];
+        storageProof.verdict = undefined;
+        const verdict = censusSessionState(...args);
+        storageProof.verdict = verdict;
+        return verdict;
+    };
     let storage: ReturnType<typeof createGuardStorage>;
     try {
         const supervisorStart = processStartedAt(process.pid);
@@ -1988,6 +2018,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     void childCompletion.catch(() => undefined);
     let storageRemoved = false;
     let treeExitProved = false;
+    let releaseThrew = false;
     const cleanupStorage = async (): Promise<boolean> => {
         if (storageRemoved) {
             return true;
@@ -1995,7 +2026,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         const treeStopped =
             child.pid === undefined || (await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000));
         treeExitProved = treeStopped;
-        const removed = await storage.release(treeStopped).catch(() => false);
+        storageProof.verdict = undefined;
+        storageProof.reasons = [];
+        releaseThrew = false;
+        const removed = await storage.release(treeStopped).catch(() => {
+            releaseThrew = true;
+            return false;
+        });
         if (ownedSession && treeStopped) {
             session.release();
         }
@@ -2207,14 +2244,24 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     // the command: keeping the storage is the safe outcome and a later guarded run reclaims it.
     let retainedStorage: GuardedCommandResult['retainedStorage'];
     if (!storageRemoved) {
-        if (treeExitProved && reason !== 'leak') {
-            retainedStorage = {
-                path: dirname(storage.tempDirectory),
-                reason: storageProofUnavailableReason ?? 'storage not proved free of file use',
-            };
+        // Only a census that lost its proof for a transient reason is the census's fault. A proved
+        // holder, a stable obstruction, an unreadable record or a throwing release would never
+        // reclaim, so they stay a leak.
+        const transientlyUnproved =
+            treeExitProved &&
+            reason !== 'leak' &&
+            !releaseThrew &&
+            storageProof.verdict === 'unknown' &&
+            areTransientProofReasons(storageProof.reasons) &&
+            storageRecordReadable(dirname(storage.tempDirectory), processToken);
+        if (transientlyUnproved) {
+            retainedStorage = { path: dirname(storage.tempDirectory), reason: storageProof.reasons.join('; ') };
         } else {
+            const census = `${storageProof.verdict ?? 'unobserved'}${storageProof.reasons.map((reason) => ` ${reason}`).join('')}`;
             output.append(
-                Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
+                Buffer.from(
+                    `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
+                )
             );
             reason ??= 'leak';
         }

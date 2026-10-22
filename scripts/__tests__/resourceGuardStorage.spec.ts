@@ -324,19 +324,27 @@ function expectMarkedRecovery(
     }
     expect(diagnostics).toEqual(expectedDiagnostics);
     const freshRetained = retainedTokens.includes(fresh.token);
-    expect(fresh.result.reason).toBeUndefined();
-    if (fresh.result.retainedStorage === undefined) {
+    if (fresh.result.reason === undefined && fresh.result.retainedStorage === undefined) {
         expect(freshRetained).toBe(false);
         expect(fresh.result.output).not.toContain('guard storage retained:');
-    } else {
+    } else if (fresh.result.reason === undefined) {
+        // A transient lost census proof warns instead of failing; the storage stays for a later start.
         expect(diagnostics).toHaveLength(1);
-        expect(fresh.result.retainedStorage.path).toBe(dirname(fresh.tempDirectory));
-        // The verdict is classified after the final cleanup attempt, so an unproved run keeps its storage.
+        expect(fresh.result.retainedStorage?.path).toBe(dirname(fresh.tempDirectory));
+        expect(freshRetained).toBe(true);
+    } else {
+        expect(fresh.result.reason).toBe('leak');
+        expect(diagnostics).toHaveLength(1);
+        expect(fresh.result.output).toContain(
+            'guard storage retained: process-tree exit or storage ownership could not be proved'
+        );
+        // The verdict is classified after the final cleanup attempt, so a leak keeps this run's storage.
         expect(freshRetained).toBe(true);
     }
     if (originalStillLive) {
         expect(retained.direct).toContain(prior[0]?.token);
     } else if (diagnostics.length === 0) {
+        expect(fresh.result.reason).toBeUndefined();
         expect(fresh.result.retainedStorage).toBeUndefined();
         expect(retained.direct).toEqual([]);
         expect(retained.claims).toEqual([]);
@@ -430,7 +438,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         });
         expect(result.output).toContain('require:ok function');
         expect(result.output).toContain('import:ok function');
-        expect(result.reason).toBeUndefined();
+        expect(result.reason, proofDiagnostic(result)).toBeUndefined();
         expect(result.code).toBe(0);
         const observed = JSON.parse(result.output.trim().split('\n').at(-1) ?? '');
         expect(observed.statuses).toEqual([0, 0]);
@@ -480,9 +488,9 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             proof: 'incomplete',
             childExit: 0,
             diskPressure: false,
-            reason: undefined,
+            reason: 'leak',
         },
-        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, diskPressure: false, reason: undefined },
+        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, diskPressure: false, reason: 'leak' },
     ] as const)(
         'reports final owned-storage disposition for $scenario',
         async ({ proof, childExit, diskPressure, reason }) => {
@@ -592,11 +600,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             expect(claimPayloads(join(root, 'storage'))).toEqual([]);
             expect(result.code).toBe(diskPressure ? null : childExit);
             expect(result.reason).toBe(reason);
-            // An exited tree with an unprovable census keeps its storage and warns instead of failing.
-            expect(result.retainedStorage).toEqual(
-                retained ? { path: dirname(tempDirectory), reason: 'storage not proved free of file use' } : undefined
-            );
-            expect(result.output.split(retainedLine).length - 1).toBe(childExit === 7 ? 1 : 0);
+            expect(result.output.split(retainedLine).length - 1).toBe(retained || childExit === 7 ? 1 : 0);
             if (diskPressure) {
                 expect(result.output).toContain('disk space below');
             }
@@ -867,10 +871,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             const prior: PriorMarkedGuard[] = [{ tempDirectory: started.tmp, token: originalToken }];
             if (alive) {
                 if (scenario === 'parent exit') {
-                    // The escaped descendant is outside the tracked tree, so only the storage proof sees it.
-                    expect(JSON.parse(readFileSync(resultPath, 'utf8')).retainedStorage.path).toBe(
-                        dirname(started.tmp)
-                    );
+                    expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
                 }
                 const interim = await runMarkedGuard(root);
                 expectMarkedRecovery(root, prior, interim, true);
@@ -3759,7 +3760,11 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
     it.skipIf(process.platform !== 'darwin').each([
         { scenario: 'unavailable utility', script: 'exit 127' },
         { scenario: 'malformed output', script: "printf 'malformed'" },
-        { scenario: 'partial coverage', script: "printf 'p1\\0\\nfcwd\\0tDIR\\0n/\\0\\n'" },
+        // The scoped read of the missed process is refused, so the proof is stably unavailable.
+        {
+            scenario: 'partial coverage',
+            script: "case \"$*\" in *' -p '*) exit 2;; esac; printf 'p1\\0\\nfcwd\\0tDIR\\0n/\\0\\n'",
+        },
         { scenario: 'permission diagnostic', script: "printf 'permission denied' >&2; exit 0" },
     ])(
         'retains owned payload for incomplete file census: $scenario',
@@ -3802,8 +3807,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
             await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1), 25_000);
             const started: { tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const result = JSON.parse(readFileSync(resultPath, 'utf8'));
-            expect(result.reason).toBeUndefined();
-            expect(result.retainedStorage.path).toBe(dirname(started.tmp));
+            expect(result.reason).toBe('leak');
             expect(result.code).toBe(0);
             expect(
                 await main(['--profile', 'focused', '--', process.execPath], {
@@ -3814,7 +3818,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                     log: () => {},
                     error: () => {},
                 })
-            ).toBe(0);
+            ).not.toBe(0);
             expect(existsSync(started.tmp)).toBe(true);
             const recovery = await guarded(root);
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
@@ -4033,10 +4037,16 @@ describe('disk reserve contract', () => {
 });
 
 describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
-    const unprovedPorts = (storedPorts: StorageRecoveryPorts): StorageRecoveryPorts => ({
-        ...storedPorts,
-        localReleaseAllowed: () => false,
+    type CensusHost = NonNullable<Parameters<typeof runGuardedCommand>[0]['storageHost']>;
+    const censusReporting = (verdict: 'alive' | 'dead' | 'unknown', ...reasons: string[]): CensusHost => ({
+        fileState: (_tempDirectories, _ownedPids, report) => {
+            for (const reason of reasons) {
+                report(reason);
+            }
+            return verdict;
+        },
     });
+    const transientReason = 'lsof-live-pid-missing:count=1:pid/uid/state=77/501/R';
 
     function laneFor(root: string) {
         const worktreePath = join(root, '.agents', 'worktrees', 'agent-1-lane');
@@ -4087,14 +4097,15 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         { status: 0, expectedCode: 0 },
         { status: 7, expectedCode: 1 },
     ])(
-        'keeps storage, warns, and records no receipt when an exited tree meets an unprovable census (status $status)',
+        'keeps storage, warns with the census reason, and records no receipt for a transient lost proof (status $status)',
         async ({ status, expectedCode }) => {
             const root = fixture();
             let tempDirectory: string | undefined;
             const { code, lines, result } = await runCli(root, {
                 args: ['-e', `process.exitCode=${status}`],
+                storageHost: censusReporting('unknown', transientReason),
                 storageFactory: (input) => {
-                    const storage = createGuardStorage({ ...input, ports: unprovedPorts(input.ports) });
+                    const storage = createGuardStorage(input);
                     tempDirectory = storage.tempDirectory;
                     return storage;
                 },
@@ -4109,7 +4120,7 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             expect(existsSync(tempDirectory)).toBe(true);
             expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
             expect(lines.filter((line) => line.includes('guard storage retained'))).toEqual([
-                `${process.execPath}: warning: guard storage retained, not proved free (storage not proved free of file use): ${storagePath}`,
+                `${process.execPath}: warning: guard storage retained, not proved free (${transientReason}): ${storagePath}`,
             ]);
             expect(lines.some((line) => line.includes('(leak'))).toBe(false);
             if (status === 0) {
@@ -4120,6 +4131,46 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             }
         }
     );
+
+    // Deleted after the guard's first host sample, which would otherwise report the missing volume as a monitor failure.
+    const deleteOwnTemp = "setTimeout(()=>require('node:fs').rmSync(require('node:os').tmpdir(),{recursive:true}),600)";
+    const loosenOwnTemp = "require('node:fs').chmodSync(require('node:os').tmpdir(),0o755)";
+    it.each([
+        { name: 'a holder the census proves alive', script: 'process.exitCode=0', host: censusReporting('alive') },
+        { name: 'a command that loosens its storage mode', script: loosenOwnTemp, host: undefined },
+        {
+            name: 'a command that deletes its own temp directory (release throws)',
+            script: deleteOwnTemp,
+            host: censusReporting('dead'),
+        },
+        {
+            name: 'a command that deletes its own temp directory under a transient reason (record unreadable)',
+            script: deleteOwnTemp,
+            host: censusReporting('unknown', transientReason),
+        },
+        {
+            name: 'a stable unusable-inspection reason',
+            script: 'process.exitCode=0',
+            host: censusReporting('unknown', 'lsof-fields-unusable:file-inspection-diagnostic'),
+        },
+        {
+            name: 'a transient reason mixed with a stable one',
+            script: 'process.exitCode=0',
+            host: censusReporting('unknown', transientReason, 'storage-not-private-same-uid'),
+        },
+    ])('still fails as a leak with a receipt for $name', async ({ script, host }) => {
+        const root = fixture();
+        const { code, lines, result } = await runCli(root, {
+            args: ['-e', script],
+            hostSampleIntervalMs: 60_000,
+            storageHost: host,
+        });
+        expect(result?.reason, JSON.stringify(result?.output)).toBe('leak');
+        expect(result?.retainedStorage).toBeUndefined();
+        expect(code).toBe(1);
+        expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
+        expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
+    });
 
     it('still reports leak and records a receipt when a process survives forced cleanup', async () => {
         const root = fixture();
