@@ -1,0 +1,94 @@
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_1c08b47ac3792f::t_d8bd1a1b92bad6 9
+  s_1c08b47ac3792f::t_42b2bb60ced4ce 233-237
+  s_1c08b47ac3792f::t_7569a63cc24048 207-209,213-214
+  s_1c08b47ac3792f::t_da094e38e1a252 1-6
+  s_1c08b47ac3792f::t_e702ae503bb5b6 204-206,210-212,215-232,238-244
+  s_1c08b47ac3792f::t_dad98b608ac599 247
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_51b467011d24f0 367
+  s_1c08b47ac3792f::t_962b6f0a4d3d60 556
+  s_1c08b47ac3792f::t_79c6790a8fa8e2 291
+  s_1c08b47ac3792f::t_53e449bd5834ac 9
+  s_1c08b47ac3792f::t_88cd7dcd4c55c7 344,348-352
+  s_1c08b47ac3792f::t_61d8c5ccb26628 37-41
+  s_1c08b47ac3792f::t_4754173e59148c 10
+  s_1c08b47ac3792f::t_12f9e3132fb11a 546-555,557-559,562-563,568
+  s_1c08b47ac3792f::t_a2dad2ddf23b0a 279-290,292-298,302-303,318-328
+  s_ba8dd89de9aac7::t_096306d60c5a8a 278,545
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_a77a511685191c 1066,1137
+  s_1c08b47ac3792f::t_9420440b35caf8 59
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_ea14f4ef21679e 647
+  s_1c08b47ac3792f::t_41f88d5ca5e561 79-100,102
+  s_1c08b47ac3792f::t_21d0f74f4a00a4 279
+  s_1c08b47ac3792f::t_536db0a964b9d0 629-633
+  s_1c08b47ac3792f::t_c2697efdaa3821 78,383,421,475-478,486-493,499-501,503,507,513-543,547-571,573
+  s_1c08b47ac3792f::t_1a9e107f8b79e7 40-41
+  s_1c08b47ac3792f::t_1ec39329bd54c0 228-239
+  s_1c08b47ac3792f::t_66f74086edb95e 384-400,404-405,418-420
+  s_1c08b47ac3792f::t_b8eb936f18ee8c 285,289-294
+  s_1c08b47ac3792f::t_411a8e2498fd82 148-150,152-160,163-164,166,171-179
+  s_1c08b47ac3792f::t_f4a86ec27eb91d 278,280-284,286-288,295
+  s_1c08b47ac3792f::t_89a8348a924414 60
+  s_ba8dd89de9aac7::t_2d7ea0953e114d 101
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_c20f66cc5fdeb9 474-480
+  s_1c08b47ac3792f::t_6cdc267a709a4e 37
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_e0aa6d8546081c 1262-1263
+  s_1c08b47ac3792f::t_4ea35e2a348d35 763,910,1264,1406-1408,1429-1430,1432,1434-1442,1444-1448,1453-1467
+  s_1c08b47ac3792f::t_21a5edfcbd5de5 1409-1428,1431,1433,1443,1449-1452
+  s_1c08b47ac3792f::t_42cedf031d6624 359-369
+  s_1c08b47ac3792f::t_13c36fc04fbc0d 31
+  s_1c08b47ac3792f::t_950a1da7e267f3 727-762
+  s_1c08b47ac3792f::t_39ec9f9248f13b 811-909
+  s_1c08b47ac3792f::t_69fb13f7a2bcbe 911-912,1265-1266,1468-1470
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_42bc72938576cf 45
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_8398224885b02d 296-299
+  s_1c08b47ac3792f::t_d66039990fb1d3 364,366-367
+  s_1c08b47ac3792f::t_c0bc3eb29a4893 71-77
+  s_1c08b47ac3792f::t_af7edfcc731b12 51-52,55-56,64-65,69-70,85-87
+  s_1c08b47ac3792f::t_3a7f950cd011f8 78,278,281-295,300-316,319-324,333
+  s_1c08b47ac3792f::t_d0aaf7a4023536 317-318,325
+  s_1c08b47ac3792f::t_4fb0317177e144 346
+  s_1c08b47ac3792f::t_f663c8651def19 374
+  s_1c08b47ac3792f::t_693c7c644825d1 44-50,53-54,66-68,80-84,88
+  s_1c08b47ac3792f::t_60f356ca6228ee 262-265
+  s_1c08b47ac3792f::t_53966a546e9a22 115-116,119
+  s_1c08b47ac3792f::t_342e158470f48c 244-245
+  s_ba8dd89de9aac7::t_40dfb8778f78b3 79
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_6d692393c5066e 5975-5980
+  s_1c08b47ac3792f::t_abc73e4ea5b62c 5678-5679
+  s_1c08b47ac3792f::t_442052bf7869a2 5680-5681,5981-5982
+src/modules/AiRuntime/transformers/__tests__/diffProposalCommands.spec.ts
+  s_1c08b47ac3792f::t_62b7e65cd12fec 86-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c228ad00c2a90ec91eeddf3ee85402fff1255ab2",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
