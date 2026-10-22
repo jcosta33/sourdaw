@@ -79,42 +79,10 @@ describe('appendRecordedMidiControllers', () => {
         expect(midiStore.set).not.toHaveBeenCalled();
     });
 
-    it('should give the clip an empty note list in the same write as its rows when asked and it has none', () => {
-        appendRecordedMidiControllers({
-            clipId: 'clip-2',
-            cc: [createMidiCC(64, 127, 1, 0)],
-            pitchBend: [],
-            ensureNoteList: true,
-        });
-
-        expect(midiStore.set).toHaveBeenCalledTimes(1);
-        expect(mocks.state.value?.notesByClipId['clip-2']).toEqual([]);
-        expect(mocks.state.value?.ccByClipId['clip-2']).toHaveLength(1);
-    });
-
-    it('should write the empty note list even when the take recorded no rows', () => {
-        appendRecordedMidiControllers({ clipId: 'clip-2', cc: [], pitchBend: [], ensureNoteList: true });
-
-        expect(mocks.state.value?.notesByClipId['clip-2']).toEqual([]);
-    });
-
-    it('should keep the notes a clip already has when asked for its note list', () => {
-        const note = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
-        mocks.state.value = { ...mocks.state.value!, notesByClipId: { 'clip-1': [note] } };
-
-        appendRecordedMidiControllers({
-            clipId: 'clip-1',
-            cc: [createMidiCC(64, 127, 1, 0)],
-            pitchBend: [],
-            ensureNoteList: true,
-        });
-
-        expect(mocks.state.value?.notesByClipId['clip-1']).toEqual([note]);
-    });
-
-    it('should leave the clip without a note list unless asked', () => {
+    it('should create no note list for a clip that has none, which a peer may be writing concurrently', () => {
         appendRecordedMidiControllers({ clipId: 'clip-2', cc: [createMidiCC(64, 127, 1, 0)], pitchBend: [] });
 
+        expect(mocks.state.value?.ccByClipId['clip-2']).toHaveLength(1);
         expect(mocks.state.value?.notesByClipId['clip-2']).toBeUndefined();
     });
 

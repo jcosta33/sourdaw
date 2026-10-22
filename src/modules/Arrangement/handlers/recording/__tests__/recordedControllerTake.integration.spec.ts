@@ -358,22 +358,13 @@ describe('recorded controller take commit', () => {
             expect(midiStore.value?.ccByClipId[discardedClipId]).toBeUndefined();
         });
 
-        // Stored playback and export admit a MIDI clip only when it has a note
-        // list (`resolveStoredControllerClips.spec.ts` pins that gate), so a
-        // take of controllers alone must carry an empty one or it is silent.
+        // Playback and export read a MIDI clip's controllers without a note list
+        // (`controllerTakePlayback.integration.spec.ts` in Transport and
+        // `controllerTakeExport.integration.spec.ts` in AudioEngine drive them), so
+        // the commit never writes a placeholder list: a peer recording the clip's
+        // first note concurrently would race it for the same key.
         describe('a take of controllers and no notes', () => {
-            const playableControllers = (clipId: string) => {
-                const clip = trackStore.value!.tracks.flatMap((track) => track.clips).find(({ id }) => id === clipId)!;
-                const moves = projectClipControllerEvents({
-                    controlChanges: midiStore.value?.ccByClipId[clipId] ?? [],
-                    clip,
-                    fromBeat: 0,
-                    toBeat: 12,
-                });
-                return moves.map(({ controller, value, beat }) => ({ controller, value, beat }));
-            };
-
-            it('commits an empty note list so the stored pedal plays, and undo and redo carry the list with the clip', async () => {
+            it('commits the controllers without creating a note list, and undo and redo carry exactly the rows', async () => {
                 const clipId = await startLiveTake();
                 sendLive(4.5, 0xb0, 64, 127);
                 sendLive(5.5, 0xb0, 64, 0);
@@ -382,11 +373,12 @@ describe('recorded controller take commit', () => {
                 transportStore.set({ ...transportStore.value!, isRecording: false });
                 flushAutomergeStorageWrites();
 
-                expect(midiStore.value?.notesByClipId[clipId]).toEqual([]);
-                expect(playableControllers(clipId)).toEqual([
-                    { controller: 64, value: 127, beat: 4.5 },
-                    { controller: 64, value: 0, beat: 5.5 },
+                const committed = pedalsOf(clipId);
+                expect(committed).toEqual([
+                    { controller: 64, value: 127, beat: 0.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 1.5, channel: 0 },
                 ]);
+                expect(midiStore.value?.notesByClipId[clipId]).toBeUndefined();
 
                 await undo();
                 flushAutomergeStorageWrites();
@@ -395,21 +387,21 @@ describe('recorded controller take commit', () => {
 
                 await redo();
                 flushAutomergeStorageWrites();
-                expect(midiStore.value?.notesByClipId[clipId]).toEqual([]);
-                expect(playableControllers(clipId)).toHaveLength(2);
+                expect(pedalsOf(clipId)).toEqual(committed);
+                expect(midiStore.value?.notesByClipId[clipId]).toBeUndefined();
             });
 
-            it('commits an empty note list for a take that recorded nothing at all', async () => {
+            it('creates no note list for a take that recorded nothing at all', async () => {
                 const clipId = await startLiveTake();
 
                 await stopRecording(8);
                 transportStore.set({ ...transportStore.value!, isRecording: false });
                 flushAutomergeStorageWrites();
 
-                expect(midiStore.value?.notesByClipId[clipId]).toEqual([]);
+                expect(midiStore.value?.notesByClipId[clipId]).toBeUndefined();
             });
 
-            it('keeps the notes a take recorded rather than replacing them with an empty list', async () => {
+            it('keeps the notes a take recorded beside its controllers', async () => {
                 const clipId = await startLiveTake();
                 appendRecordedMidiNote({
                     clipId,

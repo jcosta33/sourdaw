@@ -102,9 +102,7 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
         const midiState = getMidiStoreState();
         const planned =
             clip.type === 'midi' ? planRecordedControllers({ clip: withMinimumRecordingLength(clip) }) : null;
-        // A MIDI take always has a note list, empty when no note was played:
-        // the commit writes it, and playback skips a MIDI clip without one.
-        const notes = midiState?.notesByClipId[clip.id] ?? (clip.type === 'midi' ? [] : undefined);
+        const notes = midiState?.notesByClipId[clip.id];
         const cc = snapshotRows(midiState?.ccByClipId[clip.id], planned?.cc ?? []);
         const pitchBend = snapshotRows(midiState?.pitchBendByClipId[clip.id], planned?.pitchBend ?? []);
         return {

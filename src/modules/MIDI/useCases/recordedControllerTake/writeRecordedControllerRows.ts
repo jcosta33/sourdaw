@@ -8,7 +8,6 @@ type WriteRecordedControllerRowsInput = {
     clipId: string;
     cc: readonly MidiCC[];
     pitchBend: readonly MidiPitchBend[];
-    ensureNoteList?: boolean;
 };
 
 /**

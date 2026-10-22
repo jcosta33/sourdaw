@@ -19,10 +19,6 @@ type CommitRecordedControllersInput = {
  * it records from here on: the clip stops waiting for a commit, so the take's
  * falling edge writes those rows like any overdub.
  *
- * The same write gives the clip an empty note list when the take recorded no
- * notes, so a take of controllers alone is admitted by stored playback and
- * export, which skip a MIDI clip with no note list.
- *
  * Call it from the commit's `execute`, inside its storage transaction, so a
  * commit that does not land writes nothing. The rows written are the ones
  * `planRecordedControllers` named while the commit described its redo snapshot.
@@ -37,5 +33,5 @@ export function commitRecordedControllers({ clip }: CommitRecordedControllersInp
     } else {
         committedClipIds.add(clipId);
     }
-    writeRecordedControllerRows({ clipId, ...rows, ensureNoteList: true });
+    writeRecordedControllerRows({ clipId, ...rows });
 }
