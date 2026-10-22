@@ -1,0 +1,83 @@
+import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
+
+import { createStoredBendRangeReader } from './createStoredBendRangeReader';
+import { type ControllerProjectionClip } from './listClipControllerPasses';
+import { projectClipPitchBendEvents } from './projectClipPitchBendEvents';
+
+type ChannelBendClip = {
+    clip: ControllerProjectionClip;
+    /** The clip's stored controllers: the RPN 0 messages among them say how deep its bend is. */
+    controlChanges: readonly MidiCC[];
+    pitchBends: readonly MidiPitchBend[];
+};
+
+type ProjectChannelBendInput = {
+    /**
+     * Every clip of the track whose stored bend plays, in the order the scheduler posts them: at
+     * one sample frame a later clip's bend lands after an earlier clip's.
+     */
+    clips: readonly ChannelBendClip[];
+    /** The sample frame a note at this beat is posted at: the caller's own clock, the one that places its notes. */
+    frameAtBeat: (beat: number) => number;
+};
+
+/** One move of the track's channel bend, in the units a voice's expression takes. */
+type ChannelBendPoint = {
+    beat: number;
+    frame: number;
+    /** The signed 14-bit wire delta, -8192..8191, 0 at centre. */
+    value: number;
+    /** The depth `value` is read against, in semitones. */
+    rangeSemitones: number;
+};
+
+type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number };
+
+/**
+ * The track's channel pitch bend over the whole timeline: every move of every clip's stored
+ * bend lane, in the order the instrument receives them.
+ *
+ * A bend belongs to the channel, not to a note, so it is the bend of the whole track: a note
+ * struck while a bend is in force sounds under it, and a note sounding when a move arrives is
+ * moved. The caller reads the bend in force at a frame as the last move at or before it.
+ * Nothing resets at a clip end: a bend stays where the last row put it until a row says
+ * otherwise, as CC1 does, so the clip after one that ended bent starts bent.
+ *
+ * "Last" is the posting order, by sample frame, then clip sequence, then the clip's own row
+ * order, never by float beat: two rows a rounding step apart in beat share a frame, and the
+ * instrument ends on the later clip's, as `projectClipControllerRestore` orders stored
+ * controllers. Every move comes from `projectClipPitchBendEvents`, so a clip's passes, offset
+ * and carry place a bend as they place a controller.
+ */
+export function projectChannelBend({ clips, frameAtBeat }: ProjectChannelBendInput): ChannelBendPoint[] {
+    const placed: PlacedBend[] = [];
+    for (const [clipIndex, { clip, controlChanges, pitchBends }] of clips.entries()) {
+        const readRange = createStoredBendRangeReader(controlChanges);
+        const bends = projectClipPitchBendEvents({
+            pitchBends,
+            clip,
+            fromBeat: Number.NEGATIVE_INFINITY,
+            toBeat: Number.POSITIVE_INFINITY,
+        });
+        for (const [rowIndex, bend] of bends.entries()) {
+            placed.push({
+                point: {
+                    beat: bend.beat,
+                    frame: frameAtBeat(bend.beat),
+                    value: bend.value,
+                    rangeSemitones: readRange(bend.channel, bend.contentBeat),
+                },
+                clipIndex,
+                rowIndex,
+            });
+        }
+    }
+    return placed
+        .sort(
+            (left, right) =>
+                left.point.frame - right.point.frame ||
+                left.clipIndex - right.clipIndex ||
+                left.rowIndex - right.rowIndex
+        )
+        .map(({ point }) => point);
+}

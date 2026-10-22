@@ -137,7 +137,8 @@ function playsOnClosingLine(row: MidiCC): boolean {
 /**
  * What a MIDI clip plays for one pass through `window`: notes clipped to it, controllers
  * carried into it, and the pedal lifts on its closing line when it has one.
- * Pitch-bend rows on the closing line are always dropped; no route plays a stored bend lane.
+ * Pitch-bend rows on the closing line are always dropped: bend is a continuous position, not
+ * a switch, so no row there ends anything (`projectClipPitchBendEvents` plays the lane).
  */
 export function projectMidiClipWindow({ notes, controlChanges, pitchBends, window }: ProjectMidiClipWindowInput): {
     notes: MidiNote[];
