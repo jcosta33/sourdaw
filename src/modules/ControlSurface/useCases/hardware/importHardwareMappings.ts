@@ -35,16 +35,28 @@ function isControllerMapping(value: unknown): value is ControllerMapping {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    if (!('id' in value) || typeof value.id !== 'string') {
+    if (!('id' in value) || typeof value.id !== 'string' || value.id.length === 0 || value.id.trim() !== value.id) {
         return false;
     }
     if (!('controlType' in value) || !isValidControlType(value.controlType)) {
         return false;
     }
-    if (!('controlIndex' in value) || typeof value.controlIndex !== 'number') {
+    if (
+        !('controlIndex' in value) ||
+        typeof value.controlIndex !== 'number' ||
+        !Number.isInteger(value.controlIndex) ||
+        value.controlIndex < 0 ||
+        value.controlIndex > 127
+    ) {
         return false;
     }
-    if (!('channel' in value) || typeof value.channel !== 'number') {
+    if (
+        !('channel' in value) ||
+        typeof value.channel !== 'number' ||
+        !Number.isInteger(value.channel) ||
+        value.channel < 1 ||
+        value.channel > 16
+    ) {
         return false;
     }
     if (!('action' in value) || typeof value.action !== 'object' || value.action === null) {
@@ -68,10 +80,10 @@ function isControllerMapping(value: unknown): value is ControllerMapping {
  * surfaces an error notification rather than failing silently, so the user
  * learns the import did nothing instead of assuming it succeeded.
  */
-export function importHardwareMappings(profileId: string, json: string): void {
+export function importHardwareMappings(profileId: string, json: string): boolean {
     const state = hardwareControllerStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     let parsed: unknown;
@@ -80,17 +92,22 @@ export function importHardwareMappings(profileId: string, json: string): void {
     } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         notifyUser(`Failed to import hardware mappings: ${detail}`, 'error');
-        return;
+        return false;
     }
 
     if (!Array.isArray(parsed) || !parsed.every(isControllerMapping)) {
         notifyUser('Failed to import hardware mappings: file is not a valid controller mapping list', 'error');
-        return;
+        return false;
+    }
+
+    if (new Set(parsed.map((mapping) => mapping.id)).size !== parsed.length) {
+        notifyUser('Failed to import hardware mappings: mapping IDs must be unique', 'error');
+        return false;
     }
 
     if (!state.profiles.some((param) => param.id === profileId)) {
         notifyUser(`Failed to import hardware mappings: unknown profile "${profileId}"`, 'error');
-        return;
+        return false;
     }
 
     const mappings: ControllerMapping[] = parsed;
@@ -98,4 +115,5 @@ export function importHardwareMappings(profileId: string, json: string): void {
         ...state,
         profiles: state.profiles.map((param) => (param.id === profileId ? { ...param, mappings } : param)),
     });
+    return true;
 }

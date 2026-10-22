@@ -56,4 +56,51 @@ describe('MidiSection', () => {
 
         expect(update).toHaveBeenCalledWith({ midiInputChannel: 7 });
     });
+
+    it('reaches real profile inspection and file import/export from the MIDI preferences entry', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        vi.stubGlobal('URL', class extends URL {
+            static createObjectURL = vi.fn(() => 'blob:preferences-mappings');
+            static revokeObjectURL = vi.fn();
+        });
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+        try {
+            render(<MidiSection prefs={{ ...defaultPreferences }} update={vi.fn()} />);
+            expect(screen.getByRole('combobox', { name: 'Hardware profile' })).toHaveValue('push-2');
+            expect(screen.getByRole('table', { name: 'Push 2 mappings' })).toBeInTheDocument();
+            expect(screen.getByText('button 85')).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: 'Export mappings' }));
+            const blob = vi.mocked(URL.createObjectURL).mock.lastCall?.[0];
+            if (!(blob instanceof Blob)) {
+                throw new Error('Expected the real mapping file download');
+            }
+            const original = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result));
+                reader.onerror = () => reject(reader.error);
+                reader.readAsText(blob);
+            });
+            const file = new File([original.replace('"controlIndex": 85', '"controlIndex": 86')], 'mapping.json');
+            // The production repository still reads the File; jsdom needs its browser text method supplied.
+            Object.defineProperty(file, 'text', {
+                value: () => new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(String(reader.result));
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsText(file);
+                }),
+            });
+            fireEvent.change(screen.getByLabelText('Mapping JSON file'), { target: { files: [file] } });
+            await vi.waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());
+            const originalFile = new File([original], 'original.json');
+            Object.defineProperty(originalFile, 'text', { value: () => Promise.resolve(original) });
+            fireEvent.change(screen.getByLabelText('Mapping JSON file'), { target: { files: [originalFile] } });
+            await vi.waitFor(() => expect(screen.getByText('button 85')).toBeInTheDocument());
+        } finally {
+            vi.runOnlyPendingTimers();
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        }
+    });
 });
