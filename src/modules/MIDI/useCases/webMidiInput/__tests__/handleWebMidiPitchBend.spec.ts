@@ -9,6 +9,7 @@ import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/buffer
 
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
+const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -23,7 +24,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
-        context: { currentTime: 2, sampleRate: 48000 },
+        context: audio_clock,
     },
     applyNoteExpression: apply_note_expression,
     getDefaultBendRangeSemitones: () => 48,
@@ -461,11 +462,15 @@ describe('handleWebMidiPitchBend', () => {
             );
 
         beforeEach(() => {
+            audio_clock.baseLatency = 0;
+            audio_clock.outputLatency = 0;
             tempoMapStore.set({ changes: [] });
             recordedControllerTakeState.buffers.clear();
         });
 
         afterEach(() => {
+            audio_clock.baseLatency = 0;
+            audio_clock.outputLatency = 0;
             tempoMapStore.set({ changes: [] });
         });
 
@@ -532,6 +537,30 @@ describe('handleWebMidiPitchBend', () => {
             fn(0, 0, 96, at_beat(6));
 
             expect(recorded_rows()).toEqual([{ value: 4096, beat: 2, channel: 0 }]);
+        });
+
+        // The controller route shares the placement helper, so a bend row that
+        // skipped it would still agree with the flat-tempo cases above. The beat
+        // is derived by hand from the map: beats 0-4 run at 120 BPM (2 s) and
+        // beats 4-6 at 60 BPM (2 s), so the event at beat 6 sits at 4 s; the
+        // 0.375 s of latency (0.25 output + 0.125 track) rewinds it to 3.625 s,
+        // 1.625 s past beat 4 at one beat per second: beat 5.625 on the timeline
+        // and 1.625 in a clip starting at beat 4.
+        it('files a bend at the heard instant across latency and a tempo change', () => {
+            mpe_enabled.value = false;
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-1', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            audio_clock.outputLatency = 0.25;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies({ getCompensationDelay: () => 0.125 }));
+
+            fn(0, 127, 127, at_beat(6));
+
+            expect(recorded_rows()).toHaveLength(1);
+            expect(recorded_rows()[0]?.beat).toBeCloseTo(1.625, 9);
         });
     });
 });
