@@ -4,6 +4,7 @@ import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
 /**
@@ -33,8 +34,10 @@ function configureTestPort(doc: TestDoc): void {
     configureAutomergeStoragePort(port);
 }
 
+// The store's own sanitizer rebuilds a state from defaults, so the guard the
+// adapter runs on inbound values drops the runtime field before it is restored.
 function createRuntimeKeepingStorage(): ReturnType<typeof createAutomergeStorage<Transport>> {
-    return createAutomergeStorage<Transport>('root', 'state', {
+    const storage = createAutomergeStorage<Transport>('root', 'state', {
         toCrdt: ({ tempo }) => ({ tempo, playing: false }),
         fromCrdt: (raw) => ({ ...DEFAULT_TRANSPORT, tempo: raw.tempo }),
         hydrateMissing: () => DEFAULT_TRANSPORT,
@@ -43,6 +46,8 @@ function createRuntimeKeepingStorage(): ReturnType<typeof createAutomergeStorage
             playing: localValue.playing,
         }),
     });
+    storage.registerInboundProjector?.(({ value }) => (value === null ? null : { ...value, playing: false }));
+    return storage;
 }
 
 describe('createAutomergeStorage hydrate with keepLocalRuntimeState', () => {
@@ -104,6 +109,46 @@ describe('createAutomergeStorage hydrate with keepLocalRuntimeState', () => {
         expect(storage.get()?.playing).toBe(true);
     });
 
+    it('keeps the local runtime field in the committed value a discarded pending write falls back to', () => {
+        const doc: TestDoc = { state: { tempo: 90 } };
+        configureTestPort(doc);
+        const storage = createRuntimeKeepingStorage();
+        storage.hydrate?.();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ tempo: 90, playing: true });
+        });
+        doc.state = { tempo: 150 };
+        storage.hydrate?.({ keepLocalRuntimeState: true });
+
+        transaction.abort();
+
+        expect(storage.get()).toEqual({ tempo: 150, playing: true });
+    });
+
+    it('hydrates a store that holds no value yet from the document alone', () => {
+        configureTestPort({ state: { tempo: 150 } });
+        const storage = createRuntimeKeepingStorage();
+
+        storage.hydrate?.({ keepLocalRuntimeState: true });
+
+        expect(storage.get()).toEqual({ tempo: 150, playing: false });
+    });
+
+    it('leaves a value its inbound guard rejected rejected', () => {
+        const doc: TestDoc = { state: { tempo: 90 } };
+        configureTestPort(doc);
+        const storage = createRuntimeKeepingStorage();
+        storage.hydrate?.();
+        storage.set({ tempo: 90, playing: true });
+        flushAutomergeStorageWrites();
+        storage.registerInboundProjector?.(() => null);
+        doc.state = { tempo: 150 };
+
+        storage.hydrate?.({ keepLocalRuntimeState: true });
+
+        expect(storage.get()).toBeNull();
+    });
+
     it('keeps the local runtime field when the document has no slot for the store', () => {
         const doc: TestDoc = { state: { tempo: 90 } };
         configureTestPort(doc);
@@ -119,11 +164,15 @@ describe('createAutomergeStorage hydrate with keepLocalRuntimeState', () => {
     });
 
     it('hydrates an adapter that declares no local runtime state as it would without the option', () => {
-        const doc: TestDoc = { state: { tempo: 150 } };
+        const doc: TestDoc = { state: { tempo: 90 } };
         configureTestPort(doc);
         const storage = createAutomergeStorage<Transport>('root', 'state', {
             fromCrdt: (raw) => ({ ...DEFAULT_TRANSPORT, tempo: raw.tempo }),
         });
+        storage.hydrate?.();
+        storage.set({ tempo: 90, playing: true });
+        flushAutomergeStorageWrites();
+        doc.state = { tempo: 150 };
 
         const changed = storage.hydrate?.({ keepLocalRuntimeState: true });
 
