@@ -1,0 +1,29 @@
+src/modules/AudioRendering/useCases/audioExport/__tests__/prepareDeliveryTarget.spec.ts
+  s_59e31a5c6f3e31::t_017f5313f97780 3
+src/modules/AudioRendering/useCases/getDeliveryPresets.ts
+  s_59e31a5c6f3e31::t_017f5313f97780 1
+src/modules/AudioRendering/useCases/__tests__/resolveDeliveryTargets.spec.ts
+  s_59e31a5c6f3e31::t_017f5313f97780 3
+src/modules/AudioRendering/useCases/__tests__/applyDeliveryPreset.spec.ts
+  s_59e31a5c6f3e31::t_017f5313f97780 3
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_59e31a5c6f3e31::t_017f5313f97780 7
+src/modules/AudioRendering/models/__tests__/deliveryPresets.spec.ts
+  s_59e31a5c6f3e31::t_017f5313f97780 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a37d0e47c798feb71e68c0c284b73578402ab4a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
