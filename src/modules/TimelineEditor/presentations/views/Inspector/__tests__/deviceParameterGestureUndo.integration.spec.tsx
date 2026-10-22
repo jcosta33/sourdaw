@@ -354,9 +354,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
         expect(writes(compressor.id)).toEqual([-36, expect.closeTo(-12, 12), -48]);
         const readouts = screen.getAllByText('-48.0 dB');
         expect(readouts).toHaveLength(2);
-        readouts.forEach((readout) => {
+        for (const readout of readouts) {
             expect(readout).toBeVisible();
-        });
+        }
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
         expect(depth()).toBe(0);
