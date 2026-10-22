@@ -162,4 +162,33 @@ describe('numstatFromPatch', () => {
             rmSync(repository, { recursive: true, force: true });
         }
     });
+
+    it('finds the end of a quoted path holding an escaped quote, for edits and renames alike', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'review-patch-quote-'));
+        const git = (...args: string[]) => execFileSync('git', args, { cwd: repository });
+        try {
+            git('init', '-q');
+            git('config', 'user.email', 'author@example.com');
+            git('config', 'user.name', 'Author');
+            mkdirSync(join(repository, 'src'), { recursive: true });
+            writeFileSync(join(repository, 'src/a" b.ts'), 'one\n');
+            writeFileSync(join(repository, 'src/plain.ts'), `${'stable line\n'.repeat(20)}old\n`);
+            git('add', '-A');
+            git('commit', '-q', '-m', 'base');
+            const base = git('rev-parse', 'HEAD').toString().trim();
+            writeFileSync(join(repository, 'src/a" b.ts'), 'one\ntwo\n');
+            git('mv', 'src/plain.ts', 'src/c" d.ts');
+            writeFileSync(join(repository, 'src/c" d.ts'), `${'stable line\n'.repeat(20)}new\n`);
+            git('add', '-A');
+            git('commit', '-q', '-m', 'head');
+
+            const numstat = git('diff', '--numstat', '-z', `${base}...HEAD`);
+            const patch = git('diff', `${base}...HEAD`).toString('utf8');
+
+            expect(patch).toContain('diff --git "a/src/a\\" b.ts" "b/src/a\\" b.ts"');
+            expect(numstatFromPatch(patch).toString('utf8')).toBe(numstat.toString('utf8'));
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
 });

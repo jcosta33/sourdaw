@@ -12,6 +12,7 @@ import {
     parsePruneArgs,
     pruneFleet,
     pruneTarget,
+    capture,
     shellPort,
     type LanePrunePort,
 } from '../pruneLane';
@@ -269,6 +270,14 @@ describe('prune shell boundary', () => {
                 (entry) => entry.command === 'git' && entry.args.includes('-z') && entry.args.includes('ls-files')
             )
         ).toBe(true);
+    });
+});
+
+describe('prune capture', () => {
+    it('returns output larger than the default spawnSync buffer', () => {
+        const output = capture(process.execPath, ['-e', 'process.stdout.write("x".repeat(3 * 1024 * 1024))']);
+
+        expect(output).toHaveLength(3 * 1024 * 1024);
     });
 });
 

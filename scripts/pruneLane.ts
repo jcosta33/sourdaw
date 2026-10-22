@@ -240,8 +240,16 @@ export type PruneShell = {
     capture: (command: string, args: string[]) => string;
 };
 
-function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
+/** The machine-wide `lsof` listing outgrows spawnSync's 1 MiB default, which would fail with ENOBUFS. */
+const CAPTURE_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
+export function capture(command: string, args: string[]): string {
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: false,
+        maxBuffer: CAPTURE_MAX_BUFFER_BYTES,
+    });
     if (result.error !== undefined) {
         throw result.error;
     }

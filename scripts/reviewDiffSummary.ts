@@ -236,6 +236,19 @@ function readPathField(value: string): string {
     return value.startsWith('"') && value.endsWith('"') && value.length >= 2 ? unquotePath(value) : value;
 }
 
+/** The index of the first quote after the opening one that no backslash escapes, or -1. */
+function closingQuoteIndex(quoted: string): number {
+    for (let index = 1; index < quoted.length; index += 1) {
+        const char = quoted.charAt(index);
+        if (char === '\\') {
+            index += 1;
+        } else if (char === '"') {
+            return index;
+        }
+    }
+    return -1;
+}
+
 /**
  * Without a rename, both sides of the header name one path, so its length fixes the split. A rename
  * header names two paths and answers undefined; its `rename to` line supplies the destination.
@@ -243,7 +256,7 @@ function readPathField(value: string): string {
 function headerPath(header: string): string | undefined {
     const rest = header.slice(PATCH_FILE_HEADER.length);
     if (rest.startsWith('"')) {
-        const closing = rest.indexOf('" ', 1);
+        const closing = closingQuoteIndex(rest);
         const first = closing < 0 ? rest : rest.slice(0, closing + 1);
         return readPathField(first).slice(2);
     }
