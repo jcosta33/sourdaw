@@ -445,10 +445,17 @@ describe('recorded controller take commit', () => {
                 transportStore.set({ ...transportStore.value!, isRecording: false });
                 // The refused commit rolls its transaction back, so the stored rows
                 // end up unchanged either way: a write that landed and was undone
-                // still published to the store's subscribers.
-                let storeNotifications = 0;
+                // still published its rows to the store's subscribers. Only a
+                // notification carrying the removed clip's rows counts, so an
+                // unrelated store emission cannot redden the case.
+                let notificationsCarryingTheClipRows = 0;
                 const stopCounting = midiStore.subscribe(() => {
-                    storeNotifications += 1;
+                    const carriesRows =
+                        (midiStore.value?.ccByClipId[clipId]?.length ?? 0) > 0 ||
+                        (midiStore.value?.pitchBendByClipId[clipId]?.length ?? 0) > 0;
+                    if (carriesRows) {
+                        notificationsCarryingTheClipRows += 1;
+                    }
                 });
                 const stopping = stopRecording(8);
 
@@ -459,7 +466,7 @@ describe('recorded controller take commit', () => {
                 stopCounting();
                 flushAutomergeStorageWrites();
 
-                expect(storeNotifications).toBe(0);
+                expect(notificationsCarryingTheClipRows).toBe(0);
                 expect(midiStore.value?.ccByClipId[clipId]).toBeUndefined();
                 expect(midiStore.value?.pitchBendByClipId[clipId]).toBeUndefined();
                 expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
