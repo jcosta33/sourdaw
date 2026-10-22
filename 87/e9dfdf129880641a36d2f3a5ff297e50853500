@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_59e31a5c6f3e31::t_f9bcadd4cd8a56 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87e9dfdf129880641a36d2f3a5ff297e50853500",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
