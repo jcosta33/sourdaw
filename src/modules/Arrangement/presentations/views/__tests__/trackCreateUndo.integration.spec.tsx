@@ -96,6 +96,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         arpeggiate: actual.arpeggiate,
         canPrepareMidiClipGlueState: vi.fn(),
         downloadMidiFile: actual.downloadMidiFile,
+        flushRecordedControllers: actual.flushRecordedControllers,
         duplicateClipNotes: actual.duplicateClipNotes,
         duplicateMidiClipData: actual.duplicateMidiClipData,
         getGrooveTemplate: vi.fn(),

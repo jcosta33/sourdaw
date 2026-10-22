@@ -96,6 +96,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     canPrepareMidiClipGlueState: vi.fn(),
     createGrooveTemplate: vi.fn(),
     downloadMidiFile: vi.fn(),
+    flushRecordedControllers: vi.fn(),
     duplicateClipNotes: vi.fn(),
     duplicateMidiClipData: vi.fn(),
     getCanonicalGrooveTemplateKey: vi.fn(),
