@@ -180,12 +180,15 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
     `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
 );
 // The structural pins live in one shared module so this harness and the
-// vitest spec can never drift apart: the registered file set, the shard
+// vitest spec can never drift apart: the whole-file snapshot, the shard
 // matrices, and every job's step inventory.
 const {
     assertWorkflowFileInventory,
+    assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
     HEALTH_GATE_WORKFLOW_FILES,
+    parseHealthGateWorkflows,
+    readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
@@ -214,7 +217,8 @@ const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/
 const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
-// The harness that owns the credential boundary must run it here too.
+// The harness that owns the credential boundary must run it here too: the recorded snapshot alone is
+// regenerated as a matter of course, so it cannot stand behind a boundary move by itself.
 assertSemanticReviewWorkflow(semanticReview);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
@@ -1129,18 +1133,35 @@ for (const [file, parsed] of [
         }
     }
 }
-// GitHub runs every workflow in the directory, so the directory SET must equal
-// the registered files: an unregistered workflow no pin reads can mint a
+// The whole-file snapshot closes the class the named pins kept missing one
+// dimension of: any edit to any key — pinned or never yet named — fails here
+// until the record is regenerated and the diff reviewed.
+let snapshotError;
+try {
+    assertWorkflowSnapshotMatch(
+        readRecordedWorkflowSnapshot(process.env.REPO_ROOT),
+        parseHealthGateWorkflows(process.env.REPO_ROOT)
+    );
+} catch (error) {
+    snapshotError = error;
+}
+expect(
+    snapshotError === undefined,
+    `the registered workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
+);
+
+// The snapshot pins every registered file's contents; the directory SET is pinned
+// beside them, because a fifth workflow the parse never reads can mint a
 // passing Gate over a red head.
 let inventoryError;
 try {
-    assertWorkflowFileInventory(process.env.REPO_ROOT);
+    assertWorkflowFileInventory(readRecordedWorkflowSnapshot(process.env.REPO_ROOT), process.env.REPO_ROOT);
 } catch (error) {
     inventoryError = error;
 }
 expect(
     inventoryError === undefined,
-    `the workflows directory must match the registered workflow files: ${inventoryError?.message ?? ''}`
+    `the workflows directory must match the recorded file inventory: ${inventoryError?.message ?? ''}`
 );
 
 const workflowsByFile = {

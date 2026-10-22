@@ -40,9 +40,11 @@ const WORKFLOW_CONTRACT_PATHS = [
     'scripts/checkReleaseInventory.ts',
     'scripts/healthGateWorkflowContract.ts',
     'scripts/hostedQuantumMeasurementWorkflowContract.ts',
+    'scripts/recordHealthGateWorkflowSnapshot.ts',
     'scripts/test-health-gate-scripts.sh',
     'scripts/__tests__/healthGatesWorkflow.spec.ts',
     'scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts',
+    'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json',
 ] as const;
 
 export const HOSTED_QUANTUM_MEASUREMENT_TRIGGER_PATHS = [

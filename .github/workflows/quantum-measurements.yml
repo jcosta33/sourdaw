@@ -35,10 +35,12 @@ on:
       - scripts/healthGateWorkflowContract.ts
       - scripts/hostedQuantumMeasurementWorkflowContract.ts
       - scripts/quantumMeasurementCalibration.ts
+      - scripts/recordHealthGateWorkflowSnapshot.ts
       - scripts/test-health-gate-scripts.sh
       - scripts/wasmToolchainPins.ts
       - scripts/__tests__/healthGatesWorkflow.spec.ts
       - scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+      - scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
       - src/modules/AudioEngine/wasm/daw_dsp.js
       - src/modules/AudioEngine/wasm/proof_chamber.js
       - src/modules/AudioEngine/wasm/scoring.js

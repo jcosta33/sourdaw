@@ -151,9 +151,9 @@ export function isCollectedSpec(path: string): boolean {
  * a test-validity question may be asked about a file that carries no assertion. That costs a wasted
  * question that answers low; the opposite choice silently removes the whole test-validity family from
  * real shared suites, which is the family this tool exists to ask. The extension gate is what keeps a
- * false positive out: a JSON workflow pin under `scripts/__tests__/fixtures/` held shell `if`
- * statements, and reading every `__tests__/` file as a test fired two test-validity signals on it at
- * 0.83 and 0.78.
+ * false positive out: `scripts/__tests__/fixtures/health-gate-workflows.snapshot.json` is a JSON pin
+ * whose content holds shell `if` statements, and reading every `__tests__/` file as a test fired two
+ * test-validity signals on it at 0.83 and 0.78.
  */
 export function isTestPath(path: string): boolean {
     if (isCollectedSpec(path)) {

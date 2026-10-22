@@ -2,8 +2,8 @@
  * The credential and authority surface of every registered workflow, shared by
  * both health-gate harnesses: which jobs may hold a job-level token grant,
  * which may read which secrets, which may name a deployment environment, which
- * checkouts must not persist the job token, and the one job that may be named
- * `Gate`. Each property is its own pin, so a deliberate edit to one changes one
+ * checkouts must not persist the job token, which action refs are immutable,
+ * and the one job that may be named `Gate`. Each property is its own pin, so a deliberate edit to one changes one
  * pin and a review reads that pin's diff.
  */
 
@@ -223,6 +223,30 @@ export function assertRequiredCheckNameExclusive(workflows: Readonly<Record<stri
     }
 }
 
+// A `uses` ref runs whatever it names at run time, and a tag or branch can move
+// under the workflow to code nobody reviewed. Only a full commit SHA, or a path
+// inside this repository, pins what runs.
+const PINNED_ACTION_REF = /^[^\s@]+@[0-9a-f]{40}$/;
+
+function isPinnedActionRef(ref: unknown): boolean {
+    return typeof ref === 'string' && (ref.startsWith('./') || PINNED_ACTION_REF.test(ref));
+}
+
+export function assertPinnedActions(workflows: Readonly<Record<string, unknown>>): void {
+    for (const [file, workflow] of registeredWorkflows(workflows)) {
+        for (const [jobId, job] of jobsOf(file, workflow)) {
+            const refs = [job.uses, ...stepsOf(file, jobId, job).map((step) => step.uses)];
+            for (const ref of refs.filter((candidate) => candidate !== undefined)) {
+                if (!isPinnedActionRef(ref)) {
+                    throw new Error(
+                        `${file} job ${jobId} must pin ${JSON.stringify(ref)} to a full commit SHA or a local ./ path`
+                    );
+                }
+            }
+        }
+    }
+}
+
 // The credential and authority surface of every registered workflow, named
 // property by property so a deliberate edit to one changes one pin.
 export function assertWorkflowSecuritySurface(workflows: Readonly<Record<string, unknown>>): void {
@@ -230,5 +254,6 @@ export function assertWorkflowSecuritySurface(workflows: Readonly<Record<string,
     assertSecretReferences(workflows);
     assertJobEnvironments(workflows);
     assertCredentiallessCheckouts(workflows);
+    assertPinnedActions(workflows);
     assertRequiredCheckNameExclusive(workflows);
 }
