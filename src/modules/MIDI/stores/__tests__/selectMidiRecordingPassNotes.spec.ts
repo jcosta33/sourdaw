@@ -54,10 +54,20 @@ describe('selectMidiRecordingPassNotes', () => {
 
     it('keeps the half-open source seam and legacy identity behavior', () => {
         const atEnd: MidiNote = {
-            id: 'end', recordingPassId: 'pass-2', pitch: 72, startBeat: 8, duration: 0, velocity: 100,
+            id: 'end',
+            recordingPassId: 'pass-2',
+            pitch: 72,
+            startBeat: 8,
+            duration: 0,
+            velocity: 100,
         };
         const within: MidiNote = {
-            id: 'within', recordingPassId: 'pass-2', pitch: 72, startBeat: 7, duration: 0, velocity: 100,
+            id: 'within',
+            recordingPassId: 'pass-2',
+            pitch: 72,
+            startBeat: 7,
+            duration: 0,
+            velocity: 100,
         };
         const notes = [earlier, within, atEnd];
         expect(

@@ -19,6 +19,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 describe('triggerLiveNoteOn', () => {
     beforeEach(() => {
         vi.mocked(admitMidiRecordingEvent).mockReset();
+        vi.mocked(admitMidiRecordingEvent).mockReturnValue({ disposition: 'claimed' });
         vi.mocked(handleWebMidiNoteOn).mockReset();
         vi.mocked(handleWebMidiNoteOn).mockResolvedValue(undefined);
     });
@@ -45,7 +46,7 @@ describe('triggerLiveNoteOn', () => {
             sourceBeat: 7,
             audioTime: 2,
         };
-        vi.mocked(admitMidiRecordingEvent).mockReturnValueOnce(witness);
+        vi.mocked(admitMidiRecordingEvent).mockReturnValueOnce({ disposition: 'captured', witness });
         const pending = triggerLiveNoteOn(2, 60, 100);
         expect(handleWebMidiNoteOn).toHaveBeenCalledWith(2, 60, 100, {
             audioTime: 2,
@@ -64,5 +65,11 @@ describe('triggerLiveNoteOn', () => {
         vi.mocked(handleWebMidiNoteOn).mockRejectedValueOnce(error);
 
         await expect(triggerLiveNoteOn(2, 60, 100)).rejects.toBe(error);
+    });
+
+    it('leaves the legacy recording writer available when no journal owns the note', async () => {
+        vi.mocked(admitMidiRecordingEvent).mockReturnValueOnce({ disposition: 'inactive' });
+        await triggerLiveNoteOn(2, 60, 100);
+        expect(handleWebMidiNoteOn).toHaveBeenCalledWith(2, 60, 100, { audioTime: 2, recordingBeat: 3 });
     });
 });

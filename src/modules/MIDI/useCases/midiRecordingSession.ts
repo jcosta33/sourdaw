@@ -117,8 +117,11 @@ function closeHeld(current: Session, key: string, audioTime: number): CapturedNo
 
 export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordingEvent'] = ({ event, time }) => {
     const current = session;
-    if (!current || transportStore.value?.isRecording !== true) {
-        return undefined;
+    if (!current) {
+        return { disposition: 'inactive' };
+    }
+    if (transportStore.value?.isRecording !== true) {
+        return { disposition: 'claimed' };
     }
     // Input is admitted at its own time, before any worker or scheduler tick.
     // A delayed tick cannot extend the punched interval, and a pre-window
@@ -135,11 +138,16 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
                 : terminalPass.audioTime +
                   readSecondsAtBeat({ beat: current.punchOutBeat }) -
                   readSecondsAtBeat({ beat: terminalPass.timelineBeat });
-        if (time.audioTime + 1e-9 < current.passes[0]!.audioTime || time.audioTime + 1e-9 >= outTime) return undefined;
+        if (time.audioTime + 1e-9 < current.passes[0]!.audioTime || time.audioTime + 1e-9 >= outTime)
+            return { disposition: 'claimed' };
     }
     const release = event.type === 'noteOff' || (event.type === 'noteOn' && event.velocity === 0);
     if (release && (event.type === 'noteOff' || event.type === 'noteOn')) {
-        return closeHeld(current, keyOf(event.channel, event.note), time.audioTime)?.witness;
+        const witness = closeHeld(current, keyOf(event.channel, event.note), time.audioTime)?.witness;
+        if (witness) {
+            return { disposition: 'captured', witness };
+        }
+        return { disposition: 'claimed' };
     }
     const mpe = getMpeEnabled() && event.channel >= 1;
     let expression = event.type === 'expression' ? event : undefined;
@@ -174,12 +182,19 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
             held.data[expression.dimension] = expression.value;
             if (expression.dimension === 'pitchBend') held.data.pitchBendRangeSemitones = expression.bendRangeSemitones;
         }
-        return [...current.held.values()].find((held) => held.data.channel === event.channel)?.witness;
+        const witness = [...current.held.values()].find((held) => held.data.channel === event.channel)?.witness;
+        if (witness) {
+            return { disposition: 'captured', witness };
+        }
+        return { disposition: 'claimed' };
+    }
+    if (expression) {
+        return { disposition: 'claimed' };
     }
     const trackId = getTargetTrackId();
     const carrier = current.carriers.find((candidate) => candidate.trackId === trackId);
     if (!carrier || !trackStore.value?.tracks.some((track) => track.id === carrier.trackId && track.armed)) {
-        return undefined;
+        return { disposition: 'claimed' };
     }
     const latency =
         (audioEngine.context.baseLatency || 0) +
@@ -229,7 +244,7 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
             captured.data.pitchBendRangeSemitones = recordingBendRange(current, event.channel);
         current.held.set(key, captured);
         current.notes.push(captured);
-        return captured.witness;
+        return { disposition: 'captured', witness: captured.witness };
     }
     if (event.type === 'cc') {
         const controller = current.controllers.get(event.channel) ?? createMidiChannelControllerState();
@@ -256,7 +271,7 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
                 learn?.mappings.some((mapping) => mapping.channel === event.channel && mapping.cc === decoded.cc)) ||
             event.controller >= 120
         )
-            return witness;
+            return { disposition: 'claimed' };
         const rows = current.cc.get(carrier.clipId) ?? [];
         rows.push({
             id: `cc-${crypto.randomUUID()}`,
@@ -276,7 +291,7 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
         });
         current.bends.set(carrier.clipId, rows);
     }
-    return witness;
+    return { disposition: 'captured', witness };
 };
 
 /** Detach first: no queued handler or worker can extend the frozen gesture. */

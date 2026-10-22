@@ -7,6 +7,8 @@ import {
     transportStore,
 } from '#/modules/Transport/stores';
 
+import { admitMidiRecordingEvent } from '../../midiRecordingSession';
+
 import { memberExpressionState } from '../../../repositories/webMidi/memberExpressionState';
 import { resetChannelControllerState } from '../../../repositories/webMidi/resetChannelControllerState';
 import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabledInternal';
@@ -60,6 +62,7 @@ function midi_event(data: number[], timeStamp: number = EVENT_TIME_STAMP): MIDIM
 describe('handleWebMidiMessage', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(admitMidiRecordingEvent).mockReturnValue({ disposition: 'claimed' });
         audio_clock.currentTime = 2;
         activeNotes.clear();
     });
@@ -78,6 +81,40 @@ describe('handleWebMidiMessage', () => {
             audioTime: 2,
             recordingBeat: 0,
             recordingAdmitted: true,
+        });
+    });
+
+    it('leaves legacy recording ingress unclaimed when no journal is open', () => {
+        const previous = transportStore.value;
+        transportStore.set({ ...defaultTransportState, isRecording: true });
+        vi.mocked(admitMidiRecordingEvent).mockReturnValueOnce({ disposition: 'inactive' });
+        try {
+            handleWebMidiMessage(midi_event([0x90, 60, 100]));
+            expect(handle_note_on).toHaveBeenCalledWith(0, 60, 100, { audioTime: 2, recordingBeat: 0 });
+        } finally {
+            transportStore.set(previous);
+        }
+    });
+
+    it('passes a captured journal witness to the note handler exactly once', () => {
+        const witness = {
+            sessionId: 'session-1',
+            noteId: 'note-1',
+            recordingPassId: 'pass-1',
+            trackId: 'track-1',
+            clipId: 'clip-1',
+            timelineBeat: 0,
+            sourceBeat: 0,
+            audioTime: 2,
+        };
+        vi.mocked(admitMidiRecordingEvent).mockReturnValueOnce({ disposition: 'captured', witness });
+        handleWebMidiMessage(midi_event([0x90, 60, 100]));
+        expect(admitMidiRecordingEvent).toHaveBeenCalledTimes(1);
+        expect(handle_note_on).toHaveBeenCalledWith(0, 60, 100, {
+            audioTime: 2,
+            recordingBeat: 0,
+            recordingAdmitted: true,
+            recordingWitness: witness,
         });
     });
 

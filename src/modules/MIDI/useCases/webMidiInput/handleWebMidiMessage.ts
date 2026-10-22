@@ -179,14 +179,11 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                       value: ((message.msb << 7) | message.lsb) - 8192,
                   }
                 : message;
-    const recordingWitness = admitMidiRecordingEvent({ event: recordingEvent, time: eventTime });
+    const admission = admitMidiRecordingEvent({ event: recordingEvent, time: eventTime });
     const timeStamp: CapturedInputEventTime = {
         ...eventTime,
-        ...(recordingWitness === undefined ? {} : { recordingWitness }),
-        ...(recordingWitness !== undefined ||
-        !(transportStore.value?.isRecording && transportStore.value.overdubEnabled)
-            ? { recordingAdmitted: true }
-            : {}),
+        ...(admission.disposition === 'captured' ? { recordingWitness: admission.witness } : {}),
+        ...(admission.disposition === 'inactive' ? {} : { recordingAdmitted: true }),
     };
 
     const channel = message.channel;

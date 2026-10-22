@@ -1,4 +1,3 @@
-import { transportStore } from '#/modules/Transport/stores';
 import { admitMidiRecordingEvent } from './midiRecordingSession';
 import { captureEventBeatAt } from './webMidiInput/captureEventBeat';
 import { resolveInputEventTime, type CapturedInputEventTime } from './webMidiInput/resolveInputEventTime';
@@ -16,17 +15,14 @@ import { handleWebMidiNoteOn } from './webMidiInput/handleWebMidiNoteOn';
 export function triggerLiveNoteOn(channel: number, note: number, velocity: number): Promise<void> {
     const time = { audioTime: resolveInputEventTime({ timeStamp: undefined }) };
     const eventTime = { ...time, recordingBeat: captureEventBeatAt(time) };
-    const recordingWitness = admitMidiRecordingEvent({
+    const admission = admitMidiRecordingEvent({
         event: { type: 'noteOn', channel, note, velocity },
         time: eventTime,
     });
     const admittedTime: CapturedInputEventTime = {
         ...eventTime,
-        ...(recordingWitness === undefined ? {} : { recordingWitness }),
-        ...(recordingWitness !== undefined ||
-        !(transportStore.value?.isRecording && transportStore.value.overdubEnabled)
-            ? { recordingAdmitted: true }
-            : {}),
+        ...(admission.disposition === 'captured' ? { recordingWitness: admission.witness } : {}),
+        ...(admission.disposition === 'inactive' ? {} : { recordingAdmitted: true }),
     };
     return handleWebMidiNoteOn(channel, note, velocity, admittedTime);
 }

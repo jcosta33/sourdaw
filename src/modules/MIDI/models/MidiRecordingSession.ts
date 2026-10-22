@@ -13,6 +13,11 @@ export type MidiRecordingWitness = Readonly<{
     audioTime: number;
 }>;
 
+export type MidiRecordingAdmission =
+    | Readonly<{ disposition: 'inactive' }>
+    | Readonly<{ disposition: 'claimed' }>
+    | Readonly<{ disposition: 'captured'; witness: MidiRecordingWitness }>;
+
 export type MidiRecordingEvent =
     | { type: 'noteOn'; channel: number; note: number; velocity: number }
     | { type: 'noteOff'; channel: number; note: number }
@@ -42,7 +47,7 @@ export type MidiRecordingSessionApi = {
     admitMidiRecordingEvent: (input: {
         event: MidiRecordingEvent;
         time: Readonly<{ audioTime: number; recordingBeat?: number }>;
-    }) => MidiRecordingWitness | undefined;
+    }) => MidiRecordingAdmission;
     sealMidiRecordingSession: (input: { audioTime: number; timelineBeat: number }) => readonly {
         clipId: string;
         midiRecording: FrozenMidiRecording;
