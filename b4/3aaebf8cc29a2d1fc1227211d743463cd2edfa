@@ -1,0 +1,37 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_59e31a5c6f3e31::t_94161379ad3540 980-1013
+electron/commands.ts
+  s_59e31a5c6f3e31::t_91449d69436540 111,124
+src/modules/AudioEngine/__tests__/withNativeTimelineMaterialTransport.ts
+  s_59e31a5c6f3e31::t_e2b1473e2b93ed 27-29,35-37,43-45,55-57,60-62,65-67,94-96,100-102,104-108,112-115,117,119-121,136,138-141,145-147,153-158,160,168-171,190,192,215-217,223-225
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_59e31a5c6f3e31::t_bd2e18c514e96c 119-121,604-606
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeTimelineMaterialLeases.spec.ts
+  s_59e31a5c6f3e31::t_e8b14cb3aeebbc 12-13,132-134,158,160,169-171,254-256
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_59e31a5c6f3e31::t_6929fa5ba164bd 332-336
+src/modules/AudioEngine/repositories/nativeGraph/nativeTimelineMaterialLeases.ts
+  s_59e31a5c6f3e31::t_57b50c0394ff01 24-38,44,138-144,154,158,171,176-178,182,184,215-220,239,248,271,273,343,383
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommandBatch.ts
+  s_59e31a5c6f3e31::t_0cb06f7518e0e6 18-23,26
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_59e31a5c6f3e31::t_89508f92e5badd 673,760-762
+src/modules/Project/useCases/projectPersistence/__tests__/nativeTimelineMaterialRetirement.integration.spec.ts
+  s_59e31a5c6f3e31::t_489f08be23eaf4 31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b43aaebf8cc29a2d1fc1227211d743463cd2edfa",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
