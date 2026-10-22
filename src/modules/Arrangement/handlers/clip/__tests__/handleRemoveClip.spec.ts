@@ -117,9 +117,10 @@ describe('handleRemoveClip', () => {
     it('publishes the actual producer mode only after its commit, not the earlier description', async () => {
         const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
-        const action = { type: 'removeClip' as const, payload: { clipId: 'c1' } };
+        const action = { type: 'removeClip' as const, payload: Object.freeze({ clipId: 'c1' }) };
         const description = handleRemoveClip.describe(action);
         expect(description.redoAction).toEqual(action);
+        expect(description.redoAction?.payload).not.toBe(action.payload);
         mocks.workspaceStore.value = { rippleEditing: true };
         const result = handleRemoveClip.execute(action);
         expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'], ripple: true });
@@ -130,6 +131,7 @@ describe('handleRemoveClip', () => {
         mocks.witness = 'after';
         await result.afterCommit?.();
         expect(description.redoAction).toEqual({ type: 'removeClip', payload: { clipId: 'c1', ripple: true } });
+        expect(action.payload).toEqual({ clipId: 'c1' });
         expect(mocks.workspaceStore.value.rippleEditing).toBe(true);
     });
 

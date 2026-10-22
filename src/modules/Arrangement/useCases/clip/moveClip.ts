@@ -112,20 +112,26 @@ export function moveClip(
         return false;
     }
 
-    setTrackState({
-        ...state,
-        // Array order controls overlap drawing and edge hit testing. A retime
-        // keeps its slot so the forward move and historical restore preserve it.
-        tracks: sameHost
-            ? state.tracks.map((time) =>
-                  time.id === targetTrackId
-                      ? { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? movedClip! : clip)) }
-                      : time
-              )
-            : tracksWithoutClip.map((time) =>
-                  time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
-              ),
-    });
+    const clipToMove = movedClip;
+    // Array order controls overlap drawing and edge hit testing. A retime
+    // keeps its slot so the forward move and historical restore preserve it.
+    let tracks;
+    if (sameHost) {
+        tracks = state.tracks.map((time) => {
+            if (time.id !== targetTrackId) {
+                return time;
+            }
+            return { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? clipToMove : clip)) };
+        });
+    } else {
+        tracks = tracksWithoutClip.map((time) => {
+            if (time.id !== targetTrackId) {
+                return time;
+            }
+            return { ...time, clips: [...time.clips, clipToMove] };
+        });
+    }
+    setTrackState({ ...state, tracks });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)
     const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);

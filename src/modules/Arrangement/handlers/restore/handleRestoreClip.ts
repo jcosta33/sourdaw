@@ -163,15 +163,18 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
         } = alpha.payload;
 
         if (ripplePlan) {
-            undoRippleDelete({
+            const input: Parameters<typeof undoRippleDelete>[0] = {
                 trackId,
-                ...(clipIndex === undefined ? {} : { clipIndex }),
                 removedClips: ripplePlan.removedClips,
                 shiftedClips: ripplePlan.shiftedClips,
                 clipSatellites: ripplePlan.clipSatellites,
                 clipAutomationLanes: ripplePlan.clipAutomationLanes,
                 retiredTakeLanes,
-            });
+            };
+            if (clipIndex !== undefined) {
+                input.clipIndex = clipIndex;
+            }
+            undoRippleDelete(input);
         } else {
             updateTrack(trackId, (time) => {
                 const clips = [...time.clips];

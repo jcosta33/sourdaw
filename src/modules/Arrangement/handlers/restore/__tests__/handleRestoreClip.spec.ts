@@ -330,12 +330,12 @@ describe('handleRestoreClip', () => {
             const peer = ClipDummy.create({ id: 'peer', trackId: 't1', startBeat: 10, endBeat: 14, gain: 0.3 });
             const current = { ...createTrack({ id: 't1', name: 'Track 1', kind: 'midi' }), clips: [left, peer] };
             const updated = updater(current);
-            const expected =
-                clipIndex === 0
-                    ? [action.payload.clipSnapshot, left, peer]
-                    : clipIndex === 1
-                      ? [left, action.payload.clipSnapshot, peer]
-                      : [left, peer, action.payload.clipSnapshot];
+            let expected = [left, peer, action.payload.clipSnapshot];
+            if (clipIndex === 0) {
+                expected = [action.payload.clipSnapshot, left, peer];
+            } else if (clipIndex === 1) {
+                expected = [left, action.payload.clipSnapshot, peer];
+            }
             expect(updated).toEqual({ ...current, clips: expected });
             expect(current.clips).toEqual([left, peer]);
         }

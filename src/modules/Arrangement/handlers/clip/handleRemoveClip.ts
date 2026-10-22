@@ -219,7 +219,11 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         }
         // Resolve the preference again at the actual execution prefix, then
         // publish it into this history object only after its owner commits.
-        const redoAction: RemoveClipAction = { type: 'removeClip', payload: { ...alpha.payload } };
+        const redoPayload: RemoveClipAction['payload'] = { clipId: alpha.payload.clipId };
+        if (alpha.payload.ripple !== undefined) {
+            redoPayload.ripple = alpha.payload.ripple;
+        }
+        const redoAction: RemoveClipAction = { type: 'removeClip', payload: redoPayload };
         pendingRedoCaptures.set(alpha, redoAction);
         return { label: `Remove clip "${clipSnapshot.name}"`, inverseAction, redoAction };
     },

@@ -145,17 +145,17 @@ async function importIntoTrack(page: Page, trackName: string, kind: 'Audio' | 'M
     await trackRow(page, trackName).click({ button: 'right', position: { x: 8, y: 8 } });
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('menuitem', { name: new RegExp(`Import ${kind}`, 'i') }).click();
-    await (
-        await chooser
-    ).setFiles(
-        kind === 'Audio'
-            ? { name: 'undo-source.wav', mimeType: 'audio/wav', buffer: sineWav() }
-            : { name: 'undo-source.mid', mimeType: 'audio/midi', buffer: midiFile() }
-    );
+    let file;
+    if (kind === 'Audio') {
+        file = { name: 'undo-source.wav', mimeType: 'audio/wav', buffer: sineWav() };
+    } else {
+        file = { name: 'undo-source.mid', mimeType: 'audio/midi', buffer: midiFile() };
+    }
+    await (await chooser).setFiles(file);
 }
 
 async function readSnapshot(page: Page): Promise<Snapshot> {
-    return page.evaluate(async () => {
+    const serializedSnapshot = await page.evaluate(async () => {
         const arrangementPath = '/src/modules/Arrangement/stores/index.ts';
         const midiPath = '/src/modules/MIDI/stores/index.ts';
         const automationPath = '/src/modules/Automation/stores/index.ts';
@@ -193,24 +193,22 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
             throw new Error('Raw track ownership is absent');
         }
         // UI selection and project save timestamps are not clip-edit content.
-        const exact = JSON.parse(
-            JSON.stringify({
-                raw: {
-                    tracks: rootTracks.tracks,
-                    midi: document.midi,
-                    automation: document.automation,
-                    takeLanes: document.takeLanes,
-                    gainEnvelopes: document.gainEnvelopes,
-                },
-                projected: {
-                    tracks,
-                    midi: midi.midiStore.value,
-                    automation: automation.automationStore.value,
-                    takeLanes: arrangement.takeLaneStore.value,
-                    gainEnvelopes: arrangement.gainEnvelopeStore.value,
-                },
-            })
-        );
+        const exact = {
+            raw: {
+                tracks: rootTracks.tracks,
+                midi: document.midi,
+                automation: document.automation,
+                takeLanes: document.takeLanes,
+                gainEnvelopes: document.gainEnvelopes,
+            },
+            projected: {
+                tracks,
+                midi: midi.midiStore.value,
+                automation: automation.automationStore.value,
+                takeLanes: arrangement.takeLaneStore.value,
+                gainEnvelopes: arrangement.gainEnvelopeStore.value,
+            },
+        };
         const bufferIds = [
             ...new Set(
                 tracks
@@ -241,10 +239,10 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
         if (!serialized) {
             throw new Error('Production session action mirror is absent');
         }
-        return {
+        return JSON.stringify({
             projectId: projectState.projectId,
             witness,
-            tracks: JSON.parse(JSON.stringify(tracks)),
+            tracks,
             mirror: JSON.parse(serialized),
             exact: { ...exact, pcm },
             inspection,
@@ -256,8 +254,9 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
                     arrangement.takeLaneStore.value?.lanes.flatMap((lane) => lane.activeCompRegions).length ?? 0,
                 automationPoints: automation.automationStore.value?.lanes.flatMap((lane) => lane.points).length ?? 0,
             },
-        };
+        });
     });
+    return JSON.parse(serializedSnapshot);
 }
 
 async function expectExact(page: Page, expected: Snapshot): Promise<Snapshot> {
@@ -434,7 +433,7 @@ async function addAutomation(page: Page): Promise<void> {
         const { automationStore }: typeof import('../../src/modules/Automation/stores') = await import(automationPath);
         const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(commandPath);
         for (const track of trackStore.value?.tracks ?? []) {
-            if (!track.clips.length) {
+            if (track.clips.length === 0) {
                 continue;
             }
             const action: AppAction = {
@@ -455,7 +454,7 @@ async function addAutomation(page: Page): Promise<void> {
             ]) {
                 await executeAppAction({
                     type: 'addAutomationPoint',
-                    payload: { laneId: lane.id, beat: beat!, value: value!, curve: 'linear', tension: 0 },
+                    payload: { laneId: lane.id, beat, value, curve: 'linear', tension: 0 },
                 });
             }
         }
@@ -602,10 +601,9 @@ test('persisted clip edits replay exact owners and source material through real 
 
     await test.step('Split a sustained MIDI note through its visible clip menu', async () => {
         await replayTwice(page, info, 'split', MIDI_NAME, ['splitClip'], capabilities, async (before) => {
-            const clip = before.tracks
-                .flatMap((track) => track.clips)
-                .filter((entry) => entry.type === 'midi')
-                .sort((a, b) => b.endBeat - b.startBeat - (a.endBeat - a.startBeat))[0];
+            const allClips = before.tracks.flatMap((track) => track.clips);
+            const midiClips = allClips.filter((entry) => entry.type === 'midi');
+            const clip = midiClips.sort((a, b) => b.endBeat - b.startBeat - (a.endBeat - a.startBeat))[0];
             if (!clip) {
                 throw new Error('Imported MIDI clip is absent');
             }
@@ -640,10 +638,9 @@ test('persisted clip edits replay exact owners and source material through real 
     await test.step('Remove one selected MIDI clip with Backspace', async () => {
         await replayTwice(page, info, 'remove', MIDI_NAME, ['removeClip'], capabilities, async (before) => {
             await expect(page.getByTestId('tool-ripple')).not.toHaveAttribute('aria-pressed', 'true');
-            const clip = before.tracks
-                .flatMap((track) => track.clips)
-                .filter((entry) => entry.type === 'midi')
-                .sort((a, b) => a.startBeat - b.startBeat)[0];
+            const allClips = before.tracks.flatMap((track) => track.clips);
+            const midiClips = allClips.filter((entry) => entry.type === 'midi');
+            const clip = midiClips.sort((a, b) => a.startBeat - b.startBeat)[0];
             if (!clip) {
                 throw new Error('MIDI removal target is absent');
             }
@@ -686,33 +683,36 @@ test('persisted clip edits replay exact owners and source material through real 
                 expect(first.endBeat).toBe(second.startBeat);
                 const beat =
                     second.startBeat - (first.endBeat - first.startBeat) + (second.endBeat - second.startBeat) / 2;
-                const actions: AppAction[] = [
-                    { type: 'removeClip', payload: { clipId: first.id } },
-                    { type: 'splitClip', payload: { clipId: second.id, beat } },
-                ];
                 // The grouped-history contract uses sequential forward commits.
                 // Atomic forward admission is separately tracked by #5439.
-                const commits = await page.evaluate(async (batch: AppAction[]) => {
-                    const path = '/src/modules/Command/useCases/index.ts';
-                    const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(
-                        path
-                    );
-                    const groupId = `acceptance-${crypto.randomUUID()}`;
-                    const committed: string[] = [];
-                    for (const action of batch) {
-                        const priorCount = committed.length;
-                        await executeAppAction(action, {
-                            source: 'manual',
-                            groupId,
-                            groupLabel: 'Acceptance ripple remove then split',
-                            onCommitted: () => committed.push(action.type),
-                        });
-                        if (committed.length !== priorCount + 1) {
-                            throw new Error(`Expected exactly one real commit callback for ${action.type}`);
+                const commits = await page.evaluate(
+                    async ({ firstId, secondId, beat }) => {
+                        const path = '/src/modules/Command/useCases/index.ts';
+                        const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(
+                            path
+                        );
+                        const batch: AppAction[] = [
+                            { type: 'removeClip', payload: { clipId: firstId } },
+                            { type: 'splitClip', payload: { clipId: secondId, beat } },
+                        ];
+                        const groupId = `acceptance-${crypto.randomUUID()}`;
+                        const committed: string[] = [];
+                        for (const action of batch) {
+                            const priorCount = committed.length;
+                            await executeAppAction(action, {
+                                source: 'manual',
+                                groupId,
+                                groupLabel: 'Acceptance ripple remove then split',
+                                onCommitted: () => committed.push(action.type),
+                            });
+                            if (committed.length !== priorCount + 1) {
+                                throw new Error(`Expected exactly one real commit callback for ${action.type}`);
+                            }
                         }
-                    }
-                    return committed;
-                }, actions);
+                        return committed;
+                    },
+                    { firstId: first.id, secondId: second.id, beat }
+                );
                 expect(commits).toEqual(['removeClip', 'splitClip']);
                 await info.attach('grouped-forward-commits', {
                     body: JSON.stringify(commits),

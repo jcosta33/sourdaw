@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
-
 import { undoRippleDelete } from '../undoRippleDelete';
 
 const mocks = vi.hoisted(() => ({
@@ -46,14 +45,16 @@ describe('undoRippleDelete', () => {
         const peer = ClipDummy.create({ id: 'peer', trackId: 't1', startBeat: 16, endBeat: 20, gain: 0.3 });
         const currentRight = withShifts ? { ...right, startBeat: 4, endBeat: 8 } : right;
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [left, peer, currentRight] }] });
+        const shiftedClips: Parameters<typeof undoRippleDelete>[0]['shiftedClips'] = [];
+        if (withShifts) {
+            shiftedClips.push({ clipId: right.id, origStartBeat: 8, origEndBeat: 12, automationDelta: -4 });
+        }
 
         undoRippleDelete({
             trackId: 't1',
             clipIndex: 1,
             removedClips: [removed],
-            shiftedClips: withShifts
-                ? [{ clipId: right.id, origStartBeat: 8, origEndBeat: 12, automationDelta: -4 }]
-                : [],
+            shiftedClips,
         });
 
         expect(mocks.setTrackState.mock.calls[0]?.[0].tracks[0].clips).toEqual([left, removed, peer, right]);
