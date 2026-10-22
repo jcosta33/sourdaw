@@ -23,22 +23,34 @@ export type StatedReference = { name: string; operations: readonly string[] | nu
  */
 const REMOVAL_VERBS: readonly string[] = ['remove', 'drop', 'omit', 'exclude', 'skip', 'leave out', 'take out'];
 /**
- * The only words a removal verb may follow, in normalized words ("I'd" reads "i d"), any number of them
- * in any order: a request opening ahead of its verb ("could you please remove"). Any other word before
- * the verb ("don't remove", "you shouldn't remove", "no need to remove") says the verb is not what the
- * request asks, so the clause removes nothing.
+ * The only words a removal verb may follow, in normalized words ("I'd" reads "i d", "let's" reads
+ * "let s"), any number of them in any order: a request opening ahead of its verb ("could you please
+ * remove", "okay, let's drop"). The list is closed: any other word before the verb ("don't remove",
+ * "you shouldn't remove", "no need to remove") may say the verb is not what the request asks, so the
+ * clause removes nothing. Each opener asks for the removal or only softens it; none negates or defers it.
  */
 const REMOVAL_OPENERS: readonly string[] = [
     'please',
     'can you',
     'could you',
     'would you',
+    'you can',
     'actually',
     'also',
     'and',
     'then',
+    'just',
+    'now',
+    'ok',
+    'okay',
+    'let s',
+    'let us',
+    'we should',
+    'go ahead and',
     'i want you to',
     'i d like you to',
+    'i want to',
+    'i d like to',
 ];
 const wordsPattern = (phrases: readonly string[]) =>
     phrases.map((phrase) => phrase.split(' ').map(escapeRegExp).join('\\s+')).join('|');
@@ -48,7 +60,8 @@ const REMOVAL = new RegExp(
     'u'
 );
 const INNER_REMOVAL_SEPARATOR = /\s+(?=(?:except(?:\s+for)?|without)\s)/giu;
-const REFERENCE_ARTICLES = /^(?:(?:the|a|an|my|its|their)\s+)+/u;
+const REFERENCE_ARTICLE_WORDS: readonly string[] = ['the', 'a', 'an', 'my', 'its', 'their'];
+const REFERENCE_ARTICLES = new RegExp(`^(?:(?:${REFERENCE_ARTICLE_WORDS.join('|')})\\s+)+`, 'u');
 const REFERENCE_TRAILERS =
     /\s+(?:from\s+(?:the\s+|this\s+|that\s+)?(?:pending\s+)?(?:proposal|card|change|batch|list)|from\s+it|too|as\s+well|please)$/u;
 const OPERATION_WORDS: Readonly<Record<string, readonly string[]>> = {
@@ -221,6 +234,10 @@ export const refinementRequestReading = {
     clauses: readClauseSpans,
     statesFigure,
     removalVerbs: REMOVAL_VERBS,
+    /** The articles a removal may state before its object. */
+    articles: REFERENCE_ARTICLE_WORDS,
+    /** The operation words a removal may state after its object, narrowing it to that operation. */
+    operationWords: Object.keys(OPERATION_WORDS),
     removalObject: readRemovalObject,
     opensRemoval,
     candidates: collectReferenceCandidates,

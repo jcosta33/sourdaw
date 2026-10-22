@@ -1670,7 +1670,9 @@ describe('binding a terse refinement to the pending card it refines', () => {
         it('a refinement whose batch inherits nothing still keeps what the chain protects', () => {
             const drumBus = { name: 'setTrackGain', arguments: { trackId: 'track-drum-bus', deltaDb: -2 } };
 
-            expect(refine(P1_CARD, 'turn Drum Bus down 2 dB more', [drumBus])).toMatchObject({
+            expect(
+                refine(P1_CARD, 'remove the vocals and the snare, turn Drum Bus down 2 dB more', [drumBus])
+            ).toMatchObject({
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('"Drum Bus", which the request chain leaves unchanged'),
             });
@@ -1976,6 +1978,10 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 'Exclude the snare gain',
                 'Please remove the snare gain',
                 'Take out the snare gain',
+                'Leave out the snare gain',
+                'Would you remove the snare gain',
+                'and remove the snare gain',
+                'then remove the snare gain',
             ]) {
                 expect({
                     refinement,
@@ -1997,6 +2003,29 @@ describe('binding a terse refinement to the pending card it refines', () => {
         it('"Remove the snare" removes every Snare change', () => {
             expect(commandsOf(refine(SNARE_CARD, 'Remove the snare', [vocalsBy(-3)]))).toEqual([
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+            ]);
+        });
+
+        it('a bare object name right after a removal continues it on the refinement route', () => {
+            const refinement = 'Remove the snare pan and the vocals gain';
+
+            expect(commandsOf(refine(SNARE_CARD, refinement, [snareBy(-2)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+            ]);
+            expect(refine(SNARE_CARD, refinement, [snareBy(-2), vocalsBy(-3)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('the request removes'),
+            });
+        });
+
+        it('a protection "as is" is consumed on the refinement route, never read as an addition', () => {
+            expect(
+                commandsOf(
+                    refine(P1_CARD, 'make the vocals 1.5 dB, leave Drum Bus as is', [vocalsBy(-1.5), snareBy(-2)])
+                )
+            ).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
             ]);
         });
 
@@ -2304,6 +2333,102 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
+        it('every closed opener opens a removal, and a negating word before the verb still keeps the change', () => {
+            const context = projectContext([...BASE_TRACKS, projectTrack('track-drums', 'Drums')]);
+            const vocalsGain: StoredCommand = { type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.7 } };
+            const drumsMute: StoredCommand = { type: 'muteTrack', payload: { trackId: 'track-drums', muted: true } };
+            const pending: StoredCommand[] = [
+                { type: 'setTrackPan', payload: { trackId: 'track-bass', pan: -20 } },
+                vocalsGain,
+                drumsMute,
+            ];
+            const rows: Array<[string, string]> = [
+                ['Just remove the Bass pan', 'valid'],
+                ['Now remove the Bass pan', 'valid'],
+                ['OK remove the Bass pan', 'valid'],
+                ['Okay remove the Bass pan', 'valid'],
+                ["Let's drop the Bass pan", 'valid'],
+                ['Let us drop the Bass pan', 'valid'],
+                ['I want to remove the Bass pan', 'valid'],
+                ["I'd like to remove the Bass pan", 'valid'],
+                ['We should remove the Bass pan', 'valid'],
+                ['You can remove the Bass pan', 'valid'],
+                ['Go ahead and remove the Bass pan', 'valid'],
+                ["Don't remove the Bass pan", 'refused'],
+                ["You can't remove the Bass pan", 'refused'],
+            ];
+            for (const [prompt, status] of rows) {
+                expect({ prompt, status: admission(pending, [vocalsGain, drumsMute], prompt, context) }).toEqual({
+                    prompt,
+                    status,
+                });
+            }
+        });
+
+        it('a removal continues only into a bare object name, and removes only when nothing follows its object', () => {
+            const gain = (trackId: string, deltaDb: number): StoredCommand => ({
+                type: 'setTrackGain',
+                payload: { trackId, deltaDb },
+            });
+            const vocalsCompressor = compressorOn('track-vocals', 'device-command-1');
+            const recreated = compressorOn('track-vocals', 'device-command-2');
+            const threeCommands = [vocalsCompressor, gain('track-vocals', -3), gain('track-snare', -2)];
+            for (const tail of [
+                ', the Vocals gain stays',
+                ', Vocals gain is fine',
+                ', vocals gain unchanged',
+                '; vocals gain as proposed',
+                ' and vocals gain stays',
+                ', vocals fader up',
+            ]) {
+                const prompt = `add a Compressor to Vocals, remove the Snare gain${tail}`;
+
+                expect({ prompt, status: admission(threeCommands, [recreated], prompt, CONTEXT) }).toEqual({
+                    prompt,
+                    status: 'refused',
+                });
+            }
+            expect(
+                admission(
+                    threeCommands,
+                    [recreated],
+                    'add a Compressor to Vocals, remove the Snare gain and the Vocals gain',
+                    CONTEXT
+                )
+            ).toBe('valid');
+            const twoCommands = [vocalsCompressor, gain('track-snare', -2)];
+            for (const prompt of [
+                'drop the snare gain a bit',
+                'drop the snare level a little',
+                'drop the snare fader a touch',
+            ]) {
+                expect({ prompt, status: admission(twoCommands, [recreated], prompt, CONTEXT) }).toEqual({
+                    prompt,
+                    status: 'refused',
+                });
+            }
+            expect(admission(twoCommands, [recreated], 'take out the snare level', CONTEXT)).toBe('valid');
+            const eqAndCompressor = [
+                eqOn('track-bass', 'device-command-1'),
+                compressorOn('track-keys', 'device-command-2'),
+            ];
+            const prompt = 'remove the eq on bass, the compressor on keys stays';
+
+            expect(admission(eqAndCompressor, [compressorOn('track-keys', 'device-command-3')], prompt)).toBe('valid');
+            expect(admission(eqAndCompressor, [], prompt)).toBe('refused');
+        });
+
+        it('a project object named by a binding word is never read as an object', () => {
+            const context = projectContext([...BASE_TRACKS, projectTrack('track-gain', 'Gain')]);
+            const vocalsCut: StoredCommand = {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-vocals', deltaDb: -3 },
+            };
+            const snareCut: StoredCommand = { type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -2 } };
+
+            expect(admission([vocalsCut, snareCut], [vocalsCut], 'remove the snare gain', context)).toBe('valid');
+        });
+
         it('reads each clause the shared splitter cuts, so a removal after and, then, but or a newline still removes', () => {
             const rows: Array<[readonly StoredCommand[], string]> = [
                 [[vocalGain(0.5)], 'Remove the guitar pan and remove the vocal gain'],
@@ -2410,6 +2535,128 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ).toEqual({
                 status: 'valid',
             });
+        });
+    });
+
+    describe('one final check on every route a refinement grounds by', () => {
+        const TWO_CUTS_CARD = { prompt: 'turn Vocals down 3 dB and turn Snare down 2 dB', calls: P1_PLAN };
+        const trackBy = (trackId: string, deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId, deltaDb },
+        });
+        const mute = (trackId: string): ProviderCall => ({ name: 'muteTrack', arguments: { trackId, muted: true } });
+
+        it('a batch the refinement text grounds alone beside a comparative still may not drop a pending change', () => {
+            const rows: Array<[string, ProviderCall[]]> = [
+                ['make Keys 2 dB quieter', [trackBy('track-keys', -2)]],
+                ['make Keys 2 dB lower', [trackBy('track-keys', -2)]],
+                ['turn Bass down 1 dB less and remove the snare', [trackBy('track-bass', -1)]],
+            ];
+            for (const [refinement, calls] of rows) {
+                expect({ refinement, result: refine(TWO_CUTS_CARD, refinement, calls) }).toMatchObject({
+                    refinement,
+                    result: { status: 'rejected', rejectionReason: expect.stringContaining('omits a pending') },
+                });
+            }
+            const more = refine(TWO_CUTS_CARD, 'turn Bass down 2 dB more', [trackBy('track-bass', -2)]);
+
+            expect(['rejected', 'clarify']).toContain(more.status);
+            expect(
+                commandsOf(refine(TWO_CUTS_CARD, 'make Keys 2 dB quieter', [...P1_PLAN, trackBy('track-keys', -2)]))
+            ).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                { type: 'setTrackGain', trackId: 'track-keys', deltaDb: -2 },
+            ]);
+        });
+
+        it('a clause no new call answers is refused when the batch only carries the pending changes', () => {
+            const card = { prompt: 'mute Bass and mute Keys', calls: [mute('track-bass'), mute('track-keys')] };
+
+            expect(
+                refine(card, 'mute Bass and mute Keys, and solo Keys', [mute('track-bass'), mute('track-keys')])
+            ).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('No proposed change answers "solo Keys"'),
+            });
+        });
+
+        it('a negation beside a removal asks, while a negation on its own still removes and protects', () => {
+            const context = projectContext([
+                projectTrack('track-snare-bottom', 'Snare Bottom'),
+                projectTrack('track-snare', 'Snare'),
+                projectTrack('track-drum-bus', 'Drum Bus'),
+                projectTrack('track-drum', 'Drum'),
+            ]);
+            const plan = [
+                trackBy('track-snare-bottom', -1),
+                trackBy('track-snare', -2),
+                trackBy('track-drum-bus', -3),
+                trackBy('track-drum', -4),
+            ];
+            const card = {
+                prompt: 'turn Snare Bottom down 1 dB, turn Snare down 2 dB, turn Drum Bus down 3 dB and turn Drum down 4 dB',
+                calls: plan,
+            };
+            const [snareBottom, snare, drumBus, drum] = plan as [
+                ProviderCall,
+                ProviderCall,
+                ProviderCall,
+                ProviderCall,
+            ];
+            for (const refinement of [
+                'remove the snare but not the drum bus',
+                'remove snare, not drum bus',
+                'remove the snare and not the drum bus',
+                'skip the snare, not the drum bus',
+                'remove the snare. Not the drum bus',
+                'remove the snare except the drum bus',
+                'not the drum bus, remove the snare',
+            ]) {
+                for (const calls of [
+                    [snareBottom, drumBus, drum],
+                    [snareBottom, drum],
+                ]) {
+                    expect({ refinement, calls, status: refine(card, refinement, calls, context).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
+            expect(
+                refine(card, 'remove the drum except the drum bus', [snareBottom, snare, drumBus], context).status
+            ).toBe('clarify');
+            expect(refine(card, 'remove snare except snare bottom', [snareBottom, drumBus, drum], context).status).toBe(
+                'clarify'
+            );
+            const alone = refine(card, 'not the drum bus', [snareBottom, snare, drum], context);
+
+            expect(commandsOf(alone)).toEqual([
+                { type: 'setTrackGain', trackId: 'track-snare-bottom', deltaDb: -1 },
+                { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                { type: 'setTrackGain', trackId: 'track-drum', deltaDb: -4 },
+            ]);
+            expect(alone.status === 'grounded' ? alone.groundingBasis?.protectedUnchanged : null).toEqual(
+                expect.arrayContaining([{ id: 'track-drum-bus', name: 'Drum Bus' }])
+            );
+        });
+
+        it('a pan figure followed by "to the" side asks whether it lands there or moves toward it', () => {
+            const bassPan = (pan: number): ProviderCall => ({
+                name: 'setTrackPan',
+                arguments: { trackId: 'track-bass', pan },
+            });
+            const card = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
+            for (const refinement of ['bring it 10 to the right', 'move it 10 to the right']) {
+                for (const calls of [[bassPan(10)], [bassPan(-20)], [bassPan(-40)]]) {
+                    expect({ refinement, calls, status: refine(card, refinement, calls).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
         });
     });
 

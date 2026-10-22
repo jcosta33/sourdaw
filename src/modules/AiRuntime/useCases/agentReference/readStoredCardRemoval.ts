@@ -52,6 +52,8 @@ const BINDING_WORDS: ReadonlySet<string> = new Set([
     'on',
     'for',
 ]);
+const ARTICLE_WORDS: ReadonlySet<string> = new Set(refinementRequestReading.articles);
+const OPERATION_WORDS: ReadonlySet<string> = new Set(refinementRequestReading.operationWords);
 
 function operationPattern(actionType: string): RegExp | null {
     if (actionType === 'setTrackPan') {
@@ -214,10 +216,53 @@ function readMentions(
 }
 
 /**
+ * Whether a clause is a bare object name and nothing else: one mention, after nothing but articles and
+ * before at most one operation word ("the vocal gain"). Only such a clause continues a removal, so a
+ * clause saying anything of the object ("the Vocals gain stays", "vocals fader up") never removes it.
+ */
+function isBareObjectClause(text: string, mentions: readonly Mention[]): boolean {
+    const [only] = mentions;
+    if (only === undefined || mentions.length !== 1) {
+        return false;
+    }
+    const wordsOf = (part: string) =>
+        normalizePromptText(part)
+            .split(' ')
+            .filter((word) => word.length > 0);
+    const after = wordsOf(text.slice(only.end));
+    return (
+        wordsOf(text.slice(0, only.start)).every((word) => ARTICLE_WORDS.has(word)) &&
+        after.length <= 1 &&
+        after.every((word) => OPERATION_WORDS.has(word))
+    );
+}
+
+/**
+ * Whether nothing but binding words and other object names follows a removal's object and its operation
+ * word to the end of the clause. Any other word after them ("drop the snare gain a bit") says something
+ * of the object a removal does not, so the clause keeps it rather than removing it.
+ */
+function endsAtObject(clause: Pick<ClauseReading, 'text' | 'mentions'>, from: number): boolean {
+    let rest = '';
+    let cursor = from;
+    for (const mention of clause.mentions) {
+        if (mention.end <= cursor) {
+            continue;
+        }
+        rest += ` ${clause.text.slice(cursor, Math.max(cursor, mention.start))}`;
+        cursor = mention.end;
+    }
+    rest += ` ${clause.text.slice(cursor)}`;
+    return normalizePromptText(rest)
+        .split(' ')
+        .every((word) => word.length === 0 || BINDING_WORDS.has(word) || OPERATION_WORDS.has(word));
+}
+
+/**
  * The directives a clause states, outside quotation marks. A removal verb removes only when nothing but
  * the shared openers stand before it, and in a clause stating a figure it changes a level, so it is no
- * directive at all ("drop the Vocals gain to -1 dB"). A clause with no directive and no figure right
- * after a removal continues it ("remove the guitar pan and the vocal gain").
+ * directive at all ("drop the Vocals gain to -1 dB"). A bare object name right after a removal
+ * continues it ("remove the guitar pan and the vocal gain").
  */
 function readDirectives(clause: { text: string; masked: string }, continuesRemoval: boolean): Directive[] {
     const quotes = quotedRanges(clause.text);
@@ -246,9 +291,14 @@ function readRequest(prompt: string, context: ProjectContext, extra: readonly Ex
     const spellings = readSpellings(context, extra);
     let continuesRemoval = false;
     return refinementRequestReading.clauses(prompt, context).map((clause) => {
-        const directives = readDirectives(clause, continuesRemoval);
-        continuesRemoval = directives.some((directive) => directive.intention === 'remove');
-        return { text: clause.text, mentions: readMentions(clause.text, candidates, spellings), directives };
+        const mentions = readMentions(clause.text, candidates, spellings);
+        const directives = readDirectives(clause, continuesRemoval && isBareObjectClause(clause.text, mentions));
+        const lastMention = mentions.at(-1);
+        continuesRemoval =
+            directives.some((directive) => directive.intention === 'remove') &&
+            lastMention !== undefined &&
+            endsAtObject({ text: clause.text, mentions }, lastMention.end);
+        return { text: clause.text, mentions, directives };
     });
 }
 
@@ -281,21 +331,31 @@ function intentionForMention(input: {
         return null;
     }
     if (operation === null) {
-        return directive.intention;
+        return settleIntention(directive.intention, clause, mention.end);
     }
     const nextDirective = directives.find((entry) => entry.start > mention.end)?.start;
     const nextTarget = mentions[index + 1]?.start;
     const end = Math.min(nextDirective ?? text.length, nextTarget ?? text.length);
     const afterTarget = text.slice(mention.end, end);
     const afterMatch = operation.exec(afterTarget);
-    const beforeOperation = afterMatch === null ? '' : afterTarget.slice(0, afterMatch.index ?? 0).trim();
+    const beforeOperation = afterMatch === null ? '' : afterTarget.slice(0, afterMatch.index).trim();
     if (
         (afterMatch !== null && !onlyBindingWords(beforeOperation)) ||
         (!operation.test(beforeTarget) && afterMatch === null)
     ) {
         return null;
     }
-    return directive.intention;
+    const objectEnd = afterMatch === null ? mention.end : mention.end + afterMatch.index + afterMatch[0].length;
+    return settleIntention(directive.intention, clause, objectEnd);
+}
+
+/** A removal stands only when nothing follows its object and operation word; otherwise the clause keeps it. */
+function settleIntention(
+    intention: Directive['intention'],
+    clause: ClauseReading,
+    objectEnd: number
+): Directive['intention'] {
+    return intention === 'remove' && !endsAtObject(clause, objectEnd) ? 'preserve' : intention;
 }
 
 /** Each mention of this id a directive governs, by clause, with what the directive asks of it. */

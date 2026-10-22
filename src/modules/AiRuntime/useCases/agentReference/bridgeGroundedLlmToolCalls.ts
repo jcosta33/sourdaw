@@ -5937,13 +5937,8 @@ function findDirectComparativeRejection(
 
 function withRefinement(
     bridged: BridgeGroundedLlmToolCallsResult,
-    refinement: RefinementGroundingOutcome,
-    context: ProjectContext
+    refinement: RefinementGroundingOutcome
 ): BridgeGroundedLlmToolCallsResult {
-    const protectedChange = findProtectedChange(bridged.actions, refinement.protectedObjects, context);
-    if (protectedChange !== null) {
-        return refuseRefinement(protectedChange);
-    }
     return { ...bridged, refinement };
 }
 
@@ -5951,8 +5946,9 @@ function withRefinement(
  * Ground a batch that refines a pending card. A batch the refinement text grounds by itself is
  * admitted exactly as any request; otherwise each call continuing one pending command inherits that
  * command's target authority, re-read from the request text that granted it, and may change only the
- * value a refinement clause binds. Every other call grounds in the refinement text alone. Either way
- * a pending command may leave the batch only by name, and nothing the chain protects may change.
+ * value a refinement clause binds. Every other call grounds in the refinement text alone. Whichever
+ * route grounds it, the result then passes one check: a pending command may leave the batch only by
+ * name, every clause must be answered, and nothing the chain protects may change.
  */
 function bridgeRefinedLlmToolCalls(
     input: BridgeGroundedLlmToolCallsInput,
@@ -6002,49 +5998,101 @@ function bridgeRefinedLlmToolCalls(
         context,
         removalClauseStarts: removals.removalClauseStarts,
     });
-    if (direct.rejections.length === 0 && !comparesFigure) {
-        const carried = getCarriedCommandIndexes(calls, basis);
-        const keptRemoval = [...carried].find((index) => removals.removedCommandIndexes.has(index));
-        if (keptRemoval !== undefined) {
-            return refuseRefinement(
-                `Refined proposal keeps the pending ${describePendingCommand(basis.commands[keptRemoval]!, context)} command the request removes`
-            );
-        }
-        const omission = findSilentOmission({
+    const groundsDirectly = direct.rejections.length === 0 && !comparesFigure;
+    const routesDirectly = groundsDirectly || inheritedCommandIndexes.every((index) => index === null);
+    const routed = routesDirectly
+        ? withRefinement(direct, {
+              inheritedCommandIndexes: direct.actions.map(() => null),
+              protectedObjects,
+              keptDirectionActionIndexes: [],
+          })
+        : groundInheritedRefinement({ input, basis, removals, inheritedCommandIndexes, protectedObjects });
+    if (routed.rejections.length > 0 || routed.clarification !== undefined) {
+        return routed;
+    }
+    const defect = findRefinementDefect({
+        calls,
+        inheritedCommandIndexes,
+        kept: routesDirectly
+            ? getCarriedCommandIndexes(calls, basis)
+            : new Set(inheritedCommandIndexes.filter((index): index is number => index !== null)),
+        basis,
+        removals,
+        prompt,
+        context,
+    });
+    if (defect !== null) {
+        return refuseRefinement(defect);
+    }
+    const comparativeRejection = groundsDirectly
+        ? findDirectComparativeRejection(calls, inheritedCommandIndexes, basis, input)
+        : null;
+    const rejectionReason = comparativeRejection ?? findProtectedChange(routed.actions, protectedObjects, context);
+    return rejectionReason === null ? routed : refuseRefinement(rejectionReason);
+}
+
+type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
+
+/**
+ * The one check every refinement result passes, whichever route grounded it: no pending command the
+ * refinement removes is kept, none the batch leaves out stands without a removal naming it, and every
+ * clause asking for something the card does not carry is answered by a call continuing no pending
+ * command.
+ */
+function findRefinementDefect(input: {
+    calls: readonly ToolCallResult[];
+    inheritedCommandIndexes: ReadonlyArray<number | null>;
+    /** The pending commands the batch carries on. */
+    kept: ReadonlySet<number>;
+    basis: ProposalGroundingBasis;
+    removals: ReadRemovals;
+    prompt: string;
+    context: ProjectContext;
+}): string | null {
+    const { basis, removals, prompt, context } = input;
+    const keptRemoval = [...input.kept].find((index) => removals.removedCommandIndexes.has(index));
+    if (keptRemoval !== undefined) {
+        return `Refined proposal keeps the pending ${describePendingCommand(basis.commands[keptRemoval]!, context)} command the request removes`;
+    }
+    const omission = findSilentOmission({
+        basis,
+        inheritedOrRestated: input.kept,
+        removed: removals.removedCommandIndexes,
+        prompt,
+        context,
+    });
+    if (omission !== null) {
+        return omission;
+    }
+    const newCalls = input.calls.filter((_call, index) => input.inheritedCommandIndexes[index] === null);
+    const catalog = getExecutableAppActionGroundingCatalog();
+    const unanswered = refinementClauseReader
+        .additions({
+            text: prompt,
             basis,
-            inheritedOrRestated: carried,
-            removed: removals.removedCommandIndexes,
-            prompt,
             context,
-        });
-        if (omission !== null) {
-            return refuseRefinement(omission);
-        }
-        const comparativeRejection = findDirectComparativeRejection(calls, inheritedCommandIndexes, basis, input);
-        if (comparativeRejection !== null) {
-            return refuseRefinement(comparativeRejection);
-        }
-        return withRefinement(
-            direct,
-            {
-                inheritedCommandIndexes: direct.actions.map(() => null),
-                protectedObjects,
-                keptDirectionActionIndexes: [],
-            },
-            context
-        );
-    }
-    if (inheritedCommandIndexes.every((index) => index === null)) {
-        return withRefinement(
-            direct,
-            {
-                inheritedCommandIndexes: direct.actions.map(() => null),
-                protectedObjects,
-                keptDirectionActionIndexes: [],
-            },
-            context
-        );
-    }
+            removalClauseStarts: removals.removalClauseStarts,
+            removedCommandIndexes: removals.removedCommandIndexes,
+        })
+        .find((clause) => !newCalls.some((call) => answersAdditionClause(clause, call, catalog, context)));
+    return unanswered === undefined ? null : `No proposed change answers "${unanswered.text.trim()}" in the refinement`;
+}
+
+/**
+ * Ground a batch whose calls continue pending commands: each such call inherits that command's target
+ * authority, re-read from the request text that granted it, and may change only the value one
+ * refinement clause binds; every other call grounds in the refinement text alone.
+ */
+function groundInheritedRefinement(route: {
+    input: BridgeGroundedLlmToolCallsInput;
+    basis: ProposalGroundingBasis;
+    removals: ReadRemovals;
+    inheritedCommandIndexes: Array<number | null>;
+    protectedObjects: Array<{ id: string; name: string }>;
+}): BridgeGroundedLlmToolCallsResult {
+    const { input, basis, removals, inheritedCommandIndexes, protectedObjects } = route;
+    const { calls, context, prompt } = input;
+    const unrefined: BridgeGroundedLlmToolCallsInput = { ...input, refinementBasis: undefined };
     const binding = refinementClauseReader.values({
         text: prompt,
         basis,
@@ -6064,22 +6112,6 @@ function bridgeRefinedLlmToolCalls(
         return refuseRefinement(binding.reason);
     }
     const inherited = new Set(inheritedCommandIndexes.filter((index): index is number => index !== null));
-    const keptRemoval = [...inherited].find((index) => removals.removedCommandIndexes.has(index));
-    if (keptRemoval !== undefined) {
-        return refuseRefinement(
-            `Refined proposal keeps the pending ${describePendingCommand(basis.commands[keptRemoval]!, context)} command the request removes`
-        );
-    }
-    const omission = findSilentOmission({
-        basis,
-        inheritedOrRestated: inherited,
-        removed: removals.removedCommandIndexes,
-        prompt,
-        context,
-    });
-    if (omission !== null) {
-        return refuseRefinement(omission);
-    }
     const unboundValue = [...binding.values.keys()].find((index) => !inherited.has(index));
     if (unboundValue !== undefined) {
         return refuseRefinement(
@@ -6101,13 +6133,6 @@ function bridgeRefinedLlmToolCalls(
                     : { ...newRejection, index: newCallIndexes[newRejection.index] ?? newRejection.index }
             ),
         };
-    }
-    const catalog = getExecutableAppActionGroundingCatalog();
-    const unanswered = binding.additionClauses.find(
-        (clause) => !newCalls.some((call) => answersAdditionClause(clause, call, catalog, context))
-    );
-    if (unanswered !== undefined) {
-        return refuseRefinement(`No proposed change answers "${unanswered.text.trim()}" in the refinement`);
     }
     for (const [index, commandIndex] of inheritedCommandIndexes.entries()) {
         const command = commandIndex === null ? undefined : basis.commands[commandIndex];
@@ -6150,8 +6175,7 @@ function bridgeRefinedLlmToolCalls(
     }
     return withRefinement(
         { actions, rejections: [] },
-        { inheritedCommandIndexes, protectedObjects, keptDirectionActionIndexes },
-        context
+        { inheritedCommandIndexes, protectedObjects, keptDirectionActionIndexes }
     );
 }
 

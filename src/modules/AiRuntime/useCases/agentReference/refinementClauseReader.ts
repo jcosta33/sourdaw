@@ -25,7 +25,8 @@ type CommandView = { index: number; command: ProposalGroundingCommand; denotes: 
  * counts. Its verb is one of the shared removal verbs, after nothing but the shared openers. A
  * negation removes only in the form `not`/`except`/`except for`/`without` [the] <object> [operation
  * word]: naming a pending object it removes that object's changes (of the operation the word
- * states), naming a project object outside the card it protects that object. Any other negated
+ * states), naming a project object outside the card it protects that object; right before or after a
+ * removal clause it is asked instead. Any other negated
  * clause is asked, unless it names no project object and states no figure ("not too loud"), which is
  * read and left alone.
  */
@@ -50,8 +51,6 @@ type RefinementValueBinding =
     | {
           status: 'bound';
           values: ReadonlyMap<number, BoundRefinementValue>;
-          /** Clauses that ask for something the pending card does not carry; a new command must answer each. */
-          additionClauses: RefinementClause[];
           comparative: 'less' | 'more' | null;
       };
 
@@ -101,6 +100,8 @@ type RemovalClauseInput = {
     protectedTargets: ProtectedObject[];
     /** Set when the clause before this one removed by a removal verb. */
     continuesRemoval: boolean;
+    /** Set when the clause after this one opens with a removal verb. */
+    precedesRemoval: boolean;
 };
 
 const OPEN_VALUE_REASON = 'The refinement leaves part of the change it asks for open.';
@@ -208,10 +209,25 @@ function readRemovalContinuation(clause: RefinementClause, candidates: readonly 
     return text;
 }
 
+/**
+ * A negation right before or after a removal ("remove the snare but not the drum bus", "remove snare
+ * except snare bottom") may narrow that removal or keep another change, which no reading can tell
+ * apart, so it is asked rather than read as a removal of its own.
+ */
+function askNegationBesideRemoval(clause: RefinementClause): RemovalClauseRead {
+    return {
+        kind: 'clarify',
+        question: `"${clause.text.trim()}" beside a removal does not say whether it narrows that removal or keeps another change. Name each pending change to remove, as in "remove the snare".`,
+    };
+}
+
 function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     const { clause, candidates } = input;
     const text = normalizedClause(clause);
     const negation = NEGATION_FORM.exec(text);
+    if (negation !== null && (input.continuesRemoval || input.precedesRemoval)) {
+        return askNegationBesideRemoval(clause);
+    }
     if (negation === null && NEGATION_WORD.test(normalizePromptText(clause.masked))) {
         return readOtherNegation(clause, candidates);
     }
@@ -296,7 +312,9 @@ function readRefinementRemovals(input: {
     const removalClauseStarts = new Set<number>();
     const unreadNegations: RefinementClause[] = [];
     let continuesRemoval = false;
-    for (const clause of refinementRequestReading.clauses(input.text, input.context)) {
+    const clauses = refinementRequestReading.clauses(input.text, input.context);
+    for (const [index, clause] of clauses.entries()) {
+        const next = clauses[index + 1];
         const outcome = readRemovalClause({
             clause,
             commands,
@@ -306,6 +324,7 @@ function readRefinementRemovals(input: {
             removedTargets,
             protectedTargets,
             continuesRemoval,
+            precedesRemoval: next !== undefined && refinementRequestReading.removalObject(next) !== null,
         });
         continuesRemoval = outcome.kind === 'read' && outcome.removes;
         if (outcome.kind === 'none') {
@@ -549,7 +568,6 @@ function bindRefinementValues(input: {
 }): RefinementValueBinding {
     const scopeInput = createClauseScopeInput(input);
     const values = new Map<number, BoundRefinementValue>();
-    const additionClauses: RefinementClause[] = [];
     let comparative: 'less' | 'more' | null = null;
     for (const clause of refinementRequestReading.clauses(input.text, input.context)) {
         if (input.removalClauseStarts.has(clause.start)) {
@@ -559,15 +577,13 @@ function bindRefinementValues(input: {
         switch (read.kind) {
             case 'consumed':
             case 'restated':
+            case 'addition':
                 break;
             case 'comparative':
                 if (comparative !== null && comparative !== read.comparative) {
                     return { status: 'clarify', reason: OPEN_VALUE_REASON, question: 'Less or more?' };
                 }
                 comparative = read.comparative;
-                break;
-            case 'addition':
-                additionClauses.push(clause);
                 break;
             case 'value':
                 values.set(read.index, read.value);
@@ -587,7 +603,29 @@ function bindRefinementValues(input: {
         const question = `How much ${comparative}? State the new value, for example "${comparative}, make it 1.5 dB".`;
         return { status: 'clarify', reason: OPEN_VALUE_REASON, question };
     }
-    return { status: 'bound', values, additionClauses, comparative };
+    return { status: 'bound', values, comparative };
+}
+
+/**
+ * The clauses a refinement asks for something the pending card does not carry in: each names an object
+ * no pending command acts on, or an action no pending command it names takes, so a new command must
+ * answer it. Removal clauses are read as removals, never as additions.
+ */
+function readAdditionClauses(input: {
+    text: string;
+    basis: ProposalGroundingBasis;
+    context: ProjectContext;
+    removalClauseStarts: ReadonlySet<number>;
+    removedCommandIndexes: ReadonlySet<number>;
+}): RefinementClause[] {
+    const scopeInput = createClauseScopeInput(input);
+    return refinementRequestReading
+        .clauses(input.text, input.context)
+        .filter(
+            (clause) =>
+                !input.removalClauseStarts.has(clause.start) &&
+                readValueClause(clause, scopeInput, input.context).kind === 'addition'
+        );
 }
 
 /**
@@ -618,4 +656,5 @@ export const refinementClauseReader = {
     comparative: readRefinementComparative,
     figureComparative: statesFigureComparative,
     values: bindRefinementValues,
+    additions: readAdditionClauses,
 } as const;
