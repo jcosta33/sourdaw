@@ -197,6 +197,17 @@ describe('projectNoteExpressionCurves', () => {
         ]);
     });
 
+    it('clamps slide below its range to 0', () => {
+        const { changes } = projectNoteExpressionCurves({
+            note: { expression: { slide: [{ offsetBeats: 0.5, value: -10 }] } },
+            startBeat: 0,
+            releaseFrame: frameAtBeat(2),
+            frameAtBeat,
+        });
+
+        expect(changes.map((change) => change.expression.slide)).toEqual([0]);
+    });
+
     it('measures offsets from the uncut note start, folding the points a cut passed into the start', () => {
         // The note began at beat 1 but plays from beat 2, one beat in.
         const { atStart, changes } = projectNoteExpressionCurves({
