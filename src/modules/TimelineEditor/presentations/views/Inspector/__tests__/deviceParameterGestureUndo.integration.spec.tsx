@@ -352,7 +352,11 @@ describe('Inspector continuous parameter gestures through real history', () => {
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 80, clientY: 10 });
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
         expect(writes(compressor.id)).toEqual([-36, expect.closeTo(-12, 12), -48]);
-        expect(screen.getByText('-48.0 dB')).toBeInTheDocument();
+        const readouts = screen.getAllByText('-48.0 dB');
+        expect(readouts).toHaveLength(2);
+        readouts.forEach((readout) => {
+            expect(readout).toBeVisible();
+        });
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
         expect(depth()).toBe(0);
