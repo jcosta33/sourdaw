@@ -5,6 +5,7 @@ import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arran
 import {
     applyNoteExpression,
     ensureTrackStrip,
+    getCompensationDelay,
     getCurrentTime,
     getDrumKitByIndex,
     scheduleFaustNote,
@@ -262,6 +263,7 @@ describe('scheduleMidiNotes', () => {
         );
         shouldPlayProbability.mockImplementation(() => true);
         vi.mocked(getCurrentTime).mockReturnValue(0);
+        vi.mocked(getCompensationDelay).mockReturnValue(0);
     });
 
     it('schedules a frozen MIDI track once per playback session, not on every tick', async () => {
@@ -1724,6 +1726,46 @@ describe('scheduleMidiNotes', () => {
                 expect(noteOff.mock.calls[0]![1]).toBe(frameAt(3));
                 // The note-on is queued ahead of the first update at its frame.
                 expect(noteOn.mock.calls[0]![2]).toBe(frameAt(0.5));
+                expect(noteOn.mock.invocationCallOrder[0]).toBeLessThan(
+                    vi.mocked(applyNoteExpression).mock.invocationCallOrder[0]!
+                );
+            });
+
+            it('places each point at the compensated note-on frame plus its own offset', async () => {
+                const { noteOn } = fermenterStripWithControls();
+                // The track's plugin delay moves the whole note, so a point keeps its offset from the note-on.
+                vi.mocked(getCompensationDelay).mockReturnValue(0.05);
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 2,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: {
+                            // Closer to the note-on than the compensation is, so a point that missed the
+                            // delay would land before the note it belongs to.
+                            pressure: [
+                                { offsetBeats: 0.05, value: 40 },
+                                { offsetBeats: 0.5, value: 90 },
+                            ],
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                const noteOnFrame = frameAt(0.5 + 0.05);
+                expect(noteOn.mock.calls[0]![2]).toBe(noteOnFrame);
+                // A beat is 24 000 frames at 120 BPM: the offsets are 1 200 and 12 000 frames.
+                expect(
+                    appliedExpression().map(({ sampleFrame, expression }) => [sampleFrame, expression.pressure])
+                ).toEqual([
+                    [noteOnFrame, 10],
+                    [noteOnFrame + 1_200, 40],
+                    [noteOnFrame + 12_000, 90],
+                ]);
                 expect(noteOn.mock.invocationCallOrder[0]).toBeLessThan(
                     vi.mocked(applyNoteExpression).mock.invocationCallOrder[0]!
                 );

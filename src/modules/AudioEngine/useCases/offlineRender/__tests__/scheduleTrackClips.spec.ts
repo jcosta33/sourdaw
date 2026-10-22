@@ -1679,6 +1679,7 @@ describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => 
 describe('scheduleTrackClips — per-note MPE for offline worklet instruments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getCompensationDelay.mockReturnValue(0);
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
@@ -1928,6 +1929,38 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                 'expression',
                 'noteOff',
             ]);
+        });
+
+        // The live scheduler's case: scheduleMidiNotes.spec.ts, "places each point at the compensated note-on
+        // frame plus its own offset".
+        it('places each point at the compensated note-on frame plus its own offset', async () => {
+            // The track's plugin delay moves the whole note, so a point keeps its offset from the note-on.
+            mocks.getCompensationDelay.mockReturnValue(0.05);
+
+            const arrivals = await dispatchOneNote({
+                startBeat: 1,
+                duration: 2,
+                pressure: 10,
+                expression: {
+                    // Closer to the note-on than the compensation is, so a point that missed the delay would
+                    // land before the note it belongs to.
+                    pressure: [
+                        { offsetBeats: 0.05, value: 40 },
+                        { offsetBeats: 0.5, value: 90 },
+                    ],
+                },
+            });
+
+            // Beat 1 is 0.5 s, and the delay adds 0.05 s: frame 26 400. A beat is 24 000 frames at 120 BPM, so the
+            // offsets are 1 200 and 12 000 frames.
+            const noteOnFrame = 26_400;
+            expect(arrivals.noteOn[0]?.sampleFrame).toBe(noteOnFrame);
+            expect(appliedExpression(arrivals).map(({ sampleFrame, pressure }) => [sampleFrame, pressure])).toEqual([
+                [noteOnFrame, 10],
+                [noteOnFrame + 1_200, 40],
+                [noteOnFrame + 12_000, 90],
+            ]);
+            expect(arrivals.order).toEqual(['noteOn', 'expression', 'expression', 'expression', 'noteOff']);
         });
 
         it('moves the points with the note when the projection moves its start', async () => {
