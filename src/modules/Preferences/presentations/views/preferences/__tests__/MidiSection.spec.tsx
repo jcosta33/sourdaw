@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+
+import { OBJECT_URL_LIFETIME_MS } from '#/utils/downloadFile';
 
 import { defaultPreferences } from '../../../../models/Preferences';
 import { MidiSection } from '../MidiSection';
@@ -58,7 +60,6 @@ describe('MidiSection', () => {
     });
 
     it('reaches real profile inspection and file import/export from the MIDI preferences entry', async () => {
-        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         vi.stubGlobal('URL', class extends URL {
             static createObjectURL = vi.fn(() => 'blob:preferences-mappings');
             static revokeObjectURL = vi.fn();
@@ -91,16 +92,20 @@ describe('MidiSection', () => {
                 }),
             });
             fireEvent.change(screen.getByLabelText('Mapping JSON file'), { target: { files: [file] } });
-            await vi.waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());
+            await waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());
             const originalFile = new File([original], 'original.json');
             Object.defineProperty(originalFile, 'text', { value: () => Promise.resolve(original) });
             fireEvent.change(screen.getByLabelText('Mapping JSON file'), { target: { files: [originalFile] } });
-            await vi.waitFor(() => expect(screen.getByText('button 85')).toBeInTheDocument());
+            await waitFor(() => expect(screen.getByText('button 85')).toBeInTheDocument());
         } finally {
-            vi.runOnlyPendingTimers();
-            vi.useRealTimers();
-            vi.restoreAllMocks();
-            vi.unstubAllGlobals();
+            try {
+                await waitFor(() => expect(document.querySelector('a[download]')).toBeNull(), {
+                    timeout: OBJECT_URL_LIFETIME_MS * 2,
+                });
+            } finally {
+                vi.restoreAllMocks();
+                vi.unstubAllGlobals();
+            }
         }
     });
 });

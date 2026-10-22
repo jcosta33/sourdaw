@@ -1,5 +1,7 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { OBJECT_URL_LIFETIME_MS } from '#/utils/downloadFile';
 
 import { PUSH_2_PROFILE } from '../../../models/ControllerProfile';
 import { hardwareControllerStore } from '../../../stores/hardwareControllerStore';
@@ -47,7 +49,6 @@ describe('HardwareMappingManager', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         vi.stubGlobal('URL', class extends URL {
             static createObjectURL = vi.fn(() => 'blob:mappings');
             static revokeObjectURL = vi.fn();
@@ -62,12 +63,16 @@ describe('HardwareMappingManager', () => {
         });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         cleanup();
-        vi.runOnlyPendingTimers();
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
+        try {
+            await waitFor(() => expect(document.querySelector('a[download]')).toBeNull(), {
+                timeout: OBJECT_URL_LIFETIME_MS * 2,
+            });
+        } finally {
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        }
         expect(JSON.stringify(PUSH_2_PROFILE)).toBe(factoryProfile);
     });
 
@@ -85,7 +90,7 @@ describe('HardwareMappingManager', () => {
 
         const changedJson = originalJson.replace('"controlIndex": 85', '"controlIndex": 86');
         fireEvent.change(fileInput(), { target: { files: [mappingFile(changedJson)] } });
-        await vi.waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());
         expect(screen.getByRole('status')).toHaveTextContent('Mappings imported.');
         expect(hardwareControllerStore.value?.profiles[1]).toBe(original.profiles[1]);
         expect(hardwareControllerStore.value?.connectedDevices).toBe(original.connectedDevices);
@@ -93,7 +98,7 @@ describe('HardwareMappingManager', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Export mappings' }));
         expect(JSON.parse(await fileFromBlob(exportedBlob()).text())).toEqual(JSON.parse(changedJson));
         fireEvent.change(fileInput(), { target: { files: [originalFile] } });
-        await vi.waitFor(() => expect(screen.getByText('button 85')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('button 85')).toBeInTheDocument());
         expect(hardwareControllerStore.value).toEqual(original);
     });
 
@@ -101,7 +106,7 @@ describe('HardwareMappingManager', () => {
         render(<HardwareMappingManager />);
         const before = hardwareControllerStore.value;
         fireEvent.change(fileInput(), { target: { files: [mappingFile(json)] } });
-        await vi.waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
         expect(hardwareControllerStore.value).toBe(before);
         expect(screen.getByText('button 85')).toBeInTheDocument();
         expect(mocks.notify).toHaveBeenCalledTimes(1);
@@ -111,10 +116,10 @@ describe('HardwareMappingManager', () => {
         render(<HardwareMappingManager />);
         const file = mappingFile('[]');
         fireEvent.change(fileInput(), { target: { files: [file] } });
-        await vi.waitFor(() => expect(screen.getByText('This profile has no mappings.')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('This profile has no mappings.')).toBeInTheDocument());
         expect(fileInput().value).toBe('');
         fireEvent.change(fileInput(), { target: { files: [file] } });
-        await vi.waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Mappings imported.'));
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Mappings imported.'));
         fireEvent.click(screen.getByRole('button', { name: 'Export mappings' }));
         expect(await fileFromBlob(exportedBlob()).text()).toBe('[]');
     });
@@ -190,7 +195,7 @@ describe('HardwareMappingManager', () => {
         Object.defineProperty(file, 'size', { value: 16 * 1024 * 1024 + 1 });
         Object.defineProperty(file, 'text', { value: read });
         fireEvent.change(fileInput(), { target: { files: [file] } });
-        await vi.waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
         expect(read).not.toHaveBeenCalled();
         expect(hardwareControllerStore.value).toBe(before);
         expect(mocks.notify).toHaveBeenCalledWith(expect.stringContaining('16 MiB'), 'error');
@@ -202,7 +207,7 @@ describe('HardwareMappingManager', () => {
         const file = new File([], 'unreadable.json');
         Object.defineProperty(file, 'text', { value: () => Promise.reject(new Error('File unavailable')) });
         fireEvent.change(fileInput(), { target: { files: [file] } });
-        await vi.waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
         expect(hardwareControllerStore.value).toBe(before);
         expect(screen.getByText('button 85')).toBeInTheDocument();
     });
