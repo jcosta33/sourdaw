@@ -1,4 +1,4 @@
-import { clone as cloneDoc } from '@automerge/automerge';
+import { clone as cloneDoc, getHeads } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
@@ -42,6 +42,28 @@ function restoreUndoHistoryForRecoveredBranch(
     clearUndoHistoryAfterFailedTransition();
 }
 
+function readRootHeads(): string[] {
+    const root = automergeRepository.getDoc(DOC_PREFIX_ROOT);
+    return root ? getHeads(root).map(String) : [];
+}
+
+/**
+ * A failed switch rolls the root back from the incoming branch to the outgoing
+ * one, so the transport stops while the incoming document is still the root.
+ * A take committed by that stop lands on the incoming root, which the restore
+ * then replaces: it is not kept on either branch, and the user is told so.
+ */
+async function stopTransportBeforeSwitchRollback(): Promise<void> {
+    const headsBeforeStop = readRootHeads();
+    await stopPlayback();
+    if (!valuesEqual(headsBeforeStop, readRootHeads())) {
+        logger.warn(
+            '[switchBranch] The branch switch failed while a recording was running; ' +
+                'the take committed during the rollback is discarded with the incoming branch root.'
+        );
+    }
+}
+
 type BranchSwitchPlan = {
     state: BranchStoreState;
     branch: BranchRecord;
@@ -79,8 +101,10 @@ function planBranchSwitch(branchId: string): BranchSwitchPlan | null {
  * The transport stops first, and a recording in flight commits its take, while
  * the outgoing branch's document is still the root: a take left running would
  * record into the incoming branch, and the replace below clears undo mid-take.
- * A failed stop aborts the switch. Fork, merge and the failed-transition
- * rollback stay on one lineage and keep the runtime state.
+ * A failed stop aborts the switch. A failed switch stops the transport again
+ * before its rollback restores the outgoing root, because the rollback crosses
+ * lineages too. Fork, merge and their rollbacks stay on one lineage and keep
+ * the runtime state.
  *
  * Slot model: `DOC_PREFIX_ROOT` always mirrors the *active* branch's working
  * document (all edits, persistence and projection target it), while each branch
@@ -141,6 +165,7 @@ export async function switchBranch(branchId: string): Promise<void> {
             affectedDocIds: [DOC_PREFIX_ROOT, outgoingDocId],
             from: state.activeBranchId,
             previousState: state,
+            stopTransportBeforeRollback: stopTransportBeforeSwitchRollback,
             to: branchId,
             apply: () => {
                 const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });

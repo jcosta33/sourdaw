@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 
@@ -7,6 +8,7 @@ import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore } from '../../../stores/branchStore';
 import { mutateCrdtDoc } from '../../mutateCrdtDoc';
+import { runCrdtPersistenceOperation } from '../../runCrdtPersistenceOperation';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
 
@@ -95,8 +97,12 @@ describe('branch switch stops the transport', () => {
             activeBranchId: 'main',
         });
         mocks.stopAudioRecording.mockResolvedValue(undefined);
-        // The commit is the take landing on whichever document is root when it runs.
+        // The commit is the take landing on whichever document is root when it
+        // runs, and only a stop that finds the transport recording has one.
         mocks.commitTake.mockImplementation(() => {
+            if (!transportStore.value?.isRecording) {
+                return Promise.resolve();
+            }
             mutateCrdtDoc<TakeDocument>({
                 id: DOC_PREFIX_ROOT,
                 changeFn: (draft) => {
@@ -194,5 +200,120 @@ describe('branch switch stops the transport', () => {
 
         expect(replaceSpy).not.toHaveBeenCalled();
         expect(branchStore.value?.activeBranchId).toBe(activeBeforeSwitch);
+    });
+
+    function holdNextPersistence(): { reject: (reason: Error) => void } {
+        let rejectHeld: (reason: Error) => void = () => undefined;
+        vi.mocked(runCrdtPersistenceOperation).mockImplementationOnce(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectHeld = reject;
+                })
+        );
+        return { reject: (reason) => rejectHeld(reason) };
+    }
+
+    function incomingBackingDocId(branchId: string): string {
+        const incoming = branchStore.value?.branches.find((branch) => branch.branchId === branchId);
+        if (!incoming) {
+            throw new Error('Expected the incoming branch record');
+        }
+        return incoming.rootDocId;
+    }
+
+    it('stops a transport started while the switch persisted, then restores the outgoing branch', async () => {
+        await forkProjectBranch('feature');
+        const outgoingBranchId = branchStore.value?.activeBranchId;
+        const outgoingDocId = activeBranchBackingDocId();
+        const incomingDocId = incomingBackingDocId('main');
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const persistence = holdNextPersistence();
+
+        const switching = switchBranch('main');
+        const switchOutcome = expect(switching).rejects.toThrow('quota exceeded');
+        await vi.waitFor(() => expect(branchStore.value?.activeBranchId).toBe('main'));
+        // A Record press while the switch is persisting finds an idle transport
+        // and an incoming root, so nothing refuses it.
+        startRecordingSession();
+        persistence.reject(new Error('quota exceeded'));
+        await switchOutcome;
+
+        expect(branchStore.value?.activeBranchId).toBe(outgoingBranchId);
+        expect(transportStore.value).toMatchObject({ isPlaying: false, isRecording: false });
+        // One stop before the switch, one before its rollback.
+        expect(mocks.commitTake).toHaveBeenCalledTimes(2);
+        // The take committed onto the incoming root, which the restore replaced:
+        // it is on neither branch, and the user is told.
+        expect(readTake(DOC_PREFIX_ROOT)).toBeUndefined();
+        expect(readTake(outgoingDocId)).toBeUndefined();
+        expect(readTake(incomingDocId)).toBeUndefined();
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('take committed during the rollback is discarded'));
+    });
+
+    it('stops the transport before the outgoing snapshot is restored', async () => {
+        await forkProjectBranch('feature');
+        const persistence = holdNextPersistence();
+        const originalReplace = automergeRepository.replaceDoc.bind(automergeRepository);
+        const replaces: Array<{ id: string; transport: typeof transportStore.value }> = [];
+        vi.spyOn(automergeRepository, 'replaceDoc').mockImplementation((id, doc, tx) => {
+            replaces.push({ id, transport: transportStore.value });
+            originalReplace(id, doc, tx);
+        });
+
+        const switching = switchBranch('main');
+        const switchOutcome = expect(switching).rejects.toThrow('quota exceeded');
+        await vi.waitFor(() => expect(branchStore.value?.activeBranchId).toBe('main'));
+        startRecordingSession();
+        replaces.length = 0;
+        persistence.reject(new Error('quota exceeded'));
+        await switchOutcome;
+
+        const restores = replaces.filter(({ id }) => id === DOC_PREFIX_ROOT || id.startsWith('branch_'));
+        expect(restores.length).toBeGreaterThan(0);
+        for (const { transport } of restores) {
+            expect(transport).toMatchObject({ isPlaying: false, isRecording: false });
+        }
+    });
+
+    it('still restores the outgoing branch when the stop fails', async () => {
+        await forkProjectBranch('feature');
+        const outgoingBranchId = branchStore.value?.activeBranchId;
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const persistence = holdNextPersistence();
+
+        const switching = switchBranch('main');
+        const switchOutcome = expect(switching).rejects.toThrow('quota exceeded');
+        await vi.waitFor(() => expect(branchStore.value?.activeBranchId).toBe('main'));
+        startRecordingSession();
+        mocks.stopAudioRecording.mockRejectedValueOnce(new Error('recorder would not flush'));
+        persistence.reject(new Error('quota exceeded'));
+        await switchOutcome;
+
+        expect(branchStore.value?.activeBranchId).toBe(outgoingBranchId);
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('Failed to stop the transport before the branch rollback'),
+            expect.objectContaining({ message: 'recorder would not flush' })
+        );
+    });
+
+    it('keeps the transport running when a fork rolls back, because a fork stays on one lineage', async () => {
+        const persistence = holdNextPersistence();
+        const originalReplace = automergeRepository.replaceDoc.bind(automergeRepository);
+        let rootReplaced = false;
+        vi.spyOn(automergeRepository, 'replaceDoc').mockImplementation((id, doc, tx) => {
+            rootReplaced ||= id === DOC_PREFIX_ROOT;
+            originalReplace(id, doc, tx);
+        });
+
+        const forking = forkProjectBranch('feature');
+        const forkOutcome = expect(forking).rejects.toThrow('quota exceeded');
+        await vi.waitFor(() => expect(rootReplaced).toBe(true));
+        startRecordingSession();
+        persistence.reject(new Error('quota exceeded'));
+        await forkOutcome;
+
+        expect(branchStore.value?.activeBranchId).toBe('main');
+        expect(transportStore.value).toMatchObject({ isPlaying: true, isRecording: true });
+        expect(mocks.commitTake).not.toHaveBeenCalled();
     });
 });
