@@ -246,8 +246,11 @@ function getCreatedObject(
  * The key a refinement pairs a call with a pending command by: its type and full target tuple, or, for
  * a creation with no target tuple ("add a marker", "add an audio track"), its whole payload without the
  * ids the application minted for what it creates, so two such creations pair only when they ask for the
- * same thing. A command that creates nothing and targets nothing acts on the one object of the project
- * its type names (the tempo), so its type alone pairs it, whatever value it states.
+ * same thing. A command that creates nothing and targets nothing pairs by the arguments its registry
+ * mutation identity names (a marker's beat and name, a section's range and name), so a call naming
+ * another marker continues no pending one; only a type whose identity names no argument acts on the
+ * one object of the project its type names (the tempo), and its type alone pairs it, whatever value
+ * it states.
  */
 function getPairingKey(
     actionType: string,
@@ -255,17 +258,34 @@ function getPairingKey(
     context: ProjectContext
 ): string {
     const creates = getExecutableAppActionEffect(actionType)?.creates ?? [];
-    if (getTargets(actionType, argumentsRecord).length > 0 || creates.length === 0) {
+    if (getTargets(actionType, argumentsRecord).length > 0) {
         return getTargetKey(actionType, argumentsRecord);
+    }
+    const identity = getIdentityArguments(actionType);
+    if (creates.length === 0 && identity.length === 0) {
+        return getTargetKey(actionType, argumentsRecord);
+    }
+    if (creates.length === 0) {
+        const stated = identity.map(({ argument }) => [argument, argumentsRecord[argument] ?? null]);
+        return canonicalJson([actionType, 'identity', stated]);
     }
     const minted = new Set(getCreatedObject(actionType, argumentsRecord, context)?.idFields ?? []);
     const stated = Object.entries(argumentsRecord).filter(([field]) => !minted.has(field));
     return canonicalJson([actionType, 'payload', Object.fromEntries(stated)]);
 }
 
+/** Whether a command creates an object and names no target, so it pairs by its payload alone. */
+function isUntargetedCreation(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): boolean {
+    return (
+        (getExecutableAppActionEffect(actionType)?.creates ?? []).length > 0 &&
+        getTargets(actionType, argumentsRecord).length === 0
+    );
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
     createdObject: getCreatedObject,
+    untargetedCreation: isUntargetedCreation,
     identity: getIdentity,
     objectIds: getObjectIds,
     pairingKey: getPairingKey,

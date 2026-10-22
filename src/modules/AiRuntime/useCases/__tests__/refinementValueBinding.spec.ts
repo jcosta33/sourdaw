@@ -4,7 +4,14 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultVcaGroupState, trackStore, vcaGroupStore, type Clip, type Track } from '#/modules/Arrangement/stores';
+import {
+    defaultVcaGroupState,
+    markerStore,
+    trackStore,
+    vcaGroupStore,
+    type Clip,
+    type Track,
+} from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -1989,6 +1996,61 @@ describe('binding a terse refinement to the pending card it refines', () => {
             );
         });
 
+        it('a true toggle word binds true against a pending false toggle on the inherited route', () => {
+            const togglesAndLevelsOf = (result: ReturnType<typeof refine>) => {
+                if (result.status !== 'grounded') {
+                    return result.status;
+                }
+                return result.actions.map((action) => {
+                    const { trackId, muted, soloed, armed, deltaDb } = payloadOf(action);
+                    return { trackId, muted, soloed, armed, deltaDb };
+                });
+            };
+            const rows: Array<[string, string, (value: boolean) => ProviderCall]> = [
+                ['unmute Bass', 'mute Bass', bassMute],
+                ['unsolo Bass', 'solo Bass', bassSolo],
+                ['disarm Bass', 'arm Bass', bassArm],
+            ];
+            const context = projectContext(
+                BASE_TRACKS.map((track) =>
+                    track.id === 'track-bass' ? { ...track, muted: true, soloed: true, armed: true } : track
+                )
+            );
+            for (const [pendingText, restated, toggle] of rows) {
+                const card = {
+                    prompt: `turn Vocals down 3 dB and ${pendingText}`,
+                    calls: [toggle(false), vocalsBy(-3)],
+                };
+                const refinement = `make it 2 dB and ${restated}`;
+                expect({
+                    refinement,
+                    commands: togglesAndLevelsOf(refine(card, refinement, [toggle(true), vocalsBy(-2)], context)),
+                }).toEqual({
+                    refinement,
+                    commands: [
+                        expect.objectContaining({ trackId: 'track-bass', ...toggle(true).arguments }),
+                        expect.objectContaining({ trackId: 'track-vocals', deltaDb: -2 }),
+                    ],
+                });
+                expect({
+                    refinement,
+                    status: refine(card, refinement, [toggle(false), vocalsBy(-2)], context).status,
+                }).toEqual({
+                    refinement,
+                    status: 'rejected',
+                });
+            }
+        });
+
+        it('refuses a batch leaving out the pending command a refinement clause binds a value to', () => {
+            expect(refine(P1_CARD, 'make the vocals 1.5 dB', [snareBy(-2)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining(
+                    'leaves out the pending setTrackGain on Vocals change the refinement restates'
+                ),
+            });
+        });
+
         it('the pending action words alone, with articles, restate it', () => {
             for (const refinement of ['mute Bass', 'mute the Bass']) {
                 expect({ refinement, commands: commandsOf(refine(MUTE_CARD, refinement, [bassMute(true)])) }).toEqual({
@@ -2587,10 +2649,30 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
 
         it('a removal closes on the reference trailers the refinement reader reads, and on nothing else', () => {
-            const context = projectContext([...PAIRING_CONTEXT.tracks, projectTrack('track-snare', 'Snare')]);
+            const context = projectContext([
+                ...PAIRING_CONTEXT.tracks,
+                projectTrack('track-snare', 'Snare'),
+                projectTrack('track-guitar-left', 'Guitar Left'),
+            ]);
             const bassMute: StoredCommand = { type: 'muteTrack', payload: { trackId: 'track-bass', muted: true } };
             const snarePan: StoredCommand = { type: 'setTrackPan', payload: { trackId: 'track-snare', pan: 20 } };
+            const snareGain: StoredCommand = { type: 'setTrackGain', payload: { trackId: 'track-snare', gain: 0.5 } };
+            const guitarLeftPan: StoredCommand = {
+                type: 'setTrackPan',
+                payload: { trackId: 'track-guitar-left', pan: -20 },
+            };
             const rows: Array<[readonly StoredCommand[], readonly StoredCommand[], string, string]> = [
+                [[guitarLeftPan, snareGain], [snareGain], 'Drop Guitar Left pan entirely.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Drop Guitar Left pan altogether.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Drop Guitar Left pan completely.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Drop Guitar Left pan from the mix.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Drop Guitar Left pan for now.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Instead drop Guitar Left pan.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'We can drop Guitar Left pan.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Yes, drop Guitar Left pan.', 'valid'],
+                [[guitarLeftPan, snareGain], [snareGain], 'Yes drop Guitar Left pan.', 'valid'],
+                [[snareGain], [], 'Remove the snare gain thanks.', 'valid'],
+                [[snareGain], [], 'Remove the snare gain thank you.', 'valid'],
                 [[vocalGain(0.5)], [], 'remove the Vocal gain too', 'valid'],
                 [[vocalGain(0.5)], [], 'remove the Vocal gain please', 'valid'],
                 [[vocalGain(0.5)], [], 'remove the Vocal gain as well', 'valid'],
@@ -2880,6 +2962,139 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('more than once') });
         });
 
+        it('a pending command that targets and creates nothing pairs by the arguments its mutation identity names', () => {
+            const markerCall = (name: string, beat: number, extra: Record<string, unknown> = {}): ProviderCall => ({
+                name: Object.keys(extra).length === 0 ? 'removeMarker' : 'setMarkerColor',
+                arguments: { beat, name, ...extra },
+            });
+            const removeSection = (name: string, startBeat: number, endBeat: number): ProviderCall => ({
+                name: 'removeSection',
+                arguments: { startBeat, endBeat, name },
+            });
+            const tempo = (bpm: number): ProviderCall => ({ name: 'setTempo', arguments: { bpm } });
+            markerStore.set({
+                markers: [
+                    { id: 'marker-verse', name: 'Verse', beat: 0, color: 'amber' },
+                    { id: 'marker-chorus', name: 'Chorus', beat: 16, color: 'amber' },
+                ],
+                sections: [
+                    { id: 'section-intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#000000' },
+                    { id: 'section-outro', name: 'Outro', startBeat: 16, endBeat: 32, color: '#000000' },
+                ],
+            });
+            try {
+                const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
+                    [
+                        {
+                            prompt: 'remove marker named Verse at beat 0 and remove marker named Chorus at beat 16',
+                            calls: [markerCall('Verse', 0), markerCall('Chorus', 16)],
+                        },
+                        'remove marker named Chorus at beat 16',
+                        [markerCall('Chorus', 16)],
+                    ],
+                    [
+                        {
+                            prompt: 'set marker color for Verse at beat 0 to teal',
+                            calls: [markerCall('Verse', 0, { color: 'teal' })],
+                        },
+                        'set marker color for Chorus at beat 16 to teal',
+                        [markerCall('Chorus', 16, { color: 'teal' })],
+                    ],
+                    [
+                        {
+                            prompt: 'remove the section named Intro from beat 0 to beat 16',
+                            calls: [removeSection('Intro', 0, 16)],
+                        },
+                        'remove the section named Outro from beat 16 to beat 32',
+                        [removeSection('Outro', 16, 32)],
+                    ],
+                ];
+                for (const [card, refinement, calls] of rows) {
+                    expect({ refinement, result: refine(card, refinement, calls) }).toMatchObject({
+                        refinement,
+                        result: { status: 'rejected', rejectionReason: expect.stringContaining('omits a pending') },
+                    });
+                }
+                expect(
+                    commandsOf(
+                        refine({ prompt: 'set tempo to 120', calls: [tempo(120)] }, 'make it 124 bpm', [tempo(124)])
+                    )
+                ).toEqual([{ type: 'setTempo' }]);
+            } finally {
+                markerStore.set({ markers: [], sections: [] });
+            }
+        });
+
+        it('a figureless creation clause is answered by the creation its call continues, changed or not', () => {
+            const marker = (name: string, beat: number): ProviderCall => ({
+                name: 'addMarker',
+                arguments: { name, beat },
+            });
+            const audioTrack = (name: string): ProviderCall => ({
+                name: 'addTrack',
+                arguments: { name, kind: 'audio' },
+            });
+            const congasAndCut = {
+                prompt: 'add an audio track named Congas and turn Vocals down 3 dB',
+                calls: [audioTrack('Congas'), vocalsBy(-3)],
+            };
+            const verseAndCut = {
+                prompt: 'add a marker at beat 0 named Verse and turn Vocals down 3 dB',
+                calls: [marker('Verse', 0), vocalsBy(-3)],
+            };
+            const drumsAndCut = {
+                prompt: 'add an audio track named Drums and turn Vocals down 3 dB',
+                calls: [audioTrack('Drums'), vocalsBy(-3)],
+            };
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[], string]> = [
+                [
+                    congasAndCut,
+                    'add an audio track named Congas and turn Vocals down 2 dB',
+                    [audioTrack('Congas'), vocalsBy(-2)],
+                    'Congas',
+                ],
+                [
+                    verseAndCut,
+                    'add a marker at beat 8 named Verse and turn Vocals down 3 dB',
+                    [marker('Verse', 8), vocalsBy(-3)],
+                    'Verse',
+                ],
+                [
+                    verseAndCut,
+                    'add a marker at beat 0 named Intro and turn Vocals down 3 dB',
+                    [marker('Intro', 0), vocalsBy(-3)],
+                    'Intro',
+                ],
+                [
+                    drumsAndCut,
+                    'add an audio track named Percussion and turn Vocals down 3 dB',
+                    [audioTrack('Percussion'), vocalsBy(-3)],
+                    'Percussion',
+                ],
+            ];
+            for (const [card, refinement, calls, name] of rows) {
+                const result = refine(card, refinement, calls);
+                expect({
+                    refinement,
+                    created: result.status === 'grounded' ? payloadOf(result.actions[0]!).name : result,
+                    types: result.status === 'grounded' ? result.actions.map((action) => action.type) : null,
+                }).toEqual({ refinement, created: name, types: [calls[0]!.name, 'setTrackGain'] });
+            }
+            expect(
+                refine(congasAndCut, 'add an audio track named Bongos and turn Vocals down 3 dB', [
+                    audioTrack('Congas'),
+                    vocalsBy(-3),
+                ])
+            ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('No proposed change') });
+            expect(
+                refine(
+                    congasAndCut,
+                    'add an audio track named Congas, add an audio track named Bongos and turn Vocals down 3 dB',
+                    [audioTrack('Congas'), vocalsBy(-3)]
+                )
+            ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('No proposed change') });
+        });
+
         it('a batch continuing no pending command beside a figure comparative still reads every value clause', () => {
             const vocalsMute: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } };
             const muteCard = { prompt: 'mute Vocals', calls: [vocalsMute] };
@@ -2982,7 +3197,36 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(refine(MIX_CARD, unmuted, mixPlan(0.8, true), MIX_CONTEXT).status).not.toBe('grounded');
         });
 
-        it('ignores a clause that names nothing and states no figure, action, direction or negation', () => {
+        it('removes the Guitar Left pan through every opener and trailer a removal reads', () => {
+            const [leadVocal, , guitarRight, roomMic] = mixPlan(0.7, true);
+            const trackIdsOf = (result: ReturnType<typeof refine>) => {
+                if (result.status !== 'grounded') {
+                    return result;
+                }
+                return result.actions.map((action) => payloadOf(action).trackId);
+            };
+            for (const refinement of [
+                'Drop Guitar Left pan entirely.',
+                'Drop Guitar Left pan altogether.',
+                'Drop Guitar Left pan completely.',
+                'Drop Guitar Left pan from the mix.',
+                'Drop Guitar Left pan for now.',
+                'Drop Guitar Left pan thanks.',
+                'Instead drop Guitar Left pan.',
+                'We can drop Guitar Left pan.',
+                'Yes drop Guitar Left pan.',
+            ]) {
+                expect({
+                    refinement,
+                    tracks: trackIdsOf(refine(MIX_CARD, refinement, [leadVocal!, guitarRight!, roomMic!], MIX_CONTEXT)),
+                }).toEqual({
+                    refinement,
+                    tracks: ['track-lead-vocal', 'track-guitar-right', 'track-room-mic'],
+                });
+            }
+        });
+
+        it('consumes only the closed filler clauses beside a full restatement', () => {
             const rows = [
                 `Actually, ${RESTATED}`,
                 `Hmm, ${RESTATED}`,
@@ -3004,6 +3248,40 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     refinement,
                     status: refine(MIX_CARD, refinement, mixPlan(0.8, true), MIX_CONTEXT).status,
                 }).toEqual({ refinement, status: 'clarify' });
+            }
+        });
+
+        it('refuses a clause outside the filler list that names nothing and states no figure', () => {
+            const tempo = (bpm: number): ProviderCall => ({ name: 'setTempo', arguments: { bpm } });
+            const bassPan = (pan: number): ProviderCall => ({
+                name: 'setTrackPan',
+                arguments: { trackId: 'track-bass', pan },
+            });
+            const bassMute = (muted: boolean): ProviderCall => ({
+                name: 'muteTrack',
+                arguments: { trackId: 'track-bass', muted },
+            });
+            const tempoCard = { prompt: 'set tempo to 120', calls: [tempo(120)] };
+            const panCard = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
+            const muteCard = { prompt: 'mute Bass', calls: [bassMute(true)] };
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
+                [tempoCard, 'slower, 140 bpm', [tempo(140)]],
+                [tempoCard, 'faster, 100 bpm', [tempo(100)]],
+                [panCard, 'wider, pan it 20 left', [bassPan(-20)]],
+                [panCard, 'narrower, pan it 40 left', [bassPan(-40)]],
+                [P0_CARD, 'gentler, make it 5 dB', [vocalsBy(-5)]],
+                [P0_CARD, 'stronger, make it 1 dB', [vocalsBy(-1)]],
+                [P0_CARD, 'double it', [vocalsBy(-6)]],
+                [P0_CARD, 'undo that', [vocalsBy(-3)]],
+                [muteCard, 'unmuted', [bassMute(false)]],
+                [muteCard, 'audible', [bassMute(false)]],
+                [muteCard, 'toggle it', [bassMute(false)]],
+            ];
+            for (const [card, refinement, calls] of rows) {
+                expect({ refinement, status: refine(card, refinement, calls).status }).toEqual({
+                    refinement,
+                    status: 'rejected',
+                });
             }
         });
     });

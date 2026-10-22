@@ -79,8 +79,6 @@ type ClauseScopeInput = {
     removedCommandIndexes: ReadonlySet<number>;
     candidates: readonly ReferenceCandidate[];
     catalog: ReturnType<typeof getExecutableAppActionGroundingCatalog>;
-    /** Every word a clause states an action by: the registry's intent phrase words, value and removal verbs. */
-    actionWords: ReadonlySet<string>;
     /** Each pending command's own action words, as the source clause that grounded it states them. */
     ownActionWords: (index: number) => readonly string[] | null;
 };
@@ -110,14 +108,33 @@ type RemovalClauseInput = {
 const OPEN_VALUE_REASON = 'The refinement leaves part of the change it asks for open.';
 const NEGATED_CLAUSE_REASON = 'The refinement says what not to do without naming one pending change to remove.';
 const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
+/**
+ * The closed list of clauses a refinement states only as courtesy, hesitation or acknowledgement,
+ * which it consumes whole. Any other clause naming nothing and stating no figure is read for what it
+ * asks, never guessed to say nothing: "slower" or "double it" asks for a change the batch must answer.
+ */
 const FILLER_CLAUSES: ReadonlySet<string> = new Set([
     'please',
     'thanks',
     'thank you',
+    'thanks a lot',
+    'cheers',
     'ok',
     'okay',
     'instead',
     'go ahead',
+    'actually',
+    'hmm',
+    'well',
+    'sure',
+    'yes',
+    'yeah',
+    'hey',
+    'looks good',
+    'sounds good',
+    'great',
+    'perfect',
+    'nice',
 ]);
 const COMPARATIVE =
     /^(?:(?:make it|go|do it)\s+)?(?:(?:a\s+)?(?:bit|little|touch|tad|lot)\s+|slightly\s+|much\s+|even\s+)?(less|more)(?:\s+please)?$/u;
@@ -358,41 +375,13 @@ function readRefinementRemovals(input: {
     };
 }
 
-/** Every word a clause may state an action by, articles aside. */
-function readActionWordVocabulary(catalog: ClauseScopeInput['catalog']): ReadonlySet<string> {
-    const phrases = [
-        ...catalog.flatMap((entry) => entry.intentPhrases.concat(entry.levelIntentPhrases ?? [])),
-        ...refinementActionWords.valueVerbs,
-        ...refinementActionWords.movingVerbs,
-        ...refinementRequestReading.removalVerbs,
-    ];
-    return new Set(
-        phrases
-            .flatMap((phrase) => normalizePromptText(phrase).split(' '))
-            .filter((word) => word.length > 0 && !refinementRequestReading.articles.includes(word))
-    );
-}
-
-/**
- * Whether a clause naming no project object and no action intent says nothing a batch could answer:
- * it states no figure, direction, side or unit, no negation and no action word ("Actually", "Thanks a
- * lot", "Looks good").
- */
-function isInertClause(clause: RefinementClause, actionWords: ReadonlySet<string>): boolean {
-    const words = normalizePromptText(clause.masked);
-    return (
-        !refinementFigure.statesValue(clause) &&
-        !NEGATION_WORD.test(words) &&
-        !words.split(' ').some((word) => actionWords.has(word))
-    );
-}
-
 /**
  * What one clause the refinement does not remove can mean on the pending card. A clause naming any
  * object no pending command acts on is an addition, grounded from the refinement text alone, and never
- * binds a pending command; one naming nothing and stating nothing is inert and consumed; otherwise it
- * means the kept commands it names, narrowed to the action it states, or every kept command when it
- * names none.
+ * binds a pending command; otherwise it means the kept commands it names, narrowed to the action it
+ * states, or every kept command when it names none. Only the closed filler list is consumed: a clause
+ * naming nothing and stating no figure outside it ("slower", "double it") is an addition a batch must
+ * answer, never read as saying nothing.
  */
 function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): ClauseScope {
     const { commands, candidates } = input;
@@ -410,9 +399,6 @@ function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): Cla
         return { kind: 'addition' };
     }
     const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
-    if (references.length === 0 && intent === null && isInertClause(clause, input.actionWords)) {
-        return { kind: 'consumed' };
-    }
     const meant = commands.filter(
         (view) =>
             (intent === null || view.command.type === intent) &&
@@ -493,7 +479,6 @@ function createClauseScopeInput(input: {
         removedCommandIndexes: input.removedCommandIndexes,
         candidates,
         catalog,
-        actionWords: readActionWordVocabulary(catalog),
         ownActionWords: readOwnActionWordsOf(input.basis, input.context, commands, candidates, catalog),
     };
 }

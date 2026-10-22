@@ -48,6 +48,9 @@ const REMOVAL_OPENERS: readonly string[] = [
     'let s',
     'let us',
     'we should',
+    'we can',
+    'instead',
+    'yes',
     'i want you to',
     'i d like you to',
     'i want to',
@@ -63,9 +66,12 @@ const REMOVAL = new RegExp(
 const INNER_REMOVAL_SEPARATOR = /\s+(?=(?:except(?:\s+for)?|without)\s)/giu;
 const REFERENCE_ARTICLE_WORDS: readonly string[] = ['the', 'a', 'an', 'my', 'its', 'their'];
 const REFERENCE_ARTICLES = new RegExp(`^(?:(?:${REFERENCE_ARTICLE_WORDS.join('|')})\\s+)+`, 'u');
-/** The words a removal may close on after its object ("too", "please", "from the card"), in normalized words. */
+/**
+ * The words a removal may close on after its object, in normalized words: where it removes from ("from
+ * the card", "from the mix"), how wholly ("entirely", "for now") and courtesy ("too", "please", "thanks").
+ */
 const REFERENCE_TRAILERS =
-    /(?:^|\s+)(?:from\s+(?:the\s+|this\s+|that\s+)?(?:pending\s+)?(?:proposal|card|change|batch|list)|from\s+it|too|as\s+well|please)$/u;
+    /(?:^|\s+)(?:from\s+(?:the\s+|this\s+|that\s+)?(?:pending\s+)?(?:proposal|card|change|batch|list|mix)|from\s+it|too|as\s+well|please|entirely|altogether|completely|for\s+now|thanks|thank\s+you)$/u;
 const OPERATION_WORDS: Readonly<Record<string, readonly string[]>> = {
     pan: ['setTrackPan'],
     panning: ['setTrackPan'],
