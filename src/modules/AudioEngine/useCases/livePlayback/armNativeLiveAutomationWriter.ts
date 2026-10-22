@@ -38,15 +38,26 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { type Track } from '#/modules/Arrangement/stores';
+import {
+    deriveEffectiveAudibility,
+    deriveVcaMultiplier,
+    getVcaGroupsState,
+    trackStore,
+    vcaGroupStore,
+    type Track,
+} from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
-import { type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
+import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
 import { carryQueuedStamps } from './carryQueuedStamps';
+import { currentStripTracks } from './currentStripTracks';
 import {
     nativeLiveAutomationWriter,
     writeStartSeconds,
     type LiveAutomationWriterTarget,
+    type LiveAutomationWriterPass,
 } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
@@ -177,13 +188,89 @@ function reportExclusions(exclusions: readonly string[]): void {
     }
 }
 
+function readStripValues(stripTracks: readonly Track[]): LiveAutomationWriterPass['inputs']['strips'] {
+    const project = trackStore.value?.tracks ?? [];
+    const stripTrackIds = new Set(
+        stripTracks
+            .filter((track) => project.filter((row) => row.id === track.id).length === 1)
+            .map((track) => track.id)
+    );
+    const { soloGatedByTrackId } = deriveEffectiveAudibility({
+        tracks: project,
+        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        stripTrackIds,
+    });
+    const groups = getVcaGroupsState();
+    return new Map(
+        currentStripTracks(stripTracks).map((track) => [
+            track.id,
+            {
+                multiplier: deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups }),
+                gain: track.gain,
+                muted: track.muted,
+                soloGated: soloGatedByTrackId.get(track.id) ?? false,
+            },
+        ])
+    );
+}
+
+function unacceptedHolds(previous: LiveAutomationWriterPass | null): readonly AudioGraphParameterTarget[] {
+    if (!previous) {
+        return [];
+    }
+    const { inputs } = previous;
+    if (inputs.revision === inputs.acceptedRevision) {
+        return inputs.inheritedHolds;
+    }
+    const reference = inputs.readTargets(inputs.referenceSpan);
+    const loop = inputs.loopSpan ? inputs.readTargets(inputs.loopSpan) : [];
+    const fresh = [...reference, ...loop].filter((slot) => slot.writes.length > 0);
+    const old = [...inputs.reference, ...(previous.loopTargets ?? [])].filter((slot) => slot.writes.length > 0);
+    const changed = [...old, ...fresh]
+        .filter((slot) => {
+            const key = JSON.stringify(slot.target);
+            return (
+                JSON.stringify(old.filter((row) => JSON.stringify(row.target) === key).map((row) => row.writes)) !==
+                JSON.stringify(fresh.filter((row) => JSON.stringify(row.target) === key).map((row) => row.writes))
+            );
+        })
+        .map((slot) => slot.target);
+    return [
+        ...new Map([...inputs.inheritedHolds, ...changed].map((target) => [JSON.stringify(target), target])).values(),
+    ];
+}
+
+function observeInputs(pass: LiveAutomationWriterPass): void {
+    const epoch = nativeLiveAutomationWriter.epoch;
+    const backend = nativeLiveGraphSession.backend;
+    const changed = () => {
+        if (
+            nativeLiveAutomationWriter.pass === pass &&
+            nativeLiveAutomationWriter.epoch === epoch &&
+            nativeLiveGraphSession.backend === backend
+        ) {
+            pass.inputs.revision += 1;
+        }
+    };
+    pass.inputs.observers = [
+        automationStore.subscribe(changed),
+        trackStore.subscribe(changed),
+        vcaGroupStore.subscribe(changed),
+        workspaceStore.subscribe(changed),
+    ];
+}
+
 export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWriterInput): void {
+    const previousPass = nativeLiveAutomationWriter.pass;
+    for (const dispose of previousPass?.inputs.observers ?? []) {
+        dispose();
+    }
+    const inheritedHolds = unacceptedHolds(previousPass);
     const spans = passSpans(input);
     const entry = readSpan(input, spans.entry);
     const loop = spans.loop ? readSpan(input, spans.loop) : null;
     reportExclusions(entry.exclusions);
 
-    const previousPass = nativeLiveAutomationWriter.pass;
     if (previousPass !== null) {
         const seekFrame = input.seek ? secondsToFrames(input.positionSeconds, input.sampleRate) : null;
         carryQueuedStamps(previousPass.targets, entry.targets, seekFrame);
@@ -195,6 +282,26 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     // reading re-arm again for a device this pass already carries.
     nativeLiveAutomationWriter.pendingRearm = null;
     nativeLiveAutomationWriter.pass = {
+        inputs: {
+            revision:
+                inheritedHolds.length > 0 || previousPass?.inputs.revision !== previousPass?.inputs.acceptedRevision
+                    ? 1
+                    : 0,
+            acceptedRevision: 0,
+            referenceSpan: spans.entry,
+            loopSpan: spans.loop,
+            reference: entry.targets,
+            strips:
+                previousPass && previousPass.inputs.revision !== previousPass.inputs.acceptedRevision
+                    ? previousPass.inputs.strips
+                    : readStripValues(input.stripTracks),
+            readTargets: (span) =>
+                readSpan({ ...input, stripTracks: currentStripTracks(input.stripTracks) }, span).targets,
+            readStrips: () => readStripValues(input.stripTracks),
+            pending: null,
+            inheritedHolds,
+            observers: [],
+        },
         stripTracks: input.stripTracks,
         sampleRate: input.sampleRate,
         programmeEndSeconds: input.programmeEndSeconds,
@@ -211,6 +318,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         standingRefusalReported: false,
         saturatedGroups: new Set(),
     };
+    observeInputs(nativeLiveAutomationWriter.pass);
 
     void pumpNativeLiveAutomationWriter({
         positionSeconds: input.positionSeconds,

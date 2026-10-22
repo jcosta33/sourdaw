@@ -9,12 +9,12 @@ import { type LiveAutomationWriterTarget } from './nativeLiveAutomationWriterSta
 function targetKey(slot: LiveAutomationWriterTarget): string {
     const { target } = slot;
     if (target.kind === 'track-send-level') {
-        return `${target.kind}:${target.trackId}:${target.busId}`;
+        return JSON.stringify([target.kind, target.trackId, target.busId]);
     }
     if (target.kind === 'device-parameter') {
-        return `${target.kind}:${target.trackId}:${target.deviceId}:${target.parameterId}`;
+        return JSON.stringify([target.kind, target.trackId, target.deviceId, target.parameterId]);
     }
-    return `${target.kind}:${target.trackId}`;
+    return JSON.stringify([target.kind, target.trackId]);
 }
 
 /**
@@ -23,7 +23,8 @@ function targetKey(slot: LiveAutomationWriterTarget): string {
  * Only for a strip parameter. `QueueBudgets::apply_seek`
  * (`crates/sourdaw-native/src/commands/graph.rs`) walks `self.automation` and
  * leaves the device-parameter depths untouched, deliberately: a hosted stamp
- * has no cancellation law on the engine side, so a mirror that pruned one here
+ * is not canceled by a locate. Explicit parameter Hold releases only its own
+ * accepted tail, so a mirror that pruned a device stamp here
  * would free a slot the engine still charges and the next batch that believed
  * it would be refused whole.
  */

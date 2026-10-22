@@ -22,7 +22,7 @@
  * accepting backend is not measured at all.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     type AudioGraphApplyResult,
@@ -327,7 +327,12 @@ let engineBatches = 0;
  */
 let engineEchoBatchesApplied: number | null = null;
 
+afterEach(() => {
+    disarmNativeLiveAutomationWriter();
+});
+
 beforeEach(() => {
+    disarmNativeLiveAutomationWriter();
     mocks.apply.mockReset();
     mocks.apply.mockResolvedValue(APPLIED);
     mocks.readPosition.mockReset();
@@ -1029,6 +1034,37 @@ describe('the live automation writer', () => {
         expect(writesOf(0)).toEqual(pairs.flat().slice(0, AUTOMATION_QUEUE_CAPACITY - 1));
     });
 
+    it('charges a strip Hold one slot and a gate Step zero, fencing only the charged prefix', async () => {
+        const gate: AudioGraphStripParameterTarget = { kind: 'track-solo-gate', trackId: FADER.trackId };
+        mocks.curve = [
+            { target: FADER, writes: [{ shape: 'hold', time: 1 }, step(1.01, 0.6)] },
+            { target: gate, writes: [step(1, 0)] },
+        ];
+        arm(0);
+        await flush();
+        const fader = nativeLiveAutomationWriter.pass!.targets.find((slot) => slot.target.kind === 'track-fader')!;
+        const solo = nativeLiveAutomationWriter.pass!.targets.find((slot) => slot.target.kind === 'track-solo-gate')!;
+        const retained = Array.from({ length: AUTOMATION_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN - 1 }, () => ({
+            startFrame: SAMPLE_RATE / 2,
+            landFrame: SAMPLE_RATE / 2,
+            admittedBatch: 999,
+            seamAnchor: null,
+        }));
+        fader.queued = retained;
+        mocks.apply.mockResolvedValueOnce({ ...APPLIED, admittedBatch: 55 });
+        await pump(0.95, 0);
+        expect(mocks.apply.mock.calls.at(-1)?.[0].commands).toEqual([
+            { kind: 'write-parameter', target: FADER, write: { shape: 'hold', time: 1 } },
+            { kind: 'write-parameter', target: gate, write: step(1, 0) },
+        ]);
+        expect(fader.cursor).toBe(1);
+        expect(fader.queued).toHaveLength(AUTOMATION_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN);
+        retained.forEach((stamp, index) => expect(fader.queued[index]).toBe(stamp));
+        expect(fader.queued.at(-1)?.admittedBatch).toBe(55);
+        expect(solo.queued).toEqual([]);
+        expect(solo.cursor).toBe(1);
+    });
+
     it('reports an unchanged exclusion set once, however often the pass is re-armed', async () => {
         mocks.curve = [{ target: FADER, writes: [step(0, 0.9)] }];
         mocks.exclusions = [{ stripId: 'track-a', subjectId: 'lane-smoothed', reason: 'smoothed-write-unsupported' }];
@@ -1303,6 +1339,39 @@ describe('the live automation writer — hosted device parameters', () => {
 
     const DEVICE_A: AudioGraphParameterTarget = parameterOf('7');
     const DEVICE_B: AudioGraphParameterTarget = parameterOf('9');
+
+    it('charges device Hold zero slots, never releases B, and fences only newly charged replacements', async () => {
+        mocks.curve = [
+            { target: DEVICE_A, writes: [{ shape: 'hold', time: 1 }, step(1.01, 0.6)] },
+            { target: DEVICE_B, writes: [] },
+        ];
+        arm(0);
+        await flush();
+        const a = slotFor(DEVICE_A)!;
+        nativeLiveAutomationWriter.pass!.targets.push({
+            target: DEVICE_B,
+            writes: [],
+            cursor: 0,
+            queued: Array.from({ length: DEVICE_PARAM_QUEUE_CAPACITY }, () => heldStamp(96_000)),
+        });
+        const b = slotFor(DEVICE_B)!;
+        const original = [...b.queued];
+        await pump(0.95, 0);
+        expect(mocks.apply.mock.calls.at(-1)?.[0].commands).toEqual([
+            { kind: 'write-device-parameter', target: DEVICE_A, write: { shape: 'hold', time: 1 } },
+        ]);
+        expect(a.queued).toEqual([]);
+        expect(a.cursor).toBe(1);
+        original.forEach((stamp, index) => expect(b.queued[index]).toBe(stamp));
+        b.queued = b.queued.slice(0, 32);
+        a.queued = Array.from({ length: 31 }, () => heldStamp(96_000));
+        a.cursor = 0;
+        mocks.apply.mockResolvedValueOnce({ ...APPLIED, admittedBatch: 44 });
+        await pump(0.95, 0);
+        expect(a.queued).toHaveLength(1);
+        expect(a.queued[0]?.admittedBatch).toBe(44);
+        expect(b.queued.every((stamp) => stamp.admittedBatch === 999)).toBe(true);
+    });
 
     /** A stamp the mirror believes the engine holds and cannot yet have released. */
     function heldStamp(startFrame: number): LiveAutomationQueuedStamp {

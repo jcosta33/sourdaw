@@ -226,9 +226,9 @@ export type AudioGraphStripParameterTarget =
  * rather than sharing `write-parameter`, because it is not a strip position and
  * it does not accept the same writes: a backend that owns its per-device
  * smoothing lands the value at a block boundary, not at a sample offset, so
- * only {@link AudioGraphStepWrite} has a meaning here. Keeping the two apart at
- * the command level makes a ramp aimed at a device parameter fail to compile
- * rather than be accepted and quietly discarded.
+ * a value takes {@link AudioGraphStepWrite}. A no-value Hold cancels only that
+ * parameter's queued tail. Keeping the commands apart makes a ramp aimed at a
+ * device parameter fail to compile rather than be quietly discarded.
  */
 export type AudioGraphDeviceParameterTarget = Readonly<{
     kind: 'device-parameter';
@@ -515,12 +515,20 @@ export type AudioGraphWriteParameterCommand = Readonly<{
  *
  * Its own command, carrying its own narrower write type, so that the one
  * pairing a backend would have to silently discard — a ramp aimed at a
- * parameter that only steps — cannot be constructed at all.
+ * parameter whose values only step — cannot be constructed at all. Hold only
+ * cancels the pending tail; it never supplies a replacement value.
  */
 export type AudioGraphWriteDeviceParameterCommand = Readonly<{
     kind: 'write-device-parameter';
     target: AudioGraphDeviceParameterTarget;
-    write: AudioGraphStepWrite;
+    write: AudioGraphStepWrite | AudioGraphHoldWrite;
+}>;
+
+/** Update the live registry fold before replaying this strip's raw fader in the same batch. */
+export type AudioGraphSetStripVcaMultiplierCommand = Readonly<{
+    kind: 'set-strip-vca-multiplier';
+    trackId: AudioGraphStripId;
+    multiplier: number;
 }>;
 
 /**
@@ -847,6 +855,7 @@ export type AudioGraphCommand =
     | AudioGraphRemoveDeviceCommand
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
+    | AudioGraphSetStripVcaMultiplierCommand
     | AudioGraphSetDeviceParametersCommand
     | AudioGraphSetDeviceBypassCommand
     | AudioGraphSetDeviceModAssignmentsCommand

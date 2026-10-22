@@ -445,6 +445,8 @@ pub enum GraphCommandPayload {
     #[serde(rename_all = "camelCase")]
     RemoveDevice { track_id: String, device_id: String },
     #[serde(rename_all = "camelCase")]
+    SetStripVcaMultiplier { track_id: String, multiplier: f64 },
+    #[serde(rename_all = "camelCase")]
     WriteParameter {
         target: StripParameterTargetPayload,
         write: ParameterWritePayload,
@@ -452,7 +454,7 @@ pub enum GraphCommandPayload {
     #[serde(rename_all = "camelCase")]
     WriteDeviceParameter {
         target: DeviceParameterTargetPayload,
-        write: StepWritePayload,
+        write: DeviceParameterWritePayload,
     },
     /// Land every named value on a built-in body at the next audio callback,
     /// replacing the value the body currently holds and leaving whatever the
@@ -822,9 +824,11 @@ pub enum ParameterWritePayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "shape", rename_all = "kebab-case")]
-pub enum StepWritePayload {
+pub enum DeviceParameterWritePayload {
     #[serde(rename_all = "camelCase")]
     Step { value: f64, time: f64 },
+    #[serde(rename_all = "camelCase")]
+    Hold { time: f64 },
 }
 
 /// One scheduled note, as the producer writes it.
@@ -1782,11 +1786,11 @@ struct PendingStamp {
 }
 
 /// One device-parameter change the ledger believes a device's pending window
-/// still holds. Device queues have no cancellation laws to mirror — no
-/// replace, no locate ([`daw_engine::timeline::DeviceParamQueue`]) — so the
-/// only way a stamp leaves is the progress echo proving it popped.
+/// still holds. A parameter Hold cancels its own old tail; locate still leaves
+/// device queues alone. Other stamps leave only on proven progress.
 #[derive(Clone, Copy, Debug)]
 struct DeviceParamStamp {
+    param: DeviceParamTarget,
     at_frame: u64,
     admitted_batch: u64,
     /// As [`PendingStamp::landed_wraps`].
@@ -1902,7 +1906,18 @@ impl QueueBudgets {
         Ok(())
     }
 
-    fn charge_device_param(&mut self, effect_id: usize, at_frame: u64) -> Result<(), String> {
+    fn hold_device_param(&mut self, effect_id: usize, param: DeviceParamTarget, at_frame: u64) {
+        if let Some(queued) = self.device_params.get_mut(&effect_id) {
+            queued.retain(|stamp| stamp.param != param || stamp.at_frame < at_frame);
+        }
+    }
+
+    fn charge_device_param(
+        &mut self,
+        effect_id: usize,
+        param: DeviceParamTarget,
+        at_frame: u64,
+    ) -> Result<(), String> {
         let queued = self.device_params.entry(effect_id).or_default();
         if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
             return Err(format!(
@@ -1915,6 +1930,7 @@ impl QueueBudgets {
             ));
         }
         queued.push(DeviceParamStamp {
+            param,
             at_frame,
             admitted_batch: self.charging_batch,
             landed_wraps: None,
@@ -1924,8 +1940,8 @@ impl QueueBudgets {
 
     /// Mirror of the engine's locate law: a seek drops every queued write
     /// stamped at or past the target frame, so the ledger releases the same
-    /// slots. Device-param queues have no cancellation law to mirror, so
-    /// their depths deliberately stay.
+    /// slots. A device-param Hold is separate from locate, so those depths
+    /// deliberately stay until explicit Hold or proven playback progress.
     fn apply_seek(&mut self, frame: u64) {
         for queued in self.automation.values_mut() {
             queued.retain(|pending| pending.at_frame < frame);
@@ -3632,6 +3648,21 @@ fn map_command(
             map_parameter_write(target, write, registry, sample_rate, budgets, ops)
         }
 
+        GraphCommandPayload::SetStripVcaMultiplier { track_id, multiplier } => {
+            let value = finite(*multiplier, "set-strip-vca-multiplier multiplier")?;
+            if value < 0.0 || value > f32::MAX as f64 {
+                return Err("set-strip-vca-multiplier requires a nonnegative f32 multiplier".into());
+            }
+            let strip = registry
+                .strips
+                .get_mut(track_id)
+                .ok_or_else(|| format!("set-strip-vca-multiplier: unknown strip '{track_id}'"))?;
+            // The following raw fader replay maps through this working value.
+            // No callback operation is needed until that replay is admitted.
+            strip.vca_multiplier = value as f32;
+            Ok(())
+        }
+
         GraphCommandPayload::WriteDeviceParameter { target, write } => {
             let DeviceParameterTargetPayload::DeviceParameter {
                 track_id,
@@ -3664,19 +3695,33 @@ fn map_command(
                     })?,
                 ),
             };
-            let StepWritePayload::Step { value, time } = write;
-            let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
-            let value = finite(*value, "write-device-parameter value")?;
             let effect_id = device.native_effect_id;
-            budgets
-                .charge_device_param(effect_id, at_frame)
-                .map_err(|reason| format!("write-device-parameter: {reason}"))?;
-            ops.push(GraphCommand::AutomateDeviceParam {
-                effect_id,
-                param,
-                value,
-                at_frame,
-            });
+            match write {
+                DeviceParameterWritePayload::Hold { time } => {
+                    let at_frame =
+                        seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                    budgets.hold_device_param(effect_id, param, at_frame);
+                    ops.push(GraphCommand::HoldDeviceParam {
+                        effect_id,
+                        param,
+                        at_frame,
+                    });
+                }
+                DeviceParameterWritePayload::Step { value, time } => {
+                    let at_frame =
+                        seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                    let value = finite(*value, "write-device-parameter value")?;
+                    budgets
+                        .charge_device_param(effect_id, param, at_frame)
+                        .map_err(|reason| format!("write-device-parameter: {reason}"))?;
+                    ops.push(GraphCommand::AutomateDeviceParam {
+                        effect_id,
+                        param,
+                        value,
+                        at_frame,
+                    });
+                }
+            }
             Ok(())
         }
 
@@ -6912,6 +6957,13 @@ mod tests {
                 "write": { "shape": "step", "value": value, "time": time } })
     }
 
+    fn device_hold(track: &str, device: &str, parameter: &str, time: f64) -> Value {
+        json!({ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": track,
+                            "deviceId": device, "parameterId": parameter },
+                "write": { "shape": "hold", "time": time } })
+    }
+
     /// Push one mapped batch behind a fence, exactly as
     /// `EngineHandle::send_graph_batch` publishes the live ones — the fence
     /// is what the drain counts, so the ledger's batch numbers only line up
@@ -6942,6 +6994,375 @@ mod tests {
         send_mapped(renderer, mapped.ops);
         *registry = working;
         Ok(())
+    }
+
+    #[test]
+    fn device_hold_native_ledger_cancels_only_its_parameter_and_rolls_back_refusal() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 256);
+        let mut fill = vec![track_strip("t1"), knead_insert("t1", "d1")];
+        for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
+            fill.push(json!({ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                    "parameterId": if index % 2 == 0 { "shift_semitones" } else { "retune_speed_ms" } },
+                "write": { "shape": "step", "time": 1.0, "value": 0.25 } }));
+        }
+        admit_and_send(&mut registry, &mut renderer, Value::Array(fill), &samples).unwrap();
+        let hold = device_hold("t1", "d1", "shift_semitones", 1.0);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([hold.clone()]),
+            &samples,
+        )
+        .unwrap();
+        let effect = registry.devices["d1"].native_effect_id;
+        assert_eq!(registry.device_param_pending[&effect].len(), 32);
+        assert!(registry.device_param_pending[&effect]
+            .iter()
+            .all(|stamp| stamp.param == DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs)));
+        let step = device_step("t1", "d1", 0.6, 1.0);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([step.clone()]),
+            &samples,
+        )
+        .unwrap();
+        let mut overflow = vec![hold.clone()];
+        overflow.extend(std::iter::repeat(step.clone()).take(33));
+        let before = registry.batches_sent;
+        assert!(
+            admit_and_send(&mut registry, &mut renderer, Value::Array(overflow), &samples)
+                .unwrap_err()
+                .contains("device-param-queue-capacity")
+        );
+        assert_eq!(registry.batches_sent, before);
+        assert_eq!(registry.device_param_pending[&effect].len(), 33);
+        assert!(registry.device_param_pending[&effect]
+            .iter()
+            .any(|stamp| stamp.param == DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones)));
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([hold.clone()]),
+            &samples,
+        )
+        .unwrap();
+        let b_step = json!({ "kind": "write-device-parameter",
+            "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                        "parameterId": "retune_speed_ms" },
+            "write": { "shape": "step", "time": 2.0, "value": 0.25 } });
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            Value::Array(vec![b_step; 32]),
+            &samples,
+        )
+        .unwrap();
+        admit_and_send(&mut registry, &mut renderer, json!([hold]), &samples).unwrap();
+        assert_eq!(
+            registry.device_param_pending[&effect].len(),
+            64,
+            "A Hold cannot release B headroom"
+        );
+        assert!(
+            admit_and_send(&mut registry, &mut renderer, json!([step]), &samples)
+                .unwrap_err()
+                .contains("device-param-queue-capacity")
+        );
+        assert!(serde_json::from_value::<GraphBatchPayload>(json!({ "schemaVersion": 1,
+            "commands": [{ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                            "parameterId": "shift_semitones" },
+                "write": { "shape": "ramp-to", "value": 1, "startTime": 0, "landTime": 1 }
+            }]
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn live_vca_zero_then_half_replays_raw_gain_once_into_actual_pcm() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 128);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "VCA member",
+                  "state": { "gain": 3, "pan": 0, "muted": false,
+                             "soloGated": false, "vcaMultiplier": 0 },
+                  "devices": [], "honorMuted": true, "contributesAudio": true },
+                { "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.1,
+                    "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
+                } },
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0,
+                  "locate": false }
+            ]),
+            &samples,
+        )
+        .unwrap();
+        assert!(renderer.render(64).iter().all(|value| *value == 0.0));
+        let change = json!([
+            { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
+            { "kind": "write-parameter", "target": { "kind": "track-fader", "trackId": "t1" },
+              "write": { "shape": "hold", "time": 64.0 / 48_000.0 } },
+            { "kind": "write-parameter", "target": { "kind": "track-fader", "trackId": "t1" },
+              "write": { "shape": "step", "value": 3, "time": 64.0 / 48_000.0 } }
+        ]);
+        admit_and_send(&mut registry, &mut renderer, change, &samples).unwrap();
+        assert_eq!(registry.strips["t1"].vca_multiplier, 0.5);
+        assert!(renderer.render(64).iter().all(|value| (*value - 0.75).abs() < 1e-6));
+        let before = registry.batches_sent;
+        assert!(admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.25 },
+                { "kind": "write-parameter",
+                  "target": { "kind": "track-fader", "trackId": "missing" },
+                  "write": { "shape": "step", "value": 1, "time": 0 } }
+            ]),
+            &samples,
+        )
+        .is_err());
+        assert_eq!(registry.strips["t1"].vca_multiplier, 0.5);
+        assert_eq!(registry.batches_sent, before);
+    }
+
+    #[test]
+    fn live_vca_removed_fader_restores_raw_base_and_recovers_from_zero() {
+        for multiplier in [0.0, 1.0] {
+            let samples = sample_pool();
+            let mut registry = GraphRegistry::default();
+            let mut renderer = OfflineRenderer::new(48_000.0, 128);
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "create-track-strip", "trackId": "t1", "name": "Member",
+                      "state": { "gain": 1.5, "pan": 0, "muted": false,
+                                 "soloGated": false, "vcaMultiplier": multiplier },
+                      "devices": [], "honorMuted": true, "contributesAudio": true },
+                    { "kind": "schedule-clip", "playback": {
+                        "trackId": "t1", "source": { "sourceId": "source-a" },
+                        "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.1,
+                        "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
+                    } },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0, "value": 0.25 } },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0.01, "value": 0.8 } },
+                    { "kind": "set-transport", "playing": true, "positionSeconds": 0,
+                      "locate": false }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            let automated = (0.125 * multiplier) as f32;
+            assert!(renderer.render(64).iter().all(|value| (*value - automated).abs() < 1e-6));
+            let hold = json!({ "kind": "write-parameter",
+                "target": { "kind": "track-fader", "trackId": "t1" },
+                "write": { "shape": "hold", "time": 64.0 / 48_000.0 } });
+            let replay = json!({ "kind": "write-parameter",
+                "target": { "kind": "track-fader", "trackId": "t1" },
+                "write": { "shape": "step", "time": 64.0 / 48_000.0, "value": 1.5 } });
+            let before = registry.batches_sent;
+            assert!(admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    hold.clone(), replay.clone(),
+                    { "kind": "set-strip-vca-multiplier", "trackId": "missing", "multiplier": 0.5 }
+                ]),
+                &samples,
+            )
+            .is_err());
+            assert_eq!(registry.batches_sent, before);
+            assert!(renderer.render(64).iter().all(|value| (*value - automated).abs() < 1e-6));
+            admit_and_send(&mut registry, &mut renderer, json!([hold, replay]), &samples).unwrap();
+            let restored = (0.75 * multiplier) as f32;
+            assert!(renderer.render(64).iter().all(|value| (*value - restored).abs() < 1e-6));
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "hold", "time": 192.0 / 48_000.0 } },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 192.0 / 48_000.0, "value": 1.5 } }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            assert!(
+                renderer.render(512).iter().all(|value| (*value - 0.375).abs() < 1e-6),
+                "the removed lane's old .8 Step must not return at frame 480"
+            );
+        }
+    }
+
+    #[test]
+    fn device_hold_future_time_and_invalid_identity_preserve_the_whole_batch() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 128);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"), knead_insert("t1", "d1"),
+                device_step("t1", "d1", 1.0, 0.5),
+                device_step("t1", "d1", 2.0, 1.0),
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                              "parameterId": "retune_speed_ms" },
+                  "write": { "shape": "step", "time": 1, "value": 3 } }
+            ]),
+            &samples,
+        )
+        .unwrap();
+        let effect = registry.devices["d1"].native_effect_id;
+        let hold = device_hold("t1", "d1", "shift_semitones", 0.75);
+        for (track, device, parameter, time) in [
+            ("wrong", "d1", "shift_semitones", 0.75),
+            ("t1", "missing", "shift_semitones", 0.75),
+            ("t1", "d1", "unknown", 0.75),
+            ("t1", "d1", "shift_semitones", -1.0),
+            ("t1", "d1", "shift_semitones", 1e20),
+        ] {
+            let before = registry.batches_sent;
+            assert!(admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([hold.clone(), device_hold(track, device, parameter, time)]),
+                &samples,
+            )
+            .is_err());
+            assert_eq!(registry.device_param_pending[&effect].len(), 3);
+            assert_eq!(registry.batches_sent, before);
+        }
+        admit_and_send(&mut registry, &mut renderer, json!([hold]), &samples).unwrap();
+        let retained = &registry.device_param_pending[&effect];
+        assert_eq!(retained.len(), 2);
+        assert_eq!(
+            retained[0].param,
+            DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones)
+        );
+        assert_eq!(retained[0].at_frame, 24_000);
+        assert_eq!(
+            retained[1].param,
+            DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs)
+        );
+        assert_eq!(retained[1].at_frame, 48_000);
+        for multiplier in [-1.0, f64::MAX] {
+            assert!(admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([{ "kind": "set-strip-vca-multiplier", "trackId": "t1",
+                         "multiplier": multiplier }]),
+                &samples,
+            )
+            .is_err());
+            assert_eq!(registry.strips["t1"].vca_multiplier, 1.0);
+        }
+    }
+
+    #[test]
+    fn device_hold_resolves_hosted_aliases_to_the_same_u32_queue_identity() {
+        let mut registry = registry_holding_a_bound_hosted_plugin();
+        let mapped = map_bound_batch(
+            &batch(json!([
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "lead",
+                              "deviceId": "d-plugin", "parameterId": "042" },
+                  "write": { "shape": "step", "time": 0.5, "value": 0.1 } },
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "lead",
+                              "deviceId": "d-plugin", "parameterId": "42" },
+                  "write": { "shape": "step", "time": 1, "value": 0.2 } },
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "lead",
+                              "deviceId": "d-plugin", "parameterId": "43" },
+                  "write": { "shape": "step", "time": 1, "value": 0.3 } },
+                device_hold("lead", "d-plugin", "42", 0.75)
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .unwrap();
+        assert!(matches!(
+            mapped.ops.last(),
+            Some(GraphCommand::HoldDeviceParam {
+                effect_id: 1_007,
+                param: DeviceParamTarget::Hosted { id: 42 },
+                at_frame: 36_000
+            })
+        ));
+        let retained = &registry.device_param_pending[&1_007];
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].param, DeviceParamTarget::Hosted { id: 42 });
+        assert_eq!(retained[0].at_frame, 24_000);
+        assert_eq!(retained[1].param, DeviceParamTarget::Hosted { id: 43 });
+        for parameter in ["knead", "4294967296"] {
+            assert!(map_bound_batch(
+                &batch(json!([device_hold("lead", "d-plugin", parameter, 0.0)])),
+                &mut registry.clone(),
+                &sample_pool(),
+                48_000.0,
+                &attached("inst-1", 1_007),
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn live_vca_mute_and_solo_steps_preserve_the_prefader_send_distinction() {
+        for (gate, expected) in [("track-mute-gate", 0.25f32), ("track-solo-gate", 0.0)] {
+            let rendered = render_offline_batch(
+                &batch(json!([
+                    { "kind": "create-track-strip", "trackId": "t1", "name": "Source",
+                      "state": strip_state(0.0), "devices": [], "honorMuted": true,
+                      "contributesAudio": true },
+                    { "kind": "create-bus-strip", "busId": "cue", "name": "Cue",
+                      "state": strip_state(1.0), "devices": [], "honorMuted": true,
+                      "contributesAudio": false },
+                    { "kind": "add-send", "trackId": "t1", "busId": "cue",
+                      "tap": "pre-fader", "level": 0.5 },
+                    { "kind": "schedule-clip", "playback": {
+                        "trackId": "t1", "source": { "sourceId": "source-a" },
+                        "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.1,
+                        "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
+                    } },
+                    { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0, "value": 0 } },
+                    { "kind": "write-parameter", "target": { "kind": gate, "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0, "value": 0 } }
+                ])),
+                &sample_pool(),
+                &mut LevainBankStore::default(),
+                128,
+                48_000.0,
+            )
+            .unwrap();
+            assert!(
+                rendered.iter().all(|value| (*value - expected).abs() < 1e-6),
+                "{gate} actual cue PCM"
+            );
+        }
     }
 
     /// Debt 1+2's discriminating case: more sequential single-write batches
@@ -8917,7 +9338,7 @@ mod tests {
                         device_id: device_id.clone(),
                         parameter_id: param_name.to_string(),
                     },
-                    write: StepWritePayload::Step {
+                    write: DeviceParameterWritePayload::Step {
                         value: 1.0,
                         time: 0.0,
                     },
@@ -8945,7 +9366,7 @@ mod tests {
                     device_id: device_id.clone(),
                     parameter_id: "unknown_param".to_string(),
                 },
-                write: StepWritePayload::Step {
+                write: DeviceParameterWritePayload::Step {
                     value: 1.0,
                     time: 0.0,
                 },
@@ -9009,7 +9430,7 @@ mod tests {
                     device_id: device_id.clone(),
                     parameter_id: parameter_id.to_string(),
                 },
-                write: StepWritePayload::Step {
+                write: DeviceParameterWritePayload::Step {
                     value: 0.2,
                     time: 0.0,
                 },
@@ -9106,7 +9527,7 @@ mod tests {
                     device_id: device_id.clone(),
                     parameter_id: parameter_id.to_string(),
                 },
-                write: StepWritePayload::Step {
+                write: DeviceParameterWritePayload::Step {
                     value: 0.2,
                     time: 0.0,
                 },
