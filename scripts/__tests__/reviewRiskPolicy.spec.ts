@@ -30,6 +30,7 @@ import type { TrustedGithubWriteCommand } from '../trustedGithubWriteBootstrap.t
 const EARNED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
     'docs-only': ['correctness'],
     small: ['correctness', 'test-validity'],
+    'small-tooling': ['correctness', 'module-boundaries', 'test-validity'],
     'test-only': ['test-validity'],
     ordinary: ['correctness', 'code-craft', 'module-boundaries', 'test-validity'],
     'cross-domain': ['correctness', 'module-boundaries', 'test-validity'],
@@ -512,8 +513,8 @@ describe('planReviewRisk', () => {
     it('should not plan a .github/ Markdown template docs-only', () => {
         const result = reviewPlan([changed('.github/pull_request_template.md', 'docs', 4, 2)]);
 
-        expect(result.riskClasses).toEqual(['small']);
-        expect(reviewStanceFloor(result)).toBe(2);
+        expect(result.riskClasses).toEqual(['small-tooling']);
+        expect(reviewStanceFloor(result)).toBe(3);
     });
 
     it.each([
@@ -604,8 +605,54 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toEqual([`native-security:${path}`]);
     });
 
+    it.each([
+        [['5\t0\tsrc/modules/Tuner/x.ts'], 'small', 2],
+        [['5\t0\tscripts/foo.ts'], 'small-tooling', 3],
+        [['5\t0\tvite.config.ts'], 'small-tooling', 3],
+        [['5\t0\tsrc/x.ts', '5\t0\tscripts/y.ts'], 'small-tooling', 3],
+        [['5\t5\tpnpm-lock.yaml'], 'small', 2],
+    ] as const)('should plan %j %s with a floor of %i', (records, riskClass, floor) => {
+        const result = planNumstat(records);
+
+        expect(result.riskClasses).toEqual([riskClass]);
+        expect(reviewStanceFloor(result)).toBe(floor);
+        expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(false);
+    });
+
+    it.each([
+        'package.json',
+        'pnpm-workspace.yaml',
+        '.cargo/config',
+        'rust-toolchain',
+        'scripts/buildNativeAddon.ts',
+        'scripts/ensurePinnedRustToolchain.sh',
+        'scripts/ciApprovalAdmission.ts',
+        'scripts/prepareReviewEntry.ts',
+        'scripts/semanticReviewContext.ts',
+    ])('should plan the dependency, toolchain or review-tooling surface %s alone native-security', (path) => {
+        const result = planNumstat([`5\t5\t${path}`]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual([`native-security:${path}`]);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
+    it.each([
+        ['public/audio/worklets/sidechain-compressor-processor.js', 'realtime-audio:public/audio/worklets/'],
+        ['scripts/gen-daw-dsp-worklet.ts', 'realtime-audio:scripts/gen-daw-dsp-worklet.ts'],
+        ['scripts/gen-scoring-worklet.ts', 'realtime-audio:scripts/gen-scoring-worklet.ts'],
+        ['scripts/gen-proof-chamber-worklet.ts', 'realtime-audio:scripts/gen-proof-chamber-worklet.ts'],
+        ['scripts/workletPolyfills.ts', 'realtime-audio:scripts/workletPolyfills.ts'],
+    ])('should plan the worklet surface %s alone realtime-audio', (path, trigger) => {
+        const result = planNumstat([`5\t5\t${path}`]);
+
+        expect(result.riskClasses).toEqual(['realtime-audio']);
+        expect(result.triggers).toEqual([trigger]);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
     it('should not take a build/ icon for an entitlements file', () => {
-        expect(planNumstat(['-\t-\tbuild/icons/icon.png']).riskClasses).toEqual(['small']);
+        expect(planNumstat(['-\t-\tbuild/icons/icon.png']).riskClasses).toEqual(['small-tooling']);
     });
 
     it('should earn nothing light from a rename whose source was a .github/ template', () => {
@@ -613,8 +660,8 @@ describe('planReviewRisk', () => {
             renamed('docs/pull_request_template.md', '.github/pull_request_template.md', 1, 1, 'docs', 'docs'),
         ]);
 
-        expect(result.riskClasses).toEqual(['small']);
-        expect(reviewStanceFloor(result)).toBe(2);
+        expect(result.riskClasses).toEqual(['small-tooling']);
+        expect(reviewStanceFloor(result)).toBe(3);
     });
 
     it('should earn native-security from a rename whose source was a .github/ workflow named like a spec', () => {
@@ -638,7 +685,7 @@ describe('planReviewRisk', () => {
     it('should not call a rename out of handwritten code into docs docs-only', () => {
         const result = reviewPlan([renamed('docs/notes.md', 'scripts/notes.ts', 1, 1, 'docs', 'handwritten')]);
 
-        expect(result.riskClasses).toEqual(['small']);
+        expect(result.riskClasses).toEqual(['small-tooling']);
     });
 
     it('should call an empty path list small', () => {

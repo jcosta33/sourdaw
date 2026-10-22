@@ -32,6 +32,7 @@ describe('assertReviewDrawFloor', () => {
         [['docs-only'], 1],
         [['test-only'], 1],
         [['small'], 2],
+        [['small-tooling'], 3],
         [['ordinary'], 3],
         [['cross-domain'], 3],
     ] as const)('admits a %j plan at its floor of %i distinct stances', (riskClasses, floor) => {
@@ -42,6 +43,7 @@ describe('assertReviewDrawFloor', () => {
         [['docs-only'], 0, 1],
         [['test-only'], 0, 1],
         [['small'], 1, 2],
+        [['small-tooling'], 2, 3],
         [['ordinary'], 2, 3],
     ] as const)('refuses a %j plan with %i distinct stances below its floor of %i', (riskClasses, count, floor) => {
         expect(() => assertReviewDrawFloor(plan([...riskClasses]), draws(count))).toThrow(

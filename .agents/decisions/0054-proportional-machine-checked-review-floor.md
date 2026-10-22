@@ -56,8 +56,9 @@ into it after. It reads no `stances.json`, `discarded.json`, `reassessment.json`
 The floor follows the risk plan. A new `docs-only` class, for a change whose every path is
 Markdown outside `public/` and `.github/`, earns one stance; `.github/` paths never plan `test-only`
 or `docs-only`. Distinct stances across `draws` must reach one for `docs-only` and
-`test-only`, two for `small`, and otherwise three, or every stance the plan's classes earn when they
-earn fewer. A `realtime-audio`, `native-security`, or `undo` plan also needs one `strongest` draw. The
+`test-only`, two for `small` — product code whose handwritten paths are all under `src/` — and
+otherwise three, including a small change to tooling, configuration, build or server code
+(`small-tooling`), or every stance the plan's classes earn when they earn fewer. A `realtime-audio`, `native-security`, or `undo` plan also needs one `strongest` draw. The
 baseline probe stays a reviewer instruction the orchestrator checks in each report; it is no longer
 a publication token. A document whose `reviewerModel`, or any draw's model, matches an authoring
 model must still carry `modelExhaustion` and name that model in the body.

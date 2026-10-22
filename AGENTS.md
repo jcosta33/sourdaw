@@ -121,8 +121,8 @@ before posting: `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and
 addressing the finding can resolve it, so a wrongly posted finding blocks delivery without a repair
 to make.
 
-`review:prepare` records the change's risk classes — `docs-only`, `small`, `ordinary`, `test-only`,
-`cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
+`review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
+`ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
 derived from the same path classification as the size report beside it so the two cannot disagree.
 The classification encodes semantic risk beyond size: playback-timing, project-persistence, and
 every trusted GitHub-write closure path earn their specialist class however small the diff
@@ -137,8 +137,8 @@ event, body, comments, `reviewerModel`, and approval evidence it carries `draws`
 per discard, never posted. `review:publish` itself derives the head-bound record `deliver` reads
 from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publication is refused
 before any remote write unless its draws cover the plan's floor of distinct stances — one for
-`docs-only` and `test-only`, two for `small`, otherwise three, or every stance the plan's classes
-earn when they earn fewer — and unless a `realtime-audio`, `native-security`, or `undo` plan carries
+`docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
+every stance the plan's classes earn when they earn fewer — and unless a `realtime-audio`, `native-security`, or `undo` plan carries
 a `strongest` draw. The floor is the minimum the record can prove; whether the stances attack
 independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
 files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are

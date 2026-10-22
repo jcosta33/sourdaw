@@ -232,28 +232,32 @@ hand-edited plan can neither widen nor narrow its own review. The earned stances
 name risk surfaces to weigh; the dispatched stances are the orchestrator's
 task-derived judgement.
 
-| Class                                                   | Earns                                                     | Draw floor         |
-| ------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| `docs-only` (every path Markdown outside `public/`)     | correctness                                               | 1                  |
-| `test-only` (every path a test)                         | test-validity                                             | 1                  |
-| `small` (no specialist surface, within the line budget) | correctness, test-validity                                | 2                  |
-| `ordinary` (no specialist surface, over the budget)     | correctness, code-craft, module-boundaries, test-validity | 3                  |
-| `cross-domain`                                          | correctness, module-boundaries, test-validity             | 3                  |
-| `realtime-audio`                                        | correctness, realtime-audio, test-validity                | 3, one `strongest` |
-| `native-security`                                       | correctness, security-platform, test-validity             | 3, one `strongest` |
-| `undo`                                                  | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
+| Class                                                                                       | Earns                                                     | Draw floor         |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
+| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1                  |
+| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
+| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
+| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
+| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3, one `strongest` |
+| `native-security`                                                                           | correctness, security-platform, test-validity             | 3, one `strongest` |
+| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
 
 Every `.github/` path classifies as handwritten whatever its name, so it never
 plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
 lockfiles and rebuilt wasm artifacts — earn the `realtime-audio`,
 `native-security`, and `undo` classes of the tree they sit in, but never count
 toward the size budget. The Cargo workspace root `Cargo.lock` and `Cargo.toml`
-earn both `realtime-audio` and `native-security`, and the Rust toolchain and
-desktop packaging files (`rust-toolchain.toml`, `.cargo/config.toml`,
-`electron-builder.yml`, `build/entitlements*.plist`, the fuse, preload and
-Electron runtime scripts) earn `native-security`. A plan of several classes needs three distinct
-stances, or every stance its classes earn when they earn fewer, plus one
-`strongest` draw when any of them is a specialist class.
+earn both `realtime-audio` and `native-security`. The Rust toolchain files under
+either name, the JavaScript dependency manifests, the native addon build, the
+desktop packaging files and entitlements, the fuse, preload and Electron runtime
+scripts, and the review tooling that admits CI or feeds the bundle earn
+`native-security`; worklet sources under `public/audio/worklets/` and their
+generators earn `realtime-audio`. A generated-only change plans `small`. A plan
+of several classes needs three distinct stances, or every stance its classes
+earn when they earn fewer, plus one `strongest` draw when any of them is a
+specialist class.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching

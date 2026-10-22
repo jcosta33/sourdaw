@@ -144,6 +144,7 @@ export type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDige
 const RISK_CLASS_MEMBERSHIP: Record<ReviewRiskClass, true> = {
     'docs-only': true,
     small: true,
+    'small-tooling': true,
     ordinary: true,
     'test-only': true,
     'cross-domain': true,

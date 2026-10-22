@@ -19,6 +19,7 @@ export const REVIEW_SMALL_CHANGE_LINE_BUDGET = 200;
 const REVIEW_RISK_CLASSES = [
     'docs-only',
     'small',
+    'small-tooling',
     'ordinary',
     'test-only',
     'cross-domain',
@@ -58,6 +59,7 @@ export type ReviewRiskPlan = {
 const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
     'docs-only': ['correctness'],
     small: ['correctness', 'test-validity'],
+    'small-tooling': ['correctness', 'module-boundaries', 'test-validity'],
     'test-only': ['test-validity'],
     ordinary: ['correctness', 'code-craft', 'module-boundaries', 'test-validity'],
     'cross-domain': ['correctness', 'module-boundaries', 'test-validity'],
@@ -66,7 +68,19 @@ const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
     undo: ['correctness', 'project-integrity-undo', 'test-validity'],
 };
 
-const REALTIME_AUDIO_PREFIXES = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 'public/wasm/'] as const;
+const REALTIME_AUDIO_PREFIXES = [
+    'crates/daw-dsp/',
+    'src/modules/AudioEngine/',
+    'public/wasm/',
+    'public/audio/worklets/',
+] as const;
+/** The generators and polyfills that emit the audio-thread worklet sources. */
+const REALTIME_AUDIO_PATHS = [
+    'scripts/gen-daw-dsp-worklet.ts',
+    'scripts/gen-scoring-worklet.ts',
+    'scripts/gen-proof-chamber-worklet.ts',
+    'scripts/workletPolyfills.ts',
+] as const;
 /**
  * Playback-timing surfaces (#3377 AC-009 calibration): the playhead scheduler is not on the audio
  * thread, but a defect there moves the audible playhead, so it earns the realtime-audio class the
@@ -81,14 +95,28 @@ const NATIVE_SECURITY_PREFIXES = ['electron/', 'crates/', '.github/workflows/'] 
  */
 const CARGO_WORKSPACE_PATHS = ['Cargo.lock', 'Cargo.toml'] as const;
 /**
- * Native toolchain and desktop packaging surfaces outside `electron/` and `crates/`: the Rust
- * toolchain and build flags, the packaging config with its fuse and entitlement wiring, the bundled
- * sandboxed preload, and the pinned Electron runtime with its provenance check.
+ * Native toolchain, dependency and packaging surfaces outside `electron/` and `crates/`: the Rust
+ * toolchain and build flags, the JavaScript dependency manifests, the native addon build, the
+ * packaging config with its fuse and entitlement wiring, the bundled sandboxed preload, the pinned
+ * Electron runtime with its provenance check, and the review tooling that admits CI or feeds the
+ * review bundle. `.cargo/config` and `rust-toolchain` are the extensionless legacy names: Cargo
+ * still reads `.cargo/config` and prefers it when both forms exist, and rustup reads
+ * `rust-toolchain` and prefers it over `rust-toolchain.toml` in the same directory, so either name
+ * overrides the pinned toolchain.
  */
 const NATIVE_SECURITY_PATHS = [
     'src/utils/desktopBridge.ts',
     '.cargo/config.toml',
+    '.cargo/config',
     'rust-toolchain.toml',
+    'rust-toolchain',
+    'package.json',
+    'pnpm-workspace.yaml',
+    'scripts/buildNativeAddon.ts',
+    'scripts/ensurePinnedRustToolchain.sh',
+    'scripts/ciApprovalAdmission.ts',
+    'scripts/prepareReviewEntry.ts',
+    'scripts/semanticReviewContext.ts',
     'electron-builder.yml',
     'scripts/flipElectronFuses.ts',
     'scripts/buildElectronPreload.ts',
@@ -230,6 +258,7 @@ function realtimeAudioFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
         ...prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, sides),
         ...prefixTriggers('realtime-audio', REALTIME_TIMING_PREFIXES, sides),
+        ...exactTriggers('realtime-audio', REALTIME_AUDIO_PATHS, sides),
         ...exactTriggers('realtime-audio', CARGO_WORKSPACE_PATHS, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'realtime-audio', triggers }];
@@ -281,10 +310,22 @@ function crossDomainFindings(sides: readonly PathSide[]): RiskFinding[] {
     return [{ riskClass: 'cross-domain', triggers: ['cross-domain:multiple-surfaces'] }];
 }
 
+/**
+ * A small change keeps the light two-stance class only as product code: every handwritten side is
+ * under `src/`, or there is none (a generated-only change). Small tooling, configuration, build or
+ * server changes have no product surface to bound their reach, so they review like larger ones.
+ */
 function sizeFinding(paths: readonly ReviewChangedPath[]): RiskFinding {
     const lines = paths.reduce((total, entry) => total + entry.added + entry.deleted, 0);
     if (lines <= REVIEW_SMALL_CHANGE_LINE_BUDGET) {
-        return { riskClass: 'small', triggers: [`small:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
+        const handwritten = paths.flatMap((entry) => sidesOf(entry).filter((side) => side.group === 'handwritten'));
+        if (handwritten.every((side) => side.path.startsWith('src/'))) {
+            return { riskClass: 'small', triggers: [`small:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
+        }
+        return {
+            riskClass: 'small-tooling',
+            triggers: [`small-tooling:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}:outside-src`],
+        };
     }
     return { riskClass: 'ordinary', triggers: [`ordinary:handwritten-lines>${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
 }
