@@ -7,6 +7,8 @@
  * pin and a review reads that pin's diff.
  */
 
+import { posix } from 'node:path';
+
 import { workflowJobCheckName } from './approvalGatedWorkflowContract.ts';
 import { HEALTH_GATE_WORKFLOW_FILES } from './healthGateWorkflowContract.ts';
 
@@ -266,8 +268,14 @@ export function assertRequiredCheckNameExclusive(workflows: Readonly<Record<stri
 // inside this repository, pins what runs.
 const PINNED_ACTION_REF = /^[^\s@]+@[0-9a-f]{40}$/;
 
+// A local action must stay inside this repository once its path is normalised.
+function isRepositoryLocalRef(ref: string): boolean {
+    const normalised = posix.normalize(ref);
+    return ref.startsWith('./') && normalised !== '..' && !normalised.startsWith('../');
+}
+
 function isPinnedActionRef(ref: unknown): boolean {
-    return typeof ref === 'string' && (ref.startsWith('./') || PINNED_ACTION_REF.test(ref));
+    return typeof ref === 'string' && (isRepositoryLocalRef(ref) || PINNED_ACTION_REF.test(ref));
 }
 
 export function assertPinnedActions(workflows: Readonly<Record<string, unknown>>): void {
@@ -277,7 +285,7 @@ export function assertPinnedActions(workflows: Readonly<Record<string, unknown>>
             for (const ref of refs.filter((candidate) => candidate !== undefined)) {
                 if (!isPinnedActionRef(ref)) {
                     throw new Error(
-                        `${file} job ${jobId} must pin ${JSON.stringify(ref)} to a full commit SHA or a local ./ path`
+                        `${file} job ${jobId} must pin ${JSON.stringify(ref)} to a full commit SHA or a ./ path inside the repository`
                     );
                 }
             }

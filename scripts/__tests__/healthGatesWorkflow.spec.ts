@@ -4954,7 +4954,13 @@ export -f sudo timeout sleep apt-get
         const floatingAction = cloneWorkflows('floating action ref on lint');
         stepNamed(jobAt(floatingAction.validation, 'lint'), 'Set up pnpm').uses = 'some-org/action-setup@main';
         expect(surface(floatingAction)).toThrow(
-            'validation.yml job lint must pin "some-org/action-setup@main" to a full commit SHA or a local ./ path'
+            'validation.yml job lint must pin "some-org/action-setup@main" to a full commit SHA or a ./ path inside the repository'
+        );
+
+        const escapingLocalAction = cloneWorkflows('local action escaping the repository');
+        stepNamed(jobAt(escapingLocalAction.validation, 'lint'), 'Set up pnpm').uses = './../../evil';
+        expect(surface(escapingLocalAction)).toThrow(
+            'validation.yml job lint must pin "./../../evil" to a full commit SHA or a ./ path inside the repository'
         );
 
         const computedGate = cloneWorkflows('computed Gate name on push checks');
