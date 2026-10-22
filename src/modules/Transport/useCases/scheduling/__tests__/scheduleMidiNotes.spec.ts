@@ -1616,7 +1616,70 @@ describe('scheduleMidiNotes', () => {
                 }));
             }
 
+            /** The voice each update was addressed to, in the order the engine was asked. */
+            function appliedAddress() {
+                return vi.mocked(applyNoteExpression).mock.calls.map(([input]) => ({
+                    trackId: input.trackId,
+                    note: input.note,
+                    channel: input.channel,
+                }));
+            }
+
             const frameAt = (seconds: number) => Math.round(seconds * 48_000);
+
+            it('addresses every in-window update to the note pitch and channel', async () => {
+                fermenterStripWithControls();
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 67,
+                        channel: 3,
+                        startBeat: 0,
+                        duration: 3,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1, value: 90 },
+                            ],
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                // The note-on's own update and both curve changes, all posted by this one window.
+                const voice = { trackId: 'track-1', note: 67, channel: 3 };
+                expect(appliedAddress()).toEqual([voice, voice, voice]);
+                expect(appliedExpression().map(({ expression }) => expression.pressure)).toEqual([10, 40, 90]);
+            });
+
+            it('addresses a change posted in a later window to the note pitch and channel', async () => {
+                fermenterStripWithControls();
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 67,
+                        channel: 3,
+                        startBeat: 1,
+                        duration: 3,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: { pressure: [{ offsetBeats: 1, value: 80 }] },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 1.5, 0, new Set<string>(), [], defaultTransportState, 120);
+                expect(appliedExpression().map(({ expression }) => expression.pressure)).toEqual([10]);
+
+                await scheduleMidiNotes(1.5, 3, 1.5, new Set<string>(), [], defaultTransportState, 120);
+
+                // The second update is the change the first window parked, posted by the second.
+                const voice = { trackId: 'track-1', note: 67, channel: 3 };
+                expect(appliedExpression().map(({ expression }) => expression.pressure)).toEqual([10, 80]);
+                expect(appliedAddress()).toEqual([voice, voice]);
+            });
 
             it('applies each point at its own frame, across a tempo change inside the note', async () => {
                 const { noteOn, noteOff } = fermenterStripWithControls();
