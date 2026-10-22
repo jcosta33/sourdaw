@@ -1,0 +1,53 @@
+crates/sourdaw-native/src/addon/mod.rs
+  s_59e31a5c6f3e31::t_ddbab2ed34a24a 685-691,704-715
+crates/sourdaw-native/src/commands/timeline_sample_lifecycle.rs
+  s_59e31a5c6f3e31::t_ead15e6dcabe64 29-34,36-37,42-44,102-105,109-111,115-124,128-129,138-143,146-152,155-156,162-165,178-179,184-198,212-226,232-237,239-241,246-262,266-273,284-291,293-295,297-299,306-325,327-330,332-333,335-337,342-345,348-350,354-363,366-368,370-372,381-390,394-395,400-410,424-428,430-435,443-445,456-463,465-467,474-480,482-487,495-503,505-529,536-538,540-542,544-547,549-559,575-579,583-587,595-603,606-616,619-621,628-634,637-639,642-662,665-671,678-685
+crates/sourdaw-native/src/state.rs
+  s_59e31a5c6f3e31::t_41df9b1f1f79f7 458-470,472-476,478-480
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_59e31a5c6f3e31::t_3fa97feef78611 24-25,350,376,385,409,430,436,438,473,502,538-541,544-547
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_59e31a5c6f3e31::t_c401a129cabeb1 24,32-33,71,78,265-267,270,278-305,311-325
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeTimelineMaterialLeases.spec.ts
+  s_59e31a5c6f3e31::t_1a814517f29e95 4,8-9,104-123
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport.ts
+  s_59e31a5c6f3e31::t_a2db44a4dbeb52 1
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_59e31a5c6f3e31::t_e7eaa29327789e 72,237
+src/modules/AudioEngine/repositories/nativeGraph/nativeTimelineMaterialLeases.ts
+  s_59e31a5c6f3e31::t_f301805d453f1e 28,99,158-267,274,278,282,297,316,321,323,326-327,349,371
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_59e31a5c6f3e31::t_903ca3dc56366b 82-90
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_59e31a5c6f3e31::t_28d511e9fd8a07 30
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_5eed0ad9d97c02 32,35
+src/modules/AudioEngine/useCases/livePlayback/primeNativeTimelineSamples.ts
+  s_59e31a5c6f3e31::t_e9197f9cc0ffaf 28
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_59e31a5c6f3e31::t_e7eb4d4510ff87 106
+src/modules/AudioEngine/useCases/offlineRender/__tests__/captureOfflineAudioBuffers.spec.ts
+  s_59e31a5c6f3e31::t_6d92ad3c0686d0 5,7
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineAudioBuffers.ts
+  s_59e31a5c6f3e31::t_778570002a9fcf 5-6
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_59e31a5c6f3e31::t_572fdcd5f73df0 69-70,164,234,238-264
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_59e31a5c6f3e31::t_bee473555419e5 6-7,23,35,50-52,64-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "519a4113a63cc637dcb3a36d62a387772fde746e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
