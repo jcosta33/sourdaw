@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_59e31a5c6f3e31::t_3d46bb135a2ff6 3-4,51-52,77-78,123-144,150-203,692,700,706-731,733-734,737,764-788,873-883,885-911,928-933,952,967-981,1025,1028-1031,1049-1051,1053-1134
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_59e31a5c6f3e31::t_fe046c09693fd3 9,131-133,178-180,223-225
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineAudioClipPlaybacksLoopOrigin.spec.ts
+  s_59e31a5c6f3e31::t_774225e8a49d15 100-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f69d98f2d0b669bddf13c30d6ad058f131def195",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
