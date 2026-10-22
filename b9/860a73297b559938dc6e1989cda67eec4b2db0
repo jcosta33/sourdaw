@@ -1,0 +1,105 @@
+crates/sourdaw-native/src/addon/mod.rs
+  s_59e31a5c6f3e31::t_829a8014bb6d47 683-705
+crates/sourdaw-native/src/commands/graph.rs
+  s_59e31a5c6f3e31::t_0faffe4ead7fd0 382-383,884-885,1316,1323-1324,1345,1353,1508,1528,1558,3091-3098,3107-3109,3119,3186,3988,4202,4223-4227,4439-4441,4457-4458,4571-4581,4719,4805-4811,4983,4997,5124,8685,8690,8695-8697,8705-8706,8725-8727,8737-8740,8965,8994,9059,9157,15971-16102
+crates/sourdaw-native/src/commands/mod.rs
+  s_59e31a5c6f3e31::t_f9d7fdaaadb6f4 21
+crates/sourdaw-native/src/commands/timeline_sample_lifecycle.rs
+  s_59e31a5c6f3e31::t_e10bb3b8afdd3d 1-407
+crates/sourdaw-native/src/state.rs
+  s_59e31a5c6f3e31::t_28efd1a6cc3070 391,401,414,418,422,441,447-471,477,489,500,508,514-516
+electron/__tests__/commands.spec.ts
+  s_59e31a5c6f3e31::t_1b48c9e95d7b5e 401-402
+electron/commands.ts
+  s_59e31a5c6f3e31::t_15b2855fc789fa 111-112
+src/modules/AudioEngine/__tests__/withNativeTimelineMaterialTransport.ts
+  s_59e31a5c6f3e31::t_57bd71134e4cc8 1-190
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_59e31a5c6f3e31::t_3fe9da5551c9ce 884-885
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_59e31a5c6f3e31::t_cebbefa8b7f2bd 17,48,57,74
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_59e31a5c6f3e31::t_ec33ba4c0c97d5 17-18,74,115,119,188,197-202,231,240-242,257,274,600,602-603
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeGraphTransport.spec.ts
+  s_59e31a5c6f3e31::t_fe580c7b88327d 200-223
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeTimelineMaterialLeases.spec.ts
+  s_59e31a5c6f3e31::t_bfe3c96a038bd8 1-283
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_59e31a5c6f3e31::t_c65c5386180fba 782-789
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_59e31a5c6f3e31::t_ec454ffd3fea40 41-43,55,70,218,240,242,246-293,305
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_59e31a5c6f3e31::t_33c721d81082c6 27-28,77,196,206,230-234,236-248,250-264,266-348,350-353,355-356,372-380,389
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_59e31a5c6f3e31::t_09ea066dcba694 20-21,52-71,100,106,116,132-134,180-185
+src/modules/AudioEngine/repositories/nativeGraph/nativeTimelineMaterialLeases.ts
+  s_59e31a5c6f3e31::t_a15bb50bbeb12e 1-379
+src/modules/AudioEngine/repositories/nativeGraph/nativeTimelineSamplePool.ts
+  s_59e31a5c6f3e31::t_0f3c4b2695d518 4-8,13,20,24-29,31-44
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommandBatch.ts
+  s_59e31a5c6f3e31::t_31e97ea86288fc 14-17,20-24,27-37
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_59e31a5c6f3e31::t_2ddd5ee4231085 844-863
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_59e31a5c6f3e31::t_1f6ae653185ed3 2073-2081
+src/modules/AudioEngine/useCases/__tests__/clearRuntimeCachedAudioBuffers.integration.spec.ts
+  s_59e31a5c6f3e31::t_0e44b3afb65bc8 52,69,82
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_59e31a5c6f3e31::t_4354325268528e 31,139-145,812,827,926,938,1036,1048,1087,1099
+src/modules/AudioEngine/useCases/clearRuntimeCachedAudioBuffers.ts
+  s_59e31a5c6f3e31::t_91f7f337a89c6b 3-4,7-8,11-22
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_c518e799a7a810 34-35,388,403,638,672-673
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeTimelineMaterialOwner.spec.ts
+  s_59e31a5c6f3e31::t_b1e57c26d2cae9 1-19
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_59e31a5c6f3e31::t_91044da96d8d09 107,144,148,214-222,273-282,711-713,718,722,750,752-755,760
+src/modules/AudioEngine/useCases/livePlayback/__tests__/syncNativeTimelineSamples.spec.ts
+  s_59e31a5c6f3e31::t_872dff6b8891db 176-185
+src/modules/AudioEngine/useCases/livePlayback/nativeTimelineMaterialOwner.ts
+  s_59e31a5c6f3e31::t_b2bd66a19f642b 1-6
+src/modules/AudioEngine/useCases/livePlayback/primeNativeTimelineSamples.ts
+  s_59e31a5c6f3e31::t_735367ae12bac0 12-13,28,81,92
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_59e31a5c6f3e31::t_54ea525c9ab47b 105,524,1065-1068,1071,1085,1136
+src/modules/AudioEngine/useCases/livePlayback/syncNativeTimelineSamples.ts
+  s_59e31a5c6f3e31::t_aaf494f89317a3 41,50-52,84,91-94
+src/modules/AudioEngine/useCases/offlineRender/__tests__/captureOfflineAudioBuffers.spec.ts
+  s_59e31a5c6f3e31::t_6b68cec223796a 1-131
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_59e31a5c6f3e31::t_3b83e78a070989 180,2550-2558,2622-2631,2672
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_59e31a5c6f3e31::t_50369999282247 100,179,198-206,266-275,753,755,891-896
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineAudioBuffers.ts
+  s_59e31a5c6f3e31::t_383b3516f01600 4,33
+src/modules/Project/useCases/projectPersistence/__tests__/nativeTimelineMaterialRetirement.integration.spec.ts
+  s_59e31a5c6f3e31::t_c794f841732c10 1-69
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_59e31a5c6f3e31::t_61e291587ce3fe 584-607
+src/modules/Project/useCases/projectPersistence/__tests__/projectSessionQuiescer.spec.ts
+  s_59e31a5c6f3e31::t_5298ed72f67a1d 7,17,50
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_59e31a5c6f3e31::t_d33b18e736bdf8 364-369
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_59e31a5c6f3e31::t_f958244f9819a3 204-210
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_59e31a5c6f3e31::t_4543395fada089 1-5,99-102
+src/utils/sourdawCommandArguments.ts
+  s_59e31a5c6f3e31::t_62b897fcc8aaf4 86-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b9860a73297b559938dc6e1989cda67eec4b2db0",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
