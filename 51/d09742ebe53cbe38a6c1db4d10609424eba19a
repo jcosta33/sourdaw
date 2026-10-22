@@ -1,0 +1,25 @@
+AGENTS.md
+  s_d1c4d73ddcb30e::t_e7c7bf9d0594be 494-496
+docs/affected-e2e.md
+  s_d1c4d73ddcb30e::t_06d6d453aca9b5 30-35
+scripts/__tests__/prValidationScope.spec.ts
+  s_d1c4d73ddcb30e::t_123d08a56cd826 23-30,524-530,644-647,649-654,920-923,940-948,950,974-975,1050-1053,1161,1166,1170,1177-1179,1183-1188,1195,1343,1774-1831
+scripts/prValidationScope.ts
+  s_d1c4d73ddcb30e::t_a6b7d5756c89a2 160-174,387-393,416,429-436,454,492,502
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51d09742ebe53cbe38a6c1db4d10609424eba19a",
+  "prompts": {},
+  "sessions": {
+    "s_d1c4d73ddcb30e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7be8ac89-29b4-4f74-a6af-cf644a6dc60d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
