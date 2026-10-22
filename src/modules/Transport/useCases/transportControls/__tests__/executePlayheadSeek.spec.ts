@@ -3,9 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { transportStore } from '../../../stores/transportStore';
 import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { executePlayheadSeek } from '../executePlayheadSeek';
+import { recordingLifecycle } from '../recordingLifecycle';
 import { startPlayback } from '../startPlayback';
 import { stopPlayback } from '../stopPlayback';
 import { toggleRecording } from '../toggleRecording';
@@ -72,7 +76,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         setTransportInfo: mockSetTransportInfo,
     },
+    cacheAudioBuffer: vi.fn(() => 'recorded-audio-buffer'),
+    scheduleClick: vi.fn(),
     stopAllScheduled: mockStopAllScheduled,
+    stopAudioRecording: vi.fn(() => Promise.resolve()),
     resumeEngine: vi.fn(() => Promise.resolve()),
     startAudioRecording: vi.fn(() => Promise.resolve(true)),
     getCompensationDelay: vi.fn(() => 0),
@@ -83,11 +90,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mockResetMidiState }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
-
-import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
-import { playheadPositionRef } from '../../../stores/playheadPositionRef';
-import { executePlayheadSeek } from '../executePlayheadSeek';
-import { recordingLifecycle } from '../recordingLifecycle';
 
 describe('executePlayheadSeek', () => {
     beforeEach(() => {
