@@ -1,0 +1,29 @@
+src/modules/ControlSurface/presentations/views/HardwareMappingManager.tsx
+  s_59e31a5c6f3e31::t_879d45dc7c3607 71-75,84-88,103-105,115-121,125-127,129-132,139-141,146-152,166-175
+src/modules/ControlSurface/presentations/views/__tests__/HardwareMappingManager.spec.tsx
+  s_59e31a5c6f3e31::t_958dcc38e6f623 17-23,53-59,109-120,146-148,157-160,168-170,177-180,189-194,202-205,209-212
+src/modules/ControlSurface/useCases/hardware/__tests__/downloadHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_ecb43319a18d36 24-40,42-48,83-85
+src/modules/ControlSurface/useCases/hardware/__tests__/importHardwareMappingsFile.spec.ts
+  s_59e31a5c6f3e31::t_3a20c7d94830c0 87-89
+src/modules/ControlSurface/useCases/hardware/importHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_bcd1b0b4fe329b 29-30
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_59e31a5c6f3e31::t_06033c3d5e4d50 63-69,90-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d063af313a1c4a883f5b43e79522264b066c391c",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
