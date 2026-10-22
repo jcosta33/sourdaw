@@ -28,6 +28,7 @@ import {
 } from '../../models/MidiControllerState';
 
 import { channelControllerState } from './channelControllerState';
+import { heldPedalState } from './heldPedalState';
 
 type IngestChannelControlChangeInput = {
     /** Zero-based MIDI channel the message arrived on. */
@@ -75,6 +76,16 @@ function resolveChannelState(channel: number): MidiChannelControllerState {
     }
     const created = createMidiChannelControllerState();
     channelControllerState.set(channel, created);
+    return created;
+}
+
+function resolveHeldPedals(channel: number): Map<number, number> {
+    const existing = heldPedalState.get(channel);
+    if (existing) {
+        return existing;
+    }
+    const created = new Map<number, number>();
+    heldPedalState.set(channel, created);
     return created;
 }
 
@@ -269,11 +280,11 @@ export function ingestChannelControlChange({
     }
 
     if (isHeldPedalCc(cc)) {
-        state.heldPedals.set(cc, byte);
+        resolveHeldPedals(channel).set(cc, byte);
     } else if (cc === CC_RESET_ALL_CONTROLLERS) {
         // The message that lifts every pedal; remembering one past it would
         // press it back onto the next take.
-        state.heldPedals.clear();
+        heldPedalState.get(channel)?.clear();
     }
 
     return sevenBitResult(cc, byte);

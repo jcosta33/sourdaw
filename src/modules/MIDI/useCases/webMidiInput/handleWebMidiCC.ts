@@ -4,7 +4,6 @@ import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases
 import {
     CC_ALL_NOTES_OFF,
     CC_ALL_SOUND_OFF,
-    isControllerCc,
     isDataEntryCc,
     MPE_FIRST_MEMBER_CHANNEL,
 } from '../../models/MidiControllerState';
@@ -16,21 +15,16 @@ import { memberExpressionState, setMemberExpression } from '../../repositories/w
 import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
+import { isCapturedByMidiLearn } from './isCapturedByMidiLearn';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordChannelEvent } from './recordChannelEvent';
+import { admitsRecordedControlChange } from './recordedControlChangeAdmission';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { routePedalToBodies } from './routePedalToBodies';
-
-type MidiLearnState = ReturnType<(typeof midiMessageHandlerDependencies)['getMidiLearnState']>;
-
-/** Whether a learned mapping owns the controller, matching what `applyMidiMappings` dispatches to. */
-function hasMapping(learnState: MidiLearnState, channel: number, cc: number): boolean {
-    return learnState?.mappings.some((mapping) => mapping.channel === channel && mapping.cc === cc) === true;
-}
 
 const CC_CHANNEL_VOLUME = 7;
 const CC_PAN = 10;
@@ -45,7 +39,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             timeStamp?: number | CapturedInputEventTime
         ): void {
             const learnState = deps.getMidiLearnState();
-            if (learnState?.isLearning && learnState.learningTarget) {
+            if (isCapturedByMidiLearn(learnState)) {
                 deps.completeMidiLearn(channel, cc);
                 return;
             }
@@ -100,11 +94,18 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
 
             // The raw controller and byte, before anything below consumes them:
             // a replayed RPN/NRPN sequence or pedal needs the wire messages, not
-            // the decoded meaning. A controller a mapping owns is parameter
-            // automation, and the MPE slide is already per-note expression.
-            const isMapped = !controlChange.consumed && hasMapping(learnState, channel, controlChange.cc);
-            const isMpeSlide = mpeEnabled && cc === MPE_SLIDE_CC && channel >= MPE_FIRST_MEMBER_CHANNEL;
-            if (isControllerCc(cc) && !isMapped && !isMpeSlide) {
+            // the decoded meaning. What the take admits is decided by the one
+            // rule the take's starting pedal state is read by as well.
+            if (
+                admitsRecordedControlChange({
+                    learnState,
+                    mpeEnabled,
+                    channel,
+                    cc,
+                    resolvedCc: controlChange.cc,
+                    consumed: controlChange.consumed,
+                })
+            ) {
                 recordChannelEvent(deps, {
                     trackId: getTargetTrackId(),
                     channel,

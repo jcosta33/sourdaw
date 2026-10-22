@@ -113,18 +113,11 @@ export type MidiChannelControllerState = {
      * default applies.
      */
     bendRangeSemitones: number | undefined;
-    /**
-     * Last 7-bit position of each held pedal (`HELD_PEDAL_CONTROLLERS`) this
-     * channel sent, as the wire carried it. Absent until the pedal first moves,
-     * and emptied by Reset All Controllers, which lifts them all.
-     */
-    heldPedals: Map<number, number>;
 };
 
 export function createMidiChannelControllerState(): MidiChannelControllerState {
     return {
         highResolution: new Map(),
-        heldPedals: new Map(),
         selectedParameterKind: null,
         selectedParameterMsb: 0,
         selectedParameterLsb: 0,
@@ -157,7 +150,7 @@ export function isParameterSelectCc(cc: number): boolean {
     return cc === CC_NRPN_LSB || cc === CC_NRPN_MSB || cc === CC_RPN_LSB || cc === CC_RPN_MSB;
 }
 
-/** True for a pedal whose held position `MidiChannelControllerState.heldPedals` keeps. */
+/** True for a pedal whose held position the live input's pedal state keeps. */
 export function isHeldPedalCc(cc: number): boolean {
     return HELD_PEDAL_CONTROLLERS.includes(cc);
 }

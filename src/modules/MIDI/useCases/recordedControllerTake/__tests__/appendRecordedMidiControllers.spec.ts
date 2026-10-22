@@ -20,23 +20,7 @@ vi.mock('../../../stores/midiStore', () => ({
 
 const { appendRecordedMidiControllers } = await import('../appendRecordedMidiControllers');
 const { midiStore } = await import('../../../stores/midiStore');
-
-const bareCc = ({
-    controller,
-    value,
-    beat,
-    channel,
-}: {
-    controller: number;
-    value: number;
-    beat: number;
-    channel: number;
-}) => ({
-    controller,
-    value,
-    beat,
-    channel,
-});
+const { createMidiCC, createMidiPitchBend } = await import('../../../models/MidiNote');
 
 describe('appendRecordedMidiControllers', () => {
     beforeEach(() => {
@@ -50,73 +34,41 @@ describe('appendRecordedMidiControllers', () => {
         };
     });
 
-    it('should keep every controller message that shares a beat, channel and controller', () => {
-        appendRecordedMidiControllers({
-            clipId: 'clip-1',
-            cc: [
-                { controller: 64, value: 0, beat: 1, channel: 0 },
-                { controller: 64, value: 127, beat: 1, channel: 0 },
-            ],
-            pitchBend: [],
-        });
+    it('should keep every controller message that shares a beat, channel and controller, after the existing rows', () => {
+        const released = createMidiCC(64, 0, 1, 0);
+        const pressed = createMidiCC(64, 127, 1, 0);
+
+        appendRecordedMidiControllers({ clipId: 'clip-1', cc: [released, pressed], pitchBend: [] });
 
         const rows = mocks.state.value?.ccByClipId['clip-1'] ?? [];
-        expect(rows.map(bareCc)).toEqual([
-            { controller: 64, value: 127, beat: 1, channel: 0 },
-            { controller: 64, value: 0, beat: 1, channel: 0 },
-            { controller: 64, value: 127, beat: 1, channel: 0 },
-        ]);
-        expect(rows[0]?.id).toBe('cc-existing');
+        expect(rows.map(({ id }) => id)).toEqual(['cc-existing', released.id, pressed.id]);
+        expect(rows.map(({ value }) => value)).toEqual([127, 0, 127]);
     });
 
     it('should write the controller and pitch-bend rows of a clip in one store write', () => {
-        appendRecordedMidiControllers({
-            clipId: 'clip-2',
-            cc: [{ controller: 1, value: 10, beat: 0, channel: 2 }],
-            pitchBend: [
-                { value: -8192, beat: 0.5, channel: 2 },
-                { value: 8191, beat: 0.5, channel: 2 },
-            ],
-        });
+        const cc = createMidiCC(1, 10, 0, 2);
+        const bendDown = createMidiPitchBend(-8192, 0.5, 2);
+        const bendUp = createMidiPitchBend(8191, 0.5, 2);
+
+        appendRecordedMidiControllers({ clipId: 'clip-2', cc: [cc], pitchBend: [bendDown, bendUp] });
 
         expect(midiStore.set).toHaveBeenCalledTimes(1);
-        expect((mocks.state.value?.ccByClipId['clip-2'] ?? []).map(bareCc)).toEqual([
-            { controller: 1, value: 10, beat: 0, channel: 2 },
-        ]);
-        expect(
-            (mocks.state.value?.pitchBendByClipId['clip-2'] ?? []).map(({ value, beat, channel }) => ({
-                value,
-                beat,
-                channel,
-            }))
-        ).toEqual([
-            { value: -8192, beat: 0.5, channel: 2 },
-            { value: 8191, beat: 0.5, channel: 2 },
-        ]);
+        expect(mocks.state.value?.ccByClipId['clip-2']).toEqual([cc]);
+        expect(mocks.state.value?.pitchBendByClipId['clip-2']).toEqual([bendDown, bendUp]);
     });
 
-    it('should give each appended row its own fresh id', () => {
-        appendRecordedMidiControllers({
-            clipId: 'clip-2',
-            cc: [
-                { controller: 1, value: 10, beat: 0, channel: 2 },
-                { controller: 1, value: 10, beat: 0, channel: 2 },
-            ],
-            pitchBend: [],
-        });
+    it('should land each row under the id it was given, so a snapshot taken before the write names the stored rows', () => {
+        const first = createMidiCC(1, 10, 0, 2);
+        const second = createMidiCC(1, 10, 0, 2);
 
-        const [first, second] = mocks.state.value?.ccByClipId['clip-2'] ?? [];
-        expect(first?.id).toEqual(expect.any(String));
-        expect(second?.id).toEqual(expect.any(String));
-        expect(first?.id).not.toBe(second?.id);
+        appendRecordedMidiControllers({ clipId: 'clip-2', cc: [first, second], pitchBend: [] });
+
+        expect((mocks.state.value?.ccByClipId['clip-2'] ?? []).map(({ id }) => id)).toEqual([first.id, second.id]);
+        expect(first.id).not.toBe(second.id);
     });
 
     it('should leave the other list of the clip absent when the take recorded none for it', () => {
-        appendRecordedMidiControllers({
-            clipId: 'clip-2',
-            cc: [{ controller: 1, value: 10, beat: 0, channel: 2 }],
-            pitchBend: [],
-        });
+        appendRecordedMidiControllers({ clipId: 'clip-2', cc: [createMidiCC(1, 10, 0, 2)], pitchBend: [] });
 
         expect(mocks.state.value?.pitchBendByClipId['clip-2']).toBeUndefined();
     });
@@ -130,11 +82,7 @@ describe('appendRecordedMidiControllers', () => {
     it('should be a no-op when MIDI state is unavailable', () => {
         mocks.state.value = null;
 
-        appendRecordedMidiControllers({
-            clipId: 'clip-1',
-            cc: [{ controller: 64, value: 127, beat: 1, channel: 0 }],
-            pitchBend: [],
-        });
+        appendRecordedMidiControllers({ clipId: 'clip-1', cc: [createMidiCC(64, 127, 1, 0)], pitchBend: [] });
 
         expect(midiStore.set).not.toHaveBeenCalled();
     });

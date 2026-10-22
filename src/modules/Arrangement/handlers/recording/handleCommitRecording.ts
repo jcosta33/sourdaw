@@ -1,4 +1,9 @@
-import { flushRecordedControllers, getMidiStoreState } from '#/modules/MIDI/useCases';
+import {
+    commitRecordedControllers,
+    discardRecordedControllers,
+    getMidiStoreState,
+    planRecordedControllers,
+} from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -30,6 +35,19 @@ function withMinimumRecordingLength<TClip extends { startBeat: number; endBeat: 
 }
 
 /**
+ * The clip's rows as the redo restores them: the rows the store holds now, then
+ * the rows the commit is about to write after them, so the snapshot names what
+ * the store will hold. `null` when the clip has no list at all.
+ */
+function snapshotRows<TRow>(stored: readonly TRow[] | undefined, planned: readonly TRow[]): TRow[] | null {
+    if (stored === undefined && planned.length === 0) {
+        return null;
+    }
+    const existing = stored ?? [];
+    return structuredClone([...existing, ...planned]);
+}
+
+/**
  * Materialize one completed recording gesture into its track, updating the
  * provisional clip the recorder opened under the same id.
  *
@@ -48,6 +66,9 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
     execute: (action) => {
         const { clip } = action.payload;
         if (!owningTrackExists(action)) {
+            // The commit will never land, so nothing will claim the take's
+            // buffered controllers; they are dropped, never written.
+            discardRecordedControllers(clip.id);
             return toHandlerExecutionResult(false);
         }
         const recorded = structuredClone(withMinimumRecordingLength(clip)) as Clip;
@@ -62,24 +83,27 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
                 ),
             };
         });
+        // The controllers a MIDI take recorded wait in memory until this write,
+        // inside the commit's storage transaction, so a commit that does not
+        // land leaves none of them in the store.
+        if (clip.type === 'midi') {
+            commitRecordedControllers({ clipId: clip.id });
+        }
         return toHandlerExecutionResult(true);
     },
     describe: (action) => {
         const { clip } = action.payload;
-        // The controllers a MIDI take recorded wait in memory until now. They
-        // are written into the clip first so the snapshot below holds them: a
-        // snapshot read before this would restore the take without them.
-        if (clip.type === 'midi') {
-            flushRecordedControllers({ clipId: clip.id, trackId: clip.trackId });
-        }
         // The inverse removes the clip through the ordinary removal path, which
         // deletes the clip's MIDI data. Carry it on the redo exactly as the
         // clip-restore route does, so undoing and redoing a recorded MIDI take
-        // does not hand back an empty clip.
+        // does not hand back an empty clip. The take's buffered controllers
+        // are not in the store yet; they are added from the buffer, which this
+        // only reads, so the snapshot holds the rows `execute` then writes.
         const midiState = getMidiStoreState();
+        const planned = clip.type === 'midi' ? planRecordedControllers({ clipId: clip.id }) : null;
         const notes = midiState?.notesByClipId[clip.id];
-        const cc = midiState?.ccByClipId[clip.id];
-        const pitchBend = midiState?.pitchBendByClipId[clip.id];
+        const cc = snapshotRows(midiState?.ccByClipId[clip.id], planned?.cc ?? []);
+        const pitchBend = snapshotRows(midiState?.pitchBendByClipId[clip.id], planned?.pitchBend ?? []);
         return {
             label: `Record clip "${clip.name}"`,
             inverseAction: { type: 'discardRecording', payload: { clipId: clip.id } },
@@ -89,8 +113,8 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
                     clip: withMinimumRecordingLength(clip),
                     retiredTakeLanes: captureRetiredTakeLanes([clip.id]),
                     midiNotesSnapshot: notes ? structuredClone(notes) : null,
-                    midiCcSnapshot: cc ? structuredClone(cc) : null,
-                    midiPitchBendSnapshot: pitchBend ? structuredClone(pitchBend) : null,
+                    midiCcSnapshot: cc,
+                    midiPitchBendSnapshot: pitchBend,
                 },
             },
         };

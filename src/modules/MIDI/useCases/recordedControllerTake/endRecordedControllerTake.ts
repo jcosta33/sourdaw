@@ -1,7 +1,6 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-
 import { recordedControllerTakeState } from '../../repositories/webMidi/recordedControllerTakeState';
 
+import { readLiveClipIds } from './readLiveClipIds';
 import { writeRecordedControllerRows } from './writeRecordedControllerRows';
 
 /**
@@ -14,8 +13,8 @@ import { writeRecordedControllerRows } from './writeRecordedControllerRows';
  * commit, so its rows land now.
  */
 export function endRecordedControllerTake(): void {
-    const { buffers, openedClipIds } = recordedControllerTakeState;
-    const liveClipIds = new Set(trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)));
+    const { buffers, openedClipIds, heldPedalSeeds } = recordedControllerTakeState;
+    const liveClipIds = readLiveClipIds();
 
     for (const [clipId, buffer] of [...buffers]) {
         if (openedClipIds.has(clipId)) {
@@ -27,6 +26,11 @@ export function endRecordedControllerTake(): void {
         buffers.delete(clipId);
         if (liveClipIds.has(clipId)) {
             writeRecordedControllerRows({ clipId, cc: buffer.cc, pitchBend: buffer.pitchBend });
+        }
+    }
+    for (const clipId of [...heldPedalSeeds.keys()]) {
+        if (!liveClipIds.has(clipId)) {
+            heldPedalSeeds.delete(clipId);
         }
     }
 }

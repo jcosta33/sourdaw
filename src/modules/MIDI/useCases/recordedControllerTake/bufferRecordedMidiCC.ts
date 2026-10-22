@@ -1,4 +1,5 @@
 import { createMidiError } from '../../errors/MidiError';
+import { createMidiCC } from '../../models/MidiNote';
 import { type RecordedCcRow } from '../../repositories/webMidi/recordedControllerTakeState';
 
 import { openRecordedControllerBuffer } from './openRecordedControllerBuffer';
@@ -10,5 +11,5 @@ export function bufferRecordedMidiCC({ clipId, row }: BufferRecordedMidiCCInput)
     if (!Object.values(row).every(Number.isFinite)) {
         throw createMidiError('Recorded controller row must carry finite numbers');
     }
-    openRecordedControllerBuffer(clipId)?.cc.push(row);
+    openRecordedControllerBuffer(clipId)?.cc.push(createMidiCC(row.controller, row.value, row.beat, row.channel));
 }

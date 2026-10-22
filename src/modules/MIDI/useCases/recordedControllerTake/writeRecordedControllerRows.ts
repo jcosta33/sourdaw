@@ -1,13 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { type RecordedCcRow, type RecordedPitchBendRow } from '../../repositories/webMidi/recordedControllerTakeState';
+import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
 
 import { appendRecordedMidiControllers } from './appendRecordedMidiControllers';
 
 type WriteRecordedControllerRowsInput = {
     clipId: string;
-    cc: readonly RecordedCcRow[];
-    pitchBend: readonly RecordedPitchBendRow[];
+    cc: readonly MidiCC[];
+    pitchBend: readonly MidiPitchBend[];
 };
 
 /**

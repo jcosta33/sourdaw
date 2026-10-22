@@ -5,40 +5,44 @@
  * Singleton module alongside `channelControllerState.ts`. The CRDT-backed
  * `midiStore` reconciles a clip's whole row list on every write, so writing each
  * message as it arrives makes every flush slower the longer the take runs; the
- * rows are written once per clip, by `flushRecordedControllers`, instead.
+ * rows are written once per clip, by `commitRecordedControllers`, instead.
  *
- * Rows are in arrival order and carry no ids: the store mints them on the one
- * write that lands them.
+ * Rows are in arrival order and carry the ids they will hold in the store, so
+ * the redo snapshot the commit captures before it writes names the very rows the
+ * write then lands.
  */
 import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
 
+/** A controller message as the live input reports it, before it is given an id. */
 export type RecordedCcRow = Omit<MidiCC, 'id'>;
 export type RecordedPitchBendRow = Omit<MidiPitchBend, 'id'>;
 
 export type RecordedControllerBuffer = {
-    cc: RecordedCcRow[];
-    pitchBend: RecordedPitchBendRow[];
-};
-
-/** The pedals held on the live input when a take began, owed to that take's clip on `trackId`. */
-export type HeldPedalSeed = {
-    trackId: string;
-    rows: readonly RecordedCcRow[];
+    cc: MidiCC[];
+    pitchBend: MidiPitchBend[];
 };
 
 type RecordedControllerTakeState = {
     /** Buffered rows, keyed by the clip the take records into. */
     buffers: Map<string, RecordedControllerBuffer>;
-    /** Clips the take opened, whose commit will flush their buffer; any other clip flushes when the take ends. */
+    /**
+     * Clips a take opened whose commit has not taken their buffer yet. Their
+     * commit flushes them; any other clip a take records into flushes when the
+     * take ends.
+     */
     openedClipIds: Set<string>;
     /** Clips whose commit already took their buffer, so a message arriving after it belongs to no take. */
     committedClipIds: Set<string>;
-    heldPedalSeed: HeldPedalSeed | null;
+    /**
+     * The pedals held on the live input when a take began, owed to the clip that
+     * take opened on the input's track, as rows at the clip's beat 0.
+     */
+    heldPedalSeeds: Map<string, readonly MidiCC[]>;
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
     buffers: new Map(),
     openedClipIds: new Set(),
     committedClipIds: new Set(),
-    heldPedalSeed: null,
+    heldPedalSeeds: new Map(),
 };

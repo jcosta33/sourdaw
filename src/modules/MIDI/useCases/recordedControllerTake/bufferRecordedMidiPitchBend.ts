@@ -1,4 +1,5 @@
 import { createMidiError } from '../../errors/MidiError';
+import { createMidiPitchBend } from '../../models/MidiNote';
 import { type RecordedPitchBendRow } from '../../repositories/webMidi/recordedControllerTakeState';
 
 import { openRecordedControllerBuffer } from './openRecordedControllerBuffer';
@@ -10,5 +11,5 @@ export function bufferRecordedMidiPitchBend({ clipId, row }: BufferRecordedMidiP
     if (!Object.values(row).every(Number.isFinite)) {
         throw createMidiError('Recorded pitch-bend row must carry finite numbers');
     }
-    openRecordedControllerBuffer(clipId)?.pitchBend.push(row);
+    openRecordedControllerBuffer(clipId)?.pitchBend.push(createMidiPitchBend(row.value, row.beat, row.channel));
 }
