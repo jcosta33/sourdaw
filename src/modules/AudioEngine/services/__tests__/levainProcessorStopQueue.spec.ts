@@ -54,6 +54,9 @@ class LevainInstanceMock {
     note_off(note: number): void {
         calls.push({ method: 'note_off', args: [note] });
     }
+    note_expression(...args: unknown[]): void {
+        calls.push({ method: 'note_expression', args });
+    }
     all_notes_off(): void {
         calls.push({ method: 'all_notes_off', args: [] });
         if (allNotesOffShouldThrow) {
@@ -166,6 +169,31 @@ describe('LevainProcessor queued notes across allNotesOff', () => {
         calls.length = 0;
 
         send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 64 });
+        send(proc, { type: 'noteOff', note: 60, sampleFrame: 96_000 });
+        send(proc, { type: 'allNotesOff' });
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.map((call) => call.method).filter((name) => name !== 'process')).toEqual(['all_notes_off']);
+    });
+
+    it('does not apply an expression change that was queued before Stop released every voice', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        // A recorded bend rides in the window of its note, due inside this block
+        // here, so a surviving one would apply to whatever voice holds the pitch.
+        send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 32 });
+        send(proc, {
+            type: 'noteExpression',
+            note: 60,
+            channel: 0,
+            bendSemitones: 2,
+            pressure: 0.5,
+            slide: 0,
+            sampleFrame: 64,
+        });
         send(proc, { type: 'noteOff', note: 60, sampleFrame: 96_000 });
         send(proc, { type: 'allNotesOff' });
 

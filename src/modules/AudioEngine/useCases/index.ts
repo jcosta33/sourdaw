@@ -56,6 +56,7 @@ export { startFaustNote } from './faustScheduler/startFaustNote';
 export { applyNoteExpression } from './noteExpression/applyNoteExpression';
 export { getDefaultBendRangeSemitones } from './noteExpression/getDefaultBendRangeSemitones';
 export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
+export { projectNoteExpressionCurves } from './noteExpression/projectNoteExpressionCurves';
 
 export { buildDeviceChain } from './buildDeviceChain';
 export { buildLevainZoneTables } from './buildLevainZoneTables';

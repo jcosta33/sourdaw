@@ -4,7 +4,8 @@ import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 import { applyGrooveTemplate } from './applyGrooveTemplate';
 
 type GrooveEvent = { id: string; startBeat: number; velocity: number };
-type ClipMidiEvent = GrooveEvent & { duration: number };
+/** `beatsIntoNote` on an input event is the cut an earlier stage already made of its note (Yeast plays what the clip head left). */
+type ClipMidiEvent = GrooveEvent & { duration: number; beatsIntoNote?: number };
 type ProjectCommittedGrooveInput<Event extends GrooveEvent> = {
     events: readonly Event[];
     consumerType: GrooveTemplateState['assignments'][number]['consumerType'];
@@ -22,9 +23,18 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
 };
+/**
+ * A note as one clip pass plays it. `beatsIntoNote` is how far into its own (grooved, uncut) extent the
+ * segment begins, absent when it begins with the note: a clip trim or a pass boundary cuts the head off,
+ * and the tail of a note that wraps a clip loop begins where the first segment ends. Whatever is measured
+ * from the note's start (a recorded expression curve) is measured from `startBeat - beatsIntoNote`.
+ */
+export type ProjectedSegment<Event> = Event & { beatsIntoNote?: number };
 type GrooveProjection = {
     projectCommittedGroove: <Event extends GrooveEvent>(input: ProjectCommittedGrooveInput<Event>) => readonly Event[];
-    projectClipMidiEvents: <Event extends ClipMidiEvent>(input: ProjectClipMidiEventsInput<Event>) => Event[];
+    projectClipMidiEvents: <Event extends ClipMidiEvent>(
+        input: ProjectClipMidiEventsInput<Event>
+    ) => ProjectedSegment<Event>[];
 };
 
 const projectionsByState = new WeakMap<GrooveTemplateState, GrooveProjection>();
@@ -82,7 +92,12 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             const intervalEndBeat = intervalStartBeat + intervalDurationBeats;
             const iterationEndBeat = Math.min(clipEndBeat, iterationStartBeat + loopLengthBeats);
 
-            function createSegment(startBeat: number, endBeat: number): Event[] {
+            // `beatsIntoNoteAtStart` is how far into the note `startBeat` is, before the clip cuts it.
+            function createSegment(
+                startBeat: number,
+                endBeat: number,
+                beatsIntoNoteAtStart: number
+            ): ProjectedSegment<Event>[] {
                 const allowedStartBeat = Math.max(iterationStartBeat, clipStartBeat);
                 if (endBeat === startBeat) {
                     if (startBeat < allowedStartBeat || startBeat >= iterationEndBeat) {
@@ -102,18 +117,22 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
                 if (clippedEndBeat <= clippedStartBeat) {
                     return [];
                 }
-                return [
-                    {
-                        ...event,
-                        startBeat: clippedStartBeat,
-                        duration: clippedEndBeat - clippedStartBeat,
-                        velocity: sequencerProjected.velocity,
-                    },
-                ];
+                const segment: ProjectedSegment<Event> = {
+                    ...event,
+                    startBeat: clippedStartBeat,
+                    duration: clippedEndBeat - clippedStartBeat,
+                    velocity: sequencerProjected.velocity,
+                };
+                const beatsIntoNote =
+                    (event.beatsIntoNote ?? 0) + beatsIntoNoteAtStart + (clippedStartBeat - startBeat);
+                if (beatsIntoNote > 0) {
+                    segment.beatsIntoNote = beatsIntoNote;
+                }
+                return [segment];
             }
 
             if (!loopEnabled || loopLengthBeats <= 0) {
-                return createSegment(intervalStartBeat, intervalEndBeat);
+                return createSegment(intervalStartBeat, intervalEndBeat, 0);
             }
 
             const offsetFromIteration = intervalStartBeat - iterationStartBeat;
@@ -124,14 +143,18 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             const wrappedStartBeat = iterationStartBeat + wrappedOffset;
             const preservedDuration = Math.min(intervalDurationBeats, loopLengthBeats);
             const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
-            const firstSegments = createSegment(wrappedStartBeat, firstEndBeat);
+            const firstSegments = createSegment(wrappedStartBeat, firstEndBeat, 0);
             const remainingDuration = preservedDuration - (firstEndBeat - wrappedStartBeat);
             // On a non-dyadic grid the first segment's end misses the note's end by float noise,
             // so a note that stops at or before the loop end still leaves a remainder of that size.
             if (remainingDuration <= SAME_BEAT_TOLERANCE) {
                 return firstSegments;
             }
-            const wrappedSegments = createSegment(iterationStartBeat, iterationStartBeat + remainingDuration);
+            const wrappedSegments = createSegment(
+                iterationStartBeat,
+                iterationStartBeat + remainingDuration,
+                firstEndBeat - wrappedStartBeat
+            );
             return [...wrappedSegments, ...firstSegments];
         });
     }
