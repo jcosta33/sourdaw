@@ -43,7 +43,8 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * the transport reports recording.
  */
 export function beginRecordedControllerTake(): void {
-    const { buffers, openedClipIds, committedClipIds, heldPedalSeeds } = recordedControllerTakeState;
+    const { buffers, openedClipIds, committedClipIds, carriedOverClipIds, heldPedalSeeds } =
+        recordedControllerTakeState;
     const awaitingCommit = readClipsAwaitingCommit();
     for (const clipId of [...buffers.keys()]) {
         if (!awaitingCommit.has(clipId)) {
@@ -57,7 +58,12 @@ export function beginRecordedControllerTake(): void {
     }
     committedClipIds.clear();
     openedClipIds.clear();
-    for (const clipId of [...awaitingCommit, ...activeRecordingRef.current]) {
+    carriedOverClipIds.clear();
+    for (const clipId of awaitingCommit) {
+        openedClipIds.add(clipId);
+        carriedOverClipIds.add(clipId);
+    }
+    for (const clipId of activeRecordingRef.current) {
         openedClipIds.add(clipId);
     }
 

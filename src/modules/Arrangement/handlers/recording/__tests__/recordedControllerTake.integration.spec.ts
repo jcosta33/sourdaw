@@ -93,11 +93,16 @@ describe('recorded controller take commit', () => {
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        transportStore.set({ ...transportStore.value!, isRecording: false, playheadPosition: 4 });
+        transportStore.set({
+            ...transportStore.value!,
+            isRecording: false,
+            overdubEnabled: false,
+            playheadPosition: 4,
+        });
     });
 
     afterEach(() => {
-        transportStore.set({ ...transportStore.value!, isRecording: false });
+        transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
         clearHandlerRegistry();
         clearUndoHistory();
@@ -393,6 +398,32 @@ describe('recorded controller take commit', () => {
                 expect(pedalsOf(provisionalB.id)).toEqual([{ controller: 1, value: 99, beat: 0.5, channel: 0 }]);
                 expect(pedalsOf(clipA)).toEqual([{ controller: 1, value: 55, beat: 0.5, channel: 0 }]);
                 expect(undoHistoryStore.value?.past ?? []).toHaveLength(2);
+            });
+
+            it('keeps the rows an overdub take records into the clip after the first take commit lands', async () => {
+                transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 1, 55);
+                const held = await holdSnapshotTransaction();
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                const stoppingFirst = stopRecording(8);
+
+                // The overdub begins inside the clip the first take opened.
+                expect(startRecording(6)).toEqual([]);
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+                sendLive(6.5, 0xb0, 64, 127);
+                held.release();
+                await held.settled;
+                await stoppingFirst;
+                sendLive(7, 0xb0, 64, 0);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(pedalsOf(clipId)).toEqual([
+                    { controller: 1, value: 55, beat: 0.5, channel: 0 },
+                    { controller: 64, value: 127, beat: 2.5, channel: 0 },
+                    { controller: 64, value: 0, beat: 3, channel: 0 },
+                ]);
             });
 
             it('writes nothing for a commit the owning track being gone refuses, and drops the buffer', async () => {

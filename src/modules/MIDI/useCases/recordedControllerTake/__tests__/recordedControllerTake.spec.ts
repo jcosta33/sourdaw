@@ -439,6 +439,28 @@ describe('recorded controller take', () => {
             expect(recordedControllerTakeState.buffers.get(CLIP)?.cc).toHaveLength(1);
         });
 
+        it('writes the rows a later take records into a carried-over clip after its commit landed, when that take ends', () => {
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
+            endRecordedControllerTake();
+            beginRecordedControllerTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 127, beat: 2, channel: 0 } });
+
+            commitRecordedControllers({ clipId: CLIP });
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 3, channel: 0 } });
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
+                { controller: 1, value: 10, beat: 1, channel: 0 },
+                { controller: 64, value: 127, beat: 2, channel: 0 },
+            ]);
+            endRecordedControllerTake();
+
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
+                { controller: 1, value: 10, beat: 1, channel: 0 },
+                { controller: 64, value: 127, beat: 2, channel: 0 },
+                { controller: 64, value: 0, beat: 3, channel: 0 },
+            ]);
+        });
+
         it('writes an overdub take into the existing clip it recorded into when the take ends', () => {
             beginTake();
             setLiveClips(CLIP, 'existing-clip');

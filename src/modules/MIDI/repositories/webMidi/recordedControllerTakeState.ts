@@ -31,8 +31,17 @@ type RecordedControllerTakeState = {
      * take ends.
      */
     openedClipIds: Set<string>;
-    /** Clips whose commit already took their buffer, so a message arriving after it belongs to no take. */
+    /**
+     * Clips whose commit already took their buffer, so a message arriving after
+     * it belongs to no take: the take that opened the clip is the one that ended.
+     */
     committedClipIds: Set<string>;
+    /**
+     * Clips an earlier take opened and a later take is recording into while that
+     * earlier commit still waits. Their commit lands inside the later take, which
+     * keeps recording into the clip as an overdub, so it closes nothing.
+     */
+    carriedOverClipIds: Set<string>;
     /**
      * The pedals held on the live input when a take began, owed to the clip that
      * take opened on the input's track, as rows at the clip's beat 0.
@@ -44,5 +53,6 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     buffers: new Map(),
     openedClipIds: new Set(),
     committedClipIds: new Set(),
+    carriedOverClipIds: new Set(),
     heldPedalSeeds: new Map(),
 };
