@@ -1,9 +1,12 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { useRef, useState } from 'react';
+
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import * as commandUseCases from '#/modules/Command/useCases';
 import { useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 import { type ActionHandler } from '#/utils/handlerContract';
@@ -15,18 +18,13 @@ import { selectClipWithFocus } from '../../../useCases/clipSelection/selectClipW
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TimelineClipNavigator } from '../TimelineClipNavigator';
 
-const shortcutRoute = vi.hoisted(() => ({ handleKeydown: vi.fn(() => false) }));
-
-vi.mock('#/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown', () => ({
-    handleKeydown: shortcutRoute.handleKeydown,
-}));
-
 function ShortcutHost() {
     useGlobalKeyboardShortcuts();
     return null;
 }
 
 const togglePlaybackHandler: ActionHandler = {
+    executionKind: 'runtime',
     undoable: false,
     execute: () => {},
     describe: () => ({ label: 'togglePlayback' }),
@@ -99,11 +97,11 @@ function activeOption(listbox: HTMLElement): HTMLElement {
 
 describe('TimelineClipNavigator', () => {
     beforeEach(() => {
-        shortcutRoute.handleKeydown.mockClear();
         projectLoadFailureStore.set(null);
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         clearHandlerRegistry();
         injectDependencies(selectTrack, { eventBus: { emit: async () => {} } });
+        commandUseCases.setCommandEventBus({ emit: async () => {} });
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
@@ -111,7 +109,10 @@ describe('TimelineClipNavigator', () => {
     });
 
     afterEach(() => {
+        cleanup();
+        vi.restoreAllMocks();
         clearHandlerRegistry();
+        Container.clear();
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
@@ -260,26 +261,44 @@ describe('TimelineClipNavigator', () => {
         expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
     });
 
-    it('claims Space before the real global listener and gates unclaimed Delete through listbox containment', () => {
+    it('claims Space before the real global listener and gates unclaimed Delete through listbox containment', async () => {
         act(() =>
             trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [clip('one', 'voice', 0)])] })
         );
         registerHandlerMap({ togglePlayback: togglePlaybackHandler });
-        render(<ShortcutHost />);
-        const listbox = openNavigator();
+        const commandIntent = vi.spyOn(commandUseCases, 'executeUserAppAction').mockResolvedValue(undefined);
+        const windowKeydown = vi.fn<(event: KeyboardEvent) => void>();
+        window.addEventListener('keydown', windowKeydown);
+        try {
+            render(<ShortcutHost />);
+            const listbox = openNavigator();
 
-        fireEvent.keyDown(listbox, { key: ' ' });
-        expect(shortcutRoute.handleKeydown).not.toHaveBeenCalled();
-        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['one']);
+            fireEvent.keyDown(listbox, { key: ' ' });
+            expect(windowKeydown).not.toHaveBeenCalled();
+            expect(commandIntent).not.toHaveBeenCalled();
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['one']);
+            expect(within(listbox).getByRole('option', { name: /one, Voice/ })).toHaveAttribute(
+                'aria-selected',
+                'true'
+            );
 
-        fireEvent.keyDown(listbox, { key: 'Delete' });
-        expect(shortcutRoute.handleKeydown).toHaveBeenCalledWith(
-            expect.objectContaining({ key: 'Delete', isInput: true })
-        );
+            fireEvent.keyDown(listbox, { key: 'Delete' });
+            expect(windowKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key: 'Delete' }));
+            expect(commandIntent).not.toHaveBeenCalled();
+            expect(trackStore.value?.tracks[0]?.clips.map((item) => item.id)).toEqual(['one']);
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['one']);
+            expect(within(listbox).getByRole('option', { name: /one, Voice/ })).toHaveAttribute(
+                'aria-selected',
+                'true'
+            );
 
-        shortcutRoute.handleKeydown.mockClear();
-        fireEvent.keyDown(screen.getByRole('button', { name: 'Browse timeline clips' }), { key: ' ' });
-        expect(shortcutRoute.handleKeydown).toHaveBeenCalledWith(expect.objectContaining({ key: ' ' }));
-        expect(shortcutRoute.handleKeydown.mock.calls[0]?.[0].isInput).toBeFalsy();
+            windowKeydown.mockClear();
+            fireEvent.keyDown(screen.getByRole('button', { name: 'Browse timeline clips' }), { key: ' ' });
+            expect(windowKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key: ' ' }));
+            await waitFor(() => expect(commandIntent).toHaveBeenCalledExactlyOnceWith({ type: 'togglePlayback' }));
+        } finally {
+            window.removeEventListener('keydown', windowKeydown);
+            commandIntent.mockRestore();
+        }
     });
 });
