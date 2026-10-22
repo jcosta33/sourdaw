@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
-import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { captureOfflineAudioBuffers } from '../captureOfflineAudioBuffers';
 
 function track(): Track {

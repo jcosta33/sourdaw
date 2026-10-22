@@ -29,10 +29,10 @@ import {
 } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
-import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
-import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
+import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import {
     offlinePpqEndpointProjectorState,

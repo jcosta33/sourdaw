@@ -14,13 +14,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
-import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
 import {
     claimedNativeSampleBankKeysByBackend,
     inFlightNativeSampleBankShipments,
     registeredNativeSampleBankKeys,
 } from '../registeredNativeSampleBankKeys';
 import { type AcquireNativeSampleBank, registerNativeSampleBanks } from '../registerNativeSampleBanks';
+
+import { withNativeTimelineMaterialTransport } from './withNativeTimelineMaterialTransport';
 
 const BATCH: AudioGraphCommandBatch = {
     schemaVersion: 1,
@@ -346,7 +347,7 @@ describe('createNativeLiveGraphBackend', () => {
         };
 
         function bankTransport(calls: string[]): NativeGraphTransport {
-            return {
+            return withNativeTimelineMaterialTransport({
                 applyGraphCommands: () => {
                     calls.push('apply_graph_commands');
                     return Promise.resolve({
@@ -372,7 +373,7 @@ describe('createNativeLiveGraphBackend', () => {
                 registerTimelineSample: () => Promise.reject(new Error('unexpected register_timeline_sample')),
                 renderGraphOffline: () => Promise.reject(new Error('unexpected render_graph_offline')),
                 mapGraphBatch: () => Promise.reject(new Error('unexpected map_graph_batch')),
-            };
+            });
         }
 
         // The engine refuses a Levain device whose bank is not committed yet,
@@ -381,7 +382,7 @@ describe('createNativeLiveGraphBackend', () => {
         it('commits a device bank before the batch that maps the device', async () => {
             const calls: string[] = [];
 
-            await createNativeLiveGraphBackend({
+            const result = await createNativeLiveGraphBackend({
                 transport: bankTransport(calls),
                 acquireNativeSampleBank: () =>
                     Promise.resolve({
@@ -405,6 +406,7 @@ describe('createNativeLiveGraphBackend', () => {
                     }),
             }).apply(BANK_BATCH);
 
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
             expect(calls).toEqual([
                 'begin_levain_bank',
                 'register_levain_sample',
@@ -425,13 +427,15 @@ describe('createNativeLiveGraphBackend', () => {
             // by name, not a play gesture that refused the whole project.
             expect(calls).toEqual(['apply_graph_commands']);
             expect(result.acceptance).toBe('accepted');
+            expect(result.application).toBe('applied');
         });
 
         it('stages nothing when the caller registered no bank door', async () => {
             const calls: string[] = [];
 
-            await createNativeLiveGraphBackend({ transport: bankTransport(calls) }).apply(BANK_BATCH);
+            const result = await createNativeLiveGraphBackend({ transport: bankTransport(calls) }).apply(BANK_BATCH);
 
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
             expect(calls).toEqual(['apply_graph_commands']);
         });
     });
@@ -466,7 +470,7 @@ function claimBatch(bankKey: string): AudioGraphCommandBatch {
 }
 
 function claimTransport(calls: string[]): NativeGraphTransport {
-    return {
+    return withNativeTimelineMaterialTransport({
         applyGraphCommands: () => {
             calls.push('apply_graph_commands');
             return Promise.resolve({
@@ -495,7 +499,7 @@ function claimTransport(calls: string[]): NativeGraphTransport {
         registerTimelineSample: () => Promise.reject(new Error('unexpected register_timeline_sample')),
         renderGraphOffline: () => Promise.reject(new Error('unexpected render_graph_offline')),
         mapGraphBatch: () => Promise.reject(new Error('unexpected map_graph_batch')),
-    };
+    });
 }
 
 const acquireViolinBank: AcquireNativeSampleBank = () => {
@@ -531,10 +535,16 @@ describe('createNativeLiveGraphBackend — claims scoped per instance (#4203)', 
         const transport = claimTransport(calls);
 
         const backendA = createNativeLiveGraphBackend({ transport, acquireNativeSampleBank: acquireViolinBank });
-        await backendA.apply(claimBatch('levain:violin-1'));
+        await expect(backendA.apply(claimBatch('levain:violin-1'))).resolves.toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
 
         const backendB = createNativeLiveGraphBackend({ transport, acquireNativeSampleBank: acquireViolinBank });
-        await backendB.apply(claimBatch('levain:violin-1'));
+        await expect(backendB.apply(claimBatch('levain:violin-1'))).resolves.toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
 
         backendA.dispose();
 

@@ -69,12 +69,12 @@ import {
 
 import { deinterleaveStereoPcm, type PlanarStereo } from './deinterleaveStereoPcm';
 import { type NativeGraphTransport } from './nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from './nativeTimelineMaterialLeases';
 import { readNativeStripReports } from './readNativeStripReports';
 import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
 import { releaseNativeSampleBankClaims } from './releaseNativeSampleBankClaims';
 import { type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
-import { nativeTimelineMaterialLeases } from './nativeTimelineMaterialLeases';
 
 export const NATIVE_OFFLINE_BACKEND_ID = 'native/offline';
 
@@ -234,7 +234,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 return rejected(reasonOf(error));
             }
             return material
-                .run(async () => {
+                .run(async (): Promise<AudioGraphApplyResult> => {
                     let claim;
                     try {
                         // The lease pins the union of accepted history and incoming

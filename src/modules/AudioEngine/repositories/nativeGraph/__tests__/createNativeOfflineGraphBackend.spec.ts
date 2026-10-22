@@ -14,8 +14,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
-import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
-import { nativeTimelineMaterialLeases } from '../nativeTimelineMaterialLeases';
 import { createNativeOfflineGraphBackend, NATIVE_OFFLINE_BACKEND_ID } from '../createNativeOfflineGraphBackend';
 import {
     type MapGraphBatchInput,
@@ -23,12 +21,15 @@ import {
     type RegisterTimelineSampleInput,
     type RenderGraphOfflineInput,
 } from '../nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../nativeTimelineMaterialLeases';
 import {
     claimedNativeSampleBankKeysByBackend,
     inFlightNativeSampleBankShipments,
     registeredNativeSampleBankKeys,
 } from '../registeredNativeSampleBankKeys';
 import { registerNativeSampleBanks } from '../registerNativeSampleBanks';
+
+import { withNativeTimelineMaterialTransport } from './withNativeTimelineMaterialTransport';
 
 const SAMPLE_RATE = 48_000;
 
@@ -67,12 +68,14 @@ function scriptedTransport(options?: {
     /** Script the wire's reports for an accepted probe. */
     reports?: (input: MapGraphBatchInput) => unknown;
     refuseRegistration?: string;
+    onRegistration?: (input: RegisterTimelineSampleInput) => void;
 }): ScriptedTransport {
     const registered: RegisterTimelineSampleInput[] = [];
     const renders: RenderGraphOfflineInput[] = [];
     const maps: MapGraphBatchInput[] = [];
     const transport: NativeGraphTransport = {
         async registerTimelineSample(input) {
+            options?.onRegistration?.(input);
             if (options?.refuseRegistration !== undefined) {
                 throw new Error(options.refuseRegistration);
             }
@@ -259,10 +262,12 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(transport.registered).toHaveLength(1);
     });
 
-    it('rejects when the material itself is refused at registration', async () => {
+    it('refuses a zero-frame material descriptor before upload or mapping', async () => {
+        const transport = scriptedTransport();
+        const upload = vi.fn(transport.registerTimelineMaterial);
         const backend = createNativeOfflineGraphBackend({
             sampleRate: SAMPLE_RATE,
-            transport: scriptedTransport({ refuseRegistration: 'PCM payload holds zero frames' }),
+            transport: { ...transport, registerTimelineMaterial: upload },
         });
 
         const result = await backend.apply({
@@ -273,8 +278,51 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(result).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
+            reason: 'Invalid material descriptor',
+        });
+        expect(upload).not.toHaveBeenCalled();
+        expect(transport.registered).toEqual([]);
+        expect(transport.maps).toEqual([]);
+        expect(transport.renders).toEqual([]);
+    });
+
+    it('rejects when valid material reaches a refused registration', async () => {
+        const registration = vi.fn<(input: RegisterTimelineSampleInput) => void>();
+        const transport = scriptedTransport({
+            refuseRegistration: 'PCM payload holds zero frames',
+            onRegistration: registration,
+        });
+        const upload = vi.fn(transport.registerTimelineMaterial);
+        const backend = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: { ...transport, registerTimelineMaterial: upload },
+        });
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [clipCommand('take-1', stereoBuffer([0.25], [-0.25]))],
+        });
+
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
             reason: 'register_timeline_material "take-1": PCM payload holds zero frames',
         });
+        expect(upload).toHaveBeenCalledOnce();
+        expect(registration).toHaveBeenCalledOnce();
+        expect(registration).toHaveBeenCalledWith({
+            sampleId: 'take-1',
+            sampleRate: SAMPLE_RATE,
+            channels: 2,
+            pcm: interleavedBytes(1, (_frame, channel) => {
+                if (channel === 0) {
+                    return 0.25;
+                }
+                return -0.25;
+            }),
+        });
+        expect(transport.maps).toEqual([]);
+        expect(transport.renders).toEqual([]);
     });
 
     it('refuses a batch carrying the monitor gate before any of it crosses the wire', async () => {

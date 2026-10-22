@@ -455,16 +455,29 @@ impl TimelineSamplePool {
         if self.residency.fenced() {
             return Err("Legacy timeline registration requires a material lease".into());
         }
-        let reclaimable: usize = self.samples.values().filter(|row| {
-            Arc::strong_count(&row.sample.left) == 1
-                && (row.sample.right.is_empty() || Arc::strong_count(&row.sample.right) == 1)
-        }).map(|row| row.byte_len).sum();
-        let minimum = self.total_bytes().checked_add(bytes).ok_or("Timeline byte count overflow")?
+        let reclaimable: usize = self
+            .samples
+            .values()
+            .filter(|row| {
+                Arc::strong_count(&row.sample.left) == 1
+                    && (row.sample.right.is_empty() || Arc::strong_count(&row.sample.right) == 1)
+            })
+            .map(|row| row.byte_len)
+            .sum();
+        let minimum = self
+            .total_bytes()
+            .checked_add(bytes)
+            .ok_or("Timeline byte count overflow")?
             .saturating_sub(reclaimable);
-        if bytes > self.max_bytes || minimum > self.max_bytes
-            || !self.residency.can_track_material(self.samples.len() + usize::from(!self.samples.contains_key(id)))
+        if bytes > self.max_bytes
+            || minimum > self.max_bytes
+            || !self.residency.can_track_material(
+                self.samples.len() + usize::from(!self.samples.contains_key(id)),
+            )
         {
-            return Err("Timeline sample exceeds the native pool budget or retirement capacity".into());
+            return Err(
+                "Timeline sample exceeds the native pool budget or retirement capacity".into(),
+            );
         }
         Ok(())
     }

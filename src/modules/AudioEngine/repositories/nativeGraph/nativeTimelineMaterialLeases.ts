@@ -25,7 +25,7 @@ type MaterialConsumer = Readonly<{
     capture(commands: readonly AudioGraphCommand[]): ReadonlyMap<string, CapturedMaterial>;
     assertOpen(): void;
     isClosed(): boolean;
-    run<T>(operation: () => Promise<T>): Promise<T>;
+    run<Result>(operation: () => Promise<Result>): Promise<Result>;
     prepare(
         commands: readonly AudioGraphCommand[],
         replace?: boolean,
@@ -96,7 +96,7 @@ function open(owner: Owner, transport: NativeGraphTransport): Promise<string> {
     return owner.native;
 }
 
-function track<T>(owner: Owner, operation: Promise<T>): Promise<T> {
+function track<Result>(owner: Owner, operation: Promise<Result>): Promise<Result> {
     owner.pending.add(operation);
     void operation.finally(() => owner.pending.delete(operation)).catch(() => undefined);
     return operation;
@@ -155,40 +155,131 @@ function captureMaterial(sourceId: string, buffer: AudioBuffer, owner: Owner): C
     };
 }
 
+function captureSources(
+    commands: readonly AudioGraphCommand[],
+    owner: Owner,
+    closed: boolean
+): ReadonlyMap<string, CapturedMaterial> {
+    requireOpen(owner, closed);
+    const captured = new Map<string, CapturedMaterial>();
+    for (const command of commands) {
+        if (command.kind !== 'schedule-clip' || !command.playback.source.buffer) {
+            continue;
+        }
+        const { sourceId, buffer } = command.playback.source;
+        const row = captureMaterial(sourceId, buffer, owner);
+        const previous = captured.get(sourceId);
+        if (previous && previous.descriptor.version !== row.descriptor.version) {
+            throw new Error(`Native batch carries conflicting versions of "${sourceId}"`);
+        }
+        captured.set(sourceId, row);
+    }
+    return captured;
+}
+
+function prepareSources(
+    commands: readonly AudioGraphCommand[],
+    replace: boolean,
+    accepted: Claim | undefined,
+    captured: ReadonlyMap<string, CapturedMaterial>
+) {
+    const sources = new Map<string, CapturedMaterial>(replace ? [] : accepted?.sources);
+    const versions = new Map<string, string>();
+    // Capture object/version identity before opening an owner or preparing
+    // a lease. A bare id can only reuse this consumer's accepted material.
+    for (const command of commands) {
+        if (command.kind !== 'schedule-clip') {
+            continue;
+        }
+        const { sourceId, buffer } = command.playback.source;
+        let source: CapturedMaterial | undefined;
+        if (buffer) {
+            source = captured.get(sourceId);
+        } else {
+            source = [...sources.values()].findLast((row) => row.descriptor.sourceId === sourceId);
+        }
+        if (!source) {
+            throw new Error(`Native clip source "${sourceId}" needs its exact decoded material`);
+        }
+        const prior = versions.get(sourceId);
+        if (prior && prior !== source.descriptor.version) {
+            throw new Error(`Native batch carries conflicting versions of "${sourceId}"`);
+        }
+        if (buffer && !source.isCurrent()) {
+            throw new Error(`Native clip source "${sourceId}" publication changed before preparation`);
+        }
+        sources.set(materialKey(source.descriptor), source);
+        versions.set(sourceId, source.descriptor.version);
+    }
+    return { sources, versions };
+}
+
+function readMissingMaterial(value: unknown, sources: ReadonlyMap<string, CapturedMaterial>, seen: Set<string>) {
+    const row = record(value);
+    const sourceId = token(row.sourceId);
+    const version = token(row.version);
+    const key = JSON.stringify([sourceId, version]);
+    const source = sources.get(key);
+    if (
+        !source ||
+        seen.has(key) ||
+        row.frames !== source.descriptor.frames ||
+        row.channels !== source.descriptor.channels ||
+        row.sampleRate !== source.descriptor.sampleRate
+    ) {
+        throw new Error('Native timeline lease returned material outside the captured request');
+    }
+    seen.add(key);
+    return { sourceId, version, source };
+}
+
+function prepareMaterialUpload(lease: string, sourceId: string, version: string, source: CapturedMaterial) {
+    if (!source.isCurrent()) {
+        throw new Error(`Native clip source "${sourceId}" publication changed before upload`);
+    }
+    // No await between authentication, reading PCM and handing the
+    // owned raw bytes to IPC. Native material is immutable afterward.
+    const material = interleaveAudioBufferPcm({ sourceId, buffer: source.buffer });
+    return {
+        lease,
+        sampleId: sourceId,
+        version,
+        sampleRate: source.descriptor.sampleRate,
+        channels: material.channels,
+        pcm: material.pcm,
+    };
+}
+
+async function releaseClaim(transport: NativeGraphTransport, claims: Set<Claim>, claim: Claim): Promise<void> {
+    if (!claims.delete(claim)) {
+        return;
+    }
+    await control(transport, { action: 'release', lease: claim.lease });
+}
+
+function readAcceptedContext(owner: Owner, closed: boolean, accepted: Claim | undefined): Readonly<{ lease: string }> {
+    requireOpen(owner, closed);
+    if (!accepted) {
+        throw new Error('Native timeline consumer has no accepted material lease');
+    }
+    return { lease: accepted.lease };
+}
+
 function createConsumer(transport: NativeGraphTransport, owner: Owner = currentOwner): MaterialConsumer {
     let closed = false;
     let accepted: Claim | undefined;
     const claims = new Set<Claim>();
     let tail: Promise<unknown> = Promise.resolve();
 
-    async function release(claim: Claim): Promise<void> {
-        if (!claims.delete(claim)) {
-            return;
-        }
-        await control(transport, { action: 'release', lease: claim.lease });
-    }
+    const release = (claim: Claim): Promise<void> => releaseClaim(transport, claims, claim);
 
     const consumer: MaterialConsumer = {
         capture(commands: readonly AudioGraphCommand[]): ReadonlyMap<string, CapturedMaterial> {
-            requireOpen(owner, closed);
-            const captured = new Map<string, CapturedMaterial>();
-            for (const command of commands) {
-                if (command.kind !== 'schedule-clip' || !command.playback.source.buffer) {
-                    continue;
-                }
-                const { sourceId, buffer } = command.playback.source;
-                const row = captureMaterial(sourceId, buffer, owner);
-                const previous = captured.get(sourceId);
-                if (previous && previous.descriptor.version !== row.descriptor.version) {
-                    throw new Error(`Native batch carries conflicting versions of "${sourceId}"`);
-                }
-                captured.set(sourceId, row);
-            }
-            return captured;
+            return captureSources(commands, owner, closed);
         },
         assertOpen: (): void => requireOpen(owner, closed),
         isClosed: (): boolean => owner.closed || closed,
-        run<T>(operation: () => Promise<T>): Promise<T> {
+        run<Result>(operation: () => Promise<Result>): Promise<Result> {
             // Admission is visible to project retirement before queued work awaits.
             const pending = tail.then(async () => {
                 requireOpen(owner, closed);
@@ -203,34 +294,7 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
             captured: ReadonlyMap<string, CapturedMaterial> = consumer.capture(commands)
         ): Promise<Claim> {
             requireOpen(owner, closed);
-            const sources = new Map<string, CapturedMaterial>(replace ? [] : accepted?.sources);
-            const versions = new Map<string, string>();
-            // Capture object/version identity before opening an owner or preparing
-            // a lease. A bare id can only reuse this consumer's accepted material.
-            for (const command of commands) {
-                if (command.kind !== 'schedule-clip') {
-                    continue;
-                }
-                const { sourceId, buffer } = command.playback.source;
-                let source: CapturedMaterial | undefined;
-                if (buffer) {
-                    source = captured.get(sourceId);
-                } else {
-                    source = [...sources.values()].findLast((row) => row.descriptor.sourceId === sourceId);
-                }
-                if (!source) {
-                    throw new Error(`Native clip source "${sourceId}" needs its exact decoded material`);
-                }
-                const prior = versions.get(sourceId);
-                if (prior && prior !== source.descriptor.version) {
-                    throw new Error(`Native batch carries conflicting versions of "${sourceId}"`);
-                }
-                if (buffer && !source.isCurrent()) {
-                    throw new Error(`Native clip source "${sourceId}" publication changed before preparation`);
-                }
-                sources.set(materialKey(source.descriptor), source);
-                versions.set(sourceId, source.descriptor.version);
-            }
+            const { sources, versions } = prepareSources(commands, replace, accepted, captured);
             const nativeOwner = await open(owner, transport);
             requireOpen(owner, closed);
             const receipt = await control(transport, {
@@ -249,43 +313,18 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
                 }
                 const seen = new Set<string>();
                 for (const value of receipt.missing) {
-                    const row = record(value);
-                    const sourceId = token(row.sourceId);
-                    const version = token(row.version);
-                    const key = JSON.stringify([sourceId, version]);
-                    const source = sources.get(key);
-                    if (
-                        !source ||
-                        seen.has(key) ||
-                        row.frames !== source.descriptor.frames ||
-                        row.channels !== source.descriptor.channels ||
-                        row.sampleRate !== source.descriptor.sampleRate
-                    ) {
-                        throw new Error('Native timeline lease returned material outside the captured request');
-                    }
-                    seen.add(key);
+                    const { sourceId, version, source } = readMissingMaterial(value, sources, seen);
                     requireOpen(owner, closed);
                     if (!transport.registerTimelineMaterial) {
                         throw new Error('Native host does not support fenced timeline upload');
                     }
-                    if (!source.isCurrent()) {
-                        throw new Error(`Native clip source "${sourceId}" publication changed before upload`);
-                    }
-                    // No await between authentication, reading PCM and handing the
-                    // owned raw bytes to IPC. Native material is immutable afterward.
-                    const material = interleaveAudioBufferPcm({ sourceId, buffer: source.buffer });
+                    const upload = prepareMaterialUpload(lease, sourceId, version, source);
                     try {
-                        await transport.registerTimelineMaterial({
-                            lease,
-                            sampleId: sourceId,
-                            version,
-                            sampleRate: source.descriptor.sampleRate,
-                            channels: material.channels,
-                            pcm: material.pcm,
-                        });
+                        await transport.registerTimelineMaterial(upload);
                     } catch (error) {
                         throw new Error(
-                            `register_timeline_material "${sourceId}": ${error instanceof Error ? error.message : String(error)}`
+                            `register_timeline_material "${sourceId}": ${error instanceof Error ? error.message : String(error)}`,
+                            { cause: error }
                         );
                     }
                     requireOpen(owner, closed);
@@ -307,13 +346,7 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
             accepted = claim;
         },
         decline: release,
-        context(): Readonly<{ lease: string }> {
-            requireOpen(owner, closed);
-            if (!accepted) {
-                throw new Error('Native timeline consumer has no accepted material lease');
-            }
-            return { lease: accepted.lease };
-        },
+        context: () => readAcceptedContext(owner, closed, accepted),
         dispose(): void {
             if (closed) {
                 return;
@@ -335,7 +368,7 @@ function createConsumer(transport: NativeGraphTransport, owner: Owner = currentO
     return consumer;
 }
 
-async function untilDeadline<T>(promise: Promise<T>, deadline: number): Promise<T> {
+async function untilDeadline<Result>(promise: Promise<Result>, deadline: number): Promise<Result> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
         return await Promise.race([

@@ -1,7 +1,4 @@
-import {
-    type NativeGraphTransport,
-    type NativeTimelineMaterialDescriptor,
-} from '../repositories/nativeGraph/nativeGraphTransport';
+import { type NativeGraphTransport, type NativeTimelineMaterialDescriptor } from '../nativeGraphTransport';
 
 type Material = {
     owner: string;

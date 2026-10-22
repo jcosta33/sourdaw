@@ -1,11 +1,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphCommand } from '../../../models/AudioGraphBackend';
+import { audioBufferCache } from '../../../stores/audioBufferCache';
 import { createNativeOfflineGraphBackend } from '../createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
 import { nativeTimelineMaterialLeases } from '../nativeTimelineMaterialLeases';
-import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
-import { audioBufferCache } from '../../../stores/audioBufferCache';
+
+import { withNativeTimelineMaterialTransport } from './withNativeTimelineMaterialTransport';
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -98,6 +99,26 @@ describe('native timeline consumer leases', () => {
         expect(sources?.[0]).toHaveProperty('materialVersion');
         expect(sources?.[0]).not.toEqual(sources?.[1]);
         backend.dispose();
+    });
+
+    it('preserves the registration refusal cause and releases its pending claim', async () => {
+        const failure = new Error('native upload refused');
+        const wire = transport();
+        const consumer = nativeTimelineMaterialLeases.createConsumer({
+            ...wire,
+            registerTimelineMaterial: vi.fn(async () => {
+                throw failure;
+            }),
+        });
+        const prepared = consumer.run(async () => consumer.prepare([clip(0.25)]));
+
+        await expect(prepared).rejects.toMatchObject({
+            message: 'register_timeline_material "take": native upload refused',
+            cause: failure,
+        });
+        expect(wire.timelineSampleLifecycle).toHaveBeenCalledWith(expect.objectContaining({ action: 'release' }));
+        expect(wire.mapGraphBatch).not.toHaveBeenCalled();
+        consumer.dispose();
     });
 
     it('disposal during upload prevents map and releases only that captured receipt', async () => {

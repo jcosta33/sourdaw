@@ -1,7 +1,8 @@
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type OfflineAudioBufferSource } from './OfflineRenderSource';
 import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
+
+import { type OfflineAudioBufferSource } from './OfflineRenderSource';
 
 /** Own the PCM so cache eviction and in-place edits cannot alter a pending render. */
 export function captureOfflineAudioBuffers(tracks: readonly Track[], sources: OfflineAudioBufferSource) {

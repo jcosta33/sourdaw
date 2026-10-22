@@ -27,8 +27,8 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
+import { withNativeTimelineMaterialTransport } from '../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
-import { withNativeTimelineMaterialTransport } from '../../__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphWireCommand } from '../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
