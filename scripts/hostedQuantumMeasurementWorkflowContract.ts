@@ -36,6 +36,7 @@ const WORKFLOW_CONTRACT_PATHS = [
     '.github/workflows/quantum-measurements.yml',
     'package.json',
     'pnpm-lock.yaml',
+    'scripts/aptWithoutMicrosoftFeed.sh',
     'scripts/checkReleaseInventory.ts',
     'scripts/healthGateWorkflowContract.ts',
     'scripts/hostedQuantumMeasurementWorkflowContract.ts',
@@ -130,7 +131,10 @@ const CHROME_INSTALL_CAP_MINUTES = 5;
 const CHROME_INSTALL_KILL_AFTER_SECONDS = 15;
 // The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
 const CHROME_INSTALL_BACKOFF_SECONDS = 5 + 10;
-const CHROME_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${CHROME_INSTALL_KILL_AFTER_SECONDS}s ${CHROME_INSTALL_CAP_MINUTES}m node_modules/.bin/playwright install --force chrome`;
+// The install script's apt runs read the runner's sources without the image's
+// standalone Microsoft product feed, whose 403 fails `apt-get update` (#5359).
+const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
+const CHROME_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${CHROME_INSTALL_KILL_AFTER_SECONDS}s ${CHROME_INSTALL_CAP_MINUTES}m ${APT_FEED_FILTER} node_modules/.bin/playwright install --force chrome`;
 const CHROME_INSTALL_RUN = [
     'for attempt in 1 2 3; do',
     `  if ${CHROME_INSTALL_COMMAND}; then`,
@@ -173,6 +177,11 @@ function assertBoundedChromeInstall(install: UnknownRecord): void {
     if (!run.includes('playwright install --force chrome')) {
         throw new Error(
             'Hosted quantum measurement workflow must retain the forced Google Chrome install, since sudo drops CI and the runner image already ships Chrome'
+        );
+    }
+    if (!run.includes(`${APT_FEED_FILTER} node_modules/.bin/playwright install --force chrome`)) {
+        throw new Error(
+            'Hosted quantum measurement workflow must run the Google Chrome install through the Microsoft apt feed filter'
         );
     }
     if (!run.includes(CHROME_INSTALL_COMMAND)) {
