@@ -1,0 +1,29 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipLoop.spec.ts
+  s_1c08b47ac3792f::t_af40f040e4d721 47-50,91
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/restoreAdjustmentLayerMutation.spec.ts
+  s_59e31a5c6f3e31::t_fa11bfbdf60d37 3-4,282-289,307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "927f402a43d91db8792f219726b0997d0dabaf47",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
