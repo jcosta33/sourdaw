@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DELIVERY_PRESETS } from '../deliveryPresets';
+import { DELIVERY_PRESETS } from '../DeliveryPresets';
 
 describe('factory delivery targets', () => {
     it('defines every required family with supported fields and honest descriptions', () => {

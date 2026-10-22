@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { unzipSync } from 'fflate';
 
-import { DELIVERY_PRESETS } from '../../../models/deliveryPresets';
+import { DELIVERY_PRESETS } from '../../../models/DeliveryPresets';
 import { type DeliverySettings } from '../../../models/DeliveryTarget';
 import { type PcmDitherOptions } from '../../../models/PcmDitherOptions';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
