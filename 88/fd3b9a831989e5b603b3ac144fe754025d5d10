@@ -1,0 +1,25 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_d1c4d73ddcb30e::t_568a3997102897 4958-4965
+scripts/approvalGatedWorkflowContract.ts
+  s_d1c4d73ddcb30e::t_cc5f5948480929 57,60
+scripts/test-health-gate-scripts.sh
+  s_d1c4d73ddcb30e::t_13c7644e7e98e9 497,524-527
+scripts/workflowSecuritySurfaceContract.ts
+  s_d1c4d73ddcb30e::t_482e8b9eb6632f 10,72-73,245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88fd3b9a831989e5b603b3ac144fe754025d5d10",
+  "prompts": {},
+  "sessions": {
+    "s_d1c4d73ddcb30e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7be8ac89-29b4-4f74-a6af-cf644a6dc60d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
