@@ -288,10 +288,9 @@ fn existing_ordinals_and_unknown_id_retain_their_contract() {
         let named_ptr = named.process(&left, &right, BLOCK as u32);
         let by_id_ptr = by_id.process(&left, &right, BLOCK as u32);
         for frame in 0..BLOCK {
-            assert_eq!(
-                unsafe { *named_ptr.add(frame) },
-                unsafe { *by_id_ptr.add(frame) }
-            );
+            assert_eq!(unsafe { *named_ptr.add(frame) }, unsafe {
+                *by_id_ptr.add(frame)
+            });
         }
     }
     let mut untouched = ProofChamberInstance::new(RATE);

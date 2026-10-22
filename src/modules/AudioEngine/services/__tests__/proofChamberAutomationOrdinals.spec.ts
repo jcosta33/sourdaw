@@ -16,8 +16,8 @@ import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { NativeDspDeviceStrategy } from '../../repositories/deviceStrategy/NativeDspDeviceStrategy';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { constantTempoProjector } from '../../repositories/offlineScheduler/__tests__/constantTempoProjector';
-import { installWorkletGlobals } from '../../services/__tests__/wasmViewGrowthHarness';
-import { initSync, ProofChamberInstance } from '../proof_chamber.js';
+import { installWorkletGlobals } from './wasmViewGrowthHarness';
+import { initSync, ProofChamberInstance } from '../../wasm/proof_chamber.js';
 
 import type { OfflineAutomationSegment } from '../../repositories/deviceStrategy/AudioDeviceStrategy';
 
@@ -180,7 +180,7 @@ async function render(
     mode: 'by-id' | 'by-name' | 'static',
     spy: ParamIdSpy
 ): Promise<{ pcm: Float32Array; calls: Array<[number, number, number]> }> {
-    await import('../../services/proofChamberProcessor');
+    await import('../proofChamberProcessor');
     const Constructor = registry.get('proof-chamber-processor');
     if (!Constructor) {
         throw new Error('real ProofChamberProcessor did not register');
@@ -195,9 +195,13 @@ async function render(
         ['high_cut', 20_000],
         ['low_cut', 20],
         ['early_late', 0.8],
-        ...(fixture.prelude ?? []),
-        [name, fixture.from],
     ];
+    if (fixture.prelude !== undefined) {
+        for (const entry of fixture.prelude) {
+            initialWrites.push(entry);
+        }
+    }
+    initialWrites.push([name, fixture.from]);
     for (const [parameter, value] of initialWrites) {
         processor.port.onmessage?.({ data: { type: 'param', name: parameter, value } });
     }
