@@ -240,37 +240,28 @@ describe('recorded controller take', () => {
             ]);
         });
 
-        const recordedController = { controller: 1, value: 10, beat: 1, channel: 0 };
+        it.each([
+            { controller: 66, value: 63, seeded: false },
+            { controller: 66, value: 64, seeded: true },
+            { controller: 67, value: 63, seeded: false },
+            { controller: 67, value: 64, seeded: true },
+        ])('seeds $controller held at $value: $seeded', ({ controller, value, seeded }) => {
+            holdPedal(0, controller, value);
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
 
-        it.each([{ controller: 66 }, { controller: 67 }])(
-            'seeds no switch pedal $controller held at 63',
-            ({ controller }) => {
-                holdPedal(0, controller, 63);
-                beginTake();
-                bufferRecordedMidiCC({ clipId: CLIP, row: recordedController });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
 
-                commitRecordedControllers({ clip: spanOf(CLIP) });
-
-                expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([recordedController]);
-            }
-        );
-
-        it.each([{ controller: 66 }, { controller: 67 }])(
-            'seeds a switch pedal $controller held at 64',
-            ({ controller }) => {
-                holdPedal(0, controller, 64);
-                beginTake();
-                bufferRecordedMidiCC({ clipId: CLIP, row: recordedController });
-
-                commitRecordedControllers({ clip: spanOf(CLIP) });
-
-                expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
-                    { controller, value: 64, beat: 0, channel: 0 },
-                    recordedController,
-                    { controller, value: 0, beat: 4, channel: 0 },
-                ]);
-            }
-        );
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual(
+                seeded
+                    ? [
+                          { controller, value, beat: 0, channel: 0 },
+                          { controller: 1, value: 10, beat: 1, channel: 0 },
+                          { controller, value: 0, beat: 4, channel: 0 },
+                      ]
+                    : [{ controller: 1, value: 10, beat: 1, channel: 0 }]
+            );
+        });
 
         it('keeps the seed when only a later loop pass lifts the pedal at beat 0', () => {
             holdPedal(0, 64, 127);
