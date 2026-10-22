@@ -1,24 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { type ProjectStoreState } from '../../stores/projectStore';
 import { importSclFile } from '../importSclFile';
 
 const mocks = vi.hoisted(() => ({
-    desktopInvoke: vi.fn(),
+    invoke: vi.fn(),
     notifyUser: vi.fn(),
     pickFiles: vi.fn(),
     projectStore: { value: null as ProjectStoreState | null, set: vi.fn() },
     registerTuningTable: vi.fn(),
 }));
 
-vi.mock('#/utils/desktopBridge', () => ({ desktopInvoke: mocks.desktopInvoke }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ registerTuningTable: mocks.registerTuningTable }));
 vi.mock('../../stores/projectStore', () => ({ projectStore: mocks.projectStore }));
 vi.mock('../fileDialog', () => ({ pickFiles: mocks.pickFiles }));
 
 describe('importSclFile native wire', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.projectStore.value = {
@@ -39,17 +42,14 @@ describe('importSclFile native wire', () => {
         const content = '! demo.scl\nDemo\n! count comment\n1\n3/0\n';
         const prior = structuredClone(mocks.projectStore.value);
         mocks.pickFiles.mockResolvedValue([new File([content], 'demo.scl')]);
-        mocks.desktopInvoke.mockResolvedValue({
+        mocks.invoke.mockResolvedValue({
             error: { kind: 'zero-denominator', line: 5, reason: 'Zero denominator in ratio' },
         });
+        vi.stubGlobal('sourdaw', { invoke: mocks.invoke });
 
         await importSclFile();
 
-        expect(mocks.desktopInvoke).toHaveBeenCalledWith('parse_scl', {
-            content,
-            rootNote: 69,
-            rootFreq: 440,
-        });
+        expect(mocks.invoke).toHaveBeenCalledWith('parse_scl', [content, 69, 440]);
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
             'Failed to import Scala file at line 5: Zero denominator in ratio',
             'error'
