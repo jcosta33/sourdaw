@@ -1,0 +1,97 @@
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_813de050e89e33 8,29
+.agents/skills/review-stances/correctness.md
+  s_3e7dea5cde3f9e::t_813de050e89e33 71-91
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/appendRecordedMidiControllers.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 82-88
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 361-419
+src/modules/ControlSurface/stores/midiLearnStore.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 149-156
+.agents/skills/review-stances/session-lifecycle.md
+  s_3e7dea5cde3f9e::t_813de050e89e33 39-58
+scripts/__tests__/restampTrackedSetInventory.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 156-162,168-171,173-177,398-404,406
+src/modules/CrdtDocument/useCases/crdtBranching/switchBranch.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1,6-7,13,46-50,52-55,57-80,83,87,101-139,160-168,174
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_813de050e89e33 25
+src/infra/store/storage/__tests__/createAutomergeStorage.keepLocalRuntimeState.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-182
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-344
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 369-370,397,448-450,1224-1228,2448-2465
+  s_3e7dea5cde3f9e::t_e1102e2dea7a7f 2466-2467
+src/infra/store/storage/createAutomergeStorage.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 6,1634-1647,2477,2527-2531,2579-2583,2612-2616,2642-2646
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1072,1241-1242
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 29-33,151-154
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1,28,46,69,81
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1013-1027,3907-3935,4655-4656,4667,4718,4984,4991,4994
+src/modules/Transport/useCases/transportControls/__tests__/isTransportIdle.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 3-4,11,19,23,27-28,30,35,41,46,52-53
+src/modules/Transport/useCases/transportControls/isTransportIdle.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 6-9,13-14,16
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTakeConcurrentNote.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-137
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 19-21,37
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 278-349
+src/modules/CrdtDocument/AGENTS.md
+  s_3e7dea5cde3f9e::t_813de050e89e33 32
+release/open-source-inventory.json
+  s_3e7dea5cde3f9e::t_813de050e89e33 1211
+src/infra/store/storage/types.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-10,43
+src/infra/store/types.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 3,75
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 116-117,120-123,167-168,270-369
+  s_3e7dea5cde3f9e::t_931e594d1719d3 370
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTake.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 205-215
+src/modules/Transport/useCases/scheduling/resolveStoredControllerClips.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 17-20,30
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 32-37,81-103,111,119,121,125-133,180,237
+scripts/__tests__/restampWasmInventory.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 83-93,161-166,168
+src/modules/Transport/useCases/scheduling/__tests__/resolveStoredControllerClips.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-68
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 732,734,840-841
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchLineageTransition.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 12,21,28
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-245
+src/infra/store/createStore.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 4,266,270
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionKeepsRuntimeState.integration.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-211
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 1-239
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_3e7dea5cde3f9e::t_813de050e89e33 3-4,18,24,28,30,36,60-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b56fcb4adac116ddc481063e83180600efd69671",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
