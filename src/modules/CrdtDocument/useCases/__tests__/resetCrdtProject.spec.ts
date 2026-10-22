@@ -113,16 +113,28 @@ describe('resetCrdtProject', () => {
         });
 
         it('switches in the turn that checked the transport', async () => {
-            const replaced = vi.fn();
-            mocks.resetCrdtProjectAuthority.mockImplementation(replaced);
+            let idle = true;
+            // The transport rolls right after the check, on the microtask queue and on a
+            // macrotask, so any await between the check and the switch lands after the roll.
+            mocks.isTransportIdle.mockImplementation(() => {
+                const idleAtCheck = idle;
+                queueMicrotask(() => {
+                    idle = false;
+                });
+                setTimeout(() => {
+                    idle = false;
+                }, 0);
+                return idleAtCheck;
+            });
+            const idleWhenSwitched: boolean[] = [];
+            mocks.resetCrdtProjectAuthority.mockImplementation(() => {
+                idleWhenSwitched.push(idle);
+            });
 
             await resetCrdtProject('New Project', undefined, mocks.isTransportIdle);
 
-            expect(mocks.isTransportIdle.mock.invocationCallOrder[0]!).toBeLessThan(
-                mocks.resetCrdtProjectAuthority.mock.invocationCallOrder[0]!
-            );
             expect(mocks.abortReset).not.toHaveBeenCalled();
-            expect(replaced).toHaveBeenCalledOnce();
+            expect(idleWhenSwitched).toEqual([true]);
         });
 
         it('still refuses when the record cannot be withdrawn, and says so', async () => {

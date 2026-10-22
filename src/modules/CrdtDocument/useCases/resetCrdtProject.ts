@@ -42,9 +42,11 @@ export type CrdtProjectResetResult =
     | { status: 'transport-active' };
 
 /**
- * A marker that cannot be withdrawn is safe to leave: the durable authority
- * still names the outgoing project, so the next reset of this instance settles
- * it and a boot rolls it back. The retry the caller makes is that next reset.
+ * A marker that cannot be withdrawn stays durable, and that is tolerable only
+ * because the authority marks the handle withdrawn: the durable authority still
+ * names the outgoing project, so the next reset of this instance settles it and
+ * a boot rolls it back, while branch hydrations in between keep the live list
+ * rather than the replacement's. The retry the caller makes is that next reset.
  */
 async function withdrawBegunReset(handle: BranchResetHandle): Promise<void> {
     const outcome = await branchStateAuthority.abortReset(handle);

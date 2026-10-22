@@ -139,6 +139,12 @@ let ownReset: {
     owner: string;
     target: CrdtPersistenceAuthority;
     intended: BranchStoreState;
+    /**
+     * Set when the reset was withdrawn but the withdrawal could not be written.
+     * The switch never ran, so the outgoing project is still live and the
+     * marker's `intended` list describes nothing that exists.
+     */
+    withdrawn: boolean;
     release: () => void;
 } | null = null;
 
@@ -157,12 +163,14 @@ function resetLockName(owner: string): string {
  * project's list and the intended one is what the reset already published, so
  * the marker's `intended` is projected instead: hydrating `current` would put
  * the replaced project's branches over the replacement's root, and every later
- * branch action would write them there.
+ * branch action would write them there. A reset that was withdrawn but whose
+ * withdrawal is unwritten never switched, so `current` is the live list.
  */
 function hydrate(envelope: BranchStateEnvelope, project: BranchStateProjectionScope = projectDirectly): void {
     liveRevision = envelope.revision;
     const own = ownReset;
-    const current = own !== null && envelope.reset?.owner === own.owner ? own.intended : envelope.current;
+    const switched = own !== null && !own.withdrawn && envelope.reset?.owner === own.owner;
+    const current = switched ? own.intended : envelope.current;
     project(() => branchStore.set(current));
 }
 
@@ -712,7 +720,7 @@ async function beginReset({
     // longer describes anything a booting instance has to wait for. Its handle
     // answers `superseded` from here on, as a foreign supersession does.
     ownReset?.release();
-    ownReset = { owner, target, intended, release: lifetime.release };
+    ownReset = { owner, target, intended, withdrawn: false, release: lifetime.release };
     return { status: 'begun', handle: { owner } };
 }
 
@@ -783,14 +791,19 @@ async function finalizeReset(
  * The outgoing project is still the live one, so the list the reset recorded
  * as `previous` is the list to keep. Only a reset this instance still owns is
  * withdrawn; a superseded handle leaves the envelope to whoever replaced it. A
- * refused write leaves the marker in place, which is safe: the durable
- * authority still names the outgoing project, so a later reset of this
- * instance settles it and a boot rolls it back.
+ * refused write leaves the marker in place: the durable authority still names
+ * the outgoing project, so a later reset of this instance settles it and a boot
+ * rolls it back. Until then the handle is marked withdrawn, so a hydration
+ * keeps projecting the live list instead of the marker's `intended` one, which
+ * only a reset whose switch ran may project.
  */
 async function abortReset(handle: BranchResetHandle): Promise<BranchResetAbortOutcome> {
     if (ownReset?.owner !== handle.owner) {
         return 'superseded';
     }
+    // Marked before the write: a withdrawal that is written or superseded
+    // releases the handle, so only a failed one leaves the mark observable.
+    ownReset.withdrawn = true;
     return settleOwnReset(handle, (reset) => reset.previous, 'aborted');
 }
 

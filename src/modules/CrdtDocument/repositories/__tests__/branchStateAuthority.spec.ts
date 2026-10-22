@@ -1008,6 +1008,14 @@ describe('branchStateAuthority', () => {
             expect(readStoredEnvelope()).toEqual(before);
             await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
 
+            // The switch never ran, so the replacement's list must not reach the live project.
+            const refused = await instance.authority.commit({
+                expectedRevision: instance.authority.captureRevision(),
+                next: branchList(hotfix),
+            });
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-pending' });
+            expect(instance.store.value).toEqual(branchList(feature));
+
             await expect(instance.authority.abortReset(begun)).resolves.toBe('aborted');
 
             expect(readStoredEnvelope()?.reset).toBeNull();
