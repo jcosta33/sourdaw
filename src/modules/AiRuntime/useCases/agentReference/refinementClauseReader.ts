@@ -25,6 +25,9 @@ type ReferenceCandidate = { name: string; denotes: ReadonlySet<string> };
 
 type ClauseReference = { start: number; end: number; denotes: ReadonlySet<string> };
 
+/** An object name a removal states, and the operations a trailing operation word narrows it to. */
+type StatedReference = { name: string; operations: readonly string[] | null };
+
 type CommandView = { index: number; command: ProposalGroundingCommand; denotes: ReadonlySet<string> };
 
 /**
@@ -165,18 +168,21 @@ function normalizedClause(clause: PromptClause): string {
 /**
  * Every object text the clause masking hides, and what each denotes: VCA groups, tracks, devices,
  * their parameters and clips, each by its id and its name. A clause naming one of them names an
- * object, so no name the masking keeps out of a clause's words can leave the clause unscoped.
+ * object, so no name the masking keeps out of a clause's words can leave the clause unscoped; a name
+ * of symbols alone ("🎤"), which normalizes to nothing, counts by its raw text.
  */
 function collectReferenceCandidates(context: ProjectContext): ReferenceCandidate[] {
     const byName = new Map<string, Set<string>>();
     const add = (name: string | undefined, id: string) => {
-        const normalized = normalizePromptText(name ?? '');
-        if (normalized.length === 0) {
+        const raw = (name ?? '').trim();
+        const normalized = normalizePromptText(raw);
+        const key = normalized.length > 0 ? normalized : raw;
+        if (key.length === 0) {
             return;
         }
-        const ids = byName.get(normalized) ?? new Set<string>();
+        const ids = byName.get(key) ?? new Set<string>();
         ids.add(id);
-        byName.set(normalized, ids);
+        byName.set(key, ids);
     };
     for (const group of context.vcaGroups ?? []) {
         for (const reference of [group.id, group.name]) {
@@ -276,15 +282,39 @@ function viewCommands(basis: ProposalGroundingBasis, context: ProjectContext): C
     }));
 }
 
-function stripReference(reference: string): { name: string; operations: readonly string[] | null } {
-    let name = reference.replace(REFERENCE_TRAILERS, '').replace(REFERENCE_ARTICLES, '').trim();
-    let operations: readonly string[] | null = null;
+/** The ways a removal can state its object: its full name, then without a trailing generic noun or operation word. */
+function readReferenceForms(reference: string): StatedReference[] {
+    const name = reference.replace(REFERENCE_TRAILERS, '').replace(REFERENCE_ARTICLES, '').trim();
+    const withoutGenericNoun = (text: string) => text.replace(GENERIC_REFERENCE_NOUNS, '').trim();
+    const forms: StatedReference[] = [
+        { name, operations: null },
+        { name: withoutGenericNoun(name), operations: null },
+    ];
     const lastWord = name.split(' ').at(-1) ?? '';
-    if (OPERATION_WORDS[lastWord] !== undefined && name.includes(' ')) {
-        operations = OPERATION_WORDS[lastWord];
-        name = name.slice(0, name.length - lastWord.length).trim();
+    const operations = OPERATION_WORDS[lastWord];
+    if (operations !== undefined && name.includes(' ')) {
+        const object = name.slice(0, name.length - lastWord.length).trim();
+        forms.push({ name: object, operations }, { name: withoutGenericNoun(object), operations });
     }
-    return { name: name.replace(GENERIC_REFERENCE_NOUNS, '').trim(), operations };
+    return forms;
+}
+
+/**
+ * The project object a removal names, read by its full stated name first: a trailing generic noun or
+ * operation word is read off only when the full name names nothing, so a track named "Drum Bus" or
+ * "Bass Mute" is never read as "Drum" or as the Bass track's mute.
+ */
+function resolveReference(
+    stated: string,
+    candidates: readonly ReferenceCandidate[]
+): { reference: StatedReference; candidate: ReferenceCandidate } | null {
+    for (const reference of readReferenceForms(stated)) {
+        const candidate = candidates.find((entry) => entry.name === reference.name);
+        if (candidate !== undefined) {
+            return { reference, candidate };
+        }
+    }
+    return null;
 }
 
 function describeUnresolvedRemoval(reference: string, what: 'object' | 'change'): string {
@@ -321,15 +351,14 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     if (stated === undefined || (statesFigure && negation === null)) {
         return { kind: 'none' };
     }
-    const reference = stripReference(stated);
-    const candidate = candidates.find((entry) => entry.name === reference.name);
-    if (candidate === undefined) {
+    const resolved = resolveReference(stated, candidates);
+    if (resolved === null) {
         if (negation !== null) {
             return readOtherNegation(clause, candidates);
         }
         return { kind: 'refused', reason: describeUnresolvedRemoval(stated, 'object') };
     }
-    return removeNamedObject(input, { stated, reference, candidate, protects: alone !== null || negation !== null });
+    return removeNamedObject(input, { stated, ...resolved, protects: alone !== null || negation !== null });
 }
 
 /**
@@ -340,7 +369,7 @@ function removeNamedObject(
     input: RemovalClauseInput,
     named: {
         stated: string;
-        reference: ReturnType<typeof stripReference>;
+        reference: StatedReference;
         candidate: ReferenceCandidate;
         protects: boolean;
     }

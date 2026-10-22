@@ -112,11 +112,12 @@ function operationPattern(actionType: string): RegExp | null {
     return operation === undefined ? null : new RegExp(`\\b${operation}\\b`, 'i');
 }
 
-function isNegatedRemoval(clause: string, removalIndex: number): boolean {
-    const beforeRemoval = clause.slice(0, removalIndex);
-    return /\b(?:(?:do not|don't)\s+want(?:\s+you)?\s+to\s+|(?:not|never|don't|can't|cannot|avoid|without)\s+(?:\w+\s+){0,2})$/i.test(
-        beforeRemoval
-    );
+/**
+ * Whether a removal verb opens its clause, after nothing but `please`, `and` or `then`. A removal verb
+ * anywhere else ("don’t remove", "you shouldn't remove", "no need to remove") removes nothing.
+ */
+function opensClause(clause: string, removalIndex: number): boolean {
+    return /^\s*(?:(?:please|and|then)\s+)*$/iu.test(clause.slice(0, removalIndex));
 }
 
 const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|keep|retain|preserve|leave)\b/gi;
@@ -266,7 +267,7 @@ function intentionForMention(input: {
     if (!onlyBindingWords(beforeTarget)) {
         return null;
     }
-    const intention = REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';
+    const intention = REMOVAL.test(directive[0]) && opensClause(clause, at) ? 'remove' : 'preserve';
     if (operation === null) {
         return intention;
     }
@@ -423,7 +424,8 @@ export function explicitlyRemovesCommand(input: {
 
 /**
  * A provider may add or change grounded commands, and may remove a command the user expressly
- * dropped. It may not silently lose a command from the full held card. The caller supplies the
+ * dropped. It may not silently lose a command from the full held card, nor create again what the user
+ * removed from it. The caller supplies the
  * stored snapshot: thread_context can omit command arguments to stay inside its provider budget.
  */
 export function validateRefinedProposalActions(input: {
@@ -453,12 +455,6 @@ export function validateRefinedProposalActions(input: {
     for (const old of changed) {
         const identity = targetOf(old, createdObjectOf);
         const changedIndex = remaining.findIndex((next) => targetOf(next, createdObjectOf) === identity);
-        if (changedIndex >= 0) {
-            // The ordinary grounding route has already checked this changed command against the
-            // new request's target and value; keep its paired occurrence out of addition matching.
-            remaining.splice(changedIndex, 1);
-            continue;
-        }
         const removed = explicitlyRemovesCommand({
             prompt: input.prompt,
             command: old,
@@ -466,6 +462,20 @@ export function validateRefinedProposalActions(input: {
             context: input.context,
             createdObject: input.createdObject,
         });
+        if (changedIndex >= 0) {
+            // A creation pairs under the fresh id every grounding mints, so pairing alone would keep
+            // one the request removes.
+            if (removed && createdObjectOf(old) !== null) {
+                return {
+                    status: 'refused',
+                    reason: `Refined proposal keeps the pending ${old.type} command the request removes.`,
+                };
+            }
+            // The ordinary grounding route has already checked this changed command against the
+            // new request's target and value; keep its paired occurrence out of addition matching.
+            remaining.splice(changedIndex, 1);
+            continue;
+        }
         if (!removed) {
             return {
                 status: 'refused',

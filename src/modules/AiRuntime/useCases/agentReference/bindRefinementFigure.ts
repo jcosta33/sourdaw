@@ -713,7 +713,13 @@ export function bindRefinementFigure(input: {
         }
         return { kind: 'addition' };
     }
-    if (figure === 'several' || figure === 'unreadable') {
+    if (figure === 'several') {
+        return {
+            kind: 'clarify',
+            question: `"${clause.text.trim()}" states more than one figure. State the one new value, as in "make it 2 dB".`,
+        };
+    }
+    if (figure === 'unreadable') {
         return { kind: 'refused', reason: `The refinement clause "${clause.text.trim()}" states more than one value.` };
     }
     if (figure === 'quoted') {
@@ -746,7 +752,7 @@ export function bindRefinementFigure(input: {
         };
     }
     if (scoped.length === 0) {
-        if (input.statesAction || input.namesObjects) {
+        if (input.statesAction) {
             return { kind: 'addition' };
         }
         return { kind: 'refused', reason: `The pending proposal has no value "${clause.text.trim()}" could change.` };
