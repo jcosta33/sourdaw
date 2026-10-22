@@ -4,7 +4,7 @@ import { getMidiAccess } from '../getMidiAccess';
 import { getNativeEventUnlisten } from '../getNativeEventUnlisten';
 import { getNativeMode } from '../getNativeMode';
 import { releaseAllActiveNotes } from '../releaseAllActiveNotes';
-import { resetChannelControllerState } from '../resetChannelControllerState';
+import { resetInputDeviceControllerState } from '../resetInputDeviceControllerState';
 import { setMidiAccess } from '../setMidiAccess';
 import { setNativeEventUnlisten } from '../setNativeEventUnlisten';
 import { setNativeMode } from '../setNativeMode';
@@ -46,7 +46,7 @@ export function destroyWebMidi(input: {
     // Toaster pads and raw oscillators only, so a Fermenter / Grand Boule /
     // Levain voice held at teardown kept sounding.
     releaseAllActiveNotes(input);
-    resetChannelControllerState();
+    resetInputDeviceControllerState();
 
     const access = getMidiAccess();
     if (access) {

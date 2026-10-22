@@ -149,8 +149,8 @@ describe('midiStore', () => {
             },
             pitchBendByClipId: {
                 'clip-pitch': [
-                    { id: 'pitch-1', value: -0.25, beat: 2, channel: 1 },
-                    { id: 'bad-pitch', value: -0.25, beat: null, channel: 1 },
+                    { id: 'pitch-1', value: -2048, beat: 2, channel: 1 },
+                    { id: 'bad-pitch', value: -2048, beat: null, channel: 1 },
                 ],
                 'clip-bad-pitch': 'not-an-array',
             },
@@ -167,9 +167,37 @@ describe('midiStore', () => {
                 'clip-cc': [{ id: 'cc-1', controller: 74, value: 0.5, beat: 1, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-pitch': [{ id: 'pitch-1', value: -0.25, beat: 2, channel: 1 }],
+                'clip-pitch': [{ id: 'pitch-1', value: -2048, beat: 2, channel: 1 }],
             },
         });
+    });
+
+    it('should admit only integer pitch-bend rows inside the signed 14-bit wire range', () => {
+        const row = (id: string, value: number) => ({ id, value, beat: 1, channel: 0 });
+        fake_doc.midi = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {
+                'clip-pitch': [
+                    row('top', 8191),
+                    row('bottom', -8192),
+                    row('above-top', 8192),
+                    row('below-bottom', -8193),
+                    row('fractional', 1.5),
+                    row('not-a-number', Number.NaN),
+                ],
+            },
+        };
+
+        midiStore.hydrate();
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']?.map((point) => point.id)).toEqual(['top', 'bottom']);
+
+        midiStore.set({
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: { 'clip-pitch': [row('top', 8191), row('above-top', 8192), row('fractional', 1.5)] },
+        });
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']?.map((point) => point.id)).toEqual(['top']);
     });
 
     it('should strip malformed optional note fields without dropping the valid parent note or clip', () => {
@@ -245,7 +273,7 @@ describe('midiStore', () => {
                 'clip-cc': [{ id: 'cc-1', controller: 74, value: 0.5, beat: 1, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-pitch': [{ id: 'pitch-1', value: -0.25, beat: 2, channel: 1 }],
+                'clip-pitch': [{ id: 'pitch-1', value: -2048, beat: 2, channel: 1 }],
             },
         } satisfies MidiStoreState;
         fake_doc.midi = valid_state;

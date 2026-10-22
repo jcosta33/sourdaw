@@ -8,6 +8,7 @@ import {
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
+    projectNoteExpressionCurves,
     registerScheduledSource,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
@@ -38,6 +39,12 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import {
+    forgetHeldNoteExpression,
+    holdNoteExpression,
+    keepHeldNoteExpressionOnReceiver,
+    takeHeldNoteExpression,
+} from '../../services/heldNoteExpression';
+import {
     forgetStoredControllersClipMuteWithheld,
     forgetStoredControllersTrackMuteWithheld,
     hasStoredControllersTrackMuteWithheld,
@@ -58,7 +65,7 @@ import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers } from './restoreStoredControllers';
-import { createSameFramePostQueue } from './sameFramePostQueue';
+import { createSameFramePostQueue, type SameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
@@ -805,6 +812,44 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     return params;
 }
 
+type PostNoteExpressionInput = {
+    posts: SameFramePostQueue;
+    trackId: string;
+    pitch: number;
+    channel: number;
+    sampleFrame: number;
+    expression: ScheduledMpeParams | undefined;
+};
+
+/**
+ * Queue one expression update for a held note, in the window's same-frame order
+ * (after the note-on at its frame). It carries the bend range the bend was
+ * recorded under, and only when there is a bend, as the start event always has.
+ */
+function postNoteExpression({
+    posts,
+    trackId,
+    pitch,
+    channel,
+    sampleFrame,
+    expression,
+}: PostNoteExpressionInput): void {
+    posts.add('expression', sampleFrame, () =>
+        applyNoteExpression({
+            trackId,
+            note: pitch,
+            channel,
+            expression: {
+                pressure: expression?.pressure,
+                slide: expression?.slide,
+                pitchBend: expression?.pitchBend,
+            },
+            sampleFrame,
+            bendRangeSemitones: expression?.pitchBendRangeSemitones,
+        })
+    );
+}
+
 type PlaceSamplesOnClockInput = {
     startSamples: number;
     accumulatedSamples: number;
@@ -882,6 +927,11 @@ export async function scheduleMidiNotes(
     opensAtRelocation = false
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
+    // A relocation is not a continuation: a note sounding at the old position has no changes in the new one,
+    // and a loop pass's notes must not bend the notes the next pass starts at their pitch.
+    if (opensAtRelocation) {
+        forgetHeldNoteExpression();
+    }
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -956,7 +1006,6 @@ export async function scheduleMidiNotes(
             clips: resolveStoredControllerClips({
                 trackId: track.id,
                 clips: track.clips,
-                notesByClipId: midiState.notesByClipId,
                 ccByClipId: midiState.ccByClipId,
             }),
             atBeat: fromBeat,
@@ -1027,6 +1076,12 @@ export async function scheduleMidiNotes(
         if (track.kind !== 'midi') {
             continue;
         }
+        // A bypass or a swap panics the notes the instrument was voicing outside the transport teardown, so
+        // what a muted or gapped window left parked for them must not post to the voice that is gone, or to
+        // the next note the instrument starts on that pitch.
+        const playbackReceiver = resolvePlaybackNoteReceiver(track.devices);
+        const playbackReceiverId = isBypassedNoteReceiver(playbackReceiver) ? undefined : playbackReceiver?.device.id;
+        keepHeldNoteExpressionOnReceiver(track.id, playbackReceiverId);
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             noteStoredControllersTrackMuteWithheld(track.id);
             continue;
@@ -1085,10 +1140,7 @@ export async function scheduleMidiNotes(
 
         if (yeastDevice) {
             for (const clip of activeMidiClips) {
-                const sourceNotes = midiState.notesByClipId[clip.id];
-                if (!sourceNotes) {
-                    continue;
-                }
+                const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
 
                 const clipVisualLength = clip.endBeat - clip.startBeat;
                 const loopProjection = projectClipLoopExpansion({
@@ -1240,12 +1292,29 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
+        // The changes of notes an earlier window started that fall in this window, and the expression in
+        // force at its start for a note this track's earlier windows did not run for (a mute). Taken before
+        // the clips schedule, so a note starting now holds only the changes of windows after this one.
+        const heldDue = takeHeldNoteExpression({
+            trackId: track.id,
+            fromBeat,
+            toBeat,
+            fromFrame: sampleFrameAtBeatOnTrack(track.id)(fromBeat),
+        });
+        for (const { pitch, channel, change } of heldDue) {
+            postNoteExpression({
+                posts,
+                trackId: track.id,
+                pitch,
+                channel,
+                sampleFrame: change.frame,
+                expression: change.expression,
+            });
+        }
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
-            const notes = midiState.notesByClipId[clip.id];
-            if (!notes) {
-                continue;
-            }
+            // A clip with no note list plays no notes; its stored controllers still play.
+            const notes = midiState.notesByClipId[clip.id] ?? [];
 
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
             const synthParams =
@@ -1372,7 +1441,7 @@ export async function scheduleMidiNotes(
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                let iterNotes: readonly LiveYeastNote[];
+                let iterNotes: readonly (LiveYeastNote & Pick<ScheduledMidiNote, 'expression'>)[];
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
                 } else if (clip.loopEnabled) {
@@ -1459,7 +1528,7 @@ export async function scheduleMidiNotes(
                     }
 
                     const iterationStart = clip.startBeat + iterOffset;
-                    let projectedNotes: readonly LiveYeastNote[];
+                    let projectedNotes: readonly (LiveYeastNote & { beatsIntoNote?: number })[];
                     if (isTrackScopedYeastNote) {
                         projectedNotes = [note];
                     } else {
@@ -1635,25 +1704,61 @@ export async function scheduleMidiNotes(
                             // member default — the range they were actually
                             // performed under (audit MD-8).
                             const mpe = resolveScheduledMpeParams(note);
-                            const noteBendRange = mpe?.pitchBendRangeSemitones;
+                            // The recorded curves are placed through the
+                            // clock the note's own start and release used,
+                            // from the note's uncut start, so a curve keeps
+                            // its place in a moved or cut note. This window
+                            // posts the changes that fall in it; the rest
+                            // wait for the windows that contain them.
+                            const curves = note.expression
+                                ? projectNoteExpressionCurves({
+                                      note,
+                                      startBeat: noteStartBeat,
+                                      beatsIntoNote: projectedNote.beatsIntoNote,
+                                      releaseFrame: endSampleFrame,
+                                      frameAtBeat: (beat) =>
+                                          placeSamplesOnClock({
+                                              startSamples: beatToSamples(changes, beat, transport.tempo, sr),
+                                              accumulatedSamples,
+                                              sampleRate: sr,
+                                              compensation,
+                                          }).sampleFrame,
+                                  })
+                                : undefined;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
                             // to the voice this noteOn just started.
-                            posts.add('expression', sampleFrame, () =>
-                                applyNoteExpression({
+                            postNoteExpression({
+                                posts,
+                                trackId: track.id,
+                                pitch,
+                                channel: noteChannel,
+                                sampleFrame,
+                                expression: curves?.atStart ?? mpe,
+                            });
+                            const curveChanges = curves?.changes ?? [];
+                            for (const change of curveChanges) {
+                                if (change.beat >= toBeat) {
+                                    break;
+                                }
+                                postNoteExpression({
+                                    posts,
                                     trackId: track.id,
-                                    note: pitch,
+                                    pitch,
                                     channel: noteChannel,
-                                    expression: {
-                                        pressure: mpe?.pressure,
-                                        slide: mpe?.slide,
-                                        pitchBend: mpe?.pitchBend,
-                                    },
-                                    sampleFrame,
-                                    bendRangeSemitones: noteBendRange,
-                                })
-                            );
+                                    sampleFrame: change.frame,
+                                    expression: change.expression,
+                                });
+                            }
+                            holdNoteExpression({
+                                trackId: track.id,
+                                pitch,
+                                channel: noteChannel,
+                                receiverId: playbackReceiverId,
+                                releaseBeat: noteEndBeat,
+                                changes: curveChanges.filter((change) => change.beat >= toBeat),
+                            });
                             // Grand Boule is the one worklet synth whose
                             // `noteOff` reads a release velocity in slot 3 and
                             // its member channel in slot 4; Fermenter, Levain

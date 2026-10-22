@@ -115,6 +115,7 @@ export function projectOfflineYeastClipNotes({
             endSamples: endpoints.endSamples,
             toasterPadIndex,
             startBeat: note.startBeat,
+            beatsIntoNote: note.beatsIntoNote,
             endBeat: note.startBeat + note.duration,
         };
     });

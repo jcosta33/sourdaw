@@ -1,6 +1,6 @@
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
-import { getGrooveProjection } from './getGrooveProjection';
+import { getGrooveProjection, type ProjectedSegment } from './getGrooveProjection';
 
 type ClipMidiEvent = {
     id: string;
@@ -36,7 +36,7 @@ export function projectClipMidiEvents<Event extends ClipMidiEvent>({
     loopOriginBeat,
     clipGrooveAlreadyApplied = false,
     eventsAreAbsolute = false,
-}: ProjectClipMidiEventsInput<Event>): Event[] {
+}: ProjectClipMidiEventsInput<Event>): ProjectedSegment<Event>[] {
     return getGrooveProjection(grooveTemplateStore.value ?? defaultGrooveTemplateState).projectClipMidiEvents({
         events,
         clipId,
