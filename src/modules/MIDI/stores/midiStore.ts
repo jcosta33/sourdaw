@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
+import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 
 import {
     isValidMidiArticulation,
@@ -225,6 +226,9 @@ function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
         typeof value.id === 'string' &&
         'value' in value &&
         isFiniteNumber(value.value) &&
+        Number.isInteger(value.value) &&
+        value.value >= PITCH_BEND_MIN &&
+        value.value <= PITCH_BEND_MAX &&
         'beat' in value &&
         isFiniteNumber(value.beat) &&
         'channel' in value &&

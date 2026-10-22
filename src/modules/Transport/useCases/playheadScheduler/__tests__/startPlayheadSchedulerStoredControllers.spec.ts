@@ -139,6 +139,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: () => trackStripStub,
     getTrackStrip: () => trackStripStub,
     applyNoteExpression: vi.fn(),
+    projectNoteExpressionCurves: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
     audioEngine: { setTransportInfo: vi.fn() },

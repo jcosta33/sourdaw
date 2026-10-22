@@ -1,9 +1,17 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { GOVERNANCE_TRANSITION_PATHS, parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
+import { changedReviewPaths } from '../reviewDiffSummary.ts';
+import {
+    GOVERNANCE_TRANSITION_PATHS,
+    STRONGEST_DRAW_CLASSES,
+    parseReviewRiskPlan,
+    planReviewRisk,
+    reviewStanceFloor,
+} from '../reviewRiskPolicy.ts';
 import {
     BOOTSTRAP_PATH,
     commandEntries,
@@ -20,7 +28,9 @@ import type { TrustedGithubWriteCommand } from '../trustedGithubWriteBootstrap.t
  * or an unearned addition reddens this spec.
  */
 const EARNED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
+    'docs-only': ['correctness'],
     small: ['correctness', 'test-validity'],
+    'small-tooling': ['correctness', 'module-boundaries', 'test-validity'],
     'test-only': ['test-validity'],
     ordinary: ['correctness', 'code-craft', 'module-boundaries', 'test-validity'],
     'cross-domain': ['correctness', 'module-boundaries', 'test-validity'],
@@ -344,7 +354,9 @@ describe('planReviewRisk', () => {
     it('should count only handwritten lines toward the budget', () => {
         const result = reviewPlan([
             handwritten('src/modules/Transport/models/TempoMap.ts', 100, 0),
-            changed('public/wasm/manifest.json', 'generated', 900, 400),
+            // A generated path outside every specialist tree: one inside public/wasm/ now earns
+            // realtime-audio, which this budget case does not measure.
+            changed('pnpm-lock.yaml', 'generated', 900, 400),
             changed('docs/06-testing.md', 'docs', 40, 10),
         ]);
 
@@ -468,12 +480,212 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toEqual(['test-only:all-paths-are-tests']);
     });
 
-    it('should call a docs-only change small, since docs never trigger a specialist class', () => {
-        const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3)]);
+    it('should call a change that touches only docs docs-only, earning one stance', () => {
+        const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3), changed('AGENTS.md', 'docs', 4, 9)]);
+
+        expect(result.riskClasses).toEqual(['docs-only']);
+        expect(result.requiredStances).toEqual(['correctness']);
+        expect(result.triggers).toEqual(['docs-only:all-paths-are-docs']);
+    });
+
+    it.each([
+        ['a test', changed('scripts/__tests__/reviewDiffSummary.spec.ts', 'tests', 1, 0)],
+        ['a handwritten path', handwritten('scripts/reviewDiffSummary.ts', 1, 0)],
+        ['a generated path', changed('pnpm-lock.yaml', 'generated', 1, 0)],
+    ])('should not call docs plus %s docs-only', (_label, other) => {
+        const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3), other]);
+
+        expect(result.riskClasses).not.toContain('docs-only');
+    });
+
+    it.each([
+        ['.github/workflows/nightly.test.yml', 'tests'],
+        ['.github/workflows/deploy.spec.yml', 'tests'],
+    ] as const)('should plan a workflow named %s native-security, never test-only', (path, group) => {
+        const result = reviewPlan([changed(path, group, 3, 1)]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual(['native-security:.github/workflows/']);
+        expect(reviewStanceFloor(result)).toBe(3);
+        expect(STRONGEST_DRAW_CLASSES.has('native-security')).toBe(true);
+    });
+
+    it('should not plan a .github/ Markdown template docs-only', () => {
+        const result = reviewPlan([changed('.github/pull_request_template.md', 'docs', 4, 2)]);
+
+        expect(result.riskClasses).toEqual(['small-tooling']);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
+    it.each([
+        ['docs/run.sh', 'docs'],
+        ['docs/manual/coverage-exceptions.json', 'docs'],
+        ['public/legal/RELINKING.md', 'docs'],
+    ] as const)('should plan %s above docs-only, since docs-only is Markdown outside public/', (path, group) => {
+        const result = reviewPlan([changed(path, group, 4, 2)]);
+
+        expect(result.riskClasses).not.toContain('docs-only');
+        expect(reviewStanceFloor(result)).toBeGreaterThanOrEqual(2);
+    });
+
+    it.each(['docs/06-testing.md', 'AGENTS.md'])('should keep %s alone docs-only with a floor of one', (path) => {
+        const result = reviewPlan([changed(path, 'docs', 4, 2)]);
+
+        expect(result.riskClasses).toEqual(['docs-only']);
+        expect(reviewStanceFloor(result)).toBe(1);
+    });
+
+    it.each(['scripts/__tests__/x.spec.ts', 'electron/main.test.ts'])('should keep %s alone test-only', (path) => {
+        expect(reviewPlan([changed(path, 'tests', 4, 2)]).riskClasses).toEqual(['test-only']);
+    });
+
+    /** Plans a NUL-delimited numstat through the real diff classification, as review:prepare does. */
+    function planNumstat(records: readonly string[]): ReviewRiskPlan {
+        const root = mkdtempSync(join(tmpdir(), 'review-risk-numstat-'));
+        try {
+            return reviewPlan(changedReviewPaths(root, Buffer.from([...records, ''].join('\0'))));
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    }
+
+    it('should plan a dsp lockfile bump with its rebuilt wasm artifacts realtime-audio and native-security', () => {
+        const result = planNumstat([
+            '12\t9\tcrates/daw-dsp/Cargo.lock',
+            '-\t-\tpublic/wasm/daw-dsp/daw_dsp_bg.wasm',
+            '3\t3\tpublic/wasm/daw-dsp/daw_dsp.js',
+            '2\t2\tpublic/wasm/manifest.json',
+        ]);
+
+        expect(result.riskClasses).toEqual(['native-security', 'realtime-audio']);
+        expect(result.triggers).toEqual([
+            'native-security:crates/',
+            'realtime-audio:crates/daw-dsp/',
+            'realtime-audio:public/wasm/',
+        ]);
+        expect(reviewStanceFloor(result)).toBe(3);
+        expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(true);
+    });
+
+    it.each([
+        [['5\t5\tpnpm-lock.yaml'], 'pnpm-lock.yaml alone'],
+        [['5\t5\tserver/package-lock.json'], 'the server package-lock.json alone'],
+        [['5\t5\tscripts/__tests__/x.spec.ts', '5\t5\tpnpm-lock.yaml'], 'a test plus the lockfile'],
+        [['5\t5\tdocs/06-testing.md', '5\t5\tpnpm-lock.yaml'], 'docs plus the lockfile'],
+    ])('should keep %j (%s) small', (records) => {
+        expect(planNumstat(records).riskClasses).toEqual(['small']);
+    });
+
+    it.each(['Cargo.lock', 'Cargo.toml'])(
+        'should plan the workspace root %s alone native-security and realtime-audio, since every crate resolves through it',
+        (path) => {
+            const result = planNumstat([`5\t5\t${path}`]);
+
+            expect(result.riskClasses).toEqual(['native-security', 'realtime-audio']);
+            expect(result.triggers).toEqual([`native-security:${path}`, `realtime-audio:${path}`]);
+            expect(reviewStanceFloor(result)).toBe(3);
+            expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(true);
+        }
+    );
+
+    it.each([
+        'electron-builder.yml',
+        'build/entitlements.mac.plist',
+        'build/entitlements.mas.inherit.plist',
+        'scripts/flipElectronFuses.ts',
+        'scripts/buildElectronPreload.ts',
+        'scripts/electronRuntimeContract.ts',
+        'scripts/checkElectronRuntimeProvenance.ts',
+        '.cargo/config.toml',
+        'rust-toolchain.toml',
+    ])('should plan the packaging or toolchain surface %s alone native-security', (path) => {
+        const result = planNumstat([`5\t5\t${path}`]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual([`native-security:${path}`]);
+    });
+
+    it.each([
+        [['5\t0\tsrc/modules/Tuner/x.ts'], 'small', 2],
+        [['5\t0\tscripts/foo.ts'], 'small-tooling', 3],
+        [['5\t0\tvite.config.ts'], 'small-tooling', 3],
+        [['5\t0\tsrc/x.ts', '5\t0\tscripts/y.ts'], 'small-tooling', 3],
+        [['5\t5\tpnpm-lock.yaml'], 'small', 2],
+    ] as const)('should plan %j %s with a floor of %i', (records, riskClass, floor) => {
+        const result = planNumstat(records);
+
+        expect(result.riskClasses).toEqual([riskClass]);
+        expect(reviewStanceFloor(result)).toBe(floor);
+        expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(false);
+    });
+
+    it.each([
+        'package.json',
+        'pnpm-workspace.yaml',
+        '.cargo/config',
+        'rust-toolchain',
+        'scripts/buildNativeAddon.ts',
+        'scripts/ensurePinnedRustToolchain.sh',
+        'scripts/ciApprovalAdmission.ts',
+        'scripts/prepareReviewEntry.ts',
+        'scripts/semanticReviewContext.ts',
+    ])('should plan the dependency, toolchain or review-tooling surface %s alone native-security', (path) => {
+        const result = planNumstat([`5\t5\t${path}`]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual([`native-security:${path}`]);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
+    it.each([
+        ['public/audio/worklets/sidechain-compressor-processor.js', 'realtime-audio:public/audio/worklets/'],
+        ['scripts/gen-daw-dsp-worklet.ts', 'realtime-audio:scripts/gen-daw-dsp-worklet.ts'],
+        ['scripts/gen-scoring-worklet.ts', 'realtime-audio:scripts/gen-scoring-worklet.ts'],
+        ['scripts/gen-proof-chamber-worklet.ts', 'realtime-audio:scripts/gen-proof-chamber-worklet.ts'],
+        ['scripts/workletPolyfills.ts', 'realtime-audio:scripts/workletPolyfills.ts'],
+    ])('should plan the worklet surface %s alone realtime-audio', (path, trigger) => {
+        const result = planNumstat([`5\t5\t${path}`]);
+
+        expect(result.riskClasses).toEqual(['realtime-audio']);
+        expect(result.triggers).toEqual([trigger]);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
+    it('should not take a build/ icon for an entitlements file', () => {
+        expect(planNumstat(['-\t-\tbuild/icons/icon.png']).riskClasses).toEqual(['small-tooling']);
+    });
+
+    it('should earn nothing light from a rename whose source was a .github/ template', () => {
+        const result = reviewPlan([
+            renamed('docs/pull_request_template.md', '.github/pull_request_template.md', 1, 1, 'docs', 'docs'),
+        ]);
+
+        expect(result.riskClasses).toEqual(['small-tooling']);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
+    it('should earn native-security from a rename whose source was a .github/ workflow named like a spec', () => {
+        const result = reviewPlan([
+            renamed('scripts/deploy.yml', '.github/workflows/deploy.spec.yml', 1, 1, 'handwritten', 'tests'),
+        ]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual(['native-security:.github/workflows/']);
+    });
+
+    it('should keep docs plus a lockfile small', () => {
+        const result = reviewPlan([
+            changed('docs/06-testing.md', 'docs', 4, 2),
+            changed('pnpm-lock.yaml', 'generated', 9, 9),
+        ]);
 
         expect(result.riskClasses).toEqual(['small']);
-        expect(result.requiredStances).toEqual(['correctness', 'test-validity']);
-        expect(result.triggers).toEqual(['small:handwritten-lines<=200']);
+    });
+
+    it('should not call a rename out of handwritten code into docs docs-only', () => {
+        const result = reviewPlan([renamed('docs/notes.md', 'scripts/notes.ts', 1, 1, 'docs', 'handwritten')]);
+
+        expect(result.riskClasses).toEqual(['small-tooling']);
     });
 
     it('should call an empty path list small', () => {
@@ -506,6 +718,26 @@ describe('planReviewRisk', () => {
         expect(overBudget.riskClasses).toEqual(['ordinary']);
         expect(overBudget.requiredStances).toEqual(earned(['ordinary']));
         expect(overBudget.requiredStances).toContain('code-craft');
+    });
+});
+
+describe('reviewStanceFloor', () => {
+    it.each([
+        [['docs-only'], 1],
+        [['test-only'], 1],
+        [['small'], 2],
+        [['ordinary'], 3],
+        [['cross-domain'], 3],
+        [['realtime-audio'], 3],
+        [['native-security', 'realtime-audio'], 3],
+        [['native-security', 'undo'], 3],
+    ] as const)('should require %j plans to draw %i distinct stances', (riskClasses, floor) => {
+        expect(reviewStanceFloor({ riskClasses: [...riskClasses] })).toBe(floor);
+    });
+
+    it('should cap the default floor at the stances the classes earn', () => {
+        // A hand-built combination the policy never emits still earns its classes' union, never more.
+        expect(reviewStanceFloor({ riskClasses: ['small', 'test-only'] })).toBe(2);
     });
 });
 

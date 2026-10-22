@@ -4,6 +4,7 @@ import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { holdNoteExpression, takeHeldNoteExpression } from '../../../services/heldNoteExpression';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { applyAutomation } from '../../scheduling/applyAutomation/applyAutomation';
@@ -552,6 +553,23 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.scheduledAudioClips.size).toBe(0);
         // lastTempoMapChanges now matches the new identity.
         expect(schedulerSession.lastTempoMapChanges).toBe(tempoMapStoreState.value?.changes);
+    });
+
+    it('forgets the expression changes a previous playback parked, which a play pressed during a pause would keep', () => {
+        // A play pressed in the pause's recording-flush window skips the pause teardown, so the previous
+        // playback's parked changes are still here when the new one starts.
+        holdNoteExpression({
+            trackId: 'track-1',
+            pitch: 64,
+            channel: 0,
+            receiverId: 'device-1',
+            releaseBeat: 4,
+            changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+        });
+
+        startPlayheadScheduler();
+
+        expect(takeHeldNoteExpression({ trackId: 'track-1', fromBeat: 0, toBeat: 8, fromFrame: 0 })).toEqual([]);
     });
 
     it('wraps the playhead at loopEnd and clears scheduling state for the next pass', async () => {
