@@ -2691,9 +2691,9 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 [[vocalGain(0.5)], [], 'remove the Vocal gain a bit', 'refused'],
                 [[vocalGain(0.5)], [], 'remove the Vocal gain a bit too', 'refused'],
             ];
-            for (const [pending, next, prompt, status] of rows) {
-                expect({ prompt, status: admission(pending, next, prompt, context) }).toEqual({ prompt, status });
-            }
+            expect(
+                rows.map(([pending, next, prompt]) => ({ prompt, status: admission(pending, next, prompt, context) }))
+            ).toEqual(rows.map(([, , prompt, status]) => ({ prompt, status })));
         });
 
         it('a removal continues into a bare object name with at most one operation word', () => {
@@ -3009,12 +3009,14 @@ describe('binding a terse refinement to the pending card it refines', () => {
                         [removeSection('Outro', 16, 32)],
                     ],
                 ];
-                for (const [card, refinement, calls] of rows) {
-                    expect({ refinement, result: refine(card, refinement, calls) }).toMatchObject({
+                expect(
+                    rows.map(([card, refinement, calls]) => ({ refinement, result: refine(card, refinement, calls) }))
+                ).toMatchObject(
+                    rows.map(([, refinement]) => ({
                         refinement,
                         result: { status: 'rejected', rejectionReason: expect.stringContaining('omits a pending') },
-                    });
-                }
+                    }))
+                );
                 expect(
                     commandsOf(
                         refine({ prompt: 'set tempo to 120', calls: [tempo(120)] }, 'make it 124 bpm', [tempo(124)])
@@ -3072,14 +3074,23 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     'Percussion',
                 ],
             ];
-            for (const [card, refinement, calls, name] of rows) {
-                const result = refine(card, refinement, calls);
-                expect({
+            const createdOf = (result: ReturnType<typeof refine>) => {
+                if (result.status !== 'grounded') {
+                    return result;
+                }
+                return { name: payloadOf(result.actions[0]!).name, types: result.actions.map((action) => action.type) };
+            };
+            expect(
+                rows.map(([card, refinement, calls]) => ({
                     refinement,
-                    created: result.status === 'grounded' ? payloadOf(result.actions[0]!).name : result,
-                    types: result.status === 'grounded' ? result.actions.map((action) => action.type) : null,
-                }).toEqual({ refinement, created: name, types: [calls[0]!.name, 'setTrackGain'] });
-            }
+                    created: createdOf(refine(card, refinement, calls)),
+                }))
+            ).toEqual(
+                rows.map(([, refinement, calls, name]) => ({
+                    refinement,
+                    created: { name, types: [calls[0]!.name, 'setTrackGain'] },
+                }))
+            );
             expect(
                 refine(congasAndCut, 'add an audio track named Bongos and turn Vocals down 3 dB', [
                     audioTrack('Congas'),
@@ -3205,7 +3216,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 }
                 return result.actions.map((action) => payloadOf(action).trackId);
             };
-            for (const refinement of [
+            const rows = [
                 'Drop Guitar Left pan entirely.',
                 'Drop Guitar Left pan altogether.',
                 'Drop Guitar Left pan completely.',
@@ -3215,15 +3226,18 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 'Instead drop Guitar Left pan.',
                 'We can drop Guitar Left pan.',
                 'Yes drop Guitar Left pan.',
-            ]) {
-                expect({
+            ];
+            expect(
+                rows.map((refinement) => ({
                     refinement,
                     tracks: trackIdsOf(refine(MIX_CARD, refinement, [leadVocal!, guitarRight!, roomMic!], MIX_CONTEXT)),
-                }).toEqual({
+                }))
+            ).toEqual(
+                rows.map((refinement) => ({
                     refinement,
                     tracks: ['track-lead-vocal', 'track-guitar-right', 'track-room-mic'],
-                });
-            }
+                }))
+            );
         });
 
         it('consumes only the closed filler clauses beside a full restatement', () => {
@@ -3236,13 +3250,19 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 `${RESTATED} Cheers.`,
                 `${RESTATED} Thanks a lot.`,
                 `${RESTATED} Looks good.`,
+                `Yeah, ${RESTATED}`,
+                `Hey, ${RESTATED}`,
+                `${RESTATED} Sounds good.`,
+                `${RESTATED} Great.`,
+                `${RESTATED} Perfect.`,
+                `${RESTATED} Nice.`,
             ];
-            for (const refinement of rows) {
-                expect({
+            expect(
+                rows.map((refinement) => ({
                     refinement,
                     status: refine(MIX_CARD, refinement, mixPlan(0.8, true), MIX_CONTEXT).status,
-                }).toEqual({ refinement, status: 'grounded' });
-            }
+                }))
+            ).toEqual(rows.map((refinement) => ({ refinement, status: 'grounded' })));
             for (const refinement of [`${RESTATED} I need it quieter.`, `${RESTATED} Don't apply yet.`]) {
                 expect({
                     refinement,
@@ -3277,12 +3297,12 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 [muteCard, 'audible', [bassMute(false)]],
                 [muteCard, 'toggle it', [bassMute(false)]],
             ];
-            for (const [card, refinement, calls] of rows) {
-                expect({ refinement, status: refine(card, refinement, calls).status }).toEqual({
+            expect(
+                rows.map(([card, refinement, calls]) => ({
                     refinement,
-                    status: 'rejected',
-                });
-            }
+                    status: refine(card, refinement, calls).status,
+                }))
+            ).toEqual(rows.map(([, refinement]) => ({ refinement, status: 'rejected' })));
         });
     });
 
