@@ -1,0 +1,24 @@
+src/modules/AudioEngine/useCases/livePlayback/loopMidiWindowBatch.ts
+  s_59e31a5c6f3e31::t_4b0a331eef610d 173-226,254
+  s_59e31a5c6f3e31::t_8a5b5e2132898b 10
+  s_59e31a5c6f3e31::t_67d5643cde3995 262-270
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_59e31a5c6f3e31::t_8a5b5e2132898b 66,71,111-147
+  s_59e31a5c6f3e31::t_baad90195663ec 148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98c066ba61d68b716a067e180219de7bba6ecfb8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
