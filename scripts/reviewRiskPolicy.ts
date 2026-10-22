@@ -107,6 +107,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/resolveThread.ts',
     'scripts/reviewApprovalContext.ts',
     'scripts/reviewApprovalFormat.ts',
+    'scripts/reviewApprovalLabel.ts',
     'scripts/reviewBundleLocator.ts',
     'scripts/reviewCommentDiffPreflight.ts',
     'scripts/reviewDiffSummary.ts',
