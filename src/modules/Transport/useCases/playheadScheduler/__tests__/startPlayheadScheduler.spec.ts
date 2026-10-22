@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { holdNoteExpression, takeHeldNoteExpression } from '../../../services/heldNoteExpression';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { applyAutomation } from '../../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../../scheduling/applyAutomation/applyVcaGains';
@@ -527,6 +528,21 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.scheduledAudioClips.size).toBe(0);
         // lastTempoMapChanges now matches the new identity.
         expect(schedulerSession.lastTempoMapChanges).toBe(tempoMapStoreState.value?.changes);
+    });
+
+    it('forgets the expression changes a previous playback parked, which a play pressed during a pause would keep', () => {
+        // A play pressed in the pause's recording-flush window skips the pause teardown, so the previous
+        // playback's parked changes are still here when the new one starts.
+        holdNoteExpression({
+            trackId: 'track-1',
+            pitch: 64,
+            channel: 0,
+            changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+        });
+
+        startPlayheadScheduler();
+
+        expect(takeHeldNoteExpression('track-1', 0, 8)).toEqual([]);
     });
 
     it('wraps the playhead at loopEnd and clears scheduling state for the next pass', async () => {
