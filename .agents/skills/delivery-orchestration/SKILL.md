@@ -244,7 +244,10 @@ task-derived judgement.
 | `undo`                                                  | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
 
 Every `.github/` path classifies as handwritten whatever its name, so it never
-plans `test-only` or `docs-only`. A plan of several classes needs three distinct
+plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
+lockfiles and rebuilt wasm artifacts — earn the `realtime-audio`,
+`native-security`, and `undo` classes of the tree they sit in, but never count
+toward the size budget. A plan of several classes needs three distinct
 stances, or every stance its classes earn when they earn fewer, plus one
 `strongest` draw when any of them is a specialist class.
 

@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { changedReviewPaths } from '../reviewDiffSummary.ts';
 import {
     GOVERNANCE_TRANSITION_PATHS,
     STRONGEST_DRAW_CLASSES,
@@ -351,7 +353,9 @@ describe('planReviewRisk', () => {
     it('should count only handwritten lines toward the budget', () => {
         const result = reviewPlan([
             handwritten('src/modules/Transport/models/TempoMap.ts', 100, 0),
-            changed('public/wasm/manifest.json', 'generated', 900, 400),
+            // A generated path outside every specialist tree: one inside public/wasm/ now earns
+            // realtime-audio, which this budget case does not measure.
+            changed('pnpm-lock.yaml', 'generated', 900, 400),
             changed('docs/06-testing.md', 'docs', 40, 10),
         ]);
 
@@ -532,6 +536,61 @@ describe('planReviewRisk', () => {
 
     it.each(['scripts/__tests__/x.spec.ts', 'electron/main.test.ts'])('should keep %s alone test-only', (path) => {
         expect(reviewPlan([changed(path, 'tests', 4, 2)]).riskClasses).toEqual(['test-only']);
+    });
+
+    /** Plans a NUL-delimited numstat through the real diff classification, as review:prepare does. */
+    function planNumstat(records: readonly string[]): ReviewRiskPlan {
+        const root = mkdtempSync(join(tmpdir(), 'review-risk-numstat-'));
+        try {
+            return reviewPlan(changedReviewPaths(root, Buffer.from([...records, ''].join('\0'))));
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    }
+
+    it('should plan a dsp lockfile bump with its rebuilt wasm artifacts realtime-audio and native-security', () => {
+        const result = planNumstat([
+            '12\t9\tcrates/daw-dsp/Cargo.lock',
+            '-\t-\tpublic/wasm/daw-dsp/daw_dsp_bg.wasm',
+            '3\t3\tpublic/wasm/daw-dsp/daw_dsp.js',
+            '2\t2\tpublic/wasm/manifest.json',
+        ]);
+
+        expect(result.riskClasses).toEqual(['native-security', 'realtime-audio']);
+        expect(result.triggers).toEqual([
+            'native-security:crates/',
+            'realtime-audio:crates/daw-dsp/',
+            'realtime-audio:public/wasm/',
+        ]);
+        expect(reviewStanceFloor(result)).toBe(3);
+        expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(true);
+    });
+
+    it.each([
+        [['5\t5\tpnpm-lock.yaml'], 'pnpm-lock.yaml alone'],
+        [['5\t5\tCargo.lock'], 'the root Cargo.lock alone'],
+        [['5\t5\tscripts/__tests__/x.spec.ts', '5\t5\tpnpm-lock.yaml'], 'a test plus the lockfile'],
+        [['5\t5\tdocs/06-testing.md', '5\t5\tpnpm-lock.yaml'], 'docs plus the lockfile'],
+    ])('should keep %j (%s) small', (records) => {
+        expect(planNumstat(records).riskClasses).toEqual(['small']);
+    });
+
+    it('should earn nothing light from a rename whose source was a .github/ template', () => {
+        const result = reviewPlan([
+            renamed('docs/pull_request_template.md', '.github/pull_request_template.md', 1, 1, 'docs', 'docs'),
+        ]);
+
+        expect(result.riskClasses).toEqual(['small']);
+        expect(reviewStanceFloor(result)).toBe(2);
+    });
+
+    it('should earn native-security from a rename whose source was a .github/ workflow named like a spec', () => {
+        const result = reviewPlan([
+            renamed('scripts/deploy.yml', '.github/workflows/deploy.spec.yml', 1, 1, 'handwritten', 'tests'),
+        ]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual(['native-security:.github/workflows/']);
     });
 
     it('should keep docs plus a lockfile small', () => {

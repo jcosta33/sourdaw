@@ -264,21 +264,33 @@ function sizeFinding(paths: readonly ReviewChangedPath[]): RiskFinding {
     return { riskClass: 'ordinary', triggers: [`ordinary:handwritten-lines>${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
 }
 
-function specialistFindings(sides: readonly PathSide[]): RiskFinding[] {
+/**
+ * The specialist surfaces are what a path touches, not who wrote it: a lockfile or rebuilt wasm
+ * artifact under a specialist tree changes what that tree runs, so generated sides earn the
+ * realtime-audio, native-security and undo classes exactly as handwritten ones do. Cross-domain
+ * spread stays a handwritten-code measure.
+ */
+function specialistFindings(handwritten: readonly PathSide[], shipped: readonly PathSide[]): RiskFinding[] {
     return [
-        ...realtimeAudioFindings(sides),
-        ...nativeSecurityFindings(sides),
-        ...undoFindings(sides),
-        ...crossDomainFindings(sides),
+        ...realtimeAudioFindings(shipped),
+        ...nativeSecurityFindings(shipped),
+        ...undoFindings(shipped),
+        ...crossDomainFindings(handwritten),
     ];
 }
 
+function sidesInGroups(paths: readonly ReviewChangedPath[], groups: readonly ReviewChangedPath['group'][]): PathSide[] {
+    return paths.flatMap((entry) => sidesOf(entry).filter((side) => groups.includes(side.group)));
+}
+
 function decideFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    // A side joins the handwritten classification under its own group, so a rename record
-    // contributes its source side even when the destination landed elsewhere; the size budget still
-    // counts one numstat record once, so a record with either side handwritten counts its lines once.
-    const handwrittenSides = paths.flatMap((entry) => sidesOf(entry).filter((side) => side.group === 'handwritten'));
-    const findings = specialistFindings(handwrittenSides);
+    // A side joins the classification under its own group, so a rename record contributes its
+    // source side even when the destination landed elsewhere; the size budget still counts one
+    // numstat record once, so a record with either side handwritten counts its lines once.
+    const findings = specialistFindings(
+        sidesInGroups(paths, ['handwritten']),
+        sidesInGroups(paths, ['handwritten', 'generated'])
+    );
     if (findings.length > 0) {
         return findings;
     }
