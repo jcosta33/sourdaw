@@ -1,0 +1,65 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_f071133446e796 45
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_84851a4fc215ec 75-79
+  s_1c08b47ac3792f::t_212ef7d136c21b 426-428,431-438
+  s_1c08b47ac3792f::t_96eacb58bf5be7 404
+  s_1c08b47ac3792f::t_c7767c2ad3ef89 499-500,508
+  s_1c08b47ac3792f::t_10563ad011a678 557-561
+  s_1c08b47ac3792f::t_ad2fad01c589fa 54-55
+  s_1c08b47ac3792f::t_562ee2e1d1f393 357
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_4712d71923f099 6015-6019
+  s_1c08b47ac3792f::t_1a4d876ea03cea 6020-6023,6031
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_84b0f462d7d9aa 2197-2238,2244,2246,2250
+  s_1c08b47ac3792f::t_57b1998fdfdcd2 1471-1725,1734
+  s_1c08b47ac3792f::t_7e827ede4e581f 1726-1733,1735-1737,2239-2243,2245,2247-2249
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_ca1a9d3e058aa6 309-311
+  s_1c08b47ac3792f::t_b30174e5c23e33 584-591
+  s_1c08b47ac3792f::t_a690d4e6b9e3f0 421,423-426
+  s_1c08b47ac3792f::t_e8f8c0bdb2714c 634-636,638-639
+  s_1c08b47ac3792f::t_12b787258e04e9 422
+  s_1c08b47ac3792f::t_80d61977b3e171 46-47
+  s_1c08b47ac3792f::t_abb61e3e8f30ab 260,264-269,276
+  s_1c08b47ac3792f::t_22445b3b266a37 99-100,102-108,110-116,121,124-126
+  s_1c08b47ac3792f::t_d4d453d46fc8a9 270-275
+  s_1c08b47ac3792f::t_d0f2c240bb0a6b 637
+  s_1c08b47ac3792f::t_84238f6879ac42 193-195,199-200,202-205
+  s_1c08b47ac3792f::t_e59d42c40319c7 196-197,201
+  s_1c08b47ac3792f::t_c314d22e67a916 498-499
+  s_1c08b47ac3792f::t_0b2bfab1cc6f3e 61-64
+  s_1c08b47ac3792f::t_cfd626130352d0 80-81,83-84
+  s_1c08b47ac3792f::t_1f8648d2b0ea6a 479-481
+  s_ba8dd89de9aac7::t_e17e0abc709288 277-278
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_4f9d1a3f6e022a 252-259
+  s_1c08b47ac3792f::t_ce1d9dc93d1dc8 280
+  s_1c08b47ac3792f::t_1d21fa921ce513 124-129
+  s_1c08b47ac3792f::t_bbb6e839c8f816 83-84,87-92,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cf3121c7ce29c8cb4f434633bda0d1bd5873720",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
