@@ -470,7 +470,10 @@ function parseMasterTrackAutomation(
                     for (const point of child
                         .children()
                         .filter(
-                            (entry) => entry.element.tagName !== REAL_POINT && entry.element.tagName !== 'Target'
+                            (entry) =>
+                                entry.element.tagName !== REAL_POINT &&
+                                entry.element.tagName !== POINTS &&
+                                entry.element.tagName !== 'Target'
                         )) {
                         warn(
                             context,
@@ -488,7 +491,9 @@ function parseMasterTrackAutomation(
                         .children()
                         .filter(
                             (entry) =>
-                                entry.element.tagName !== TIME_SIGNATURE_POINT && entry.element.tagName !== 'Target'
+                                entry.element.tagName !== TIME_SIGNATURE_POINT &&
+                                entry.element.tagName !== POINTS &&
+                                entry.element.tagName !== 'Target'
                         )) {
                         warn(
                             context,
@@ -511,8 +516,8 @@ function parseMasterTrackAutomation(
                         child.attr('name') ?? targetName ?? 'Automation',
                         owner
                     );
+                    continue;
                 }
-                continue;
             }
             walkAutomation(child, childUnit);
         }

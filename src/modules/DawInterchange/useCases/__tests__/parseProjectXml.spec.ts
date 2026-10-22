@@ -370,6 +370,7 @@ describe('parseProjectXml — master-track automation', () => {
             '</Points></Automation></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         expect(result.tempoChanges).toEqual([{ beat: 4, tempo: 140, curve: 'instant' }]);
+        expect(result.warnings).toEqual([]);
     });
 
     it('parses time-signature automation points', () => {
@@ -380,6 +381,30 @@ describe('parseProjectXml — master-track automation', () => {
             '</Points></Automation></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         expect(result.timeSignatureChanges).toEqual([{ beat: 0, numerator: 7, denominator: 8 }]);
+        expect(result.warnings).toEqual([]);
+    });
+
+    it('keeps direct and nested tempo points once while reporting only unsupported siblings in source order', () => {
+        const inner =
+            '<Structure></Structure>' +
+            '<Arrangement><Lanes>' +
+            '<Automation target="tempo"><RealPoint time="2" value="130"/>' +
+            '<Points target="tempo" timeUnit="seconds"><RealPoint time="2" value="140"/></Points>' +
+            '</Automation>' +
+            '<Points target="tempo"><RealPoint time="8" value="150"/></Points>' +
+            '<Points name="Cutoff"><Target parameter="filter"/><RealPoint time="0" value="0.5"/></Points>' +
+            '<Points name="Pan"><Target parameter="pan"/><RealPoint time="0" value="0.25"/></Points>' +
+            '</Lanes></Arrangement>';
+        const result = parseProjectXml(project(inner));
+
+        expect(result.tempoChanges).toEqual([
+            { beat: 2, tempo: 130, curve: 'instant' },
+            { beat: 4, tempo: 140, curve: 'instant' },
+            { beat: 8, tempo: 150, curve: 'instant' },
+        ]);
+        expect(result.warnings.map((warning) => warning.name)).toEqual(['Cutoff', 'Pan']);
+        expect(result.warnings.map((warning) => warning.sourceType)).toEqual(['Points', 'Points']);
+        expect(result.warnings[0]?.sourceOrder).toBeLessThan(result.warnings[1]!.sourceOrder);
     });
 
     it('returns empty automation when there is no Lanes element', () => {
