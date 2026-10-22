@@ -24,8 +24,8 @@ import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
-import { useDeviceParameterGesture } from '../../hooks/useDeviceParameterGesture';
 import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
+import { useDeviceParameterGesture } from '../../hooks/useDeviceParameterGesture';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;
