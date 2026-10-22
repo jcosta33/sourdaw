@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DELIVERY_PRESETS } from '../../../models/deliveryPresets';
+import { DELIVERY_PRESETS } from '../../../models/DeliveryPresets';
 import { readExportPcmBlock } from '../../../repositories/audioEncoders/readExportPcmBlock';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { prepareDeliveryTarget } from '../prepareDeliveryTarget';
