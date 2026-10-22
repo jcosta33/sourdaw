@@ -1038,9 +1038,13 @@ describe('handleWebMidiCC', () => {
             expect(apply_midi_mappings).toHaveBeenCalledWith(0, 64, 127, 1);
         });
 
-        // The note route is the authority for where a heard instant lands: the
-        // controller is compared against its answer for the same instant rather
-        // than a second derivation of the latency and tempo-map conversion.
+        // The note route shares the placement helper with the controller route,
+        // so agreement with it alone cannot catch a wrong conversion in both. The
+        // clip beat is therefore also derived by hand from the map: beats 0-4 run
+        // at 120 BPM (2 s) and beats 4-6 at 60 BPM (2 s), so the event at beat 6
+        // sits at 4 s; the 0.375 s of latency (0.25 output + 0.125 track) rewinds
+        // it to 3.625 s, which is 1.625 s past beat 4 at one beat per second, beat
+        // 5.625 on the timeline and 1.625 in a clip starting at beat 4.
         it('files a controller at the beat a note-on at the same instant gets, across latency and a tempo change', async () => {
             tempoMapStore.set({
                 changes: [
@@ -1081,8 +1085,8 @@ describe('handleWebMidiCC', () => {
             handleWebMidiCC._factory(dependencies)(0, 64, 127, at_beat(6));
 
             expect(recorded_cc_rows()).toEqual([{ controller: 64, value: 127, beat: noteStartBeat, channel: 0 }]);
-            // The latency rewound the instant: an uncompensated placement reads 2.
-            expect(noteStartBeat).not.toBe(2);
+            expect(noteStartBeat).toBeCloseTo(1.625, 9);
+            expect(recorded_cc_rows()[0]?.beat).toBeCloseTo(1.625, 9);
         });
     });
 });

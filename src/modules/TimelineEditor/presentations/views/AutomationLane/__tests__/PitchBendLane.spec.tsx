@@ -199,6 +199,17 @@ describe('PitchBendLane', () => {
             expect(addPitchBend).toHaveBeenCalledWith('clip-1', expected, 1);
         });
 
+        it('should store an unsigned zero for a click that rounds to the centre from below', () => {
+            // A hair under the centre line: the product rounds to -0, which the store must not hold.
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, -0.001, 800, 80));
+            render(<PitchBendLane {...defaultProps} />);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+
+            const stored = vi.mocked(addPitchBend).mock.calls[0]?.[1];
+            expect(Object.is(stored, 0)).toBe(true);
+        });
+
         it('should wire undo/redo for an added point to remove/re-add it', () => {
             render(<PitchBendLane {...defaultProps} />);
             fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
