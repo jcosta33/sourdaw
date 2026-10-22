@@ -275,7 +275,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         cancelExport: vi.fn(),
         exportStems: async (options: Parameters<typeof actual.exportStems>[0]) => {
             if (typeof options === 'number') {
-                throw new Error('Expected options');
+                throw new TypeError('Expected options');
             }
             const consume = options.onStem;
             if (!consume) {
@@ -629,7 +629,7 @@ describe('connected stem export output ownership', () => {
     it('observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems', async () => {
         const gc: unknown = Reflect.get(globalThis, 'gc');
         if (typeof gc !== 'function') {
-            throw new Error('Run this ownership probe with node --expose-gc.');
+            throw new TypeError('Run this ownership probe with node --expose-gc.');
         }
         stemRender.frames = 44100 * 3;
         const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;
