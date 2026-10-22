@@ -1,0 +1,25 @@
+scripts/__tests__/pruneLane.spec.ts
+  s_d1c4d73ddcb30e::t_d67aff2a343d1a 15,276-283
+scripts/__tests__/reviewDiffSummary.spec.ts
+  s_d1c4d73ddcb30e::t_a03d397eacac89 165-193
+scripts/pruneLane.ts
+  s_d1c4d73ddcb30e::t_797b218ffa6e17 243-252
+scripts/reviewDiffSummary.ts
+  s_d1c4d73ddcb30e::t_e24899f04b7e6a 239-251,259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10429257675114eaa3da60a389d7e1ed9cda0f7a",
+  "prompts": {},
+  "sessions": {
+    "s_d1c4d73ddcb30e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7be8ac89-29b4-4f74-a6af-cf644a6dc60d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
