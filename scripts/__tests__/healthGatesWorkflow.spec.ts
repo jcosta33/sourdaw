@@ -4898,6 +4898,20 @@ export -f sudo timeout sleep apt-get
         jobAt(spacedJobToken.validation, 'static').env = { GH_TOKEN: '${{ GitHub . Token }}' };
         expect(surface(spacedJobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
 
+        for (const wholeGithub of ['${{ github }}', "${{ join(github.*, ',') }}", "${{ format('{0}', github) }}"]) {
+            const wholeContext = cloneWorkflows(`whole github context ${wholeGithub}`);
+            jobAt(wholeContext.validation, 'static').env = { CONTEXT: wholeGithub };
+            expect(surface(wholeContext), wholeGithub).toThrow(
+                'validation.yml job static must read exactly its pinned secrets: none'
+            );
+        }
+        const fieldRead = cloneWorkflows('github field read on static');
+        jobAt(fieldRead.validation, 'static').env = {
+            HEAD: '${{ github.event.pull_request.head.sha }}',
+            REPOSITORY: '${{ github.repository }}',
+        };
+        expect(surface(fieldRead)).not.toThrow();
+
         const upperCaseContext = cloneWorkflows('upper-case secrets context on static');
         jobAt(upperCaseContext.validation, 'static').env = { TOKEN: '${{ SECRETS.VERCEL_TOKEN }}' };
         expect(surface(upperCaseContext)).toThrow(

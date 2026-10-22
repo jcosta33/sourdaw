@@ -116,19 +116,29 @@ function expressionsIn(value: unknown, key = ''): string[] {
     return [];
 }
 
+// The `github` context carries the job token, so any reference to it other
+// than a named field is a whole-context read. `github.token` is that token,
+// which `secrets.GITHUB_TOKEN` also names.
+function githubContextRead(field: string | undefined): string | undefined {
+    if (field === undefined) {
+        return '*';
+    }
+    return field.toLowerCase() === 'token' ? 'GITHUB_TOKEN' : undefined;
+}
+
 // The secret names a value reads, matched case-insensitively as GitHub matches
-// contexts. `github.token` is the job token `secrets.GITHUB_TOKEN` names, so
-// both count as GITHUB_TOKEN. Reading either context whole (`toJSON(secrets)`,
-// `secrets[name]`, `toJSON(github)`, `github[name]`) is reported as `*`, which
-// no pin admits.
+// contexts. Reading either context whole (`toJSON(secrets)`, `secrets[name]`,
+// `${{ github }}`, `github.*`, `format('{0}', github)`) is reported as `*`,
+// which no pin admits.
 function secretNamesIn(value: unknown): string[] {
     const names = expressionsIn(value).flatMap((expression) => [
         ...Array.from(
             expression.matchAll(/\bsecrets\b(\s*\.\s*([A-Za-z_][A-Za-z0-9_]*))?/gi),
             (match) => match[2]?.toUpperCase() ?? '*'
         ),
-        ...Array.from(expression.matchAll(/\bgithub\s*\.\s*token\b/gi), () => 'GITHUB_TOKEN'),
-        ...Array.from(expression.matchAll(/\bgithub\s*[[)]/gi), () => '*'),
+        ...Array.from(expression.matchAll(/(?<![\w.-])github\b(?:\s*\.\s*([A-Za-z_][A-Za-z0-9_-]*))?/gi), (match) =>
+            githubContextRead(match[1])
+        ).filter((name) => name !== undefined),
     ]);
     return [...new Set(names)].sort();
 }
