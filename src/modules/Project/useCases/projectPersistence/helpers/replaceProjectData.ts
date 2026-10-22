@@ -18,7 +18,7 @@ import {
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
-import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
@@ -259,6 +259,12 @@ export async function replaceProjectData({
         }
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
+        // A Play or Record pressed during the unload rolls against the
+        // outgoing project; stop it until the check and the switch below
+        // share one synchronous run.
+        while (!isTransportIdle()) {
+            await stopPlayback();
+        }
         if (!transaction.isCurrent() || (shouldProceed !== undefined && !shouldProceed())) {
             restorePreviousAudioGraph(context);
             releaseRuntimeTransition();

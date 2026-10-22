@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
     startCrdtAutoSave: vi.fn(),
     stopActiveAutoSave: vi.fn(),
     stopPlayback: vi.fn(),
+    transport: { rolling: false },
     transactionActivate: vi.fn(),
     transactionCanActivate: vi.fn(),
     transactionIsCurrent: vi.fn(),
@@ -118,6 +119,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
+    isTransportIdle: () => !mocks.transport.rolling,
     stopPlayback: mocks.stopPlayback,
     addTempoChange: vi.fn(),
     addTimeSignatureChange: vi.fn(),
@@ -175,6 +177,11 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
+        mocks.transport.rolling = false;
+        mocks.stopPlayback.mockImplementation(() => {
+            mocks.transport.rolling = false;
+            return Promise.resolve();
+        });
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.finalize.mockResolvedValue('finalized');
@@ -478,6 +485,81 @@ describe('createFromTemplate', () => {
         // template creation.
         expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
+    it('stops a roll started during the native teardown before the authority switch', async () => {
+        const unloading = Promise.withResolvers<void>();
+        let rollingAtSwitch: boolean | null = null;
+        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
+            rollingAtSwitch = mocks.transport.rolling;
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: mocks.finalize });
+        });
+
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
+        mocks.transport.rolling = true;
+        unloading.resolve();
+
+        await expect(creation).resolves.toBe(true);
+        expect(rollingAtSwitch).toBe(false);
+        expect(mocks.stopPlayback).toHaveBeenCalledTimes(2);
+        expect(mocks.stopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(
+            mocks.resetCrdtProject.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('keeps stopping until the transport is idle when a roll restarts during the extra stop', async () => {
+        const unloading = Promise.withResolvers<void>();
+        const extraStop = Promise.withResolvers<void>();
+        let rollingAtSwitch: boolean | null = null;
+        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
+            rollingAtSwitch = mocks.transport.rolling;
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: mocks.finalize });
+        });
+
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        mocks.transport.rolling = true;
+        mocks.stopPlayback.mockImplementationOnce(() => {
+            // The extra stop is held open and a second roll starts under it.
+            mocks.transport.rolling = false;
+            return extraStop.promise.then(() => {
+                mocks.transport.rolling = true;
+            });
+        });
+        unloading.resolve();
+        await vi.waitFor(() => expect(mocks.stopPlayback).toHaveBeenCalledTimes(2));
+        extraStop.resolve();
+
+        await expect(creation).resolves.toBe(true);
+        expect(mocks.stopPlayback).toHaveBeenCalledTimes(3);
+        expect(rollingAtSwitch).toBe(false);
+    });
+
+    it('does not replace authority when superseded while the restarted roll is being stopped', async () => {
+        const unloading = Promise.withResolvers<void>();
+        const extraStop = Promise.withResolvers<void>();
+        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        mocks.transport.rolling = true;
+        mocks.stopPlayback.mockImplementationOnce(() => {
+            mocks.transport.rolling = false;
+            return extraStop.promise;
+        });
+        unloading.resolve();
+        await vi.waitFor(() => expect(mocks.stopPlayback).toHaveBeenCalledTimes(2));
+        mocks.transactionIsCurrent.mockReturnValue(false);
+        extraStop.resolve();
+
+        await expect(creation).resolves.toBe(false);
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
+    });
+
     it('holds the runtime transition lease through the template action', async () => {
         const action = Promise.withResolvers<void>();
         const releaseRuntimeTransition = vi.fn();

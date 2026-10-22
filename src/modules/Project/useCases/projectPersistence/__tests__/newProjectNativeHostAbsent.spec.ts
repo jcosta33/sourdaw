@@ -32,6 +32,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
+    isTransportIdle: () => true,
     stopPlayback: vi.fn(),
 }));
 

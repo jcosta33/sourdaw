@@ -11,7 +11,7 @@ import {
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
-import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
@@ -128,6 +128,12 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         graphWasReset = true;
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
+        // A Play or Record pressed during the unload rolls against the
+        // outgoing project; stop it until the check and the switch below
+        // share one synchronous run.
+        while (!isTransportIdle()) {
+            await stopPlayback();
+        }
         if (!transaction.isCurrent()) {
             restoreAudioGraph(templateId);
             restorePersistence();

@@ -32,6 +32,7 @@ const {
     mockVerifyAudioBufferReferences,
     mockRearmInputMonitoring,
     mockTrackStoreValue,
+    mockTransport,
 } = vi.hoisted(() => ({
     mockLogger: { error: vi.fn(), warn: vi.fn() },
     mockBatchStoreUpdates: vi.fn((fn: () => void) => fn()),
@@ -70,6 +71,7 @@ const {
     mockVerifyAudioBufferReferences: vi.fn(),
     mockRearmInputMonitoring: vi.fn(),
     mockTrackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
+    mockTransport: { rolling: false },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
@@ -110,6 +112,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: mockEnsureTrackStrips,
+    isTransportIdle: () => !mockTransport.rolling,
     stopPlayback: mockStopPlayback,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
@@ -193,7 +196,11 @@ describe('replaceProjectData', () => {
             cancel: mockCancelPreparedStoredBuffers,
             publish: vi.fn(),
         });
-        mockStopPlayback.mockResolvedValue(undefined);
+        mockTransport.rolling = false;
+        mockStopPlayback.mockImplementation(() => {
+            mockTransport.rolling = false;
+            return Promise.resolve();
+        });
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
         mockFinalizeReset.mockResolvedValue('finalized');
@@ -384,6 +391,94 @@ describe('replaceProjectData', () => {
         // The player stays in the old project, whose graph is rebuilt above, so
         // a damper still held must survive the abandoned load.
         expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('stops a roll started during the native teardown before the authority switch', async () => {
+        const unloading = Promise.withResolvers<void>();
+        let rollingAtSwitch: boolean | null = null;
+        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+        mockResetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
+            rollingAtSwitch = mockTransport.rolling;
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
+        });
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        expect(mockStopPlayback).toHaveBeenCalledOnce();
+        mockTransport.rolling = true;
+        unloading.resolve();
+
+        await expect(replacement).resolves.toMatchObject({ status: 'committed' });
+        expect(rollingAtSwitch).toBe(false);
+        expect(mockStopPlayback).toHaveBeenCalledTimes(2);
+        expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(
+            mockResetCrdtProject.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('keeps stopping until the transport is idle when a roll restarts during the extra stop', async () => {
+        const unloading = Promise.withResolvers<void>();
+        const extraStop = Promise.withResolvers<void>();
+        let rollingAtSwitch: boolean | null = null;
+        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+        mockResetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
+            rollingAtSwitch = mockTransport.rolling;
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
+        });
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        mockTransport.rolling = true;
+        mockStopPlayback.mockImplementationOnce(() => {
+            // The extra stop is held open and a second roll starts under it.
+            mockTransport.rolling = false;
+            return extraStop.promise.then(() => {
+                mockTransport.rolling = true;
+            });
+        });
+        unloading.resolve();
+        await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
+        extraStop.resolve();
+
+        await expect(replacement).resolves.toMatchObject({ status: 'committed' });
+        expect(mockStopPlayback).toHaveBeenCalledTimes(3);
+        expect(rollingAtSwitch).toBe(false);
+    });
+
+    it('does not replace authority when superseded while the restarted roll is being stopped', async () => {
+        const unloading = Promise.withResolvers<void>();
+        const extraStop = Promise.withResolvers<void>();
+        let isCurrent = true;
+        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction({ isCurrent: () => isCurrent }),
+        });
+        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        mockTransport.rolling = true;
+        mockStopPlayback.mockImplementationOnce(() => {
+            mockTransport.rolling = false;
+            return extraStop.promise;
+        });
+        unloading.resolve();
+        await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
+        isCurrent = false;
+        extraStop.resolve();
+
+        await expect(replacement).resolves.toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
     });
 
     it('cancels the stored-buffer candidate when playback shutdown fails before publication', async () => {

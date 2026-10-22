@@ -56,10 +56,15 @@ function createDeferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred };
 }
 
-// newProject imports ensureTrackStrips and stopPlayback.
+const transportMocks = vi.hoisted(() => ({
+    rolling: false,
+}));
+
+// newProject imports ensureTrackStrips, isTransportIdle and stopPlayback.
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
+    isTransportIdle: vi.fn(() => !transportMocks.rolling),
     stopPlayback: vi.fn(),
 }));
 
@@ -159,6 +164,11 @@ describe('newProject injectable', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        transportMocks.rolling = false;
+        vi.mocked(stopPlayback).mockImplementation(() => {
+            transportMocks.rolling = false;
+            return Promise.resolve();
+        });
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
         resetMocks.finalize.mockReset();
         resetMocks.finalize.mockResolvedValue('finalized');
@@ -271,6 +281,83 @@ describe('newProject injectable', () => {
         // The player stays in the old project, whose graph is rebuilt above, so
         // a damper still held must survive the abandoned activation.
         expect(forgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('stops a roll started during the plugin unload before the authority switch', async () => {
+        const unloading = createDeferred<undefined>();
+        let rollingAtSwitch: boolean | null = null;
+        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        resetMocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
+            rollingAtSwitch = transportMocks.rolling;
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: resetMocks.finalize });
+        });
+
+        const activation = newProject('Quiet Project');
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        expect(stopPlayback).toHaveBeenCalledOnce();
+        transportMocks.rolling = true;
+        unloading.resolve(undefined);
+
+        await expect(activation).resolves.toBe(true);
+        expect(rollingAtSwitch).toBe(false);
+        expect(stopPlayback).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(stopPlayback).mock.invocationCallOrder[1]!).toBeLessThan(
+            vi.mocked(resetCrdtProject).mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('keeps stopping until the transport is idle when a roll restarts during the extra stop', async () => {
+        const unloading = createDeferred<undefined>();
+        const secondStop = createDeferred<undefined>();
+        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+
+        const activation = newProject('Quiet Project');
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        transportMocks.rolling = true;
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            // The extra stop is held open and a second roll starts under it.
+            transportMocks.rolling = false;
+            return secondStop.promise.then(() => {
+                transportMocks.rolling = true;
+            });
+        });
+        unloading.resolve(undefined);
+        await vi.waitFor(() => expect(stopPlayback).toHaveBeenCalledTimes(2));
+        secondStop.resolve(undefined);
+
+        await expect(activation).resolves.toBe(true);
+        expect(stopPlayback).toHaveBeenCalledTimes(3);
+        expect(transportMocks.rolling).toBe(false);
+    });
+
+    it('does not replace authority when superseded while the restarted roll is being stopped', async () => {
+        const unloading = createDeferred<undefined>();
+        const extraStop = createDeferred<undefined>();
+        let isCurrent = true;
+        vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
+            prepare: vi.fn().mockResolvedValue(true),
+            activate: vi.fn().mockReturnValue(true),
+            canActivate: () => isCurrent,
+            isCurrent: () => isCurrent,
+            signal: new AbortController().signal,
+        });
+        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+
+        const activation = newProject('Older Project');
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        transportMocks.rolling = true;
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            transportMocks.rolling = false;
+            return extraStop.promise;
+        });
+        unloading.resolve(undefined);
+        await vi.waitFor(() => expect(stopPlayback).toHaveBeenCalledTimes(2));
+        isCurrent = false;
+        extraStop.resolve(undefined);
+
+        await expect(activation).resolves.toBe(false);
+        expect(resetCrdtProject).not.toHaveBeenCalled();
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {

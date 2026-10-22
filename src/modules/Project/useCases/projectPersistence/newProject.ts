@@ -15,7 +15,7 @@ import {
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
-import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
@@ -147,6 +147,12 @@ async function switchToNewProject({
             graphTeardownStarted = true;
             resetAudioGraph();
             await unloadLoadedExternalPlugins();
+            // A Play or Record pressed during the unload rolls against the
+            // outgoing project; stop it until the check and the switch below
+            // share one synchronous run.
+            while (!isTransportIdle()) {
+                await stopPlayback();
+            }
             if (!transaction.isCurrent()) {
                 restorePreviousProjectRuntime();
                 failNewProjectActivation({ previousTransientState, transaction });

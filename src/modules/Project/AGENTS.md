@@ -35,6 +35,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 ## Invariants & Traps
 
 - **Single Active Project**: Only one project aggregate is active in memory at a time; project transitions must teardown prior audio graphs and reset dirty states.
+- **Transport Quiesced At The Switch**: every project replacement (`newProject`, `createFromTemplate`, `replaceProjectData`) ends with the transport stopped before the CRDT authority switch, and re-stops it when a Play or Record landed during the plugin unload that follows the first stop. The `isTransportIdle` loop and the switch share one synchronous run with no `await` between them; resetting `transportStore` alone would leave the scheduler and engine rolling the old project under a store that reads stopped. The repair handler stops a rolling transport for the same reason before it re-projects.
 - **Dirty Tracking Lifecycle**: Any mutation affecting project state must invoke `markDirty` to ensure unsaved work prompts on unload or autosave.
 - **Runtime Detection**: Always check `isNativeProjectRuntimeAvailable` / `isNativeFileSystemAvailable` before issuing native desktop filesystem commands.
 - **Scala Tuning Validation**: `.scl` parsing enforces valid pitch ratios/cents and line formats, rejecting corrupted tuning files.

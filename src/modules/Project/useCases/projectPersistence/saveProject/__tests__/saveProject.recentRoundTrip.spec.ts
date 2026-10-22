@@ -92,6 +92,7 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     defaultTransportState: { masterGain: 75, isPlaying: false },
+    isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     ensureTrackStrips: vi.fn(),
 }));

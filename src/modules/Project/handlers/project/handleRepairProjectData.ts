@@ -1,5 +1,7 @@
+import { logger } from '#/infra/logger/appLogger';
 import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { DOC_PREFIX_ROOT, mutateCrdtDoc, projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
+import { isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 type ConflictRepairCandidate = Extract<
@@ -63,6 +65,17 @@ export const handleRepairProjectData = createHandler<'repairProjectData'>({
             return { status: 'no-write' };
         }
 
+        // The projection below resets the transport store, which says nothing
+        // to the scheduler or the engine: a roll still running would play on
+        // against a store that reads stopped. The halt itself is synchronous,
+        // so nothing can restart between it and the projection; only the
+        // take's commit outlives it, and that is awaited after the write.
+        const teardown = isTransportIdle() ? Promise.resolve() : stopPlayback();
+        // A refused repair or a throw never reaches the awaiting hooks below.
+        teardown.catch((error: unknown) => {
+            logger.warn(new Error('Transport teardown failed during project repair', { cause: error }));
+        });
+
         const conflictPaths = repairState.repairCandidates
             .filter(
                 (candidate): candidate is ConflictRepairCandidate =>
@@ -86,7 +99,11 @@ export const handleRepairProjectData = createHandler<'repairProjectData'>({
         // A repair that leaves the gate up fixed nothing the user can act on:
         // report it as a conflict so the dispatch refuses rather than claiming
         // success over a project that still cannot be edited.
-        return agentProjectRepairStateStore.value === null ? { status: 'written' } : { status: 'conflict' };
+        if (agentProjectRepairStateStore.value !== null) {
+            return { status: 'conflict' };
+        }
+        const settleTeardown = (): Promise<void> => teardown;
+        return { status: 'written', afterCommit: settleTeardown, afterAmbiguousCommit: settleTeardown };
     },
     describe: () => ({ label: 'Repair project data' }),
     batchExecution: 'singleton',
