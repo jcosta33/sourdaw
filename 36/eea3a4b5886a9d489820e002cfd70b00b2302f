@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/agentReference/refinementProtectionForms.ts
+  s_1c08b47ac3792f::t_330e53c2d5ab8a 130-133
+  s_1c08b47ac3792f::t_aec57b2ace2135 1,7,9,11-18,20,22-25,27-31,58,63-64,84-88,90-102,105-106,108-111,114,120-123,125-129,134-136,140-144,150,152-162,164-170,172-183,185-186
+  s_1c08b47ac3792f::t_c89efec24e2e38 2-6,8,10,19,32-56,60-61,65-83,89
+  s_1c08b47ac3792f::t_25d13c0b85bb89 62,117-119,124,137-139,145-149,151,163,171
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_1c5f6683d1e9f8 64,180,205,209,211,216,221-222,226,228-230,232-235,238-246,249-261,310,312,315,321,323,326,331,362,370
+  s_1c08b47ac3792f::t_1f05c789d3af4f 178-179
+  s_1c08b47ac3792f::t_2cf31b2d5c4777 124
+  s_1c08b47ac3792f::t_4b319973c46582 4,17,24,63,65,96,102-103,116-117,125,181,204,206-208,210,212-215,217-220,223-225,281,296,305,311,313-314,316-320,322,324-325,327-330,332-338,345,352,355-358,368,371,380,385-387,410,419,426-427,459,496
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_a73e0cb312013e 3574-3799,3808
+  s_1c08b47ac3792f::t_2290e631e70088 3800-3807,3809-3813
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_1c0313ecfbe546 454-457
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_a41972fdf0a129 45
+src/modules/AiRuntime/useCases/agentReference/refinementCardCommands.ts
+  s_1c08b47ac3792f::t_81ea5032c1d15d 1-63
+src/modules/AiRuntime/useCases/agentReference/refinementCourtesy.ts
+  s_1c08b47ac3792f::t_545a47b19c0eed 1-31,58-65,69-71,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "36eea3a4b5886a9d489820e002cfd70b00b2302f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
