@@ -1,0 +1,21 @@
+crates/daw-engine/src/scheduler.rs
+  s_59e31a5c6f3e31::t_25f237d5314b0b 12674-12676,24691-24706,24712-24719,24721-24728,24730-24734
+crates/sourdaw-native/src/commands/graph.rs
+  s_59e31a5c6f3e31::t_7e3e33d5a930f1 158-160,2302,2304-2307,2312-2314,2321-2325,2333-2335,2369-2371,2424-2427,2798-2801,3720-3721,3726-3727,15324-15338,15343-15378,15380-15388,15393-15422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f131090d5988a7c4a2097c22a8a3fe1c8119d8e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
