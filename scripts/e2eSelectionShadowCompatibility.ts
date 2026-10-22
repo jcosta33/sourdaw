@@ -6,7 +6,7 @@ import ts from 'typescript';
 import { parseDocument } from 'yaml';
 
 import {
-    comparePlans,
+    compareAuthoritativePlan,
     integrationDeltaDiff,
     ShadowSkipError,
     unionChangedPaths,
@@ -19,7 +19,7 @@ import {
     treeEntry,
 } from './e2eSelectionShadowIntegration.ts';
 import { parseSpecDurations } from './e2eShardPartition.ts';
-import { selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
+import { SMOKE_SPEC } from './prValidationScope.ts';
 
 export function sha256(value: string | Buffer): string {
     return createHash('sha256').update(value).digest('hex');
@@ -75,6 +75,7 @@ const CONTROL_SOURCE_PATHS = [
     'scripts/e2eSelectionShadowCompatibility.ts',
     'scripts/e2eSelectionShadowIntegration.ts',
     'scripts/e2eSelectionShadowCertificate.json',
+    'scripts/e2eAffectedGraph.ts',
     'scripts/e2eShardPartition.ts',
     'scripts/e2eSpecDurations.json',
     'scripts/prValidationScope.ts',
@@ -146,7 +147,12 @@ export function candidateShadowCapability(
     return 'supported';
 }
 
+export function integrationOwnersManifest(integrationRoot: string, integrationSha: string): string {
+    return git(['show', `${integrationSha}:scripts/e2eSuiteOwners.json`], integrationRoot).toString('utf8');
+}
+
 const PLANNER_CONTROL_PATHS = [
+    'scripts/e2eAffectedGraph.ts',
     'playwright.config.ts',
     'scripts/prValidationScope.ts',
     'scripts/vitestCollectionPatterns.ts',
@@ -196,10 +202,8 @@ export function unsupportedShadowReport(input: {
 }) {
     const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], root);
-    const changedPaths = unionChangedPaths(
-        rawDiff.toString('utf8'),
-        integrationDeltaDiff(integrationRoot, base, integrationSha)
-    );
+    const integrationDiff = integrationDeltaDiff(integrationRoot, base, integrationSha);
+    const changedPaths = unionChangedPaths(rawDiff.toString('utf8'), integrationDiff);
     const inventory = listIntegrationInventory(integrationRoot, integrationSha);
     const full = inventory.filter((row) => row.path !== SMOKE_SPEC).map((row) => row.path);
     if (full.length === 0) {
@@ -209,17 +213,19 @@ export function unsupportedShadowReport(input: {
     const durationText = git(['show', `${integrationSha}:scripts/e2eSpecDurations.json`], integrationRoot).toString(
         'utf8'
     );
-    const expectedPlan = selectValidationPlan(
-        changedPaths,
-        inventory.map((row) => row.path),
-        parseSpecDurations(durationText)
-    );
     const scopeBytes = readFileSync(scopePath);
-    const livePlan: unknown = JSON.parse(scopeBytes.toString('utf8'));
-    const agreement = comparePlans(
-        expectedPlan,
-        livePlan,
-        inventory.map((row) => row.path)
+    const agreement = compareAuthoritativePlan(
+        {
+            rawDiff,
+            integrationDiff,
+            readOwnersManifest: () => integrationOwnersManifest(integrationRoot, integrationSha),
+            livePlan: JSON.parse(scopeBytes.toString('utf8')),
+        },
+        {
+            paths: changedPaths,
+            inventory: inventory.map((row) => row.path),
+            durations: parseSpecDurations(durationText),
+        }
     );
     if (!agreement.agrees) {
         throw new Error(

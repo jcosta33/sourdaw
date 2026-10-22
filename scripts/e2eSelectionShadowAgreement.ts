@@ -1,9 +1,11 @@
 import { writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 
+import { changedSourceOwners, knownFeatureOwners, selectsBrowserAi, specsForOwners } from './e2eAffectedGraph.ts';
 import { git, PLANNER_SOURCES } from './e2eSelectionShadowIntegration.ts';
-import { parseChangedPaths } from './prValidationScope.ts';
+import { canNarrow, parseChangedPaths, productPathsOf, selectValidationPlan } from './prValidationScope.ts';
 
+import type { SpecDurations } from './e2eShardPartition.ts';
 import type { ValidationPlan } from './prValidationScope.ts';
 
 // The shadow is advisory. A condition it cannot measure honestly is a skip with a reason, never a
@@ -12,8 +14,7 @@ type ShadowSkipCode =
     | 'integration-selector-differs'
     | 'integration-duration-planner-differs'
     | 'integration-execution-policy-differs'
-    | 'integration-selector-differs-from-control'
-    | 'affected-graph-narrowing-unverified';
+    | 'integration-selector-differs-from-control';
 
 export class ShadowSkipError extends Error {
     readonly code: ShadowSkipCode;
@@ -100,86 +101,128 @@ function withoutAffectedGraphDiagnostic(live: ValidationPlan): { plan: Validatio
     return { plan: { ...live, reasons: rest }, notes: [`affected-graph-diagnostic: ${last.reason}`] };
 }
 
-const FULL_COVERAGE_REASON_SUFFIX = 'full browser coverage';
-
 function isNarrowedRow(row: ValidationPlan['reasons'][number]): boolean {
     return row.reason.startsWith(NARROW_REASON_PREFIX);
 }
 
-function narrowedOwners(live: ValidationPlan): string[] {
-    const owners = new Set<string>();
-    for (const row of live.reasons.filter(isNarrowedRow)) {
-        for (const owner of row.reason.slice(NARROW_REASON_PREFIX.length).split(', ')) {
-            owners.add(owner);
-        }
+// What the planner saw: the changed paths, the integration inventory, the duration table, both status
+// diffs, and the owner manifest the affected-graph helper reads.
+export type PlanContext = {
+    paths: readonly string[];
+    inventory: readonly string[];
+    durations: SpecDurations;
+    candidateDiff: string;
+    integrationDiff: string;
+    readOwnersManifest: () => string;
+};
+
+function claimedOwners(live: ValidationPlan): string[] | null {
+    const reasons = new Set(live.reasons.filter(isNarrowedRow).map((row) => row.reason));
+    const [reason] = [...reasons];
+    if (reasons.size !== 1 || reason === undefined) {
+        return null;
     }
-    return [...owners].sort();
+    const owners = reason.slice(NARROW_REASON_PREFIX.length).split(', ');
+    const sorted = [...new Set(owners)].sort();
+    return owners.length === sorted.length && owners.every((owner, index) => owner === sorted[index]) ? owners : null;
 }
 
-// The affected-graph helper picks the owners and specs of a narrowed selection, and this job does not
-// install it, so those fields cannot be checked. Everything else about a narrowed plan is a function
-// of the changed paths and the inventory, and must equal the recomputation: the scalar fields, the
-// path order, every row that is not an owners row, and that every full-coverage row is an owners row
-// on a src/modules path (any other full-coverage row would have forced the planner to the full suite).
-function narrowedPlanIsBounded(
-    expected: ValidationPlan,
-    live: ValidationPlan,
-    inventory: ReadonlySet<string>,
-    diagnosticWasStripped: boolean
-): boolean {
-    const specs = planSpecs(live);
-    return (
-        !diagnosticWasStripped &&
-        live.version === expected.version &&
-        live.profile === expected.profile &&
-        live.browser === expected.browser &&
-        live.codeql === expected.codeql &&
-        specs.length > 0 &&
-        specs.every((spec) => inventory.has(spec)) &&
-        live.reasons.length === expected.reasons.length &&
-        live.reasons.every((row, index) => {
-            const counterpart = expected.reasons[index];
-            if (counterpart?.path !== row.path) {
-                return false;
-            }
-            const fullCoverage = counterpart.reason.endsWith(FULL_COVERAGE_REASON_SUFFIX);
-            if (!isNarrowedRow(row)) {
-                return row.reason === counterpart.reason && !fullCoverage;
-            }
-            return row.path.startsWith('src/modules/') && fullCoverage;
-        })
-    );
+// The graph helper is not installed here, so which owners a change reaches through consumers cannot be
+// derived. Everything else is: the claimed owners must be registered and include every changed source's
+// own owner, and the plan the control planner builds for them must equal the authoritative plan exactly.
+function rebuiltNarrowedPlan(live: ValidationPlan, context: PlanContext): ValidationPlan | string {
+    const productPaths = productPathsOf(context.paths, context.inventory, false);
+    if (!canNarrow({ productPaths, candidateDiff: context.candidateDiff, integrationDiff: context.integrationDiff })) {
+        return 'the planner does not narrow this change';
+    }
+    const owners = claimedOwners(live);
+    if (!owners) {
+        return 'narrowed owners are not one sorted, unique list';
+    }
+    const manifest: unknown = JSON.parse(context.readOwnersManifest());
+    const known = knownFeatureOwners(manifest, context.inventory);
+    if (!owners.every((owner) => known.has(owner))) {
+        return 'narrowed owners include an unregistered owner';
+    }
+    const changedOwners = changedSourceOwners(productPaths, known);
+    if (!changedOwners || !changedOwners.every((owner) => owners.includes(owner))) {
+        return 'narrowed owners omit the owner of a changed source';
+    }
+    const specs = specsForOwners(new Set(owners), context.inventory, manifest);
+    return selectValidationPlan(context.paths, context.inventory, context.durations, false, {
+        kind: 'narrow',
+        owners,
+        specs,
+        browserAi: selectsBrowserAi(specs),
+    });
 }
 
-// Authority: the scope artifact. The shadow reproduces its inputs and requires the live plan to equal
-// the recomputed one, admitting only the output of the optional affected-graph helper it does not run:
-//  - the diagnostic row the planner appends after a full-coverage fallback, which is stripped, and
-//  - a narrowed selection, whose bounded form is skipped with a reason and any other form is a disagreement.
-export function comparePlans(expected: ValidationPlan, live: unknown, inventory: readonly string[]): PlanAgreement {
+function narrowedAgreement(expected: ValidationPlan, live: ValidationPlan, context: PlanContext): PlanAgreement {
+    let rebuilt: ValidationPlan | string;
+    try {
+        rebuilt = rebuiltNarrowedPlan(live, context);
+    } catch (error) {
+        return {
+            agrees: false,
+            detail: `narrowed authoritative plan cannot be rebuilt: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+    if (typeof rebuilt === 'string') {
+        return { agrees: false, detail: `narrowed authoritative plan is not planner-reachable: ${rebuilt}` };
+    }
+    if (!isDeepStrictEqual(rebuilt, live)) {
+        return { agrees: false, detail: 'narrowed authoritative plan differs from the planner rebuilt for its owners' };
+    }
+    const owners = claimedOwners(live)?.join(', ') ?? '';
+    return {
+        agrees: true,
+        liveSpecs: planSpecs(live).sort(),
+        notes: [
+            `affected-graph-owners-unverified: ${owners}; ${planSpecs(live).length} of ${planSpecs(expected).length} specs`,
+        ],
+    };
+}
+
+// Authority: the scope artifact. The shadow reproduces its inputs and requires the live plan to equal the
+// planner's own output for them. The optional affected-graph helper is not installed here, so two of its
+// outputs are admitted only in the form the planner can emit:
+//  - the full-fallback diagnostic row, stripped only when the planner could have tried the helper, and
+//  - a narrowed selection, rebuilt through the planner from its claimed owners.
+export function comparePlans(expected: ValidationPlan, live: unknown, context: PlanContext): PlanAgreement {
     if (!isPlanShape(live)) {
         return { agrees: false, detail: 'authoritative plan is malformed' };
     }
-    const stripped = withoutAffectedGraphDiagnostic(live);
+    if (live.reasons.some(isNarrowedRow)) {
+        return narrowedAgreement(expected, live, context);
+    }
+    const productPaths = productPathsOf(context.paths, context.inventory, false);
+    const mayHaveTriedHelper = canNarrow({
+        productPaths,
+        candidateDiff: context.candidateDiff,
+        integrationDiff: context.integrationDiff,
+    });
+    const stripped = mayHaveTriedHelper ? withoutAffectedGraphDiagnostic(live) : { plan: live, notes: [] as string[] };
     if (!stripped) {
         return { agrees: false, detail: 'authoritative plan repeats the affected-graph diagnostic' };
-    }
-    const owners = narrowedOwners(stripped.plan);
-    if (owners.length > 0) {
-        if (!narrowedPlanIsBounded(expected, stripped.plan, new Set(inventory), stripped.notes.length > 0)) {
-            return {
-                agrees: false,
-                detail: 'narrowed authoritative plan differs beyond its unverified owners and specs',
-            };
-        }
-        throw new ShadowSkipError(
-            'affected-graph-narrowing-unverified',
-            `Authoritative scope narrowed the selection to feature owners (${owners.join(', ')}); the shadow does not run the affected-graph helper and cannot verify it`
-        );
     }
     if (isDeepStrictEqual(expected, stripped.plan)) {
         return { agrees: true, liveSpecs: planSpecs(expected).sort(), notes: stripped.notes };
     }
     return { agrees: false, detail: 'authoritative plan differs from the recomputed plan' };
+}
+
+// The recomputation every caller performs: the control planner over the union of changed paths.
+export function compareAuthoritativePlan(
+    input: { rawDiff: Buffer; integrationDiff?: string; readOwnersManifest: () => string; livePlan: unknown },
+    planned: { paths: readonly string[]; inventory: readonly string[]; durations: SpecDurations }
+): PlanAgreement {
+    const { paths, inventory, durations } = planned;
+    return comparePlans(selectValidationPlan(paths, inventory, durations), input.livePlan, {
+        ...planned,
+        candidateDiff: input.rawDiff.toString('utf8'),
+        integrationDiff: input.integrationDiff ?? '',
+        readOwnersManifest: input.readOwnersManifest,
+    });
 }
 
 export function skipWhenIntegrationSourcesDiffer(

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 import {
-    comparePlans,
+    compareAuthoritativePlan,
     integrationDeltaDiff,
     reportShadowError,
     skipWhenIntegrationDurationPlannerDiffers,
@@ -18,6 +18,7 @@ import {
     candidateShadowCapability,
     canonical,
     healthPolicyDigest,
+    integrationOwnersManifest,
     sha256,
     skipWhenIntegrationPlannerDiffersFromControl,
     unsupportedShadowReport,
@@ -37,7 +38,7 @@ import {
     verifyIntegrationCheckout,
     type InventoryRow,
 } from './e2eSelectionShadowIntegration.ts';
-import { parseChangedPaths, selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
+import { parseChangedPaths, SMOKE_SPEC } from './prValidationScope.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 type ChangedRecord = {
@@ -57,6 +58,7 @@ type ShadowInput = {
     integrationSha: string;
     rawDiff: Buffer;
     integrationDiff?: string;
+    readOwnersManifest: () => string;
     certificateSha256: string;
     records: ChangedRecord[];
     inventory: InventoryRow[];
@@ -277,16 +279,11 @@ function validateMeasurementInput(input: ShadowInput): {
     assert.equal(input.sourceModes[validationPath], '100644', invalidValidation);
     assert.match(String(input.sourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
     assert.match(String(input.integrationSourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
-    const expectedPlan = selectValidationPlan(
+    const agreement = compareAuthoritativePlan(input, {
         paths,
-        inventory.map((row) => row.path),
-        durations
-    );
-    const agreement = comparePlans(
-        expectedPlan,
-        input.livePlan,
-        inventory.map((row) => row.path)
-    );
+        inventory: inventory.map((row) => row.path),
+        durations,
+    });
     if (!agreement.agrees) {
         throw new Error(
             `Authoritative scope artifact disagrees with the current selector or inventory: ${agreement.detail}`
@@ -533,6 +530,7 @@ function runSupportedShadow(input: {
         integrationSha,
         rawDiff,
         integrationDiff: integrationDeltaDiff(integrationRoot, base, integrationSha),
+        readOwnersManifest: () => integrationOwnersManifest(integrationRoot, integrationSha),
         certificateSha256,
         records,
         inventory: listInventory(root, head),

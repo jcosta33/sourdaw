@@ -22,6 +22,7 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
 import {
     hashInventoryFile,
     listIntegrationInventory,
@@ -114,7 +115,7 @@ function withIntegrationCheckout(
         );
         run(root, git('rev-parse', 'HEAD'), head, base, first);
     } finally {
-        rmSync(root, { recursive: true, force: true });
+        rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
 }
 
@@ -130,6 +131,7 @@ function withShadowCliCheckouts(
         | 'merge-deleted'
         | 'integration-matcher'
         | 'invalid-scope'
+        | 'control-config-missing'
         | 'planner-edit'
         | 'stale-base'
         | 'policy-drift',
@@ -168,6 +170,7 @@ function withShadowCliCheckouts(
         'scripts/e2eSelectionShadowCompatibility.ts',
         'scripts/e2eSelectionShadowCertificate.json',
         'scripts/e2eSelectionShadowIntegration.ts',
+        'scripts/e2eAffectedGraph.ts',
         'scripts/e2eShardPartition.ts',
         'scripts/e2eCollectorInventory.ts',
         'scripts/e2eSpecDurations.json',
@@ -176,6 +179,9 @@ function withShadowCliCheckouts(
     ];
     const copyControl = () => {
         for (const path of controlPaths) {
+            if (capability === 'control-config-missing' && path === 'playwright.config.ts') {
+                continue;
+            }
             const destination = join(repository, path);
             mkdirSync(resolve(destination, '..'), { recursive: true });
             copyFileSync(path, destination);
@@ -188,13 +194,22 @@ function withShadowCliCheckouts(
         mkdirSync(join(repository, 'tests/e2e'), { recursive: true });
         writeFileSync(join(repository, SMOKE_SPEC), 'smoke\n');
         writeFileSync(join(repository, 'tests/e2e/example.spec.ts'), 'example\n');
-        if (!['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
+        mkdirSync(join(repository, 'scripts'), { recursive: true });
+        writeFileSync(
+            join(repository, 'scripts/e2eSuiteOwners.json'),
+            syntheticOwnersManifest([SMOKE_SPEC, 'tests/e2e/example.spec.ts'])
+        );
+        if (
+            !['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope', 'control-config-missing'].includes(
+                capability
+            )
+        ) {
             copyControl();
         }
         const originalBase = commit('base');
         git('checkout', '-q', '-b', 'candidate');
-        mkdirSync(join(repository, 'src/modules/Tuner'), { recursive: true });
-        writeFileSync(join(repository, 'src/modules/Tuner/feature.ts'), 'export const tuner = true;\n');
+        mkdirSync(join(repository, 'src/modules/Tuner/presentations'), { recursive: true });
+        writeFileSync(join(repository, 'src/modules/Tuner/presentations/feature.ts'), 'export const tuner = true;\n');
         if (capability === 'planner-edit') {
             const planner = join(repository, 'scripts/prValidationScope.ts');
             writeFileSync(
@@ -247,7 +262,11 @@ function withShadowCliCheckouts(
         }
         const head = git('rev-parse', 'HEAD');
         git('checkout', '-q', 'main');
-        if (['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
+        if (
+            ['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope', 'control-config-missing'].includes(
+                capability
+            )
+        ) {
             copyControl();
         }
         writeFileSync(join(repository, 'integration.txt'), 'integration\n');
@@ -256,6 +275,10 @@ function withShadowCliCheckouts(
             writeFileSync(config, `${readFileSync(config, 'utf8')}\n// Main moved the collection policy.\n`);
         }
         const control = commit('control');
+        if (capability === 'control-config-missing') {
+            copyFileSync('playwright.config.ts', join(repository, 'playwright.config.ts'));
+            commit('integration adds the Playwright config the control lacks');
+        }
         if (capability === 'integration-matcher') {
             const config = join(repository, 'playwright.config.ts');
             const source = readFileSync(config, 'utf8');
@@ -368,6 +391,28 @@ function withShadowCliCheckouts(
     }
 }
 
+function syntheticOwnerOf(spec: string): string {
+    for (const [prefix, owner] of [
+        ['tests/e2e/browserAi', 'BrowserAi'],
+        ['tests/e2e/bacteria', 'Bacteria'],
+        ['tests/e2e/tuner', 'Tuner'],
+    ] as const) {
+        if (spec.startsWith(prefix)) {
+            return owner;
+        }
+    }
+    return 'Other';
+}
+
+// Every collected spec is owned, so a narrowed selection stays small enough to tell owners apart.
+function syntheticOwnersManifest(specs: readonly string[]): string {
+    const entries = specs
+        .filter((spec) => spec !== SMOKE_SPEC)
+        .map((spec) => ({ spec, owners: [syntheticOwnerOf(spec)] }));
+    const owners = [...new Set(entries.flatMap((entry) => entry.owners))].sort();
+    return JSON.stringify({ version: 1, owners, entries });
+}
+
 function thrownBy(run: () => unknown): unknown {
     try {
         run();
@@ -420,6 +465,7 @@ function fixture(
         candidateBase: baseText,
         candidateHead: baseText.replace('Scoring', 'Pitch display'),
         durationText,
+        readOwnersManifest: () => syntheticOwnersManifest(inventory.map((row) => row.path)),
         livePlan: selectValidationPlan(
             [candidate],
             inventory.map((row) => row.path)
@@ -510,31 +556,44 @@ describe('E2E selection shadow', () => {
         );
     }, 30_000);
 
-    const narrowedScope = (specs: string[]) => (plan: ReturnType<typeof selectValidationPlan>) => ({
-        ...plan,
-        matrix: { include: specs.length === 0 ? [] : [{ id: 1, specs }] },
-        reasons: plan.reasons.map((row) =>
-            row.path === 'src/modules/Tuner/feature.ts' ? { ...row, reason: 'affected feature owners: Tuner' } : row
-        ),
-    });
+    const cliSpecs = [SMOKE_SPEC, 'tests/e2e/example.spec.ts'];
+    const cliFeature = 'src/modules/Tuner/presentations/feature.ts';
+    const narrowedScope =
+        (forge?: (plan: ReturnType<typeof selectValidationPlan>) => unknown) =>
+        (plan: ReturnType<typeof selectValidationPlan>) => {
+            const graph: SourceNode[] = [{ source: cliFeature, dependencies: [] }];
+            const affected = selectAffectedE2e(
+                [cliFeature],
+                cliSpecs,
+                JSON.parse(syntheticOwnersManifest(cliSpecs)),
+                graph
+            );
+            const planned = selectValidationPlan(
+                plan.reasons.map((row) => row.path),
+                cliSpecs,
+                undefined,
+                false,
+                affected
+            );
+            return forge ? forge(planned) : planned;
+        };
 
-    it.each(['absent', 'present'] as const)(
-        'records a graph-narrowed scope as an explained skip on the %s route',
-        (capability) => {
+    it.each([
+        ['absent', 'unsupported'],
+        ['present', 'complete'],
+    ] as const)(
+        'agrees with a planner-made graph-narrowed scope on the %s route',
+        (capability, measurementStatus) => {
             withShadowCliCheckouts(
                 capability,
                 (result, report) => {
                     expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
-                    expect(report).toMatchObject({
-                        measurementStatus: 'skipped',
-                        skipReason: 'affected-graph-narrowing-unverified',
-                    });
-                    expect(report.skipDetail).toMatch(/Tuner/);
+                    expect(report.measurementStatus).toBe(measurementStatus);
                     expect(report).not.toHaveProperty('failureReason');
                 },
                 undefined,
                 false,
-                narrowedScope(['tests/e2e/example.spec.ts'])
+                narrowedScope()
             );
         },
         60_000
@@ -552,11 +611,21 @@ describe('E2E selection shadow', () => {
                 },
                 undefined,
                 false,
-                narrowedScope([])
+                narrowedScope((planned) => ({ ...planned, matrix: { include: [] } }))
             );
         },
         60_000
     );
+
+    it('fails, rather than skips, when the control planner source is missing', () => {
+        withShadowCliCheckouts('control-config-missing', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(
+                /Control selector or planner is missing or nonregular: playwright\.config\.ts/
+            );
+        });
+    }, 30_000);
 
     it('skips, not fails, when the candidate edits the planner and the control still holds the old one', () => {
         withShadowCliCheckouts(
@@ -1429,81 +1498,215 @@ describe('E2E selection shadow agreement with the authoritative scope', () => {
         }
     });
 
-    const narrow = {
-        kind: 'narrow' as const,
-        specs: [mainOnlySpec],
-        browserAi: false,
-        owners: ['Tuner'],
+    const synthetic = syntheticOwnersManifest(inventoryPaths);
+    const manifest: unknown = JSON.parse(synthetic);
+    const source = (owner: string, name = 'Panel') => `src/modules/${owner}/presentations/views/${name}.tsx`;
+    const tunerSource = candidate;
+    const changedSpec = 'tests/e2e/mixer.spec.ts';
+    // The real selector over a small synthetic graph, so the plan is genuinely planner-made.
+    const plannerMade = (
+        changed: readonly string[],
+        consumers: readonly [consumer: string, dependency: string][] = [],
+        paths: readonly string[] = changed
+    ) => {
+        const sources = Array.from(new Set([...changed, ...consumers.flat()]));
+        const graph: SourceNode[] = sources.map((node) => ({
+            source: node,
+            dependencies: consumers
+                .filter(([consumer]) => consumer === node)
+                .map(([, dependency]) => ({ resolved: dependency })),
+        }));
+        const affected = selectAffectedE2e(
+            paths.filter((path) => path.startsWith('src/modules/')),
+            inventoryPaths,
+            manifest,
+            graph
+        );
+        if (affected.kind !== 'narrow') {
+            throw new Error(`Expected a narrowed selection: ${affected.reason}`);
+        }
+        return { affected, plan: selectValidationPlan([...paths].sort(), inventoryPaths, undefined, false, affected) };
     };
-    const narrowedPlan = (paths: string[], selection = narrow) =>
-        selectValidationPlan(paths, inventoryPaths, undefined, false, selection);
-    const unverified = (livePlan: unknown, integrationDiff?: string) =>
-        thrownBy(() => measureShadow(fixture({ livePlan, integrationDiff })));
+    const extraDiff = (...paths: string[]) => paths.map((path) => `M\0${path}\0`).join('');
+    const measure = (livePlan: unknown, integrationDiff?: string) =>
+        measureShadow(fixture({ livePlan, integrationDiff }));
 
-    it('skips with the owners named for an honest-looking graph-narrowed selection', () => {
-        const error = unverified(narrowedPlan([candidate]));
-        expect(error).toMatchObject({ name: 'ShadowSkipError', code: 'affected-graph-narrowing-unverified' });
-        expect((error as Error).message).toMatch(/Tuner/);
-    });
+    describe('agrees with a graph-narrowed plan the planner made', () => {
+        it('for one owner', () => {
+            const { affected, plan } = plannerMade([tunerSource]);
+            expect(affected.owners).toEqual(['Tuner']);
+            const report = measure(plan);
+            expect(report.measurementStatus).toBe('complete');
+            expect(report.authoritativeDiagnostics).toEqual([
+                expect.stringContaining('affected-graph-owners-unverified: Tuner'),
+            ]);
+            expect(plan.matrix.include.flatMap((group) => group.specs)).not.toContain(SMOKE_SPEC);
+        });
 
-    it('skips, not admits, a forged narrowing that names one owner and one of its many specs', () => {
-        const forged = narrowedPlan([candidate], { ...narrow, owners: ['Bacteria'], specs: [mainOnlySpec] });
-        expect(unverified(forged)).toMatchObject({
-            name: 'ShadowSkipError',
-            code: 'affected-graph-narrowing-unverified',
+        it('for several owners reached through a consumer', () => {
+            const consumer = source('Bacteria', 'Consumer');
+            const { affected, plan } = plannerMade([tunerSource], [[consumer, tunerSource]], [tunerSource, consumer]);
+            expect(affected.owners).toEqual(['Bacteria', 'Tuner']);
+            expect(measure(plan, extraDiff(consumer)).measurementStatus).toBe('complete');
+        });
+
+        it('beside a changed browser spec', () => {
+            const { plan } = plannerMade([tunerSource], [], [tunerSource, changedSpec]);
+            expect(plan.matrix.include.flatMap((group) => group.specs)).toContain(changedSpec);
+            expect(measure(plan, extraDiff(changedSpec)).measurementStatus).toBe('complete');
+        });
+
+        it('for a Browser AI owner', () => {
+            const aiSource = source('BrowserAi');
+            const { affected, plan } = plannerMade([tunerSource, aiSource]);
+            expect(affected.browserAi).toBe(true);
+            expect(plan.browserAi).toBe(true);
+            expect(measure(plan, extraDiff(aiSource)).measurementStatus).toBe('complete');
+        });
+
+        it('when the event base lags and the integration delta adds another changed source', () => {
+            const delta = source('Bacteria', 'FromMain');
+            const { plan } = plannerMade([tunerSource, delta]);
+            expect(measure(plan, extraDiff(delta)).measurementStatus).toBe('complete');
+            expect(() => measure(plan)).toThrow(disagrees);
         });
     });
 
-    describe('fails a graph-narrowed plan that differs beyond its owners and specs', () => {
-        const honest = () => narrowedPlan([candidate]);
+    describe('fails a graph-narrowed plan the planner cannot have made', () => {
+        const honest = () => plannerMade([tunerSource]).plan;
         const infra = 'src/infra/clock.ts';
-        const owners = { path: candidate, reason: 'affected feature owners: Tuner' };
 
         it.each([
-            ['beside a codeql flip', () => ({ ...honest(), codeql: !honest().codeql })],
-            ['beside a profile change', () => ({ ...honest(), profile: 'tooling' as const })],
+            ['a smoke-only matrix', () => ({ ...honest(), matrix: { include: [{ id: 1, specs: [SMOKE_SPEC] }] } })],
+            ['an empty matrix', () => ({ ...honest(), matrix: { include: [] } })],
             [
-                'beside the full-fallback diagnostic',
-                () => ({ ...honest(), reasons: [...honest().reasons, diagnostic] }),
+                'a duplicate spec',
+                () => {
+                    const plan = honest();
+                    const [first, ...rest] = plan.matrix.include;
+                    const specs = first?.specs ?? [];
+                    return { ...plan, matrix: { include: [{ id: 1, specs: [...specs, specs[0]] }, ...rest] } };
+                },
             ],
-            ['with an empty matrix', () => narrowedPlan([candidate], { ...narrow, specs: [] })],
             [
-                'with a spec outside the inventory',
-                () => narrowedPlan([candidate], { ...narrow, specs: ['tests/e2e/notInIntegration.spec.ts'] }),
+                'an extra matrix group key',
+                () => {
+                    const plan = honest();
+                    return {
+                        ...plan,
+                        matrix: { include: plan.matrix.include.map((group) => ({ ...group, extra: 1 })) },
+                    };
+                },
             ],
+            ['an extra top-level key', () => ({ ...honest(), extra: true })],
+            ['a codeql change', () => ({ ...honest(), codeql: !honest().codeql })],
+            ['a profile change', () => ({ ...honest(), profile: 'tooling' as const })],
+            ['a version change', () => ({ ...honest(), version: 2 })],
+            ['a browser change', () => ({ ...honest(), browser: false })],
+            ['the full-fallback diagnostic', () => ({ ...honest(), reasons: [...honest().reasons, diagnostic] })],
+            ['an unknown owner', () => forgedOwners(['Nobody'])],
             [
-                'with a changed path row that is no longer the recomputed reason',
-                () => ({ ...honest(), reasons: [{ ...owners, path: `${candidate}.other` }] }),
+                'a spec outside the inventory',
+                () => ({
+                    ...honest(),
+                    matrix: { include: [{ id: 1, specs: ['tests/e2e/notInIntegration.spec.ts'] }] },
+                }),
             ],
-        ])('%s', (_name, build) => {
-            expect(() => measureShadow(fixture({ livePlan: build() }))).toThrow(disagrees);
+        ])('with %s', (_name, build) => {
+            expect(() => measure(build())).toThrow(disagrees);
+        });
+
+        function forgedOwners(owners: string[], paths = [tunerSource]) {
+            const specs = owners.flatMap((owner) =>
+                inventoryPaths.filter((spec) => syntheticOwnerOf(spec) === owner && spec !== SMOKE_SPEC)
+            );
+            return selectValidationPlan(paths, inventoryPaths, undefined, false, {
+                kind: 'narrow',
+                owners,
+                specs,
+                browserAi: false,
+            });
+        }
+
+        it('when the owners name one of their many specs', () => {
+            const tunerSpecs = inventoryPaths.filter((spec) => syntheticOwnerOf(spec) === 'Tuner');
+            expect(tunerSpecs.length).toBeGreaterThan(1);
+            const livePlan = selectValidationPlan([tunerSource], inventoryPaths, undefined, false, {
+                kind: 'narrow',
+                owners: ['Tuner'],
+                specs: [tunerSpecs[0] ?? ''],
+                browserAi: false,
+            });
+            expect(() => measure(livePlan)).toThrow(disagrees);
+        });
+
+        it('when a non-owner row carries a different reason', () => {
+            const { plan } = plannerMade([tunerSource], [], [tunerSource, 'docs/a.md']);
+            const reasons = plan.reasons.map((row) => (row.path === 'docs/a.md' ? { ...row, reason: 'other' } : row));
+            expect(() => measure({ ...plan, reasons }, extraDiff('docs/a.md'))).toThrow(disagrees);
+        });
+
+        it('when a changed browser spec is dropped from the matrix', () => {
+            const { plan } = plannerMade([tunerSource], [], [tunerSource, changedSpec]);
+            const specs = plan.matrix.include.flatMap((group) => group.specs).filter((spec) => spec !== changedSpec);
+            const livePlan = { ...plan, matrix: { include: [{ id: 1, specs }] } };
+            expect(() => measure(livePlan, extraDiff(changedSpec))).toThrow(disagrees);
+        });
+
+        it('when browserAi is off for a selected Browser AI spec', () => {
+            const aiSource = source('BrowserAi');
+            const { plan } = plannerMade([tunerSource, aiSource]);
+            expect(() => measure({ ...plan, browserAi: false }, extraDiff(aiSource))).toThrow(disagrees);
+        });
+
+        it.each([
+            ['a deletion', (path: string) => `D\0${path}\0`],
+            ['a rename', (path: string) => `R100\0${path}\0${path}.renamed\0`],
+        ])('over %s', (_name, status) => {
+            const gone = source('Tuner', 'Retired');
+            const livePlan = plannerMade([tunerSource, gone]).plan;
+            expect(() => measure(livePlan, status(gone))).toThrow(disagrees);
         });
 
         it('on a path outside src/modules', () => {
-            const full = selectValidationPlan([candidate, infra].sort(), inventoryPaths);
-            const livePlan = {
-                ...full,
-                reasons: full.reasons.map((row) => (row.path === infra ? { ...row, reason: owners.reason } : row)),
-            };
-            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${infra}\0` }))).toThrow(disagrees);
+            const { affected } = plannerMade([tunerSource]);
+            const full = selectValidationPlan([tunerSource, infra].sort(), inventoryPaths, undefined, false, affected);
+            expect(() => measure(full, extraDiff(infra))).toThrow(disagrees);
         });
 
-        it('beside a full-coverage row that is not an owners row', () => {
-            const full = selectValidationPlan([candidate, infra].sort(), inventoryPaths);
+        it('when an owners row replaces a non-module full-coverage row', () => {
+            const full = selectValidationPlan([tunerSource, infra].sort(), inventoryPaths);
             const livePlan = {
                 ...full,
-                matrix: honest().matrix,
-                reasons: full.reasons.map((row) => (row.path === candidate ? { ...row, reason: owners.reason } : row)),
+                reasons: full.reasons.map((row) =>
+                    row.path === infra ? { ...row, reason: 'affected feature owners: Tuner' } : row
+                ),
             };
-            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${infra}\0` }))).toThrow(disagrees);
+            expect(() => measure(livePlan, extraDiff(infra))).toThrow(disagrees);
+        });
+
+        it('when a changed feature source belongs to an owner the plan does not claim', () => {
+            const other = source('Bacteria', 'Unclaimed');
+            const livePlan = forgedOwners(['Tuner'], [tunerSource, other].sort());
+            expect(() => measure(livePlan, extraDiff(other))).toThrow(disagrees);
+        });
+
+        it('when the diagnostic row sits on a plan with a src/infra path', () => {
+            const plan = selectValidationPlan([tunerSource, infra].sort(), inventoryPaths);
+            const livePlan = { ...plan, reasons: [...plan.reasons, diagnostic] };
+            expect(() => measure(livePlan, extraDiff(infra))).toThrow(disagrees);
+        });
+
+        it('when the diagnostic row sits on a plan with a deletion', () => {
+            const gone = source('Tuner', 'Retired');
+            const plan = selectValidationPlan([tunerSource, gone].sort(), inventoryPaths);
+            const livePlan = { ...plan, reasons: [...plan.reasons, diagnostic] };
+            expect(() => measure(livePlan, `D\0${gone}\0`)).toThrow(disagrees);
         });
     });
 
-    it('still fails a non-narrowed plan that differs from the recomputed plan', () => {
+    it('still agrees with the full-fallback diagnostic when the planner could have tried the helper', () => {
         const plan = selectValidationPlan([candidate], inventoryPaths);
-        const error = unverified({ ...plan, matrix: narrowedPlan([candidate]).matrix });
-        expect(error).toBeInstanceOf(Error);
-        expect(error).not.toMatchObject({ name: 'ShadowSkipError' });
-        expect((error as Error).message).toContain(disagrees);
+        expect(measure({ ...plan, reasons: [...plan.reasons, diagnostic] }).measurementStatus).toBe('complete');
     });
 });
