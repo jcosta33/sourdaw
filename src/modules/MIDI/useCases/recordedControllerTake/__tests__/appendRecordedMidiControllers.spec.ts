@@ -79,6 +79,13 @@ describe('appendRecordedMidiControllers', () => {
         expect(midiStore.set).not.toHaveBeenCalled();
     });
 
+    it('should create no note list for a clip that has none, which a peer may be writing concurrently', () => {
+        appendRecordedMidiControllers({ clipId: 'clip-2', cc: [createMidiCC(64, 127, 1, 0)], pitchBend: [] });
+
+        expect(mocks.state.value?.ccByClipId['clip-2']).toHaveLength(1);
+        expect(mocks.state.value?.notesByClipId['clip-2']).toBeUndefined();
+    });
+
     it('should be a no-op when MIDI state is unavailable', () => {
         mocks.state.value = null;
 
