@@ -1272,18 +1272,41 @@ mod applied_registry_tests {
 
     #[test]
     fn every_registered_scalar_reaches_real_stage_state_and_preserves_bare_defaults() {
-        let mut chain=ProofChain::new(48_000.0);
+        let mut chain = ProofChain::new(48_000.0);
         for parameter in PARAMETERS {
-            if parameter.route==ParameterRoute::Order {continue;}
-            let before=chain.parameter_value(parameter.name).expect(parameter.name);
-            assert!((before-parameter.default).abs()<=parameter.default.abs().max(1.0)*0.002,"bare default {}: {before} != {}",parameter.name,parameter.default);
-            let value=match parameter.kind {
-                ParameterKind::Continuous => if parameter.default==parameter.minimum { (parameter.minimum+parameter.maximum)*0.5 } else {parameter.minimum},
-                _ => if parameter.default==parameter.maximum {parameter.minimum} else {parameter.maximum},
+            if parameter.route == ParameterRoute::Order {
+                continue;
+            }
+            let before = chain.parameter_value(parameter.name).expect(parameter.name);
+            assert!(
+                (before - parameter.default).abs() <= parameter.default.abs().max(1.0) * 0.002,
+                "bare default {}: {before} != {}",
+                parameter.name,
+                parameter.default
+            );
+            let value = match parameter.kind {
+                ParameterKind::Continuous => {
+                    if parameter.default == parameter.minimum {
+                        (parameter.minimum + parameter.maximum) * 0.5
+                    } else {
+                        parameter.minimum
+                    }
+                }
+                _ => {
+                    if parameter.default == parameter.maximum {
+                        parameter.minimum
+                    } else {
+                        parameter.maximum
+                    }
+                }
             };
-            assert!(chain.set_param(parameter.name,value),"{}",parameter.name);
-            let actual=chain.parameter_value(parameter.name).expect(parameter.name);
-            assert!((actual-value).abs()<=value.abs().max(1.0)*0.002,"actual stage target {}: {actual} != {value}",parameter.name);
+            assert!(chain.set_param(parameter.name, value), "{}", parameter.name);
+            let actual = chain.parameter_value(parameter.name).expect(parameter.name);
+            assert!(
+                (actual - value).abs() <= value.abs().max(1.0) * 0.002,
+                "actual stage target {}: {actual} != {value}",
+                parameter.name
+            );
         }
         // The setting is recognized, but no FIR is designed by parameter application.
         assert!(chain.eq_linear_phase);
@@ -1292,17 +1315,27 @@ mod applied_registry_tests {
 
     #[test]
     fn refusal_keeps_nondefault_actual_targets_and_can_recover() {
-        let mut chain=ProofChain::new(48_000.0);
-        assert!(chain.set_param("input_gain",3.0));
-        assert!(chain.set_param("eq_band0_type",2.0));
-        assert!(chain.set_param("lim_lookahead",7.5));
-        for (name,value) in [("input_gain",f32::NAN),("input_gain",f32::INFINITY),("eq_band0_type",0.25),("eq_bypass",2.0),("dither_mode",3.0),("eq_band0Xfreq",800.0),("dyn_xover0_suffix",800.0),("chain_order_0",0.0),("target_lufs",-14.0)] {
-            assert!(!chain.set_param(name,value),"{name}");
+        let mut chain = ProofChain::new(48_000.0);
+        assert!(chain.set_param("input_gain", 3.0));
+        assert!(chain.set_param("eq_band0_type", 2.0));
+        assert!(chain.set_param("lim_lookahead", 7.5));
+        for (name, value) in [
+            ("input_gain", f32::NAN),
+            ("input_gain", f32::INFINITY),
+            ("eq_band0_type", 0.25),
+            ("eq_bypass", 2.0),
+            ("dither_mode", 3.0),
+            ("eq_band0Xfreq", 800.0),
+            ("dyn_xover0_suffix", 800.0),
+            ("chain_order_0", 0.0),
+            ("target_lufs", -14.0),
+        ] {
+            assert!(!chain.set_param(name, value), "{name}");
         }
-        assert!((chain.parameter_value("input_gain").unwrap()-3.0).abs()<0.001);
-        assert_eq!(chain.parameter_value("eq_band0_type"),Some(2.0));
-        assert_eq!(chain.limiter.latency_samples(),360);
-        assert!(chain.set_param("input_gain",-6.0));
-        assert!((chain.parameter_value("input_gain").unwrap()+6.0).abs()<0.001);
+        assert!((chain.parameter_value("input_gain").unwrap() - 3.0).abs() < 0.001);
+        assert_eq!(chain.parameter_value("eq_band0_type"), Some(2.0));
+        assert_eq!(chain.limiter.latency_samples(), 360);
+        assert!(chain.set_param("input_gain", -6.0));
+        assert!((chain.parameter_value("input_gain").unwrap() + 6.0).abs() < 0.001);
     }
 }

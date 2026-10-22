@@ -114,12 +114,24 @@ impl MasteringEq {
     }
 
     #[cfg(test)]
-    pub(super) fn parameter_value(&self,name:&str)->Option<f32> {
-        if name=="eq_bypass" {return Some(u8::from(self.bypassed) as f32);}
-        if name=="eq_output_gain" {return Some(20.0*self.output_gain.log10());}
-        let (index,field)=name.strip_prefix("eq_band")?.split_once('_')?;
-        let band=self.bands.get(index.parse::<usize>().ok()?)?;
-        Some(match field {"freq"=>band.freq as f32,"gain"=>band.gain_db as f32,"q"=>band.q as f32,"type"=>band.band_type as u8 as f32,"channel"=>band.channel as u8 as f32,"enabled"=>u8::from(band.enabled) as f32,_=>return None})
+    pub(super) fn parameter_value(&self, name: &str) -> Option<f32> {
+        if name == "eq_bypass" {
+            return Some(u8::from(self.bypassed) as f32);
+        }
+        if name == "eq_output_gain" {
+            return Some(20.0 * self.output_gain.log10());
+        }
+        let (index, field) = name.strip_prefix("eq_band")?.split_once('_')?;
+        let band = self.bands.get(index.parse::<usize>().ok()?)?;
+        Some(match field {
+            "freq" => band.freq as f32,
+            "gain" => band.gain_db as f32,
+            "q" => band.q as f32,
+            "type" => band.band_type as u8 as f32,
+            "channel" => band.channel as u8 as f32,
+            "enabled" => u8::from(band.enabled) as f32,
+            _ => return None,
+        })
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

@@ -8,7 +8,6 @@
 
 pub mod biquad;
 pub mod chain;
-pub mod parameter_registry;
 pub mod crossover;
 pub mod dither;
 pub mod dynamic_eq;
@@ -20,6 +19,7 @@ pub mod linear_phase_eq;
 pub mod match_eq;
 pub mod metering;
 pub mod multiband;
+pub mod parameter_registry;
 pub mod true_peak;
 
 use crate::primitives::sanitize_block;

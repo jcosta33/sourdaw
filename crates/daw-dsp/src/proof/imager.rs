@@ -73,11 +73,18 @@ impl StereoImager {
     }
 
     #[cfg(test)]
-    pub(super) fn parameter_value(&self,name:&str)->Option<f32> {
-        match name {"img_bypass"=>return Some(u8::from(self.bypassed) as f32),"img_auto_mono_bass"=>return Some(u8::from(self.auto_mono_bass) as f32),"img_mono_bass_freq"=>return Some(self.mono_bass_freq as f32),_=>{}}
-        if let Some(index)=name.strip_prefix("img_width") {return self.band_width.get(index.parse::<usize>().ok()?).copied();}
-        let index=name.strip_prefix("img_xover")?.parse::<usize>().ok()?;
-        self.crossover_freqs.get(index).map(|value|*value as f32)
+    pub(super) fn parameter_value(&self, name: &str) -> Option<f32> {
+        match name {
+            "img_bypass" => return Some(u8::from(self.bypassed) as f32),
+            "img_auto_mono_bass" => return Some(u8::from(self.auto_mono_bass) as f32),
+            "img_mono_bass_freq" => return Some(self.mono_bass_freq as f32),
+            _ => {}
+        }
+        if let Some(index) = name.strip_prefix("img_width") {
+            return self.band_width.get(index.parse::<usize>().ok()?).copied();
+        }
+        let index = name.strip_prefix("img_xover")?.parse::<usize>().ok()?;
+        self.crossover_freqs.get(index).map(|value| *value as f32)
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

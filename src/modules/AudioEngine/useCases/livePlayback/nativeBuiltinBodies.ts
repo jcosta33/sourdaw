@@ -1,4 +1,3 @@
-import { isProofNativeParameterId } from '../../models/ProofRuntimeControl';
 /**
  * The built-in device types `daw-engine` builds a body for, and the vocabulary
  * each body answers to (#3893).
@@ -45,6 +44,7 @@ import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
 import { KNEAD_ENGINE_PARAM_NAMES } from '../../models/KneadEngineParamNames';
+import { isProofNativeParameterId } from '../../models/ProofRuntimeControl';
 import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames';
 
 /**

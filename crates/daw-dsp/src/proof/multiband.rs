@@ -117,12 +117,30 @@ impl MultibandDynamics {
     }
 
     #[cfg(test)]
-    pub(super) fn parameter_value(&self,name:&str)->Option<f32> {
-        if name=="dyn_bypass" {return Some(u8::from(self.bypassed) as f32);}
-        if let Some(index)=name.strip_prefix("dyn_xover") {return self.crossover_freqs.get(index.parse::<usize>().ok()?).map(|value|*value as f32);}
-        let (index,field)=name.strip_prefix("dyn_band")?.split_once('_')?;
-        let band=self.bands.get(index.parse::<usize>().ok()?)?;
-        Some(match field {"threshold"=>band.threshold,"ratio"=>band.ratio,"attack"=>-1000.0/(band.attack_coeff.ln()*band.sample_rate),"release"=>-1000.0/(band.release_coeff.ln()*band.sample_rate),"knee"=>band.knee_width,"makeup"=>band.makeup_db,"auto_makeup"=>u8::from(band.auto_makeup) as f32,"bypass"=>u8::from(band.bypassed) as f32,"solo"=>u8::from(band.solo) as f32,_=>return None})
+    pub(super) fn parameter_value(&self, name: &str) -> Option<f32> {
+        if name == "dyn_bypass" {
+            return Some(u8::from(self.bypassed) as f32);
+        }
+        if let Some(index) = name.strip_prefix("dyn_xover") {
+            return self
+                .crossover_freqs
+                .get(index.parse::<usize>().ok()?)
+                .map(|value| *value as f32);
+        }
+        let (index, field) = name.strip_prefix("dyn_band")?.split_once('_')?;
+        let band = self.bands.get(index.parse::<usize>().ok()?)?;
+        Some(match field {
+            "threshold" => band.threshold,
+            "ratio" => band.ratio,
+            "attack" => -1000.0 / (band.attack_coeff.ln() * band.sample_rate),
+            "release" => -1000.0 / (band.release_coeff.ln() * band.sample_rate),
+            "knee" => band.knee_width,
+            "makeup" => band.makeup_db,
+            "auto_makeup" => u8::from(band.auto_makeup) as f32,
+            "bypass" => u8::from(band.bypassed) as f32,
+            "solo" => u8::from(band.solo) as f32,
+            _ => return None,
+        })
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

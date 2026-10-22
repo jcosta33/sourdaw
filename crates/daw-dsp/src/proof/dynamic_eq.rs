@@ -179,11 +179,24 @@ impl DynamicEq {
     }
 
     #[cfg(test)]
-    pub(super) fn parameter_value(&self,name:&str)->Option<f32> {
-        if name=="dyneq_bypass" {return Some(u8::from(self.bypassed) as f32);}
-        let (index,field)=name.strip_prefix("dyneq_band")?.split_once('_')?;
-        let band=self.bands.get(index.parse::<usize>().ok()?)?;
-        Some(match field {"freq"=>band.freq as f32,"q"=>band.q as f32,"threshold"=>band.threshold_db,"ratio"=>band.ratio,"attack"=>-1000.0/(band.attack_coeff.ln()*band.sample_rate as f32),"release"=>-1000.0/(band.release_coeff.ln()*band.sample_rate as f32),"range"=>band.max_gain_db,"mode"=>band.mode as u8 as f32,"enabled"=>u8::from(band.enabled) as f32,_=>return None})
+    pub(super) fn parameter_value(&self, name: &str) -> Option<f32> {
+        if name == "dyneq_bypass" {
+            return Some(u8::from(self.bypassed) as f32);
+        }
+        let (index, field) = name.strip_prefix("dyneq_band")?.split_once('_')?;
+        let band = self.bands.get(index.parse::<usize>().ok()?)?;
+        Some(match field {
+            "freq" => band.freq as f32,
+            "q" => band.q as f32,
+            "threshold" => band.threshold_db,
+            "ratio" => band.ratio,
+            "attack" => -1000.0 / (band.attack_coeff.ln() * band.sample_rate as f32),
+            "release" => -1000.0 / (band.release_coeff.ln() * band.sample_rate as f32),
+            "range" => band.max_gain_db,
+            "mode" => band.mode as u8 as f32,
+            "enabled" => u8::from(band.enabled) as f32,
+            _ => return None,
+        })
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
