@@ -1,0 +1,16 @@
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  h_beb54bf43b47b7 408,412,422,441,443,445
+src/modules/Proof/useCases/__tests__/proofParamBridge.spec.ts
+  h_beb54bf43b47b7 26,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7898f403453833cd442bb1214ebb7f0bacf08f3d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
