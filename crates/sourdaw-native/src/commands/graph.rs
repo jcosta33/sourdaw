@@ -3090,7 +3090,12 @@ fn map_batch(
 
     if let Some(lease) = &batch.timeline_lease {
         let owner = samples.timeline_lease_owner(lease)?;
-        if !batch.replace_topology && registry.timeline_owner.as_deref().is_some_and(|current| current != owner) {
+        if !batch.replace_topology
+            && registry
+                .timeline_owner
+                .as_deref()
+                .is_some_and(|current| current != owner)
+        {
             return Err("Timeline graph belongs to another project owner".into());
         }
     } else if samples.residency.fenced() {
@@ -3984,9 +3989,14 @@ fn map_command(
             Ok(())
         }
 
-        GraphCommandPayload::ScheduleClip { playback } => {
-            map_schedule_clip(playback, registry, samples, timeline_lease, sample_rate, ops)
-        }
+        GraphCommandPayload::ScheduleClip { playback } => map_schedule_clip(
+            playback,
+            registry,
+            samples,
+            timeline_lease,
+            sample_rate,
+            ops,
+        ),
 
         GraphCommandPayload::SetTransport {
             playing,
@@ -4436,7 +4446,13 @@ pub async fn register_timeline_sample(
     pcm: Vec<u8>,
     state: &AppState,
 ) -> Result<Value, String> {
-    if state.timeline_samples.lock().map_err(|e| e.to_string())?.residency.fenced() {
+    if state
+        .timeline_samples
+        .lock()
+        .map_err(|e| e.to_string())?
+        .residency
+        .fenced()
+    {
         return Err("register_timeline_sample requires a fenced material lease; use register_timeline_material".into());
     }
     if sample_id.is_empty() {
@@ -4575,7 +4591,9 @@ pub async fn apply_graph_commands(
                 return result_json(&GraphApplyResultPayload::rejected(reason));
             }
         } else if samples.residency.fenced() {
-            return result_json(&GraphApplyResultPayload::rejected("Graph batch requires a timeline material lease".into()));
+            return result_json(&GraphApplyResultPayload::rejected(
+                "Graph batch requires a timeline material lease".into(),
+            ));
         }
     }
 
@@ -8692,9 +8710,14 @@ mod tests {
         assert_eq!(pool.total_bytes(), 64);
 
         // Re-register s1 with 16 bytes
-        pool.insert("s1".to_string(), TimelineSample {
-            left: vec![0.0; 2].into(), right: vec![0.0; 2].into(), sample_rate: 48_000.0,
-        });
+        pool.insert(
+            "s1".to_string(),
+            TimelineSample {
+                left: vec![0.0; 2].into(),
+                right: vec![0.0; 2].into(),
+                sample_rate: 48_000.0,
+            },
+        );
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.total_bytes(), 16);
 
@@ -8702,7 +8725,11 @@ mod tests {
         let removed = pool.remove("s1");
         assert!(removed.is_some());
         assert_eq!(pool.len(), 0);
-        assert_eq!(pool.total_bytes(), 16, "the returned reader still owns the PCM");
+        assert_eq!(
+            pool.total_bytes(),
+            16,
+            "the returned reader still owns the PCM"
+        );
         drop(removed);
         assert_eq!(pool.total_bytes(), 0);
     }
@@ -8722,9 +8749,14 @@ mod tests {
         }; // 128 bytes (larger than max_bytes = 64)
 
         // Empty pool: oversized sample is retained
-        pool.insert("oversized_empty".to_string(), TimelineSample {
-            left: vec![0.0; 16].into(), right: vec![0.0; 16].into(), sample_rate: 48_000.0,
-        });
+        pool.insert(
+            "oversized_empty".to_string(),
+            TimelineSample {
+                left: vec![0.0; 16].into(),
+                right: vec![0.0; 16].into(),
+                sample_rate: 48_000.0,
+            },
+        );
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.total_bytes(), 128);
         assert!(pool.contains_key("oversized_empty"));
@@ -8735,9 +8767,14 @@ mod tests {
 
         // Multi-entry pool: oversized sample evicts prior entries and is retained
         pool.insert("s1".to_string(), sample_16);
-        pool.insert("s2".to_string(), TimelineSample {
-            left: vec![0.0; 2].into(), right: vec![0.0; 2].into(), sample_rate: 48_000.0,
-        });
+        pool.insert(
+            "s2".to_string(),
+            TimelineSample {
+                left: vec![0.0; 2].into(),
+                right: vec![0.0; 2].into(),
+                sample_rate: 48_000.0,
+            },
+        );
         assert_eq!(pool.len(), 2);
         assert_eq!(pool.total_bytes(), 32);
 
@@ -15970,19 +16007,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn native_timeline_residency_fifty_mapped_clips_keep_one_allocation_until_the_real_reader_releases() {
-        use crate::commands::timeline_sample_lifecycle::{register_timeline_material, timeline_sample_lifecycle};
+    async fn native_timeline_residency_fifty_mapped_clips_keep_one_allocation_until_the_real_reader_releases(
+    ) {
+        use crate::commands::timeline_sample_lifecycle::{
+            register_timeline_material, timeline_sample_lifecycle,
+        };
         let state = AppState::default();
         state.timeline_samples.lock().unwrap().set_max_bytes(32);
-        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state).await.unwrap();
+        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
         let owner = opened["owner"].as_str().unwrap();
         let prepared = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner,
             "materials": [{"sourceId": "take", "version": "v1", "frames": 4, "channels": 2, "sampleRate": 48000}]}), &state).await.unwrap();
         let lease = prepared["lease"].as_str().unwrap();
-        let pcm: Vec<u8> = [0.25f32, -0.25].iter().cycle().take(8).flat_map(|v| v.to_le_bytes()).collect();
-        register_timeline_material(lease.into(), "take".into(), "v1".into(), 48000.0, 2, pcm, &state).await.unwrap();
-        let mut commands = vec![json!({"kind": "create-track-strip", "trackId": "t1", "name": "Take",
-            "state": strip_state(1.0), "devices": [], "honorMuted": true, "contributesAudio": true})];
+        let pcm: Vec<u8> = [0.25f32, -0.25]
+            .iter()
+            .cycle()
+            .take(8)
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        register_timeline_material(
+            lease.into(),
+            "take".into(),
+            "v1".into(),
+            48000.0,
+            2,
+            pcm,
+            &state,
+        )
+        .await
+        .unwrap();
+        let mut commands = vec![
+            json!({"kind": "create-track-strip", "trackId": "t1", "name": "Take",
+            "state": strip_state(1.0), "devices": [], "honorMuted": true, "contributesAudio": true}),
+        ];
         for index in 0..50 {
             commands.push(json!({"kind": "schedule-clip", "playback": {"trackId": "t1",
                 "source": {"sourceId": "take", "materialVersion": "v1"}, "startTime": f64::from(index * 4) / 48000.0,
@@ -15991,57 +16050,118 @@ mod tests {
         }
         let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": commands});
         // Exercise the public production render body before holding a real mapped reader.
-        let output = render_graph_offline(wire.clone(), 200, 48000.0, &state).await.unwrap();
-        let decoded: Vec<_> = output.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let output = render_graph_offline(wire.clone(), 200, 48000.0, &state)
+            .await
+            .unwrap();
+        let decoded: Vec<_> = output
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
         assert!(decoded.iter().all(|value| value.is_finite()));
         assert!(decoded.iter().any(|value| value.abs() > 0.0));
         let batch = parse_batch(wire).unwrap();
         let ops = {
             let samples = state.timeline_samples.lock().unwrap();
-            let ops = map_offline_batch(&batch, &samples, &mut LevainBankStore::default(), 48000.0).unwrap();
-            let sample = samples.resolve_timeline_sample(Some(lease), "take", Some("v1")).unwrap();
+            let ops = map_offline_batch(&batch, &samples, &mut LevainBankStore::default(), 48000.0)
+                .unwrap();
+            let sample = samples
+                .resolve_timeline_sample(Some(lease), "take", Some("v1"))
+                .unwrap();
             assert_eq!(Arc::strong_count(&sample.left), 51);
             assert_eq!(Arc::strong_count(&sample.right), 51);
             assert_eq!(samples.total_bytes(), 32);
             ops
         };
-        let waiting = timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state).await.unwrap();
+        let waiting =
+            timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
+                .await
+                .unwrap();
         assert_eq!(waiting["complete"], false);
         assert_eq!(waiting["remainingReaders"], 1);
         assert_eq!(state.timeline_samples.lock().unwrap().total_bytes(), 32);
-        assert!(render_graph_offline(json!({"schemaVersion": 1, "timelineLease": lease, "commands": []}), 1, 48000.0, &state).await.is_err());
-        let incoming = timeline_sample_lifecycle(json!({"action": "open"}), &state).await.unwrap();
+        assert!(render_graph_offline(
+            json!({"schemaVersion": 1, "timelineLease": lease, "commands": []}),
+            1,
+            48000.0,
+            &state
+        )
+        .await
+        .is_err());
+        let incoming = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
         let request = json!({"action": "prepare", "owner": incoming["owner"],
             "materials": [{"sourceId": "next", "version": "v2", "frames": 4, "channels": 2, "sampleRate": 48000}]});
-        assert!(timeline_sample_lifecycle(request.clone(), &state).await.unwrap_err().contains("budget"));
+        assert!(timeline_sample_lifecycle(request.clone(), &state)
+            .await
+            .unwrap_err()
+            .contains("budget"));
         // These are the actual mapped clips, consumed by the existing scheduler.
         let (left, right) = render_offline_ops(ops, 200, 48000.0).unwrap();
         assert!(left.iter().chain(&right).all(|value| value.is_finite()));
-        let complete = timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state).await.unwrap();
+        let complete =
+            timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
+                .await
+                .unwrap();
         assert_eq!(complete["complete"], true);
         assert_eq!(state.timeline_samples.lock().unwrap().total_bytes(), 0);
         assert!(timeline_sample_lifecycle(request, &state).await.is_ok());
     }
 
     #[tokio::test]
-    async fn native_timeline_residency_eviction_reacquires_and_history_keeps_exact_same_id_versions() {
-        use crate::commands::timeline_sample_lifecycle::{register_timeline_material, timeline_sample_lifecycle};
+    async fn native_timeline_residency_eviction_reacquires_and_history_keeps_exact_same_id_versions(
+    ) {
+        use crate::commands::timeline_sample_lifecycle::{
+            register_timeline_material, timeline_sample_lifecycle,
+        };
         let state = AppState::default();
         state.timeline_samples.lock().unwrap().set_max_bytes(32);
-        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state).await.unwrap();
+        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
         let owner = opened["owner"].as_str().unwrap();
-        let descriptor = |version: &str| json!({"sourceId": "take", "version": version,
-            "frames": 4, "channels": 1, "sampleRate": 48000});
-        let old = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner, "materials": [descriptor("v1")]}), &state).await.unwrap();
+        let descriptor = |version: &str| {
+            json!({"sourceId": "take", "version": version,
+            "frames": 4, "channels": 1, "sampleRate": 48000})
+        };
+        let old = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner, "materials": [descriptor("v1")]}),
+            &state,
+        )
+        .await
+        .unwrap();
         let old_lease = old["lease"].as_str().unwrap();
-        register_timeline_material(old_lease.into(), "take".into(), "v1".into(), 48000.0, 1,
-            [0.25f32; 4].iter().flat_map(|v| v.to_le_bytes()).collect(), &state).await.unwrap();
-        let union = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner,
-            "materials": [descriptor("v1"), descriptor("v2")]}), &state).await.unwrap();
+        register_timeline_material(
+            old_lease.into(),
+            "take".into(),
+            "v1".into(),
+            48000.0,
+            1,
+            [0.25f32; 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            &state,
+        )
+        .await
+        .unwrap();
+        let union = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner,
+            "materials": [descriptor("v1"), descriptor("v2")]}),
+            &state,
+        )
+        .await
+        .unwrap();
         let lease = union["lease"].as_str().unwrap();
         assert_eq!(union["missing"].as_array().unwrap().len(), 1);
-        register_timeline_material(lease.into(), "take".into(), "v2".into(), 48000.0, 1,
-            [0.75f32; 4].iter().flat_map(|v| v.to_le_bytes()).collect(), &state).await.unwrap();
+        register_timeline_material(
+            lease.into(),
+            "take".into(),
+            "v2".into(),
+            48000.0,
+            1,
+            [0.75f32; 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            &state,
+        )
+        .await
+        .unwrap();
         let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": [
             {"kind": "create-track-strip", "trackId": "t1", "name": "Take", "state": strip_state(1.0),
                 "devices": [], "honorMuted": true, "contributesAudio": true},
@@ -16050,35 +16170,61 @@ mod tests {
             {"kind": "schedule-clip", "playback": {"trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v2"},
                 "startTime": 4.0 / 48000.0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}}}
         ]});
-        let output = render_graph_offline(wire, 8, 48000.0, &state).await.unwrap();
+        let output = render_graph_offline(wire, 8, 48000.0, &state)
+            .await
+            .unwrap();
         let first = f32::from_le_bytes(output[0..4].try_into().unwrap());
         let second = f32::from_le_bytes(output[32..36].try_into().unwrap());
         assert!(first > 0.0);
         assert!((second - first * 3.0).abs() < 0.00001);
-        timeline_sample_lifecycle(json!({"action": "release", "lease": old_lease}), &state).await.unwrap();
-        timeline_sample_lifecycle(json!({"action": "release", "lease": lease}), &state).await.unwrap();
+        timeline_sample_lifecycle(json!({"action": "release", "lease": old_lease}), &state)
+            .await
+            .unwrap();
+        timeline_sample_lifecycle(json!({"action": "release", "lease": lease}), &state)
+            .await
+            .unwrap();
         // Both cached rows can now be evicted to admit a complete new working set.
         let replacement = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner,
             "materials": [{"sourceId": "other", "version": "other", "frames": 8, "channels": 1, "sampleRate": 48000}]}), &state).await.unwrap();
-        timeline_sample_lifecycle(json!({"action": "release", "lease": replacement["lease"]}), &state).await.unwrap();
-        let reacquired = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner,
-            "materials": [descriptor("v1")]}), &state).await.unwrap();
+        timeline_sample_lifecycle(
+            json!({"action": "release", "lease": replacement["lease"]}),
+            &state,
+        )
+        .await
+        .unwrap();
+        let reacquired = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner,
+            "materials": [descriptor("v1")]}),
+            &state,
+        )
+        .await
+        .unwrap();
         assert_eq!(reacquired["missing"].as_array().unwrap().len(), 1);
     }
 
-
     #[tokio::test]
-    async fn native_timeline_residency_retirement_reclaims_no_engine_strip_capacity_without_booting_audio() {
+    async fn native_timeline_residency_retirement_reclaims_no_engine_strip_capacity_without_booting_audio(
+    ) {
         use crate::commands::timeline_sample_lifecycle::timeline_sample_lifecycle;
         let state = AppState::default();
-        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state).await.unwrap();
+        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
         let owner = opened["owner"].as_str().unwrap();
-        let prepared = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner, "materials": []}), &state).await.unwrap();
+        let prepared = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner, "materials": []}),
+            &state,
+        )
+        .await
+        .unwrap();
         let commands: Vec<_> = (0..MAX_TIMELINE_TRACKS).map(|index| json!({
             "kind": "create-track-strip", "trackId": format!("t{index}"), "name": "Track",
             "state": strip_state(1.0), "devices": [], "honorMuted": true, "contributesAudio": false
         })).collect();
-        let batch = parse_batch(json!({"schemaVersion": 1, "timelineLease": prepared["lease"], "commands": commands})).unwrap();
+        let batch = parse_batch(
+            json!({"schemaVersion": 1, "timelineLease": prepared["lease"], "commands": commands}),
+        )
+        .unwrap();
         {
             let mut registry = state.graph.lock().unwrap();
             let samples = state.timeline_samples.lock().unwrap();
@@ -16086,12 +16232,22 @@ mod tests {
             assert_eq!(registry.track_count, MAX_TIMELINE_TRACKS);
             drop(mapped);
         }
-        let retired = timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state).await.unwrap();
+        let retired =
+            timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
+                .await
+                .unwrap();
         assert_eq!(retired["complete"], true);
         assert!(state.engine.lock().unwrap().is_none());
         assert_eq!(state.graph.lock().unwrap().track_count, 0);
-        let successor = timeline_sample_lifecycle(json!({"action": "open"}), &state).await.unwrap();
-        let lease = timeline_sample_lifecycle(json!({"action": "prepare", "owner": successor["owner"], "materials": []}), &state).await.unwrap();
+        let successor = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
+        let lease = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": successor["owner"], "materials": []}),
+            &state,
+        )
+        .await
+        .unwrap();
         let mut again = batch;
         again.timeline_lease = Some(lease["lease"].as_str().unwrap().into());
         let mut registry = state.graph.lock().unwrap();
@@ -16099,5 +16255,4 @@ mod tests {
         assert!(map_unbound_batch(&again, &mut registry, &samples, 48000.0).is_ok());
         assert_eq!(registry.track_count, MAX_TIMELINE_TRACKS);
     }
-
 }
