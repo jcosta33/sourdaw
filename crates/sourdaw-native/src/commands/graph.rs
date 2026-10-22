@@ -3648,10 +3648,15 @@ fn map_command(
             map_parameter_write(target, write, registry, sample_rate, budgets, ops)
         }
 
-        GraphCommandPayload::SetStripVcaMultiplier { track_id, multiplier } => {
+        GraphCommandPayload::SetStripVcaMultiplier {
+            track_id,
+            multiplier,
+        } => {
             let value = finite(*multiplier, "set-strip-vca-multiplier multiplier")?;
             if value < 0.0 || value > f32::MAX as f64 {
-                return Err("set-strip-vca-multiplier requires a nonnegative f32 multiplier".into());
+                return Err(
+                    "set-strip-vca-multiplier requires a nonnegative f32 multiplier".into(),
+                );
             }
             let strip = registry
                 .strips
@@ -7033,11 +7038,14 @@ mod tests {
         let mut overflow = vec![hold.clone()];
         overflow.extend(std::iter::repeat(step.clone()).take(33));
         let before = registry.batches_sent;
-        assert!(
-            admit_and_send(&mut registry, &mut renderer, Value::Array(overflow), &samples)
-                .unwrap_err()
-                .contains("device-param-queue-capacity")
-        );
+        assert!(admit_and_send(
+            &mut registry,
+            &mut renderer,
+            Value::Array(overflow),
+            &samples
+        )
+        .unwrap_err()
+        .contains("device-param-queue-capacity"));
         assert_eq!(registry.batches_sent, before);
         assert_eq!(registry.device_param_pending[&effect].len(), 33);
         assert!(registry.device_param_pending[&effect]
@@ -7072,14 +7080,16 @@ mod tests {
                 .unwrap_err()
                 .contains("device-param-queue-capacity")
         );
-        assert!(serde_json::from_value::<GraphBatchPayload>(json!({ "schemaVersion": 1,
-            "commands": [{ "kind": "write-device-parameter",
-                "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
-                            "parameterId": "shift_semitones" },
-                "write": { "shape": "ramp-to", "value": 1, "startTime": 0, "landTime": 1 }
-            }]
-        }))
-        .is_err());
+        assert!(
+            serde_json::from_value::<GraphBatchPayload>(json!({ "schemaVersion": 1,
+                "commands": [{ "kind": "write-device-parameter",
+                    "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                                "parameterId": "shift_semitones" },
+                    "write": { "shape": "ramp-to", "value": 1, "startTime": 0, "landTime": 1 }
+                }]
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -7109,7 +7119,10 @@ mod tests {
         let (zero_left, zero_right) = renderer.render(64);
         assert_eq!(zero_left.len(), 64);
         assert_eq!(zero_right.len(), 64);
-        assert!(zero_left.iter().chain(&zero_right).all(|value| *value == 0.0));
+        assert!(zero_left
+            .iter()
+            .chain(&zero_right)
+            .all(|value| *value == 0.0));
         let change = json!([
             { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
             { "kind": "write-parameter", "target": { "kind": "track-fader", "trackId": "t1" },
@@ -7207,7 +7220,13 @@ mod tests {
                 .iter()
                 .chain(&rejected_right)
                 .all(|value| (*value - automated).abs() < 1e-6));
-            admit_and_send(&mut registry, &mut renderer, json!([hold, replay]), &samples).unwrap();
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([hold, replay]),
+                &samples,
+            )
+            .unwrap();
             let restored = (0.75 * multiplier) as f32;
             let (restored_left, restored_right) = renderer.render(64);
             assert_eq!(restored_left.len(), 64);
@@ -7363,8 +7382,13 @@ mod tests {
     #[test]
     fn live_vca_mute_and_solo_steps_preserve_the_prefader_send_distinction() {
         for (gate, expected) in [("track-mute-gate", 0.25f32), ("track-solo-gate", 0.0)] {
-            let rendered = render_offline_batch(
-                &batch(json!([
+            let samples = sample_pool();
+            let mut registry = GraphRegistry::default();
+            let mut renderer = OfflineRenderer::new(48_000.0, 128);
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
                     { "kind": "create-track-strip", "trackId": "t1", "name": "Source",
                       "state": strip_state(0.0), "devices": [], "honorMuted": true,
                       "contributesAudio": true },
@@ -7375,7 +7399,7 @@ mod tests {
                       "tap": "pre-fader", "level": 0.5 },
                     { "kind": "schedule-clip", "playback": {
                         "trackId": "t1", "source": { "sourceId": "source-a" },
-                        "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.1,
+                        "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
                         "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
                     } },
                     { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
@@ -7383,17 +7407,78 @@ mod tests {
                       "target": { "kind": "track-fader", "trackId": "t1" },
                       "write": { "shape": "step", "time": 0, "value": 0 } },
                     { "kind": "write-parameter", "target": { "kind": gate, "trackId": "t1" },
-                      "write": { "shape": "step", "time": 0, "value": 0 } }
-                ])),
-                &sample_pool(),
-                &mut LevainBankStore::default(),
-                128,
-                48_000.0,
+                      "write": { "shape": "step", "time": 0, "value": 0 } },
+                    { "kind": "set-transport", "playing": true, "positionSeconds": 0,
+                      "locate": false }
+                ]),
+                &samples,
             )
             .unwrap();
+            let (edge_left, edge_right) = renderer.render(128);
+            assert_eq!(edge_left.len(), 128);
+            assert_eq!(edge_right.len(), 128);
+            assert_eq!(edge_left[0], 0.25, "{gate} retains the old level at the edge");
+            assert_eq!(edge_right[0], 0.25, "{gate} retains the old level at the edge");
+            for (index, (left, right)) in edge_left.iter().zip(&edge_right).enumerate() {
+                let edge_expected = if gate == "track-solo-gate" {
+                    // The solo gate precedes the cue tap and follows the existing
+                    // 5 ms one-pole, using the old level before each advance.
+                    (0.25 * (-(index as f64) / (48_000.0 * 0.005)).exp()) as f32
+                } else {
+                    0.25
+                };
+                assert!(
+                    (*left - edge_expected).abs() < 1e-6,
+                    "{gate} left cue edge at frame {index}"
+                );
+                assert!(
+                    (*right - edge_expected).abs() < 1e-6,
+                    "{gate} right cue edge at frame {index}"
+                );
+            }
+            // 4,096 frames exceed 17 time constants and the gate's snap bound.
+            // The one-second source remains active for closure and restoration.
+            let (settling_left, settling_right) = renderer.render(4_096 - 128);
+            assert_eq!(settling_left.len(), 4_096 - 128);
+            assert_eq!(settling_right.len(), 4_096 - 128);
+            let (closed_left, closed_right) = renderer.render(128);
+            assert_eq!(closed_left.len(), 128);
+            assert_eq!(closed_right.len(), 128);
             assert!(
-                rendered.iter().all(|value| (*value - expected).abs() < 1e-6),
-                "{gate} actual cue PCM"
+                closed_left
+                    .iter()
+                    .chain(&closed_right)
+                    .all(|value| *value == expected),
+                "{gate} settled cue PCM while the source is active"
+            );
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "write-parameter", "target": { "kind": gate, "trackId": "t1" },
+                      "write": { "shape": "step", "time": 4_224.0 / 48_000.0, "value": 1 } }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            let (opening_left, opening_right) = renderer.render(4_096);
+            assert_eq!(opening_left.len(), 4_096);
+            assert_eq!(opening_right.len(), 4_096);
+            assert_eq!(opening_left[0], expected, "{gate} reopening keeps the closed edge");
+            assert_eq!(opening_right[0], expected, "{gate} reopening keeps the closed edge");
+            let (restored_left, restored_right) = renderer.render(128);
+            assert_eq!(restored_left.len(), 128);
+            assert_eq!(restored_right.len(), 128);
+            assert!(
+                restored_left
+                    .iter()
+                    .chain(&restored_right)
+                    .all(|value| *value == 0.25),
+                "{gate} restores the cue before the source ends"
+            );
+            assert_eq!(
+                renderer.timeline_diagnostics(),
+                TimelineRtDiagnosticsSnapshot::default()
             );
         }
     }

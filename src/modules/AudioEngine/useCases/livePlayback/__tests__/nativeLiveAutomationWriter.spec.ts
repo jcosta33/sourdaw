@@ -1059,7 +1059,9 @@ describe('the live automation writer', () => {
         ]);
         expect(fader.cursor).toBe(1);
         expect(fader.queued).toHaveLength(AUTOMATION_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN);
-        retained.forEach((stamp, index) => expect(fader.queued[index]).toBe(stamp));
+        for (const [index, stamp] of retained.entries()) {
+            expect(fader.queued[index]).toBe(stamp);
+        }
         expect(fader.queued.at(-1)?.admittedBatch).toBe(55);
         expect(solo.queued).toEqual([]);
         expect(solo.cursor).toBe(1);
@@ -1362,7 +1364,9 @@ describe('the live automation writer — hosted device parameters', () => {
         ]);
         expect(a.queued).toEqual([]);
         expect(a.cursor).toBe(1);
-        original.forEach((stamp, index) => expect(b.queued[index]).toBe(stamp));
+        for (const [index, stamp] of original.entries()) {
+            expect(b.queued[index]).toBe(stamp);
+        }
         b.queued = b.queued.slice(0, 32);
         a.queued = Array.from({ length: 31 }, () => heldStamp(96_000));
         a.cursor = 0;

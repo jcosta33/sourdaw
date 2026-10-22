@@ -45,7 +45,12 @@ import {
     clearActionHistory,
 } from '#/modules/CrdtDocument/useCases';
 
-import { type AudioGraphApplyResult, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import {
+    type AudioGraphApplyResult,
+    type AudioGraphCommand,
+    type AudioGraphCommandBatch,
+    type AudioGraphParameterWrite,
+} from '../../../models/AudioGraphBackend';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     offlinePpqEndpointProjectorState,
@@ -215,10 +220,50 @@ describe('live store edits on the existing writer pass', () => {
             writerEpoch: nativeLiveAutomationWriter.epoch,
         });
 
+    function deviceAWrites(commands: readonly AudioGraphCommand[]): readonly AudioGraphParameterWrite[] {
+        return commands.flatMap((command) => {
+            if (command.kind === 'write-device-parameter' && command.target.parameterId === '4') {
+                return [command.write];
+            }
+            return [];
+        });
+    }
+
+    // For this authored .1 -> .6 jump, the independent one-pole solution is
+    // .6 - .5 * .6^n. The existing 5e-5 delivery gate emits ticks 1..17 and 19;
+    // tick 18 and the final residual fit inside the last delivered value's bound.
+    function editedTrajectory(regionStartSeconds: number): readonly { frame: number; value: number }[] {
+        const firstMovingTick = Math.ceil((0.05 - regionStartSeconds) / 0.01);
+        const deliveredTicks = [...Array.from({ length: 17 }, (_, index) => index + 1), 19];
+        return [
+            { frame: Math.round(regionStartSeconds * SAMPLE_RATE), value: 0.1 },
+            ...deliveredTicks.map((tick) => ({
+                frame: Math.round((regionStartSeconds + (firstMovingTick + tick - 1) * 0.01) * SAMPLE_RATE),
+                value: 0.6 - 0.5 * 0.6 ** tick,
+            })),
+        ];
+    }
+
+    function expectTrajectory(
+        writes: readonly AudioGraphParameterWrite[],
+        expected: readonly { frame: number; value: number }[]
+    ): void {
+        expect(writes).toHaveLength(expected.length);
+        for (const [index, write] of writes.entries()) {
+            expect(write.shape).toBe('step');
+            if (write.shape !== 'step') {
+                throw new Error('the hosted lane must emit device Steps');
+            }
+            expect(Math.round(write.time * SAMPLE_RATE)).toBe(expected[index]!.frame);
+            expect(write.value).toBeCloseTo(expected[index]!.value, 12);
+        }
+    }
+
     async function playingWith(
         lanes: readonly StoredAutomationLane[],
         respond: (batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult> = async () => applied,
-        strips: readonly Track[] = [trackHolding([FIRST_PLUGIN])]
+        strips: readonly Track[] = [trackHolding([FIRST_PLUGIN])],
+        positionSeconds = 0
     ): Promise<AudioGraphCommandBatch[]> {
         automationStore.set({ lanes: [...lanes] });
         trackStore.set({ tracks: [...strips], selectedTrackId: null, ghostClips: [] });
@@ -238,7 +283,7 @@ describe('live store edits on the existing writer pass', () => {
             stripTracks: strips,
             sampleRate: SAMPLE_RATE,
             programmeEndSeconds: 8,
-            positionSeconds: 0,
+            positionSeconds,
             provenAfterBatch: null,
         });
         await vi.waitFor(() => expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull());
@@ -291,21 +336,29 @@ describe('live store edits on the existing writer pass', () => {
             target: { parameterId: '4' },
             write: { shape: 'hold', time: 0.02 },
         });
-        expect(
-            commands.some(
-                (command) =>
-                    command.kind === 'write-device-parameter' &&
-                    command.target.parameterId === '4' &&
-                    command.write.shape === 'step' &&
-                    command.write.value === 0.6
-            )
-        ).toBe(true);
+        const edited = pass.targets.find(
+            (slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '4'
+        )!;
+        const expected = editedTrajectory(0.02);
+        expectTrajectory(edited.writes, expected);
+        expectTrajectory(
+            deviceAWrites(commands).filter((write) => write.shape === 'step'),
+            expected.filter((step) => step.frame < 0.12 * SAMPLE_RATE)
+        );
+        const firstChanged = deviceAWrites(commands)[2]!;
+        expect(firstChanged).toMatchObject({ shape: 'step', value: expect.closeTo(0.3, 12) });
+        // The old .9-target curve would deliver .42 at this same first moving tick.
+        expect(firstChanged).not.toMatchObject({ value: expect.closeTo(0.42, 12) });
         expect(pass.targets).toContain(bystander);
         expect(bystander.cursor).toBe(cursor);
-        stamps.forEach((stamp, index) => expect(bystander.queued[index]).toBe(stamp));
+        for (const [index, stamp] of stamps.entries()) {
+            expect(bystander.queued[index]).toBe(stamp);
+        }
         expect(pass.targets).toContain(otherSlot);
         expect(otherSlot.cursor).toBe(otherCursor);
-        otherStamps.forEach((stamp, index) => expect(otherSlot.queued[index]).toBe(stamp));
+        for (const [index, stamp] of otherStamps.entries()) {
+            expect(otherSlot.queued[index]).toBe(stamp);
+        }
         automationStore.set({ lanes: [b, pan] });
         await pump();
         expect(batches.at(-1)!.commands).toEqual([
@@ -316,7 +369,7 @@ describe('live store edits on the existing writer pass', () => {
             },
         ]);
         const count = batches.length;
-        automationStore.set({ lanes: [{ ...b }, pan] });
+        automationStore.set({ lanes: [structuredClone(b), pan] });
         await pump();
         expect(batches).toHaveLength(count);
     });
@@ -447,7 +500,7 @@ describe('live store edits on the existing writer pass', () => {
 
     it('uses the edited loop curve at the real seam and keeps the bystander loop slot', async () => {
         offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instance, id) => id === '7' || id === '4';
-        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 1 };
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 0, endSeconds: 1 };
         nativeLiveGraphSession.loopEnabled = true;
         const a: StoredAutomationLane = {
             ...hostedLane(FIRST_PLUGIN.id),
@@ -459,8 +512,10 @@ describe('live store edits on the existing writer pass', () => {
             ],
         };
         const b = { ...hostedLane(FIRST_PLUGIN.id), id: 'B' };
-        const batches = await playingWith([a, b]);
+        let admittedBatch = 0;
+        const batches = await playingWith([a, b], async () => ({ ...applied, admittedBatch: ++admittedBatch }));
         const pass = nativeLiveAutomationWriter.pass!;
+        const epoch = nativeLiveAutomationWriter.epoch;
         const loopB = pass.loopTargets!.find(
             (slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '7'
         )!;
@@ -472,34 +527,124 @@ describe('live store edits on the existing writer pass', () => {
         });
         await pump();
         expect(pass.loopTargets).toContain(loopB);
+        const seamBatchIndex = batches.length;
         await pumpNativeLiveAutomationWriter({
             positionSeconds: 0.01,
             loopWraps: 1,
-            batchesApplied: 11,
-            writerEpoch: nativeLiveAutomationWriter.epoch,
+            batchesApplied: admittedBatch,
+            writerEpoch: epoch,
         });
-        const aWrites = batches
-            .at(-1)!
-            .commands.filter(
-                (command) => command.kind === 'write-device-parameter' && command.target.parameterId === '4'
-            );
-        expect(
-            aWrites.some(
-                (command) =>
-                    command.kind === 'write-device-parameter' &&
-                    command.write.shape === 'step' &&
-                    command.write.value === 0.6
-            )
-        ).toBe(true);
-        expect(
-            aWrites.some(
-                (command) =>
-                    command.kind === 'write-device-parameter' &&
-                    command.write.shape === 'step' &&
-                    command.write.value === 0.9
-            )
-        ).toBe(false);
+        const expected = editedTrajectory(0);
+        const seamWrites = deviceAWrites(batches.at(-1)!.commands);
+        expectTrajectory(
+            seamWrites,
+            expected.filter((step) => step.frame < 0.11 * SAMPLE_RATE)
+        );
+        expect(seamWrites[1]).toMatchObject({ shape: 'step', value: expect.closeTo(0.3, 12) });
+        expect(seamWrites[1]).not.toMatchObject({ value: expect.closeTo(0.42, 12) });
+        expect(seamWrites.some((write) => write.shape === 'step' && write.value === 0.9)).toBe(false);
         expect(pass.targets).toContain(loopB);
+        for (const positionSeconds of [0.11, 0.21, 0.31]) {
+            const drainedBatch = admittedBatch;
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds,
+                loopWraps: 1,
+                batchesApplied: drainedBatch,
+                writerEpoch: epoch,
+            });
+            expect(nativeLiveAutomationWriter.epoch).toBe(epoch);
+        }
+        const delivered = batches.slice(seamBatchIndex).flatMap((batch) => deviceAWrites(batch.commands));
+        expectTrajectory(delivered, expected);
+        const tail = delivered.at(-1)!;
+        expect(tail.shape).toBe('step');
+        if (tail.shape !== 'step') {
+            throw new Error('the delivered hosted tail must be a Step');
+        }
+        expect(tail.time).toBeGreaterThan(0.2);
+        expect(tail.value).toBeLessThan(0.6);
+        expect(0.6 - tail.value).toBeLessThanOrEqual(5e-5);
+        expect(Math.abs(tail.value - 0.9)).toBeGreaterThan(0.29);
+    });
+
+    it('delivers an exact edited held value and its real loop wrap on the same epoch and admitted fences', async () => {
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instance, id) => id === '7' || id === '4';
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 0.35, endSeconds: 1 };
+        nativeLiveGraphSession.loopEnabled = true;
+        const a: StoredAutomationLane = {
+            ...hostedLane(FIRST_PLUGIN.id),
+            id: 'A',
+            parameterId: `${FIRST_PLUGIN.id}:4`,
+            points: [
+                { beat: 0, value: 0.1, curve: 'step', tension: 0 },
+                { beat: 0.1, value: 0.9, curve: 'step', tension: 0 },
+            ],
+        };
+        const b = { ...hostedLane(FIRST_PLUGIN.id), id: 'B' };
+        let admittedBatch = 0;
+        const batches = await playingWith(
+            [a, b],
+            async () => ({ ...applied, admittedBatch: ++admittedBatch }),
+            [trackHolding([FIRST_PLUGIN])],
+            0.35
+        );
+        const pass = nativeLiveAutomationWriter.pass!;
+        const epoch = nativeLiveAutomationWriter.epoch;
+        const pumpAtWrap = (loopWraps: number) =>
+            pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.35,
+                loopWraps,
+                batchesApplied: admittedBatch,
+                writerEpoch: epoch,
+            });
+        await pumpAtWrap(0);
+        const bystander = pass.targets.find(
+            (slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '7'
+        )!;
+        const loopB = pass.loopTargets!.find(
+            (slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '7'
+        )!;
+        const cursor = bystander.cursor;
+        const stamps = [...bystander.queued];
+        expect(deviceAWrites(batches[0]!.commands)).toEqual([{ shape: 'step', value: 0.9, time: 0.35 }]);
+        automationStore.set({
+            lanes: [
+                { ...a, points: a.points.map((point, index) => (index === 1 ? { ...point, value: 0.6 } : point)) },
+                b,
+            ],
+        });
+        await pumpAtWrap(0);
+        const target = {
+            kind: 'device-parameter',
+            trackId: STRIP_ID,
+            deviceId: FIRST_PLUGIN.id,
+            parameterId: '4',
+        };
+        expect(batches.at(-1)!.commands).toEqual([
+            { kind: 'write-device-parameter', target, write: { shape: 'hold', time: 0.35 } },
+            { kind: 'write-device-parameter', target, write: { shape: 'step', value: 0.6, time: 0.35 } },
+        ]);
+        expect(pass.targets).toContain(bystander);
+        expect(pass.loopTargets).toContain(loopB);
+        expect(bystander.cursor).toBe(cursor);
+        for (const [index, stamp] of stamps.entries()) {
+            expect(bystander.queued[index]).toBe(stamp);
+        }
+        const edited = pass.targets.find(
+            (slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '4'
+        )!;
+        expect(edited.queued.map((stamp) => stamp.admittedBatch)).toEqual([admittedBatch]);
+        const editFence = admittedBatch;
+        await pumpAtWrap(1);
+        expect(admittedBatch).toBe(editFence + 1);
+        expect(deviceAWrites(batches.at(-1)!.commands)).toEqual([{ shape: 'step', value: 0.6, time: 0.35 }]);
+        expect(pass.targets).toContain(loopB);
+        expect(nativeLiveAutomationWriter.epoch).toBe(epoch);
+        expect(
+            pass.targets
+                .find((slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '4')!
+                .queued.some((stamp) => stamp.admittedBatch === admittedBatch)
+        ).toBe(true);
     });
 
     it('does not let a late accepted edit advance a disarmed pass or clear its successor flight', async () => {
@@ -624,10 +769,12 @@ describe('live store edits on the existing writer pass', () => {
                 let refused = false;
                 const batches = await playingWith(
                     [lane],
-                    async () =>
-                        refused
-                            ? { acceptance: 'rejected', application: 'not-applied', reason: 'test refusal' }
-                            : applied,
+                    async () => {
+                        if (refused) {
+                            return { acceptance: 'rejected', application: 'not-applied', reason: 'test refusal' };
+                        }
+                        return applied;
+                    },
                     [track]
                 );
                 const pass = nativeLiveAutomationWriter.pass!;
@@ -662,7 +809,9 @@ describe('live store edits on the existing writer pass', () => {
                 expect(pass.targets).toContain(fader);
                 expect(pass.inputs.acceptedRevision).toBe(revision);
                 expect(pass.inputs.pending?.revision).toBeGreaterThan(revision);
-                stamps.forEach((stamp, index) => expect(fader.queued[index]).toBe(stamp));
+                for (const [index, stamp] of stamps.entries()) {
+                    expect(fader.queued[index]).toBe(stamp);
+                }
                 refused = false;
                 await pump();
                 expect(batches.at(-1)!.commands).toEqual(expected);
@@ -750,20 +899,18 @@ describe('live store edits on the existing writer pass', () => {
                     },
                     dispose: () => undefined,
                 };
-                automationStore.set({
-                    lanes: withLane
-                        ? [
-                              {
-                                  ...hostedLane(FIRST_PLUGIN.id),
-                                  id: 'fader',
-                                  parameterId: 'gain',
-                                  minValue: -60,
-                                  maxValue: 12,
-                                  points: [{ beat: 0, value: 0, curve: 'step', tension: 0 }],
-                              },
-                          ]
-                        : [],
-                });
+                const lanes: StoredAutomationLane[] = [];
+                if (withLane) {
+                    lanes.push({
+                        ...hostedLane(FIRST_PLUGIN.id),
+                        id: 'fader',
+                        parameterId: 'gain',
+                        minValue: -60,
+                        maxValue: 12,
+                        points: [{ beat: 0, value: 0, curve: 'step', tension: 0 }],
+                    });
+                }
+                automationStore.set({ lanes });
                 armNativeLiveAutomationWriter({
                     stripTracks: [track],
                     sampleRate: SAMPLE_RATE,

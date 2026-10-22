@@ -225,7 +225,11 @@ function unacceptedHolds(previous: LiveAutomationWriterPass | null): readonly Au
     const reference = inputs.readTargets(inputs.referenceSpan);
     const loop = inputs.loopSpan ? inputs.readTargets(inputs.loopSpan) : [];
     const fresh = [...reference, ...loop].filter((slot) => slot.writes.length > 0);
-    const old = [...inputs.reference, ...(previous.loopTargets ?? [])].filter((slot) => slot.writes.length > 0);
+    const oldTargets = [...inputs.reference];
+    if (previous.loopTargets) {
+        oldTargets.push(...previous.loopTargets);
+    }
+    const old = oldTargets.filter((slot) => slot.writes.length > 0);
     const changed = [...old, ...fresh]
         .filter((slot) => {
             const key = JSON.stringify(slot.target);
@@ -281,6 +285,12 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     // the whole world, so a request still standing would make the next feed
     // reading re-arm again for a device this pass already carries.
     nativeLiveAutomationWriter.pendingRearm = null;
+    let strips: LiveAutomationWriterPass['inputs']['strips'];
+    if (previousPass && previousPass.inputs.revision !== previousPass.inputs.acceptedRevision) {
+        strips = previousPass.inputs.strips;
+    } else {
+        strips = readStripValues(input.stripTracks);
+    }
     nativeLiveAutomationWriter.pass = {
         inputs: {
             revision:
@@ -291,10 +301,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
             referenceSpan: spans.entry,
             loopSpan: spans.loop,
             reference: entry.targets,
-            strips:
-                previousPass && previousPass.inputs.revision !== previousPass.inputs.acceptedRevision
-                    ? previousPass.inputs.strips
-                    : readStripValues(input.stripTracks),
+            strips,
             readTargets: (span) =>
                 readSpan({ ...input, stripTracks: currentStripTracks(input.stripTracks) }, span).targets,
             readStrips: () => readStripValues(input.stripTracks),
