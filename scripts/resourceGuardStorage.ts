@@ -13,7 +13,6 @@ import {
     rmSync,
     rmdirSync,
     unlinkSync,
-    statfsSync,
     writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -409,6 +408,8 @@ export function reclaimGuardStorage(input: {
     reclaimer: StorageProcessIdentity;
     canRemove: (payloadPath: string) => boolean;
     sourceClaim?: StorageClaim;
+    // Called once the payload sits under its claim, so a caller whose proof then fails knows where it is.
+    onMoved?: (claim: StorageClaim) => void;
 }): boolean {
     const owner = parseOwner(input.owner, input.owner.token);
     if (!uuidPattern.test(input.owner.token) || owner === undefined || parseIdentity(input.reclaimer) === undefined) {
@@ -460,6 +461,7 @@ export function reclaimGuardStorage(input: {
         }
         throw error;
     }
+    input.onMoved?.(claim);
     if (
         directoryIdentity(payload) !== owner.directoryIdentity ||
         JSON.stringify(readClaim(path, token)) !== JSON.stringify(claim) ||
@@ -545,6 +547,8 @@ export function createGuardStorage(input: {
     markSpawning: () => void;
     recordProcesses: (child: StorageProcessIdentity | undefined, tracked: Map<number, string>) => void;
     release: (treeStopped: boolean) => Promise<boolean>;
+    // Where the payload is now: its own path, or under the claim a partly failed release left it in.
+    payloadPath: () => string;
 } {
     if (!uuidPattern.test(input.token) || parseIdentity(input.owner) === undefined) {
         throw new Error('guard storage requires a valid token and supervisor identity');
@@ -570,8 +574,10 @@ export function createGuardStorage(input: {
         }
         return input.ports.sessionState(owner, tempDirectory, join(payload, 'tmp')) === 'dead';
     };
+    let claimed: StorageClaim | undefined;
     return {
         tempDirectory,
+        payloadPath: () => (claimed === undefined ? path : join(input.root, '.claims', claimed.token, input.token)),
         markSpawning: () => {
             owner = { ...owner, phase: 'spawning' };
             writeStorageOwner(path, owner);
@@ -596,43 +602,15 @@ export function createGuardStorage(input: {
                 root: input.root,
                 owner,
                 reclaimer: input.owner,
+                // A retry resumes from the claim an earlier attempt moved the payload into.
+                sourceClaim: claimed,
+                onMoved: (claim) => {
+                    claimed = claim;
+                },
                 canRemove: (payload) => treeStopped && localReleaseAllowed(payload),
             });
         },
     };
 }
 
-export function availableDiskBytes(path: string): number | undefined {
-    try {
-        const stats = statfsSync(path, { bigint: true });
-        const bytes = Number(stats.bavail * stats.bsize);
-        return Number.isFinite(bytes) && bytes >= 0 ? bytes : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-export function diskStorageFailure(
-    paths: readonly string[],
-    reserveBytes: number,
-    sampler: (path: string) => number | undefined = availableDiskBytes
-): { reason: 'monitor' | 'pressure'; message: string } | undefined {
-    for (const path of new Set(paths)) {
-        let available: number | undefined;
-        try {
-            available = sampler(path);
-        } catch {
-            available = undefined;
-        }
-        if (available === undefined || !Number.isFinite(available) || available < 0) {
-            return { reason: 'monitor', message: `available disk space could not be measured: ${path}` };
-        }
-        if (available < reserveBytes) {
-            return {
-                reason: 'pressure',
-                message: `available disk space below ${Math.ceil(reserveBytes / 1024 ** 2)} MiB reserve: ${path} (${Math.floor(available / 1024 ** 2)} MiB available)`,
-            };
-        }
-    }
-    return undefined;
-}
+export { availableDiskBytes, diskStorageFailure } from './resourceGuardDisk.ts';

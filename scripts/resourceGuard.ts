@@ -107,6 +107,8 @@ export type GuardedCommandResult = {
     // Set when the command's process tree was proved exited but the storage census could not prove
     // its storage free: the storage is kept and a later guarded run reclaims it once provable.
     retainedStorage?: { path: string; reason: string };
+    // The census that left storage retained as a leak, recorded in the guard-failure receipt.
+    census?: string;
 };
 
 type GuardedCommandInput = {
@@ -1806,6 +1808,10 @@ function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessE
 }
 
 // A directory whose owner record cannot be read is skipped by every later recovery, so it never reclaims.
+function describeCensus(verdict: string | undefined, reasons: readonly string[]): string {
+    return [verdict ?? 'unobserved', ...reasons].join(' ');
+}
+
 function storageRecordReadable(path: string, token: string): boolean {
     try {
         return readStorageOwner(path, token) !== undefined;
@@ -1910,10 +1916,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     let storageEvidenceReported = false;
     // The last census verdict and its diagnostics, kept per sessionState call so the final release
     // attempt can tell a proved holder or a stable obstruction from a transient lost proof.
-    const storageProof: { verdict: 'alive' | 'dead' | 'unknown' | undefined; reasons: string[] } = {
-        verdict: undefined,
-        reasons: [],
-    };
+    const storageProof: {
+        verdict: 'alive' | 'dead' | 'unknown' | undefined;
+        reasons: string[];
+        // The first census of this run that proved a holder or hit a stable obstruction. A later,
+        // weaker census never clears it: the holder may still be running.
+        obstruction: string | undefined;
+    } = { verdict: undefined, reasons: [], obstruction: undefined };
     const storagePorts = storageRecoveryPorts(
         (reason) => {
             storageProof.reasons.push(reason);
@@ -1931,6 +1940,12 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         storageProof.verdict = undefined;
         const verdict = censusSessionState(...args);
         storageProof.verdict = verdict;
+        const [owner] = args;
+        const stable =
+            verdict === 'alive' || (verdict === 'unknown' && !areTransientProofReasons(storageProof.reasons));
+        if (owner.token === processToken && stable) {
+            storageProof.obstruction ??= describeCensus(verdict, storageProof.reasons);
+        }
         return verdict;
     };
     let storage: ReturnType<typeof createGuardStorage>;
@@ -2028,7 +2043,6 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         treeExitProved = treeStopped;
         storageProof.verdict = undefined;
         storageProof.reasons = [];
-        releaseThrew = false;
         const removed = await storage.release(treeStopped).catch(() => {
             releaseThrew = true;
             return false;
@@ -2243,6 +2257,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     // A tree that exited with only the storage census unproved is a verdict about the census, not
     // the command: keeping the storage is the safe outcome and a later guarded run reclaims it.
     let retainedStorage: GuardedCommandResult['retainedStorage'];
+    let census: string | undefined;
     if (!storageRemoved) {
         // Only a census that lost its proof for a transient reason is the census's fault. A proved
         // holder, a stable obstruction, an unreadable record or a throwing release would never
@@ -2251,13 +2266,14 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             treeExitProved &&
             reason !== 'leak' &&
             !releaseThrew &&
+            storageProof.obstruction === undefined &&
             storageProof.verdict === 'unknown' &&
             areTransientProofReasons(storageProof.reasons) &&
-            storageRecordReadable(dirname(storage.tempDirectory), processToken);
+            storageRecordReadable(storage.payloadPath(), processToken);
         if (transientlyUnproved) {
-            retainedStorage = { path: dirname(storage.tempDirectory), reason: storageProof.reasons.join('; ') };
+            retainedStorage = { path: storage.payloadPath(), reason: storageProof.reasons.join('; ') };
         } else {
-            const census = `${storageProof.verdict ?? 'unobserved'}${storageProof.reasons.map((reason) => ` ${reason}`).join('')}`;
+            census = storageProof.obstruction ?? describeCensus(storageProof.verdict, storageProof.reasons);
             output.append(
                 Buffer.from(
                     `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
@@ -2271,7 +2287,8 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         ...completion.result,
         signal: interruptedSignal ?? completion.result.signal,
         reason,
-        ...(retainedStorage === undefined ? {} : { retainedStorage }),
+        retainedStorage,
+        census,
         ...tail,
         peakRssBytes,
         maxRssBytes,
@@ -2955,7 +2972,7 @@ export async function main(
                 log(`guard: recovery lint target '${replacement.oldTarget}' -> '${replacement.newTarget}'`);
             }
             log(
-                `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}')`
+                `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}'${receipt.census === undefined ? '' : `; census: ${receipt.census}`})`
             );
             const result = await runCommand({
                 command: receipt.command,
@@ -3002,6 +3019,7 @@ export async function main(
                         headSha: lane.headSha,
                         failedAt: new Date().toISOString(),
                         reason: result.reason,
+                        census: result.census,
                         peakRssBytes: result.peakRssBytes,
                         maxRssBytes: result.maxRssBytes,
                         durationMs: result.durationMs,
@@ -3082,6 +3100,7 @@ export async function main(
                     headSha: lane.headSha,
                     failedAt: new Date().toISOString(),
                     reason: result.reason,
+                    census: result.census,
                     command: input.command,
                     args: input.args,
                     cwd: commandCwd,

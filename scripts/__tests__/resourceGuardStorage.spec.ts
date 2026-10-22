@@ -33,7 +33,6 @@ import {
     startTimeExcuseSupervisor,
     storageRecoveryPorts,
 } from '../resourceGuard';
-import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -3761,13 +3760,10 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
     it.skipIf(process.platform !== 'darwin').each([
         { scenario: 'unavailable utility', script: 'exit 127' },
         { scenario: 'malformed output', script: "printf 'malformed'" },
-        // Which diagnostic ends this run depends on process churn: a refused scoped read is a leak,
-        // a catalog that keeps missing exited processes until the time bound is a transient warning.
-        { scenario: 'partial coverage', script: "printf 'p1\\0\\nfcwd\\0tDIR\\0n/\\0\\n'" },
         { scenario: 'permission diagnostic', script: "printf 'permission denied' >&2; exit 0" },
     ])(
         'retains owned payload for incomplete file census: $scenario',
-        async ({ scenario, script }) => {
+        async ({ script }) => {
             const root = fixture();
             const bin = join(root, 'bin');
             mkdirSync(bin);
@@ -3806,14 +3802,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
             await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1), 25_000);
             const started: { tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const result = JSON.parse(readFileSync(resultPath, 'utf8'));
-            const transient = scenario === 'partial coverage' && result.reason === undefined;
-            if (transient) {
-                expect(result.retainedStorage.path).toBe(dirname(started.tmp));
-                expect(areTransientProofReasons(result.retainedStorage.reason.split('; '))).toBe(true);
-            } else {
-                expect(result.reason).toBe('leak');
-                expect(result.retainedStorage).toBeUndefined();
-            }
+            expect(result.reason).toBe('leak');
+            expect(result.retainedStorage).toBeUndefined();
             expect(result.code).toBe(0);
             expect(
                 await main(['--profile', 'focused', '--', process.execPath], {
@@ -3824,7 +3814,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                     log: () => {},
                     error: () => {},
                 })
-            ).toBe(transient ? 0 : 1);
+            ).not.toBe(0);
             expect(existsSync(started.tmp)).toBe(true);
             const recovery = await guarded(root);
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
@@ -4053,6 +4043,45 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
     });
     const transientReason = 'lsof-live-pid-missing:count=1:pid/uid/state=77/501/R';
+    // Each census call takes the next step; the last step repeats.
+    const censusSequence = (...steps: [verdict: 'alive' | 'dead' | 'unknown', ...reasons: string[]][]): CensusHost => {
+        let call = 0;
+        return {
+            fileState: (_tempDirectories, _ownedPids, report) => {
+                const [verdict, ...reasons] = steps[Math.min(call, steps.length - 1)] ?? ['unknown'];
+                call += 1;
+                for (const reason of reasons) {
+                    report(reason);
+                }
+                return verdict;
+            },
+        };
+    };
+    type StorageFactory = NonNullable<Parameters<typeof runGuardedCommand>[0]['storageFactory']>;
+    // Rewrites the owner record so the reclaim declines even after a census that said dead.
+    const tamperedRecord: StorageFactory = (input) => {
+        const storage = createGuardStorage(input);
+        const ownerPath = join(dirname(storage.tempDirectory), 'owner.json');
+        return {
+            ...storage,
+            release: async (treeStopped) => {
+                const record = JSON.parse(readFileSync(ownerPath, 'utf8'));
+                writeFileSync(ownerPath, `${JSON.stringify({ ...record, phase: 'spawning' })}\n`);
+                return storage.release(treeStopped);
+            },
+        };
+    };
+    // The release itself finishes on a transient census and then reports an error.
+    const throwingRelease: StorageFactory = (input) => {
+        const storage = createGuardStorage(input);
+        return {
+            ...storage,
+            release: async (treeStopped) => {
+                await storage.release(treeStopped);
+                throw new Error('release failed after the census');
+            },
+        };
+    };
 
     function laneFor(root: string) {
         const worktreePath = join(root, '.agents', 'worktrees', 'agent-1-lane');
@@ -4142,40 +4171,133 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     const deleteOwnTemp = "setTimeout(()=>require('node:fs').rmSync(require('node:os').tmpdir(),{recursive:true}),600)";
     const loosenOwnTemp = "require('node:fs').chmodSync(require('node:os').tmpdir(),0o755)";
     it.each([
-        { name: 'a holder the census proves alive', script: 'process.exitCode=0', host: censusReporting('alive') },
-        { name: 'a command that loosens its storage mode', script: loosenOwnTemp, host: undefined },
+        {
+            name: 'a holder the census proves alive',
+            script: 'process.exitCode=0',
+            host: censusReporting('alive', transientReason),
+            census: 'alive',
+        },
+        {
+            name: 'a proved holder followed by a census that only hit the time bound',
+            script: 'process.exitCode=0',
+            host: censusSequence(['alive'], ['unknown', 'file-census-time-bound']),
+            census: 'alive',
+        },
+        {
+            name: 'a refused scoped read of the missed processes',
+            script: 'process.exitCode=0',
+            host: censusReporting('unknown', 'lsof-scoped-command-unavailable'),
+            census: 'unknown lsof-scoped-command-unavailable',
+        },
+        { name: 'a command that loosens its storage mode', script: loosenOwnTemp, host: undefined, census: 'unknown' },
         {
             name: 'a command that deletes its own temp directory (release throws)',
             script: deleteOwnTemp,
             host: censusReporting('dead'),
+            census: 'dead',
         },
         {
             name: 'a command that deletes its own temp directory under a transient reason (record unreadable)',
             script: deleteOwnTemp,
             host: censusReporting('unknown', transientReason),
+            census: transientReason,
         },
         {
             name: 'a stable unusable-inspection reason',
             script: 'process.exitCode=0',
             host: censusReporting('unknown', 'lsof-fields-unusable:file-inspection-diagnostic'),
+            census: 'unknown lsof-fields-unusable:file-inspection-diagnostic',
         },
         {
             name: 'a transient reason mixed with a stable one',
             script: 'process.exitCode=0',
             host: censusReporting('unknown', transientReason, 'storage-not-private-same-uid'),
+            census: 'storage-not-private-same-uid',
         },
-    ])('still fails as a leak with a receipt for $name', async ({ script, host }) => {
+        {
+            name: 'a dead census after which the release still declines',
+            script: 'process.exitCode=0',
+            host: censusReporting('dead', transientReason),
+            factory: tamperedRecord,
+            census: 'dead',
+        },
+        {
+            name: 'a release that throws after an otherwise transient proof',
+            script: 'process.exitCode=0',
+            host: censusReporting('unknown', transientReason),
+            factory: throwingRelease,
+            census: transientReason,
+        },
+    ])('still fails as a leak with a receipt for $name', async ({ script, host, factory, census }) => {
         const root = fixture();
         const { code, lines, result } = await runCli(root, {
             args: ['-e', script],
             hostSampleIntervalMs: 60_000,
             storageHost: host,
+            storageFactory: factory,
         });
         expect(result?.reason, JSON.stringify(result?.output)).toBe('leak');
         expect(result?.retainedStorage).toBeUndefined();
         expect(code).toBe(1);
         expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
-        expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
+        const receipt = JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8'));
+        expect(receipt.reason).toBe('leak');
+        expect(receipt.census).toContain(census);
+    });
+
+    it('warns instead of failing when a catalog keeps missing exited processes until the time bound', async () => {
+        const root = fixture();
+        const { code, lines, result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: censusSequence(
+                ['unknown', 'lsof-missed-pid-exited:count=2:pid=11,12'],
+                ['unknown', 'file-census-time-bound']
+            ),
+        });
+        expect(result?.reason).toBeUndefined();
+        expect(code).toBe(0);
+        expect(result?.retainedStorage?.reason).toBe('file-census-time-bound');
+        expect(lines.some((line) => line.includes('warning: guard storage retained'))).toBe(true);
+        expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
+    });
+
+    it('warns with the claimed path when the second census fails after the payload moved, and a later start reclaims it', async () => {
+        const root = fixture();
+        const storageRoot = join(root, 'storage');
+        const { code, lines, result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: censusSequence(['dead'], ['unknown', 'lsof-missed-pid-exited:count=1:pid=11']),
+        });
+        const retained = result?.retainedStorage;
+        expect(result?.reason).toBeUndefined();
+        expect(code).toBe(0);
+        expect(retained?.path).toMatch(/\/storage\/\.claims\/[^/]+\/[^/]+$/);
+        expect(retained?.reason).toBe('lsof-missed-pid-exited:count=1:pid=11');
+        expect(existsSync(join(retained?.path ?? '', 'tmp'))).toBe(true);
+        expect(
+            lines.some(
+                (line) => line.includes(`warning: guard storage retained`) && line.endsWith(retained?.path ?? '')
+            )
+        ).toBe(true);
+        expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
+        expect(claimPayloads(storageRoot)).toHaveLength(1);
+        // The supervisor is gone by the next start; recovery owns the claim and removes it once provable.
+        recoverGuardStorage(storageRoot, deadPorts, fakeReclaimer);
+        expect(claimPayloads(storageRoot)).toEqual([]);
+        expect(existsSync(retained?.path ?? '')).toBe(false);
+    });
+
+    it('finishes the removal on the retry when the census recovers after the payload moved', async () => {
+        const root = fixture();
+        const { code, result } = await runCli(root, {
+            args: ['-e', 'process.exitCode=0'],
+            storageHost: censusSequence(['dead'], ['unknown', 'lsof-missed-pid-exited:count=1:pid=11'], ['dead']),
+        });
+        expect(result?.reason).toBeUndefined();
+        expect(result?.retainedStorage).toBeUndefined();
+        expect(code).toBe(0);
+        expect(claimPayloads(join(root, 'storage'))).toEqual([]);
+        expect(readdirSync(join(root, 'storage')).filter((name) => name !== '.claims')).toEqual([]);
     });
 
     it('still reports leak and records a receipt when a process survives forced cleanup', async () => {
