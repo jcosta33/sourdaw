@@ -95,6 +95,12 @@ trigger, a persisted credential, a key on any other step, a widened token, a dro
 renamed check. That contract also fixes the job-level permissions: the assessment job grants none,
 and the coverage job that annotates the withheld paths grants exactly `contents: read`.
 
+Amended 2026-10-22 (#5473): the recorded whole-file snapshot is deleted, because it was regenerated
+with every deliberate edit and so guarded nothing by itself. The trust boundary stands on
+`semanticReviewWorkflowContract.ts` alone, and the job permissions, the `JEV_KEY` read, the
+credentialless checkout, and the check name are also pinned for every registered workflow in
+`scripts/workflowSecuritySurfaceContract.ts`.
+
 Three things remain true and are worth stating plainly. The signal's usefulness is still unmeasured —
 no labelled evaluation exists, and a green check means the assessment ran. The provider's judgement
 of untrusted text can be argued with, which is why it holds no authority. And the screening is

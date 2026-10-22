@@ -180,18 +180,18 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
     `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
 );
 // The structural pins live in one shared module so this harness and the
-// vitest spec can never drift apart: the whole-file snapshot, the shard
-// matrices, the permission-free files, and every job's step inventory.
+// vitest spec can never drift apart: the registered file set, the shard
+// matrices, and every job's step inventory.
 const {
     assertWorkflowFileInventory,
-    assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
-    JOB_LEVEL_PERMISSION_FREE_FILES,
-    parseHealthGateWorkflows,
-    readRecordedWorkflowSnapshot,
+    HEALTH_GATE_WORKFLOW_FILES,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
+const { assertWorkflowSecuritySurface } = await import(
+    `${process.env.REPO_ROOT}/scripts/workflowSecuritySurfaceContract.ts`
+);
 const { assertHostedWasmWorkflow } = await import(`${process.env.REPO_ROOT}/scripts/hostedWasmWorkflowContract.ts`);
 const { assertApprovalGatedRequiredCheck } = await import(
     `${process.env.REPO_ROOT}/scripts/approvalGatedWorkflowContract.ts`
@@ -214,8 +214,7 @@ const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/
 const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
-// The harness that owns the credential boundary must run it here too: the recorded snapshot alone is
-// regenerated as a matter of course, so it cannot stand behind a boundary move by itself.
+// The harness that owns the credential boundary must run it here too.
 assertSemanticReviewWorkflow(semanticReview);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
@@ -1130,35 +1129,18 @@ for (const [file, parsed] of [
         }
     }
 }
-// The whole-file snapshot closes the class the named pins kept missing one
-// dimension of: any edit to any key — pinned or never yet named — fails here
-// until the record is regenerated and the diff reviewed.
-let snapshotError;
-try {
-    assertWorkflowSnapshotMatch(
-        readRecordedWorkflowSnapshot(process.env.REPO_ROOT),
-        parseHealthGateWorkflows(process.env.REPO_ROOT)
-    );
-} catch (error) {
-    snapshotError = error;
-}
-expect(
-    snapshotError === undefined,
-    `the registered workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
-);
-
-// The snapshot pins every registered file's contents; the directory SET is pinned
-// beside them, because a fifth workflow the parse never reads can mint a
+// GitHub runs every workflow in the directory, so the directory SET must equal
+// the registered files: an unregistered workflow no pin reads can mint a
 // passing Gate over a red head.
 let inventoryError;
 try {
-    assertWorkflowFileInventory(readRecordedWorkflowSnapshot(process.env.REPO_ROOT), process.env.REPO_ROOT);
+    assertWorkflowFileInventory(process.env.REPO_ROOT);
 } catch (error) {
     inventoryError = error;
 }
 expect(
     inventoryError === undefined,
-    `the workflows directory must match the recorded file inventory: ${inventoryError?.message ?? ''}`
+    `the workflows directory must match the registered workflow files: ${inventoryError?.message ?? ''}`
 );
 
 const workflowsByFile = {
@@ -1182,13 +1164,25 @@ for (const [file, jobId, shards] of SHARD_MATRIX_JOBS) {
         `${file} job ${jobId} must shard across exactly ${shards.join(', ')}`
     );
 }
-// A job-level permissions block reshapes one leg's token away from the
-// workflow-level pin; these two files must grant nothing at job level.
-for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
-    for (const [jobId, job] of Object.entries(workflowsByFile[file]?.jobs ?? {})) {
-        expect(job?.permissions === undefined, `${file} job ${jobId} must inherit the workflow-level permissions`);
-    }
+// Job-level permissions, secret reads, deployment environments, credentialless
+// checkouts, and the one job that may be named Gate, over every registered file.
+let securitySurfaceError;
+try {
+    assertWorkflowSecuritySurface(
+        Object.fromEntries(
+            HEALTH_GATE_WORKFLOW_FILES.map((file) => [
+                file,
+                parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/${file}`, 'utf8')),
+            ])
+        )
+    );
+} catch (error) {
+    securitySurfaceError = error;
 }
+expect(
+    securitySurfaceError === undefined,
+    `the registered workflows must keep their pinned security surface: ${securitySurfaceError?.message ?? ''}`
+);
 // A deleted proof step leaves its job green while the proof never runs, and
 // an added one runs unpinned; the inventory refuses both directions.
 for (const [file, parsed] of Object.entries(workflowsByFile)) {

@@ -47,20 +47,10 @@ function isValidSpec(path: string): boolean {
     return isPlaywrightCollected(path) && !path.split('/').includes('..') && !path.split('/').includes('node_modules');
 }
 
-// The graph is cruised over these roots, minus tests, and only sources the installed cruise can parse
-// (it always reads these extensions) enter it. A changed path outside that set is absent from the
+// The graph is cruised over these roots, minus tests. A changed path outside them is absent from the
 // graph, and the helper then widens to the full suite.
 const GRAPH_ROOTS = ['src', 'public'] as const;
 const GRAPH_EXCLUDE_PATTERN = '(?:^|/)__tests__/|\\.(spec|test)\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$';
-const GRAPH_SOURCE_EXTENSION = /\.(?:[cm]?[jt]s|[jt]sx)$/;
-
-export function graphCanHoldSource(path: string): boolean {
-    return (
-        GRAPH_ROOTS.some((root) => path.startsWith(`${root}/`)) &&
-        GRAPH_SOURCE_EXTENSION.test(path) &&
-        !new RegExp(GRAPH_EXCLUDE_PATTERN).test(path)
-    );
-}
 
 function isOwnerRegistry(value: unknown): value is string[] {
     return (
@@ -134,11 +124,6 @@ function suiteOwners(
         throw new Error('E2E owner has no suite');
     }
     return { owners, suites: entries };
-}
-
-/** The registry of feature owners the manifest declares, validated against the inventory. */
-export function knownFeatureOwners(manifest: unknown, availableSpecs: readonly string[]): ReadonlySet<string> {
-    return suiteOwners(manifest, new Set(availableSpecs)).owners;
 }
 
 /** Browser AI proofs trigger the separate hardware admission job. */

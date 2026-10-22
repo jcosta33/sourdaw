@@ -6710,10 +6710,10 @@ describe('credential-shaped content', () => {
 describe('a fixture is not a test', () => {
     it('asks the test questions only about tests', () => {
         // A live run fired two test-validity signals on a JSON fixture, because everything under
-        // `__tests__/` counted as a test and the snapshot's content holds shell `if` statements.
+        // `__tests__/` counted as a test and the fixture's content held shell `if` statements.
         // The extension gate keeps that false positive out: a data file in a test directory is not
         // test material.
-        expect(isTestPath('scripts/__tests__/fixtures/health-gate-workflows.snapshot.json')).toBe(false);
+        expect(isTestPath('scripts/__tests__/fixtures/workflow-pin.json')).toBe(false);
         // A code file in `__tests__/` without a runner suffix can still carry assertions the specs
         // import and execute, so it is test material even though the suffix rule alone would miss it.
         expect(isTestPath('src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts')).toBe(true);

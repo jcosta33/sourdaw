@@ -1,35 +1,21 @@
 /**
  * The structural pins of the registered workflows, shared by both health-gate
  * harnesses — the vitest spec and the shell harness — so the two can never
- * drift apart, and by the record script that blesses a deliberate edit.
+ * drift apart.
  *
- * Three review rounds each surfaced one new unpinned workflow-key dimension —
- * job and step `if`/`continue-on-error` at summary positions, then at every
- * position, then matrix shard lists, job-level permissions, and step presence
- * — because every pin enumerated the keys it read and read nothing else. The
- * recorded snapshot closes that class: it is the whole parsed file, so any
- * edit to any key — pinned or never yet named — fails the harness until the
- * record is regenerated and the diff reviewed. The named inventories beside
- * it give the headline vectors precise failure messages: the shard lists each
- * suite must fan out across, the files whose jobs must inherit workflow-level
- * permissions, and every job's ordered step names.
+ * Each pin names the property it protects: the registered file set, shard
+ * lists, ordered step names, and the pinned step conditions here, and every
+ * file's credential surface in `workflowSecuritySurfaceContract.ts`. A recorded
+ * whole-file snapshot was regenerated with every deliberate edit, so it
+ * blessed whatever it recorded and stood behind no property by itself.
  *
- * The snapshot pins the registered files' CONTENTS; GitHub runs whatever the
- * directory holds, and a required check is satisfied by the newest run of its
- * name — a `skipped` conclusion included. An unregistered workflow the parse never
- * reads could therefore mint a passing `Gate` over a red head, so the sorted
- * *.yml/*.yaml directory listing is pinned beside the contents under
- * `workflowFileInventory`.
- *
- * The same parse feeds both harnesses and the record script, so the pin can
- * never diverge from the files by parser drift: a deliberate workflow edit is
- * recorded with `pnpm test:health-gates:record` and reviewed as a JSON diff.
+ * GitHub runs whatever the directory holds, and the newest run of a required
+ * name satisfies it, `skipped` included, so the directory listing must equal
+ * the registered file list.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-
-import { parseDocument } from 'yaml';
 
 export const HEALTH_GATE_WORKFLOW_FILES = [
     'health-gates.yml',
@@ -43,10 +29,6 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'cargo-dependency-seed.yml',
 ] as const;
 
-export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
-
-export const WORKFLOW_FILE_INVENTORY_KEY = 'workflowFileInventory';
-
 // The full nightly train and required unit suite retain their fixed shards.
 // The pull-request browser matrix is generated from a validated affected plan.
 export const UNIT_SHARDS = [1, 2, 3, 4] as const;
@@ -57,22 +39,6 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
     ['nightly.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'e2e', E2E_SHARDS],
 ];
-
-// A job-level `permissions` block reshapes one leg's token away from the
-// workflow-level pin, and no pin read it: `contents: write` on a validation
-// leg would hand every pull request a token that can push. The required
-// CodeQL job has a separately pinned SARIF upload permission; these files
-// must grant nothing. The semantic-review file is
-// absent because its coverage job carries a deliberate `contents: read`, and
-// `semanticReviewWorkflowContract.ts` pins that job's permissions exactly
-// beside the assessment job's own ban.
-export const JOB_LEVEL_PERMISSION_FREE_FILES = [
-    'validation.yml',
-    'pr-checks.yml',
-    'cargo-dependency-seed.yml',
-    'quantum-measurements.yml',
-    'wasm-artifacts.yml',
-] as const;
 
 const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
@@ -172,17 +138,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'health-gates.yml': {
         admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
         scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
-        'selection-shadow': [
-            'Checkout candidate head',
-            'Checkout immutable integration commit',
-            'Checkout immutable shadow control',
-            'Download authoritative scope',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Measure shadow selection',
-            'Upload shadow measurement',
-        ],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
@@ -382,7 +337,6 @@ function pin(workflow: string, job: string, step: string, condition: string): Co
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
-    pin('health-gates.yml', 'selection-shadow', 'Upload shadow measurement', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),
     pin('heavy-gates.yml', 'heavy-gate', 'Require selected browser jobs to succeed', ALWAYS_EXPRESSION),
@@ -439,31 +393,9 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_RUN)),
 ];
 
-export type WorkflowSnapshot = Record<string, unknown>;
-
-export function parseHealthGateWorkflows(repositoryRoot: string): WorkflowSnapshot {
-    const snapshot: WorkflowSnapshot = {};
-    for (const file of HEALTH_GATE_WORKFLOW_FILES) {
-        const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', file), 'utf8'));
-        if (document.errors.length > 0) {
-            throw new Error(`${file} is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
-        }
-        snapshot[file] = document.toJS();
-    }
-    return snapshot;
-}
-
-export function readRecordedWorkflowSnapshot(repositoryRoot: string): WorkflowSnapshot {
-    const parsed: unknown = JSON.parse(readFileSync(join(repositoryRoot, WORKFLOW_SNAPSHOT_PATH), 'utf8'));
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new TypeError(`${WORKFLOW_SNAPSHOT_PATH} must be a mapping of workflow file to parsed workflow`);
-    }
-    return parsed as WorkflowSnapshot;
-}
-
 // GitHub runs every *.yml/*.yaml file in the directory, so the file SET is a
-// dimension a fixed-file parse never reads: an unpinned workflow can mint a
-// Gate check no pin reads, and a deleted one leaves the record pointing at a
+// dimension a fixed-file parse never reads: an unregistered workflow can mint a
+// Gate check no pin reads, and a deleted one leaves the registry pointing at a
 // gate that no longer exists. Both directions refuse the drift, naming the
 // file.
 export function listWorkflowFiles(repositoryRoot: string): string[] {
@@ -472,74 +404,20 @@ export function listWorkflowFiles(repositoryRoot: string): string[] {
         .sort();
 }
 
-export function assertWorkflowFileInventory(recorded: WorkflowSnapshot, repositoryRoot: string): void {
-    const pinned: unknown = recorded[WORKFLOW_FILE_INVENTORY_KEY];
-    if (!Array.isArray(pinned) || pinned.some((entry) => typeof entry !== 'string')) {
-        throw new TypeError(
-            `${WORKFLOW_SNAPSHOT_PATH} must record ${WORKFLOW_FILE_INVENTORY_KEY} as a list of workflow file names`
-        );
-    }
-    const pinnedFiles = pinned as string[];
+export function assertWorkflowFileInventory(repositoryRoot: string): void {
+    const registered: readonly string[] = HEALTH_GATE_WORKFLOW_FILES;
     const liveFiles = listWorkflowFiles(repositoryRoot);
     for (const file of liveFiles) {
-        if (!pinnedFiles.includes(file)) {
+        if (!registered.includes(file)) {
             throw new Error(
-                `${file} is not in the recorded workflow file inventory: an unpinned workflow can mint a Gate check no pin reads. ` +
-                    'If it is deliberate, regenerate the pin with `pnpm test:health-gates:record` and review the snapshot diff'
+                `${file} is not a registered gate workflow: an unregistered workflow can mint a Gate check no pin reads. ` +
+                    'If it is deliberate, add it to HEALTH_GATE_WORKFLOW_FILES and pin its triggers, permissions, and secrets'
             );
         }
     }
-    for (const file of pinnedFiles) {
+    for (const file of registered) {
         if (!liveFiles.includes(file)) {
-            throw new Error(
-                `${file} is pinned in the recorded workflow file inventory but missing from .github/workflows. ` +
-                    'If the removal is deliberate, regenerate the pin with `pnpm test:health-gates:record` and review the snapshot diff'
-            );
-        }
-    }
-}
-
-function firstDifference(recorded: unknown, fresh: unknown, path: string): string | undefined {
-    if (recorded === null || fresh === null || typeof recorded !== 'object' || typeof fresh !== 'object') {
-        return Object.is(recorded, fresh) ? undefined : path;
-    }
-    if (Array.isArray(recorded) || Array.isArray(fresh)) {
-        if (!Array.isArray(recorded) || !Array.isArray(fresh) || recorded.length !== fresh.length) {
-            return path;
-        }
-        for (let index = 0; index < recorded.length; index += 1) {
-            const difference = firstDifference(recorded[index], fresh[index], `${path}.${index}`);
-            if (difference !== undefined) {
-                return difference;
-            }
-        }
-        return undefined;
-    }
-    const recordedRecord = recorded as Record<string, unknown>;
-    const freshRecord = fresh as Record<string, unknown>;
-    const recordedKeys = Object.keys(recordedRecord);
-    const freshKeys = Object.keys(freshRecord);
-    if (recordedKeys.length !== freshKeys.length || recordedKeys.some((key, index) => key !== freshKeys[index])) {
-        return path;
-    }
-    for (const key of recordedKeys) {
-        const difference = firstDifference(recordedRecord[key], freshRecord[key], `${path}.${key}`);
-        if (difference !== undefined) {
-            return difference;
-        }
-    }
-    return undefined;
-}
-
-export function assertWorkflowSnapshotMatch(recorded: WorkflowSnapshot, fresh: WorkflowSnapshot): void {
-    for (const file of HEALTH_GATE_WORKFLOW_FILES) {
-        const difference = firstDifference(recorded[file], fresh[file], file);
-        if (difference !== undefined) {
-            throw new Error(
-                `${file} drifted from the recorded workflow snapshot at ${difference}. ` +
-                    'If this workflow edit is deliberate, regenerate the pin with `pnpm test:health-gates:record` ' +
-                    'and review the snapshot diff'
-            );
+            throw new Error(`${file} is a registered gate workflow but missing from .github/workflows`);
         }
     }
 }
