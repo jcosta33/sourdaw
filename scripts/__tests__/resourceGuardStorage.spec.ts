@@ -660,10 +660,43 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             expect(result.reason).toBe(unavailable ? 'monitor' : 'pressure');
             expect(result.output).toMatch(unavailable ? /disk space could not be measured/ : /disk space below/);
             if (!unavailable) {
-                expect(result.output).toContain('AGENTS.md Resource Safety: clearable caches');
+                expect(result.output).toContain(
+                    'AGENTS.md Resource Safety: "When the system volume is below the reserve"'
+                );
+                expect(readFileSync(join(process.cwd(), 'AGENTS.md'), 'utf8')).toContain(
+                    'When the system volume is below the reserve'
+                );
             }
             expect(result.refusedBeforeStart).toBe(unavailable ? undefined : true);
             expect(sampled).toEqual(['/']);
+            expect(existsSync(marker)).toBe(false);
+        }
+    });
+
+    it('keeps the lane-stopping failure when admission pressure leaves the guard storage held', async () => {
+        const held: [string, 'alive' | 'unknown', ...string[]][] = [
+            ['a live process still holds it', 'alive'],
+            ['the census is unproved with a stable reason', 'unknown', 'storage-not-private-same-uid'],
+        ];
+        for (const [, verdict, ...reasons] of held) {
+            const root = fixture();
+            const marker = join(root, 'spawned');
+            const result = await guarded(root, {
+                args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`],
+                diskReserveBytes: 100,
+                diskSampler: () => 99,
+                storageHost: {
+                    fileState: (_tempDirectories, _ownedPids, report) => {
+                        for (const reason of reasons) {
+                            report(reason);
+                        }
+                        return verdict;
+                    },
+                },
+            });
+            expect(result.reason).toBe('pressure');
+            expect(result.output).toMatch(/guard storage retained/);
+            expect(result.refusedBeforeStart).toBeUndefined();
             expect(existsSync(marker)).toBe(false);
         }
     });

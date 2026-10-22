@@ -109,8 +109,9 @@ export type GuardedCommandResult = {
     retainedStorage?: { path: string; reason: string };
     // The census that left storage retained as a leak, recorded in the guard-failure receipt.
     census?: string;
-    // Set when disk pressure refused the command before it started: nothing ran and nothing leaked,
-    // so the refusal is not a lane-stopping guard failure.
+    // Set when disk pressure refused the command before it started and the guard storage was
+    // released: nothing ran and nothing leaked, so the refusal is not a lane-stopping guard failure.
+    // Held storage is a leak and keeps its receipt.
     refusedBeforeStart?: true;
 };
 
@@ -1987,7 +1988,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             code: null,
             signal: null,
             reason: admissionDiskFailure.reason,
-            ...(admissionDiskFailure.reason === 'pressure' ? { refusedBeforeStart: true as const } : {}),
+            ...(admissionDiskFailure.reason === 'pressure' && removed ? { refusedBeforeStart: true as const } : {}),
             output: `${admissionDiskFailure.message}${removed ? '' : retainedStorageDiagnostic}`,
             omittedBytes: 0,
             peakRssBytes: 0,
