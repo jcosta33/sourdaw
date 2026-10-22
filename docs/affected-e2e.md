@@ -27,20 +27,15 @@ the separate hardware admission job; an unowned browser-AI proof stays selected 
 
 Direct edits to a collected E2E spec select that spec, alongside any browser work selected for other
 changed paths. Documentation and recognized review tooling keep their existing no-browser route.
+Every other path under `scripts/` (including `scripts/__tests__/`), `.agents/`, top-level
+`release/*.json`, and Markdown outside `src/`, `public/`, and `tests/` selects no browser suite but
+keeps the broad non-browser profile, so its unit, type, Rust, and WASM checks still run. Generator and
+build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
+select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the
+nightly full train. Configuration, dependency, workflow, and product paths keep their own routes.
 The planner retains the broad validation profile for product changes, CodeQL selection, anchored
 literal filenames at the runner boundary, and the required Gate's selected-job checks. A failed
 graph or missing dependency installation must never produce an empty or silently narrowed matrix.
-
-The advisory selection shadow recomputes the plan from the control checkout's own planner. It does not
-run the graph helper, so it cannot derive which owners a change reaches through consumers. It
-therefore verifies a graph-narrowed plan by rebuilding it: the planner must have been able to narrow
-(`canNarrow`), the claimed owners must be registered in `scripts/e2eSuiteOwners.json` as read from the
-integration checkout and include the owner of every changed feature source, and the plan the control
-planner builds for those owners (`specsForOwners`) must equal the authoritative plan exactly. Owners
-reached only through consumers are reported as unverified (`affected-graph-owners-unverified`). The
-full-fallback diagnostic row is stripped only where the planner could have tried the helper. Any other
-difference is a disagreement. A candidate that edits the planner, collector, partition, graph helper, or
-Playwright config is a skip, because the control cannot reproduce its plan.
 
 This follows the affected-task pattern of comparing Git changes with reverse dependencies described
 by [Nx](https://nx.dev/docs/features/ci-features/affected), using the already installed

@@ -181,17 +181,20 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
 );
 // The structural pins live in one shared module so this harness and the
 // vitest spec can never drift apart: the whole-file snapshot, the shard
-// matrices, the permission-free files, and every job's step inventory.
+// matrices, and every job's step inventory.
 const {
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
-    JOB_LEVEL_PERMISSION_FREE_FILES,
+    HEALTH_GATE_WORKFLOW_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
+const { assertWorkflowSecuritySurface } = await import(
+    `${process.env.REPO_ROOT}/scripts/workflowSecuritySurfaceContract.ts`
+);
 const { assertHostedWasmWorkflow } = await import(`${process.env.REPO_ROOT}/scripts/hostedWasmWorkflowContract.ts`);
 const { assertApprovalGatedRequiredCheck } = await import(
     `${process.env.REPO_ROOT}/scripts/approvalGatedWorkflowContract.ts`
@@ -491,7 +494,7 @@ expect(
 function gateNameViolations(file, jobs) {
     const violations = [];
     for (const [id, job] of Object.entries(jobs ?? {})) {
-        if ((job?.name ?? id) === 'Gate') {
+        if ((typeof job?.name === 'string' && job.name !== '' ? job.name : id) === 'Gate') {
             violations.push(
                 `${file} job ${id} must not be named Gate; only a pull_request run of health-gates.yml may mint that check`
             );
@@ -517,6 +520,10 @@ for (const [file, parsed] of [
 expect(
     gateNameViolations('mutant.yml', { Gate: { needs: ['decide'] } }).length === 1,
     'the Gate-name guard must catch an unnamed Gate-keyed job'
+);
+expect(
+    gateNameViolations('mutant.yml', { Gate: { name: '', needs: ['decide'] } }).length === 1,
+    'the Gate-name guard must catch an empty-named Gate-keyed job'
 );
 expect(heavyGate?.name === 'HeavyGate', 'the heavy summary must keep its own distinct, non-required name');
 expect(
@@ -1182,13 +1189,25 @@ for (const [file, jobId, shards] of SHARD_MATRIX_JOBS) {
         `${file} job ${jobId} must shard across exactly ${shards.join(', ')}`
     );
 }
-// A job-level permissions block reshapes one leg's token away from the
-// workflow-level pin; these two files must grant nothing at job level.
-for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
-    for (const [jobId, job] of Object.entries(workflowsByFile[file]?.jobs ?? {})) {
-        expect(job?.permissions === undefined, `${file} job ${jobId} must inherit the workflow-level permissions`);
-    }
+// Job-level permissions, secret reads, deployment environments, credentialless
+// checkouts, and the one job that may be named Gate, over every registered file.
+let securitySurfaceError;
+try {
+    assertWorkflowSecuritySurface(
+        Object.fromEntries(
+            HEALTH_GATE_WORKFLOW_FILES.map((file) => [
+                file,
+                parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/${file}`, 'utf8')),
+            ])
+        )
+    );
+} catch (error) {
+    securitySurfaceError = error;
 }
+expect(
+    securitySurfaceError === undefined,
+    `the registered workflows must keep their pinned security surface: ${securitySurfaceError?.message ?? ''}`
+);
 // A deleted proof step leaves its job green while the proof never runs, and
 // an added one runs unpinned; the inventory refuses both directions.
 for (const [file, parsed] of Object.entries(workflowsByFile)) {

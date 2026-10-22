@@ -862,13 +862,17 @@ that drop the session token while retaining temp paths remain outside that platf
 Windows cannot establish a complete command/environment/file-use census after supervisor death, so crashed
 spawned runs there retain their storage for explicit inspection.
 
-The guard samples available disk space on the temporary-storage volume, the command's working
-volume, and the system volume without walking their directory trees. It requires a 20 GiB free
-reserve at admission and throughout execution. Set `--disk-reserve-mib <positive-integer>` or
-`SOURDAW_GUARD_DISK_RESERVE_MIB` to configure it; nested guards inherit the chosen reserve. Supply
-the desired override again on `--recover`. Disk pressure stops the process tree with the existing
-`pressure` failure receipt and a disk-specific diagnostic; unavailable or invalid disk sampling
-fails closed with `monitor`. Cleanup uncertainty never turns a stopped run into success.
+The guard samples available disk space on the system volume (`/`, or the SystemRoot drive on Windows)
+without walking its directory tree, because filling that volume freezes the machine; other volumes
+carry no reserve. It requires a 5 GiB free reserve at admission and throughout execution. Set
+`--disk-reserve-mib <positive-integer>` or `SOURDAW_GUARD_DISK_RESERVE_MIB` to configure it; nested
+guards inherit the chosen reserve. Supply the desired override again on `--recover`. Disk pressure
+during a run stops the process tree with the existing `pressure` failure receipt and a disk-specific
+diagnostic. Pressure at admission is a plain refusal with a non-zero exit and no receipt, since
+nothing ran; its message carries the cleanup guidance (delete only definite regenerable caches and agent junk, never
+anything a running process holds, report what was freed), which AGENTS.md deliberately omits.
+Unavailable or invalid disk sampling fails closed with `monitor`. Cleanup uncertainty never turns a
+stopped run into success.
 
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when

@@ -11,8 +11,8 @@
  * edit to any key — pinned or never yet named — fails the harness until the
  * record is regenerated and the diff reviewed. The named inventories beside
  * it give the headline vectors precise failure messages: the shard lists each
- * suite must fan out across, the files whose jobs must inherit workflow-level
- * permissions, and every job's ordered step names.
+ * suite must fan out across and every job's ordered step names here, and every
+ * file's credential and action surface in `workflowSecuritySurfaceContract.ts`.
  *
  * The snapshot pins the registered files' CONTENTS; GitHub runs whatever the
  * directory holds, and a required check is satisfied by the newest run of its
@@ -57,22 +57,6 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
     ['nightly.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'e2e', E2E_SHARDS],
 ];
-
-// A job-level `permissions` block reshapes one leg's token away from the
-// workflow-level pin, and no pin read it: `contents: write` on a validation
-// leg would hand every pull request a token that can push. The required
-// CodeQL job has a separately pinned SARIF upload permission; these files
-// must grant nothing. The semantic-review file is
-// absent because its coverage job carries a deliberate `contents: read`, and
-// `semanticReviewWorkflowContract.ts` pins that job's permissions exactly
-// beside the assessment job's own ban.
-export const JOB_LEVEL_PERMISSION_FREE_FILES = [
-    'validation.yml',
-    'pr-checks.yml',
-    'cargo-dependency-seed.yml',
-    'quantum-measurements.yml',
-    'wasm-artifacts.yml',
-] as const;
 
 const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
@@ -172,17 +156,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'health-gates.yml': {
         admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
         scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
-        'selection-shadow': [
-            'Checkout candidate head',
-            'Checkout immutable integration commit',
-            'Checkout immutable shadow control',
-            'Download authoritative scope',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Measure shadow selection',
-            'Upload shadow measurement',
-        ],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
@@ -382,7 +355,6 @@ function pin(workflow: string, job: string, step: string, condition: string): Co
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
-    pin('health-gates.yml', 'selection-shadow', 'Upload shadow measurement', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),
     pin('heavy-gates.yml', 'heavy-gate', 'Require selected browser jobs to succeed', ALWAYS_EXPRESSION),

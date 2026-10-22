@@ -17,7 +17,6 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
-    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -39,7 +38,6 @@ const REVIEW_TOOLING = new Set([
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -157,6 +155,21 @@ export type ValidationPlan = {
 
 function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
+}
+
+/**
+ * Repository tooling and prose never select browser execution, though they keep broad non-browser
+ * validation. Generator and build scripts reach the browser only through their outputs, which land
+ * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
+ * stays classified with them.
+ */
+function isRepositoryTooling(path: string): boolean {
+    return (
+        path.startsWith('scripts/') ||
+        path.startsWith('.agents/') ||
+        /^release\/[^/]+\.json$/.test(path) ||
+        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+    );
 }
 
 function needsCodeql(path: string): boolean {
@@ -371,6 +384,13 @@ function browserPathSelection(
     };
 }
 
+function planProfile(broad: boolean, tooling: boolean): ValidationPlan['profile'] {
+    if (broad) {
+        return 'broad';
+    }
+    return tooling ? 'tooling' : 'docs';
+}
+
 export function selectValidationPlan(
     paths: readonly string[],
     availableSpecs: readonly string[],
@@ -393,6 +413,7 @@ export function selectValidationPlan(
     let browserAi = false;
     let codeql = false;
     let tooling = false;
+    let nonBrowser = false;
     for (const path of paths) {
         if (isDocumentation(path)) {
             reasons.push({ path, reason: 'documentation; no browser execution' });
@@ -403,6 +424,14 @@ export function selectValidationPlan(
         if (reason !== null) {
             tooling = true;
             reasons.push({ path, reason });
+            continue;
+        }
+        if (isRepositoryTooling(path)) {
+            nonBrowser = true;
+            reasons.push({
+                path,
+                reason: 'repository tooling; broad non-browser validation without browser execution',
+            });
             continue;
         }
         browser = true;
@@ -422,12 +451,7 @@ export function selectValidationPlan(
         throw new Error('Full browser coverage has no specs');
     }
     const matrix = browserMatrix(specs, durations);
-    let profile: ValidationPlan['profile'] = 'docs';
-    if (browser) {
-        profile = 'broad';
-    } else if (tooling) {
-        profile = 'tooling';
-    }
+    const profile = planProfile(browser || nonBrowser, tooling);
     return { version: 1, profile, browser, browserAi, codeql, matrix, reasons };
 }
 
@@ -465,7 +489,7 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-/** Paths that need browser coverage beyond documentation, recognized tooling, and collected specs. */
+/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
 export function productPathsOf(
     paths: readonly string[],
     specs: readonly string[],
@@ -475,6 +499,7 @@ export function productPathsOf(
         (path) =>
             !isDocumentation(path) &&
             toolingReason(path, packageScriptOnly) === null &&
+            !isRepositoryTooling(path) &&
             !(isSpec(path) && specs.includes(path))
     );
 }

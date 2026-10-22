@@ -54,9 +54,10 @@ function sameValue(actual: unknown, expected: unknown): boolean {
 }
 
 /** GitHub names an unnamed job's check run after its job id. */
+// GitHub names a job's check run after its key when `name` is absent or empty.
 export function workflowJobCheckName(jobId: string, job: unknown): string {
     const name = asWorkflowRecord(job, jobId).name;
-    return typeof name === 'string' ? name : jobId;
+    return typeof name === 'string' && name !== '' ? name : jobId;
 }
 
 function assertGateCannotSkip(gate: WorkflowRecord): void {

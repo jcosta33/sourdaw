@@ -167,7 +167,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:6b54ed079a44f89c35b4fd9dc4b68f2c0ba9300194e32f4b43510874760784a7:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:09011009c586bac272e9bac6a71e68b187f89a8260c5116a31122941ae03102f:release/dependency-license-proofs.json"
+                "sha256:3b5b5ee39eb4dde600bc079b3f6791b36dc028a0ee7811610fa384d20ca635f9:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1740,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "e5363a7578117ef19b686af78e1375616c2eaf64058479fcf0cb9f71607defde"
+            "sha256": "89b699a6f606b94e0953addbc3740312c2acf21f20d76654481a446584142078"
         },
         {
             "path": "server/package.json",
@@ -2175,11 +2175,6 @@
             "surface": "project-source",
             "file": "scripts/checkReleaseInventory.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkStancesRecord.ts",
-            "value": "https://api.typesafe.ai/v1/systemone"
         },
         {
             "surface": "project-source",

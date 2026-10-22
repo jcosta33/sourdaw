@@ -240,7 +240,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/savedProjectStatePaths.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/reviewPublicationBinding.ts',
-        'scripts/reviewDossierSemanticAssessment.ts',
         'scripts/prepareReview.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -278,7 +277,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/savedProjectStatePaths.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/reviewPublicationBinding.ts',
-        'scripts/reviewDossierSemanticAssessment.ts',
         'scripts/prepareReview.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -320,7 +318,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewPublicationRecoveryReceipt.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/reviewPublicationBinding.ts',
-        'scripts/reviewDossierSemanticAssessment.ts',
         'scripts/prepareReview.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -5850,6 +5847,15 @@ function carriedName(name: unknown): unknown {
     return NON_TEXT_NAME;
 }
 
+/**
+ * The snapshot's own module-type boundary (#5466). The copied closure is ES module source, as the
+ * repository's `"type": "module"` declares, but it lands under the temp directory, whose nearest
+ * package.json is whatever encloses it — the guard's typeless `{}` boundary in an agent session —
+ * so Node would reparse every module and warn on stderr. Only the type crosses; nothing else of the
+ * repository manifest does.
+ */
+export const TRUSTED_SNAPSHOT_PACKAGE_JSON = '{ "type": "module" }\n';
+
 export async function executeTrustedSnapshot(
     command: TrustedGithubWriteCommand,
     args: string[],
@@ -5858,6 +5864,11 @@ export async function executeTrustedSnapshot(
 ): Promise<number> {
     const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-write-'));
     try {
+        writeFileSync(join(snapshotRoot, 'package.json'), TRUSTED_SNAPSHOT_PACKAGE_JSON, {
+            encoding: 'utf8',
+            flag: 'wx',
+            mode: 0o600,
+        });
         for (const [path, source] of snapshot.sources) {
             if (!path.startsWith('scripts/') || posix.normalize(path) !== path || path.includes('..')) {
                 throw new Error(`invalid trusted snapshot path ${path}`);

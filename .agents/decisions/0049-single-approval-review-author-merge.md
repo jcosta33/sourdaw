@@ -2,7 +2,7 @@
 type: adr
 id: 0049
 title: Single reviewer approval authorizes delivery; the author App merges
-status: accepted
+status: partially superseded by 0054 (the bounded-review-rounds extension only)
 date: 2026-09-23
 owner: The Sourdaw team
 sources:
