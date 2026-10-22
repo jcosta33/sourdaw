@@ -3057,10 +3057,18 @@ describe('contract-carrying admission', () => {
         const unit = units.find((candidate) => candidate.path === readerPath);
         expect(unit).toBeDefined();
         expect(excluded).not.toContainEqual({ path: readerPath, reason: 'no-evidence-region-within-budget' });
-        const carried = unit?.evidence.context.map((reference) => reference.path) ?? [];
+        // The acceptance is one request, not the pass-union: `evidence.context`
+        // merges every pass, so it stays green when the region set splits across
+        // two requests — a wider truncated share would double every local
+        // contract unit's requests while this case kept passing. The quarter
+        // share exists precisely so both default documents fit beside the own
+        // sides of the unit's single pass.
+        const passes = unit?.evidence.passes ?? [];
+        expect(passes).toHaveLength(1);
+        const carried = passes[0]?.context.map((reference) => reference.path) ?? [];
         expect(carried).toContain('.agents/decisions/README.md');
         expect(carried).toContain('AGENTS.md');
-        for (const reference of unit?.evidence.context ?? []) {
+        for (const reference of passes[0]?.context ?? []) {
             const text = reference.path === 'AGENTS.md' ? contract : ledger;
             expect(reference.endLine).toBeLessThan(text.split('\n').length);
         }
