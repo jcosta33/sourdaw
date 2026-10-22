@@ -232,12 +232,49 @@ describe('recorded controller take', () => {
                 { controller: 64, value: 127, beat: 0, channel: 0 },
                 { controller: 64, value: 40, beat: 0, channel: 1 },
                 { controller: 66, value: 90, beat: 0, channel: 2 },
-                { controller: 67, value: 1, beat: 0, channel: 2 },
+                // Soft pedal at 1 is below its latch threshold: playback reads it as released, so it is no seed.
                 { controller: 1, value: 10, beat: 1, channel: 0 },
-                // Soft pedal at 1 is below its latch threshold: it holds nothing to lift.
                 { controller: 64, value: 0, beat: 4, channel: 0 },
                 { controller: 64, value: 0, beat: 4, channel: 1 },
                 { controller: 66, value: 0, beat: 4, channel: 2 },
+            ]);
+        });
+
+        it.each([
+            { controller: 66, value: 63, seeded: false },
+            { controller: 66, value: 64, seeded: true },
+            { controller: 67, value: 63, seeded: false },
+            { controller: 67, value: 64, seeded: true },
+        ])('seeds $controller held at $value: $seeded', ({ controller, value, seeded }) => {
+            holdPedal(0, controller, value);
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual(
+                seeded
+                    ? [
+                          { controller, value, beat: 0, channel: 0 },
+                          { controller: 1, value: 10, beat: 1, channel: 0 },
+                          { controller, value: 0, beat: 4, channel: 0 },
+                      ]
+                    : [{ controller: 1, value: 10, beat: 1, channel: 0 }]
+            );
+        });
+
+        it('keeps the seed when only a later loop pass lifts the pedal at beat 0', () => {
+            holdPedal(0, 64, 127);
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 127, beat: 2, channel: 0 } });
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 0, channel: 0 } });
+
+            expect(bare(planRecordedControllers({ clip: spanOf(CLIP) }).cc)).toEqual([
+                { controller: 64, value: 127, beat: 0, channel: 0 },
+                { controller: 64, value: 127, beat: 2, channel: 0 },
+                { controller: 64, value: 0, beat: 0, channel: 0 },
+                // Beat order ends on the press at beat 2, so the clip still closes engaged.
+                { controller: 64, value: 0, beat: 4, channel: 0 },
             ]);
         });
 
@@ -436,6 +473,48 @@ describe('recorded controller take', () => {
             ]);
         });
 
+        it('closes a loop take whose last pass lifts early after a press late in the clip', () => {
+            beginTake();
+            press(64, 127, 3);
+            press(64, 0, 1);
+
+            expect(plannedCc()).toEqual([
+                { controller: 64, value: 127, beat: 3, channel: 0 },
+                { controller: 64, value: 0, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 4, channel: 0 },
+            ]);
+        });
+
+        it('adds no lift to a loop take whose last row by beat is a lift though a press arrived after it', () => {
+            beginTake();
+            press(64, 127, 1);
+            press(64, 0, 3);
+            press(64, 127, 1);
+
+            expect(plannedCc()).toEqual([
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+                { controller: 64, value: 0, beat: 3, channel: 0 },
+                { controller: 64, value: 127, beat: 1, channel: 0 },
+            ]);
+        });
+
+        it('lets the row that arrived last decide among rows sharing one beat', () => {
+            beginTake();
+            press(64, 0, 2);
+            press(64, 127, 2);
+
+            expect(plannedCc().at(-1)).toEqual({ controller: 64, value: 0, beat: 4, channel: 0 });
+        });
+
+        it('places the lift at the last row by beat when the take ended before it', () => {
+            beginTake();
+            press(64, 0, 0);
+            press(64, 127, 3);
+            press(64, 127, 1);
+
+            expect(plannedCc({ takeEndBeat: 5 }).at(-1)).toEqual({ controller: 64, value: 0, beat: 3, channel: 0 });
+        });
+
         it('lifts a non-pedal controller never', () => {
             beginTake();
             press(1, 127, 1);
@@ -571,7 +650,7 @@ describe('recorded controller take', () => {
             endRecordedControllerTake();
 
             holdPedal(0, 64, 0);
-            holdPedal(0, 66, 33);
+            holdPedal(0, 66, 90);
             mocks.activeRecordingRef.current = [NEXT_CLIP];
             setLiveClips(CLIP, NEXT_CLIP);
             beginRecordedControllerTake();
@@ -587,8 +666,9 @@ describe('recorded controller take', () => {
 
             commitRecordedControllers({ clip: spanOf(NEXT_CLIP) });
             expect(bare(mocks.midi.value?.ccByClipId[NEXT_CLIP])).toEqual([
-                { controller: 66, value: 33, beat: 0, channel: 0 },
+                { controller: 66, value: 90, beat: 0, channel: 0 },
                 { controller: 1, value: 7, beat: 2, channel: 0 },
+                { controller: 66, value: 0, beat: 4, channel: 0 },
             ]);
         });
 

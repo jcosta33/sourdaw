@@ -26,8 +26,23 @@ export type RecordedControllerPlan = {
     pitchBend: MidiPitchBend[];
 };
 
+/**
+ * Whether the take's first pass records the seed's controller and channel at
+ * beat 0 itself. A loop take overlays every pass into one clip, and a pass
+ * only moves forward, so a row at beat 0 that arrives after a row later in the
+ * clip belongs to a later pass: it does not stand in for the press the start
+ * of the take owes.
+ */
 function isRecordedAtBeatZero(rows: readonly MidiCC[], seed: MidiCC): boolean {
-    return rows.some((row) => row.beat === 0 && row.controller === seed.controller && row.channel === seed.channel);
+    for (const row of rows) {
+        if (row.beat > 0) {
+            return false;
+        }
+        if (row.controller === seed.controller && row.channel === seed.channel) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**

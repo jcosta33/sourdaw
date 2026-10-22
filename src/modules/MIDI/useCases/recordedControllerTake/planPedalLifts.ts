@@ -21,15 +21,23 @@ type PlanPedalLiftsInput = {
  * of a recorded part for the same reason.
  *
  * A pedal is engaged by the same test playback uses to tell a lift: the last
- * row of a pedal and channel is a press when it is not a lift. The lift never
- * sits before the press it ends, and takes its id from that press so planning
- * the same rows twice names the same lifts.
+ * row of a pedal and channel is a press when it is not a lift. Last means last
+ * in beat order, because a loop take overlays every pass into one clip at its
+ * wrapped beat and playback reads the rows sorted by beat; rows sharing a beat
+ * keep their arrival order. The lift never sits before the press it ends, and
+ * takes its id from that press so planning the same rows twice names the same
+ * lifts.
  */
 export function planPedalLifts({ rows, takeEndBeat, closingLineBeat }: PlanPedalLiftsInput): MidiCC[] {
     const lastRowByPedal = new Map<string, MidiCC>();
     for (const row of rows) {
-        if (isHeldPedalCc(row.controller)) {
-            lastRowByPedal.set(`${row.channel}:${row.controller}`, row);
+        if (!isHeldPedalCc(row.controller)) {
+            continue;
+        }
+        const pedalKey = `${row.channel}:${row.controller}`;
+        const last = lastRowByPedal.get(pedalKey);
+        if (!last || row.beat >= last.beat) {
+            lastRowByPedal.set(pedalKey, row);
         }
     }
     return Array.from(lastRowByPedal.values())
