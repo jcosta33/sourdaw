@@ -439,6 +439,27 @@ describe('replaceProjectData', () => {
         expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
+    it('does not replace authority when the caller withdraws its consent while the refused roll is being stopped', async () => {
+        const extraStop = Promise.withResolvers<void>();
+        let allowed = true;
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mockStopPlayback.mockResolvedValueOnce(undefined).mockReturnValueOnce(extraStop.promise);
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+            shouldProceed: () => allowed,
+        });
+        await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
+        allowed = false;
+        extraStop.resolve();
+
+        await expect(replacement).resolves.toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProject).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
     it('hands the previous project back when the stop after a refused reset rejects', async () => {
         mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
         mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });

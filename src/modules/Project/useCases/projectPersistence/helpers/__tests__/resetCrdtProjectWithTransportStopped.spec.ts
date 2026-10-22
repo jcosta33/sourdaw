@@ -56,6 +56,18 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         expect(mocks.resetCrdtProject).toHaveBeenCalledTimes(2);
     });
 
+    it('stops once per refusal and keeps asking until the reset settles', async () => {
+        mocks.resetCrdtProject
+            .mockResolvedValueOnce({ status: 'transport-active' })
+            .mockResolvedValueOnce({ status: 'transport-active' })
+            .mockResolvedValueOnce({ status: 'transport-active' });
+
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(replaced);
+
+        expect(mocks.resetCrdtProject).toHaveBeenCalledTimes(4);
+        expect(mocks.stopPlayback).toHaveBeenCalledTimes(3);
+    });
+
     it('passes a refusal through untouched', async () => {
         const refused = { status: 'refused', reason: 'session-active' };
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' }).mockResolvedValueOnce(refused);

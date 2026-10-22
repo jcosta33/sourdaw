@@ -137,6 +137,17 @@ describe('resetCrdtProject', () => {
             expect(mocks.loggerWarn).toHaveBeenCalledWith(expect.stringContaining('write-failed'));
         });
 
+        it.each(['aborted', 'superseded'] as const)('stays quiet when the withdrawal answers %s', async (outcome) => {
+            mocks.isTransportIdle.mockReturnValue(false);
+            mocks.abortReset.mockResolvedValue(outcome);
+
+            await expect(resetCrdtProject('New Project', undefined, mocks.isTransportIdle)).resolves.toEqual({
+                status: 'transport-active',
+            });
+
+            expect(mocks.loggerWarn).not.toHaveBeenCalled();
+        });
+
         it('does not touch the durable record when the authority cannot be read', async () => {
             mocks.isTransportIdle.mockReturnValue(false);
             mocks.readDurableAuthority.mockRejectedValue(new Error('IndexedDB unavailable'));
