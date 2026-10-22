@@ -46,8 +46,12 @@ describe('isPianoPedalMoveEngaged', () => {
 });
 
 describe('isSwitchControllerRelease', () => {
+    // The raw switch frame spans the whole pedal band, so it answers for sustain (CC64)
+    // too: a value below the latch releases, whatever the controller. Sustain is a
+    // continuous position, not a switch — its true lift (value 0) is
+    // `isPedalControllerLift`'s own case.
     it.each([64, 65, 66, 67, 68, 69])(
-        'reads CC%i below the latch threshold as a release and at it as a press',
+        'reads CC%i under the raw switch frame: a value below the latch threshold releases, at or above it does not',
         (cc) => {
             expect(isSwitchControllerRelease(cc, 0)).toBe(true);
             expect(isSwitchControllerRelease(cc, 63)).toBe(true);

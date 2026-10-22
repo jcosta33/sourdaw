@@ -30,7 +30,7 @@ describe('transformMidiGlobalTimeState', () => {
         const prepared = state({
             notesByClipId: { source: [beforeNote, shiftedNote], dormant: dormantNotes },
             ccByClipId: { source: [{ id: 'cc', controller: 1, value: 64, beat: 5, channel: 1 }] },
-            pitchBendByClipId: { source: [{ id: 'pb', value: 0.5, beat: 5, channel: 1 }] },
+            pitchBendByClipId: { source: [{ id: 'pb', value: 4096, beat: 5, channel: 1 }] },
         });
 
         const result = transformMidiGlobalTimeState({
@@ -73,7 +73,7 @@ describe('transformMidiGlobalTimeState', () => {
                 remove: [{ id: 'remove-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
             },
             ccByClipId: { remove: [{ id: 'cc', controller: 1, value: 2, beat: 0, channel: 1 }] },
-            pitchBendByClipId: { remove: [{ id: 'pb', value: 0.2, beat: 0, channel: 1 }] },
+            pitchBendByClipId: { remove: [{ id: 'pb', value: 1600, beat: 0, channel: 1 }] },
         });
         const commands = [
             { type: 'split-notes' as const, sourceClipId: 'source', targetClipId: 'right', splitBeat: 4 },
@@ -225,7 +225,7 @@ describe('transformMidiGlobalTimeState', () => {
             channel: 12,
         };
         const sourceCc = { id: 'source-cc', controller: 1, value: 2, beat: 1, channel: 1 };
-        const sourcePitchBend = { id: 'source-pb', value: 0.3, beat: 1, channel: 1 };
+        const sourcePitchBend = { id: 'source-pb', value: 2400, beat: 1, channel: 1 };
         const existingTarget = { id: 'existing', pitch: 40, startBeat: 0, duration: 1, velocity: 50 };
         const prepared = state({
             notesByClipId: { source: [sourceNote], target: [existingTarget] },
@@ -441,7 +441,7 @@ describe('transformMidiGlobalTimeState shift edge cases', () => {
         const prepared = state({
             notesByClipId: { source: [{ id: 'n1', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }] },
             ccByClipId: { source: [{ id: 'cc', controller: 1, value: 64, beat: 5, channel: 1 }] },
-            pitchBendByClipId: { source: [{ id: 'pb', value: 0.5, beat: Number.MAX_VALUE, channel: 1 }] },
+            pitchBendByClipId: { source: [{ id: 'pb', value: 4096, beat: Number.MAX_VALUE, channel: 1 }] },
         });
         const result = transformMidiGlobalTimeState({
             state: prepared,
@@ -1021,10 +1021,10 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
         const prepared = state({
             pitchBendByClipId: {
                 source: [
-                    pitchBend('p0', 1, 0.2, 0),
-                    pitchBend('p1', 6, 0.8, 0),
-                    pitchBend('p2', 3, -0.5, 1),
-                    pitchBend('p3', 7, 0.1, 1),
+                    pitchBend('p0', 1, 1600, 0),
+                    pitchBend('p1', 6, 6500, 0),
+                    pitchBend('p2', 3, -4096, 1),
+                    pitchBend('p3', 7, 800, 1),
                 ],
             },
         });
@@ -1032,14 +1032,14 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
         const result = split(prepared, 4);
 
         expect(result.state.pitchBendByClipId.source).toEqual([
-            pitchBend('p0', 1, 0.2, 0),
-            pitchBend('p2', 3, -0.5, 1),
+            pitchBend('p0', 1, 1600, 0),
+            pitchBend('p2', 3, -4096, 1),
         ]);
         expect(result.state.pitchBendByClipId.right).toEqual([
-            pitchBend('pb-split:right:0', 0, 0.2, 0),
-            pitchBend('pb-split:right:2', 0, -0.5, 1),
-            pitchBend('pb-split:right:1', 2, 0.8, 0),
-            pitchBend('pb-split:right:3', 3, 0.1, 1),
+            pitchBend('pb-split:right:0', 0, 1600, 0),
+            pitchBend('pb-split:right:2', 0, -4096, 1),
+            pitchBend('pb-split:right:1', 2, 6500, 0),
+            pitchBend('pb-split:right:3', 3, 800, 1),
         ]);
     });
 
@@ -1085,7 +1085,7 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
     it('produces the same right clip event ids every time the command is applied to the same state', () => {
         const prepared = state({
             ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] },
-            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.2, 0), pitchBend('p1', 6, 0.8, 0)] },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 1600, 0), pitchBend('p1', 6, 6500, 0)] },
         });
 
         const first = split(prepared, 4);
@@ -1136,15 +1136,19 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
     it('carries the latest-beat pitch bend of each channel when the source rows are not in beat order', () => {
         const prepared = state({
             pitchBendByClipId: {
-                source: [pitchBend('late', 3, 0.6, 0), pitchBend('early', 1, 0.3, 0), pitchBend('other', 2, -0.4, 1)],
+                source: [
+                    pitchBend('late', 3, 4900, 0),
+                    pitchBend('early', 1, 2400, 0),
+                    pitchBend('other', 2, -3200, 1),
+                ],
             },
         });
 
         const result = split(prepared, 4);
 
         expect(result.state.pitchBendByClipId.right).toEqual([
-            pitchBend('pb-split:right:0', 0, 0.6, 0),
-            pitchBend('pb-split:right:2', 0, -0.4, 1),
+            pitchBend('pb-split:right:0', 0, 4900, 0),
+            pitchBend('pb-split:right:2', 0, -3200, 1),
         ]);
     });
 });
@@ -1166,7 +1170,7 @@ describe('transformMidiGlobalTimeState copy controllers and pitch bends', () => 
             ccByClipId: {
                 source: [cc('a', 1, 127, 64, 0), cc('b', 1, 0, 64, 0), cc('c', 2, 90, 64, 3), cc('d', 2, 10, 1, 0)],
             },
-            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.5, 0), pitchBend('p1', 3, -0.25, 2)] },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 4096, 0), pitchBend('p1', 3, -2048, 2)] },
         });
     }
 
@@ -1187,8 +1191,8 @@ describe('transformMidiGlobalTimeState copy controllers and pitch bends', () => 
             cc('cc-dup:target:3', 2, 10, 1, 0),
         ]);
         expect(result.state.pitchBendByClipId.target).toEqual([
-            pitchBend('pb-dup:target:0', 1, 0.5, 0),
-            pitchBend('pb-dup:target:1', 3, -0.25, 2),
+            pitchBend('pb-dup:target:0', 1, 4096, 0),
+            pitchBend('pb-dup:target:1', 3, -2048, 2),
         ]);
         expect(replay.state.ccByClipId.target).toEqual(result.state.ccByClipId.target);
         expect(replay.state.pitchBendByClipId.target).toEqual(result.state.pitchBendByClipId.target);
