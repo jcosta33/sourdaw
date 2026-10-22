@@ -1,62 +1,56 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultTransportState, type TransportState } from '../../../models/TransportState';
-import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { defaultTransportState } from '../../../models/TransportState';
+import { transportStore } from '../../../stores/transportStore';
 import { isTransportIdle } from '../isTransportIdle';
 import { recordingLifecycle } from '../recordingLifecycle';
-
-vi.mock('../../../repositories/transport/getTransportState', () => ({
-    getTransportState: vi.fn(),
-}));
-
-function transportWith(overrides: Partial<TransportState>): void {
-    vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, ...overrides });
-}
 
 describe('isTransportIdle', () => {
     beforeEach(() => {
         vi.useFakeTimers();
+        transportStore.set(defaultTransportState);
         recordingLifecycle.cancelPendingRecordingStart();
         recordingLifecycle.setCountInTimerId(null);
-        transportWith({});
     });
 
     afterEach(() => {
         recordingLifecycle.cancelPendingRecordingStart();
         recordingLifecycle.setCountInTimerId(null);
+        transportStore.set(defaultTransportState);
         vi.useRealTimers();
     });
 
-    it('is idle when nothing is rolling, recording or starting', () => {
+    it('is idle when nothing is rolling and no recording start is pending', () => {
         expect(isTransportIdle()).toBe(true);
     });
 
-    it('is idle before any transport state exists', () => {
-        vi.mocked(getTransportState).mockReturnValue(null);
+    it('is idle when no transport state has been published', () => {
+        transportStore.clear();
 
+        expect(transportStore.value).toBeNull();
         expect(isTransportIdle()).toBe(true);
     });
 
     it('is not idle while playing', () => {
-        transportWith({ isPlaying: true });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
 
         expect(isTransportIdle()).toBe(false);
     });
 
     it('is not idle while recording', () => {
-        transportWith({ isRecording: true });
+        transportStore.set({ ...defaultTransportState, isRecording: true });
 
         expect(isTransportIdle()).toBe(false);
     });
 
-    it('is not idle while a recording start is still opening its capture', () => {
+    it('is not idle while a recording start waits on its token', () => {
         recordingLifecycle.beginPendingRecordingStart();
 
         expect(isTransportIdle()).toBe(false);
     });
 
-    it('is not idle while a count-in is running', () => {
-        recordingLifecycle.setCountInTimerId(setTimeout(() => {}, 1000));
+    it('is not idle while a count-in timer is pending', () => {
+        recordingLifecycle.setCountInTimerId(setTimeout(() => undefined, 1000));
 
         expect(isTransportIdle()).toBe(false);
     });

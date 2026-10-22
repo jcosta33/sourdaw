@@ -935,7 +935,6 @@ export async function scheduleMidiNotes(
             clips: resolveStoredControllerClips({
                 trackId: track.id,
                 clips: track.clips,
-                notesByClipId: midiState.notesByClipId,
                 ccByClipId: midiState.ccByClipId,
             }),
             atBeat: fromBeat,
@@ -1070,10 +1069,7 @@ export async function scheduleMidiNotes(
 
         if (yeastDevice) {
             for (const clip of activeMidiClips) {
-                const sourceNotes = midiState.notesByClipId[clip.id];
-                if (!sourceNotes) {
-                    continue;
-                }
+                const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
 
                 const clipVisualLength = clip.endBeat - clip.startBeat;
                 const loopProjection = projectClipLoopExpansion({
@@ -1242,10 +1238,8 @@ export async function scheduleMidiNotes(
         }
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
-            const notes = midiState.notesByClipId[clip.id];
-            if (!notes) {
-                continue;
-            }
+            // A clip with no note list plays no notes; its stored controllers still play.
+            const notes = midiState.notesByClipId[clip.id] ?? [];
 
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
             const synthParams =

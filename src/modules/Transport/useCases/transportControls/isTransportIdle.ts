@@ -3,13 +3,15 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
- * True when nothing is rolling, recording, or about to: a Play or Record
- * gesture that is still counting in or opening its capture is not idle yet.
+ * True when nothing is rolling and nothing is about to: not playing, not
+ * recording, and no recording start waiting on its token or count-in timer.
+ * Read synchronously by a caller that must not replace the document under a
+ * live take; it holds only until the caller's next await.
  */
 export function isTransportIdle(): boolean {
     const state = getTransportState();
-    if (!state) {
-        return true;
+    if (state?.isPlaying || state?.isRecording) {
+        return false;
     }
-    return !state.isPlaying && !state.isRecording && !recordingLifecycle.hasPendingRecordingStart();
+    return !recordingLifecycle.hasPendingRecordingStart();
 }

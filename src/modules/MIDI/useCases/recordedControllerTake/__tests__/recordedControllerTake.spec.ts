@@ -202,6 +202,17 @@ describe('recorded controller take', () => {
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
+        it('lands a controller-only take without creating a note list for the clip', () => {
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            expect(midiStore.set).toHaveBeenCalledTimes(1);
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toHaveLength(1);
+            expect(mocks.midi.value?.notesByClipId[CLIP]).toBeUndefined();
+        });
+
         it('drops a clip buffer and starting pedals unwritten when its commit will not land', () => {
             holdPedal(0, 64, 127);
             beginTake();

@@ -366,6 +366,8 @@ type RunScheduleInput = {
     loopLengthBeats?: number;
     includeSecondClip?: boolean;
     emptyNotes?: boolean;
+    /** The clip has no note list at all, as a clip derived from a controller-only one does. */
+    noNoteList?: boolean;
     removeClips?: boolean;
     probability?: number;
     probabilityCorpus?: boolean;
@@ -392,6 +394,7 @@ async function runSchedule({
     loopLengthBeats,
     includeSecondClip = false,
     emptyNotes = false,
+    noNoteList = false,
     removeClips = false,
     probability,
     probabilityCorpus = false,
@@ -441,6 +444,9 @@ async function runSchedule({
     }
     if (emptyNotes) {
         midi.notesByClipId['clip-1'] = [];
+    }
+    if (noNoteList) {
+        delete midi.notesByClipId['clip-1'];
     }
     if (removeClips) {
         track.clips = [];
@@ -1213,6 +1219,11 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(mocks.processYeastMidi).not.toHaveBeenCalled();
 
         await runSchedule({ withYeast: true, emptyNotes: true });
+        expect(mocks.processYeastMidi).toHaveBeenCalledTimes(1);
+    });
+
+    it('drives source-free generators for a clip that has no note list, as for one with an empty list', async () => {
+        await runSchedule({ withYeast: true, noNoteList: true });
         expect(mocks.processYeastMidi).toHaveBeenCalledTimes(1);
     });
 });
@@ -2432,6 +2443,26 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
             `noteOn @${3 * BEAT_FRAMES}`,
             `noteOff @${4 * BEAT_FRAMES}`,
         ]);
+    });
+
+    // A controller-only recorded take, and a clip split, copied, duplicated or
+    // pasted from one, stores controller rows and no note list.
+    it('queues the stored pedal of a clip that has no note list and sounds no note for it', async () => {
+        const { arrivals, events } = await scheduleWithPedalLane({
+            shape: ({ midi }) => {
+                delete midi.notesByClipId['clip-1'];
+            },
+        });
+
+        expect(
+            events
+                .filter(isPendingControlWorkletEvent)
+                .map(({ time, controller, value }) => ({ time, controller, value }))
+        ).toEqual([
+            { time: 0.5, controller: 64, value: 127 },
+            { time: 1, controller: 64, value: 0 },
+        ]);
+        expect(arrivals).toEqual([`control 64=127 @${BEAT_FRAMES}`, `control 64=0 @${2 * BEAT_FRAMES}`]);
     });
 
     it('releases the last note of one clip before the carry its successor on the track opens with', async () => {

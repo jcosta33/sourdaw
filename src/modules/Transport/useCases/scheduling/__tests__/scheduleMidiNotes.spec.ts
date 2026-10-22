@@ -1010,6 +1010,21 @@ describe('scheduleMidiNotes', () => {
         // Probability defaults to 100 from the template, so the note is not gated out.
     });
 
+    it('runs the Yeast block for a clip that has no note list, as for one with an empty list', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: {} };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 } },
+            { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ]);
+
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(processYeastMidi).toHaveBeenCalledWith(expect.objectContaining({ rackId: 'y', trackId: 'track-1' }));
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+    });
+
     it('routes grooved generator notes by their final carrier and clips the note tail', async () => {
         const firstClip = midiClip({ id: 'clip-1', startBeat: 0, endBeat: 2 });
         const secondClip = midiClip({ id: 'clip-2', startBeat: 2.5, endBeat: 4 });
@@ -3889,6 +3904,35 @@ describe('scheduleMidiNotes', () => {
             expect(posted.indexOf(`sustain 1 @${BEAT_FRAMES}`)).toBeLessThan(posted.indexOf(`noteOn @${BEAT_FRAMES}`));
         });
 
+        it('posts the stored sustain of a clip that has no note list, as a controller-only take stores it', async () => {
+            const setSustain = vi.fn();
+            const noteOn = vi.fn();
+            stripWith({
+                type: 'grand-boule',
+                deviceId: 'gb-1',
+                grandBouleControls: {
+                    noteOn,
+                    noteOff: vi.fn(),
+                    noteExpression: vi.fn(),
+                    setSustain,
+                    setSostenuto: vi.fn(),
+                    setUnaCorda: vi.fn(),
+                },
+            });
+            loadTrack('grand-boule', 'gb-1', {
+                notesByClipId: {},
+                ccByClipId: {
+                    'clip-1': [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2)],
+                },
+            });
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(setSustain).toHaveBeenCalledWith(1, BEAT_FRAMES, true);
+            expect(setSustain).toHaveBeenCalledWith(0, 2 * BEAT_FRAMES, true);
+            expect(noteOn).not.toHaveBeenCalled();
+        });
+
         it('maps sostenuto and una corda to latches at the 64 threshold', async () => {
             const setSostenuto = vi.fn();
             const setUnaCorda = vi.fn();
@@ -4608,8 +4652,8 @@ describe('scheduleMidiNotes', () => {
                 rackAfterInstrument?: { id: string; type: string }[];
                 /** What stored playback already moved on the device, as a relocation finds it. */
                 alreadyMoved?: 'sustain' | 'cc11' | 'nothing';
-                /** The clips (by index) that have a stored lane but no note record. */
-                withoutNoteRecord?: readonly number[];
+                /** The clips (by index) that have a stored lane but no note list. */
+                withoutNoteList?: readonly number[];
             };
 
             /** A relocation of a track whose clips (each with its stored controller lane) are listed in track order. */
@@ -4620,7 +4664,7 @@ describe('scheduleMidiNotes', () => {
                     instrument = 'grand-boule',
                     rackAfterInstrument = [],
                     alreadyMoved = 'sustain',
-                    withoutNoteRecord = [],
+                    withoutNoteList = [],
                 }: RelocationOptions = {}
             ): Promise<string[]> {
                 const posted: string[] = [];
@@ -4671,7 +4715,7 @@ describe('scheduleMidiNotes', () => {
                 (midiStore as { value: unknown }).value = {
                     notesByClipId: Object.fromEntries(
                         clips.flatMap((_, index) =>
-                            withoutNoteRecord.includes(index) ? [] : [[`clip-${index + 1}`, []]]
+                            withoutNoteList.includes(index) ? [] : [[`clip-${index + 1}`, []]]
                         )
                     ),
                     ccByClipId: Object.fromEntries(clips.map(({ lane }, index) => [`clip-${index + 1}`, lane])),
@@ -4937,18 +4981,17 @@ describe('scheduleMidiNotes', () => {
                     });
                 });
 
-                it('does not carry the controllers of a clip that has no note record, as the window plays none of them', async () => {
+                it('carries the controllers of a clip that has no note list, as the window plays them', async () => {
                     const posted = await relocateTrackTo(
                         5,
                         [
                             { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
                             { clip: clipB, lane: [] },
                         ],
-                        { withoutNoteRecord: [0] }
+                        { withoutNoteList: [0] }
                     );
 
-                    // Nothing carries for the pedal stored playback moved, so it is lifted.
-                    expect(posted).toEqual(['sustain 0 @0']);
+                    expect(posted).toEqual(['sustain 1 @0']);
                 });
 
                 it('does not play the controllers of a muted clip', async () => {
