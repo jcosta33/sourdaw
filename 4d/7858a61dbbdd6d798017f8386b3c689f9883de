@@ -1,0 +1,50 @@
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchLineageTransition.ts
+  s_3e7dea5cde3f9e::t_dbece64d103197 12
+  s_3e7dea5cde3f9e::t_b4c3e15226881f 21,28
+src/modules/CrdtDocument/AGENTS.md
+  s_3e7dea5cde3f9e::t_d9fed242c555fb 32
+src/modules/CrdtDocument/useCases/crdtBranching/switchBranch.ts
+  s_3e7dea5cde3f9e::t_65d6698bc32060 45-66
+  s_3e7dea5cde3f9e::t_acead29b71782f 104-107
+  s_3e7dea5cde3f9e::t_8e13cdeab4990e 168
+  s_3e7dea5cde3f9e::t_98c546b0d22eee 1
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_3e7dea5cde3f9e::t_2ad933db9b07f3 237
+  s_3e7dea5cde3f9e::t_4fcdf7546b5f37 180
+  s_3e7dea5cde3f9e::t_7a7940a6f1878d 32-37
+  s_3e7dea5cde3f9e::t_00c56168a2c7af 81-103,111,119,121,125-132
+  s_3e7dea5cde3f9e::t_795a54e494550b 133
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_3e7dea5cde3f9e::t_b7e00185039001 3
+  s_3e7dea5cde3f9e::t_29610f8f08f863 243-244
+  s_3e7dea5cde3f9e::t_5553e6829bccb6 11
+  s_3e7dea5cde3f9e::t_7231e170fa1aa1 100-101,103-105
+  s_1c08b47ac3792f::t_eece124ae40481 204-242,245-318
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_3e7dea5cde3f9e::t_c53f63c8df1871 320-321
+  s_3e7dea5cde3f9e::t_d95aedcd7ea53b 278-319,322-349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d7858a61dbbdd6d798017f8386b3c689f9883de",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
