@@ -1,0 +1,21 @@
+crates/daw-plugin-host/src/clap_host.rs
+  s_59e31a5c6f3e31::t_4f3f91709aad5f 399-405
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_59e31a5c6f3e31::t_f75d67407a8f98 6540-6544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f57ee90964acaed988966fcccf8b0fc73a8e7b18",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
