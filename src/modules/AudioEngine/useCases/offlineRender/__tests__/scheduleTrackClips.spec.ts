@@ -2031,6 +2031,29 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             expect(arrivals.expression[0]!.bendSemitones).toBeCloseTo(fullBend, 6);
         });
 
+        it('starts a note on the last bend of the timeline before the region, whatever order the track lists its clips in', async () => {
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 1 },
+                {
+                    productionProjection: true,
+                    regionStartBeat: 5,
+                    clip: { startBeat: 6, endBeat: 10 },
+                    // Both bend-only clips end before the region, so the region start clamps both moves to its
+                    // first frame. The clip list puts the later clip (bend out) ahead of the earlier one
+                    // (bend down): the bend in force is the later clip's, though it comes first in the list.
+                    otherClips: [
+                        { clip: { id: 'clip-later', startBeat: 2, endBeat: 4 }, bends: [bendRow('out', 1, 8_191)] },
+                        { clip: { id: 'clip-earlier', startBeat: 0, endBeat: 2 }, bends: [bendRow('down', 1, -8_192)] },
+                    ],
+                }
+            );
+
+            // The note sits two beats (one second) into the region.
+            expect(arrivals.noteOn[0]?.sampleFrame).toBe(48_000);
+            expect(arrivals.expression).toHaveLength(1);
+            expect(arrivals.expression[0]!.bendSemitones).toBeCloseTo(fullBend, 6);
+        });
+
         it('lets a clip that is not a MIDI clip bend nothing', async () => {
             const arrivals = await dispatchOneNote(
                 { startBeat: 1, duration: 1 },

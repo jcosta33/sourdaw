@@ -575,10 +575,16 @@ export async function scheduleTrackClips({
         });
     }
 
+    // Where the render places a beat on the timeline, before the region start clamps it: a beat before the
+    // region is negative.
+    function timelineSecondsAtBeat(beat: number, toasterPadIndex: number): number {
+        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
+        return startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec;
+    }
+
     // Where the render places a beat, exactly as a note's own start is placed.
     function secondsAtBeat(beat: number, toasterPadIndex: number): number {
-        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
-        return Math.max(0, startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec);
+        return Math.max(0, timelineSecondsAtBeat(beat, toasterPadIndex));
     }
 
     // The frame `schedulePendingSuspends` addresses an event at a given time to.
@@ -605,9 +611,12 @@ export async function scheduleTrackClips({
             }
             return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
         });
+        // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
+        // zero, rather than the clamp every note shares: the bend in force at the region start is then the last
+        // one on the timeline, not the last one of the last clip in the track's clip list.
         return projectChannelBend({
             clips,
-            frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, -1)),
+            frameAtBeat: (beat) => frameAtSeconds(timelineSecondsAtBeat(beat, -1)),
         });
     }
 
