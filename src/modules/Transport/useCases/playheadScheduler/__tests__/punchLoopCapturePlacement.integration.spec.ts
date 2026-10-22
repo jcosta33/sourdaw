@@ -374,6 +374,27 @@ describe('punch audio capture loop placement', () => {
         vi.unstubAllGlobals();
     });
 
+    it('retains producer PCM through a punch-out in the final seam band', async () => {
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 11.95 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.starts === 1);
+        await advanceUntil(() => hardware.flushes === 1);
+        await recordingLifecycle.waitForCommits();
+
+        expect(hardware.starts).toBe(1);
+        expect(hardware.flushes).toBe(1);
+        expect(hardware.buffer?.length).toBeGreaterThan(0);
+        const capturedEndContextSeconds = hardware.zeroFrame / hardware.sampleRate + hardware.buffer!.duration;
+        expect(capturedEndContextSeconds).toBeGreaterThanOrEqual(51.975);
+        expect(capturedEndContextSeconds).toBeLessThan(51.975 + TICK_SECONDS);
+        const clip = recordedClips()[0]!;
+        expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
+        expect(hardware.buffer!.getChannelData(0).at(-1)).toBe(hardware.buffer!.length - 1);
+    });
+
     it('places automatic punch first media on its sounded traversal and retains completed-pass PCM', async () => {
         hardware.deferFirstFrame = true;
         await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
