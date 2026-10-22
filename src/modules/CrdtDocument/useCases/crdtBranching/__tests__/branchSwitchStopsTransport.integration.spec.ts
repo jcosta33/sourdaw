@@ -144,6 +144,45 @@ describe('branch switch stops the transport', () => {
         expect(readTake(DOC_PREFIX_ROOT)).toBeUndefined();
     });
 
+    it('refuses to replace the root when Record or Play starts while the stop is still flushing', async () => {
+        await forkProjectBranch('feature');
+        const outgoingBranchId = branchStore.value?.activeBranchId;
+        const outgoingDocId = activeBranchBackingDocId();
+        startRecordingSession();
+
+        let releaseFlush: () => void = () => undefined;
+        mocks.stopAudioRecording.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseFlush = resolve;
+                })
+        );
+        const originalReplace = automergeRepository.replaceDoc.bind(automergeRepository);
+        const transportAtEveryRootReplace: Array<typeof transportStore.value> = [];
+        vi.spyOn(automergeRepository, 'replaceDoc').mockImplementation((id, doc, tx) => {
+            if (id === DOC_PREFIX_ROOT) {
+                transportAtEveryRootReplace.push(transportStore.value);
+            }
+            originalReplace(id, doc, tx);
+        });
+
+        const switching = switchBranch('main');
+        const switchOutcome = expect(switching).rejects.toThrow('The transport started while switching branches');
+        // The stop already published an idle transport; Record pressed now is
+        // not blocked, and the flush it is waiting on has not landed yet.
+        expect(transportStore.value).toMatchObject({ isPlaying: false, isRecording: false });
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, overdubEnabled: true });
+        releaseFlush();
+        await switchOutcome;
+
+        expect(transportAtEveryRootReplace).toEqual([]);
+        expect(branchStore.value?.activeBranchId).toBe(outgoingBranchId);
+        expect(transportStore.value).toMatchObject({ isPlaying: true, isRecording: true });
+        expect(mocks.commitTake).toHaveBeenCalledTimes(1);
+        expect(readTake(outgoingDocId)).toBeUndefined();
+        expect(readTake(DOC_PREFIX_ROOT)).toBe(TAKE_MARKER);
+    });
+
     it('keeps the outgoing branch active when the transport cannot stop', async () => {
         await forkProjectBranch('feature');
         const activeBeforeSwitch = branchStore.value?.activeBranchId;

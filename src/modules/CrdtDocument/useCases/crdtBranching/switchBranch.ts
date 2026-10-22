@@ -3,7 +3,7 @@ import { clone as cloneDoc } from '@automerge/automerge';
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { captureUndoHistory, clearUndoHistory, restoreUndoHistory } from '#/modules/Command/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import { isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { createBranchError } from '../../errors/BranchError';
@@ -127,6 +127,15 @@ export async function switchBranch(branchId: string): Promise<void> {
     // callers with narrower affected-document sets are not changed.
     const capturedReference = captureActiveBranchReference();
     const undoSnapshot = captureUndoHistory();
+    // The stop published an idle transport at once and then awaited the
+    // recording commit, so Record or Play pressed in that window is already
+    // rolling. Nothing below awaits before `apply()` replaces the root, so this
+    // check holds at the replace; a take or playback started now would run on
+    // into the incoming branch. Refuse rather than stop again: the user's
+    // newer gesture stands and the switch can be repeated.
+    if (!isTransportIdle()) {
+        throw createBranchError('The transport started while switching branches. Stop it and switch again.');
+    }
     try {
         await runBranchLineageTransition({
             affectedDocIds: [DOC_PREFIX_ROOT, outgoingDocId],
