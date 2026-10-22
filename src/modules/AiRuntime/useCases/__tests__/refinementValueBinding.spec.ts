@@ -1996,6 +1996,24 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(admission(pending, recreated, 'add a Compressor to Bass')).toBe('valid');
         });
 
+        it('a kept pending command the request removes is refused whether it is re-emitted identically or changed', () => {
+            const rows: Array<[readonly StoredCommand[], readonly StoredCommand[], string, string]> = [
+                [[guitarPan], [guitarPan], 'drop the guitar pan', 'refused'],
+                [[guitarPan], [guitarPan], 'Remove the guitar pan', 'refused'],
+                [
+                    [guitarPan],
+                    [{ type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: 30 } }],
+                    'drop the guitar pan',
+                    'refused',
+                ],
+                [[guitarPan, vocalGain(0.5)], [guitarPan, vocalGain(0.6)], 'Set the vocal gain to 60%', 'valid'],
+                [[guitarPan], [guitarPan], 'Set the vocal gain to 60%', 'valid'],
+            ];
+            for (const [pending, next, prompt, status] of rows) {
+                expect({ prompt, status: admission(pending, next, prompt) }).toEqual({ prompt, status });
+            }
+        });
+
         it('a removal of a created object picks out exactly one pending creation, by name and host or a unique name', () => {
             const guitarCompressor = compressorOn('track-guitar', 'device-command-1');
             const bassCompressor = compressorOn('track-bass', 'device-command-2');

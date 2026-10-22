@@ -442,34 +442,40 @@ export function validateRefinedProposalActions(input: {
     }
     const remaining = [...input.actions];
     const oldActions = input.pendingActions;
-    const changed: Command[] = [];
-    for (const old of oldActions) {
-        const exact = remaining.findIndex((next) => canonicalJson(next) === canonicalJson(old));
-        if (exact >= 0) {
-            remaining.splice(exact, 1);
-        } else {
-            changed.push(old);
-        }
-    }
     const createdObjectOf = readsCreatedObjects(input.createdObject, input.context);
-    for (const old of changed) {
-        const identity = targetOf(old, createdObjectOf);
-        const changedIndex = remaining.findIndex((next) => targetOf(next, createdObjectOf) === identity);
-        const removed = explicitlyRemovesCommand({
+    const requestRemoves = (old: Command): boolean =>
+        explicitlyRemovesCommand({
             prompt: input.prompt,
             command: old,
             pendingActions: oldActions,
             context: input.context,
             createdObject: input.createdObject,
         });
+    const keptRemoval = (old: Command): { status: 'refused'; reason: string } => ({
+        status: 'refused',
+        reason: `Refined proposal keeps the pending ${old.type} command the request removes.`,
+    });
+    const changed: Command[] = [];
+    for (const old of oldActions) {
+        const exact = remaining.findIndex((next) => canonicalJson(next) === canonicalJson(old));
+        if (exact < 0) {
+            changed.push(old);
+            continue;
+        }
+        if (requestRemoves(old)) {
+            return keptRemoval(old);
+        }
+        remaining.splice(exact, 1);
+    }
+    for (const old of changed) {
+        const identity = targetOf(old, createdObjectOf);
+        const changedIndex = remaining.findIndex((next) => targetOf(next, createdObjectOf) === identity);
+        const removed = requestRemoves(old);
         if (changedIndex >= 0) {
             // A creation pairs under the fresh id every grounding mints, so pairing alone would keep
             // one the request removes.
-            if (removed && createdObjectOf(old) !== null) {
-                return {
-                    status: 'refused',
-                    reason: `Refined proposal keeps the pending ${old.type} command the request removes.`,
-                };
+            if (removed) {
+                return keptRemoval(old);
             }
             // The ordinary grounding route has already checked this changed command against the
             // new request's target and value; keep its paired occurrence out of addition matching.
