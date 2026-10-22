@@ -1,3 +1,4 @@
+import { refinementActionWords } from './refinementActionWords';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 
 type FormPattern = {
@@ -60,8 +61,22 @@ const REST_OF_MIX = /^(?:everything\s+else|anything\s+else|all\s+else|the\s+rest
 /** The whole clauses that keep the rest of the mix as it is without a slot. */
 const REST_CLAUSE = /^(?:nothing\s+else(?:\s+should\s+change)?|no\s+other\s+changes?)$/u;
 
-/** The closed form a whole clause, in normalized words, takes, and the slot it states; `null` for none. */
+/**
+ * The closed form a whole clause, in normalized words, takes, and the slot it states; `null` for none.
+ * The whole clause is read first, so an object whose name ends in a closing word keeps its name; only
+ * when it takes no form is it read again without the one closing word it ends on ("leave the Drum Bus
+ * unchanged please").
+ */
 function readStatedForm(words: string): StatedForm | null {
+    const whole = readWholeForm(words);
+    if (whole !== null) {
+        return whole;
+    }
+    const closed = refinementActionWords.withoutClosingWord(words).trim();
+    return closed === words ? null : readWholeForm(closed);
+}
+
+function readWholeForm(words: string): StatedForm | null {
     if (REST_CLAUSE.test(words)) {
         return { kind: 'rest' };
     }
@@ -133,10 +148,19 @@ function readNamedProtection(
     return { kind: 'protects', ids, leaveAlone };
 }
 
+/** Whether a slot names exactly one object, and that object is one a pending command acts on. */
+function namesOnePending(named: readonly NamedObject[], pendingIds: ReadonlySet<string>): boolean {
+    const [only] = named;
+    return (
+        named.length === 1 && only !== undefined && Array.from(only.candidate.denotes).some((id) => pendingIds.has(id))
+    );
+}
+
 /**
  * How one whole clause, in normalized words, reads as a protection; `null` when it takes no closed
- * form. The imperative `leave <object> alone` naming one object it cannot protect, or none, is the
- * removal the removal reading reads.
+ * form. The imperative `leave <object> alone` naming one pending object, or nothing at all, is the
+ * removal the removal reading reads; naming one object off the card it cannot protect (an operation of
+ * it, or a name several objects share), it is asked like any other protection.
  */
 function readProtection(words: string, scope: ProtectionScope): ProtectionRead | null {
     const stated = readStatedForm(words);
@@ -145,7 +169,7 @@ function readProtection(words: string, scope: ProtectionScope): ProtectionRead |
     }
     const named = resolveSlotObjects(stated.stated, scope.candidates);
     const read = readNamedProtection(stated, named, scope.pendingIds);
-    if (read.kind === 'asked' && stated.removalForm && (named === null || named.length === 1)) {
+    if (read.kind === 'asked' && stated.removalForm && (named === null || namesOnePending(named, scope.pendingIds))) {
         return { kind: 'removal', leaveAlone: true };
     }
     return read;

@@ -342,6 +342,7 @@ function findRestatementQuestion(input: {
     namesObjects: boolean;
     /** The pending command's own action words, or `null` when its source clause states none this reading reads. */
     ownActionWords: readonly string[] | null;
+    context: ProjectContext;
 }): string | null {
     const { clause, command } = input;
     if (findPromptNumbers(clause.masked).length > 0) {
@@ -356,8 +357,7 @@ function findRestatementQuestion(input: {
         ) {
             return null;
         }
-        const asProposed = own === null || own.length === 0 ? '' : ` ("${own.join(' ')}")`;
-        return `"${clause.text.trim()}" does not restate the pending change in the words that proposed it${asProposed}. Say what it should be instead, for example "make it 2 dB".`;
+        return refinementActionWords.askRestatement(clause.text.trim(), own, command, input.context);
     }
     const words = normalizePromptText(clause.masked);
     const level = readDirection(words);
@@ -699,6 +699,7 @@ function readFigurelessClause(input: FigureClauseInput): FigureRead {
                 command: view.command,
                 namesObjects: true,
                 ownActionWords: input.ownActionWords(view.index),
+                context: input.context,
             })
         )
         .find((candidate) => candidate !== null);

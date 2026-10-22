@@ -812,6 +812,42 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ).toEqual(expect.arrayContaining([{ id: 'track-bass', name: 'Bass' }]));
             expect(refine(P1_CARD, `${P1}, not at 2 dB`, P1_PLAN).status).toBe('clarify');
         });
+
+        it('asks a negation naming nothing beside a removal, which may withdraw it', () => {
+            const rows = [
+                'remove the snare, or not',
+                'remove the snare, maybe not',
+                'remove the snare, never',
+                'remove the snare... or not',
+                'not the snare, not sure',
+                'not the snare, not really',
+                'not the snare, not yet',
+                'not the snare, not now',
+                'not the snare, not quite',
+                'not the snare, not at all',
+                'not the snare, not that',
+                // The refinement text grounds this batch by itself, so the final check asks it.
+                'turn Vocals down 3 dB, remove the snare, or not',
+            ];
+            expect(
+                rows.map((refinement) => {
+                    const result = refine(P1_CARD, refinement, [vocalsBy(-3)]);
+                    return {
+                        refinement,
+                        asked: result.status === 'clarify' ? result.planningOutcome.questions[0] : result.status,
+                    };
+                })
+            ).toEqual(
+                rows.map((refinement) => ({
+                    refinement,
+                    asked: expect.stringContaining('beside a removal does not say whether that change is removed'),
+                }))
+            );
+            // The removal alone still removes and protects the snare.
+            const removed = refine(P1_CARD, 'not the snare', [vocalsBy(-3)]);
+
+            expect(commandsOf(removed)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }]);
+        });
     });
 
     describe('a removal names its object by the full name it states first', () => {
@@ -2114,6 +2150,69 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     'leaves out the pending setTrackGain on Vocals change the refinement restates'
                 ),
             });
+        });
+
+        it('reads one closing please, thanks, thank you or instead off the end of a restatement or toggle clause', () => {
+            const togglesOf = (result: ReturnType<typeof refine>) => {
+                if (result.status !== 'grounded') {
+                    return result.status;
+                }
+                return result.actions.map((action) => {
+                    const { trackId, muted, soloed } = payloadOf(action);
+                    return { trackId, muted, soloed };
+                });
+            };
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
+                [TWO_MUTES_CARD, 'mute Bass and mute Keys please', [bassMute(true), keysMute(true)]],
+                [TWO_MUTES_CARD, 'unmute Bass and mute Keys please', [bassMute(false), keysMute(true)]],
+                [TWO_MUTES_CARD, 'mute Bass and mute Keys instead', [bassMute(true), keysMute(true)]],
+                [SOLO_CARD, 'solo Bass please', [bassSolo(true)]],
+                [MUTE_CARD, 'mute Bass please', [bassMute(true)]],
+                [MUTE_CARD, 'unmute Bass please', [bassMute(false)]],
+                [MUTE_CARD, 'unmute Bass thanks', [bassMute(false)]],
+                [MUTE_CARD, 'unmute Bass thank you', [bassMute(false)]],
+            ];
+            expect(
+                rows.map(([card, refinement, calls]) => ({
+                    refinement,
+                    commands: togglesOf(refine(card, refinement, calls)),
+                }))
+            ).toEqual(
+                rows.map(([, refinement, calls]) => ({
+                    refinement,
+                    commands: calls.map((call) => expect.objectContaining(call.arguments)),
+                }))
+            );
+            // Only one closing entry, and only at the very end of the clause, is read off.
+            for (const refinement of ['mute Bass please thanks', 'mute instead Bass', 'mute please Bass']) {
+                expect({ refinement, status: refine(MUTE_CARD, refinement, [bassMute(true)]).status }).toEqual({
+                    refinement,
+                    status: 'clarify',
+                });
+            }
+        });
+
+        it('the restatement question suggests a change of the kind the pending command takes', () => {
+            const questionOf = (result: ReturnType<typeof refine>) =>
+                result.status === 'clarify' ? result.planningOutcome.questions[0] : result.status;
+            const bassPan = { name: 'setTrackPan', arguments: { trackId: 'track-bass', pan: -30 } };
+            const PAN_CARD = { prompt: 'pan Bass 30% left', calls: [bassPan] };
+
+            expect(questionOf(refine(MUTE_CARD, 'Bass mute off', [bassMute(false)]))).toBe(
+                '"Bass mute off" does not restate the pending change in the words that proposed it ("mute"). Say what it should be instead, for example "unmute Bass".'
+            );
+            expect(questionOf(refine(SOLO_CARD, 'solo Bass only', [bassSolo(true)]))).toContain(
+                'for example "unsolo Bass".'
+            );
+            expect(questionOf(refine(PAN_CARD, 'pan Bass only', [bassPan]))).toContain(
+                'for example "pan it 20% left".'
+            );
+            expect(questionOf(refine(P1_CARD, 'turn Vocals down only', [...P1_PLAN]))).toContain(
+                'for example "make it 2 dB".'
+            );
+            expect(questionOf(refine(PD_CARD, 'set Reverb mix only', PD_PLAN))).toMatch(
+                /does not restate the pending change in the words that proposed it( \("[^"]*"\))?\. Say what it should be instead\.$/u
+            );
         });
 
         it('the pending action words alone, with articles, restate it', () => {
@@ -3803,11 +3902,207 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ).toEqual(rows.map((refinement) => ({ refinement, commands: RESTATED_COMMANDS })));
         });
 
+        it('reads one closing please, thanks or thank you off the end of a protection clause', () => {
+            const rows = [
+                'turn Vocals down 4 dB and turn Snare down 2 dB, leaving the Drum Bus unchanged please',
+                'turn Vocals down 4 dB and turn Snare down 2 dB, leaving the Drum Bus unchanged thanks',
+                'turn Vocals down 4 dB and turn Snare down 2 dB, leaving the Drum Bus unchanged thank you',
+                'turn Vocals down 4 dB and turn Snare down 2 dB, leave the Drum Bus unchanged please',
+                'turn Vocals down 4 dB and turn Snare down 2 dB, leaving the Drum Bus untouched please',
+            ];
+            const calls = [vocalsBy(-4), snareBy(-2)];
+            expect(
+                rows.map((refinement) => ({ refinement, commands: commandsOf(refine(P1_CARD, refinement, calls)) }))
+            ).toEqual(
+                rows.map((refinement) => ({
+                    refinement,
+                    commands: [
+                        { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -4 },
+                        { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                    ],
+                }))
+            );
+            // Off the card, the closed form read without its closing word protects the object it names.
+            const later = { prompt: 'turn Bass up 2 dB', calls: [...RESTATED_PLAN, bassBy(2)] };
+            expect(chainOf(TWO_CUTS_CARD, `${RESTATED}, keep the Bass unchanged please`, RESTATED_PLAN, later)).toEqual(
+                {
+                    refinement: `${RESTATED}, keep the Bass unchanged please`,
+                    status: 'grounded',
+                    later: expect.stringContaining('changes "Bass", which the request chain leaves unchanged'),
+                }
+            );
+            // The whole clause is read first, so an object whose name ends in a closing word keeps its name.
+            const context = projectContext([...BASE_TRACKS, projectTrack('track-keys-instead', 'Keys Instead')]);
+            expect(
+                protectedBy(refine(TWO_CUTS_CARD, `${RESTATED}, no changes to Keys Instead`, RESTATED_PLAN, context))
+            ).toEqual([{ id: 'track-keys-instead', name: 'Keys Instead' }]);
+            // Naming a pending object, it is still asked; only one closing word is read off.
+            for (const refinement of [
+                `${RESTATED}, keep the Snare unchanged please`,
+                `${RESTATED}, keep the Bass unchanged please thanks`,
+            ]) {
+                expect({ refinement, status: refine(P1_CARD, refinement, RESTATED_PLAN).status }).toEqual({
+                    refinement,
+                    status: expect.stringMatching(/^(?:clarify|rejected)$/u),
+                });
+            }
+        });
+
         it('reads a bare "s" as seconds directly after a figure the value reading does not read', () => {
             // A full-width figure is no figure this reading binds; the "s" after it still states a unit, so
             // the clause asks what the value should be instead of standing as an unanswered addition.
             expect(refine(P0_CARD, 'make it ２ s', [vocalsBy(-3)]).status).toBe('clarify');
             expect(refine(P0_CARD, 'make it so', [vocalsBy(-3)]).status).toBe('rejected');
+        });
+    });
+
+    describe('each rule the removal and protection readers decide by holds an input that reaches it', () => {
+        const TWO_CUTS_CARD = { prompt: 'turn Vocals down 3 dB and turn Snare down 2 dB', calls: P1_PLAN };
+        const RESTATED = 'turn Vocals down 2 dB and turn Snare down 2 dB';
+        const RESTATED_PLAN = [vocalsBy(-2), snareBy(-2)];
+        const reverbOnPads: ProjectTrack['devices'][number] = { ...reverbDevice, id: 'device-reverb-pads' };
+        const PADS_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-pads', 'Pads', { deviceCount: 1, devices: [reverbOnPads] }),
+        ]);
+        const NO_SINGLE_CHANGE = 'which names no single change of the pending proposal';
+
+        function readOf(result: ReturnType<typeof ground>) {
+            if (result.status === 'rejected') {
+                return { status: result.status, said: result.rejectionReason };
+            }
+            if (result.status === 'clarify') {
+                return { status: result.status, said: result.planningOutcome.questions.join(' ') };
+            }
+            return {
+                status: result.status,
+                said: commandsOf(result),
+                protects: result.status === 'grounded' ? result.groundingBasis?.protectedUnchanged : null,
+            };
+        }
+
+        it('a bare object name after a negation or a "leave ... alone" continues no removal', () => {
+            for (const refinement of ['leave the snare alone, the vocals', 'not the snare, the vocals']) {
+                expect({ refinement, read: readOf(refine(P1_CARD, refinement, [vocalsBy(-3)])) }).toEqual({
+                    refinement,
+                    read: { status: 'clarify', said: expect.stringContaining('"the vocals" does not restate') },
+                });
+            }
+        });
+
+        it('a clause stating a figure is read as a value, never as a removal, unless it is a negation', () => {
+            expect(readOf(refine(P1_CARD, 'leave the snare at 2 dB alone', P1_PLAN))).toEqual({
+                status: 'clarify',
+                said: expect.stringContaining('"leave" beside 2 dB does not say'),
+            });
+            expect(readOf(refine(P1_CARD, 'not the snare at 2 dB', [vocalsBy(-3)]))).toEqual({
+                status: 'clarify',
+                said: expect.stringContaining('"not the snare at 2 dB" says what not to do'),
+            });
+        });
+
+        it('a "leave ... alone" naming several objects asks before a removal that follows its last object', () => {
+            expect(
+                readOf(refine(TWO_CUTS_CARD, 'leave the Drum Bus and Bass alone, remove the snare', [vocalsBy(-3)]))
+            ).toEqual({ status: 'clarify', said: expect.stringContaining('beside a removal does not say') });
+        });
+
+        it('a negation protects only a whole object off the card that one name denotes', () => {
+            // A pending object with no pending change of the operation it states.
+            expect(readOf(refine(P1_CARD, 'not the snare pan', [vocalsBy(-3)]))).toEqual({
+                status: 'rejected',
+                said: expect.stringContaining(`"the snare pan", ${NO_SINGLE_CHANGE}`),
+            });
+            // A name two objects off the card share.
+            expect(readOf(refine(TWO_CUTS_CARD, `${RESTATED}, not the Reverb`, RESTATED_PLAN, PADS_CONTEXT))).toEqual({
+                status: 'rejected',
+                said: expect.stringContaining(`"the reverb", ${NO_SINGLE_CHANGE}`),
+            });
+        });
+
+        it('a removal naming a name two pending objects share removes neither', () => {
+            const context = projectContext([
+                ...BASE_TRACKS,
+                projectTrack('track-vox-1', 'Vox'),
+                projectTrack('track-vox-2', 'Vox'),
+            ]);
+            const voxBy = (trackId: string): ProviderCall => ({
+                name: 'setTrackGain',
+                arguments: { trackId, deltaDb: -3 },
+            });
+            const card = {
+                prompt: 'turn track-vox-1 down 3 dB and turn track-vox-2 down 3 dB',
+                calls: [voxBy('track-vox-1'), voxBy('track-vox-2')],
+            };
+            for (const refinement of ['remove the Vox', 'not the Vox']) {
+                expect({ refinement, read: readOf(refine(card, refinement, [], context)) }).toEqual({
+                    refinement,
+                    read: { status: 'rejected', said: expect.stringContaining(`"the vox", ${NO_SINGLE_CHANGE}`) },
+                });
+            }
+        });
+
+        it('a protection list is read whole or not at all', () => {
+            // One part naming nothing leaves the whole list unread, never protecting the parts that resolve.
+            expect(
+                readOf(
+                    refine(
+                        TWO_CUTS_CARD,
+                        `${RESTATED}, keep the Drum Bus, Bass and Nonexistent unchanged`,
+                        RESTATED_PLAN
+                    )
+                )
+            ).toEqual({ status: 'clarify', said: expect.stringContaining('"Nonexistent unchanged" keeps something') });
+            // An object whose own name holds "and" is protected whole.
+            const rockContext = projectContext([...BASE_TRACKS, projectTrack('track-rock-and-roll', 'Rock and Roll')]);
+            expect(
+                readOf(refine(TWO_CUTS_CARD, `${RESTATED}, keep Rock and Roll unchanged`, RESTATED_PLAN, rockContext))
+            ).toEqual({
+                status: 'grounded',
+                said: [
+                    { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 },
+                    { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                ],
+                protects: [{ id: 'track-rock-and-roll', name: 'Rock and Roll' }],
+            });
+        });
+
+        it('rejoins clauses into a list only when their slot names more than one object', () => {
+            const listed = `${RESTATED}, keep the Bass, Keys unchanged`;
+            expect(readOf(refine(TWO_CUTS_CARD, listed, RESTATED_PLAN)).protects).toEqual(
+                expect.arrayContaining([
+                    { id: 'track-bass', name: 'Bass' },
+                    { id: 'track-keys', name: 'Keys' },
+                ])
+            );
+            // The rejoined slot "the Bass and Keys" names one object of that whole name, which the user
+            // never wrote, so the clauses are read apart and never protect it.
+            const context = projectContext([...BASE_TRACKS, projectTrack('track-bass-and-keys', 'Bass and Keys')]);
+            expect(readOf(refine(TWO_CUTS_CARD, listed, RESTATED_PLAN, context))).toEqual({
+                status: 'rejected',
+                said: expect.stringContaining('No proposed change answers "keep the Bass"'),
+            });
+        });
+
+        it('a "leave ... alone" naming one object off the card it cannot protect asks, as every protection form does', () => {
+            const rows: Array<[string, ProjectContext]> = [
+                [`${RESTATED}, leave the Bass pan alone`, CONTEXT],
+                [`${RESTATED}, leave the Reverb alone`, PADS_CONTEXT],
+            ];
+            expect(
+                rows.map(([refinement, context]) => ({
+                    refinement,
+                    status: refine(TWO_CUTS_CARD, refinement, RESTATED_PLAN, context).status,
+                }))
+            ).toEqual(rows.map(([refinement]) => ({ refinement, status: 'clarify' })));
+        });
+
+        it('consumes a clause that is exactly "instead" as filler', () => {
+            expect(readOf(refine(P0_CARD, 'make it 1.5 dB, instead', [vocalsBy(-1.5)]))).toEqual({
+                status: 'grounded',
+                said: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 }],
+                protects: [],
+            });
         });
     });
 

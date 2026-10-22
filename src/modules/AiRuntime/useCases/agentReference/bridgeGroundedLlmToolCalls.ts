@@ -6096,6 +6096,7 @@ function bridgeRefinedLlmToolCalls(
         text: prompt,
         context,
         unreadNegations: removals.unreadNegations,
+        removedCommandIndexes: removals.removedCommandIndexes,
         bindsValue: changesPendingValue(calls, inheritedCommandIndexes, basis),
     });
     if (unreadNegation !== null) {

@@ -566,6 +566,7 @@ function findClauseCombinationQuestion(input: {
                 command: view.command,
                 namesObjects: scope.namesObjects,
                 ownActionWords: scopeInput.ownActionWords(view.index),
+                context: input.context,
             });
             if (restated !== null) {
                 return restated;
@@ -654,21 +655,29 @@ function bindRefinementValues(input: {
 }
 
 /**
- * A negation naming no object ("not as much", "never mind", "not less") says something about a value
- * no clause binds. On its own it is read and left alone; beside a value the refinement binds or changes,
- * or a comparative it states, it is asked, whichever route grounded the batch: the inherited route asks
- * it while binding, and the final check every route passes asks it beside a pending value the batch
- * changes.
+ * A negation naming no object ("not as much", "never mind", "not less", "or not") says something about
+ * a change no clause names. On its own it is read and left alone; beside a removal, a value the
+ * refinement binds or changes, or a comparative it states, it is asked, whichever route grounded the
+ * batch: it may withdraw that removal or change that value ("remove the snare, or not"). The inherited
+ * route asks it while binding, and the final check every route passes asks it beside a removal or a
+ * pending value the batch changes.
  */
 function askUnreadNegation(input: {
     text: string;
     context: ProjectContext;
     unreadNegations: readonly RefinementClause[];
+    removedCommandIndexes: ReadonlySet<number>;
     bindsValue: boolean;
 }): { reason: string; question: string } | null {
     const [unreadNegation] = input.unreadNegations;
     if (unreadNegation === undefined) {
         return null;
+    }
+    if (input.removedCommandIndexes.size > 0) {
+        return {
+            reason: NEGATED_CLAUSE_REASON,
+            question: `"${unreadNegation.text.trim()}" beside a removal does not say whether that change is removed. Name each pending change to remove, as in "remove the snare".`,
+        };
     }
     if (!input.bindsValue && readRefinementComparative(input.text, input.context) === null) {
         return null;
