@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_a52fbf7e3068cc 658,660
+  s_59e31a5c6f3e31::t_b2d3bb5ece8bd8 90-95,101,656-657,659,661,686-689,691
+  s_59e31a5c6f3e31::t_112e7d2f0fb75a 55-63,158-162,164-169
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_76666085c77ec5 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "125309fc7449e0cf5e7b830718058caccdfea259",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
