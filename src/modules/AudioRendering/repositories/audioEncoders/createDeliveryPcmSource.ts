@@ -45,7 +45,7 @@ export function createDeliveryPcmSource(input: {
     }
     const length = Math.round((source.length * sampleRate) / source.sampleRate);
     if (!Number.isSafeInteger(length)) {
-        throw new Error('Delivery PCM exceeds the frame limit.');
+        throw new TypeError('Delivery PCM exceeds the frame limit.');
     }
     const cutoff = Math.min(1, sampleRate / source.sampleRate);
     return {
