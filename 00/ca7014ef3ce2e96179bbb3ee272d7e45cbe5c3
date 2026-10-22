@@ -1,0 +1,33 @@
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_59e31a5c6f3e31::t_5db74861483c90 25,135,198,200,276-282,327,400-401,416-417,566-571,573-579,582,587-596,599,640-687,735,745,1730,1733-1766
+scripts/__tests__/prValidationScope.spec.ts
+  s_59e31a5c6f3e31::t_2caa8a0c0a5da4 119-188
+scripts/e2eAffectedGraph.ts
+  s_ba8dd89de9aac7::t_01601f679b6cc2 50-64,570,575
+scripts/e2eSelectionShadowAgreement.ts
+  s_ba8dd89de9aac7::t_9f4458f0979149 4-10,144-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00ca7014ef3ce2e96179bbb3ee272d7e45cbe5c3",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
