@@ -1,0 +1,111 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_8eb57ad0f5119a 45
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_3e7ae65c75afac 92-96,100-105
+  s_1c08b47ac3792f::t_420fcbebfe7bbe 55-66,97-99,129-131,139,149-150,162-166,174-177,181,189
+  s_ba8dd89de9aac7::t_7dc2c03381b280 106-107
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_b39948f908b146 202,224
+  s_1c08b47ac3792f::t_c0cba647c14352 25-28
+  s_1c08b47ac3792f::t_9fb65262ef585b 227,234,251,351,371-375,381-382,384,386-389,391-392
+  s_1c08b47ac3792f::t_2a05c7fa1556de 16
+  s_1c08b47ac3792f::t_37ed12eebc873d 117
+  s_1c08b47ac3792f::t_1c9c0609e32565 292,390,393-406,412-422,424-433,435-436,452,461,485,554,603,605
+  s_1c08b47ac3792f::t_408ca40fa942d4 196-201,203-210,220-221
+  s_1c08b47ac3792f::t_d95570868f451a 423
+  s_1c08b47ac3792f::t_9561f4e875d84d 118
+  s_1c08b47ac3792f::t_082af8c44e9e50 187,385
+  s_1c08b47ac3792f::t_7d30c959d7d8ae 383
+  s_1c08b47ac3792f::t_51ace17ed80f7e 408
+  s_1c08b47ac3792f::t_54aae7ceed2a1f 376-380
+  s_1c08b47ac3792f::t_11a40683561dd7 491
+  s_1c08b47ac3792f::t_c5e90ad95115e6 82-83
+  s_1c08b47ac3792f::t_fb1a84dd31a454 407,409-411
+  s_1c08b47ac3792f::t_0b22220ee4ad0a 88-89
+  s_1c08b47ac3792f::t_2d39117fac1ed9 102-103
+  s_1c08b47ac3792f::t_9425d2c59e50e1 222-223,235-236,298-299,308,310,434,437-440,462-463,483,486,489,497-502,506-508,521,550,604,606-607
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_5a846c2dd64e7c 146
+  s_1c08b47ac3792f::t_3f64b38be34fd6 5679,5685-5688
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_8461cc7164bddd 34
+  s_1c08b47ac3792f::t_2f4dd026703057 2282-2413
+  s_1c08b47ac3792f::t_4e7f04aba8a820 1898-2035,2037-2038,2041,2043,2045-2046,2048-2062
+  s_1c08b47ac3792f::t_bc1c610ce050a1 2039-2040,2042,2044,2047
+  s_1c08b47ac3792f::t_1f36d35c584952 2085,2088-2090,2095,2097-2107
+  s_1c08b47ac3792f::t_1542527f152f10 1504
+  s_ba8dd89de9aac7::t_7d7904a7e3afe2 2036
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_42c021a8843e33 107-109
+  s_1c08b47ac3792f::t_843ba2a196d9d3 11
+  s_1c08b47ac3792f::t_de83dc2c9e169f 321-349,351-357,359-366,370-377,550,709
+  s_1c08b47ac3792f::t_238956debcfba4 298,385
+  s_1c08b47ac3792f::t_fd55839d0c161c 397
+  s_1c08b47ac3792f::t_b5646989c8534e 697-698,700-707
+  s_1c08b47ac3792f::t_2632a484993857 145
+  s_1c08b47ac3792f::t_294220b495416d 549,551,556,614,630,690-691,708,710
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_1c08b47ac3792f::t_cff30f2f7da649 200
+  s_1c08b47ac3792f::t_efe3fd119478a5 118
+  s_1c08b47ac3792f::t_c2d958a13cec75 100
+  s_1c08b47ac3792f::t_c9a3145bfcf019 212-229
+  s_1c08b47ac3792f::t_b3f9e00bc6ca6a 1-23,25-66,68-90,92-99,101-107,109-117,119-160,162-199,201-211
+  s_1c08b47ac3792f::t_44b14877f27e8b 24
+  s_1c08b47ac3792f::t_7285991519864d 91
+  s_1c08b47ac3792f::t_b146b68902c9b4 108
+  s_1c08b47ac3792f::t_b46e0032431ba3 161
+  s_1c08b47ac3792f::t_00d5dda6b617e5 67
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_d2ca832b1c97d9 38
+  s_1c08b47ac3792f::t_e01e5933aa00cd 481
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_2ca0b32af3931f 1068,1140
+  s_1c08b47ac3792f::t_63e6072fdd97a7 60
+src/modules/AiRuntime/useCases/agentReference/readStoredCardRemoval.ts
+  s_1c08b47ac3792f::t_d8c67f00f1c28d 248
+  s_1c08b47ac3792f::t_2ea4b8b4917191 120
+  s_1c08b47ac3792f::t_857fd0b014e1a0 385-386
+  s_1c08b47ac3792f::t_47bf6fbf17a377 198
+  s_1c08b47ac3792f::t_4037ace4815f6f 7
+  s_1c08b47ac3792f::t_7222f3bd3c9313 369
+  s_1c08b47ac3792f::t_5dd8098366cde2 328,330,334
+  s_1c08b47ac3792f::t_6a26c9cf4895a1 380
+  s_1c08b47ac3792f::t_aebf410a4e826e 382
+  s_1c08b47ac3792f::t_785af1cb81437c 392-396,399
+  s_1c08b47ac3792f::t_e787128952dd06 231,237
+  s_1c08b47ac3792f::t_92fdaa82d825b0 224
+  s_1c08b47ac3792f::t_38c5af8ba12677 230,234
+  s_1c08b47ac3792f::t_f8837cddef9fde 26,29
+  s_1c08b47ac3792f::t_d7a0a16082955c 1-6,8-25,27-28,30-119,121-197,199-223,225-229,232-233,235-236,238-247,249-327,329,331-333,335-368,370-379,381,383-384,387-391,397-398,400-428
+src/modules/AiRuntime/useCases/agentReference/refinementValueUnits.ts
+  s_1c08b47ac3792f::t_c348dd3b0ed907 75-82
+  s_1c08b47ac3792f::t_071cc767b48f5c 33
+  s_1c08b47ac3792f::t_adce458bb434db 22
+  s_1c08b47ac3792f::t_b2db01f3a0ce67 38
+  s_1c08b47ac3792f::t_74eba396ede588 52
+  s_1c08b47ac3792f::t_3671d3816bbc22 1-21,23-32,34-37,39-51,53-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00c54407793c36d8f614b6a8c634b416f9d8261b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
