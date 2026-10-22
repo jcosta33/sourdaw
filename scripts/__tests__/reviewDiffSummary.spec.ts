@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { changedReviewPaths, summarizeReviewDiff } from '../reviewDiffSummary.ts';
+import { changedReviewPaths, numstatFromPatch, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 
 function fixtureRoot(): string {
     const root = mkdtempSync(join(tmpdir(), 'review-diff-summary-'));
@@ -122,5 +123,43 @@ describe('changedReviewPaths', () => {
         expect(changedReviewPaths(root, numstat)).toEqual([
             { path: 'src/app.ts', group: 'handwritten', added: 1, deleted: 1, binary: false },
         ]);
+    });
+});
+
+describe('numstatFromPatch', () => {
+    it('reproduces git numstat records, renames, binaries and quoted paths from the patch alone', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'review-patch-numstat-'));
+        const git = (...args: string[]) =>
+            execFileSync('git', ['-c', 'core.quotePath=true', ...args], { cwd: repository });
+        try {
+            git('init', '-q');
+            git('config', 'user.email', 'author@example.com');
+            git('config', 'user.name', 'Author');
+            mkdirSync(join(repository, 'src'), { recursive: true });
+            writeFileSync(join(repository, 'src/edited.ts'), 'a\nb\nc\n');
+            writeFileSync(join(repository, 'src/removed.ts'), 'gone\n');
+            writeFileSync(join(repository, 'src/moved.ts'), `${'stable line\n'.repeat(20)}old\n`);
+            writeFileSync(join(repository, 'image.bin'), Buffer.from([0, 1, 2, 3]));
+            git('add', '-A');
+            git('commit', '-q', '-m', 'base');
+            const base = git('rev-parse', 'HEAD').toString().trim();
+            writeFileSync(join(repository, 'src/edited.ts'), 'a\nB\nc\nd\n');
+            rmSync(join(repository, 'src/removed.ts'));
+            git('mv', 'src/moved.ts', 'src/moved again.ts');
+            writeFileSync(join(repository, 'src/moved again.ts'), `${'stable line\n'.repeat(20)}new\n`);
+            writeFileSync(join(repository, 'image.bin'), Buffer.from([0, 9, 9, 9, 9]));
+            writeFileSync(join(repository, 'src/café.ts'), 'x\n');
+            mkdirSync(join(repository, 'docs/tools'), { recursive: true });
+            writeFileSync(join(repository, 'docs/tools/gen.ts'), 'export {};\n');
+            git('add', '-A');
+            git('commit', '-q', '-m', 'head');
+
+            const numstat = git('diff', '--numstat', '-z', `${base}...HEAD`);
+            const patch = git('diff', `${base}...HEAD`).toString('utf8');
+
+            expect(numstatFromPatch(patch).toString('utf8')).toBe(numstat.toString('utf8'));
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
 });
