@@ -1792,6 +1792,15 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
+        it('a lone "go ahead" clause is filler beside a removal the card still answers', () => {
+            const refinement = 'go ahead and remove the snare';
+
+            expect({ refinement, commands: commandsOf(refine(P1_CARD, refinement, [vocalsBy(-3)])) }).toEqual({
+                refinement,
+                commands: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }],
+            });
+        });
+
         it('a value for one pending command stated across two clauses asks, in either order and across any separator', () => {
             expectAsked(
                 P0_CARD,

@@ -107,7 +107,15 @@ type RemovalClauseInput = {
 const OPEN_VALUE_REASON = 'The refinement leaves part of the change it asks for open.';
 const NEGATED_CLAUSE_REASON = 'The refinement says what not to do without naming one pending change to remove.';
 const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
-const FILLER_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay', 'instead']);
+const FILLER_CLAUSES: ReadonlySet<string> = new Set([
+    'please',
+    'thanks',
+    'thank you',
+    'ok',
+    'okay',
+    'instead',
+    'go ahead',
+]);
 const COMPARATIVE =
     /^(?:(?:make it|go|do it)\s+)?(?:(?:a\s+)?(?:bit|little|touch|tad|lot)\s+|slightly\s+|much\s+|even\s+)?(less|more)(?:\s+please)?$/u;
 /** The one form a negation removes or protects in: `not`/`except`/`except for`/`without` and what follows. */
