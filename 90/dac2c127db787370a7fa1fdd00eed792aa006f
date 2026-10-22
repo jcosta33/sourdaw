@@ -1,0 +1,26 @@
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionKeepsRuntimeState.integration.spec.ts
+  s_3e7dea5cde3f9e::t_c600faf609cc85 88
+  s_3e7dea5cde3f9e::t_7af20ef4245ed7 107
+  s_3e7dea5cde3f9e::t_89a0d4418e300c 177-182,184-197
+  s_3e7dea5cde3f9e::t_63ed4a085071f6 183
+  s_3e7dea5cde3f9e::t_6f66d6e9ffafed 28-39,44-53
+  s_3e7dea5cde3f9e::t_8f3791303ace00 9
+  s_3e7dea5cde3f9e::t_68e288e5d87989 83-87,89-91
+  s_3e7dea5cde3f9e::t_613fd17aa5d249 198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90dac2c127db787370a7fa1fdd00eed792aa006f",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
