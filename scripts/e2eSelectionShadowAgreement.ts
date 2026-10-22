@@ -1,7 +1,13 @@
 import { writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 
-import { changedSourceOwners, knownFeatureOwners, selectsBrowserAi, specsForOwners } from './e2eAffectedGraph.ts';
+import {
+    changedSourceOwners,
+    graphCanHoldSource,
+    knownFeatureOwners,
+    selectsBrowserAi,
+    specsForOwners,
+} from './e2eAffectedGraph.ts';
 import { git, PLANNER_SOURCES } from './e2eSelectionShadowIntegration.ts';
 import { canNarrow, parseChangedPaths, productPathsOf, selectValidationPlan } from './prValidationScope.ts';
 
@@ -134,6 +140,9 @@ function rebuiltNarrowedPlan(live: ValidationPlan, context: PlanContext): Valida
     const productPaths = productPathsOf(context.paths, context.inventory, false);
     if (!canNarrow({ productPaths, candidateDiff: context.candidateDiff, integrationDiff: context.integrationDiff })) {
         return 'the planner does not narrow this change';
+    }
+    if (!productPaths.every(graphCanHoldSource)) {
+        return 'a changed source cannot be in the dependency graph';
     }
     const owners = claimedOwners(live);
     if (!owners) {
