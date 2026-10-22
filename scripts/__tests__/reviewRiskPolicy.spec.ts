@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     GOVERNANCE_TRANSITION_PATHS,
+    STRONGEST_DRAW_CLASSES,
     parseReviewRiskPlan,
     planReviewRisk,
     reviewStanceFloor,
@@ -490,6 +491,56 @@ describe('planReviewRisk', () => {
         const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3), other]);
 
         expect(result.riskClasses).not.toContain('docs-only');
+    });
+
+    it.each([
+        ['.github/workflows/nightly.test.yml', 'tests'],
+        ['.github/workflows/deploy.spec.yml', 'tests'],
+    ] as const)('should plan a workflow named %s native-security, never test-only', (path, group) => {
+        const result = reviewPlan([changed(path, group, 3, 1)]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toEqual(['native-security:.github/workflows/']);
+        expect(reviewStanceFloor(result)).toBe(3);
+        expect(STRONGEST_DRAW_CLASSES.has('native-security')).toBe(true);
+    });
+
+    it('should not plan a .github/ Markdown template docs-only', () => {
+        const result = reviewPlan([changed('.github/pull_request_template.md', 'docs', 4, 2)]);
+
+        expect(result.riskClasses).toEqual(['small']);
+        expect(reviewStanceFloor(result)).toBe(2);
+    });
+
+    it.each([
+        ['docs/run.sh', 'docs'],
+        ['docs/manual/coverage-exceptions.json', 'docs'],
+        ['public/legal/RELINKING.md', 'docs'],
+    ] as const)('should plan %s above docs-only, since docs-only is Markdown outside public/', (path, group) => {
+        const result = reviewPlan([changed(path, group, 4, 2)]);
+
+        expect(result.riskClasses).not.toContain('docs-only');
+        expect(reviewStanceFloor(result)).toBeGreaterThanOrEqual(2);
+    });
+
+    it.each(['docs/06-testing.md', 'AGENTS.md'])('should keep %s alone docs-only with a floor of one', (path) => {
+        const result = reviewPlan([changed(path, 'docs', 4, 2)]);
+
+        expect(result.riskClasses).toEqual(['docs-only']);
+        expect(reviewStanceFloor(result)).toBe(1);
+    });
+
+    it.each(['scripts/__tests__/x.spec.ts', 'electron/main.test.ts'])('should keep %s alone test-only', (path) => {
+        expect(reviewPlan([changed(path, 'tests', 4, 2)]).riskClasses).toEqual(['test-only']);
+    });
+
+    it('should keep docs plus a lockfile small', () => {
+        const result = reviewPlan([
+            changed('docs/06-testing.md', 'docs', 4, 2),
+            changed('pnpm-lock.yaml', 'generated', 9, 9),
+        ]);
+
+        expect(result.riskClasses).toEqual(['small']);
     });
 
     it('should not call a rename out of handwritten code into docs docs-only', () => {

@@ -177,8 +177,21 @@ function earnedStances(riskClasses: readonly ReviewRiskClass[]): ReviewStanceId[
  */
 type PathSide = Pick<ReviewChangedPath, 'path' | 'group'>;
 
+/**
+ * Repository-control paths classify as handwritten whatever the diff summary groups them as: a
+ * workflow named `*.test.yml` or a `.github/` template is never a test or a document to review
+ * lightly, so it can neither plan `test-only` or `docs-only` nor skip the specialist classes.
+ */
+const ALWAYS_HANDWRITTEN_PREFIXES = ['.github/'] as const;
+
+function riskSide(side: PathSide): PathSide {
+    const controlled = ALWAYS_HANDWRITTEN_PREFIXES.some((prefix) => side.path.startsWith(prefix));
+    return controlled ? { path: side.path, group: 'handwritten' } : side;
+}
+
 function sidesOf(entry: ReviewChangedPath): readonly PathSide[] {
-    return entry.previous === undefined ? [entry] : [entry, entry.previous];
+    const sides = entry.previous === undefined ? [entry] : [entry, entry.previous];
+    return sides.map(riskSide);
 }
 
 function prefixTriggers(rule: string, prefixes: readonly string[], sides: readonly PathSide[]): string[] {
@@ -277,11 +290,19 @@ function allSidesInGroup(paths: readonly ReviewChangedPath[], group: ReviewChang
     return paths.length > 0 && paths.every((entry) => sidesOf(entry).every((side) => side.group === group));
 }
 
+/**
+ * `docs-only` is prose alone: Markdown outside `public/`, which ships to users. The docs group also
+ * holds any file under `docs/`, such as scripts and data, which earn an ordinary size class.
+ */
+function isDocsOnlySide(side: PathSide): boolean {
+    return /\.mdx?$/u.test(side.path) && !side.path.startsWith('public/');
+}
+
 function classifyFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
     if (allSidesInGroup(paths, 'tests')) {
         return [{ riskClass: 'test-only', triggers: ['test-only:all-paths-are-tests'] }];
     }
-    if (allSidesInGroup(paths, 'docs')) {
+    if (allSidesInGroup(paths, 'docs') && paths.every((entry) => sidesOf(entry).every(isDocsOnlySide))) {
         return [{ riskClass: 'docs-only', triggers: ['docs-only:all-paths-are-docs'] }];
     }
     return decideFindings(paths);

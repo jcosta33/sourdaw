@@ -54,7 +54,8 @@ into it after. It reads no `stances.json`, `discarded.json`, `reassessment.json`
 `dossier.json` input, and logs one line when a bundle still carries them.
 
 The floor follows the risk plan. A new `docs-only` class, for a change whose every path is
-documentation, earns one stance. Distinct stances across `draws` must reach one for `docs-only` and
+Markdown outside `public/` and `.github/`, earns one stance; `.github/` paths never plan `test-only`
+or `docs-only`. Distinct stances across `draws` must reach one for `docs-only` and
 `test-only`, two for `small`, and otherwise three, or every stance the plan's classes earn when they
 earn fewer. A `realtime-audio`, `native-security`, or `undo` plan also needs one `strongest` draw. The
 baseline probe stays a reviewer instruction the orchestrator checks in each report; it is no longer

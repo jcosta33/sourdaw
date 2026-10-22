@@ -234,7 +234,7 @@ task-derived judgement.
 
 | Class                                                   | Earns                                                     | Draw floor         |
 | ------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| `docs-only` (every path in the docs group)              | correctness                                               | 1                  |
+| `docs-only` (every path Markdown outside `public/`)     | correctness                                               | 1                  |
 | `test-only` (every path a test)                         | test-validity                                             | 1                  |
 | `small` (no specialist surface, within the line budget) | correctness, test-validity                                | 2                  |
 | `ordinary` (no specialist surface, over the budget)     | correctness, code-craft, module-boundaries, test-validity | 3                  |
@@ -243,9 +243,10 @@ task-derived judgement.
 | `native-security`                                       | correctness, security-platform, test-validity             | 3, one `strongest` |
 | `undo`                                                  | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
 
-A plan of several classes needs three distinct stances, or every stance its
-classes earn when they earn fewer, plus one `strongest` draw when any of them is
-a specialist class.
+Every `.github/` path classifies as handwritten whatever its name, so it never
+plans `test-only` or `docs-only`. A plan of several classes needs three distinct
+stances, or every stance its classes earn when they earn fewer, plus one
+`strongest` draw when any of them is a specialist class.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
