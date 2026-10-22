@@ -1,0 +1,45 @@
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_3e7dea5cde3f9e::t_ab4c5575d2e386 106
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_3e7dea5cde3f9e::t_add8012b3631a4 54
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_3e7dea5cde3f9e::t_9d563b500b370c 41
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_3e7dea5cde3f9e::t_211c8a2c45b0d1 225
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_26aaf19682a9b0 99
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_3e7dea5cde3f9e::t_34ded7fc451496 49
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_3e7dea5cde3f9e::t_bc416f9f8c4d43 129
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_3e7dea5cde3f9e::t_a2da9e350468bd 90
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_3e7dea5cde3f9e::t_32431475432562 180
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_3e7dea5cde3f9e::t_cf6e6ad6c14385 36
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_c9b346b581031f 87
+src/app/__tests__/main.spec.tsx
+  s_3e7dea5cde3f9e::t_d0c6e7cc8a837f 99
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_9cd60b42105726 157
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_3e7dea5cde3f9e::t_13399ff1fda4b8 75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d691dfd9567eb241f75f09e2d8d4933ad02b4b2",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
