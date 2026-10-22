@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/recording/__tests__/stageRecordingTake.spec.ts
+  s_59e31a5c6f3e31::t_e1cbe548f2580e 87-130
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_59e31a5c6f3e31::t_1f9946caecf901 64-66
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_59e31a5c6f3e31::t_49509bd1c41e69 19,39-40,55-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5acdca1776f40c9d61bddc3ca4263c43fc568c8f",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
