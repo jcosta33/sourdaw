@@ -1,8 +1,8 @@
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { type NoteExpressionControls } from '../../engine/noteExpression';
-import { type Device } from '../../models/TrackViewTypes';
 import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
+import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import {
