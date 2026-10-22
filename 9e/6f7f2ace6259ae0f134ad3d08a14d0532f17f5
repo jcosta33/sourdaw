@@ -1,0 +1,39 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_68978d6a1052ef 45
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_f4b86b41082628 171-172,177-180,183,185
+  s_1c08b47ac3792f::t_c1f38d8287cca1 28-30
+  s_1c08b47ac3792f::t_e6f217eb9d2e7e 285-292,294-315,317
+  s_1c08b47ac3792f::t_ad0666eda60b05 354-355,361
+  s_1c08b47ac3792f::t_ea1050d9f48fe6 372
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_ae6a853629a4c8 427-428
+  s_1c08b47ac3792f::t_d514d5d6d250a5 465-478
+  s_1c08b47ac3792f::t_4673bcb021fff3 115-120
+  s_1c08b47ac3792f::t_0e633df69df77c 270
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_2fbd85570ea903 762-820
+  s_1c08b47ac3792f::t_4f669542c59b77 2015
+  s_1c08b47ac3792f::t_55ce9cb04f173f 1959-1964,1971-1997
+  s_1c08b47ac3792f::t_256af706decd15 1759-1790
+  s_1c08b47ac3792f::t_1189a887dbd64a 1998
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_8134dbf7ffd4e0 755
+  s_1c08b47ac3792f::t_acecf9924ca6b4 716-722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e6f7f2ace6259ae0f134ad3d08a14d0532f17f5",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
