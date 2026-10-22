@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH, migrateGrinderPatch, type GrinderPatch } from '../../../models/GrinderPatch';
 import { parseGrinderNamFile } from '../../../services/parseGrinderNamFile';
-
 import { syncGrinderPatchToAudio } from '../syncGrinderPatchToAudio';
 
 vi.mock('#/modules/Arrangement/stores', () => ({

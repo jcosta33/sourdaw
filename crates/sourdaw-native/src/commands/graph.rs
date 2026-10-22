@@ -1429,7 +1429,10 @@ fn push_initial_grinder_input<'a>(
 }
 fn native_grinder_inputs(batch: &GraphBatchPayload) -> Result<Vec<NativeGrinderInput<'_>>, String> {
     if batch.commands.len() > MAX_BATCH_COMMANDS {
-        return Err("Native graph batch command limit".into());
+        return Err(format!(
+            "batch carries {} commands, past the ceiling of {MAX_BATCH_COMMANDS}",
+            batch.commands.len()
+        ));
     }
     let mut inputs = Vec::with_capacity(16);
     for command in &batch.commands {
