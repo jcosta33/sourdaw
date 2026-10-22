@@ -183,8 +183,6 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
 // vitest spec can never drift apart: the whole-file snapshot, the shard
 // matrices, the permission-free files, and every job's step inventory.
 const {
-    assertApprovalGatedRequiredCheck,
-    assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
@@ -194,6 +192,10 @@ const {
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
+const { assertHostedWasmWorkflow } = await import(`${process.env.REPO_ROOT}/scripts/hostedWasmWorkflowContract.ts`);
+const { assertApprovalGatedRequiredCheck } = await import(
+    `${process.env.REPO_ROOT}/scripts/approvalGatedWorkflowContract.ts`
+);
 const { assertHostedQuantumMeasurementWorkflow } = await import(
     `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
 );

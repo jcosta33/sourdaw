@@ -21,11 +21,9 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
-    ADMITTED_CONDITION,
-    assertApprovalGatedRequiredCheck,
-    assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
@@ -38,6 +36,7 @@ import {
     STEP_INVENTORY,
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
+import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
 import {
     assertSemanticReviewWorkflow,
     SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT,

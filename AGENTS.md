@@ -569,6 +569,9 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
 - `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
   never required: it is the cheap pre-review signal, and a new head has no `Gate` until it is approved again.
+  Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
+  does not cancel an admitted run still working on the old head, and any later label event on the pull request
+  cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
 - `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
   `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
   reviewed head as Git objects and never checks out or executes it, and it mints the non-required

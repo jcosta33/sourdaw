@@ -56,16 +56,17 @@ function flattenReviewPages(reviews: unknown): unknown[] | undefined {
     return pages.flat();
 }
 
-function readReview(value: unknown): DecisiveReview | undefined {
-    if (!isRecord(value) || !isRecord(value.user)) {
+/**
+ * A review whose author or commit GitHub no longer reports (a deleted account answers `user: null`, a
+ * commit dropped by a force push answers `commit_id: null`) cannot be the reviewer App's review of a
+ * known head, so it is attributed to nobody and decides nothing.
+ */
+function attributedReview(review: Record<string, unknown>, state: string): DecisiveReview | undefined {
+    const { user, commit_id: commitId } = review;
+    if (!isRecord(user) || typeof user.node_id !== 'string' || typeof commitId !== 'string') {
         return undefined;
     }
-    const { state, commit_id: commitId } = value;
-    const nodeId = value.user.node_id;
-    if (typeof state !== 'string' || typeof commitId !== 'string' || typeof nodeId !== 'string') {
-        return undefined;
-    }
-    return { state, commitId, nodeId };
+    return { state, commitId, nodeId: user.node_id };
 }
 
 export function decideApprovalAdmission(input: ApprovalAdmissionInput): ApprovalAdmission {
@@ -84,11 +85,13 @@ export function decideApprovalAdmission(input: ApprovalAdmissionInput): Approval
     }
     const reviews: DecisiveReview[] = [];
     for (const entry of entries) {
-        const review = readReview(entry);
-        if (review === undefined) {
+        if (!isRecord(entry) || typeof entry.state !== 'string') {
             return refuse('the review list holds an unreadable review');
         }
-        reviews.push(review);
+        const review = attributedReview(entry, entry.state);
+        if (review !== undefined) {
+            reviews.push(review);
+        }
     }
     // GitHub lists reviews oldest first, so the last decisive one is the reviewer's current verdict.
     const verdict = reviews.findLast(

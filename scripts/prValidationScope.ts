@@ -32,6 +32,7 @@ const REVIEW_TOOLING = new Set([
     'repairReviewFinding',
     'resolveThread',
     'reviewApprovalFormat',
+    'reviewApprovalLabel',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
@@ -464,6 +465,38 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
+/** Paths that need browser coverage beyond documentation, recognized tooling, and collected specs. */
+export function productPathsOf(
+    paths: readonly string[],
+    specs: readonly string[],
+    packageScriptOnly: boolean
+): string[] {
+    return paths.filter(
+        (path) =>
+            !isDocumentation(path) &&
+            toolingReason(path, packageScriptOnly) === null &&
+            !(isSpec(path) && specs.includes(path))
+    );
+}
+
+const HISTORICAL_STATUS = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/;
+
+/** The planner narrows only live product sources under src/modules/; a deleted, renamed, copied, or retyped path widens. */
+export function canNarrow(input: {
+    productPaths: readonly string[];
+    candidateDiff: string;
+    integrationDiff: string;
+}): boolean {
+    const historicalChange = [input.candidateDiff, input.integrationDiff].some((value) =>
+        HISTORICAL_STATUS.test(value)
+    );
+    return (
+        !historicalChange &&
+        input.productPaths.length > 0 &&
+        input.productPaths.every((path) => path.startsWith('src/modules/'))
+    );
+}
+
 async function affectedFromCheckout(
     root: string,
     base: string,
@@ -497,13 +530,7 @@ async function affectedFromCheckout(
         paths.includes('package.json') &&
         packageUnchangedAtCheckout &&
         isOperationalPackageScriptChange(diff, base, head);
-    const productPaths = paths.filter(
-        (path) =>
-            !isDocumentation(path) &&
-            toolingReason(path, packageScriptOnly) === null &&
-            !(isSpec(path) && specs.includes(path))
-    );
-    const historicalChange = [diff, integrationDiff].some((value) => /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(value));
+    const productPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
         [
@@ -521,13 +548,7 @@ async function affectedFromCheckout(
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
     let affected: AffectedSelection | undefined;
-    if (
-        integrated &&
-        cleanGraphInputs &&
-        !historicalChange &&
-        productPaths.length > 0 &&
-        productPaths.every((path) => path.startsWith('src/modules/'))
-    ) {
+    if (integrated && cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
             affected = await loadAffectedE2e(root, productPaths, specs);

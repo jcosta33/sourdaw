@@ -117,6 +117,83 @@ describe('graph-backed browser selection', () => {
     });
 
     // Four planner invocations collect the real Playwright suite, alongside a direct list check.
+    it.each([
+        ['deletes', (git: (args: string[]) => string) => git(['rm', '--quiet', 'docs/retired.md'])],
+        ['renames', (git: (args: string[]) => string) => git(['mv', 'docs/retired.md', 'docs/moved.md'])],
+    ])(
+        'widens a module-only candidate when only the integration delta %s a path',
+        (_name, change) => {
+            const root = temporaryRoot();
+            const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust];
+            for (const path of [
+                source,
+                ...specs,
+                'scripts/e2eSuiteOwners.json',
+                'docs/retired.md',
+                'public/fixture.js',
+            ]) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            }
+            writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+            writeFileSync(join(root, 'docs/retired.md'), 'retired\n');
+            writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.' } }));
+            writeFileSync(
+                join(root, 'scripts/e2eSuiteOwners.json'),
+                JSON.stringify({
+                    version: 1,
+                    owners: ['Crust', 'Tuner'],
+                    entries: [
+                        { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                        { spec: crust, owners: ['Crust'] },
+                    ],
+                })
+            );
+            for (const spec of specs) {
+                writeFileSync(
+                    join(root, spec),
+                    `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+                );
+            }
+            fixturePlaywright(root);
+            writeFileSync(
+                join(root, 'playwright.config.mjs'),
+                "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+            );
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git(['init', '--quiet', '-b', 'trunk']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', 'src', 'public', 'scripts', 'tests', 'docs', 'tsconfig.json']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', '-b', 'feature']);
+            writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+            git(['add', source]);
+            git(['commit', '--quiet', '-m', 'change tuner panel']);
+            const head = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', 'trunk']);
+            change(git);
+            git(['commit', '--quiet', '-m', 'main moves a documentation path']);
+            git(['merge', '--quiet', '--no-ff', '-m', 'integration', 'feature']);
+            const output = join(root, 'github-output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(plan)).toEqual([crust, TUNER_SPECS[0]].sort());
+            expect(plan.reasons.some((row) => row.reason.startsWith('affected feature owners'))).toBe(false);
+        },
+        60_000
+    );
+
     it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
         const root = temporaryRoot();
         const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -317,6 +394,7 @@ const REVIEW_REPAIR_TOOLING = [
 ];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/reviewApprovalLabel.ts',
     'scripts/reviewRiskPolicy.ts',
     'scripts/savedProjectStatePaths.ts',
     'scripts/trustedGithubWriteBootstrap.ts',

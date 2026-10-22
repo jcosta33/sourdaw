@@ -5,12 +5,22 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
+import {
+    compareAuthoritativePlan,
+    integrationDeltaDiff,
+    reportShadowError,
+    skipWhenIntegrationDurationPlannerDiffers,
+    skipWhenIntegrationSourcesDiffer,
+    unionChangedPaths,
+} from './e2eSelectionShadowAgreement.ts';
 import certificate from './e2eSelectionShadowCertificate.json' with { type: 'json' };
 import {
     candidateShadowCapability,
     canonical,
     healthPolicyDigest,
+    integrationOwnersManifest,
     sha256,
+    skipWhenIntegrationPlannerDiffersFromControl,
     unsupportedShadowReport,
 } from './e2eSelectionShadowCompatibility.ts';
 import {
@@ -28,7 +38,7 @@ import {
     verifyIntegrationCheckout,
     type InventoryRow,
 } from './e2eSelectionShadowIntegration.ts';
-import { parseChangedPaths, selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
+import { parseChangedPaths, SMOKE_SPEC } from './prValidationScope.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 type ChangedRecord = {
@@ -47,6 +57,8 @@ type ShadowInput = {
     head: string;
     integrationSha: string;
     rawDiff: Buffer;
+    integrationDiff?: string;
+    readOwnersManifest: () => string;
     certificateSha256: string;
     records: ChangedRecord[];
     inventory: InventoryRow[];
@@ -226,6 +238,7 @@ function validateMeasurementInput(input: ShadowInput): {
     full: string[];
     live: string[];
     inventoryDrift: boolean;
+    agreementNotes: string[];
 } {
     if (!SHA.test(input.base) || !SHA.test(input.head) || !SHA.test(input.integrationSha)) {
         throw new Error('Shadow requires immutable base/head/integration SHAs');
@@ -237,7 +250,7 @@ function validateMeasurementInput(input: ShadowInput): {
     ) {
         throw new Error('Changed records disagree with raw diff');
     }
-    const paths = parseChangedPaths(input.rawDiff.toString('utf8'));
+    const paths = unionChangedPaths(input.rawDiff.toString('utf8'), input.integrationDiff);
     const headInventory = sortInventoryRows([...input.inventory]);
     const inventory = sortInventoryRows([...input.integrationInventory]);
     for (const rows of [headInventory, inventory]) {
@@ -248,35 +261,33 @@ function validateMeasurementInput(input: ShadowInput): {
             throw new Error('Invalid Playwright inventory');
         }
     }
-    for (const path of ['scripts/prValidationScope.ts', 'scripts/vitestCollectionPatterns.ts']) {
-        if (input.integrationSourceHashes[path] !== input.sourceHashes[path] || !input.sourceHashes[path]) {
-            throw new Error(`Integration selector or collector differs from candidate head: ${path}`);
-        }
-    }
+    skipWhenIntegrationSourcesDiffer(input, 'integration-selector-differs', 'Integration selector or collector', [
+        'scripts/prValidationScope.ts',
+        'scripts/vitestCollectionPatterns.ts',
+    ]);
+    skipWhenIntegrationDurationPlannerDiffers(input);
     const durations = parseBoundDurations(input);
-    for (const path of [
+    skipWhenIntegrationSourcesDiffer(input, 'integration-execution-policy-differs', 'Integration execution policy', [
         'playwright.config.ts',
         '.github/workflows/health-gates.yml',
         '.github/workflows/heavy-gates.yml',
         'package.json',
         'pnpm-lock.yaml',
-    ]) {
-        if (input.integrationSourceHashes[path] !== input.sourceHashes[path] || !input.sourceHashes[path]) {
-            throw new Error(`Integration execution policy differs from candidate head: ${path}`);
-        }
-    }
+    ]);
     const validationPath = '.github/workflows/validation.yml';
     const invalidValidation = 'Integration validation policy source is missing or nonregular';
     assert.equal(input.sourceModes[validationPath], '100644', invalidValidation);
     assert.match(String(input.sourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
     assert.match(String(input.integrationSourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
-    const expectedPlan = selectValidationPlan(
+    const agreement = compareAuthoritativePlan(input, {
         paths,
-        inventory.map((row) => row.path),
-        durations
-    );
-    if (canonical(expectedPlan) !== canonical(input.livePlan)) {
-        throw new Error('Authoritative scope artifact disagrees with the current selector or inventory');
+        inventory: inventory.map((row) => row.path),
+        durations,
+    });
+    if (!agreement.agrees) {
+        throw new Error(
+            `Authoritative scope artifact disagrees with the current selector or inventory: ${agreement.detail}`
+        );
     }
     const full = inventory.filter((row) => row.path !== SMOKE_SPEC).map((row) => row.path);
     if (full.length === 0) {
@@ -286,8 +297,9 @@ function validateMeasurementInput(input: ShadowInput): {
         headInventory,
         inventory,
         full,
-        live: expectedPlan.matrix.include.flatMap((group) => group.specs).sort(),
+        live: agreement.liveSpecs,
         inventoryDrift: canonical(headInventory) !== canonical(inventory),
+        agreementNotes: agreement.notes,
     };
 }
 
@@ -417,7 +429,7 @@ function candidateDecision(input: ShadowInput, reasons: string[]): string[] {
 }
 
 export function measureShadow(input: ShadowInput) {
-    const { headInventory, inventory, full, live, inventoryDrift } = validateMeasurementInput(input);
+    const { headInventory, inventory, full, live, inventoryDrift, agreementNotes } = validateMeasurementInput(input);
     const fallbackReasons = certificateReasons(input, inventory, full);
     if (inventoryDrift) {
         fallbackReasons.push('scope-head-inventory-drift');
@@ -465,6 +477,7 @@ export function measureShadow(input: ShadowInput) {
         astRoutes,
         candidateSpecs: candidate,
         liveSelectedSpecs: live,
+        authoritativeDiagnostics: agreementNotes,
         fallbackReasons,
         counts: { inventory: full.length, candidate: candidate.length, liveSelected: live.length },
         obligationDispositions,
@@ -473,13 +486,15 @@ export function measureShadow(input: ShadowInput) {
 
 function runSupportedShadow(input: {
     root: string;
+    controlRoot: string;
     integrationRoot: string;
     scopePath: string;
     base: string;
     head: string;
     integrationSha: string;
 }): void {
-    const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
+    const { root, controlRoot, integrationRoot, scopePath, base, head, integrationSha } = input;
+    skipWhenIntegrationPlannerDiffersFromControl({ controlRoot, integrationRoot, base, integrationSha });
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--']);
     const parsed = parseChangedRecords(rawDiff.toString('utf8'));
     const mergeBase = git(['merge-base', base, head]).toString('utf8').trim();
@@ -514,6 +529,8 @@ function runSupportedShadow(input: {
         head,
         integrationSha,
         rawDiff,
+        integrationDiff: integrationDeltaDiff(integrationRoot, base, integrationSha),
+        readOwnersManifest: () => integrationOwnersManifest(integrationRoot, integrationSha),
         certificateSha256,
         records,
         inventory: listInventory(root, head),
@@ -588,32 +605,13 @@ function main(): void {
         console.log(JSON.stringify({ measurementStatus: report.measurementStatus, counts: report.counts }));
         return;
     }
-    runSupportedShadow({ root, integrationRoot, scopePath, base, head, integrationSha });
+    runSupportedShadow({ root, controlRoot, integrationRoot, scopePath, base, head, integrationSha });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     try {
         main();
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        writeFileSync(
-            'e2e-selection-shadow.json',
-            `${JSON.stringify(
-                {
-                    schemaVersion: 1,
-                    shadowOnly: true,
-                    measurementStatus: 'failed',
-                    base: process.env.BASE_SHA ?? null,
-                    head: process.env.HEAD_SHA ?? null,
-                    integrationSha: process.env.INTEGRATION_SHA ?? null,
-                    controlSha: process.env.BASE_SHA ?? null,
-                    failureReason: reason,
-                },
-                null,
-                2
-            )}\n`
-        );
-        console.error(`E2E shadow measurement failed: ${reason}`);
-        process.exitCode = 1;
+        reportShadowError(error);
     }
 }

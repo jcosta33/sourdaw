@@ -85,9 +85,27 @@ describe('approval admission', () => {
         expect(decideApprovalAdmission(input({ reviews: [review('COMMENTED')] })).admitted).toBe(false);
     });
 
+    // GitHub answers `user: null` for a deleted account and `commit_id: null` for a commit a force push
+    // dropped; neither can be the reviewer App's review of this head, so neither may block admission.
+    it.each([
+        ['a deleted account', { ...review('APPROVED', HEAD, AUTHOR_BOT_NODE_ID), user: null }],
+        ['a force-pushed commit', { ...review('APPROVED'), commit_id: null }],
+        ['a user without a node id', { ...review('APPROVED'), user: { login: 'ghost' } }],
+    ])('decides past a review left by %s', (_label, unattributed) => {
+        expect(decideApprovalAdmission(input({ reviews: [unattributed, review('APPROVED')] })).admitted).toBe(true);
+        expect(
+            decideApprovalAdmission(input({ reviews: [review('APPROVED'), unattributed, review('CHANGES_REQUESTED')] }))
+        ).toEqual({
+            admitted: false,
+            reason: `the reviewer App's latest review of head ${HEAD} is CHANGES_REQUESTED`,
+        });
+    });
+
     it('fails closed on an unreadable review list or head', () => {
         expect(decideApprovalAdmission(input({ reviews: { message: 'Not Found' } })).admitted).toBe(false);
-        expect(decideApprovalAdmission(input({ reviews: [review('APPROVED'), { state: 'APPROVED' }] })).admitted).toBe(
+        expect(decideApprovalAdmission(input({ reviews: [review('APPROVED'), 'APPROVED'] })).admitted).toBe(false);
+        expect(decideApprovalAdmission(input({ reviews: [review('APPROVED'), { user: null }] })).admitted).toBe(false);
+        expect(decideApprovalAdmission(input({ reviews: [[review('APPROVED')], review('APPROVED')] })).admitted).toBe(
             false
         );
         expect(decideApprovalAdmission(input({ headSha: '' })).admitted).toBe(false);

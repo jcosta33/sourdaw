@@ -6,7 +6,9 @@ name: Health gates
 # Pushes run only the cheap pr-checks.yml; this heavy run starts when a label is
 # added, and admission lets it proceed only for the reviewer App's approval
 # label on its approval of this exact head. Any other label event still ends
-# in a failing Gate that names the reason, never a skipped one.
+# in a failing Gate that names the reason, never a skipped one. review:publish
+# applies the label after its publication lock is released; if that write
+# fails, a plain review:publish re-run replays the review and re-applies it.
 on:
   pull_request:
     types: [labeled]
@@ -15,6 +17,9 @@ permissions:
   contents: read
   pull-requests: read
 
+# One run per pull request: a newer label event supersedes an older run. The
+# cancelled run's gate still runs under always() and fails, and the newest run
+# always ends in its own non-skipped Gate, so no cancellation yields a skip.
 concurrency:
   group: health-gates-${{ github.event.pull_request.number }}
   cancel-in-progress: true

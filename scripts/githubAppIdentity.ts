@@ -24,9 +24,9 @@ export const AUTHOR_BOT_COMMIT_NAME = `${AUTHOR_BOT_COMMIT_LOGIN}[bot]`;
 export const AUTHOR_BOT_COMMIT_EMAIL = `${AUTHOR_BOT_DATABASE_ID}+${AUTHOR_BOT_COMMIT_NAME}@users.noreply.github.com`;
 
 /**
- * The label the reviewer App applies after it approves a head. Its `labeled` event is the only event
- * that starts the heavy checks and the required `Gate` (`.github/workflows/health-gates.yml`), and the
- * workflow admits it only when this App approved that exact head (`scripts/ciApprovalAdmission.ts`).
+ * The label the reviewer App applies after it approves a head: the signal approval-gated CI keys its
+ * heavy checks and required `Gate` on. `scripts/ciApprovalAdmission.ts` admits its `labeled` event
+ * only when this App applied it and approved that exact head.
  */
 export const CI_APPROVAL_LABEL = 'ci:approved';
 

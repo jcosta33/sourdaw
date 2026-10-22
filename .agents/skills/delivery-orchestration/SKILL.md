@@ -116,7 +116,9 @@ The delivery sequence, in order:
    `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
 5. On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the
    current head records the delivery authorization in the head's dossier, and
-   `review:publish` then re-applies the `ci:approved` label as the reviewer App.
+   `review:publish` then re-applies the `ci:approved` label as the reviewer App,
+   after its publication lock is released; a failed label write exits nonzero
+   naming the pull request, and a plain re-run replays the review and retries it.
    That label event alone starts the heavy checks and `Gate`, so CI capacity is
    spent once per approved head; `REQUEST_CHANGES` removes the label. Re-running
    `review:publish` on the same head replays the review and re-applies the label,
