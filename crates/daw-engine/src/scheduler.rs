@@ -12671,9 +12671,9 @@ mod tests {
                 for (name, value) in &writes {
                     body.set_param(name.as_str(), *value);
                 }
-                assert!(!body.set_param("eq_band0Xfreq",800.0));
-                assert!(!body.set_param("input_gain",f32::NAN));
-                assert_eq!(body.chain.get_module_order(),[0,1,2,3,4]);
+                assert!(!body.set_param("eq_band0Xfreq", 800.0));
+                assert!(!body.set_param("input_gain", f32::NAN));
+                assert_eq!(body.chain.get_module_order(), [0, 1, 2, 3, 4]);
                 body.process(&mut left, &mut right);
             });
 
@@ -24688,32 +24688,50 @@ mod timeline_tests {
 
     #[test]
     fn proof_body_registry_refuses_bad_targets_without_mutating_order_or_audio() {
-        let patch=proof_patch(&[("input_gain",3.0),("lim_ceiling",-3.0)]);
-        let mut actual=ProofBody::new(PROOF_RATE);actual.load_patch(&patch);
-        assert!(!actual.set_param("chain_order_0",4.5));
-        assert!(!actual.set_param("eq_band0Xfreq",800.0));
-        assert!(!actual.set_param("input_gain",f32::NAN));
-        assert!(!actual.set_param("bypass",1.0));
-        assert!(!actual.set_param("target_lufs",-14.0));
-        assert_eq!(actual.chain.get_module_order(),[0,1,2,3,4]);
-        let mut reference=ProofBody::new(PROOF_RATE);reference.load_patch(&patch);
-        let material=proof_burst_material(4096);
-        let rendered=proof_render(&mut actual,&material);
-        assert!(rendered.iter().any(|value|*value!=0.0));
-        assert_eq!(rendered,proof_render(&mut reference,&material));
-        assert!(actual.set_param("input_gain",-6.0));
+        let patch = proof_patch(&[("input_gain", 3.0), ("lim_ceiling", -3.0)]);
+        let mut actual = ProofBody::new(PROOF_RATE);
+        actual.load_patch(&patch);
+        assert!(!actual.set_param("chain_order_0", 4.5));
+        assert!(!actual.set_param("eq_band0Xfreq", 800.0));
+        assert!(!actual.set_param("input_gain", f32::NAN));
+        assert!(!actual.set_param("bypass", 1.0));
+        assert!(!actual.set_param("target_lufs", -14.0));
+        assert_eq!(actual.chain.get_module_order(), [0, 1, 2, 3, 4]);
+        let mut reference = ProofBody::new(PROOF_RATE);
+        reference.load_patch(&patch);
+        let material = proof_burst_material(4096);
+        let rendered = proof_render(&mut actual, &material);
+        assert!(rendered.iter().any(|value| *value != 0.0));
+        assert_eq!(rendered, proof_render(&mut reference, &material));
+        assert!(actual.set_param("input_gain", -6.0));
     }
 
     #[test]
     fn proof_order_staging_is_admitted_before_a_permutation_is_installed() {
         let mut instance = PluginCore::proof_with_patch(PROOF_RATE, &[]);
-        assert!(apply_builtin_param(&mut instance, DeviceParam::BuiltinNamed(proof_name("chain_order_0")), 4.0));
-        let PluginCore::Proof(body) = &instance else { unreachable!() };
+        assert!(apply_builtin_param(
+            &mut instance,
+            DeviceParam::BuiltinNamed(proof_name("chain_order_0")),
+            4.0
+        ));
+        let PluginCore::Proof(body) = &instance else {
+            unreachable!()
+        };
         assert_eq!(body.chain.get_module_order(), [0, 1, 2, 3, 4]);
-        assert!(apply_builtin_param(&mut instance, DeviceParam::BuiltinNamed(proof_name("chain_order_4")), 0.0));
-        let PluginCore::Proof(body) = &instance else { unreachable!() };
+        assert!(apply_builtin_param(
+            &mut instance,
+            DeviceParam::BuiltinNamed(proof_name("chain_order_4")),
+            0.0
+        ));
+        let PluginCore::Proof(body) = &instance else {
+            unreachable!()
+        };
         assert_eq!(body.chain.get_module_order(), [4, 1, 2, 3, 0]);
-        assert!(!apply_builtin_param(&mut instance, DeviceParam::BuiltinNamed(proof_name("chain_order_0")), 1.5));
+        assert!(!apply_builtin_param(
+            &mut instance,
+            DeviceParam::BuiltinNamed(proof_name("chain_order_0")),
+            1.5
+        ));
     }
 
     // ── Proof ──────────────────────────────────────────────────────────────
