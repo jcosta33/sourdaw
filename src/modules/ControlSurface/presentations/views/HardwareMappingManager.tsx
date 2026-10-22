@@ -68,9 +68,11 @@ export const HardwareMappingManager = (): ReactElement => {
             if (result === 'cancelled') {
                 return;
             }
-            setFeedback(result === 'imported'
-                ? { error: false, message: 'Mappings imported.' }
-                : { error: true, message: 'Mapping file was not imported. Existing mappings were kept.' });
+            setFeedback(
+                result === 'imported'
+                    ? { error: false, message: 'Mappings imported.' }
+                    : { error: true, message: 'Mapping file was not imported. Existing mappings were kept.' }
+            );
         });
     };
 
@@ -79,9 +81,11 @@ export const HardwareMappingManager = (): ReactElement => {
             return;
         }
         const downloaded = downloadHardwareMappings(profile.id);
-        setFeedback(downloaded
-            ? { error: false, message: 'Mapping download started.' }
-            : { error: true, message: 'Mapping file could not be exported.' });
+        setFeedback(
+            downloaded
+                ? { error: false, message: 'Mapping download started.' }
+                : { error: true, message: 'Mapping file could not be exported.' }
+        );
     };
 
     return (
@@ -96,7 +100,9 @@ export const HardwareMappingManager = (): ReactElement => {
             >
                 {state.profiles.length === 0 ? <option value="">No profiles</option> : null}
                 {state.profiles.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                    <option key={candidate.id} value={candidate.id}>
+                        {candidate.name}
+                    </option>
                 ))}
             </DawCompactSelect>
             {profile ? (
@@ -106,25 +112,44 @@ export const HardwareMappingManager = (): ReactElement => {
                     <div className="max-h-48 overflow-auto">
                         <table className="w-full text-left text-xs">
                             <caption className="sr-only">{profile.name} mappings</caption>
-                            <thead><tr><th scope="col">Control</th><th scope="col">Channel</th><th scope="col">Action</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Control</th>
+                                    <th scope="col">Channel</th>
+                                    <th scope="col">Action</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 {profile.mappings.map((mapping) => (
                                     <tr key={mapping.id}>
-                                        <td>{mapping.controlType} {mapping.controlIndex}</td>
+                                        <td>
+                                            {mapping.controlType} {mapping.controlIndex}
+                                        </td>
                                         <td>{mapping.channel}</td>
-                                        <td>{mapping.action.type}{mapping.action.target ? `: ${mapping.action.target}` : ''}</td>
+                                        <td>
+                                            {mapping.action.type}
+                                            {mapping.action.target ? `: ${mapping.action.target}` : ''}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 )
-            ) : <p className="text-xs text-muted-foreground">No hardware profiles are available.</p>}
+            ) : (
+                <p className="text-xs text-muted-foreground">No hardware profiles are available.</p>
+            )}
             <Row gap={2}>
                 <Button type="button" variant="outline" size="sm" disabled={!profile} onClick={exportFile}>
                     Export mappings
                 </Button>
-                <Button type="button" variant="outline" size="sm" disabled={!profile} onClick={() => input.current?.click()}>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!profile}
+                    onClick={() => input.current?.click()}
+                >
                     Import mappings
                 </Button>
                 <input
@@ -138,8 +163,16 @@ export const HardwareMappingManager = (): ReactElement => {
                     onChange={importFile}
                 />
             </Row>
-            {pending ? <p role="status" className="text-xs text-muted-foreground">Reading mapping file…</p> : null}
-            {feedback ? <p role={feedback.error ? 'alert' : 'status'} className="text-xs text-muted-foreground">{feedback.message}</p> : null}
+            {pending ? (
+                <p role="status" className="text-xs text-muted-foreground">
+                    Reading mapping file…
+                </p>
+            ) : null}
+            {feedback ? (
+                <p role={feedback.error ? 'alert' : 'status'} className="text-xs text-muted-foreground">
+                    {feedback.message}
+                </p>
+            ) : null}
         </section>
     );
 };

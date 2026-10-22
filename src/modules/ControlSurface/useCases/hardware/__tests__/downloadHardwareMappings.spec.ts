@@ -21,16 +21,31 @@ describe('downloadHardwareMappings', () => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         hardwareControllerStore.set({
             connectedDevices: [],
-            profiles: [{
-                id: 'p1', name: 'One', manufacturer: 'M', productId: ['one'],
-                mappings: [{ id: 'play', controlType: 'button', controlIndex: 85, channel: 1,
-                    action: { type: 'transport', target: 'togglePlayback' } }],
-            }],
+            profiles: [
+                {
+                    id: 'p1',
+                    name: 'One',
+                    manufacturer: 'M',
+                    productId: ['one'],
+                    mappings: [
+                        {
+                            id: 'play',
+                            controlType: 'button',
+                            controlIndex: 85,
+                            channel: 1,
+                            action: { type: 'transport', target: 'togglePlayback' },
+                        },
+                    ],
+                },
+            ],
         });
-        vi.stubGlobal('URL', class extends URL {
-            static createObjectURL = vi.fn(() => 'blob:mappings');
-            static revokeObjectURL = vi.fn();
-        });
+        vi.stubGlobal(
+            'URL',
+            class extends URL {
+                static createObjectURL = vi.fn(() => 'blob:mappings');
+                static revokeObjectURL = vi.fn();
+            }
+        );
         vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     });
 
@@ -65,7 +80,9 @@ describe('downloadHardwareMappings', () => {
 
     it('reports browser download failure without changing the profile', () => {
         const before = hardwareControllerStore.value;
-        vi.mocked(URL.createObjectURL).mockImplementation(() => { throw new Error('download refused'); });
+        vi.mocked(URL.createObjectURL).mockImplementation(() => {
+            throw new Error('download refused');
+        });
         expect(downloadHardwareMappings('p1')).toBe(false);
         expect(hardwareControllerStore.value).toBe(before);
         expect(mocks.notify).toHaveBeenCalledWith(expect.stringContaining('download refused'), 'error');

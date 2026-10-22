@@ -84,7 +84,9 @@ describe('importHardwareMappingsFile', () => {
     });
 
     it('admits the exact file limit and a valid mapping file larger than one MiB', async () => {
-        const large = JSON.stringify([{ ...mappings[0], action: { type: 'parameter', target: 'x'.repeat(1024 * 1024) } }]);
+        const large = JSON.stringify([
+            { ...mappings[0], action: { type: 'parameter', target: 'x'.repeat(1024 * 1024) } },
+        ]);
         const file = new File([large], 'large-valid.json');
         Object.defineProperty(file, 'size', { value: 16 * 1024 * 1024 });
         mocks.read.mockResolvedValueOnce(large);

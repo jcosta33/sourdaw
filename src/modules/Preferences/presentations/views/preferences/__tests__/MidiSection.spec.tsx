@@ -60,10 +60,13 @@ describe('MidiSection', () => {
     });
 
     it('reaches real profile inspection and file import/export from the MIDI preferences entry', async () => {
-        vi.stubGlobal('URL', class extends URL {
-            static createObjectURL = vi.fn(() => 'blob:preferences-mappings');
-            static revokeObjectURL = vi.fn();
-        });
+        vi.stubGlobal(
+            'URL',
+            class extends URL {
+                static createObjectURL = vi.fn(() => 'blob:preferences-mappings');
+                static revokeObjectURL = vi.fn();
+            }
+        );
         vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
         try {
             render(<MidiSection prefs={{ ...defaultPreferences }} update={vi.fn()} />);
@@ -84,12 +87,13 @@ describe('MidiSection', () => {
             const file = new File([original.replace('"controlIndex": 85', '"controlIndex": 86')], 'mapping.json');
             // The production repository still reads the File; jsdom needs its browser text method supplied.
             Object.defineProperty(file, 'text', {
-                value: () => new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(String(reader.result));
-                    reader.onerror = () => reject(reader.error);
-                    reader.readAsText(file);
-                }),
+                value: () =>
+                    new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result));
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsText(file);
+                    }),
             });
             fireEvent.change(screen.getByLabelText('Mapping JSON file'), { target: { files: [file] } });
             await waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());

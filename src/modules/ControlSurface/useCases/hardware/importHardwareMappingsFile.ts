@@ -26,7 +26,8 @@ export async function importHardwareMappingsFile(
         return 'rejected';
     }
     const stillOwnsImport = (): boolean =>
-        isCurrent() && hardwareControllerStore.value?.profiles.find((candidate) => candidate.id === profileId) === profile;
+        isCurrent() &&
+        hardwareControllerStore.value?.profiles.find((candidate) => candidate.id === profileId) === profile;
 
     let json: string;
     try {

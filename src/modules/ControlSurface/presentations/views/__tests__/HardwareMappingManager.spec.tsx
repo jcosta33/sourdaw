@@ -14,12 +14,13 @@ function fileFromBlob(blob: Blob): File {
     const file = new File([blob], 'mappings.json', { type: 'application/json' });
     // jsdom has FileReader but does not implement the browser's Blob.text().
     Object.defineProperty(file, 'text', {
-        value: () => new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsText(file);
-        }),
+        value: () =>
+            new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result));
+                reader.onerror = () => reject(reader.error);
+                reader.readAsText(file);
+            }),
     });
     return file;
 }
@@ -49,10 +50,13 @@ describe('HardwareMappingManager', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.stubGlobal('URL', class extends URL {
-            static createObjectURL = vi.fn(() => 'blob:mappings');
-            static revokeObjectURL = vi.fn();
-        });
+        vi.stubGlobal(
+            'URL',
+            class extends URL {
+                static createObjectURL = vi.fn(() => 'blob:mappings');
+                static revokeObjectURL = vi.fn();
+            }
+        );
         vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
         hardwareControllerStore.set({
             connectedDevices: [{ id: 'input', name: 'Input', profileId: 'push-2' }],
@@ -102,15 +106,18 @@ describe('HardwareMappingManager', () => {
         expect(hardwareControllerStore.value).toEqual(original);
     });
 
-    it.each(['{bad json', '{}', '[{"id":"broken"}]'])('rejects invalid files without changing any profile: %s', async (json) => {
-        render(<HardwareMappingManager />);
-        const before = hardwareControllerStore.value;
-        fireEvent.change(fileInput(), { target: { files: [mappingFile(json)] } });
-        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
-        expect(hardwareControllerStore.value).toBe(before);
-        expect(screen.getByText('button 85')).toBeInTheDocument();
-        expect(mocks.notify).toHaveBeenCalledTimes(1);
-    });
+    it.each(['{bad json', '{}', '[{"id":"broken"}]'])(
+        'rejects invalid files without changing any profile: %s',
+        async (json) => {
+            render(<HardwareMappingManager />);
+            const before = hardwareControllerStore.value;
+            fireEvent.change(fileInput(), { target: { files: [mappingFile(json)] } });
+            await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
+            expect(hardwareControllerStore.value).toBe(before);
+            expect(screen.getByText('button 85')).toBeInTheDocument();
+            expect(mocks.notify).toHaveBeenCalledTimes(1);
+        }
+    );
 
     it('accepts an empty list and permits the same file to be selected again', async () => {
         render(<HardwareMappingManager />);
@@ -136,7 +143,9 @@ describe('HardwareMappingManager', () => {
     it('keeps an older read cancelled after selecting another profile and returning', async () => {
         render(<HardwareMappingManager />);
         let resolve!: (value: string) => void;
-        const read = new Promise<string>((resolveRead) => { resolve = resolveRead; });
+        const read = new Promise<string>((resolveRead) => {
+            resolve = resolveRead;
+        });
         const file = new File([], 'pending.json');
         Object.defineProperty(file, 'text', { value: () => read });
         const before = hardwareControllerStore.value;
@@ -145,7 +154,10 @@ describe('HardwareMappingManager', () => {
         fireEvent.change(screen.getByRole('combobox', { name: 'Hardware profile' }), { target: { value: 'other' } });
         expect(screen.getByText('This profile has no mappings.')).toBeInTheDocument();
         fireEvent.change(screen.getByRole('combobox', { name: 'Hardware profile' }), { target: { value: 'push-2' } });
-        await act(async () => { resolve('[]'); await read; });
+        await act(async () => {
+            resolve('[]');
+            await read;
+        });
         expect(hardwareControllerStore.value).toBe(before);
         expect(screen.getByText('button 85')).toBeInTheDocument();
         expect(screen.queryByText('Mappings imported.')).not.toBeInTheDocument();
@@ -153,14 +165,19 @@ describe('HardwareMappingManager', () => {
 
     it('does not publish a late read after closing the view', async () => {
         let resolve!: (value: string) => void;
-        const read = new Promise<string>((resolveRead) => { resolve = resolveRead; });
+        const read = new Promise<string>((resolveRead) => {
+            resolve = resolveRead;
+        });
         const file = new File([], 'pending.json');
         Object.defineProperty(file, 'text', { value: () => read });
         const before = hardwareControllerStore.value;
         const view = render(<HardwareMappingManager />);
         fireEvent.change(fileInput(), { target: { files: [file] } });
         view.unmount();
-        await act(async () => { resolve('[]'); await read; });
+        await act(async () => {
+            resolve('[]');
+            await read;
+        });
         expect(hardwareControllerStore.value).toBe(before);
         expect(mocks.notify).not.toHaveBeenCalled();
     });
@@ -169,8 +186,12 @@ describe('HardwareMappingManager', () => {
         render(<HardwareMappingManager />);
         let resolveOld!: (value: string) => void;
         let resolveNew!: (value: string) => void;
-        const oldRead = new Promise<string>((resolve) => { resolveOld = resolve; });
-        const newRead = new Promise<string>((resolve) => { resolveNew = resolve; });
+        const oldRead = new Promise<string>((resolve) => {
+            resolveOld = resolve;
+        });
+        const newRead = new Promise<string>((resolve) => {
+            resolveNew = resolve;
+        });
         const oldFile = new File([], 'old.json');
         const newFile = new File([], 'new.json');
         Object.defineProperty(oldFile, 'text', { value: () => oldRead });
@@ -178,11 +199,17 @@ describe('HardwareMappingManager', () => {
         const before = hardwareControllerStore.value!;
         fireEvent.change(fileInput(), { target: { files: [oldFile] } });
         fireEvent.change(fileInput(), { target: { files: [newFile] } });
-        await act(async () => { resolveOld('[]'); await oldRead; });
+        await act(async () => {
+            resolveOld('[]');
+            await oldRead;
+        });
         expect(hardwareControllerStore.value).toBe(before);
         expect(screen.queryByText('Mappings imported.')).not.toBeInTheDocument();
         const json = JSON.stringify(before.profiles[0]?.mappings.map((mapping) => ({ ...mapping, controlIndex: 86 })));
-        await act(async () => { resolveNew(json); await newRead; });
+        await act(async () => {
+            resolveNew(json);
+            await newRead;
+        });
         expect(screen.getByText('button 86')).toBeInTheDocument();
         expect(screen.getByRole('status')).toHaveTextContent('Mappings imported.');
     });
