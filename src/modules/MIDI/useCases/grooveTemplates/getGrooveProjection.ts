@@ -4,7 +4,8 @@ import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 import { applyGrooveTemplate } from './applyGrooveTemplate';
 
 type GrooveEvent = { id: string; startBeat: number; velocity: number };
-type ClipMidiEvent = GrooveEvent & { duration: number };
+/** `beatsIntoNote` on an input event is the cut an earlier stage already made of its note (Yeast plays what the clip head left). */
+type ClipMidiEvent = GrooveEvent & { duration: number; beatsIntoNote?: number };
 type ProjectCommittedGrooveInput<Event extends GrooveEvent> = {
     events: readonly Event[];
     consumerType: GrooveTemplateState['assignments'][number]['consumerType'];
@@ -122,7 +123,8 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
                     duration: clippedEndBeat - clippedStartBeat,
                     velocity: sequencerProjected.velocity,
                 };
-                const beatsIntoNote = beatsIntoNoteAtStart + (clippedStartBeat - startBeat);
+                const beatsIntoNote =
+                    (event.beatsIntoNote ?? 0) + beatsIntoNoteAtStart + (clippedStartBeat - startBeat);
                 if (beatsIntoNote > 0) {
                     segment.beatsIntoNote = beatsIntoNote;
                 }

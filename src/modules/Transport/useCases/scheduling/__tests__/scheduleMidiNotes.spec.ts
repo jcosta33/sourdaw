@@ -2150,6 +2150,95 @@ describe('scheduleMidiNotes', () => {
                     ]);
                 });
 
+                // The export's case for the same track (scheduleTrackClips.spec.ts, "measures offsets from the uncut start
+                // of a note a Yeast track plays past a trimmed clip head"): Yeast sees the note from the clip's head, and
+                // the curve is still measured from where the note began.
+                it('measures the curve of a Yeast note held past a trimmed clip head from the uncut start', async () => {
+                    fermenterStripWithControls();
+                    const track = midiTrack({
+                        clips: [midiClip({ startBeat: 0, endBeat: 8, midiOffsetBeats: 2 })],
+                        devices: [
+                            { id: 'y', type: 'yeast' },
+                            { id: 'device-1', type: 'fermenter' },
+                        ],
+                    });
+                    (trackStore as { value: unknown }).value = { tracks: [track] };
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: {
+                            'clip-1': [
+                                {
+                                    id: 'n0',
+                                    pitch: 64,
+                                    startBeat: 1,
+                                    duration: 4,
+                                    velocity: 100,
+                                    pressure: 10,
+                                    expression: {
+                                        pressure: [
+                                            { offsetBeats: 0.5, value: 40 },
+                                            { offsetBeats: 2, value: 90 },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    };
+
+                    await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(
+                        appliedExpression().map(({ sampleFrame, expression }) => [sampleFrame, expression.pressure])
+                    ).toEqual([
+                        [frameAt(0), 40],
+                        [frameAt(0.5), 90],
+                    ]);
+                });
+
+                // The export's case for the same track (scheduleTrackClips.spec.ts, "measures the tail of a note a Yeast
+                // track plays across a clip loop from the note's own start").
+                it('measures the tail of a Yeast note that wraps a clip loop from the note’s own start', async () => {
+                    fermenterStripWithControls();
+                    const track = midiTrack({
+                        clips: [midiClip({ startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 4 })],
+                        devices: [
+                            { id: 'y', type: 'yeast' },
+                            { id: 'device-1', type: 'fermenter' },
+                        ],
+                    });
+                    (trackStore as { value: unknown }).value = { tracks: [track] };
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: {
+                            'clip-1': [
+                                {
+                                    id: 'n0',
+                                    pitch: 64,
+                                    startBeat: 3,
+                                    duration: 3,
+                                    velocity: 100,
+                                    pressure: 10,
+                                    expression: {
+                                        pressure: [
+                                            { offsetBeats: 0.5, value: 40 },
+                                            { offsetBeats: 1.5, value: 90 },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    };
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(
+                        appliedExpression().map(({ sampleFrame, expression }) => [sampleFrame, expression.pressure])
+                    ).toEqual([
+                        [frameAt(0), 40],
+                        [frameAt(0.25), 90],
+                        [frameAt(1.5), 10],
+                        [frameAt(1.75), 40],
+                    ]);
+                });
+
                 it('measures the tail of a note that wraps a clip loop from the note’s own start', async () => {
                     const { noteOn } = fermenterStripWithControls();
                     // A loop of 4 beats: the note starts at beat 3 and lasts 3, so it wraps one beat in.

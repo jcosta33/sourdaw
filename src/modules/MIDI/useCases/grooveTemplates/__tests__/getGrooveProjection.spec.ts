@@ -210,6 +210,23 @@ describe('getGrooveProjection.projectClipMidiEvents', () => {
         expect(result).toEqual([{ ...event('a', 8, 3), beatsIntoNote: 1 }]);
     });
 
+    it('adds a cut an earlier stage made of the event to how far into the note its segments begin', () => {
+        const projection = getGrooveProjection(defaultGrooveTemplateState);
+        // The event is already one beat into its note, and the clip start cuts one more beat off it.
+        const result = projection.projectClipMidiEvents({
+            events: [{ ...event('a', 0, 3), beatsIntoNote: 1 }],
+            clipId: 'clip-1',
+            clipStartBeat: 1,
+            clipEndBeat: 8,
+            iterationStartBeat: 0,
+            loopLengthBeats: 8,
+            midiOffsetBeats: 0,
+        });
+        expect(result.map(({ startBeat, beatsIntoNote }) => ({ startBeat, beatsIntoNote }))).toEqual([
+            { startBeat: 1, beatsIntoNote: 2 },
+        ]);
+    });
+
     it('adds the clipped head to how far into the note a wrapped tail begins', () => {
         const projection = getGrooveProjection(defaultGrooveTemplateState);
         // Wraps at the loop end after one beat (the tail), and the clip start cuts one more beat off it.

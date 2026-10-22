@@ -2035,6 +2035,60 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             ]);
         });
 
+        // The live scheduler's case for the same track (scheduleMidiNotes.spec.ts, "measures the tail of a Yeast note
+        // that wraps a clip loop from the note's own start").
+        it('measures the tail of a note a Yeast track plays across a clip loop from the note’s own start', async () => {
+            const arrivals = await dispatchOneNote(
+                {
+                    startBeat: 3,
+                    duration: 3,
+                    pressure: 10,
+                    expression: {
+                        pressure: [
+                            { offsetBeats: 0.5, value: 40 },
+                            { offsetBeats: 1.5, value: 90 },
+                        ],
+                    },
+                },
+                {
+                    clip: { startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 4 },
+                    productionProjection: true,
+                    withYeast: true,
+                }
+            );
+
+            expect(pressures(arrivals)).toEqual([
+                [0, 40],
+                [12_000, 90],
+                [72_000, 10],
+                [84_000, 40],
+            ]);
+        });
+
+        // The live scheduler's case for the same track (scheduleMidiNotes.spec.ts, "measures the curve of a Yeast note
+        // held past a trimmed clip head from the uncut start"): both routes place the same updates.
+        it('measures offsets from the uncut start of a note a Yeast track plays past a trimmed clip head', async () => {
+            const arrivals = await dispatchOneNote(
+                {
+                    startBeat: 1,
+                    duration: 4,
+                    pressure: 10,
+                    expression: {
+                        pressure: [
+                            { offsetBeats: 0.5, value: 40 },
+                            { offsetBeats: 2, value: 90 },
+                        ],
+                    },
+                },
+                { clip: { startBeat: 0, endBeat: 8, midiOffsetBeats: 2 }, productionProjection: true, withYeast: true }
+            );
+
+            expect(pressures(arrivals)).toEqual([
+                [0, 40],
+                [24_000, 90],
+            ]);
+        });
+
         // The live scheduler's case for the same track (scheduleMidiNotes.spec.ts, "plays a Yeast track's note curves
         // as the export does"): Yeast hands the note's template, curves included, to the notes it plays.
         it('plays the curves of a note a Yeast track plays, as live playback does', async () => {
