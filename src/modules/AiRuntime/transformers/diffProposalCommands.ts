@@ -1,6 +1,5 @@
 import { formatDecibels } from '#/utils/audioLevelLaw';
 import { canonicalJson } from '#/utils/canonicalDigest';
-import { type AppActionType } from '#/utils/handlerContract';
 
 type ProposalCommands = {
     actions: ReadonlyArray<{ type: string; payload?: unknown }>;
@@ -17,69 +16,39 @@ type ProposalCommandChange =
 type ProposalCommandDiff = { changes: ProposalCommandChange[]; unchangedCount: number };
 
 /**
- * The payload fields that say which object a command acts on, as the payload carries them.
- * Repeated commands on one target still need occurrence evidence before a changed-value pairing.
+ * Which object a command acts on, read from the action registry by the caller: the object itself, and
+ * the members of any set of sources or placements it acts on there. A creation id is no target, so it
+ * never pairs a fresh object with an old one.
  */
-const TARGET_IDENTITY_FIELDS = ['trackId', 'busId', 'deviceId', 'parameterId', 'sendId'] as const;
-/** Typed clip commands whose clipId names the existing clip they act on. Creation IDs are excluded. */
-const CLIP_TARGET_ACTIONS = new Set<string>([
-    'removeClip',
-    'moveClip',
-    'splitClip',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'duplicateClipAt',
-    'renameClip',
-    'trimClipStart',
-    'trimClipEnd',
-    'nudgeClip',
-    'slipClipContent',
-    'setClipGain',
-    'muteClip',
-    'setClipColor',
-    'setClipFade',
-    'lockClip',
-    'setClipLoop',
-    'setClipLoopLength',
-    'normalizeClip',
-    'setClipStretchMode',
-    'setClipStretchRatio',
-    'fitClipToBeats',
-    'quantizeNotes',
-    'quantizeNoteLengths',
-    'transposeNotes',
-    'invertNotes',
-    'retrogradeNotes',
-    'scaleAllVelocities',
-    'setAllVelocities',
-    'removeShortMidiOverlaps',
-    'addNotes',
-    'arpeggiate',
-    'exportMidi',
-] satisfies AppActionType[]);
+export type CommandObjectIdentity = (
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>
+) => { object: string; members: readonly string[]; membersAreSources: boolean };
 
-type KeyedCommand = { identity: string; actionType: string; label: string; payload: Readonly<Record<string, unknown>> };
+type KeyedCommand = {
+    identity: string;
+    object: string;
+    members: ReadonlySet<string>;
+    membersAreSources: boolean;
+    actionType: string;
+    label: string;
+    payload: Readonly<Record<string, unknown>>;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function targetIdentity(actionType: string, payload: Readonly<Record<string, unknown>>): string {
-    if (CLIP_TARGET_ACTIONS.has(actionType)) {
-        return typeof payload.clipId === 'string' ? `${actionType}|clipId=${payload.clipId}` : actionType;
-    }
-    const targets = TARGET_IDENTITY_FIELDS.flatMap((field) =>
-        typeof payload[field] === 'string' ? [`${field}=${payload[field]}`] : []
-    );
-    return [actionType, ...targets].join('|');
-}
-
 /** Keep the command's target identity and payload separate so exact occurrences can pair first. */
-function keyCommands(proposal: ProposalCommands): KeyedCommand[] {
+function keyCommands(proposal: ProposalCommands, objectIdentity: CommandObjectIdentity): KeyedCommand[] {
     return proposal.actions.map((action, index) => {
         const payload = isRecord(action.payload) ? action.payload : {};
+        const { object, members, membersAreSources } = objectIdentity(action.type, payload);
         return {
-            identity: targetIdentity(action.type, payload),
+            identity: canonicalJson([object, members]),
+            object,
+            members: new Set(members),
+            membersAreSources,
             actionType: action.type,
             label: proposal.actionLabels[index] ?? action.type,
             payload,
@@ -120,56 +89,101 @@ function changedFields(
         }));
 }
 
+function sharesMember(left: KeyedCommand, right: KeyedCommand): boolean {
+    return Array.from(left.members).some((member) => right.members.has(member));
+}
+
+type PairingState = {
+    previousCommands: readonly KeyedCommand[];
+    nextCommands: readonly KeyedCommand[];
+    /** Each paired next command's previous command, by index. */
+    pairs: Map<number, number>;
+    pairedPrevious: Set<number>;
+};
+
 /**
- * What a replacement proposal changes against the proposal it replaced, command by command. A
- * Exact command occurrences match first. A differing command is paired by type and target only
- * when one unmatched occurrence remains on each side; otherwise its lineage is ambiguous and the
- * comparison reports additions and removals without claiming which old value changed.
+ * Pair each unpaired next command with the one unpaired previous command `related` admits, when that
+ * previous command admits no other unpaired next command either; any other count is ambiguous lineage.
  */
-export function diffProposalCommands(previous: ProposalCommands, next: ProposalCommands): ProposalCommandDiff {
-    const previousCommands = keyCommands(previous);
-    const nextCommands = keyCommands(next);
-    const matchedPrevious = new Set<number>();
-    const exactNext = new Set<number>();
+function pairUniquely(state: PairingState, related: (previous: KeyedCommand, next: KeyedCommand) => boolean): void {
+    const { previousCommands, nextCommands, pairs, pairedPrevious } = state;
+    const unpairedNext = (index: number) => !pairs.has(index);
+    const unpairedPrevious = (index: number) => !pairedPrevious.has(index);
+    for (const [nextIndex, command] of nextCommands.entries()) {
+        if (!unpairedNext(nextIndex)) {
+            continue;
+        }
+        const previousCandidates = previousCommands.flatMap((candidate, index) =>
+            unpairedPrevious(index) && related(candidate, command) ? [index] : []
+        );
+        const [previousIndex] = previousCandidates;
+        if (previousCandidates.length !== 1 || previousIndex === undefined) {
+            continue;
+        }
+        const previousCommand = previousCommands[previousIndex]!;
+        const nextCandidates = nextCommands.filter(
+            (candidate, index) => unpairedNext(index) && related(previousCommand, candidate)
+        );
+        if (nextCandidates.length !== 1) {
+            continue;
+        }
+        pairs.set(nextIndex, previousIndex);
+        pairedPrevious.add(previousIndex);
+    }
+}
+
+/**
+ * What a replacement proposal changes against the proposal it replaced, command by command.
+ * Exact command occurrences match first. A differing command is paired by type and target only
+ * when one unpaired occurrence remains on each side; then a command acting on a set of sources or
+ * placements pairs with the one on the same object whose set shares a member, and a set of sources
+ * pairs by type and object alone when that is the only one on each side. Anything else is ambiguous
+ * lineage, and the comparison reports additions and removals without claiming which old value changed.
+ */
+export function diffProposalCommands(
+    previous: ProposalCommands,
+    next: ProposalCommands,
+    objectIdentity: CommandObjectIdentity
+): ProposalCommandDiff {
+    const previousCommands = keyCommands(previous, objectIdentity);
+    const nextCommands = keyCommands(next, objectIdentity);
+    const state: PairingState = { previousCommands, nextCommands, pairs: new Map(), pairedPrevious: new Set() };
     // Preserve exact occurrences before pairing changed peers. Removing the first of two clips on
     // one track must leave the second clip unchanged even though its occurrence number shifted.
+    const exactNext = new Set<number>();
     for (const [nextIndex, command] of nextCommands.entries()) {
         const previousIndex = previousCommands.findIndex(
             (candidate, index) =>
-                !matchedPrevious.has(index) &&
+                !state.pairedPrevious.has(index) &&
                 candidate.identity === command.identity &&
                 canonicalJson(candidate.payload) === canonicalJson(command.payload)
         );
         if (previousIndex >= 0) {
-            matchedPrevious.add(previousIndex);
+            state.pairedPrevious.add(previousIndex);
+            state.pairs.set(nextIndex, previousIndex);
             exactNext.add(nextIndex);
         }
     }
+    pairUniquely(state, (left, right) => left.identity === right.identity);
+    pairUniquely(state, (left, right) => left.object === right.object && sharesMember(left, right));
+    pairUniquely(
+        state,
+        (left, right) => left.object === right.object && left.membersAreSources && right.membersAreSources
+    );
     const changes: ProposalCommandChange[] = [];
     for (const [nextIndex, command] of nextCommands.entries()) {
-        if (exactNext.has(nextIndex)) {
-            continue;
-        }
-        const previousCandidates = previousCommands.flatMap((candidate, index) =>
-            !matchedPrevious.has(index) && candidate.identity === command.identity ? [index] : []
-        );
-        const nextCandidates = nextCommands.filter(
-            (candidate, index) => !exactNext.has(index) && candidate.identity === command.identity
-        );
-        if (previousCandidates.length !== 1 || nextCandidates.length !== 1) {
+        const previousIndex = state.pairs.get(nextIndex);
+        if (previousIndex === undefined) {
             changes.push({ kind: 'added', actionType: command.actionType, label: command.label });
             continue;
         }
-        const previousIndex = previousCandidates[0]!;
-        matchedPrevious.add(previousIndex);
         const fields = changedFields(previousCommands[previousIndex]!.payload, command.payload);
-        if (fields.length === 0) {
-            continue;
+        if (fields.length > 0) {
+            changes.push({ kind: 'changed', actionType: command.actionType, label: command.label, fields });
         }
-        changes.push({ kind: 'changed', actionType: command.actionType, label: command.label, fields });
     }
     for (const [index, command] of previousCommands.entries()) {
-        if (!matchedPrevious.has(index)) {
+        if (!state.pairedPrevious.has(index)) {
             changes.push({ kind: 'removed', actionType: command.actionType, label: command.label });
         }
     }

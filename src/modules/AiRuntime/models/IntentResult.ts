@@ -6,6 +6,7 @@ import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
+import { type ProposalGroundingBasis } from './ProposalGroundingBasis';
 import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
@@ -65,6 +66,12 @@ export type IntentResult = {
      * confirmation; whether that card is still pending is checked again where the replacement persists.
      */
     refines?: string;
+    /** What a later refinement of this batch's card inherits; only an ordinary batch carries one. */
+    groundingBasis?: ProposalGroundingBasis;
+    /** Objects a refinement's chain protects beyond those this request's own text protects. */
+    refinementProtectedUnchanged?: Array<{ id: string; name: string }>;
+    /** Actions whose value kept the refined change's direction because the refinement stated none. */
+    keptDirectionActionIndexes?: number[];
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */

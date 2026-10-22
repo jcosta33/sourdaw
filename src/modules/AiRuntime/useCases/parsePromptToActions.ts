@@ -56,6 +56,8 @@ import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVoca
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
+import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { readStoredCardRemoval } from './agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -862,6 +864,12 @@ const planPromptIntent = inject({ logger })(
                     refinement.status === 'refines'
                         ? { refines: refinement.confirmationId, requiresConfirmation: true }
                         : {};
+                // The basis is read from the stored card, never from thread_context, which a provider
+                // budget may have cut; a card no longer proposed is refused where the replacement persists.
+                const refinedCard =
+                    refinement.status === 'refines' ? getPendingActionConfirmation(refinement.confirmationId) : null;
+                const refinedBasis =
+                    refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.groundingBasis : undefined;
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
                 const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
@@ -1056,6 +1064,8 @@ const planPromptIntent = inject({ logger })(
                             actions: [stemImport.action],
                             prompt,
                             context,
+                            createdObject: proposalCommandShape.createdObject,
+                            readRemoval: readStoredCardRemoval,
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1091,6 +1101,7 @@ const planPromptIntent = inject({ logger })(
                     transformTargetIds,
                     creativeAuthority,
                     providerProposal,
+                    ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
                 });
                 if (grounded.status === 'rejected') {
                     return {
@@ -1116,13 +1127,17 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 if (grounded.status === 'grounded') {
-                    if (refinement.status === 'refines') {
+                    // Grounding against the card's basis already held every pending command to an
+                    // explicit removal; only a card without one is checked against its stored batch.
+                    if (refinement.status === 'refines' && grounded.refinement === undefined) {
                         const pending = getPendingActionConfirmation(refinement.confirmationId);
                         const preservation = validateRefinedProposalActions({
                             pendingActions: pending?.status === 'proposed' ? pending.approvalSnapshot.actions : null,
                             actions: grounded.actions,
                             prompt,
                             context,
+                            createdObject: proposalCommandShape.createdObject,
+                            readRemoval: readStoredCardRemoval,
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1156,6 +1171,15 @@ const planPromptIntent = inject({ logger })(
                         ...(grounded.providerProposal === null ? {} : { providerProposal: grounded.providerProposal }),
                         ...creativeAuthorityFields,
                         ...(batchSchedule === undefined ? {} : { batchSchedule }),
+                        ...(grounded.groundingBasis === undefined || batchSchedule !== undefined
+                            ? {}
+                            : { groundingBasis: grounded.groundingBasis }),
+                        ...(grounded.refinement === undefined
+                            ? {}
+                            : {
+                                  refinementProtectedUnchanged: grounded.refinement.protectedUnchanged,
+                                  keptDirectionActionIndexes: grounded.refinement.keptDirectionActionIndexes,
+                              }),
                     };
                 }
 

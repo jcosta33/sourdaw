@@ -376,6 +376,8 @@ export async function reproposePendingChatActions(
         measuredPreview: confirmation.approvalSnapshot.measuredPreview,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
+        // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
+        groundingBasis: selectsSubset ? undefined : confirmation.approvalSnapshot.groundingBasis,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,
