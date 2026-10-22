@@ -73,6 +73,7 @@ import {
     readUsage,
     TYPESAFE_MODEL,
     type SemanticProviderPort,
+    type SemanticProviderQuestions,
 } from '../provider.ts';
 import { renderSummary, validateReport, type SemanticVerifyReport } from '../report.ts';
 import { unitReservationBytes } from '../requestPayload.ts';
@@ -105,6 +106,7 @@ import {
     unitStatePlusQuestionBytes,
     type SemanticUnitPlan,
 } from '../run.ts';
+import { DRY_RUN_REASON } from '../scopeAccounting.ts';
 import { sensitiveContentReason } from '../sensitive.ts';
 import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.ts';
 
@@ -3826,6 +3828,7 @@ describe('contract classification follows each side on both routes', () => {
                 },
             ],
             runId: 'verify-withheld',
+            dryRun: false,
         });
         return result.report.scope.truncated[0]?.reason;
     }
@@ -3961,6 +3964,7 @@ describe('contract classification follows each side on both routes', () => {
                 },
             ],
             runId: 'verify-context-class',
+            dryRun: false,
         });
         expect(beyond.report.scope.truncated).toEqual([
             { path: contextPath, reason: 'hunk-beyond-file (context, contract)' },
@@ -6025,6 +6029,7 @@ describe('complete transport admission', () => {
                 profile: SEMANTIC_BUDGET_PROFILES.local,
                 findings: [finding],
                 runId: 'complete-verify-screen',
+                dryRun: false,
             });
             expect(result.report.failureCode).toBe('sensitive_content_excluded');
             expect(result.report.findingAssessments).toEqual([]);
@@ -8312,6 +8317,7 @@ describe('verify incomplete attribution', () => {
                 },
             ],
             runId: 'verify-incomplete',
+            dryRun: false,
         });
         const assessment = result.report.findingAssessments[0];
         expect(assessment?.disposition).toBe('needs_more_evidence');
@@ -8398,6 +8404,7 @@ describe('verify summary wording', () => {
                 },
             ],
             runId: 'verify-summary',
+            dryRun: false,
         });
         const assessment = result.report.findingAssessments[0];
         expect(assessment?.disposition).toBe('needs_more_evidence');
@@ -9056,6 +9063,7 @@ describe('verify-path screening and identity', () => {
                 },
             ],
             runId: 'verify-test',
+            dryRun: false,
         });
         return { result, providerCalls };
     }
@@ -9207,6 +9215,7 @@ describe('verify-path screening and identity', () => {
             profile: SEMANTIC_BUDGET_PROFILES.local,
             findings,
             runId: 'verify-identity',
+            dryRun: false,
         });
         expect(result.report.rulesDigest).toBe(computeVerifyQuestionsDigest(findings));
         expect(result.report.rulesDigest).not.toBe(computeRulesDigest());
@@ -9265,8 +9274,164 @@ describe('verify mode', () => {
                 profile: SEMANTIC_BUDGET_PROFILES.local,
                 findings: [{ ...finding, headSha: 'f'.repeat(40) }],
                 runId: 'verify-test',
+                dryRun: false,
             })
         ).rejects.toMatchObject({ code: 'stale_context' });
+    });
+});
+
+describe('verify dry run', () => {
+    const dryRunFindings: CandidateFinding[] = [
+        {
+            findingId: 'f1',
+            headSha: HEAD,
+            claim: 'the first claim',
+            expectedBehavior: 'the first expected behavior',
+            evidenceReferences: [{ path: 'src/modules/Project/a.ts', side: 'after', startLine: 1, endLine: 1 }],
+        },
+        {
+            findingId: 'f2',
+            headSha: HEAD,
+            claim: 'the second claim',
+            expectedBehavior: 'the second expected behavior',
+            evidenceReferences: [{ path: 'src/modules/Project/b.ts', side: 'after', startLine: 2, endLine: 2 }],
+        },
+    ];
+    const dryRunBlobs = {
+        [`${HEAD}:src/modules/Project/a.ts`]: 'first line\n',
+        [`${HEAD}:src/modules/Project/b.ts`]: 'other line\nsecond line\n',
+    };
+
+    function dryRunPorts(provider: SemanticProviderPort) {
+        return {
+            ports: {
+                source: fakeSource({ files: [], blobs: dryRunBlobs }),
+                provider,
+                cache: new MapCache(),
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: () => undefined,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            findings: dryRunFindings,
+            runId: 'verify-dry-run',
+        };
+    }
+
+    /** The answers the live path needs: the selection question offers the supplied region ids plus `none`. */
+    function cannedAnswers(questions: SemanticProviderQuestions): Record<string, unknown> {
+        const distributions: Record<string, Record<string, number>> = {
+            support: { supported: 0.95, contradicted: 0.02, insufficient_context: 0.03 },
+            attribution: { introduced_by_change: 0.95, pre_existing: 0.02, undetermined: 0.03 },
+            kind: { behavioral_or_contract_issue: 0.95, style_preference: 0.02, undetermined: 0.03 },
+            strongestEvidence: { none: 1 },
+        };
+        const answers: Record<string, unknown> = {};
+        for (const key of Object.keys(questions)) {
+            const probabilities = distributions[key] ?? distributions.support!;
+            answers[key] = {
+                type: 'choice',
+                probabilities,
+                confidence: 0.95,
+                choice: Object.keys(probabilities)[0],
+            };
+        }
+        return answers;
+    }
+
+    it('builds every request without a single provider call and skips every finding', async () => {
+        // The usage text promises zero TypeSafe calls under --dry-run. The stub answers a call with a
+        // defect refusal, so one provider call fails the run loudly instead of passing quietly.
+        const { runVerify } = await import('../verify.ts');
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('dry-run made a provider call; this is a defect');
+            },
+        };
+        const result = await runVerify({ ...dryRunPorts(provider), dryRun: true });
+        expect(providerCalls).toBe(0);
+        expect(result.report.execution).toBe('skipped');
+        expect(result.report.findingAssessments).toEqual([]);
+        // Every finding is named under the dry-run reason, not counted into a bucket.
+        expect(result.report.scope.unassessed).toEqual([
+            { path: 'f1', reason: DRY_RUN_REASON },
+            { path: 'f2', reason: DRY_RUN_REASON },
+        ]);
+        expect(() => validateReport(result.report)).not.toThrow();
+    });
+
+    it('reports the request each finding would send, measured as the live request is charged', async () => {
+        const { runVerify } = await import('../verify.ts');
+        const seen: { state: unknown; questions: unknown }[] = [];
+        const liveProvider: SemanticProviderPort = {
+            systemOne: async ({ state, questions }) => {
+                seen.push({ state, questions });
+                return {
+                    model: TYPESAFE_MODEL,
+                    answers: cannedAnswers(questions),
+                    usage: { input_tokens: 5, output_tokens: 0 },
+                };
+            },
+        };
+        const live = await runVerify({ ...dryRunPorts(liveProvider), dryRun: false });
+        expect(live.report.execution).toBe('completed');
+        expect(live.report.findingAssessments).toHaveLength(2);
+        expect(seen).toHaveLength(2);
+
+        // The dry run must reach the provider exactly zero times, so its provider refuses on a call.
+        let dryRunProviderCalls = 0;
+        const dryRunProvider: SemanticProviderPort = {
+            systemOne: async () => {
+                dryRunProviderCalls += 1;
+                throw new Error('dry-run made a provider call; this is a defect');
+            },
+        };
+        const dry = await runVerify({ ...dryRunPorts(dryRunProvider), dryRun: true });
+        expect(dryRunProviderCalls).toBe(0);
+        expect(dry.previews.map((preview) => preview.findingId)).toEqual(['f1', 'f2']);
+        // The export cannot disagree with what a live run submits: each preview is the exact state and
+        // question set the provider received for its finding.
+        expect(dry.previews[0]?.state).toEqual(seen[0]?.state);
+        expect(dry.previews[0]?.questions).toEqual(seen[0]?.questions);
+        expect(dry.previews[1]?.state).toEqual(seen[1]?.state);
+        expect(dry.previews[1]?.questions).toEqual(seen[1]?.questions);
+
+        const first = dry.previews[0];
+        const firstState = first?.state as {
+            finding: { claim: string; expectedBehavior: string };
+            evidence: Record<string, { path: string; side: string; startLine: number; content: string }>;
+        };
+        expect(firstState.finding.claim).toBe('the first claim');
+        expect(firstState.finding.expectedBehavior).toBe('the first expected behavior');
+        const regions = Object.entries(firstState.evidence);
+        expect(regions).toHaveLength(1);
+        const [evidenceId, region] = regions[0]!;
+        expect(evidenceId).toBe('a1');
+        expect(region.path).toBe('src/modules/Project/a.ts');
+        expect(region.side).toBe('after');
+        expect(region.startLine).toBe(1);
+        expect(region.content).toBe('first line');
+
+        const firstQuestions = first?.questions as Record<string, { instructions: string; criteria: unknown }>;
+        expect(Object.keys(firstQuestions)).toEqual(['support', 'attribution', 'kind', 'strongestEvidence']);
+        expect(firstQuestions.support?.instructions).toContain('the first claim');
+        expect(firstQuestions.strongestEvidence?.criteria).toEqual({
+            none: 'No supplied region is the strongest evidence.',
+            a1: 'Region a1 is the strongest evidence for this finding.',
+        });
+
+        // The bytes are what the live request submits and the budget charges: state, questions, and
+        // the model as one body, exactly what `assessUnit` prepares for the provider.
+        expect(first?.bodyBytes).toBe(
+            Buffer.byteLength(
+                JSON.stringify({ state: seen[0]?.state, questions: seen[0]?.questions, model: TYPESAFE_MODEL }),
+                'utf8'
+            )
+        );
+        expect(first?.estimatedInputTokens).toBe(Math.ceil((first?.bodyBytes ?? 0) / 4));
     });
 });
 
@@ -9413,6 +9578,7 @@ describe('execution state and required evidence resolution', () => {
                 },
             ],
             runId: 'verify-range',
+            dryRun: false,
         });
         const serialized = JSON.stringify(seen);
         expect(serialized).toContain('second line');
@@ -10240,6 +10406,7 @@ async function verifyWith(input: {
             },
         ],
         runId: input.runId ?? 'verify-test',
+        dryRun: false,
     });
 }
 
@@ -11595,6 +11762,7 @@ describe('opaque bearer source and caller admission', () => {
             profile: SEMANTIC_BUDGET_PROFILES.local,
             findings: [candidate],
             runId: 'opaque-bearer-verify',
+            dryRun: false,
         });
     }
 
