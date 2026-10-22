@@ -113,6 +113,13 @@ function statesFigure(clause: PromptClause): boolean {
     return findPromptNumbers(clause.masked).length > 0;
 }
 
+/** Any negation a clause states, read from its normalized words outside object names ("don't" reads "don t"). */
+const NEGATION_WORD = /(?<![\p{L}\p{N}])(?:not|never|without|except|cannot|\p{L}*n t)(?![\p{L}\p{N}])/u;
+
+function statesNegation(clause: PromptClause): boolean {
+    return NEGATION_WORD.test(normalizePromptText(clause.masked));
+}
+
 /**
  * The object a removal verb clause names after its verb and openers, or `null` when the clause is no
  * removal. A removal verb in a clause stating a figure changes a level rather than removing it ("drop
@@ -247,6 +254,7 @@ function resolveReference(
 export const refinementRequestReading = {
     clauses: readClauseSpans,
     statesFigure,
+    statesNegation,
     removalVerbs: REMOVAL_VERBS,
     /** The articles a removal may state before its object. */
     articles: REFERENCE_ARTICLE_WORDS,

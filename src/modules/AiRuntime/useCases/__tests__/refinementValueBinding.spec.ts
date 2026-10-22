@@ -15,7 +15,12 @@ import {
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
-import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import {
+    clearUndoHistory,
+    getExecutableAppActionGroundingRules,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -23,7 +28,6 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
-import { canonicalJson } from '#/utils/canonicalDigest';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -187,6 +191,35 @@ function refine(
     context: ProjectContext = CONTEXT
 ) {
     return ground(refinement, calls, cardBasis(card.prompt, card.calls, context), context);
+}
+
+/**
+ * A refinement of a card that carries no basis, as the planner holds it: the batch grounds in the
+ * refinement text alone and is then checked against the card's stored batch.
+ */
+function refineStoredCard(
+    card: { prompt: string; calls: readonly ProviderCall[] },
+    refinement: string,
+    calls: readonly ProviderCall[],
+    context: ProjectContext = CONTEXT
+) {
+    const stored = ground(card.prompt, card.calls, undefined, context);
+    if (stored.status !== 'grounded' || stored.groundingBasis !== undefined) {
+        throw new Error(`Expected "${card.prompt}" to ground as a card without a basis.`);
+    }
+    const refined = ground(refinement, calls, undefined, context);
+    if (refined.status !== 'grounded') {
+        return { status: refined.status, reason: null };
+    }
+    const admission = validateRefinedProposalActions({
+        pendingActions: stored.actions,
+        actions: refined.actions,
+        prompt: refinement,
+        context,
+        createdObject: proposalCommandShape.createdObject,
+        readRemoval: readStoredCardRemoval,
+    });
+    return admission.status === 'valid' ? { status: 'valid', reason: null } : admission;
 }
 
 function payloadOf(action: { payload?: unknown }): Record<string, unknown> {
@@ -515,7 +548,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(workflowBatch.status).toBe('rejected');
         });
 
-        it('calls of one type and an empty target tuple each continue the pending command of their own payload', () => {
+        it('a card holding a command with an empty target tuple carries no basis and inherits nothing', () => {
             const marker = (name: string, beat: number): ProviderCall => ({
                 name: 'addMarker',
                 arguments: { name, beat },
@@ -524,24 +557,37 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 prompt: 'add a marker at beat 0 named Verse and add a marker at beat 16 named Chorus',
                 calls: [marker('Verse', 0), marker('Chorus', 16)],
             };
-            const basis = cardBasis(card.prompt, card.calls);
-            const markerKey = canonicalJson(['addMarker', []]);
+            const reversed = [marker('Chorus', 16), marker('Verse', 0)];
+            const targetLessTypes = [
+                'addTrack',
+                'addMarker',
+                'createBus',
+                'addSection',
+                'removeMarker',
+                'setMarkerColor',
+                'removeSection',
+                'renameSection',
+                'setTempo',
+            ];
+
             expect(
-                basis.commands.map((command) => proposalCommandShape.targetKey(command.type, command.payload))
-            ).toEqual([markerKey, markerKey]);
+                targetLessTypes.filter((type) => getExecutableAppActionGroundingRules(type)?.targetRules.length !== 0)
+            ).toEqual([]);
 
-            // The target tuple names neither marker, so each call continues the one pending marker
-            // whose payload it carries, in whatever order the batch lists them.
-            const result = ground('thanks', [marker('Chorus', 16), marker('Verse', 0)], basis);
-
-            const commands = result.status === 'grounded' ? result.groundingBasis?.commands : undefined;
-
-            expect(ground('thanks', card.calls).status).toBe('rejected');
-            expect(result.status).toBe('grounded');
-            expect(commands?.map((command) => [command.source, command.sourceCallIndex])).toEqual([
-                [0, 1],
-                [0, 0],
-            ]);
+            for (const [prompt, calls] of [
+                [card.prompt, card.calls],
+                [`${P0} and ${card.prompt}`, [vocalsBy(-3), ...card.calls]],
+            ] as const) {
+                expect(ground(prompt, calls)).toMatchObject({ status: 'grounded', groundingBasis: undefined });
+            }
+            expect(refineStoredCard(card, 'thanks', reversed).status).toBe('rejected');
+            expect(
+                refineStoredCard(
+                    card,
+                    'add a marker at beat 16 named Chorus and add a marker at beat 0 named Verse',
+                    reversed
+                )
+            ).toEqual({ status: 'valid', reason: null });
         });
 
         it('row 18: the chain keeps its root request even once no command reads it', () => {
@@ -963,16 +1009,17 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ]);
         });
 
-        it('a tempo figure in another unit than bpm asks', () => {
-            for (const [refinement, bpm] of [
+        it('a tempo card carries no basis, so a tempo figure in another unit than bpm grounds in its own text', () => {
+            const rows = [
                 ['make it 100 Hz', 100],
                 ['make it 50 percent', 50],
-            ] as const) {
-                const result = refine(TEMPO_CARD, refinement, [tempo(bpm)]);
-
-                expect({ refinement, status: result.status }).toEqual({ refinement, status: 'clarify' });
-                expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('in bpm');
-            }
+            ] as const;
+            expect(
+                rows.map(([refinement, bpm]) => ({
+                    refinement,
+                    status: refineStoredCard(TEMPO_CARD, refinement, [tempo(bpm)]).status,
+                }))
+            ).toEqual(rows.map(([refinement]) => ({ refinement, status: 'rejected' })));
         });
     });
 
@@ -1434,13 +1481,12 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     )
                 )
             ).toEqual([{ type: 'setDeviceParameter', deviceId: 'device-filter', paramId: 'cutoff', value: 200 }]);
-            const tempoResult = refine({ prompt: 'set tempo to 120', calls: [tempo(120)] }, 'make it 100 bpm', [
-                tempo(100),
-            ]);
+            const tempoCard = { prompt: 'set tempo to 120', calls: [tempo(120)] };
 
-            expect(tempoResult).toMatchObject({ status: 'grounded', actions: [{ type: 'setTempo' }] });
-            expect(tempoResult.status === 'grounded' ? payloadOf(tempoResult.actions[0]!) : null).toMatchObject({
-                bpm: 100,
+            expect(refineStoredCard(tempoCard, 'make it 100 bpm', [tempo(100)]).status).toBe('rejected');
+            expect(refineStoredCard(tempoCard, 'set tempo to 124', [tempo(124)])).toEqual({
+                status: 'valid',
+                reason: null,
             });
         });
     });
@@ -1900,10 +1946,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
 
         it('asks when a plain value states a direction beside its landing', () => {
-            const result = refine(TEMPO_CARD, 'bring it down to 100 bpm', [tempo(100)]);
+            const result = refine(PD_CARD, 'bring it down to 50%', [reverbMix(50)]);
 
             expect(questionOf(result)).toContain('Say where the value should land');
-            expect(commandsOf(refine(TEMPO_CARD, 'bring it to 100 bpm', [tempo(100)]))).toEqual([{ type: 'setTempo' }]);
+            expect(commandsOf(refine(PD_CARD, 'bring it to 50%', [reverbMix(50)]))).toEqual([
+                { type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'mix', value: 50 },
+            ]);
+            expect(refineStoredCard(TEMPO_CARD, 'bring it down to 100 bpm', [tempo(100)]).status).toBe('rejected');
         });
 
         it('asks about a symbol a space before the figure or touching it after', () => {
@@ -1993,6 +2042,22 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ]);
             expect(refine(TWO_MUTES_CARD, 'mute Bass and unmute Keys', [bassMute(true), keysMute(true)]).status).toBe(
                 'rejected'
+            );
+        });
+
+        it('a toggle clause naming two pending toggles asks which one it changes on the inherited route', () => {
+            const card = {
+                prompt: 'turn Vocals down 3 dB, mute Bass and mute Keys',
+                calls: [vocalsBy(-3), ...TWO_MUTES_CARD.calls],
+            };
+            const result = refine(card, 'make it 1.5 dB, unmute Bass Keys', [
+                vocalsBy(-1.5),
+                bassMute(false),
+                keysMute(true),
+            ]);
+
+            expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : result).toBe(
+                'Which pending change should "unmute Bass Keys" apply to?'
             );
         });
 
@@ -2906,17 +2971,14 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
-        it('a pending command that targets nothing is continued at most once too', () => {
+        it('a marker card carries no basis, so a refinement repeating its marker grounds in its own text', () => {
             const verse: ProviderCall = { name: 'addMarker', arguments: { name: 'Verse', beat: 0 } };
             const card = { prompt: 'add a marker at beat 0 named Verse', calls: [verse] };
 
-            expect(refine(card, 'keep the marker as it is', [verse, verse])).toMatchObject({
-                status: 'rejected',
-                rejectionReason: expect.stringContaining('more than once'),
-            });
+            expect(refineStoredCard(card, 'keep the marker as it is', [verse, verse]).status).toBe('rejected');
         });
 
-        it('a pending command with no target pairs only with a call of the same payload, minted ids aside', () => {
+        it('a creation card refines against its stored batch, which refuses a pending creation the batch drops', () => {
             const marker = (name: string, beat: number): ProviderCall => ({
                 name: 'addMarker',
                 arguments: { name, beat },
@@ -2936,33 +2998,40 @@ describe('binding a terse refinement to the pending card it refines', () => {
             const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
                 [twoMarkers, 'add a marker at beat 0 named Verse', [marker('Verse', 0)]],
                 [twoMarkers, 'add a marker at beat 32 named Chorus', [marker('Chorus', 32)]],
+                [
+                    twoMarkers,
+                    'add a marker at beat 0 named Verse and add a marker at beat 32 named Outro',
+                    [marker('Verse', 0), marker('Outro', 32)],
+                ],
                 [twoTracks, 'add an audio track named Drums', [audioTrack('Drums')]],
             ];
-            for (const [card, refinement, calls] of rows) {
-                expect({ refinement, result: refine(card, refinement, calls) }).toMatchObject({
+            expect(
+                rows.map(([card, refinement, calls]) => ({
                     refinement,
-                    result: { status: 'rejected', rejectionReason: expect.stringContaining('omits a pending') },
-                });
-            }
+                    result: refineStoredCard(card, refinement, calls),
+                }))
+            ).toEqual(
+                rows.map(([, refinement]) => ({
+                    refinement,
+                    result: { status: 'refused', reason: expect.stringContaining('omits a pending') },
+                }))
+            );
             const verseAndCut = {
                 prompt: 'add a marker at beat 0 named Verse and turn Vocals down 3 dB',
                 calls: [marker('Verse', 0), vocalsBy(-3)],
             };
             const addsChorus =
                 'add a marker at beat 0 named Verse, add a marker at beat 16 named Chorus and turn Vocals down 3 dB';
-            const grounded = refine(verseAndCut, addsChorus, [marker('Verse', 0), marker('Chorus', 16), vocalsBy(-3)]);
 
-            expect(grounded.status === 'grounded' ? grounded.actions.map((action) => action.type) : grounded).toEqual([
-                'addMarker',
-                'addMarker',
-                'setTrackGain',
-            ]);
             expect(
-                refine(verseAndCut, addsChorus, [marker('Verse', 0), marker('Verse', 0), vocalsBy(-3)])
-            ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('more than once') });
+                refineStoredCard(verseAndCut, addsChorus, [marker('Verse', 0), marker('Chorus', 16), vocalsBy(-3)])
+            ).toEqual({ status: 'valid', reason: null });
+            expect(
+                refineStoredCard(verseAndCut, addsChorus, [marker('Verse', 0), marker('Verse', 0), vocalsBy(-3)])
+            ).toEqual({ status: 'rejected', reason: null });
         });
 
-        it('a pending command that targets and creates nothing pairs by the arguments its mutation identity names', () => {
+        it('a marker, section or tempo card carries no basis and refines against its stored batch', () => {
             const markerCall = (name: string, beat: number, extra: Record<string, unknown> = {}): ProviderCall => ({
                 name: Object.keys(extra).length === 0 ? 'removeMarker' : 'setMarkerColor',
                 arguments: { beat, name, ...extra },
@@ -3010,24 +3079,32 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     ],
                 ];
                 expect(
-                    rows.map(([card, refinement, calls]) => ({ refinement, result: refine(card, refinement, calls) }))
-                ).toMatchObject(
-                    rows.map(([, refinement]) => ({
+                    rows.map(([card, refinement, calls]) => ({
                         refinement,
-                        result: { status: 'rejected', rejectionReason: expect.stringContaining('omits a pending') },
+                        result: refineStoredCard(card, refinement, calls),
+                    }))
+                ).toEqual(
+                    rows.map(([card, refinement]) => ({
+                        refinement,
+                        result: {
+                            status: 'refused',
+                            reason: expect.stringContaining(`omits a pending ${card.calls[0]!.name}`),
+                        },
                     }))
                 );
-                expect(
-                    commandsOf(
-                        refine({ prompt: 'set tempo to 120', calls: [tempo(120)] }, 'make it 124 bpm', [tempo(124)])
-                    )
-                ).toEqual([{ type: 'setTempo' }]);
+                const tempoCard = { prompt: 'set tempo to 120', calls: [tempo(120)] };
+
+                expect(refineStoredCard(tempoCard, 'make it 124 bpm', [tempo(124)]).status).toBe('rejected');
+                expect(refineStoredCard(tempoCard, 'set tempo to 124', [tempo(124)])).toEqual({
+                    status: 'valid',
+                    reason: null,
+                });
             } finally {
                 markerStore.set({ markers: [], sections: [] });
             }
         });
 
-        it('a figureless creation clause is answered by the creation its call continues, changed or not', () => {
+        it('a creation card refines against its stored batch, keeping each pending creation the batch makes again', () => {
             const marker = (name: string, beat: number): ProviderCall => ({
                 name: 'addMarker',
                 arguments: { name, beat },
@@ -3048,62 +3125,69 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 prompt: 'add an audio track named Drums and turn Vocals down 3 dB',
                 calls: [audioTrack('Drums'), vocalsBy(-3)],
             };
-            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[], string]> = [
+            const drums = { prompt: 'add an audio track named Drums', calls: [audioTrack('Drums')] };
+            const valid = { status: 'valid', reason: null };
+            const omits = (type: string) => ({
+                status: 'refused',
+                reason: expect.stringContaining(`omits a pending ${type}`),
+            });
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[], unknown]> = [
                 [
                     congasAndCut,
                     'add an audio track named Congas and turn Vocals down 2 dB',
                     [audioTrack('Congas'), vocalsBy(-2)],
-                    'Congas',
+                    valid,
                 ],
                 [
                     verseAndCut,
                     'add a marker at beat 8 named Verse and turn Vocals down 3 dB',
                     [marker('Verse', 8), vocalsBy(-3)],
-                    'Verse',
+                    omits('addMarker'),
                 ],
                 [
                     verseAndCut,
                     'add a marker at beat 0 named Intro and turn Vocals down 3 dB',
                     [marker('Intro', 0), vocalsBy(-3)],
-                    'Intro',
+                    omits('addMarker'),
                 ],
                 [
                     drumsAndCut,
                     'add an audio track named Percussion and turn Vocals down 3 dB',
                     [audioTrack('Percussion'), vocalsBy(-3)],
-                    'Percussion',
+                    omits('addTrack'),
+                ],
+                [
+                    drums,
+                    'add an audio track named Percussion, leaving Drums unchanged',
+                    [audioTrack('Percussion')],
+                    omits('addTrack'),
+                ],
+                [drums, 'add an audio track named Percussion, remove Drums', [audioTrack('Percussion')], valid],
+                [
+                    drumsAndCut,
+                    'turn Vocals down 2 dB and add an audio track named Bongos',
+                    [vocalsBy(-2), audioTrack('Bongos')],
+                    omits('addTrack'),
+                ],
+                [
+                    congasAndCut,
+                    'add an audio track named Bongos and turn Vocals down 3 dB',
+                    [audioTrack('Congas'), vocalsBy(-3)],
+                    { status: 'rejected', reason: null },
+                ],
+                [
+                    congasAndCut,
+                    'add an audio track named Congas, add an audio track named Bongos and turn Vocals down 3 dB',
+                    [audioTrack('Congas'), vocalsBy(-3)],
+                    { status: 'rejected', reason: null },
                 ],
             ];
-            const createdOf = (result: ReturnType<typeof refine>) => {
-                if (result.status !== 'grounded') {
-                    return result;
-                }
-                return { name: payloadOf(result.actions[0]!).name, types: result.actions.map((action) => action.type) };
-            };
             expect(
                 rows.map(([card, refinement, calls]) => ({
                     refinement,
-                    created: createdOf(refine(card, refinement, calls)),
+                    result: refineStoredCard(card, refinement, calls),
                 }))
-            ).toEqual(
-                rows.map(([, refinement, calls, name]) => ({
-                    refinement,
-                    created: { name, types: [calls[0]!.name, 'setTrackGain'] },
-                }))
-            );
-            expect(
-                refine(congasAndCut, 'add an audio track named Bongos and turn Vocals down 3 dB', [
-                    audioTrack('Congas'),
-                    vocalsBy(-3),
-                ])
-            ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('No proposed change') });
-            expect(
-                refine(
-                    congasAndCut,
-                    'add an audio track named Congas, add an audio track named Bongos and turn Vocals down 3 dB',
-                    [audioTrack('Congas'), vocalsBy(-3)]
-                )
-            ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('No proposed change') });
+            ).toEqual(rows.map(([, refinement, , result]) => ({ refinement, result })));
         });
 
         it('a batch continuing no pending command beside a figure comparative still reads every value clause', () => {
@@ -3271,6 +3355,51 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
+        it('consumes a clause of courtesy alone beside a batch the refinement text grounds by itself', () => {
+            const rows = [
+                `Hi, ${RESTATED}`,
+                `Hello, ${RESTATED}`,
+                `Sorry, ${RESTATED}`,
+                `Oops, ${RESTATED}`,
+                `No wait, ${RESTATED}`,
+                `Alright, ${RESTATED}`,
+                `Cool, ${RESTATED}`,
+                `Yes please, ${RESTATED}`,
+                `${RESTATED} Thank you very much.`,
+                `${RESTATED} Thanks so much.`,
+                `${RESTATED} Thx.`,
+                `${RESTATED.replace(/\.$/u, '')}, pls.`,
+                `${RESTATED} That should be better.`,
+                `${RESTATED.replace(/\.$/u, '')}, if possible.`,
+            ];
+            expect(
+                rows.map((refinement) => ({
+                    refinement,
+                    status: refine(MIX_CARD, refinement, mixPlan(0.8, true), MIX_CONTEXT).status,
+                }))
+            ).toEqual(rows.map((refinement) => ({ refinement, status: 'grounded' })));
+            const asking = [
+                [`${RESTATED} Slower.`, 'rejected'],
+                [`${RESTATED} Double it.`, 'rejected'],
+                [`${RESTATED} Undo that.`, 'rejected'],
+                [`${RESTATED} Unmuted.`, 'clarify'],
+                [`${RESTATED} Add it.`, 'rejected'],
+            ] as const;
+            expect(
+                asking.map(([refinement]) => ({
+                    refinement,
+                    status: refine(MIX_CARD, refinement, mixPlan(0.8, true), MIX_CONTEXT).status,
+                }))
+            ).toEqual(asking.map(([refinement, status]) => ({ refinement, status })));
+            expect(commandsOf(refine(P0_CARD, 'Hi, turn Vocals down 2 dB', [vocalsBy(-2)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 },
+            ]);
+            expect(refine(P0_CARD, 'hi, make it 1 dB', [vocalsBy(-1)]).status).not.toBe('grounded');
+            expect(refine(MIX_CARD, `${RESTATED} I need it quieter.`, mixPlan(0.8, true), MIX_CONTEXT).status).toBe(
+                'clarify'
+            );
+        });
+
         it('refuses a clause outside the filler list that names nothing and states no figure', () => {
             const tempo = (bpm: number): ProviderCall => ({ name: 'setTempo', arguments: { bpm } });
             const bassPan = (pan: number): ProviderCall => ({
@@ -3285,8 +3414,6 @@ describe('binding a terse refinement to the pending card it refines', () => {
             const panCard = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
             const muteCard = { prompt: 'mute Bass', calls: [bassMute(true)] };
             const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[]]> = [
-                [tempoCard, 'slower, 140 bpm', [tempo(140)]],
-                [tempoCard, 'faster, 100 bpm', [tempo(100)]],
                 [panCard, 'wider, pan it 20 left', [bassPan(-20)]],
                 [panCard, 'narrower, pan it 40 left', [bassPan(-40)]],
                 [P0_CARD, 'gentler, make it 5 dB', [vocalsBy(-5)]],
@@ -3303,6 +3430,17 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     status: refine(card, refinement, calls).status,
                 }))
             ).toEqual(rows.map(([, refinement]) => ({ refinement, status: 'rejected' })));
+            // A tempo card carries no basis: such a refinement grounds in its own text alone.
+            const tempoRows = [
+                ['slower, 140 bpm', 140],
+                ['faster, 100 bpm', 100],
+            ] as const;
+            expect(
+                tempoRows.map(([refinement, bpm]) => ({
+                    refinement,
+                    status: refineStoredCard(tempoCard, refinement, [tempo(bpm)]).status,
+                }))
+            ).toEqual(tempoRows.map(([refinement]) => ({ refinement, status: 'rejected' })));
         });
     });
 

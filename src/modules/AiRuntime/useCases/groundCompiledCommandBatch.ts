@@ -18,6 +18,7 @@ import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmTo
 import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
+import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalGroundingBasis } from './agentReference/proposalGroundingBasis';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
@@ -296,6 +297,8 @@ function toGroundedRefinement(bridged: Bridged): GroundedRefinement | undefined 
  * The basis the card for this batch carries, so a terse refinement of it can inherit its grounding.
  * Only an ordinary batch whose commands are the provider's calls one for one carries one: anything an
  * application route expanded, compiled or bound has no single request clause behind each command.
+ * Every command must also name a target, the one thing a refinement pairs a call with it by: a card
+ * holding a creation, a marker or section command or the tempo refines against its stored batch instead.
  */
 function composeGroundingBasis(
     input: GroundCompiledCommandBatchInput,
@@ -305,11 +308,15 @@ function composeGroundingBasis(
     const alignsWithCalls =
         guarded.actions.length === input.toolCalls.length &&
         guarded.actions.every((action, index) => action.type === input.toolCalls[index]?.name);
+    const everyCallTargets = input.toolCalls.every(
+        (call) => proposalCommandShape.targets(call.name, call.arguments).length > 0
+    );
     if (
         !isOrdinaryBatch(input) ||
         bridged.actionCommandGraph !== undefined ||
         (bridged.batchLocalActionIdentities?.length ?? 0) > 0 ||
-        !alignsWithCalls
+        !alignsWithCalls ||
+        !everyCallTargets
     ) {
         return undefined;
     }

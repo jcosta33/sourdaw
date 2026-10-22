@@ -5642,74 +5642,27 @@ function findProtectedChange(
     return null;
 }
 
-/** The pending commands of one pairing key: one type and full target tuple, or one target-less payload. */
-function groupPendingByPairingKey(basis: ProposalGroundingBasis, context: ProjectContext): Map<string, number[]> {
+/** The pending commands of one type and full target tuple. */
+function groupPendingByTargetKey(basis: ProposalGroundingBasis): Map<string, number[]> {
     const groups = new Map<string, number[]>();
     for (const [index, command] of basis.commands.entries()) {
-        const key = proposalCommandShape.pairingKey(command.type, command.payload, context);
+        const key = proposalCommandShape.targetKey(command.type, command.payload);
         groups.set(key, [...(groups.get(key) ?? []), index]);
     }
     return groups;
 }
 
 /**
- * After payload pairing, the one creation with no target tuple a batch makes of a type that no pending
- * command shares continues the one such pending creation of that type no call shares, changed: "add a
- * marker at beat 8 named Verse" against a pending marker at beat 0, or a track named Percussion against
- * one named Drums. With two left over on either side nothing pairs, since no reading tells which changed.
- * Returns each such call's position with the pending command it continues.
+ * For each call, the one pending command of its type and full target tuple it continues, or `null` when
+ * no pending command or several share that key. Every command a basis carries names a target, so a call
+ * naming none continues nothing. No two calls continue one command: a batch where they would is
+ * refused before any route reads it.
  */
-function pairChangedCreations(
-    calls: readonly ToolCallResult[],
-    basis: ProposalGroundingBasis,
-    context: ProjectContext
-): Map<number, number> {
-    const pendingKeys = basis.commands.map((command) =>
-        proposalCommandShape.pairingKey(command.type, command.payload, context)
-    );
-    const callKeys = calls.map((call) => proposalCommandShape.pairingKey(call.name, call.arguments, context));
-    const remainingCalls = calls.flatMap((call, position) =>
-        !pendingKeys.includes(callKeys[position]!) && proposalCommandShape.untargetedCreation(call.name, call.arguments)
-            ? [position]
-            : []
-    );
-    const remainingPending = basis.commands.flatMap((command, index) =>
-        !callKeys.includes(pendingKeys[index]!) &&
-        proposalCommandShape.untargetedCreation(command.type, command.payload)
-            ? [index]
-            : []
-    );
-    const pairs = new Map<number, number>();
-    for (const position of remainingCalls) {
-        const type = calls[position]!.name;
-        const sameTypeCalls = remainingCalls.filter((other) => calls[other]!.name === type);
-        const [onlyPending, ...otherPending] = remainingPending.filter((index) => basis.commands[index]!.type === type);
-        if (sameTypeCalls.length === 1 && onlyPending !== undefined && otherPending.length === 0) {
-            pairs.set(position, onlyPending);
-        }
-    }
-    return pairs;
-}
-
-/**
- * For each call, the one pending command it continues: of the same type and full target tuple, or, with
- * no target tuple, of the same payload, minted ids aside, or the one changed creation left over once
- * payloads paired. `null` when no pending command or several share that key. No two calls continue one
- * command: a batch where they would is refused before any route reads it.
- */
-function partitionRefinedCalls(
-    calls: readonly ToolCallResult[],
-    basis: ProposalGroundingBasis,
-    context: ProjectContext
-): Array<number | null> {
-    const groups = groupPendingByPairingKey(basis, context);
-    const changedCreations = pairChangedCreations(calls, basis, context);
-    return calls.map((call, position) => {
-        const [only, ...others] = groups.get(proposalCommandShape.pairingKey(call.name, call.arguments, context)) ?? [];
-        if (only !== undefined && others.length === 0) {
-            return only;
-        }
-        return changedCreations.get(position) ?? null;
+function partitionRefinedCalls(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Array<number | null> {
+    const groups = groupPendingByTargetKey(basis);
+    return calls.map((call) => {
+        const [only, ...others] = groups.get(proposalCommandShape.targetKey(call.name, call.arguments)) ?? [];
+        return only !== undefined && others.length === 0 ? only : null;
     });
 }
 
@@ -5762,23 +5715,14 @@ function findSilentOmission(input: {
     return null;
 }
 
-/**
- * The pending commands a batch the refinement text grounded by itself still carries, by type and target,
- * or by payload for a command with no target, and the one changed creation of a type left over once
- * payloads paired.
- */
-function getCarriedCommandIndexes(
-    calls: readonly ToolCallResult[],
-    basis: ProposalGroundingBasis,
-    context: ProjectContext
-): Set<number> {
-    const keys = new Set(calls.map((call) => proposalCommandShape.pairingKey(call.name, call.arguments, context)));
-    return new Set([
-        ...basis.commands.flatMap((command, index) =>
-            keys.has(proposalCommandShape.pairingKey(command.type, command.payload, context)) ? [index] : []
-        ),
-        ...pairChangedCreations(calls, basis, context).values(),
-    ]);
+/** The pending commands a batch the refinement text grounded by itself still carries, by type and target. */
+function getCarriedCommandIndexes(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Set<number> {
+    const keys = new Set(calls.map((call) => proposalCommandShape.targetKey(call.name, call.arguments)));
+    return new Set(
+        basis.commands.flatMap((command, index) =>
+            keys.has(proposalCommandShape.targetKey(command.type, command.payload)) ? [index] : []
+        )
+    );
 }
 
 /** Which source calls still ground in their own request text, replayed against the project as it is now. */
@@ -6089,7 +6033,7 @@ function bridgeRefinedLlmToolCalls(
 ): BridgeGroundedLlmToolCallsResult {
     const { calls, context, prompt } = input;
     const unrefined: BridgeGroundedLlmToolCallsInput = { ...input, refinementBasis: undefined };
-    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis, context);
+    const inheritedCommandIndexes = partitionRefinedCalls(calls, basis);
     const repeated = findRepeatedPendingCommand(inheritedCommandIndexes, basis, context);
     if (repeated !== null) {
         return refuseRefinement(repeated);
@@ -6165,9 +6109,9 @@ function bridgeRefinedLlmToolCalls(
         calls,
         inheritedCommandIndexes,
         kept: groundsDirectly
-            ? getCarriedCommandIndexes(calls, basis, context)
+            ? getCarriedCommandIndexes(calls, basis)
             : new Set(inheritedCommandIndexes.filter((index): index is number => index !== null)),
-        unrefined: groundsDirectly ? unrefined : null,
+        groundsDirectly,
         basis,
         removals,
         prompt,
@@ -6204,15 +6148,16 @@ function changesPendingValue(
  * The one check every refinement result passes, whichever route grounded it: no pending command the
  * refinement removes is kept, none the batch leaves out stands without a removal naming it, and every
  * clause asking for something the card does not carry is answered by a call continuing no pending
- * command.
+ * command. Beside a batch the refinement text grounded by itself, a clause of courtesy alone asks for
+ * nothing.
  */
 function findRefinementDefect(input: {
     calls: readonly ToolCallResult[];
     inheritedCommandIndexes: ReadonlyArray<number | null>;
     /** The pending commands the batch carries on. */
     kept: ReadonlySet<number>;
-    /** The refinement grounded as a plain request, when its text grounded the whole batch by itself. */
-    unrefined: BridgeGroundedLlmToolCallsInput | null;
+    /** Whether the refinement text grounded the whole batch by itself, so no call inherits a pending command. */
+    groundsDirectly: boolean;
     basis: ProposalGroundingBasis;
     removals: ReadRemovals;
     prompt: string;
@@ -6234,19 +6179,6 @@ function findRefinementDefect(input: {
         return omission;
     }
     const catalog = getExecutableAppActionGroundingCatalog();
-    // A creation continuing a pending one answers a clause that grounds it by itself ("add an audio track
-    // named Congas" restated, or the marker it moves); one inherited from the card answers nothing.
-    const answers = (clause: RefinementClause, call: ToolCallResult, index: number): boolean => {
-        if (input.inheritedCommandIndexes[index] === null) {
-            return answersAdditionClause(clause, call, catalog, context);
-        }
-        return (
-            input.unrefined !== null &&
-            proposalCommandShape.untargetedCreation(call.name, call.arguments) &&
-            bridgeGroundedLlmToolCalls({ ...input.unrefined, calls: [call], prompt: clause.text }).rejections.length ===
-                0
-        );
-    };
     const unanswered = refinementClauseReader
         .additions({
             text: prompt,
@@ -6254,8 +6186,16 @@ function findRefinementDefect(input: {
             context,
             removalClauseStarts: removals.removalClauseStarts,
             removedCommandIndexes: removals.removedCommandIndexes,
+            readsCourtesy: input.groundsDirectly,
         })
-        .find((clause) => !input.calls.some((call, index) => answers(clause, call, index)));
+        .find(
+            (clause) =>
+                !input.calls.some(
+                    (call, index) =>
+                        input.inheritedCommandIndexes[index] === null &&
+                        answersAdditionClause(clause, call, catalog, context)
+                )
+        );
     return unanswered === undefined ? null : `No proposed change answers "${unanswered.text.trim()}" in the refinement`;
 }
 

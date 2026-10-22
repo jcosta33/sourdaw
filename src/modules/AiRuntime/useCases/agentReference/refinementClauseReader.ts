@@ -14,6 +14,7 @@ import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { refinementActionWords } from './refinementActionWords';
+import { refinementCourtesy } from './refinementCourtesy';
 import { refinementRequestReading, type ReferenceCandidate, type StatedReference } from './refinementRequestReading';
 
 type ProtectedObject = ProposalGroundingBasis['protectedUnchanged'][number];
@@ -110,8 +111,10 @@ const NEGATED_CLAUSE_REASON = 'The refinement says what not to do without naming
 const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
 /**
  * The closed list of clauses a refinement states only as courtesy, hesitation or acknowledgement,
- * which it consumes whole. Any other clause naming nothing and stating no figure is read for what it
- * asks, never guessed to say nothing: "slower" or "double it" asks for a change the batch must answer.
+ * which it consumes whole. Wherever a call inherits a pending command, any other clause naming nothing
+ * and stating no figure is read for what it asks, never guessed to say nothing: "slower" or "double it"
+ * asks for a change the batch must answer. Only beside a batch the refinement text grounds by itself is a
+ * clause of courtesy alone outside this list read as asking for nothing.
  */
 const FILLER_CLAUSES: ReadonlySet<string> = new Set([
     'please',
@@ -140,8 +143,6 @@ const COMPARATIVE =
     /^(?:(?:make it|go|do it)\s+)?(?:(?:a\s+)?(?:bit|little|touch|tad|lot)\s+|slightly\s+|much\s+|even\s+)?(less|more)(?:\s+please)?$/u;
 /** The one form a negation removes or protects in: `not`/`except`/`except for`/`without` and what follows. */
 const NEGATION_FORM = /^(?:not|except(?:\s+for)?|without)\s+(.+)$/u;
-/** Any negation a clause states, read from its normalized words outside object names ("don't" reads "don t"). */
-const NEGATION_WORD = /(?<![\p{L}\p{N}])(?:not|never|without|except|cannot|\p{L}*n t)(?![\p{L}\p{N}])/u;
 const LEAVE_ALONE = /^leave\s+(.+?)\s+alone$/u;
 const PROTECTION =
     /\b(?:leave|leaving|keep|keeping|preserve|preserving)\b.*\b(?:unchanged|as\s+(?:it\s+is|is|proposed))\b/u;
@@ -253,7 +254,7 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     if ((negation !== null || alone !== null) && (input.continuesRemoval || input.precedesRemoval)) {
         return askNegationBesideRemoval(clause);
     }
-    if (negation === null && NEGATION_WORD.test(normalizePromptText(clause.masked))) {
+    if (negation === null && refinementRequestReading.statesNegation(clause)) {
         return readOtherNegation(clause, candidates);
     }
     const statesFigure = findPromptNumbers(clause.masked).length > 0;
@@ -660,7 +661,9 @@ function askUnreadNegation(input: {
 /**
  * The clauses a refinement asks for something the pending card does not carry in: each names an object
  * no pending command acts on, or an action no pending command it names takes, so a new command must
- * answer it. Removal clauses are read as removals, never as additions.
+ * answer it. Removal clauses are read as removals, never as additions. With `readsCourtesy`, set only
+ * when the refinement text grounded the whole batch by itself, a clause of courtesy alone asks for
+ * nothing; otherwise only the closed filler list is consumed.
  */
 function readAdditionClauses(input: {
     text: string;
@@ -668,15 +671,21 @@ function readAdditionClauses(input: {
     context: ProjectContext;
     removalClauseStarts: ReadonlySet<number>;
     removedCommandIndexes: ReadonlySet<number>;
+    readsCourtesy: boolean;
 }): RefinementClause[] {
     const scopeInput = createClauseScopeInput(input);
-    return refinementRequestReading
+    const additions = refinementRequestReading
         .clauses(input.text, input.context)
         .filter(
             (clause) =>
                 !input.removalClauseStarts.has(clause.start) &&
                 readValueClause(clause, scopeInput, input.context).kind === 'addition'
         );
+    if (!input.readsCourtesy) {
+        return additions;
+    }
+    const isCourtesy = refinementCourtesy.reader(scopeInput.catalog, scopeInput.candidates);
+    return additions.filter((clause) => !isCourtesy(clause));
 }
 
 /**
