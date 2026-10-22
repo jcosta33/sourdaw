@@ -135,7 +135,10 @@ describe('repairProjectData', () => {
 
         await expect(repairProjectData()).resolves.toBe('refused');
 
-        expect(notifyUser).toHaveBeenCalledWith('Playback started during the repair - stop it and repair again', 'warning');
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Playback started during the repair - stop it and repair again',
+            'warning'
+        );
     });
 
     it('propagates a real failure unchanged', async () => {

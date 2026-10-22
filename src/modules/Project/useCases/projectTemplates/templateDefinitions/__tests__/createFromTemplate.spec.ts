@@ -31,7 +31,6 @@ const mocks = vi.hoisted(() => ({
     startCrdtAutoSave: vi.fn(),
     stopActiveAutoSave: vi.fn(),
     stopPlayback: vi.fn(),
-    transport: { rolling: false },
     transactionActivate: vi.fn(),
     transactionCanActivate: vi.fn(),
     transactionIsCurrent: vi.fn(),
@@ -119,7 +118,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
-    isTransportIdle: () => !mocks.transport.rolling,
+    isTransportIdle: () => true,
     stopPlayback: mocks.stopPlayback,
     addTempoChange: vi.fn(),
     addTimeSignatureChange: vi.fn(),
@@ -177,11 +176,7 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
-        mocks.transport.rolling = false;
-        mocks.stopPlayback.mockImplementation(() => {
-            mocks.transport.rolling = false;
-            return Promise.resolve();
-        });
+        mocks.stopPlayback.mockResolvedValue(undefined);
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.finalize.mockResolvedValue('finalized');
@@ -319,7 +314,7 @@ describe('createFromTemplate', () => {
         expect(mocks.transactionPrepare).toHaveBeenCalledOnce();
         expect(mocks.transactionActivate).toHaveBeenCalledOnce();
         expect(mocks.stopActiveAutoSave).toHaveBeenCalledOnce();
-        expect(mocks.resetCrdtProject).toHaveBeenCalledWith('Pop Song', expect.any(Function));
+        expect(mocks.resetCrdtProject).toHaveBeenCalledWith('Pop Song', expect.any(Function), expect.any(Function));
         // The template owns the document from that call on, so the pedals
         // latched under the project just left are forgotten here and not at the
         // earlier graph reset, which restoreAudioGraph can still undo.
@@ -485,79 +480,61 @@ describe('createFromTemplate', () => {
         // template creation.
         expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
-    it('stops a roll started during the native teardown before the authority switch', async () => {
-        const unloading = Promise.withResolvers<void>();
-        let rollingAtSwitch: boolean | null = null;
-        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
-        mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
-            rollingAtSwitch = mocks.transport.rolling;
-            onAuthorityReplaced?.();
-            return Promise.resolve({ status: 'replaced', finalize: mocks.finalize });
-        });
 
-        const creation = createFromTemplate('pop-song');
-        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
-        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
-        mocks.transport.rolling = true;
-        unloading.resolve();
+    // A Play or Record pressed while the reset awaits its durable steps is
+    // rolling at the switch, and only the reset can see that; it refuses, and
+    // this caller stops the transport and asks again.
+    it('stops the transport and asks again when the reset finds it rolling', async () => {
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
 
-        await expect(creation).resolves.toBe(true);
-        expect(rollingAtSwitch).toBe(false);
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.resetCrdtProject).toHaveBeenCalledTimes(2);
         expect(mocks.stopPlayback).toHaveBeenCalledTimes(2);
-        expect(mocks.stopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(
-            mocks.resetCrdtProject.mock.invocationCallOrder[0]!
-        );
+        const [firstReset, secondReset] = mocks.resetCrdtProject.mock.invocationCallOrder;
+        expect(mocks.stopPlayback.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
+        expect(mocks.stopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(mocks.forgetProjectLatchedPedals).toHaveBeenCalledOnce();
     });
 
-    it('keeps stopping until the transport is idle when a roll restarts during the extra stop', async () => {
-        const unloading = Promise.withResolvers<void>();
-        const extraStop = Promise.withResolvers<void>();
-        let rollingAtSwitch: boolean | null = null;
-        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
-        mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
-            rollingAtSwitch = mocks.transport.rolling;
-            onAuthorityReplaced?.();
-            return Promise.resolve({ status: 'replaced', finalize: mocks.finalize });
-        });
+    it('keeps stopping and asking until the reset finds the transport idle', async () => {
+        mocks.resetCrdtProject
+            .mockResolvedValueOnce({ status: 'transport-active' })
+            .mockResolvedValueOnce({ status: 'transport-active' });
 
-        const creation = createFromTemplate('pop-song');
-        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
-        mocks.transport.rolling = true;
-        mocks.stopPlayback.mockImplementationOnce(() => {
-            // The extra stop is held open and a second roll starts under it.
-            mocks.transport.rolling = false;
-            return extraStop.promise.then(() => {
-                mocks.transport.rolling = true;
-            });
-        });
-        unloading.resolve();
-        await vi.waitFor(() => expect(mocks.stopPlayback).toHaveBeenCalledTimes(2));
-        extraStop.resolve();
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
 
-        await expect(creation).resolves.toBe(true);
+        expect(mocks.resetCrdtProject).toHaveBeenCalledTimes(3);
         expect(mocks.stopPlayback).toHaveBeenCalledTimes(3);
-        expect(rollingAtSwitch).toBe(false);
     });
 
-    it('does not replace authority when superseded while the restarted roll is being stopped', async () => {
-        const unloading = Promise.withResolvers<void>();
+    it('does not replace authority when superseded while the refused roll is being stopped', async () => {
         const extraStop = Promise.withResolvers<void>();
-        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mocks.stopPlayback.mockResolvedValueOnce(undefined).mockReturnValueOnce(extraStop.promise);
 
         const creation = createFromTemplate('pop-song');
-        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
-        mocks.transport.rolling = true;
-        mocks.stopPlayback.mockImplementationOnce(() => {
-            mocks.transport.rolling = false;
-            return extraStop.promise;
-        });
-        unloading.resolve();
         await vi.waitFor(() => expect(mocks.stopPlayback).toHaveBeenCalledTimes(2));
         mocks.transactionIsCurrent.mockReturnValue(false);
         extraStop.resolve();
 
         await expect(creation).resolves.toBe(false);
-        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('restores the previous project when the stop after a refused reset rejects', async () => {
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mocks.stopPlayback.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('recorder flush failed'));
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
+        expect(mocks.finalize).not.toHaveBeenCalled();
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     it('holds the runtime transition lease through the template action', async () => {

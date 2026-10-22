@@ -32,7 +32,6 @@ const {
     mockVerifyAudioBufferReferences,
     mockRearmInputMonitoring,
     mockTrackStoreValue,
-    mockTransport,
 } = vi.hoisted(() => ({
     mockLogger: { error: vi.fn(), warn: vi.fn() },
     mockBatchStoreUpdates: vi.fn((fn: () => void) => fn()),
@@ -71,7 +70,6 @@ const {
     mockVerifyAudioBufferReferences: vi.fn(),
     mockRearmInputMonitoring: vi.fn(),
     mockTrackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
-    mockTransport: { rolling: false },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
@@ -112,7 +110,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: mockEnsureTrackStrips,
-    isTransportIdle: () => !mockTransport.rolling,
+    isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
@@ -196,11 +194,7 @@ describe('replaceProjectData', () => {
             cancel: mockCancelPreparedStoredBuffers,
             publish: vi.fn(),
         });
-        mockTransport.rolling = false;
-        mockStopPlayback.mockImplementation(() => {
-            mockTransport.rolling = false;
-            return Promise.resolve();
-        });
+        mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
         mockFinalizeReset.mockResolvedValue('finalized');
@@ -301,8 +295,9 @@ describe('replaceProjectData', () => {
         expect(mockResetAudioGraph).toHaveBeenCalled();
         expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce();
         // Second argument is the point-of-no-return callback the abort path
-        // uses to tell a recoverable failure from an unrecoverable one.
-        expect(mockResetCrdtProject).toHaveBeenCalledWith('Test Project', expect.any(Function));
+        // uses to tell a recoverable failure from an unrecoverable one; the third
+        // is the transport check the reset makes at the switch.
+        expect(mockResetCrdtProject).toHaveBeenCalledWith('Test Project', expect.any(Function), expect.any(Function));
         // The loaded project owns the document from that call on, so the pedals
         // latched under the project just left are forgotten here and not at the
         // earlier graph reset, which an abort can still undo.
@@ -393,92 +388,75 @@ describe('replaceProjectData', () => {
         expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
-    it('stops a roll started during the native teardown before the authority switch', async () => {
-        const unloading = Promise.withResolvers<void>();
-        let rollingAtSwitch: boolean | null = null;
-        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
-        mockResetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
-            rollingAtSwitch = mockTransport.rolling;
-            onAuthorityReplaced?.();
-            return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
-        });
+    // A Play or Record pressed while the reset awaits its durable steps is
+    // rolling at the switch, and only the reset can see that; it refuses, and
+    // this caller stops the transport and asks again.
+    it('stops the transport and asks again when the reset finds it rolling', async () => {
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
 
-        const replacement = replaceProjectData({
-            context: 'loadRecentProject',
-            data: makeData(),
-            transaction: makeTransaction(),
-        });
-        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
-        expect(mockStopPlayback).toHaveBeenCalledOnce();
-        mockTransport.rolling = true;
-        unloading.resolve();
+        await expect(
+            replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
+        ).resolves.toMatchObject({ status: 'committed' });
 
-        await expect(replacement).resolves.toMatchObject({ status: 'committed' });
-        expect(rollingAtSwitch).toBe(false);
+        expect(mockResetCrdtProject).toHaveBeenCalledTimes(2);
         expect(mockStopPlayback).toHaveBeenCalledTimes(2);
-        expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(
-            mockResetCrdtProject.mock.invocationCallOrder[0]!
-        );
+        const [firstReset, secondReset] = mockResetCrdtProject.mock.invocationCallOrder;
+        expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
+        expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(mockForgetProjectLatchedPedals).toHaveBeenCalledOnce();
     });
 
-    it('keeps stopping until the transport is idle when a roll restarts during the extra stop', async () => {
-        const unloading = Promise.withResolvers<void>();
-        const extraStop = Promise.withResolvers<void>();
-        let rollingAtSwitch: boolean | null = null;
-        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
-        mockResetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced?: () => void) => {
-            rollingAtSwitch = mockTransport.rolling;
-            onAuthorityReplaced?.();
-            return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
-        });
+    it('keeps stopping and asking until the reset finds the transport idle', async () => {
+        mockResetCrdtProject
+            .mockResolvedValueOnce({ status: 'transport-active' })
+            .mockResolvedValueOnce({ status: 'transport-active' });
 
-        const replacement = replaceProjectData({
-            context: 'loadRecentProject',
-            data: makeData(),
-            transaction: makeTransaction(),
-        });
-        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
-        mockTransport.rolling = true;
-        mockStopPlayback.mockImplementationOnce(() => {
-            // The extra stop is held open and a second roll starts under it.
-            mockTransport.rolling = false;
-            return extraStop.promise.then(() => {
-                mockTransport.rolling = true;
-            });
-        });
-        unloading.resolve();
-        await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
-        extraStop.resolve();
+        await expect(
+            replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
+        ).resolves.toMatchObject({ status: 'committed' });
 
-        await expect(replacement).resolves.toMatchObject({ status: 'committed' });
+        expect(mockResetCrdtProject).toHaveBeenCalledTimes(3);
         expect(mockStopPlayback).toHaveBeenCalledTimes(3);
-        expect(rollingAtSwitch).toBe(false);
     });
 
-    it('does not replace authority when superseded while the restarted roll is being stopped', async () => {
-        const unloading = Promise.withResolvers<void>();
+    it('does not replace authority when superseded while the refused roll is being stopped', async () => {
         const extraStop = Promise.withResolvers<void>();
         let isCurrent = true;
-        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mockStopPlayback.mockResolvedValueOnce(undefined).mockReturnValueOnce(extraStop.promise);
 
         const replacement = replaceProjectData({
             context: 'loadRecentProject',
             data: makeData(),
             transaction: makeTransaction({ isCurrent: () => isCurrent }),
         });
-        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
-        mockTransport.rolling = true;
-        mockStopPlayback.mockImplementationOnce(() => {
-            mockTransport.rolling = false;
-            return extraStop.promise;
-        });
-        unloading.resolve();
         await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
         isCurrent = false;
         extraStop.resolve();
 
         await expect(replacement).resolves.toEqual({ status: 'aborted' });
-        expect(mockResetCrdtProject).not.toHaveBeenCalled();
+        expect(mockResetCrdtProject).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('hands the previous project back when the stop after a refused reset rejects', async () => {
+        mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mockStopPlayback.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('recorder flush failed'));
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProject).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+        expect(mockFinalizeReset).not.toHaveBeenCalled();
+        expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+        expect(mockAutoSaveHandle.setAutoSaveHandle).toHaveBeenCalledOnce();
+        expect(mockProjectLoadFailureStore.set).not.toHaveBeenCalled();
     });
 
     it('cancels the stored-buffer candidate when playback shutdown fails before publication', async () => {

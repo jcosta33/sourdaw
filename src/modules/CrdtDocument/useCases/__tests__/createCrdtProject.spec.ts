@@ -48,6 +48,16 @@ describe('createCrdtProject', () => {
         expect(mocks.compactProject).not.toHaveBeenCalled();
     });
 
+    it('rejects naming the refusal, without compacting, when the reset finds the transport rolling', async () => {
+        mocks.resetCrdtProject.mockResolvedValue({ status: 'transport-active' });
+
+        await expect(createCrdtProject('New Project')).rejects.toThrow(
+            '[createCrdtProject] Project reset refused (transport-active)'
+        );
+
+        expect(mocks.compactProject).not.toHaveBeenCalled();
+    });
+
     // C5 — a caller told the project exists must be able to rely on its branch
     // list and its durable bundle describing the same project.
     it('rejects naming the outcome when the reset did not finalize', async () => {

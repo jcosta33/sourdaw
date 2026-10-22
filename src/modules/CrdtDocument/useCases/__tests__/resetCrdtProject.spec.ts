@@ -23,20 +23,27 @@ const mocks = vi.hoisted(() => {
         committedAuthority: vi.fn(),
         beginReset: vi.fn(),
         finalizeReset: vi.fn(),
+        abortReset: vi.fn(),
+        isTransportIdle: vi.fn(),
         resetCrdtProjectAuthority: vi.fn(),
         loggerError: vi.fn(),
+        loggerWarn: vi.fn(),
     };
 });
 
 vi.mock('#/infra/logger/appLogger', () => ({
-    logger: { error: mocks.loggerError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    logger: { error: mocks.loggerError, warn: mocks.loggerWarn, info: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../../stores/branchStore', () => ({
     createDefaultBranchStoreState: mocks.createDefaultBranchStoreState,
     MAIN_BRANCH_ID: 'main',
 }));
 vi.mock('../../repositories/branchStateAuthority', () => ({
-    branchStateAuthority: { beginReset: mocks.beginReset, finalizeReset: mocks.finalizeReset },
+    branchStateAuthority: {
+        beginReset: mocks.beginReset,
+        finalizeReset: mocks.finalizeReset,
+        abortReset: mocks.abortReset,
+    },
 }));
 vi.mock('../readDurablePersistenceAuthority', () => ({
     readDurablePersistenceAuthority: mocks.readDurableAuthority,
@@ -60,7 +67,95 @@ describe('resetCrdtProject', () => {
         mocks.readDurableAuthority.mockResolvedValue(outgoingAuthority);
         mocks.beginReset.mockResolvedValue({ status: 'begun', handle: resetHandle });
         mocks.finalizeReset.mockResolvedValue('finalized');
+        mocks.abortReset.mockResolvedValue('aborted');
+        mocks.isTransportIdle.mockReturnValue(true);
         mocks.committedAuthority.mockReturnValue(null);
+    });
+
+    /**
+     * The reset awaits the durable authority read and the reset record before
+     * it switches, and a Play or Record can land in either wait. The check has
+     * to sit after the last of them, in the switch's own synchronous turn.
+     */
+    describe('a transport that rolls while the durable steps are awaited', () => {
+        it('refuses before the switch and withdraws the record it began', async () => {
+            const begun = Promise.withResolvers<{ status: 'begun'; handle: typeof resetHandle }>();
+            mocks.beginReset.mockReturnValue(begun.promise);
+            const reset = resetCrdtProject('New Project', undefined, mocks.isTransportIdle);
+            await vi.waitFor(() => expect(mocks.beginReset).toHaveBeenCalledOnce());
+            // The user presses Play while the record is being written.
+            mocks.isTransportIdle.mockReturnValue(false);
+            begun.resolve({ status: 'begun', handle: resetHandle });
+
+            await expect(reset).resolves.toEqual({ status: 'transport-active' });
+
+            expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+            expect(mocks.abortReset).toHaveBeenCalledWith(resetHandle);
+            expect(mocks.finalizeReset).not.toHaveBeenCalled();
+        });
+
+        it('does not read the transport until the reset record has been written', async () => {
+            const begun = Promise.withResolvers<{ status: 'begun'; handle: typeof resetHandle }>();
+            mocks.beginReset.mockReturnValue(begun.promise);
+            // Idle when it is first looked at, rolling afterwards: only a check made
+            // after the last await sees the roll.
+            mocks.isTransportIdle.mockReturnValueOnce(true).mockReturnValue(false);
+
+            const reset = resetCrdtProject('New Project', undefined, mocks.isTransportIdle);
+            await vi.waitFor(() => expect(mocks.beginReset).toHaveBeenCalledOnce());
+            expect(mocks.isTransportIdle).not.toHaveBeenCalled();
+            begun.resolve({ status: 'begun', handle: resetHandle });
+            await reset;
+
+            expect(mocks.isTransportIdle.mock.invocationCallOrder[0]!).toBeGreaterThan(
+                mocks.beginReset.mock.invocationCallOrder[0]!
+            );
+        });
+
+        it('switches in the turn that checked the transport', async () => {
+            const replaced = vi.fn();
+            mocks.resetCrdtProjectAuthority.mockImplementation(replaced);
+
+            await resetCrdtProject('New Project', undefined, mocks.isTransportIdle);
+
+            expect(mocks.isTransportIdle.mock.invocationCallOrder[0]!).toBeLessThan(
+                mocks.resetCrdtProjectAuthority.mock.invocationCallOrder[0]!
+            );
+            expect(mocks.abortReset).not.toHaveBeenCalled();
+            expect(replaced).toHaveBeenCalledOnce();
+        });
+
+        it('still refuses when the record cannot be withdrawn, and says so', async () => {
+            mocks.isTransportIdle.mockReturnValue(false);
+            mocks.abortReset.mockResolvedValue('write-failed');
+
+            await expect(resetCrdtProject('New Project', undefined, mocks.isTransportIdle)).resolves.toEqual({
+                status: 'transport-active',
+            });
+
+            expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+            expect(mocks.loggerWarn).toHaveBeenCalledWith(expect.stringContaining('write-failed'));
+        });
+
+        it('does not touch the durable record when the authority cannot be read', async () => {
+            mocks.isTransportIdle.mockReturnValue(false);
+            mocks.readDurableAuthority.mockRejectedValue(new Error('IndexedDB unavailable'));
+
+            await expect(resetCrdtProject('New Project', undefined, mocks.isTransportIdle)).resolves.toEqual({
+                status: 'refused',
+                reason: 'authority-unavailable',
+            });
+
+            expect(mocks.abortReset).not.toHaveBeenCalled();
+        });
+
+        it('checks nothing when the caller supplies no transport, as the bootstrap does', async () => {
+            mocks.isTransportIdle.mockReturnValue(false);
+
+            await expect(resetCrdtProject('New Project')).resolves.toMatchObject({ status: 'replaced' });
+
+            expect(mocks.isTransportIdle).not.toHaveBeenCalled();
+        });
     });
 
     // U1

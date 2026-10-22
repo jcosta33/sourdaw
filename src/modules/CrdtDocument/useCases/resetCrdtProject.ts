@@ -1,7 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { DEFAULT_CRDT_ROOT_LINEAGE } from '../models/CrdtRootLineage';
-import { branchStateAuthority, type BranchResetFinalizeOutcome } from '../repositories/branchStateAuthority';
+import {
+    branchStateAuthority,
+    type BranchResetFinalizeOutcome,
+    type BranchResetHandle,
+} from '../repositories/branchStateAuthority';
 import { advancePersistenceAuthority } from '../repositories/crdtPersistence/advancePersistenceAuthority';
 import { type CrdtPersistenceAuthority } from '../repositories/crdtPersistence/persistenceAuthorityModel';
 import { createDefaultBranchStoreState } from '../stores/branchStore';
@@ -26,9 +30,28 @@ export type CrdtProjectResetRefusal =
     | 'lock-unavailable'
     | 'authority-unavailable';
 
+/**
+ * `transport-active` is the one refusal that asks the caller to act: Record or
+ * Play landed while the reset's durable steps were awaited, so the outgoing
+ * project is still rolling. The caller stops the transport and asks again;
+ * nothing was replaced and the durable record of the attempt is withdrawn.
+ */
 export type CrdtProjectResetResult =
     | { status: 'replaced'; finalize: () => Promise<BranchResetFinalizeOutcome> }
-    | { status: 'refused'; reason: CrdtProjectResetRefusal };
+    | { status: 'refused'; reason: CrdtProjectResetRefusal }
+    | { status: 'transport-active' };
+
+/**
+ * A marker that cannot be withdrawn is safe to leave: the durable authority
+ * still names the outgoing project, so the next reset of this instance settles
+ * it and a boot rolls it back. The retry the caller makes is that next reset.
+ */
+async function withdrawBegunReset(handle: BranchResetHandle): Promise<void> {
+    const outcome = await branchStateAuthority.abortReset(handle);
+    if (outcome !== 'aborted' && outcome !== 'superseded') {
+        logger.warn(`[resetCrdtProject] Could not withdraw the recorded reset (${outcome}); the retry settles it.`);
+    }
+}
 
 /**
  * Replace the active project durably.
@@ -44,10 +67,17 @@ export type CrdtProjectResetResult =
  * @param onAuthorityReplaced Called once the previous project is unrecoverable.
  * A caller that aborts on a throw from here needs to know which side of that
  * line it landed on; see `resetCrdtProjectAuthority`.
+ * @param isTransportIdle Read synchronously, after the last `await` and in the
+ * same turn as the switch. A caller that can have a transport rolling passes
+ * the Transport module's `isTransportIdle`; it is a parameter, not an import,
+ * because Transport already reaches CrdtDocument and importing it back closes
+ * a dependency cycle. Omitted, nothing is checked, which is right only where no
+ * transport exists yet, such as the bootstrap.
  */
 export async function resetCrdtProject(
     name: string,
-    onAuthorityReplaced?: () => void
+    onAuthorityReplaced?: () => void,
+    isTransportIdle?: () => boolean
 ): Promise<CrdtProjectResetResult> {
     let old: CrdtPersistenceAuthority;
     try {
@@ -69,6 +99,16 @@ export async function resetCrdtProject(
     const begun = await branchStateAuthority.beginReset({ old, target, intended: branchState });
     if (begun.status === 'refused') {
         return { status: 'refused', reason: begun.reason };
+    }
+
+    // The durable steps above are awaited, so a Play or Record pressed during
+    // them is already rolling the outgoing project. Nothing below awaits before
+    // the switch, which makes this check hold at the switch: the transport store
+    // alone would read stopped after the reset while the scheduler and engine
+    // kept playing the old project.
+    if (isTransportIdle !== undefined && !isTransportIdle()) {
+        await withdrawBegunReset(begun.handle);
+        return { status: 'transport-active' };
     }
 
     resetCrdtProjectAuthority(name, onAuthorityReplaced, { epoch, old, branchState });
