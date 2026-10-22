@@ -714,6 +714,21 @@ describe('ExportDialog', () => {
         ]);
     });
 
+    it('admits WAV reports only in Stems and refuses a mixed-format plan before picker or render', async () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        expect(screen.queryByRole('checkbox', { name: 'Include WAV loudness reports' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+        const reports = screen.getByRole('checkbox', { name: 'Include WAV loudness reports' });
+        expect(reports).not.toBeChecked();
+        fireEvent.click(reports);
+        fireEvent.click(screen.getByTestId('export-format-mp3'));
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(await screen.findByText(/WAV loudness reports require Stems and WAV-only/)).toBeInTheDocument();
+        expect(mocks.selectNativeAudioExportDirectory).not.toHaveBeenCalled();
+        expect(mocks.restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(mocks.exportStems).not.toHaveBeenCalled();
+    });
+
     it('exports Podcast RSS MP3 with real audio and Unicode tags to the native file', async () => {
         const real = await vi.importActual<typeof import('../../../useCases/audioBufferToMp3')>(
             '../../../useCases/audioBufferToMp3'

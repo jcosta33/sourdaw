@@ -20,6 +20,7 @@ export async function streamExportToBrowser(input: {
     extension: string;
     mime: string;
     archive: boolean;
+    requireReportPairs?: boolean;
     checkCancelled: () => void;
 }) {
     const picker: unknown = Reflect.get(window, 'showSaveFilePicker');
@@ -54,6 +55,8 @@ export async function streamExportToBrowser(input: {
     let failure: Error | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
+    const completed = new Set<string>();
+    const pairs = new Map<string, string>();
     let zip: Zip | undefined;
     if (input.archive) {
         zip = new Zip((error, bytes) => {
@@ -133,13 +136,36 @@ export async function streamExportToBrowser(input: {
                         await drain();
                     }
                     fileOpen = false;
+                    completed.add(name);
                 },
             };
+        },
+        registerReportPair(audioName: string, reportName: string) {
+            if (
+                !input.requireReportPairs ||
+                reportName !== `${audioName}.loudness.json` ||
+                !completed.has(audioName) ||
+                !completed.has(reportName) ||
+                pairs.has(audioName)
+            ) {
+                throw new Error('Invalid WAV report pair.');
+            }
+            pairs.set(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
             input.checkCancelled();
             if (fileOpen || count === 0 || closed) {
                 throw new Error('Export has no completed files.');
+            }
+            if (
+                input.requireReportPairs &&
+                (!zip ||
+                    pairs.size * 2 !== completed.size ||
+                    [...completed].some((name) =>
+                        name.endsWith('.wav') ? !pairs.has(name) : ![...pairs.values()].includes(name)
+                    ))
+            ) {
+                throw new Error('WAV report pairs are incomplete.');
             }
             if (zip) {
                 zip.end();
