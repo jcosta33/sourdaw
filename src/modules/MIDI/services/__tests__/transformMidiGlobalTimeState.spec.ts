@@ -885,6 +885,39 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
             { ...afterBend, id: 'pb-split:right:1', beat: 4 },
         ]);
     });
+
+    it('pins the window bounds and the keep-zone overlap for retained controller rows', () => {
+        // The predicate is half-open [start, end) against the windows the resolver
+        // plays, and retention shares one exclusive push with the keep-zone clause:
+        // a row both retained and under keptEnd is stored once, a row exactly at a
+        // window start stays, one exactly at the end goes, and one discarded into
+        // the gap between keptEnd and a later window is not resurrected.
+        const keptOverlapCc = { id: 'cc-overlap', controller: 64, value: 32, beat: 1.5, channel: 0 };
+        const gapCc = { id: 'cc-gap', controller: 64, value: 36, beat: 2.25, channel: 0 };
+        const atStartCc = { id: 'cc-at-start', controller: 64, value: 40, beat: 2.5, channel: 0 };
+        const atEndCc = { id: 'cc-at-end', controller: 64, value: 44, beat: 3.5, channel: 0 };
+        const prepared = state({ ccByClipId: { source: [keptOverlapCc, gapCc, atStartCc, atEndCc] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [
+                {
+                    ...command,
+                    retainOnSourceWindows: [
+                        { start: 1, end: 2 },
+                        { start: 2.5, end: 3.5 },
+                    ],
+                },
+            ],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Exactly the rows the half-open windows cover, each stored once — the
+        // overlap row rides the single shared push, not two.
+        expect(result.state.ccByClipId.source).toEqual([keptOverlapCc, atStartCc]);
+        expect([...storedCopiesById(result.state.ccByClipId.source ?? []).values()]).toEqual([1, 1]);
+    });
 });
 
 describe('transformMidiGlobalTimeState copy and removal edge cases', () => {
