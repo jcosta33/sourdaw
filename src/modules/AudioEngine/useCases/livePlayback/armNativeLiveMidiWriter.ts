@@ -63,11 +63,12 @@ import {
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
-import { indexLoopMidiFrames, indexLoopMidiNotePartners, loopMidiWindowBatch } from './loopMidiWindowBatch';
+import { loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
     MIDI_WINDOW_SECONDS,
     nativeLiveMidiWriter,
+    type LiveMidiFrameGroup,
     type LiveMidiWriterPass,
     type LiveMidiWriterTarget,
     type MidiAdmission,
@@ -106,6 +107,44 @@ export type ArmNativeLiveMidiWriterInput = Readonly<{
 }>;
 
 type PassSpan = LiveMidiSpan & Readonly<{ looping: boolean }>;
+
+/** Prepare once per arm; every later tick visits only indexed windows and residents. */
+function indexLoopMidiFrames(
+    events: readonly AudioGraphMidiNoteEvent[],
+    sampleRate: number
+): readonly LiveMidiFrameGroup[] {
+    const groups: { frame: number; firstEventIndex: number; endEventIndex: number }[] = [];
+    for (const [index, event] of events.entries()) {
+        const frame = Math.round(event.time * sampleRate);
+        const previous = groups.at(-1);
+        if (previous?.frame === frame) {
+            previous.endEventIndex = index + 1;
+        } else {
+            groups.push({ frame, firstEventIndex: index, endEventIndex: index + 1 });
+        }
+    }
+    return groups;
+}
+
+/** Projection resolves same-key overlaps before emitting this ordered programme. */
+function indexLoopMidiNotePartners(events: readonly AudioGraphMidiNoteEvent[]): readonly (number | undefined)[] {
+    const partners: (number | undefined)[] = Array.from({ length: events.length }, () => undefined);
+    const open = new Map<number, number>();
+    for (const [index, event] of events.entries()) {
+        const key = event.channel * 128 + event.note;
+        if (event.isNoteOn) {
+            open.set(key, index);
+            continue;
+        }
+        const onset = open.get(key);
+        if (onset !== undefined) {
+            partners[onset] = index;
+            partners[index] = onset;
+            open.delete(key);
+        }
+    }
+    return partners;
+}
 
 function passSpan(input: ArmNativeLiveMidiWriterInput): PassSpan {
     const { loopRegion, loopEnabled } = nativeLiveGraphSession;
