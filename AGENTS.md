@@ -342,6 +342,14 @@ locally at other lanes' expense.
   lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
+- The guard reserves disk on the system volume only, because filling it freezes the machine. When
+  the system volume is below the reserve (owner-approved), clear regenerable caches without asking,
+  then retry: `pnpm store prune` (`--store-dir` for a home store under `~/Library/pnpm/store/*`),
+  `brew cleanup`, updater download caches (`~/Library/Caches/*.ShipIt`, `~/Library/Caches/*-updater`),
+  your own probe copies and scratch temp files, and `cargo clean` or build outputs inside your own
+  lane. Never delete user documents or media, other agents' lanes, worktrees, review bundles,
+  `~/.agents/artifacts`, git objects, or anything you cannot identify as a regenerable cache. Report
+  what you cleared and how much space it freed.
 
 ## Checks
 
