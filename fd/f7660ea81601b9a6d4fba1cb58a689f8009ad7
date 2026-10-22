@@ -1,0 +1,24 @@
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_59e31a5c6f3e31::t_71d4f2d7ef0b88 603
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_59e31a5c6f3e31::t_71d4f2d7ef0b88 474,491,501,518,535,553,573
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessRuntimeGraph.integration.spec.ts
+  s_59e31a5c6f3e31::t_71d4f2d7ef0b88 147
+  s_59e31a5c6f3e31::t_b59a2feabda9e3 148-150,202,210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fdf7660ea81601b9a6d4fba1cb58a689f8009ad7",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
