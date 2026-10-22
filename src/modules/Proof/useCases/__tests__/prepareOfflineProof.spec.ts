@@ -14,6 +14,41 @@ import { captureOfflineProof } from '../captureOfflineProof';
 import { prepareOfflineProof } from '../prepareOfflineProof';
 
 describe('prepareOfflineProof', () => {
+    it('uses the real order validator on a captured unopened patch and never sends metadata as audio controls', async () => {
+        const actual = await vi.importActual<typeof import('../../services/getRestoredProofChainOrder')>(
+            '../../services/getRestoredProofChainOrder'
+        );
+        mockGetRestoredProofChainOrder.mockImplementation(actual.getRestoredProofChainOrder);
+        const captured = captureOfflineProof({
+            deviceId: 'proof-captured',
+            device: {
+                parameterValues: {
+                    chain_order_0: 4,
+                    chain_order_1: 0,
+                    chain_order_2: 1,
+                    chain_order_3: 2,
+                    chain_order_4: 3,
+                    target_mode: 2,
+                    target_lufs: -6,
+                    eq_band1_gain: 6,
+                },
+            },
+        });
+        const postMessage = vi.fn();
+        const port: MessagePort = {
+            postMessage,
+            onmessage: null,
+            onmessageerror: null,
+            close: vi.fn(),
+            start: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(() => true),
+        };
+        prepareOfflineProof({ deviceId: 'proof-captured', port, captured });
+        expect(postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'reorder', order: [4, 0, 1, 2, 3] });
+    });
+
     it('projects captured parameters without reacquiring the same live device id', () => {
         const device = { parameterValues: { chain_order_0: 3 } };
         const captured = captureOfflineProof({ deviceId: 'proof-1', device });

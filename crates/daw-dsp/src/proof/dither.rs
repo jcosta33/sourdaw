@@ -112,6 +112,11 @@ impl Ditherer {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn parameter_value(&self,name:&str)->Option<f32> {
+        Some(match name {"dither_mode"=>self.mode as u8 as f32,"dither_bits"=>self.tpdf.bit_depth as f32,_=>return None})
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "dither_mode" => {

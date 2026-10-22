@@ -8,6 +8,7 @@
 
 pub mod biquad;
 pub mod chain;
+pub mod parameter_registry;
 pub mod crossover;
 pub mod dither;
 pub mod dynamic_eq;
@@ -92,6 +93,7 @@ impl ProofInstance {
         self.input_right.as_mut_ptr()
     }
 
+    /// Unknown or malformed targets leave the current DSP state untouched.
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.chain.set_param(name, value);
     }

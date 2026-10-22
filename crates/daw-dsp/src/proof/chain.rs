@@ -251,39 +251,64 @@ impl ProofChain {
         }
     }
 
-    pub fn set_param(&mut self, name: &str, value: f32) {
-        match name {
-            "bypass" => self.bypassed = value > 0.5,
-            "ab_bypass" => self.ab_bypass = value > 0.5,
-            "input_gain" => self.input_gain = gain_from_db(value),
-            "output_gain" => self.output_gain = gain_from_db(value),
-            _ => {}
+    /// True only after a registered scalar was applied to its real consumer.
+    /// Order slots belong to the native host's staged tuple, not this setter.
+    pub fn set_param(&mut self, name: &str, value: f32) -> bool {
+        use super::parameter_registry::{by_name, ParameterRoute};
+        let Some(parameter) = by_name(name) else {
+            return false;
+        };
+        let Some(value) = parameter.normalize(value) else {
+            return false;
+        };
+        match parameter.route {
+            ParameterRoute::Chain => match name {
+                "bypass" => self.bypassed = value > 0.5,
+                "ab_bypass" => self.ab_bypass = value > 0.5,
+                "input_gain" => self.input_gain = gain_from_db(value),
+                "output_gain" => self.output_gain = gain_from_db(value),
+                "eq_linear_phase" => {
+                    self.eq_linear_phase = value > 0.5;
+                    if self.eq_linear_phase {
+                        self.linear_eq.mark_dirty();
+                    }
+                }
+                _ => return false,
+            },
+            ParameterRoute::Eq => self.eq.set_param(name, value),
+            ParameterRoute::DynamicEq => self.dynamic_eq.set_param(name, value),
+            ParameterRoute::MatchEq => self.match_eq.set_param(name, value),
+            ParameterRoute::Dynamics => self.dynamics.set_param(name, value),
+            ParameterRoute::Imager => self.imager.set_param(name, value),
+            ParameterRoute::Exciter => self.exciter.set_param(name, value),
+            ParameterRoute::Limiter => self.limiter.set_param(name, value),
+            ParameterRoute::Dither => self.dither.set_param(name, value),
+            ParameterRoute::Order => return false,
         }
+        true
+    }
 
-        // Route to submodules by prefix
-        if name == "eq_linear_phase" {
-            self.eq_linear_phase = value > 0.5;
-            if self.eq_linear_phase {
-                self.linear_eq.mark_dirty();
-            }
-            return;
-        }
-        if name.starts_with("eq_") {
-            self.eq.set_param(name, value);
-        } else if name.starts_with("dyneq_") {
-            self.dynamic_eq.set_param(name, value);
-        } else if name.starts_with("match_") {
-            self.match_eq.set_param(name, value);
-        } else if name.starts_with("dyn_") {
-            self.dynamics.set_param(name, value);
-        } else if name.starts_with("img_") {
-            self.imager.set_param(name, value);
-        } else if name.starts_with("exc_") {
-            self.exciter.set_param(name, value);
-        } else if name.starts_with("lim_") {
-            self.limiter.set_param(name, value);
-        } else if name.starts_with("dither_") {
-            self.dither.set_param(name, value);
+    #[cfg(test)]
+    fn parameter_value(&self, name: &str) -> Option<f32> {
+        use super::parameter_registry::{by_name, ParameterRoute};
+        match by_name(name)?.route {
+            ParameterRoute::Chain => match name {
+                "bypass" => Some(u8::from(self.bypassed) as f32),
+                "ab_bypass" => Some(u8::from(self.ab_bypass) as f32),
+                "input_gain" => Some(20.0 * self.input_gain.log10()),
+                "output_gain" => Some(20.0 * self.output_gain.log10()),
+                "eq_linear_phase" => Some(u8::from(self.eq_linear_phase) as f32),
+                _ => None,
+            },
+            ParameterRoute::Eq => self.eq.parameter_value(name),
+            ParameterRoute::DynamicEq => self.dynamic_eq.parameter_value(name),
+            ParameterRoute::MatchEq => self.match_eq.parameter_value(name),
+            ParameterRoute::Dynamics => self.dynamics.parameter_value(name),
+            ParameterRoute::Imager => self.imager.parameter_value(name),
+            ParameterRoute::Exciter => self.exciter.parameter_value(name),
+            ParameterRoute::Limiter => self.limiter.parameter_value(name),
+            ParameterRoute::Dither => self.dither.parameter_value(name),
+            ParameterRoute::Order => None,
         }
     }
 
@@ -1237,5 +1262,47 @@ mod metering_rt_tests {
             let _ = chain.integrated_lufs.get_lufs();
             let _ = chain.lra.get_lra();
         });
+    }
+}
+
+#[cfg(test)]
+mod applied_registry_tests {
+    use super::*;
+    use crate::proof::parameter_registry::{ParameterKind, ParameterRoute, PARAMETERS};
+
+    #[test]
+    fn every_registered_scalar_reaches_real_stage_state_and_preserves_bare_defaults() {
+        let mut chain=ProofChain::new(48_000.0);
+        for parameter in PARAMETERS {
+            if parameter.route==ParameterRoute::Order {continue;}
+            let before=chain.parameter_value(parameter.name).expect(parameter.name);
+            assert!((before-parameter.default).abs()<=parameter.default.abs().max(1.0)*0.002,"bare default {}: {before} != {}",parameter.name,parameter.default);
+            let value=match parameter.kind {
+                ParameterKind::Continuous => if parameter.default==parameter.minimum { (parameter.minimum+parameter.maximum)*0.5 } else {parameter.minimum},
+                _ => if parameter.default==parameter.maximum {parameter.minimum} else {parameter.maximum},
+            };
+            assert!(chain.set_param(parameter.name,value),"{}",parameter.name);
+            let actual=chain.parameter_value(parameter.name).expect(parameter.name);
+            assert!((actual-value).abs()<=value.abs().max(1.0)*0.002,"actual stage target {}: {actual} != {value}",parameter.name);
+        }
+        // The setting is recognized, but no FIR is designed by parameter application.
+        assert!(chain.eq_linear_phase);
+        assert!(!chain.linear_eq.is_active());
+    }
+
+    #[test]
+    fn refusal_keeps_nondefault_actual_targets_and_can_recover() {
+        let mut chain=ProofChain::new(48_000.0);
+        assert!(chain.set_param("input_gain",3.0));
+        assert!(chain.set_param("eq_band0_type",2.0));
+        assert!(chain.set_param("lim_lookahead",7.5));
+        for (name,value) in [("input_gain",f32::NAN),("input_gain",f32::INFINITY),("eq_band0_type",0.25),("eq_bypass",2.0),("dither_mode",3.0),("eq_band0Xfreq",800.0),("dyn_xover0_suffix",800.0),("chain_order_0",0.0),("target_lufs",-14.0)] {
+            assert!(!chain.set_param(name,value),"{name}");
+        }
+        assert!((chain.parameter_value("input_gain").unwrap()-3.0).abs()<0.001);
+        assert_eq!(chain.parameter_value("eq_band0_type"),Some(2.0));
+        assert_eq!(chain.limiter.latency_samples(),360);
+        assert!(chain.set_param("input_gain",-6.0));
+        assert!((chain.parameter_value("input_gain").unwrap()+6.0).abs()<0.001);
     }
 }

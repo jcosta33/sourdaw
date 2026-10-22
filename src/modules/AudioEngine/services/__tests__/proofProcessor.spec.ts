@@ -509,15 +509,44 @@ describe('ProofProcessor message handling & process guards', () => {
         expect(errors).toHaveLength(1);
     });
 
+    it('refuses unknown, aliased and malformed legacy targets before WASM, while retaining auxiliary targets', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'param', name: 'input_gain', value: -6 });
+        for (const [name, value] of [
+            ['input_gain', NaN],
+            ['input_gain', Number.MAX_VALUE],
+            ['eq_band0Xfreq', 400],
+            ['dyn_xover0_extra', 400],
+            ['dither_mode', 0.25],
+            ['lim_threshold', -1],
+            ['target_lufs', -14],
+            ['chain_order_0', 4],
+        ] as const) {
+            send(proc, { type: 'param', name, value });
+        }
+        expect(proofParamCalls).toEqual([{ name: 'input_gain', value: -6 }]);
+        send(proc, { type: 'param', name: 'dyneq_band0_ratio', value: 3 });
+        send(proc, { type: 'param', name: 'match_amount', value: 0.6 });
+        send(proc, { type: 'param', name: 'img_xover1', value: 1300 });
+        send(proc, { type: 'param', name: 'dither_bits', value: 12 });
+        expect(proofParamCalls.slice(1)).toEqual([
+            { name: 'dyneq_band0_ratio', value: 3 },
+            { name: 'match_amount', value: 0.6 },
+            { name: 'img_xover1', value: 1300 },
+            { name: 'dither_bits', value: 16 },
+        ]);
+    });
+
     it('forwards param, reorder (5-tuple) and reset_integrated', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
-        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -1 });
         send(proc, { type: 'reorder', order: [3, 1, 2, 0, 4] });
         send(proc, { type: 'reset_integrated' });
 
-        expect(proofParamCalls).toContainEqual({ name: 'lim_threshold', value: -1 });
+        expect(proofParamCalls).toContainEqual({ name: 'lim_ceiling', value: -1 });
         expect(proofReorderCalls).toEqual([[3, 1, 2, 0, 4]]);
         expect(proofResetCalls).toBe(1);
     });
@@ -582,7 +611,7 @@ describe('ProofProcessor message handling & process guards', () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         proofLatencyQueue = [256, 256]; // both calls identical
-        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -1 });
         const postMessage = vi.mocked(proc.port.postMessage);
         const changed = postMessage.mock.calls
             .map((c) => c[0] as { type?: string })
@@ -592,7 +621,7 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('ignores control messages before init (no instance)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -1 });
         send(proc, { type: 'reorder', order: [0, 1, 2, 3, 4] });
         expect(proofParamCalls).toEqual([]);
         expect(proofReorderCalls).toEqual([]);
@@ -641,7 +670,7 @@ describe('ProofProcessor message handling & process guards', () => {
         const spy = vi.spyOn(ProofInstanceMock.prototype, 'set_param').mockImplementation(() => {
             throw new Error('param trap while ready');
         });
-        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -1 });
         spy.mockRestore();
 
         const errors = vi
@@ -651,7 +680,7 @@ describe('ProofProcessor message handling & process guards', () => {
         expect((errors[0]![0] as { message: string }).message).toBe('param trap while ready');
 
         // A throw here may mean the instance is trapped, so it stops being fed.
-        send(proc, { type: 'param', name: 'lim_threshold', value: -2 });
+        send(proc, { type: 'param', name: 'lim_ceiling', value: -2 });
         expect(proofParamCalls).toEqual([]);
     });
 
@@ -747,15 +776,14 @@ describe('ProofProcessor message handling & process guards', () => {
     // ── An out-of-range *finite* value is clamped, not dropped. Dropping it
     // leaves the engine on its previous value while the store and the panel
     // move to the new one, which is the store/engine divergence this control
-    // path exists to prevent. Only what cannot survive the f32 narrowing is
-    // refused, because that class has no ordering to clamp against. ──
+    // path exists to prevent. Discrete controls have a closed vocabulary and
+    // refuse malformed values, covered separately below. ──
     it.each([
         ['above the maximum', 'input_gain', 25, 24],
         ['below the minimum', 'input_gain', -25, -24],
         ['far above the maximum', 'lim_release', 1e30, 500],
         ['far below the minimum', 'lim_lookahead', -1e30, 0.5],
         ['above a per-band maximum', 'eq_band3_gain', 400, 18],
-        ['below a toggle', 'lim_bypass', -3, 0],
     ])(
         'clamps a live %s value onto the declared bound instead of dropping it',
         async (_label, parameterId, value, expected) => {
@@ -773,6 +801,37 @@ describe('ProofProcessor message handling & process guards', () => {
             expect(proofParamCalls).toEqual([{ name: parameterId, value: expected }]);
         }
     );
+
+    it.each([
+        ['dither_mode', 3],
+        ['eq_bypass', 2],
+        ['lim_bypass', -3],
+        ['eq_band0_type', 5],
+        ['eq_band0_type', 0.5],
+        ['exc_band0_enabled', 1.5],
+    ] as const)('refuses malformed discrete %s=%s on both wire routes', async (parameterId, value) => {
+        const legacy = await loadProcessor();
+        send(legacy, { type: 'param', name: parameterId, value });
+        expect(proofParamCalls).toEqual([]);
+        const live = await loadProcessor();
+        initializeLiveProof(live, 'track-1');
+        send(
+            live,
+            liveControl('set-fallback-param', 'track-1', 1, {
+                value,
+                target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId },
+            })
+        );
+        expect(proofParamCalls).toEqual([]);
+        send(
+            live,
+            liveControl('set-fallback-param', 'track-1', 2, {
+                value: 1,
+                target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId },
+            })
+        );
+        expect(proofParamCalls).toEqual([{ name: parameterId, value: 1 }]);
+    });
 
     it('lands a legacy project value that predates the patch bounds on the bound', async () => {
         // Strip rebuild replays `device.parameterValues` through
@@ -804,27 +863,37 @@ describe('ProofProcessor message handling & process guards', () => {
     // the project validator and the descriptor read. Widening a range there
     // and forgetting this one would otherwise leave the worklet quietly
     // pinning every value above the old bound while everything else moved. ──
-    it.each(EXPECTED_WIRE_RANGES)('%s clamps onto the range the product declares', async (parameterId, min, max) => {
-        const proc = await loadProcessor();
-        initializeLiveProof(proc, 'track-1');
+    it.each(EXPECTED_WIRE_RANGES)(
+        '%s retains its product bounds and refuses invalid discrete choices',
+        async (parameterId, min, max) => {
+            const proc = await loadProcessor();
+            initializeLiveProof(proc, 'track-1');
 
-        const set = (sequence: number, value: number): void => {
-            send(
-                proc,
-                liveControl('set-fallback-param', 'track-1', sequence, {
-                    value,
-                    target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId },
-                })
-            );
-        };
-        set(1, max + 1_000_000);
-        set(2, min - 1_000_000);
+            const set = (sequence: number, value: number): void => {
+                send(
+                    proc,
+                    liveControl('set-fallback-param', 'track-1', sequence, {
+                        value,
+                        target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId },
+                    })
+                );
+            };
+            set(1, max + 1_000_000);
+            set(2, min - 1_000_000);
 
-        expect(proofParamCalls).toEqual([
-            { name: parameterId, value: max },
-            { name: parameterId, value: min },
-        ]);
-    });
+            const discrete =
+                /(?:_bypass|_enabled|_auto_makeup|_type|_channel)$/.test(parameterId) ||
+                ['bypass', 'img_auto_mono_bass', 'eq_linear_phase', 'dither_mode'].includes(parameterId);
+            if (discrete) {
+                expect(proofParamCalls).toEqual([]);
+                return;
+            }
+            expect(proofParamCalls).toEqual([
+                { name: parameterId, value: max },
+                { name: parameterId, value: min },
+            ]);
+        }
+    );
 
     it('reads real bounds out of the product model rather than fabricating them', () => {
         // The check above is only worth anything if `readDeclaredRanges` truly
@@ -900,15 +969,10 @@ describe('ProofProcessor message handling & process guards', () => {
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         send(proc, { type: 'param', name: 'output_gain', value: 25 });
-        // `lim_threshold` is not in the live namespace, so it carries no
-        // declared range and is inert in the engine — it passes through rather
-        // than being refused.
+        // A nonexistent limiter name must be refused even through legacy replay.
         send(proc, { type: 'param', name: 'lim_threshold', value: -400 });
 
-        expect(proofParamCalls).toEqual([
-            { name: 'output_gain', value: 24 },
-            { name: 'lim_threshold', value: -400 },
-        ]);
+        expect(proofParamCalls).toEqual([{ name: 'output_gain', value: 24 }]);
     });
 
     // ── `only()` judges a record without allocating a key array per message.

@@ -9,7 +9,11 @@
  * Writes metering data (LUFS, GR, correlation, tap levels) into a shared telemetry slot.
  */
 
-import { isProofRuntimeParameterId, PROOF_RUNTIME_PARAMETER_COUNT } from '../models/ProofRuntimeControl';
+import {
+    isProofRuntimeParameterId,
+    normalizeProofParameter,
+    PROOF_RUNTIME_PARAMETER_COUNT,
+} from '../models/ProofRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
@@ -125,141 +129,8 @@ function isModuleOrder(value: unknown): value is ModuleOrder {
     return true;
 }
 
-type ParameterRange = readonly [min: number, max: number];
-
-const TOGGLE: ParameterRange = [0, 1];
-const AUDIO_FREQ: ParameterRange = [20, 20_000];
-const GAIN_DB: ParameterRange = [-24, 24];
-
-/**
- * Declared inclusive range of every parameter in the live wire namespace.
- *
- * The source of truth is `PROOF_PATCH_RANGES` in
- * `src/modules/Proof/models/ProofPatch.ts` — the same table the sliders, the
- * store, the project validator and the descriptor read. Worklet isolation
- * forbids importing it here, so this is a transcription, and
- * `proofProcessor.spec.ts` asserts the two agree bound for
- * bound; widening one without the other is what that spec exists to catch.
- * The Rust clamps agree with it wherever both declare a range, but they are
- * not the reference: `dither.rs` admits `[8, 32]` bits against the `[16, 24]`
- * the product offers, and the product bound is the one this holds.
- *
- * Both sides of the wire hold the range for different jobs. Here it clamps, so
- * a value outside the range still reaches the engine as the nearest legal one
- * and store and engine cannot disagree. In Rust it clamps again, so the engine
- * never trusts a caller that skipped this.
- */
-function buildParameterRanges(): ReadonlyMap<string, ParameterRange> {
-    const ranges = new Map<string, ParameterRange>([
-        ['bypass', TOGGLE],
-        ['ab_bypass', TOGGLE],
-        ['input_gain', GAIN_DB],
-        ['output_gain', GAIN_DB],
-        ['eq_bypass', TOGGLE],
-        ['eq_linear_phase', TOGGLE],
-        ['dyn_bypass', TOGGLE],
-        ['img_bypass', TOGGLE],
-        ['img_auto_mono_bass', TOGGLE],
-        ['img_mono_bass_freq', [40, 200]],
-        ['exc_bypass', TOGGLE],
-        ['lim_bypass', TOGGLE],
-        ['lim_ceiling', [-12, 0]],
-        ['lim_release', [10, 500]],
-        ['lim_lookahead', [0.5, 10]],
-        ['dither_mode', [0, 2]],
-        ['dither_bits', [16, 24]],
-    ]);
-    for (let band = 0; band < 8; band += 1) {
-        ranges.set(`eq_band${band}_freq`, AUDIO_FREQ);
-        ranges.set(`eq_band${band}_gain`, [-18, 18]);
-        ranges.set(`eq_band${band}_q`, [0.1, 10]);
-        ranges.set(`eq_band${band}_type`, [0, 4]);
-        ranges.set(`eq_band${band}_channel`, [0, 2]);
-        ranges.set(`eq_band${band}_enabled`, TOGGLE);
-    }
-    for (let crossover = 0; crossover < 3; crossover += 1) {
-        ranges.set(`dyn_xover${crossover}`, AUDIO_FREQ);
-    }
-    for (let band = 0; band < 4; band += 1) {
-        ranges.set(`dyn_band${band}_threshold`, [-60, 0]);
-        ranges.set(`dyn_band${band}_ratio`, [1, 20]);
-        ranges.set(`dyn_band${band}_attack`, [1, 200]);
-        ranges.set(`dyn_band${band}_release`, [10, 2_000]);
-        ranges.set(`dyn_band${band}_knee`, [0, 12]);
-        ranges.set(`dyn_band${band}_makeup`, [-12, 24]);
-        ranges.set(`dyn_band${band}_auto_makeup`, TOGGLE);
-        ranges.set(`dyn_band${band}_bypass`, TOGGLE);
-        ranges.set(`img_width${band}`, [0, 2]);
-        ranges.set(`exc_band${band}_type`, [0, 3]);
-        ranges.set(`exc_band${band}_drive`, [0, 1]);
-        ranges.set(`exc_band${band}_blend`, [0, 1]);
-        ranges.set(`exc_band${band}_enabled`, TOGGLE);
-    }
-    return ranges;
-}
-const PARAMETER_RANGES = buildParameterRanges();
-
-/**
- * True when `value` still exists as a finite number *after* the f64 → f32
- * narrowing the wasm boundary performs.
- *
- * `Number.isFinite(value)` on its own validated the JavaScript f64 and not the
- * f32 actually handed to wasm: `Number.MAX_VALUE` passed it and arrived as f32
- * `Infinity`.
- */
-function representableF32(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && Number.isFinite(Math.fround(value));
-}
-
-/**
- * True when `value` can be forwarded to the engine for `parameterId`.
- *
- * Rejection is reserved for what cannot survive the boundary at all — a
- * non-number, or a number that narrows to `Infinity` or `NaN` in f32. That is
- * the class that poisons a stored parameter or throws, and it is not a value
- * the engine could have clamped for us, since it has no ordering to clamp
- * against.
- *
- * An out-of-range *finite* value is not rejected. Dropping it would leave the
- * engine on its previous value while the store and the panel moved to the new
- * one, which is exactly the divergence this control path exists to prevent; it
- * is clamped by [`clampToRange`] instead.
- *
- * A parameter with no declared range fails closed, so a namespace entry added
- * without one cannot reach wasm unchecked;
- * `proofProcessor.spec.ts` pins that every live parameter
- * declares one.
- */
 function isForwardableValue(parameterId: string, value: unknown): value is number {
-    return representableF32(value) && PARAMETER_RANGES.get(parameterId) !== undefined;
-}
-
-/**
- * The declared value nearest `value` for `parameterId`.
- *
- * An in-range value is returned untouched rather than round-tripped through
- * `Math.fround`, so an ordinary control carries the number its sender wrote.
- * Only a value outside the range moves, and it lands exactly on the bound the
- * engine would have clamped it to — the store keeps its value, the engine
- * takes the legal one, and nothing silently ignores the message.
- *
- * A name with no declared range passes through: the legacy message addresses
- * engine parameters the live namespace does not model, and an unknown name is
- * inert in the engine (`_ => {}` in every Rust `set_param`).
- */
-function clampToRange(parameterId: string, value: number): number {
-    const range = PARAMETER_RANGES.get(parameterId);
-    if (range === undefined) {
-        return value;
-    }
-    const narrowed = Math.fround(value);
-    if (narrowed < range[0]) {
-        return range[0];
-    }
-    if (narrowed > range[1]) {
-        return range[1];
-    }
-    return value;
+    return normalizeProofParameter(parameterId, value, 'live') !== null;
 }
 
 class ProofProcessor extends AudioWorkletProcessor {
@@ -468,7 +339,11 @@ class ProofProcessor extends AudioWorkletProcessor {
             }
             this._lastFallbackControlSequence = msg.correlation.controlSequence;
             const oldLatency = inst.get_latency_samples();
-            inst.set_param(msg.target.parameterId, clampToRange(msg.target.parameterId, msg.value));
+            const value = normalizeProofParameter(msg.target.parameterId, msg.value, 'live');
+            if (value === null) {
+                return;
+            }
+            inst.set_param(msg.target.parameterId, value);
             const newLatency = inst.get_latency_samples();
             if (newLatency !== oldLatency) {
                 this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
@@ -483,14 +358,10 @@ class ProofProcessor extends AudioWorkletProcessor {
             case 'init':
                 break;
             case 'param': {
-                // The legacy message reaches the same wasm setter the live
-                // namespace does, so it takes the same f32 check and the same
-                // clamp. It addresses names the namespace does not model, so
-                // an undeclared one is forwarded rather than refused.
                 const name = msg.name;
-                const value = msg.value;
-                if (boundedId(name) && representableF32(value)) {
-                    inst.set_param(name, clampToRange(name, value));
+                const value = typeof name === 'string' ? normalizeProofParameter(name, msg.value) : null;
+                if (boundedId(name) && value !== null) {
+                    inst.set_param(name, value);
                 }
                 break;
             }

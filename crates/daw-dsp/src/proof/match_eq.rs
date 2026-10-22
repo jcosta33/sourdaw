@@ -189,6 +189,11 @@ impl MatchEq {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn parameter_value(&self,name:&str)->Option<f32> {
+        Some(match name {"match_enabled"=>u8::from(self.enabled) as f32,"match_amount"=>self.amount,"match_smoothing"=>self.smoothing,"match_max_correction"=>self.max_correction,_=>return None})
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "match_enabled" => self.enabled = value > 0.5,

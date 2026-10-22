@@ -155,6 +155,7 @@
 use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
+use daw_dsp::proof::parameter_registry::{self as proof_parameters, NativeAdmission, ParameterKind, ParameterRoute};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
@@ -2285,6 +2286,48 @@ fn resolved_param_writes<T>(
         .collect()
 }
 
+/// Validate a Proof record before publishing any graph or queue command.
+/// Known project/graph metadata is admitted without claiming DSP application.
+fn proof_parameter_writes(
+    values: &HashMap<String, f64>,
+    record: bool,
+    device_id: &str,
+) -> Result<Vec<(BuiltinParamName, f32)>, String> {
+    let mut resolved = Vec::new();
+    let mut order = [None; 5];
+    for key in name_ordered_keys(values) {
+        let value = finite(values[key], "Proof parameter value")?;
+        if proof_parameters::by_name(key).is_some_and(|parameter|
+            parameter.kind != ParameterKind::Continuous && value.fract() != 0.0
+        ) {
+            return Err(format!("device '{device_id}' refuses fractional Proof parameter '{key}'"));
+        }
+        match proof_parameters::admit_native(key, value as f32, record) {
+            Some(NativeAdmission::Apply { parameter, value }) => {
+                if parameter.route == ParameterRoute::Order {
+                    let slot = key.strip_prefix("chain_order_").and_then(|slot| slot.parse::<usize>().ok())
+                        .expect("canonical order slot");
+                    order[slot] = Some(value as u8);
+                }
+                resolved.push((builtin_named_parameter(key, device_id)?, value));
+            }
+            Some(_) => {}
+            None => return Err(format!("device '{device_id}' refuses Proof parameter '{key}' or its value")),
+        }
+    }
+    if order.iter().all(Option::is_some) {
+        let mut seen = [false; 5];
+        for slot in order {
+            let module = slot.expect("complete order") as usize;
+            if seen[module] {
+                return Err(format!("device '{device_id}' carries a duplicate Proof module order"));
+            }
+            seen[module] = true;
+        }
+    }
+    Ok(resolved)
+}
+
 /// Resolve one built-in device's parameter key onto the address the engine
 /// routes it by, or refuse by name.
 ///
@@ -2309,6 +2352,12 @@ fn builtin_parameter(
     device_id: &str,
 ) -> Result<DeviceParam, String> {
     match builtin {
+        BuiltinEffectType::Proof => {
+            if proof_parameters::by_name(key).is_none() {
+                return Err(format!("device '{device_id}' has no Proof parameter '{key}'"));
+            }
+            builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
+        }
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
@@ -2318,7 +2367,6 @@ fn builtin_parameter(
         | BuiltinEffectType::Crust
         | BuiltinEffectType::Grinder
         | BuiltinEffectType::Bacteria
-        | BuiltinEffectType::Proof
         | BuiltinEffectType::DutchOven
         | BuiltinEffectType::Toaster
         | BuiltinEffectType::Levain
@@ -2357,6 +2405,11 @@ fn immediate_device_parameters(
     values: &HashMap<String, f64>,
     device_id: &str,
 ) -> Result<Vec<(DeviceParam, f32)>, String> {
+    if builtin == BuiltinEffectType::Proof {
+        return proof_parameter_writes(values, false, device_id).map(|writes| {
+            writes.into_iter().map(|(name, value)| (DeviceParam::BuiltinNamed(name), value)).collect()
+        });
+    }
     let resolved = name_ordered_keys(values)
         .into_iter()
         .map(|key| {
@@ -2724,14 +2777,9 @@ fn map_device(
             )
         }
         BuiltinEffectType::Proof => {
-            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
-                |patch| {
-                    (
-                        PluginCore::proof_with_patch(sample_rate, &patch),
-                        Vec::new(),
-                    )
-                },
-            )
+            proof_parameter_writes(&device.parameter_values, true, &device.id).map(|patch| {
+                (PluginCore::proof_with_patch(sample_rate, &patch), Vec::new())
+            })
         }
         BuiltinEffectType::DutchOven => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -3646,6 +3694,24 @@ fn map_command(
                 return Err(format!(
                     "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
                 ));
+            }
+            if device.builtin() == Some(BuiltinEffectType::Proof) {
+                let StepWritePayload::Step { value, time } = write;
+                let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                let values = HashMap::from([(parameter_id.clone(), *value)]);
+                let writes = proof_parameter_writes(&values, false, device_id)?;
+                for (name, value) in writes {
+                    let effect_id = device.native_effect_id;
+                    budgets.charge_device_param(effect_id, at_frame)
+                        .map_err(|reason| format!("write-device-parameter: {reason}"))?;
+                    ops.push(GraphCommand::AutomateDeviceParam {
+                        effect_id,
+                        param: DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(name)),
+                        value: value as f64,
+                        at_frame,
+                    });
+                }
+                return Ok(());
             }
             // The address a stamp carries is decided by what the device is, not
             // by the name it was written under: a built-in's parameters are the
@@ -15229,6 +15295,43 @@ mod tests {
              re-aims a figure the bypass has already answered",
             declarations[0].0
         );
+    }
+
+    #[test]
+    fn proof_registry_refuses_unknown_initial_records_before_graph_publication() {
+        let mut registry=GraphRegistry::default();
+        let result=map_unbound_batch(&batch(strip_with_device("d-proof","proof",json!({"unknown_proof":1}))),&mut registry,&sample_pool(),48_000.0);
+        assert!(result.is_err(),"unknown target was admitted as a native Proof patch");
+    }
+
+    #[test]
+    fn proof_registry_validates_actual_immediate_and_scheduled_command_routes() {
+        let mut registry=GraphRegistry::default();
+        map_unbound_batch(&batch(strip_with_device("d-proof","proof",json!({"lim_ceiling":-3}))),&mut registry,&sample_pool(),48_000.0).unwrap();
+        for (name,value) in [("eq_band0Xfreq",400.0),("dither_mode",3.0),("eq_bypass",2.0),("dither_mode",0.25),("input_gain",1e100),("chain_order_0",2.5)] {
+            let stamped=batch(json!([{"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":name},"write":{"shape":"step","value":value,"time":0}}]));
+            let immediate=batch(json!([{"kind":"set-device-parameters","trackId":"t1","deviceId":"d-proof","values":{(name):value}}]));
+            assert!(map_unbound_batch(&stamped,&mut registry.clone(),&sample_pool(),48_000.0).is_err(),"scheduled {name}");
+            assert!(map_unbound_batch(&immediate,&mut registry.clone(),&sample_pool(),48_000.0).is_err(),"immediate {name}");
+        }
+        let ignored=batch(json!([{"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"target_lufs"},"write":{"shape":"step","value":-14,"time":0}}]));
+        let mapped=map_unbound_batch(&ignored,&mut registry.clone(),&sample_pool(),48_000.0).unwrap();
+        assert!(!mapped.ops.iter().any(|op|matches!(op,GraphCommand::AutomateDeviceParam{..}|GraphCommand::SetParam(..))));
+    }
+
+    #[test]
+    fn proof_registry_distinguishes_admitted_metadata_from_applied_targets() {
+        let values=serde_json::from_value(json!({"target_mode":2,"target_lufs":-6,"bypass":1,"ab_bypass":1})).unwrap();
+        let live=immediate_device_parameters(BuiltinEffectType::Proof,&values,"d-proof").unwrap();
+        assert_eq!(live.len(),1,"only runtime A/B is a live DSP target");
+        assert_eq!(addressed_parameter_name(&live[0].0),"ab_bypass");
+        for bad in [json!({"eq_band0Xfreq":400}),json!({"dither_mode":0.25}),json!({"eq_band0_type":1.000000001}),json!({"dither_mode":3}),json!({"eq_bypass":2}),json!({"chain_order_0":1.5}),json!({"input_gain":1e100}),json!({"chain_order_0":0,"chain_order_1":0,"chain_order_2":2,"chain_order_3":3,"chain_order_4":4})] {
+            let values=serde_json::from_value(bad).unwrap();
+            assert!(immediate_device_parameters(BuiltinEffectType::Proof,&values,"d-proof").is_err());
+        }
+        let valid=serde_json::from_value(json!({"input_gain":100,"lim_release":1000})).unwrap();
+        let applied=immediate_device_parameters(BuiltinEffectType::Proof,&valid,"d-proof").unwrap();
+        assert_eq!(applied.iter().map(|(_,value)|*value).collect::<Vec<_>>(),vec![24.0,500.0]);
     }
 
     /// A proof device is registered as an insert: no note store, and an

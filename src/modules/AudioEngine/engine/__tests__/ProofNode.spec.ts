@@ -206,3 +206,37 @@ describe('ProofNode post-ready runtime failure forwarding', () => {
         expect(onRuntimeFailure).not.toHaveBeenCalled();
     });
 });
+
+describe('ProofNode canonical legacy scalar door', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        workletNodes.length = 0;
+        mocks.allocateSlot.mockReturnValue(null);
+        vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+    it('refuses malformed targets before posting and keeps known legacy auxiliary controls', async () => {
+        const node = await createProofNode(makeContext());
+        const port = lastWorkletPort();
+        port.postMessage.mockClear();
+        node.setParam('input_gain', -6);
+        for (const [name, value] of [
+            ['unknown', 1],
+            ['eq_band0Xfreq', 400],
+            ['dither_mode', 0.25],
+            ['input_gain', Number.MAX_VALUE],
+            ['target_lufs', -14],
+            ['chain_order_0', 4],
+        ] as const) {
+            node.setParam(name, value);
+        }
+        node.setParam('match_amount', 0.6);
+        expect(port.postMessage.mock.calls.map(([message]) => message)).toEqual([
+            { type: 'param', name: 'input_gain', value: -6 },
+            { type: 'param', name: 'match_amount', value: 0.6 },
+        ]);
+        node.destroy();
+    });
+});
