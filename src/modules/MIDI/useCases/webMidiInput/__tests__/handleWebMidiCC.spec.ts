@@ -987,6 +987,18 @@ describe('handleWebMidiCC', () => {
             ]);
         });
 
+        it('records an unconsumed 14-bit MSB and LSB pair as the two raw messages, not the assembled controller', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 1, 64, at_beat(6));
+            fn(0, 33, 10, at_beat(6.5));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 1, value: 64, beat: 2, channel: 0 },
+                { controller: 33, value: 10, beat: 2.5, channel: 0 },
+            ]);
+        });
+
         it('records both pedal messages of the first latency window at clip beat 0', () => {
             audio_clock.outputLatency = 0.25;
             const fn = handleWebMidiCC._factory(recording_dependencies());
