@@ -1,0 +1,57 @@
+src/app/__tests__/main.spec.tsx
+  s_ba8dd89de9aac7::t_aceeae0bc69458 146
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_ba8dd89de9aac7::t_e3cc55c13cb710 131
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_ba8dd89de9aac7::t_54247af3423d22 119
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_ba8dd89de9aac7::t_b46399b690f137 122
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_ba8dd89de9aac7::t_224e52020087b2 205
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_59e31a5c6f3e31::t_682e71cca842e8 265
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_59e31a5c6f3e31::t_d596be395dd7f9 169
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_1c08b47ac3792f::t_34b90bcdc832c2 122
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_1c08b47ac3792f::t_e77fd90b14ac89 95
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  s_1c08b47ac3792f::t_42dde5f23fd02c 93
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_1c08b47ac3792f::t_b8b9f188c66408 113
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_1c08b47ac3792f::t_cfd2af64985c8a 109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74f680955651d0b7f41a1ce96f7dcaa45d0913f7",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
