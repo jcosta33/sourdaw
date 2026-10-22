@@ -175,6 +175,28 @@ describe('projectNoteExpressionCurves', () => {
         ]);
     });
 
+    it('clamps slide above its range and every dimension below its range', () => {
+        const { changes } = projectNoteExpressionCurves({
+            note: {
+                expression: {
+                    pressure: [{ offsetBeats: 0.5, value: -10 }],
+                    slide: [{ offsetBeats: 1, value: 300 }],
+                    pitchBend: [{ offsetBeats: 1.5, value: -9000 }],
+                },
+            },
+            startBeat: 0,
+            releaseFrame: frameAtBeat(2),
+            frameAtBeat,
+        });
+
+        // Slide holds 300 at the second point, then is read again, still clamped, at the third.
+        expect(changes.map((change) => change.expression)).toEqual([
+            { pressure: 0, slide: undefined, pitchBend: undefined },
+            { pressure: 0, slide: 127, pitchBend: undefined },
+            { pressure: 0, slide: 127, pitchBend: -8192, pitchBendRangeSemitones: 48 },
+        ]);
+    });
+
     it('measures offsets from the uncut note start, folding the points a cut passed into the start', () => {
         // The note began at beat 1 but plays from beat 2, one beat in.
         const { atStart, changes } = projectNoteExpressionCurves({
