@@ -288,22 +288,12 @@ describe('TimelineSurface', () => {
         expect(canvas).toHaveAttribute('aria-label', 'Timeline editor surface');
     });
 
-    it('opens a clip listbox for named clips on distinct visible tracks', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [
-                makeTrack({ id: 'voice', clips: [makeClip({ id: 'verse', trackId: 'voice', name: 'Verse' })] }),
-                makeTrack({ id: 'drums', clips: [makeClip({ id: 'fill', trackId: 'drums', name: 'Fill' })] }),
-            ],
-            selectedTrackId: null,
-        });
+    it('keeps the measured canvas viewport free of the Browse control', () => {
+        const { container } = renderWithTooltip(<TimelineSurface />);
 
-        renderWithTooltip(<TimelineSurface />);
-        fireEvent.click(screen.getByRole('button', { name: 'Browse timeline clips' }));
-
-        const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
-        expect(listbox).toBeVisible();
-        expect(screen.getByRole('option', { name: /Verse/ })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: /Fill/ })).toBeInTheDocument();
+        expect(container.querySelector('canvas')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Browse timeline clips' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
     });
 
     it('should render PresenceOverlay', async () => {

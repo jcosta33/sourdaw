@@ -167,7 +167,7 @@ function TimelineClipNavigatorView({
     status,
 }: TimelineClipNavigatorViewProps): ReactElement {
     return (
-        <div className="absolute left-2 top-10 z-30 max-w-sm rounded border border-border bg-surface-base p-2 text-sm shadow-lg">
+        <div className="max-w-sm rounded border border-border bg-surface-base p-2 text-sm shadow-lg">
             <p id={`${id}-help`} className="mb-2 text-foreground/70">
                 Arrow keys, Home and End browse clips. Space toggles selection; Enter selects one clip. Escape closes.
             </p>
