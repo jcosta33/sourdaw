@@ -71,6 +71,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: { value: null },
+    selectMidiRecordingPassNotes: (
+        ...args: Parameters<(typeof import('#/modules/MIDI/stores'))['selectMidiRecordingPassNotes']>
+    ) => realMidiRecordingPass.selectMidiRecordingPassNotes(...args),
 }));
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: null },
@@ -133,9 +136,6 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
-    selectMidiRecordingPassNotes: (
-        ...args: Parameters<(typeof import('#/modules/MIDI/useCases'))['selectMidiRecordingPassNotes']>
-    ) => realMidiUseCases.selectMidiRecordingPassNotes(...args),
     getChordAtBeat: vi.fn(),
     projectClipControllerEvents: vi.fn(),
     projectClipControllerRestore: vi.fn(),
@@ -161,6 +161,9 @@ const realArrangementUseCases = await vi.importActual<typeof import('#/modules/A
 const realArrangementStores = await vi.importActual<typeof import('#/modules/Arrangement/stores/takeLaneStore')>(
     '#/modules/Arrangement/stores/takeLaneStore'
 );
+const realMidiRecordingPass = await vi.importActual<typeof import('#/modules/MIDI/stores/selectMidiRecordingPassNotes')>(
+    '#/modules/MIDI/stores/selectMidiRecordingPassNotes'
+);
 const realMidiUseCases = {
     ...(await vi.importActual<typeof import('#/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents')>(
         '#/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents'
@@ -170,9 +173,6 @@ const realMidiUseCases = {
     )),
     ...(await vi.importActual<typeof import('#/modules/MIDI/useCases/midiClipData/projectClipControllerRestore')>(
         '#/modules/MIDI/useCases/midiClipData/projectClipControllerRestore'
-    )),
-    ...(await vi.importActual<typeof import('#/modules/MIDI/useCases/midiClipData/selectMidiRecordingPassNotes')>(
-        '#/modules/MIDI/useCases/midiClipData/selectMidiRecordingPassNotes'
     )),
 };
 

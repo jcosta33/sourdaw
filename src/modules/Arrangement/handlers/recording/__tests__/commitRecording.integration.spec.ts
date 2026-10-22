@@ -48,7 +48,7 @@ import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadSch
 import { schedulerSession } from '#/modules/Transport/useCases/playheadScheduler/schedulerSession';
 import { disposePlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler';
 import { stopActiveRecording } from '#/modules/Transport/useCases/transportControls/stopActiveRecording';
-import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases/midiClipData/selectMidiRecordingPassNotes';
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/stores/selectMidiRecordingPassNotes';
 import { audioEngine as ownedAudioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
 import { realtimeMidiProcessorState } from '#/modules/MIDI/repositories/webMidi/realtimeMidiProcessorState';
 import { advanceMidiRecordingPass } from '#/modules/MIDI/useCases/midiRecordingSession';

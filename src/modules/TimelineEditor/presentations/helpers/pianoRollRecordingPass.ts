@@ -1,5 +1,5 @@
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/stores';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 

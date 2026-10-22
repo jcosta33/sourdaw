@@ -10,6 +10,7 @@ export {
     sanitizeMidiStoreState,
 } from './midiStore';
 export type { MidiNote, MidiStoreState } from './midiStore';
+export { selectMidiRecordingPassNotes } from './selectMidiRecordingPassNotes';
 
 export {
     GROOVE_CONSUMER_TYPES,

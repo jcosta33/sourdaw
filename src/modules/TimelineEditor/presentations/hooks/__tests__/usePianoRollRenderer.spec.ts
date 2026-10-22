@@ -16,9 +16,8 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/MIDI/useCases', () => ({ selectMidiRecordingPassNotes: vi.fn() }));
-
 vi.mock('#/modules/MIDI/stores', () => ({
+    selectMidiRecordingPassNotes: vi.fn(),
     midiStore: {
         get value() {
             return mocks.midiState;

@@ -1,4 +1,4 @@
-import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/stores';
 /**
  * The notes each natively voiced instrument plays over one span (#3892).
  *

@@ -195,5 +195,3 @@ export {
     sealMidiRecordingSession,
     cancelMidiRecordingSession,
 } from './midiRecordingSession';
-
-export { selectMidiRecordingPassNotes } from './midiClipData/selectMidiRecordingPassNotes';

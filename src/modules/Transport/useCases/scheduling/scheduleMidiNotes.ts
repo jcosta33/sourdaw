@@ -1,4 +1,3 @@
-import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
@@ -14,7 +13,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { midiStore, selectMidiRecordingPassNotes, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectClipMidiEvents,

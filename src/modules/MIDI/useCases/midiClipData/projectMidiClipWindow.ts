@@ -4,7 +4,7 @@ import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/Mid
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
-import { selectMidiRecordingPassNotes } from './selectMidiRecordingPassNotes';
+import { selectMidiRecordingPassNotes } from '../../stores/selectMidiRecordingPassNotes';
 
 type MidiClipWindow = {
     recordingPassId?: string;

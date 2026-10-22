@@ -1,4 +1,4 @@
-import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/stores';
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';

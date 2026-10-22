@@ -4,7 +4,7 @@ import { isValidMidiNoteExpression, isValidMidiProbabilitySeed, sanitizeMidiStor
 import {
     decodeExactTakeLaneSnapshots,
     sanitize_take_lane_store_state,
-} from '#/modules/Arrangement/stores/takeLaneStore';
+} from '#/modules/Arrangement/stores';
 import { isRecordingPassId } from '#/utils/recordingPassId';
 
 const DOC_PREFIX_ROOT = 'root';

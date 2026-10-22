@@ -1,5 +1,5 @@
-import { type MidiNote } from '../../models/MidiNote';
-import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
+import { type MidiNote } from '../models/MidiNote';
+import { sliceMidiNoteExtent } from '../services/sliceMidiNoteExtent';
 
 export type MidiRecordingPassWindow = {
     recordingPassId?: string;
@@ -29,8 +29,9 @@ export function selectMidiRecordingPassNotes(
         if (end <= start) {
             return [];
         }
-        return start === note.startBeat && end === note.startBeat + note.duration
-            ? [note]
-            : [sliceMidiNoteExtent(note, { fromOffset: start - note.startBeat, duration: end - start })];
+        if (start === note.startBeat && end === note.startBeat + note.duration) {
+            return [note];
+        }
+        return [sliceMidiNoteExtent(note, { fromOffset: start - note.startBeat, duration: end - start })];
     });
 }
