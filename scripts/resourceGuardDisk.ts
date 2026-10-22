@@ -28,7 +28,7 @@ export function diskStorageFailure(
         if (available < reserveBytes) {
             return {
                 reason: 'pressure',
-                message: `available disk space below ${Math.ceil(reserveBytes / 1024 ** 2)} MiB reserve: ${path} (${Math.floor(available / 1024 ** 2)} MiB available)`,
+                message: `available disk space below ${Math.ceil(reserveBytes / 1024 ** 2)} MiB reserve: ${path} (${Math.floor(available / 1024 ** 2)} MiB available); free space on the system volume (see AGENTS.md Resource Safety: "When the system volume is below the reserve") and retry`,
             };
         }
     }
