@@ -1,0 +1,185 @@
+src/modules/AudioEngine/models/LevainZoneTables.ts
+  s_4c8cd08893b364::t_ad5450ec028ccc 1-31
+src/modules/AudioEngine/repositories/levainZoneTables/buildLevainZoneTablesInWorker.ts
+  s_4c8cd08893b364::t_222ba9e507a22a 1,3-8,13-24,29-47,49-96
+  s_4c8cd08893b364::t_c415a01305f5cf 9-12,25-28
+  s_ba8dd89de9aac7::t_e2cb55b3833e86 2
+  s_ba8dd89de9aac7::t_72ec59142b3e35 48
+src/modules/AudioEngine/useCases/buildLevainZoneTables.ts
+  s_4c8cd08893b364::t_7fa72f4f63171f 1-9,14-15
+  s_59e31a5c6f3e31::t_a5e3dd845c6394 10-13
+src/modules/AudioEngine/useCases/index.ts
+  s_4c8cd08893b364::t_81fe5661bd17b7 61
+src/modules/AudioEngine/services/__tests__/levainZoneTableHarness.ts
+  s_4c8cd08893b364::t_913baf7bd3bcc8 1-79
+crates/daw-dsp/src/levain/zone.rs
+  s_4c8cd08893b364::t_91f4dcb8496687 449-451,457-462,466-468,472-491
+  s_4c8cd08893b364::t_f99af0f1ffa204 9,38,44-313
+  s_4c8cd08893b364::t_c28cc42514dbb9 314-315,492-493
+crates/daw-dsp/tests/device_process_rt.rs
+  s_4c8cd08893b364::t_ea6edb75877426 1968-2042
+  s_4c8cd08893b364::t_360ee457973fc6 2043-2047
+src/infra/audioWorklet/levainZoneTableChunk.ts
+  s_4c8cd08893b364::t_467bbd07dfd918 1-16
+src/modules/AudioEngine/transformers/computeLevainZoneTables.ts
+  s_4c8cd08893b364::t_cb504422478f42 1-18,28-36
+  s_59e31a5c6f3e31::t_169da1d9a4a402 19-27
+src/infra/audioWorklet/workletInitShared.ts
+  s_4c8cd08893b364::t_aa10fa195edee4 124-128,130-132
+  s_4c8cd08893b364::t_704ecab4bd7fa0 123
+  s_ba8dd89de9aac7::t_fec26596666752 129
+crates/daw-dsp/src/levain/mod.rs
+  s_4c8cd08893b364::t_14b365e68e5a0b 51-64,71-73,85
+  s_4c8cd08893b364::t_31fea3abdfada8 445-452,459-524
+  s_4c8cd08893b364::t_e22a9778a0a61b 525,566-654
+src/modules/AudioEngine/workers/levainZoneTableWorker.ts
+  s_4c8cd08893b364::t_1e71ec8f8a11da 1-30
+src/modules/AudioEngine/services/__tests__/levainProcessorZoneTables.spec.ts
+  s_4c8cd08893b364::t_39c2bd18eb051e 1-271,274,276-277,280-282,284-293,331,342,344-346,352-353,357-384,389-393,401-402,404,411-413,422-424,426,442-445,447,456,464-467,469-473,477-479,481,490-495,497-504,508-542,594-669
+  s_4c8cd08893b364::t_7f8862115067f1 385-388,405-410,415-421,427-441,448-455,457-463,475-476,482-489
+  s_4c8cd08893b364::t_3b3261b48a0e8f 394-400,403,414,425,446,468,474,480,496,505-507
+  s_4c8cd08893b364::t_d226210c5e401b 272-273,275,278-279,283,294,296-329,331-356
+  s_ba8dd89de9aac7::t_a19a937dada006 544-581,584-593
+crates/daw-dsp/tests/levain_zone_table_staging.rs
+  s_4c8cd08893b364::t_4c9264f9d1e991 1-399,403-557
+  s_4c8cd08893b364::t_f5d9d10ba759ba 558-587
+  s_4c8cd08893b364::t_f1c33cab75dcca 400-402
+crates/daw-dsp/src/levain/engine.rs
+  s_4c8cd08893b364::t_8957d5c5a370db 28,73-77,96,118-120,140,153,710-773,776-778,2340,2414
+  s_ba8dd89de9aac7::t_81a957b2e11fab 3242-3343
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_4c8cd08893b364::t_b616cecca31b7e 770-777,804-818,886-893,925-930,941-985,1135-1136,1174-1227,1230-1231,1273,1275-1276,1291-1308,1323-1324,1339,1345,1348-1370
+  s_59e31a5c6f3e31::t_ed2710935b9eed 1
+public/wasm/daw-dsp/daw_dsp.js
+  s_4c8cd08893b364::t_6ae1779b56e1fd 1626-1633,1678-1704,1843-1858,1913-1922,1944-1963,1967-2040,2523-2525,2538-2542,2568-2575,2670
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_4c8cd08893b364::t_a4c6e4d55ec7b7 6-7,45-98,101-102,144,146-147,162-179,194-195,210,216,219-241
+  s_59e31a5c6f3e31::t_bf5d994c4228dd 1
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_4c8cd08893b364::t_a59ff13aaa7bbd 32-35,134-156,249-257,518,554-555,561,572,584,591,617,666,683,730,760,913,934-960,969-1003,1005-1007,1026,1039,1070,1129,1165,1189,1195,1200
+  s_4c8cd08893b364::t_ac58107d997197 919-933,961-968
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_4c8cd08893b364::t_124f74e1a7c586 6,103-107
+src/modules/AudioEngine/services/__tests__/levainProcessorSampleUpload.spec.ts
+  s_4c8cd08893b364::t_cc5f06f4c5bba4 8,151,153-157,233-237
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_4c8cd08893b364::t_eedabdd844590f 6,79-83
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_4c8cd08893b364::t_9fd343f2c9e8db 23-26,41-54,155-167,214-224,280-282,296-298,388,417,421-426,432,485-488,593,607-609,842,846-867,917-948,950-954
+  s_4c8cd08893b364::t_f1cc97406ff2a6 949,955-962
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_4c8cd08893b364::t_3f0e047969ff8f 770-777,804-818,886-893,925-930,941-985,1135-1136,1174-1227,1230-1231,1273,1275-1276,1291-1308,1323-1324,1339,1345,1348-1370
+  s_59e31a5c6f3e31::t_1ec523f96b8dd0 1
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_4c8cd08893b364::t_5f10cbf2a86378 1803-1810,1855-1881,2020-2035,2090-2099,2121-2140,2144-2217,2700-2702,2715-2719,2745-2752,2847
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_4c8cd08893b364::t_3301a38d8d2f9f 10-15,20-25,106,194,226,363,372,375,396,422,464,494,524,610,778,832,1043,1053,1063,1070,1090,1106,1112,1193,1222,1229,1273,1336,1366,1393,1404,1428,1442,1452,1457,1460,1471,1479,1486,1496,1499,1513,1521,1524,1548,1556,1563,1566,1569,1584,1602,1609,1627,1634,1687,1694,1740,1758,1782,1807,1816,1833
+  s_4c8cd08893b364::t_d8dbf076b2f546 4,16-19,1847-1982,1984-2000,2003-2005,2007-2009,2250
+  s_4c8cd08893b364::t_9c8ff572a6f94d 26-28,753-754,758-760,809
+  s_4c8cd08893b364::t_a37f9e0a8fc4ad 1389-1392
+  s_59e31a5c6f3e31::t_db1d3a1761bd37 810-811
+  s_4c8cd08893b364::t_13bc239627fafb 199-203
+  s_ba8dd89de9aac7::t_a2edf0a33b51ff 1983,2001-2002,2006,2010-2127,2161-2199
+  s_ba8dd89de9aac7::t_232768d269e898 2200-2249
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_4c8cd08893b364::t_213b704d45c25b 2,25,30,33-56,90-91,93,191,195-200,225-226,381-382,440,542-585,589-591,597-598,611,625,637,723,771-779,791,812,819-820,825
+  s_59e31a5c6f3e31::t_01e2573c559bb9 586-588
+  s_ba8dd89de9aac7::t_15e5e2d2e873f4 695-697
+  s_ba8dd89de9aac7::t_d510fa20e56723 321-324
+  s_d257b09300b1ad::t_1c4dc30b139b58 320,325-326,387-388,401,410,492,676,698-699,719,813-818
+src/modules/AudioEngine/workers/__tests__/levainZoneTableWorker.spec.ts
+  s_4c8cd08893b364::t_1353ac93ced909 1-68
+src/modules/AudioEngine/repositories/levainZoneTables/__tests__/buildLevainZoneTablesInWorker.spec.ts
+  s_4c8cd08893b364::t_a47e2e3e9f72c2 1-9,11-100,104-106,117-136
+  s_4c8cd08893b364::t_82a957224f885b 101-103
+  s_ba8dd89de9aac7::t_8237fd14865fac 10
+  s_ba8dd89de9aac7::t_245e16a62789c3 107-113,116
+  s_ba8dd89de9aac7::t_a740f1d242d6f3 114-115
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_4c8cd08893b364::t_82f3c74984aae6 92-93
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_4c8cd08893b364::t_9d2973967e9af8 82,86,111-119
+  s_4c8cd08893b364::t_53d39b93681e9c 83
+crates/daw-dsp/AGENTS.md
+  s_4c8cd08893b364::t_c2b35d1a84260a 75-89
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_4c8cd08893b364::t_66cba8f2d694c4 24-34,95-97,114
+  s_ba8dd89de9aac7::t_de0560b4537666 8-13,16,192,239
+src/modules/Levain/useCases/__tests__/loadSamplesForInstrumentCommitOrder.spec.ts
+  s_4c8cd08893b364::t_75d6385af0cf3a 33,118,141-152,161,222,348,351,356,386,400
+  s_59e31a5c6f3e31::t_c0c5345201ed1f 306-308,403-405
+  s_ba8dd89de9aac7::t_9ab61a40c7c095 25,258-269,272,317
+public/wasm/manifest.json
+  s_4c8cd08893b364::t_be80607cc7527c 15,20
+  s_ba8dd89de9aac7::t_d062039d8ad80b 12,16-18,21
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_8785b2ef4aed26 11
+  s_ba8dd89de9aac7::t_664a52d443c03e 35
+src/modules/Levain/useCases/configureLevainZoneTableBuilder.ts
+  s_ba8dd89de9aac7::t_ed74a33a26c3e1 1-24
+  s_ba8dd89de9aac7::t_8baad582923c46 25-26
+src/modules/Levain/useCases/__tests__/configureLevainZoneTableBuilder.spec.ts
+  s_ba8dd89de9aac7::t_80cfbc6156b9fd 1-47
+src/app/__tests__/bootstrap.spec.ts
+  s_ba8dd89de9aac7::t_64c6a1763c13fe 141-142,240-243,391,571,1081-1091
+src/app/bootstrap.ts
+  s_ba8dd89de9aac7::t_3deca71bd6937f 47,144,399
+src/modules/Levain/AGENTS.md
+  s_ba8dd89de9aac7::t_2273b13ba3de49 7,14
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_ba8dd89de9aac7::t_b2b324db4bb7a6 23,61-80
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_ba8dd89de9aac7::t_df84e446e7be21 9-10,71
+src/modules/Levain/useCases/index.ts
+  s_ba8dd89de9aac7::t_2cafc862325719 2
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ba8dd89de9aac7::t_3fdc8da45e073b 29-35
+crates/daw-dsp/src/levain/expression.rs
+  s_ba8dd89de9aac7::t_7824951a81d7d5 134-135,175-180
+crates/daw-engine/src/scheduler.rs
+  s_ba8dd89de9aac7::t_236674396729e4 4151-4154,4163-4167,26964,26994-26996,27000,27025,27038-27039,27072-27086
+evidence/agent-campaign/manifest.json
+  s_ba8dd89de9aac7::t_e9a144091631a7 623
+release/open-source-inventory.json
+  s_59e31a5c6f3e31::t_692af6280b8cd7 1345,1351,1771
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd5c6dc44c69b87cc6b5c6ee1e70d41b52132e31",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
