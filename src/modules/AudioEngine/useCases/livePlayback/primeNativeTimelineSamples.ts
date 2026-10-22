@@ -9,8 +9,8 @@
  * and pushing it across the bridge at the play gesture is a musician waiting
  * for the first frame (`createNativeLiveGraphBackend`'s header states both).
  *
- * So the material goes early and the memo in `nativeTimelineSamplePool` makes
- * the same call at the gesture find nothing left to send. Correctness does not
+ * Material goes early under a priming consumer lease. The next native prepare
+ * authenticates residency rather than trusting a renderer id memo. Correctness does not
  * depend on this having run: `startNativeLiveGraphSession` registers its own
  * batch's material before applying it, and a prime that never happened costs
  * only the wait it existed to remove.
@@ -25,6 +25,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
+import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
 import { projectLiveGraphTopology } from './projectLiveGraphTopology';
@@ -77,6 +78,7 @@ function projectLiveProgrammeBatch(sampleRate: number): ReturnType<typeof projec
 export async function primeNativeTimelineSamples(
     input: PrimeNativeTimelineSamplesInput
 ): Promise<PrimeNativeTimelineSamplesResult> {
+    const owner = nativeTimelineMaterialLeases.captureOwner();
     const commands = projectLiveProgrammeBatch(input.sampleRate);
     if (!commands.some((command) => command.kind === 'schedule-clip')) {
         // Nothing to register, and therefore no reason to spend the probe's
@@ -87,7 +89,7 @@ export async function primeNativeTimelineSamples(
     if (!availability.available) {
         return { outcome: 'declined', reason: availability.reason };
     }
-    const registered = await registerNativeTimelineSamples({ transport: availability.transport, commands });
+    const registered = await registerNativeTimelineSamples({ transport: availability.transport, commands, owner });
     if (registered.outcome === 'declined') {
         logger.debug(`[AudioEngine] native timeline sample prime declined: ${registered.reason}`);
         return registered;

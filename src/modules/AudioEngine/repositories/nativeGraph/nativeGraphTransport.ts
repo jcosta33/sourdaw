@@ -17,6 +17,8 @@ import { type NativeLevainBankLayout } from '../../models/NativeSampleBank';
 
 import { type NativeGraphWireBatch, type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 
+type TimelineGraphWireBatch = NativeGraphWireBatch & Readonly<{ timelineLease?: string }>;
+
 // The bank vocabulary is a model rather than this file's own, because the
 // registration that stages a bank and the runtime sink that leases one read it
 // too. Re-exported here so the seam still names the whole of what crosses it.
@@ -47,6 +49,26 @@ export type RegisterTimelineSampleInput = Readonly<{
     pcm: Uint8Array;
 }>;
 
+export type NativeTimelineMaterialDescriptor = Readonly<{
+    sourceId: string;
+    version: string;
+    frames: number;
+    channels: 1 | 2;
+    sampleRate: number;
+}>;
+
+export type NativeTimelineLifecycleRequest =
+    | Readonly<{ action: 'open' }>
+    | Readonly<{ action: 'prepare'; owner: string; materials: readonly NativeTimelineMaterialDescriptor[] }>
+    | Readonly<{ action: 'release'; lease: string }>
+    | Readonly<{ action: 'retire'; owner: string }>;
+
+export type RegisterTimelineMaterialInput = RegisterTimelineSampleInput &
+    Readonly<{
+        lease: string;
+        version: string;
+    }>;
+
 export type BeginLevainBankInput = Readonly<{
     /** Names the bank on the native side, as the worklet cache keys it. */
     bankKey: string;
@@ -75,13 +97,13 @@ export type ReleaseLevainBankInput = Readonly<{
 }>;
 
 export type RenderGraphOfflineInput = Readonly<{
-    batch: NativeGraphWireBatch;
+    batch: TimelineGraphWireBatch;
     frames: number;
     sampleRate: number;
 }>;
 
 export type ApplyGraphCommandsInput = Readonly<{
-    batch: NativeGraphWireBatch;
+    batch: TimelineGraphWireBatch;
 }>;
 
 export type MapGraphBatchInput = Readonly<{
@@ -91,7 +113,7 @@ export type MapGraphBatchInput = Readonly<{
      * when `session` resumes that history natively instead.
      */
     prior: readonly NativeGraphWireCommand[];
-    batch: NativeGraphWireBatch;
+    batch: TimelineGraphWireBatch;
     sampleRate: number;
     /**
      * Resumable prior (#2225): with a key, the native side keeps the mapped
@@ -107,6 +129,9 @@ export type MapGraphBatchInput = Readonly<{
 export type NativeGraphTransport = Readonly<{
     /** `register_timeline_sample`: decoded material into the native pool. */
     registerTimelineSample: (input: RegisterTimelineSampleInput) => Promise<unknown>;
+    /** Missing methods explicitly refuse a mixed-version native host. */
+    timelineSampleLifecycle?: (request: NativeTimelineLifecycleRequest) => Promise<unknown>;
+    registerTimelineMaterial?: (input: RegisterTimelineMaterialInput) => Promise<unknown>;
     /**
      * `begin_levain_bank`: open an empty bank under `bankKey`, replacing any
      * bank already registered there. The first of the three-step stage a
@@ -152,6 +177,12 @@ export type NativeGraphTransport = Readonly<{
 /** The production carrier: the graph commands over the desktop bridge. */
 export function createDesktopNativeGraphTransport(): NativeGraphTransport {
     return {
+        async timelineSampleLifecycle(request) {
+            return desktopInvoke('timeline_sample_lifecycle', { request });
+        },
+        async registerTimelineMaterial({ lease, sampleId, version, sampleRate, channels, pcm }) {
+            return desktopInvoke('register_timeline_material', { lease, sampleId, version, sampleRate, channels, pcm });
+        },
         async registerTimelineSample({ sampleId, sampleRate, channels, pcm }) {
             // The trailing byte payload routes through the bridge's binary
             // path; the seam orders the named arguments positionally.

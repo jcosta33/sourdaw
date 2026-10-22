@@ -28,6 +28,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
+import { withNativeTimelineMaterialTransport } from '../../__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphWireCommand } from '../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
@@ -135,7 +136,13 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
     automationStore: mocks.automation,
 }));
-vi.mock('../../stores/audioBufferCache', () => ({ audioBufferCache: mocks.buffers }));
+vi.mock('../../stores/audioBufferCache', () => ({
+    audioBufferCache: {
+        get: (id: string) => mocks.buffers.get(id),
+        has: (id: string) => mocks.buffers.has(id),
+        readRuntimeMaterialPublication: () => undefined,
+    },
+}));
 vi.mock('#/modules/Routing/stores', () => ({
     sidechainStore: mocks.sidechainStore,
 }));
@@ -802,7 +809,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         const commands: NativeGraphWireCommand[] = [];
         const samples: Uint8Array[] = [];
         const unexpected = () => Promise.reject(new Error('Unexpected native operation'));
-        const transport: NativeGraphTransport = {
+        const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
             registerTimelineSample: ({ pcm }) => {
                 samples.push(pcm);
                 return Promise.resolve();
@@ -817,7 +824,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                 commands.push(...batch.commands);
                 return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
             },
-        };
+        });
         const rendering = renderOffline({ durationBeats: 2, sampleRate: 48_000 });
         await started.promise;
         pcm.getChannelData(0).fill(0.9);
@@ -916,7 +923,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         const liveBefore = structuredClone(mocks.automation.value);
         const commands: NativeGraphWireCommand[] = [];
         const unexpected = () => Promise.reject(new Error('Unexpected native operation'));
-        const transport: NativeGraphTransport = {
+        const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
             registerTimelineSample: () => Promise.resolve(),
             beginLevainBank: unexpected,
             registerLevainSample: unexpected,
@@ -928,7 +935,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                 commands.push(...batch.commands);
                 return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
             },
-        };
+        });
         mocks.selectOfflineRenderEngine.mockResolvedValue({ engine: 'native/offline', transport });
         await renderOfflineInput(captureOfflineRenderInput({ durationBeats: 2, sampleRate: 48_000 }, { project }));
         expect(commands).toContainEqual(
@@ -1026,7 +1033,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             mocks.buffers.set('pcm', new AudioBuffer({ length: sampleRate * 2, numberOfChannels: 1, sampleRate }));
             const commands: NativeGraphWireCommand[] = [];
             const unexpected = () => Promise.reject(new Error('Unexpected native operation'));
-            const transport: NativeGraphTransport = {
+            const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
                 registerTimelineSample: () => Promise.resolve(),
                 beginLevainBank: unexpected,
                 registerLevainSample: unexpected,
@@ -1038,7 +1045,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     commands.push(...batch.commands);
                     return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
                 },
-            };
+            });
             mocks.selectOfflineRenderEngine.mockResolvedValue({ engine: 'native/offline', transport });
             try {
                 await renderOfflineInput(captureOfflineRenderInput({ durationBeats: 8, sampleRate }, { project }));
@@ -1077,7 +1084,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         captured.renderContext.tracks!.tracks[0]!.gain = 0.7;
         const commands: NativeGraphWireCommand[] = [];
         const unexpected = () => Promise.reject(new Error('Unexpected native operation'));
-        const transport: NativeGraphTransport = {
+        const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
             registerTimelineSample: unexpected,
             beginLevainBank: unexpected,
             registerLevainSample: unexpected,
@@ -1089,7 +1096,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                 commands.push(...batch.commands);
                 return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
             },
-        };
+        });
         mocks.selectOfflineRenderEngine.mockResolvedValue({ engine: 'native/offline', transport });
         await renderOfflineInput(captured);
         expect(commands).toContainEqual(

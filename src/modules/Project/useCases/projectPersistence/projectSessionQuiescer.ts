@@ -1,4 +1,8 @@
-import { disarmRetrospectiveCapture, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import {
+    clearRuntimeCachedAudioBuffers,
+    disarmRetrospectiveCapture,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
 import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { beginProjectSessionPluginRetirement } from '#/modules/PluginHost/useCases';
 import { repairRuntimeGraphFromProject, stopPlayback } from '#/modules/Transport/useCases';
@@ -92,6 +96,10 @@ const retire = async (
             return await repair();
         }
         pluginRetirement = await beginProjectSessionPluginRetirement();
+        await clearRuntimeCachedAudioBuffers({ retainRuntimeBuffers: true });
+        if (cancellationRequestId === requestId) {
+            return await repair();
+        }
         resetAudioGraph();
         await pluginRetirement.retire();
         retractEveryCrumbsEngineAttachment();

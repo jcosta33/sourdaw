@@ -24,9 +24,8 @@
  * `apply_graph_commands` keeps on the live path. One honest caveat: clip
  * material is sent to the native sample pool *before* the probe, because a
  * `schedule-clip` the probe maps must find its sample there. The pool is
- * process-wide and identity-keyed with replace semantics, so a refused batch
- * may leave material in it; the backend forgets those ids on refusal and a
- * retry simply re-registers the same bytes under the same identity.
+ * owner-scoped and immutable by material version. A refused batch releases
+ * only its pending lease; accepted history keeps its previous claim.
  *
  * ── Where the committed history lives ─────────────────────────────────────
  *
@@ -68,15 +67,14 @@ import {
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
 
-import { collectBufferedClipSources } from './collectBufferedClipSources';
 import { deinterleaveStereoPcm, type PlanarStereo } from './deinterleaveStereoPcm';
-import { interleaveAudioBufferPcm } from './interleaveAudioBufferPcm';
 import { type NativeGraphTransport } from './nativeGraphTransport';
 import { readNativeStripReports } from './readNativeStripReports';
 import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
 import { releaseNativeSampleBankClaims } from './releaseNativeSampleBankClaims';
 import { type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
+import { nativeTimelineMaterialLeases } from './nativeTimelineMaterialLeases';
 
 export const NATIVE_OFFLINE_BACKEND_ID = 'native/offline';
 
@@ -195,7 +193,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
      * This backend's mapping-session name on the native side. Fresh per
      * backend so two renders can never resume each other's history.
      */
-    const sessionId = `offline-${crypto.randomUUID()}`;
+    let sessionId = `offline-${crypto.randomUUID()}`;
     /**
      * This instance's own name in {@link claimedNativeSampleBankKeysByBackend},
      * suffixed with `sessionId` rather than reused as the public `backendId`:
@@ -205,8 +203,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
      * this value.
      */
     const claimBackendId = `${NATIVE_OFFLINE_BACKEND_ID}:${sessionId}`;
-    /** Source ids of material an *accepted* batch put in the native pool. */
-    const registeredSourceIds = new Set<string>();
+    const material = nativeTimelineMaterialLeases.createConsumer(transport);
     let runtimeRevision = 0;
     let disposed = false;
 
@@ -230,124 +227,133 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 }
             }
 
-            // The envelope is the applied batch's own — `schemaVersion` and
-            // `correlation` cross the wire exactly as this batch carries them,
-            // and an absent correlation stays absent (the serializer's law).
-            const incoming = serializeAudioGraphCommandBatch(batch);
-
-            // Material first: the wire carries only identities, and a
-            // `schedule-clip` the probe maps must find its sample in the pool.
-            // A source with no buffer is passed through untouched — the pool
-            // may already hold it — and one the pool does not hold is refused
-            // by the probe, by name, never played as silence. The ids are
-            // remembered only after the probe accepts (see the header's
-            // rollback caveat).
-            const sentSourceIds: string[] = [];
-            for (const source of collectBufferedClipSources(batch.commands)) {
-                if (registeredSourceIds.has(source.sourceId)) {
-                    continue;
-                }
-                try {
-                    const material = interleaveAudioBufferPcm(source);
-                    await transport.registerTimelineSample({
-                        sampleId: source.sourceId,
-                        sampleRate: source.buffer.sampleRate,
-                        channels: material.channels,
-                        pcm: material.pcm,
-                    });
-                } catch (error) {
-                    return rejected(`register_timeline_sample "${source.sourceId}": ${reasonOf(error)}`);
-                }
-                sentSourceIds.push(source.sourceId);
-            }
-
-            if (acquireNativeSampleBank) {
-                // Bank material after the clip material and still before the
-                // probe: a device built from a staged bank is refused by
-                // `map_device` until the bank is committed, and that refusal
-                // takes the whole batch. Staging never refuses the batch of its
-                // own accord — an instrument that could not be staged is one
-                // device the probe then names, not a bounce that never started.
-                await registerNativeSampleBanks({
-                    transport,
-                    commands: batch.commands,
-                    acquire: acquireNativeSampleBank,
-                    replaceTopology: batch.replaceTopology,
-                    backendId: claimBackendId,
-                });
-            }
-
-            // The whole-batch probe (see the header): the incoming batch maps
-            // against the graph the native side already holds under this
-            // backend's session key, nothing renders. A refusal is the native
-            // side's own reasons and commits nothing; an acceptance carries
-            // the native reports. `prior` stays empty here — the recovery leg
-            // below is the only place the committed history re-crosses.
-            const session = { sessionId, revision: wireCommands.length };
-            let mappedRaw: unknown;
+            let captured: ReturnType<typeof material.capture>;
             try {
-                mappedRaw = await transport.mapGraphBatch({
-                    prior: [],
-                    batch: incoming,
-                    sampleRate,
-                    session,
-                });
+                captured = material.capture(batch.commands);
             } catch (error) {
-                const reason = reasonOf(error);
-                if (!reason.startsWith(SESSION_FAULT_PREFIX)) {
-                    // A prior fault is not this batch's refusal: those commands
-                    // were accepted once, so a mapping that no longer takes
-                    // them is a broken seam invariant, and shaping it as
-                    // `rejected` would blame the incoming batch for a fault it
-                    // did not cause and hand the caller a reason no command of
-                    // theirs explains. It surfaces as a throw, exactly as a
-                    // malformed wire result does (`readMappedResult`) — one
-                    // law for seam defects. (Unreachable from the empty-prior
-                    // probe, which replays nothing; kept for the law's sake.)
-                    if (reason.startsWith(PRIOR_FAULT_PREFIX)) {
-                        throw error;
-                    }
-                    return rejected(reason);
-                }
-                // Recovery, exactly once: the full committed history replays
-                // as the prior and re-establishes the session under the same
-                // key. A session fault here *again* would mean the native side
-                // cannot hold what it just built; it is not retried a second
-                // time — it falls into the same `rejected` answer as any other
-                // non-prior transport error, so the caller declines and falls
-                // back to the Web Audio render instead of looping.
-                try {
-                    mappedRaw = await transport.mapGraphBatch({
-                        prior: wireCommands,
-                        batch: incoming,
-                        sampleRate,
-                        session,
-                    });
-                } catch (retryError) {
-                    const retryReason = reasonOf(retryError);
-                    if (retryReason.startsWith(PRIOR_FAULT_PREFIX)) {
-                        throw retryError;
-                    }
-                    return rejected(retryReason);
-                }
+                return rejected(reasonOf(error));
             }
-            const mapped = readMappedResult(mappedRaw);
-            if (mapped.outcome === 'rejected') {
-                return rejected(mapped.reason);
-            }
+            return material
+                .run(async () => {
+                    let claim;
+                    try {
+                        // The lease pins the union of accepted history and incoming
+                        // material, including older versions of a reused source id.
+                        claim = await material.prepare(batch.commands, batch.replaceTopology, captured);
+                    } catch (error) {
+                        return rejected(reasonOf(error));
+                    }
+                    let retained = false;
+                    try {
+                        const incoming = serializeAudioGraphCommandBatch(batch, claim);
 
-            wireCommands = [...wireCommands, ...incoming.commands];
-            for (const sourceId of sentSourceIds) {
-                registeredSourceIds.add(sourceId);
-            }
-            runtimeRevision += 1;
-            return {
-                acceptance: 'accepted',
-                application: 'applied',
-                ...(batch.correlation ? { correlation: batch.correlation } : {}),
-                runtimeRevision,
-                reports: mapped.reports,
-            };
+                        if (acquireNativeSampleBank) {
+                            // Bank material after the clip material and still before the
+                            // probe: a device built from a staged bank is refused by
+                            // `map_device` until the bank is committed, and that refusal
+                            // takes the whole batch. Staging never refuses the batch of its
+                            // own accord — an instrument that could not be staged is one
+                            // device the probe then names, not a bounce that never started.
+                            await registerNativeSampleBanks({
+                                transport,
+                                commands: batch.commands,
+                                acquire: acquireNativeSampleBank,
+                                replaceTopology: batch.replaceTopology,
+                                backendId: claimBackendId,
+                            });
+                        }
+
+                        // The whole-batch probe (see the header): the incoming batch maps
+                        // against the graph the native side already holds under this
+                        // backend's session key, nothing renders. A refusal is the native
+                        // side's own reasons and commits nothing; an acceptance carries
+                        // the native reports. `prior` stays empty here — the recovery leg
+                        // below is the only place the committed history re-crosses.
+                        material.assertOpen();
+                        const nextSessionId = batch.replaceTopology ? `offline-${crypto.randomUUID()}` : sessionId;
+                        const session = {
+                            sessionId: nextSessionId,
+                            revision: batch.replaceTopology ? 0 : wireCommands.length,
+                        };
+                        let mappedRaw: unknown;
+                        try {
+                            mappedRaw = await transport.mapGraphBatch({
+                                prior: [],
+                                batch: incoming,
+                                sampleRate,
+                                session,
+                            });
+                        } catch (error) {
+                            const reason = reasonOf(error);
+                            if (!reason.startsWith(SESSION_FAULT_PREFIX)) {
+                                // A prior fault is not this batch's refusal: those commands
+                                // were accepted once, so a mapping that no longer takes
+                                // them is a broken seam invariant, and shaping it as
+                                // `rejected` would blame the incoming batch for a fault it
+                                // did not cause and hand the caller a reason no command of
+                                // theirs explains. It surfaces as a throw, exactly as a
+                                // malformed wire result does (`readMappedResult`) — one
+                                // law for seam defects. (Unreachable from the empty-prior
+                                // probe, which replays nothing; kept for the law's sake.)
+                                if (reason.startsWith(PRIOR_FAULT_PREFIX)) {
+                                    throw error;
+                                }
+                                return rejected(reason);
+                            }
+                            // Recovery, exactly once: the full committed history replays
+                            // as the prior and re-establishes the session under the same
+                            // key. A session fault here *again* would mean the native side
+                            // cannot hold what it just built; it is not retried a second
+                            // time — it falls into the same `rejected` answer as any other
+                            // non-prior transport error, so the caller declines and falls
+                            // back to the Web Audio render instead of looping.
+                            try {
+                                mappedRaw = await transport.mapGraphBatch({
+                                    prior: batch.replaceTopology ? [] : wireCommands,
+                                    batch: incoming,
+                                    sampleRate,
+                                    session,
+                                });
+                            } catch (retryError) {
+                                const retryReason = reasonOf(retryError);
+                                if (retryReason.startsWith(PRIOR_FAULT_PREFIX)) {
+                                    throw retryError;
+                                }
+                                return rejected(retryReason);
+                            }
+                        }
+                        material.assertOpen();
+                        const mapped = readMappedResult(mappedRaw);
+                        if (mapped.outcome === 'rejected') {
+                            return rejected(mapped.reason);
+                        }
+
+                        await material.accept(claim);
+                        wireCommands = batch.replaceTopology
+                            ? [...incoming.commands]
+                            : [...wireCommands, ...incoming.commands];
+                        sessionId = nextSessionId;
+                        retained = true;
+                        runtimeRevision += 1;
+                        return {
+                            acceptance: 'accepted',
+                            application: 'applied',
+                            ...(batch.correlation ? { correlation: batch.correlation } : {}),
+                            runtimeRevision,
+                            reports: mapped.reports,
+                        };
+                    } finally {
+                        if (!retained) {
+                            await material.decline(claim);
+                        }
+                    }
+                })
+                .catch((error: unknown) => {
+                    if (material.isClosed()) {
+                        return rejected(reasonOf(error));
+                    }
+                    throw error;
+                });
         },
 
         async render(frames: number): Promise<PlanarStereo> {
@@ -363,12 +369,16 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
             // per-batch staleness key, echoed at apply time on each batch's own
             // probe, and this render applies no batch. `schemaVersion` is the
             // wire schema this file speaks — `apply` refused anything else.
-            const bytes = await transport.renderGraphOffline({
-                batch: { schemaVersion: 1, commands: wireCommands },
-                frames,
-                sampleRate,
+            return material.run(async () => {
+                const context = material.context();
+                const bytes = await transport.renderGraphOffline({
+                    batch: { schemaVersion: 1, timelineLease: context.lease, commands: wireCommands },
+                    frames,
+                    sampleRate,
+                });
+                material.assertOpen();
+                return deinterleaveStereoPcm({ bytes, frames });
             });
-            return deinterleaveStereoPcm({ bytes, frames });
         },
 
         dispose(): void {
@@ -376,10 +386,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 return;
             }
             disposed = true;
-            // The sample pool is deliberately left alone: ids name decoded
-            // identities and re-registration replaces, so entries cannot go
-            // stale — and the pool is process-wide, bounded by native LRU
-            // byte-budget eviction (#2229).
+            material.dispose();
             wireCommands = [];
             // This bounce's own sample-bank claim names nothing once it can
             // send no further batch, so a later replacement elsewhere is free

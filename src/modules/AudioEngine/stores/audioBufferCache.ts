@@ -2070,6 +2070,15 @@ async function readDurableOwnedIdsOrAbort(): Promise<Set<string> | null> {
 }
 
 export const audioBufferCache = {
+    /** Runtime publication identity only; this is not a durable-media receipt. */
+    readRuntimeMaterialPublication(id: string, buffer: AudioBuffer): number | undefined {
+        const source = durabilitySourceById.get(id);
+        if (cache.get(id) !== buffer || !source || source.status === 'removed' || !source.isAuthoritative()) {
+            return undefined;
+        }
+        return source.revision;
+    },
+
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
         if (buf) {

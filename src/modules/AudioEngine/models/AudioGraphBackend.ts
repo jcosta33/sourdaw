@@ -881,6 +881,8 @@ export type AudioGraphCorrelation = RuntimeGraphCorrelation;
  */
 export type AudioGraphCommandBatch = Readonly<{
     schemaVersion: 1;
+    /** Native runtime residency authority, never serialized project truth. */
+    timelineLease?: string;
     correlation?: AudioGraphCorrelation;
     /**
      * Whether this batch replaces the backend's graph rather than adding to

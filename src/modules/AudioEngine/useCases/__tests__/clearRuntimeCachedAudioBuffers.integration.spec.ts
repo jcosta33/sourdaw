@@ -49,7 +49,7 @@ describe('clearRuntimeCachedAudioBuffers', () => {
         audioBufferCache.set(projectBId, makeAudioBuffer(0.2), { freezeProjectId: 200 });
         await flushIndexedDbTasks();
 
-        clearRuntimeCachedAudioBuffers();
+        await clearRuntimeCachedAudioBuffers();
         await flushIndexedDbTasks();
 
         expect(audioBufferCache.has(projectAId)).toBe(false);
@@ -66,7 +66,7 @@ describe('clearRuntimeCachedAudioBuffers', () => {
         audioBufferCache.set('old-project-only', makeAudioBuffer(0.2));
         await flushIndexedDbTasks();
 
-        clearRuntimeCachedAudioBuffers({ retainedIds: ['shared-buffer'] });
+        await clearRuntimeCachedAudioBuffers({ retainedIds: ['shared-buffer'] });
 
         expect(audioBufferCache.has('shared-buffer')).toBe(true);
         expect(audioBufferCache.has('old-project-only')).toBe(false);
@@ -79,7 +79,7 @@ describe('clearRuntimeCachedAudioBuffers', () => {
         audioBufferCache.set(id, makeAudioBuffer(0.1), { freezeProjectId: 100 });
         expect(controls.committed.has(id)).toBe(false);
 
-        clearRuntimeCachedAudioBuffers();
+        await clearRuntimeCachedAudioBuffers();
         expect(audioBufferCache.has(id)).toBe(false);
         await flushIndexedDbTasks();
 

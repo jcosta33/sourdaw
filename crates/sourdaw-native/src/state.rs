@@ -388,6 +388,7 @@ pub struct TimelineSamplePool {
     touch_counter: u64,
     total_bytes: usize,
     max_bytes: usize,
+    pub(crate) residency: crate::commands::timeline_sample_lifecycle::TimelineMaterialResidency,
 }
 
 impl TimelineSamplePool {
@@ -397,6 +398,7 @@ impl TimelineSamplePool {
             touch_counter: 0,
             total_bytes: 0,
             max_bytes,
+            residency: Default::default(),
         }
     }
 
@@ -409,15 +411,15 @@ impl TimelineSamplePool {
     }
 
     pub fn len(&self) -> usize {
-        self.samples.len()
+        self.samples.len() + self.residency.resident_len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.samples.is_empty()
+        self.len() == 0
     }
 
     pub fn total_bytes(&self) -> usize {
-        self.total_bytes
+        self.total_bytes + self.residency.accounted_bytes()
     }
 
     pub fn max_bytes(&self) -> usize {
@@ -436,9 +438,35 @@ impl TimelineSamplePool {
                 break;
             };
             if let Some(entry) = self.samples.remove(&oldest) {
+                self.residency.remember_retired(None, &entry.sample);
                 self.total_bytes = self.total_bytes.saturating_sub(entry.byte_len);
             }
         }
+    }
+
+    pub(crate) fn has_legacy_material_readers(&self) -> bool {
+        self.samples.values().any(|entry| {
+            Arc::strong_count(&entry.sample.left) > 1
+                || (!entry.sample.right.is_empty() && Arc::strong_count(&entry.sample.right) > 1)
+        }) || self.residency.has_legacy_readers()
+    }
+
+    pub(crate) fn admit_legacy_material(&self, id: &str, bytes: usize) -> Result<(), String> {
+        if self.residency.fenced() {
+            return Err("Legacy timeline registration requires a material lease".into());
+        }
+        let reclaimable: usize = self.samples.values().filter(|row| {
+            Arc::strong_count(&row.sample.left) == 1
+                && (row.sample.right.is_empty() || Arc::strong_count(&row.sample.right) == 1)
+        }).map(|row| row.byte_len).sum();
+        let minimum = self.total_bytes().checked_add(bytes).ok_or("Timeline byte count overflow")?
+            .saturating_sub(reclaimable);
+        if bytes > self.max_bytes || minimum > self.max_bytes
+            || !self.residency.can_track_material(self.samples.len() + usize::from(!self.samples.contains_key(id)))
+        {
+            return Err("Timeline sample exceeds the native pool budget or retirement capacity".into());
+        }
+        Ok(())
     }
 
     pub fn insert(&mut self, id: String, sample: TimelineSample) {
@@ -446,6 +474,7 @@ impl TimelineSamplePool {
         let touched = self.touch_counter;
         let byte_len = sample.byte_len();
         if let Some(prev) = self.samples.remove(&id) {
+            self.residency.remember_retired(None, &prev.sample);
             self.total_bytes = self.total_bytes.saturating_sub(prev.byte_len);
         }
         self.samples.insert(
@@ -457,7 +486,7 @@ impl TimelineSamplePool {
             },
         );
         self.total_bytes += byte_len;
-        while self.total_bytes > self.max_bytes && self.samples.len() > 1 {
+        while self.total_bytes() > self.max_bytes && self.samples.len() > 1 {
             let Some(oldest) = self
                 .samples
                 .iter()
@@ -468,6 +497,7 @@ impl TimelineSamplePool {
                 break;
             };
             if let Some(entry) = self.samples.remove(&oldest) {
+                self.residency.remember_retired(None, &entry.sample);
                 self.total_bytes = self.total_bytes.saturating_sub(entry.byte_len);
             }
         }
@@ -475,11 +505,15 @@ impl TimelineSamplePool {
 
     pub fn remove(&mut self, id: &str) -> Option<TimelineSample> {
         let entry = self.samples.remove(id)?;
+        self.residency.remember_retired(None, &entry.sample);
         self.total_bytes = self.total_bytes.saturating_sub(entry.byte_len);
         Some(entry.sample)
     }
 
     pub fn clear(&mut self) {
+        for entry in self.samples.values() {
+            self.residency.remember_retired(None, &entry.sample);
+        }
         self.samples.clear();
         self.total_bytes = 0;
     }

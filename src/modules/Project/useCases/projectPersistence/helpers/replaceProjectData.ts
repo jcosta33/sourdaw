@@ -361,12 +361,15 @@ export async function replaceProjectData({
     // the incoming project. Remaining operations cannot become an abort.
 
     try {
+        try {
+            await clearRuntimeCachedAudioBuffers({ retainedIds: referencedIds });
+        } catch (error) {
+            degraded = true;
+            logger.error(new Error(`[${context}] Committed native material retirement failed`, { cause: error }));
+        }
         // Notification coalescing only: each write remains independently fallible
         // and is guarded so one owner failure cannot prevent later owner steps.
         batchStoreUpdates(() => {
-            runCommittedStep('runtime audio buffer reset', () =>
-                clearRuntimeCachedAudioBuffers({ retainedIds: referencedIds })
-            );
             runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
             runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
             runCommittedStep('module store reset', resetModuleStoresToDefault);

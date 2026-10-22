@@ -83,6 +83,8 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['read_file_bytes', ['path']],
     ['register_levain_sample', ['bank_key', 'sample_id', 'sample_rate', 'channels', 'pcm']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['timeline_sample_lifecycle', ['request']],
+    ['register_timeline_material', ['lease', 'sample_id', 'version', 'sample_rate', 'channels', 'pcm']],
     ['release_levain_bank', ['bank_key']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['retire_native_engine', []],

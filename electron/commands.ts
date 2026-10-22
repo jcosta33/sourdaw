@@ -108,6 +108,8 @@ export const EXPOSED_COMMANDS = [
     'read_file_bytes',
     'register_levain_sample',
     'register_timeline_sample',
+    'timeline_sample_lifecycle',
+    'register_timeline_material',
     'release_levain_bank',
     'render_graph_offline',
     RETIRE_NATIVE_ENGINE,

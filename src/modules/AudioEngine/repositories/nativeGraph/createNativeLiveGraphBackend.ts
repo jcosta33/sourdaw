@@ -38,12 +38,9 @@
  * process-wide memo of what the store holds keeps a second play from paying for
  * the instrument twice.
  *
- * This slice's producer emits no `schedule-clip`, so nothing here registers
- * timeline material. When a live programme arrives, clip material has to reach
- * `register_timeline_sample` **before** the batch that references it — the
- * ordering the offline backend already keeps — and it must not be paid for at
- * the play gesture, because a project's decoded PCM is far too large to push
- * across the bridge while a musician waits for the first frame.
+ * Timeline material is prepared under this backend's exact native consumer
+ * lease before every batch. Priming makes decoded bytes available early; the
+ * native receipt decides whether another shipment is needed.
  */
 
 import {
@@ -55,6 +52,7 @@ import {
 } from '../../models/AudioGraphBackend';
 
 import { type NativeGraphTransport } from './nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from './nativeTimelineMaterialLeases';
 import { readNativeStripReports } from './readNativeStripReports';
 import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
 import { releaseNativeSampleBankClaims } from './releaseNativeSampleBankClaims';
@@ -69,6 +67,7 @@ export type NativeLiveGraphBackendDeps = Readonly<{
      * side of it.
      */
     transport: NativeGraphTransport;
+    materialOwner?: ReturnType<typeof nativeTimelineMaterialLeases.captureOwner>;
     /**
      * Leases the decoded bank one device's `sampleBankKey` names, so the batch
      * can stage it before the engine is asked to map that device. Absent in a
@@ -216,6 +215,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
 export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): AudioGraphBackend {
     const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
+    const material = nativeTimelineMaterialLeases.createConsumer(transport, deps.materialOwner);
     /**
      * This instance's own name in {@link claimedNativeSampleBankKeysByBackend},
      * suffixed with a per-instance token rather than reused as the public
@@ -237,25 +237,60 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
             if (batch.schemaVersion !== 1) {
                 return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
             }
-            if (acquireNativeSampleBank) {
-                // Before the apply, never after: `map_device` refuses a Levain
-                // device whose bank is not committed yet, and the refusal takes
-                // the whole batch — every other strip in this play with it.
-                await registerNativeSampleBanks({
-                    transport,
-                    commands: batch.commands,
-                    acquire: acquireNativeSampleBank,
-                    replaceTopology: batch.replaceTopology,
-                    backendId: claimBackendId,
-                });
-            }
-            let raw: unknown;
+            let captured: ReturnType<typeof material.capture>;
             try {
-                raw = await transport.applyGraphCommands({ batch: serializeAudioGraphCommandBatch(batch) });
+                captured = material.capture(batch.commands);
             } catch (error) {
                 return rejected(reasonOf(error));
             }
-            return readAppliedResult(raw, batch);
+            return material
+                .run(async () => {
+                    let claim;
+                    try {
+                        claim = await material.prepare(batch.commands, batch.replaceTopology, captured);
+                    } catch (error) {
+                        return rejected(reasonOf(error));
+                    }
+                    let retained = false;
+                    try {
+                        if (acquireNativeSampleBank) {
+                            await registerNativeSampleBanks({
+                                transport,
+                                commands: batch.commands,
+                                acquire: acquireNativeSampleBank,
+                                replaceTopology: batch.replaceTopology,
+                                backendId: claimBackendId,
+                            });
+                        }
+                        material.assertOpen();
+                        let raw: unknown;
+                        try {
+                            raw = await transport.applyGraphCommands({
+                                batch: serializeAudioGraphCommandBatch(batch, claim),
+                            });
+                        } catch (error) {
+                            return rejected(reasonOf(error));
+                        }
+                        const result = readAppliedResult(raw, batch);
+                        // A native fence is an admission fact even if this handle
+                        // closed while IPC was pending. Never recast it as not-applied.
+                        if (result.acceptance === 'accepted' && !material.isClosed()) {
+                            await material.accept(claim);
+                            retained = true;
+                        }
+                        return result;
+                    } finally {
+                        if (!retained) {
+                            await material.decline(claim);
+                        }
+                    }
+                })
+                .catch((error: unknown) => {
+                    if (material.isClosed()) {
+                        return rejected(reasonOf(error));
+                    }
+                    throw error;
+                });
         },
 
         dispose(): void {
@@ -267,6 +302,7 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
             // later replacement elsewhere is then free to reclaim a bank this
             // backend used to name.
             disposed = true;
+            material.dispose();
             releaseNativeSampleBankClaims(claimBackendId);
         },
     };

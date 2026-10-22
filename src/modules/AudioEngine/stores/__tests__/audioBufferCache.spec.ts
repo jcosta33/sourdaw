@@ -841,4 +841,24 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get(ids[1]!)).toBeUndefined();
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
     });
+
+    it('authenticates an exact resident publication and changes on same-object republish', () => {
+        const buffer = createAudioBuffer({ length: 4, sampleRate: 48_000 });
+        audioBufferCache.set('native-version', buffer);
+        const first = audioBufferCache.readRuntimeMaterialPublication('native-version', buffer);
+        expect(first).toEqual(expect.any(Number));
+        expect(
+            audioBufferCache.readRuntimeMaterialPublication(
+                'native-version',
+                createAudioBuffer({ length: 4, sampleRate: 48_000 })
+            )
+        ).toBeUndefined();
+        buffer.copyToChannel(new Float32Array([0.5, 0.5, 0.5, 0.5]), 0);
+        audioBufferCache.set('native-version', buffer);
+        const second = audioBufferCache.readRuntimeMaterialPublication('native-version', buffer);
+        expect(second).toEqual(expect.any(Number));
+        expect(second).not.toBe(first);
+        audioBufferCache.clear();
+        expect(audioBufferCache.readRuntimeMaterialPublication('native-version', buffer)).toBeUndefined();
+    });
 });

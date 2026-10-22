@@ -97,6 +97,7 @@ import {
     type AudioGraphWriteParameterCommand,
 } from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { armNativeLiveAutomationWriter } from '../../livePlayback/armNativeLiveAutomationWriter';
@@ -175,6 +176,7 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
 
 vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: {
+        readRuntimeMaterialPublication: () => undefined,
         get: (id: string) => mocks.audioBuffers.get(id),
         has: (id: string) => mocks.audioBuffers.has(id),
         set: () => undefined,
@@ -193,6 +195,15 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
 
 /** The napi surface the in-process transport drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -252,6 +263,16 @@ const capturedRenders: CapturedRender[] = [];
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -729,7 +750,9 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         const { matA, matB } = fixtureMaterial();
         mocks.audioBuffers.clear();
         mocks.audioBuffers.set('mat-a', matA);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-a', matA);
         mocks.audioBuffers.set('mat-b', matB);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-b', matB);
         mocks.lanes.length = 0;
         mocks.lanes.push(...fixtureLanes());
         mocks.renderContext = fixtureRenderContext();
@@ -865,8 +888,12 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         'renders mono clips panned $name the same way on both engines',
         async ({ name, storedPan }) => {
             const { matA, matB } = fixtureMaterial();
-            mocks.audioBuffers.set('mat-a', toMono(matA));
-            mocks.audioBuffers.set('mat-b', toMono(matB));
+            const monoA = toMono(matA);
+            mocks.audioBuffers.set('mat-a', monoA);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-a', monoA);
+            const monoB = toMono(matB);
+            mocks.audioBuffers.set('mat-b', monoB);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-b', monoB);
             mocks.lanes.length = 0;
             mocks.lanes.push(...fixtureLanes().filter((candidate) => candidate.parameterId !== 'pan'));
             mocks.renderContext = fixtureRenderContext({}, storedPan);

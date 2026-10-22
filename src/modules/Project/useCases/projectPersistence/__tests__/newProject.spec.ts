@@ -581,4 +581,28 @@ describe('newProject injectable', () => {
         expect(projectStore.value?.projectId).not.toBe(firstProjectId);
         expect(projectStore.value).toMatchObject({ name: 'Second Project', identityPersistencePending: false });
     });
+
+    it('awaits outgoing native material completion before committed store publication', async () => {
+        const entered = createDeferred<void>();
+        const retirement = createDeferred<void>();
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockImplementationOnce(() => {
+            entered.resolve();
+            return retirement.promise;
+        });
+        const opening = newProject('After native readers');
+        await entered.promise;
+        expect(resetCrdtProject).toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(resetMocks.finalize).not.toHaveBeenCalled();
+        retirement.resolve();
+        await expect(opening).resolves.toBe(true);
+        expect(projectStore.value?.name).toBe('After native readers');
+    });
+
+    it('keeps committed incoming authority and reports an asynchronous native retirement failure', async () => {
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockRejectedValueOnce(new Error('native last reader timed out'));
+        await expect(newProject('Committed despite native failure')).resolves.toBe(true);
+        expect(projectStore.value?.name).toBe('Committed despite native failure');
+        expect(resetMocks.finalize).toHaveBeenCalledOnce();
+    });
 });

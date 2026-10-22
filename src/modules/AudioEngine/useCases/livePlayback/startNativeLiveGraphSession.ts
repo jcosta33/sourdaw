@@ -102,8 +102,8 @@ import {
 import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
+import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
-import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 import { effectiveMasterGain } from '../engineAccess/masterGainState';
@@ -521,12 +521,7 @@ async function applyTopologyBatch(input: {
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     commands: readonly AudioGraphCommand[];
 }): Promise<TopologyBatchOutcome> {
-    const { transport, backend } = input;
-    const material = await registerNativeTimelineSamples({ transport, commands: input.commands });
-    if (material.outcome === 'declined') {
-        // No batch was sent, so nothing in the graph moved.
-        return { outcome: 'refused', reason: material.reason };
-    }
+    const { backend } = input;
     const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
     // A batch that starts the engine takes over the plugin instances loaded
@@ -1067,9 +1062,13 @@ async function installRolledSession(input: {
  * bank, so one registration answers for every device module that builds its
  * native body from staged material rather than from its record.
  */
-function createSessionBackend(transport: NativeGraphTransport): AudioGraphBackend {
+function createSessionBackend(
+    transport: NativeGraphTransport,
+    materialOwner: ReturnType<typeof nativeTimelineMaterialLeases.captureOwner>
+): AudioGraphBackend {
     return createNativeLiveGraphBackend({
         transport,
+        materialOwner,
         acquireNativeSampleBank: getAudioDeviceRuntimeSink().acquireNativeSampleBank,
     });
 }
@@ -1083,6 +1082,7 @@ export function startNativeLiveGraphSession(
     // down, and the epoch is the identity both of them check. The claim itself
     // is not handed back here; only a stop does that, because a re-armed start
     // is itself a start (see `nativeLiveGraphSessionState.ts`).
+    const materialOwner = nativeTimelineMaterialLeases.captureOwner();
     nativeLiveGraphSession.rearmEpoch += 1;
     // And the pending count with it, synchronously for the same reason: a
     // retire already queued ahead of this start would otherwise read an epoch
@@ -1133,7 +1133,7 @@ export function startNativeLiveGraphSession(
                     monitor,
                     programme: against,
                 });
-            const backend = createSessionBackend(availability.transport);
+            const backend = createSessionBackend(availability.transport, materialOwner);
             const firstCommands = projectTopology(topology.attachedInstanceIds, programme);
             // Everything past the claim, so that every way out of it reopens the
             // gates — a rejected sample registration, a bridge that drops mid-apply,

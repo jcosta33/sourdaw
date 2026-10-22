@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
+import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
 import {
     claimedNativeSampleBankKeysByBackend,
     inFlightNativeSampleBankShipments,
@@ -44,7 +45,7 @@ const BATCH: AudioGraphCommandBatch = {
  */
 function stubTransport(applyGraphCommands: NativeGraphTransport['applyGraphCommands']): NativeGraphTransport {
     const unexpected = (name: string) => () => Promise.reject(new Error(`the live backend must not call ${name}`));
-    return {
+    return withNativeTimelineMaterialTransport({
         applyGraphCommands,
         registerTimelineSample: unexpected('register_timeline_sample'),
         beginLevainBank: unexpected('begin_levain_bank'),
@@ -53,7 +54,7 @@ function stubTransport(applyGraphCommands: NativeGraphTransport['applyGraphComma
         releaseLevainBank: unexpected('release_levain_bank'),
         renderGraphOffline: unexpected('render_graph_offline'),
         mapGraphBatch: unexpected('map_graph_batch'),
-    };
+    });
 }
 
 describe('createNativeLiveGraphBackend', () => {
@@ -70,6 +71,7 @@ describe('createNativeLiveGraphBackend', () => {
         expect(applyGraphCommands).toHaveBeenCalledWith({
             batch: {
                 schemaVersion: 1,
+                timelineLease: expect.any(String),
                 commands: [
                     {
                         kind: 'create-track-strip',

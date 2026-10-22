@@ -680,6 +680,29 @@ impl SourdawNative {
         )
     }
 
+    #[napi]
+    pub async fn timeline_sample_lifecycle(&self, request: Value) -> Result<Value> {
+        reason(commands::timeline_sample_lifecycle::timeline_sample_lifecycle(
+            request, &self.singletons.app_state,
+        ).await)
+    }
+
+    #[napi]
+    pub async fn register_timeline_material(
+        &self,
+        lease: String,
+        sample_id: String,
+        version: String,
+        sample_rate: f64,
+        channels: u32,
+        pcm: Buffer,
+    ) -> Result<Value> {
+        reason(commands::timeline_sample_lifecycle::register_timeline_material(
+            lease, sample_id, version, sample_rate, channels, pcm.to_vec(),
+            &self.singletons.app_state,
+        ).await)
+    }
+
     /// Open an empty Levain sample bank under `bank_key`, replacing any bank
     /// already registered there. Returns `{ "bankKey": … }`.
     #[napi]

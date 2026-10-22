@@ -38,6 +38,7 @@ import { primeNativeTimelineSamples } from './primeNativeTimelineSamples';
  * teardown, the same contract `syncTransportMapsToNativeSession` follows.
  */
 export function syncNativeTimelineSamples(): () => void {
+    let closed = false;
     let flushScheduled = false;
     // One pass at a time: a pass is a bridge round trip, and a second one
     // started underneath it would push the same material twice — the memo
@@ -46,6 +47,9 @@ export function syncNativeTimelineSamples(): () => void {
     let changedDuringPass = false;
 
     function pass(): void {
+        if (closed) {
+            return;
+        }
         if (priming) {
             changedDuringPass = true;
             return;
@@ -77,11 +81,15 @@ export function syncNativeTimelineSamples(): () => void {
         pass();
     }
 
-    return trackStore.subscribe(() => {
+    const unsubscribe = trackStore.subscribe(() => {
         if (flushScheduled) {
             return;
         }
         flushScheduled = true;
         void Promise.resolve().then(flush);
     });
+    return () => {
+        closed = true;
+        unsubscribe();
+    };
 }

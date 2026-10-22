@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 // factories re-run when a reset sends the next scenario through them, but
 // they keep handing out these.
 const mocks = vi.hoisted(() => ({
+    clearRuntimeCachedAudioBuffers: vi.fn(async () => undefined),
     disarmRetrospectiveCapture: vi.fn(),
     resetAudioGraph: vi.fn(),
     retractEveryCrumbsEngineAttachment: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    clearRuntimeCachedAudioBuffers: mocks.clearRuntimeCachedAudioBuffers,
     disarmRetrospectiveCapture: mocks.disarmRetrospectiveCapture,
     resetAudioGraph: mocks.resetAudioGraph,
 }));
@@ -45,6 +47,7 @@ async function loadQuiescer() {
     vi.resetModules();
     const module = await import('../projectSessionQuiescer');
     vi.clearAllMocks();
+    mocks.clearRuntimeCachedAudioBuffers.mockReset().mockResolvedValue(undefined);
     return module.projectSessionQuiescer;
 }
 

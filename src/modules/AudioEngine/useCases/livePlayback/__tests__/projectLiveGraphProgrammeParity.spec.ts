@@ -104,8 +104,7 @@ import { NATIVE_ADDON_FILE } from '../../../../../../electron/native';
 import { type AudioGraphCommand } from '../../../models/AudioGraphBackend';
 import { deinterleaveStereoPcm } from '../../../repositories/nativeGraph/deinterleaveStereoPcm';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
-import { registerNativeTimelineSamples } from '../../../repositories/nativeGraph/nativeTimelineSamplePool';
-import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { serializeAudioGraphCommandBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommandBatch';
 import {
     type OfflinePpqEndpointProjector,
@@ -142,10 +141,11 @@ const resolveTempoAtBeat: OfflineTempoAtBeatResolver = () => TEMPO;
 
 // ── The seams: the material cache, and lanes the export must not find ─────
 
-const mocks = vi.hoisted(() => ({ audioBuffers: new Map<string, unknown>() }));
+const mocks = vi.hoisted(() => ({ audioBuffers: new Map<string, AudioBuffer>() }));
 
 vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: {
+        readRuntimeMaterialPublication: () => undefined,
         get: (id: string) => mocks.audioBuffers.get(id),
         has: (id: string) => mocks.audioBuffers.has(id),
         set: () => undefined,
@@ -211,6 +211,15 @@ function createMaterial(seconds: number, hertz: number): AudioBuffer {
 
 /** The napi surface the in-process transport drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -261,6 +270,16 @@ function requireNativeHost(): NativeHostAddon {
 /** The in-process transport: the production commands, minus the wire. */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -689,18 +708,18 @@ function projectLiveSessionCommands(options?: {
 
 async function renderLiveLeg(commands: readonly AudioGraphCommand[]): Promise<Float32Array[]> {
     const transport = inProcessNativeTransport(requireNativeHost());
-    const material = await registerNativeTimelineSamples({ transport, commands });
-    if (material.outcome !== 'registered') {
-        throw new Error(`the live leg could not register its material: ${material.reason}`);
-    }
+    const material = nativeTimelineMaterialLeases.createConsumer(transport);
+    const claim = await material.run(() => material.prepare(commands));
+    await material.accept(claim);
     // Straight at the transport, not through `createNativeOfflineGraphBackend`:
     // that backend refuses `set-monitor-shadow` by name, and dropping the
     // command would render something other than the batch under test.
     const bytes = await transport.renderGraphOffline({
-        batch: serializeAudioGraphCommandBatch({ schemaVersion: 1, commands }),
+        batch: serializeAudioGraphCommandBatch({ schemaVersion: 1, commands }, claim),
         frames: FRAME_COUNT,
         sampleRate: SAMPLE_RATE,
     });
+    material.dispose();
     const { left, right } = deinterleaveStereoPcm({ bytes, frames: FRAME_COUNT });
     return [left, right];
 }
@@ -728,16 +747,17 @@ function firstDifference(left: readonly Float32Array[], right: readonly Float32A
 }
 
 describe('live and export projections render one project the same way (#3068)', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.stubGlobal('AudioBuffer', StubAudioBuffer);
-        // The pool memo is process-wide; a previous file's belief about a host
-        // this one never registered against would skip the registration.
-        registeredNativeTimelineSampleIds.clear();
-        mocks.audioBuffers = new Map<string, unknown>([
+        // Retire the previous actual native generation before creating this
+        // case's privately owned fixture material.
+        await nativeTimelineMaterialLeases.retire();
+        mocks.audioBuffers = new Map<string, AudioBuffer>([
             ['mat-a', createMaterial(2, 220)],
             ['mat-b', createMaterial(1.25, 330)],
             ['bake-1', createMaterial(BAKE_SECONDS, 110)],
         ]);
+        for (const [id, buffer] of mocks.audioBuffers) nativeTimelineMaterialLeases.ownSnapshot(id, buffer);
     });
 
     afterEach(() => {

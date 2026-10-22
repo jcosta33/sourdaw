@@ -14,6 +14,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import { withNativeTimelineMaterialTransport } from '../../../__tests__/withNativeTimelineMaterialTransport';
+import { nativeTimelineMaterialLeases } from '../nativeTimelineMaterialLeases';
 import { createNativeOfflineGraphBackend, NATIVE_OFFLINE_BACKEND_ID } from '../createNativeOfflineGraphBackend';
 import {
     type MapGraphBatchInput,
@@ -69,10 +71,7 @@ function scriptedTransport(options?: {
     const registered: RegisterTimelineSampleInput[] = [];
     const renders: RenderGraphOfflineInput[] = [];
     const maps: MapGraphBatchInput[] = [];
-    return {
-        registered,
-        renders,
-        maps,
+    const transport: NativeGraphTransport = {
         async registerTimelineSample(input) {
             if (options?.refuseRegistration !== undefined) {
                 throw new Error(options.refuseRegistration);
@@ -113,9 +112,11 @@ function scriptedTransport(options?: {
         },
         applyGraphCommands: vi.fn(async () => ({ acceptance: 'accepted' })),
     };
+    return { ...withNativeTimelineMaterialTransport(transport), registered, renders, maps };
 }
 
 function clipCommand(sourceId: string, buffer?: AudioBuffer) {
+    if (buffer) nativeTimelineMaterialLeases.ownSnapshot(sourceId, buffer);
     return {
         kind: 'schedule-clip',
         playback: {
@@ -184,7 +185,7 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(transport.maps[1]!.sampleRate).toBe(SAMPLE_RATE);
     });
 
-    it('passes an identity-only source through and lets the pool answer for it', async () => {
+    it('refuses identity-only material without a captured version before mapping', async () => {
         const transport = scriptedTransport();
         const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
 
@@ -193,7 +194,12 @@ describe('createNativeOfflineGraphBackend', () => {
             commands: [TRACK_STRIP, clipCommand('registered-elsewhere')],
         });
 
-        expect(result.application).toBe('applied');
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('exact decoded material'),
+        });
+        expect(transport.maps).toHaveLength(0);
         expect(transport.registered).toHaveLength(0);
     });
 
@@ -222,7 +228,7 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(refused).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
-            reason: 'commands[0]: schedule-clip: clip gain is negative',
+            reason: 'Native clip source "take-1" needs its exact decoded material',
         });
         // Rollback: the refused command never enters a later wire batch.
         await backend.render(4);
@@ -231,10 +237,9 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(rendered.batch.commands).toHaveLength(1);
         expect(rendered.batch.commands[0]!.kind).toBe('create-track-strip');
 
-        // And the backend forgot material a refused batch sent ahead of its
-        // probe (a schedule-clip probe must find its sample in the pool): a
-        // retry re-registers the identity — replace-idempotent natively —
-        // rather than trusting a set the rejected batch mutated.
+        // Refusal releases only the new lease. On the next prepare, the
+        // authoritative native receipt may reuse its still-cached exact PCM;
+        // the rejected command itself must remain outside accepted history.
         const material = stereoBuffer([0], [0]);
         const refusedWithMaterial = await backend.apply({
             schemaVersion: 1,
@@ -249,7 +254,7 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(transport.registered).toHaveLength(1);
         const retried = await backend.apply({ schemaVersion: 1, commands: [clipCommand('take-2', material)] });
         expect(retried.application).toBe('applied');
-        expect(transport.registered).toHaveLength(2);
+        expect(transport.registered).toHaveLength(1);
     });
 
     it('rejects when the material itself is refused at registration', async () => {
@@ -266,7 +271,7 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(result).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
-            reason: 'register_timeline_sample "take-1": PCM payload holds zero frames',
+            reason: 'register_timeline_material "take-1": PCM payload holds zero frames',
         });
     });
 
@@ -592,9 +597,10 @@ describe('createNativeOfflineGraphBackend', () => {
         const scripted = scriptedTransport();
         const transport: NativeGraphTransport = {
             ...scripted,
-            async registerTimelineSample(input) {
+            async registerTimelineMaterial(input) {
                 calls.push('register_timeline_sample');
-                return scripted.registerTimelineSample(input);
+                if (!scripted.registerTimelineMaterial) throw new Error('missing fenced test transport');
+                return scripted.registerTimelineMaterial(input);
             },
             async beginLevainBank() {
                 calls.push('begin_levain_bank');
