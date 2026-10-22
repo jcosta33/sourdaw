@@ -25,7 +25,10 @@ const PLAYHEAD_BEAT = 12;
 const mocks = vi.hoisted(() => ({
     commitTake: vi.fn<() => Promise<void>>(),
     stopAudioRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
 }));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 vi.mock('../../compactProject', () => ({ compactProject: vi.fn(() => Promise.resolve()) }));
 vi.mock('../../runCrdtPersistenceOperation', () => ({
@@ -248,6 +251,11 @@ describe('branch switch stops the transport', () => {
         expect(readTake(outgoingDocId)).toBeUndefined();
         expect(readTake(incomingDocId)).toBeUndefined();
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('take committed during the rollback is discarded'));
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            expect.stringContaining('the recording made while it was switching was discarded'),
+            'warning'
+        );
     });
 
     it('does not report a discarded take when nothing was recording at the rollback', async () => {
@@ -264,6 +272,7 @@ describe('branch switch stops the transport', () => {
 
         expect(branchStore.value?.activeBranchId).toBe(outgoingBranchId);
         expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('discarded'));
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('stops the transport before the outgoing snapshot is restored', async () => {

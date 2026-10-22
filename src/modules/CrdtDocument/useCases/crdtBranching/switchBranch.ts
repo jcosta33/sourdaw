@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { captureUndoHistory, clearUndoHistory, restoreUndoHistory } from '#/modules/Command/useCases';
 import { isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { createBranchError } from '../../errors/BranchError';
@@ -60,6 +61,11 @@ async function stopTransportBeforeSwitchRollback(): Promise<void> {
         logger.warn(
             '[switchBranch] The branch switch failed while a recording was running; ' +
                 'the take committed during the rollback is discarded with the incoming branch root.'
+        );
+        notifyUser(
+            'The branch switch failed, so the recording made while it was switching was discarded. ' +
+                'The project is back on the previous branch.',
+            'warning'
         );
     }
 }
