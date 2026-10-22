@@ -1,0 +1,237 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_006652329e1aac 299
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_3e7dea5cde3f9e::t_92ccd0935b2c75 131
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_3e7dea5cde3f9e::t_a5c45d275856ff 130-170
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_3e7dea5cde3f9e::t_f33a00ae4fa5f6 571-581
+  s_3e7dea5cde3f9e::t_d5a124462e4e12 457,482-483
+  s_3e7dea5cde3f9e::t_4d50f269d566d2 622-624,645-649
+  s_3e7dea5cde3f9e::t_962be9a547ff04 1031,1036-1040,1048
+  s_3e7dea5cde3f9e::t_e324d6522a5a44 1049-1060
+  s_3e7dea5cde3f9e::t_42d1f30cbea9ff 47
+  s_3e7dea5cde3f9e::t_9d75afef60482b 940,942
+  s_3e7dea5cde3f9e::t_a310b90a9eccdc 1041-1047
+  s_3e7dea5cde3f9e::t_bfe183563c5043 461
+  s_3e7dea5cde3f9e::t_2577197f5461fd 459-460
+  s_3e7dea5cde3f9e::t_9bec49bd203a8c 941
+  s_3e7dea5cde3f9e::t_85e4c53e617171 625-627
+  s_3e7dea5cde3f9e::t_5c756c41107840 458
+  s_3e7dea5cde3f9e::t_b7d9d55af6a6a0 628-633
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_3e7dea5cde3f9e::t_0eabc54416a2fe 168
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_3e7dea5cde3f9e::t_b3171f3faf45ad 149
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_3e7dea5cde3f9e::t_7cf0b52a15f2b8 130
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_3e7dea5cde3f9e::t_b474aaee293fb3 141
+src/modules/AudioEngine/useCases/index.ts
+  s_3e7dea5cde3f9e::t_b96c33945fbf46 59
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_3e7dea5cde3f9e::t_36dfae3a20bc21 102
+src/modules/AudioEngine/services/__tests__/levainProcessorStopQueue.spec.ts
+  s_3e7dea5cde3f9e::t_7dafdf6299476c 57-59
+  s_3e7dea5cde3f9e::t_b5e3f8ebf15389 179-197
+  s_3e7dea5cde3f9e::t_a3e07098c00e6e 173-178
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_3e7dea5cde3f9e::t_94926dec820406 142
+  s_3e7dea5cde3f9e::t_9db5988071d52c 79-83
+  s_3e7dea5cde3f9e::t_cee47f10b40e03 322-344
+  s_3e7dea5cde3f9e::t_994375af4bb98a 34
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_3e7dea5cde3f9e::t_be74b12776ad0e 244
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_3e7dea5cde3f9e::t_af8a5a8ed421b7 131
+src/modules/AudioEngine/useCases/noteExpression/__tests__/projectNoteExpressionCurves.spec.ts
+  s_3e7dea5cde3f9e::t_93ee117b9c2979 1-177,291-301
+  s_3e7dea5cde3f9e::t_4ce8b6e22f29eb 211-238
+  s_3e7dea5cde3f9e::t_b6b9f81559be40 178-199
+  s_3e7dea5cde3f9e::t_0707b44f27eebe 200-210
+src/modules/AudioEngine/useCases/noteExpression/projectNoteExpressionCurves.ts
+  s_3e7dea5cde3f9e::t_7f9039597ef9b0 27
+  s_3e7dea5cde3f9e::t_ebc4a24a86db4b 1-17,19-26,28-34,36-42,44-54,56,63-75,80-127,131-139,141-148,150-157,159-181
+  s_3e7dea5cde3f9e::t_08dc767b648cdf 35
+  s_3e7dea5cde3f9e::t_bec6fe704cc714 43
+  s_3e7dea5cde3f9e::t_c822a359c596e8 76-79
+  s_3e7dea5cde3f9e::t_d4c278f848df32 18
+  s_3e7dea5cde3f9e::t_ed7665168c852f 140,149
+  s_3e7dea5cde3f9e::t_e97c852286f862 55,57-62
+  s_3e7dea5cde3f9e::t_03b708d0cb42a0 128-130
+  s_3e7dea5cde3f9e::t_7d98b479b0892b 158
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_3e7dea5cde3f9e::t_d256b69899b351 109,111-112
+  s_3e7dea5cde3f9e::t_ed823e30fdfc6a 1581-1620,1630-1631,1686-1733,1806-1857,1864-1930,1939-1940,1950-1962,1964,1966,1968,2836-2837
+  s_3e7dea5cde3f9e::t_c822a359c596e8 61-63,1858-1863,1931-1938
+  s_3e7dea5cde3f9e::t_c596e066f3998d 56-60,64-65
+  s_3e7dea5cde3f9e::t_009a8151a45776 113
+  s_3e7dea5cde3f9e::t_4d7edacb6fb446 217
+  s_3e7dea5cde3f9e::t_f8ce18f1359f66 30
+  s_3e7dea5cde3f9e::t_f95b10829fb573 2397,2399,2401-2403,2405,2414
+  s_3e7dea5cde3f9e::t_1c8ac2d4a9e622 2419-2464,2818,2828
+  s_3e7dea5cde3f9e::t_170e79afd4b8b0 1941-1949,1963,1965,1967,1969-2084,2136-2146,2149-2150,2385-2396,2398,2400,2404,2406-2413,2415-2418,2465-2482,2546-2583,2795-2817
+  s_3e7dea5cde3f9e::t_76a1787a694c63 2085-2123,2125-2135
+  s_3e7dea5cde3f9e::t_95b43792610c3b 2819-2827,2829-2835
+  s_3e7dea5cde3f9e::t_ed5cdd33a7c16a 2706-2748
+  s_3e7dea5cde3f9e::t_2cd0f4b3cc9fc4 2584,2620-2663
+  s_3e7dea5cde3f9e::t_7021a0497a62dd 2585
+  s_3e7dea5cde3f9e::t_533465f0e6d4f2 1621-1629,1632-1684
+  s_3e7dea5cde3f9e::t_4bc0b389a40cd8 1685
+  s_3e7dea5cde3f9e::t_3a48d445be223e 2483-2545
+  s_3e7dea5cde3f9e::t_2d217660a38991 1766-1792,1801-1805
+  s_3e7dea5cde3f9e::t_3acf9be8b3f654 8
+  s_3e7dea5cde3f9e::t_a342f61b4c8f10 266
+  s_3e7dea5cde3f9e::t_b6c044733a6d70 1793-1800
+  s_3e7dea5cde3f9e::t_e7ad8310aa453f 2664-2705
+  s_3e7dea5cde3f9e::t_9935aa9301c0d1 2187-2189,2201-2203
+  s_3e7dea5cde3f9e::t_1b6ba65a71cc26 2207-2237
+  s_3e7dea5cde3f9e::t_c8865ea5f44fd1 2299-2340
+  s_3e7dea5cde3f9e::t_20e77ea553e9b1 1734-1758,1761-1765
+  s_3e7dea5cde3f9e::t_fcfe348c3a9adc 1759-1760
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_3e7dea5cde3f9e::t_3652b0a0b4d52d 1888-1906,1921-1947,1980-2016,2060-2064,2270
+  s_3e7dea5cde3f9e::t_d9e57cfc24e5d2 1702-1715,1723
+  s_3e7dea5cde3f9e::t_4d54715e44064f 1785,1788,1806-1813
+  s_3e7dea5cde3f9e::t_1f685c14669cae 1814-1815
+  s_3e7dea5cde3f9e::t_f48c4565672405 2065-2134,2189-2213
+  s_3e7dea5cde3f9e::t_99479b81d0806a 9
+  s_3e7dea5cde3f9e::t_237af39e80f0b6 1787,1799
+  s_3e7dea5cde3f9e::t_6528e331618cdf 1716-1722,1725-1733
+  s_3e7dea5cde3f9e::t_fb60d14ae09ba7 1766-1769
+  s_3e7dea5cde3f9e::t_762b4a1d3d9690 2165-2188
+  s_3e7dea5cde3f9e::t_daf95e73000b08 2135-2164
+  s_3e7dea5cde3f9e::t_29d8036e3cd78e 2214-2226,2229-2269
+  s_3e7dea5cde3f9e::t_cc03cfed3e5da3 2227-2228
+  s_3e7dea5cde3f9e::t_6cd796c53f71ed 193
+  s_3e7dea5cde3f9e::t_2d29a23ce10b9d 94-100,104
+  s_3e7dea5cde3f9e::t_b01505894f747f 1682
+  s_3e7dea5cde3f9e::t_a1d9c2baeaf675 1948-1979
+  s_3e7dea5cde3f9e::t_24e0c5454ae396 2029,2031-2032,2035-2037
+  s_3e7dea5cde3f9e::t_48edce4c78a870 2017-2028,2030,2033-2034
+  s_3e7dea5cde3f9e::t_a7910689941acd 2038-2059
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  s_3e7dea5cde3f9e::t_fdcd86dc160dcf 65
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_3e7dea5cde3f9e::t_18f5d53887d24c 107
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_3e7dea5cde3f9e::t_82ba984cade14b 141
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_3e7dea5cde3f9e::t_550b8383c3ef63 38
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_3e7dea5cde3f9e::t_8483e7592f0585 752-765,774-789
+  s_3e7dea5cde3f9e::t_2fd328ef8b12b5 1375
+  s_3e7dea5cde3f9e::t_432f507d36a558 1609-1612,1614-1623,1628-1635,1641-1642,1644,1646-1649
+  s_3e7dea5cde3f9e::t_4e1b708cad566d 63
+  s_3e7dea5cde3f9e::t_1eccf461dcd962 11
+  s_3e7dea5cde3f9e::t_c822a359c596e8 766-773
+  s_3e7dea5cde3f9e::t_2ce196efe65946 1638
+  s_3e7dea5cde3f9e::t_191c03f7dc74d6 1603-1608
+  s_3e7dea5cde3f9e::t_bdcce9beb18dcd 1613
+  s_3e7dea5cde3f9e::t_76dbef4d61c97a 1234-1242
+  s_3e7dea5cde3f9e::t_7c8a8ba56cc574 1636-1637
+  s_3e7dea5cde3f9e::t_09174a0e543d1a 1639-1640,1650-1653,1657
+  s_3e7dea5cde3f9e::t_f07b2f1ba56d1d 1656
+  s_3e7dea5cde3f9e::t_0810bcdc5b2f49 1428
+  s_3e7dea5cde3f9e::t_a86da90209bcec 859-860,862-863
+  s_3e7dea5cde3f9e::t_a9f53ba0fe9131 861
+  s_3e7dea5cde3f9e::t_83c26e4a77b6c7 37-38,40-41
+  s_59e31a5c6f3e31::t_b19d6537f068f0 36
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_3e7dea5cde3f9e::t_f5b0e2f4ab4b3f 30-32,35
+src/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents.ts
+  s_3e7dea5cde3f9e::t_82b8bbc61f0b96 3
+  s_3e7dea5cde3f9e::t_60c9778108307d 36
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_3e7dea5cde3f9e::t_f2f130ce1351b5 95-100,120-125,128-131,135
+  s_3e7dea5cde3f9e::t_b61c9daecebd7e 146
+  s_3e7dea5cde3f9e::t_8dffd14f1d3238 153-157
+  s_3e7dea5cde3f9e::t_2f866f7b054034 26-32,35-37
+  s_3e7dea5cde3f9e::t_61e0303e5132e4 7-8
+  s_3e7dea5cde3f9e::t_e22140fff3dd54 126-127
+src/modules/MIDI/useCases/grooveTemplates/createGrooveMidiEventProjector.ts
+  s_3e7dea5cde3f9e::t_8efe4af28d4e90 7
+  s_3e7dea5cde3f9e::t_73bb9b85dacfb8 29
+src/modules/MIDI/useCases/grooveTemplates/__tests__/getGrooveProjection.spec.ts
+  s_3e7dea5cde3f9e::t_f96fa4969f9316 180-212,230-248,250
+  s_3e7dea5cde3f9e::t_3ccd5b170e373f 249
+  s_3e7dea5cde3f9e::t_adeedc15ad461c 213-229
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_3e7dea5cde3f9e::t_8df25f35fc4188 58
+  s_3e7dea5cde3f9e::t_18aad76f8b68cb 3
+src/modules/Transport/useCases/playheadScheduler/__tests__/stopPlayheadScheduler.spec.ts
+  s_3e7dea5cde3f9e::t_19b5c08fa662f6 5
+  s_1c08b47ac3792f::t_524e35b6f8ab29 152-158,161-165,167-168
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  s_3e7dea5cde3f9e::t_a4586564cc6a8a 10
+  s_3e7dea5cde3f9e::t_f2ed06e98af792 64-65
+src/modules/Transport/services/heldNoteExpression.ts
+  s_3e7dea5cde3f9e::t_0f038169553353 114
+  s_3e7dea5cde3f9e::t_85016b694b6832 1-33,38-47,50-52,63-71,80-83,85-88,95,102-109,112-113,118-120,129-140,160-163
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastClipNotes.ts
+  s_3e7dea5cde3f9e::t_e6a137e66e3b27 83
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_3e7dea5cde3f9e::t_20472bebf715e0 61
+  s_3e7dea5cde3f9e::t_849cb38296d6df 4
+  s_3e7dea5cde3f9e::t_2752c765b419b8 9-11
+  s_3e7dea5cde3f9e::t_ed614014d4e2aa 22,60,67
+  s_3e7dea5cde3f9e::t_cdade617957643 148-151,158
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_3e7dea5cde3f9e::t_80c7ed60581e7c 331-333
+  s_3e7dea5cde3f9e::t_f625176d36f46b 319,329-330,334
+  s_3e7dea5cde3f9e::t_6bd0ec75f1bc0a 110-112
+  s_3e7dea5cde3f9e::t_6c97f964787f9d 167
+  s_3e7dea5cde3f9e::t_10bfeee994fa77 30-34
+  s_3e7dea5cde3f9e::t_e1424dd7c1bda1 177-178
+  s_3e7dea5cde3f9e::t_73c76e1175d197 186-188
+  s_3e7dea5cde3f9e::t_7a23b213e28138 1
+  s_3e7dea5cde3f9e::t_fe2473a8a6efa3 28-29
+  s_3e7dea5cde3f9e::t_e6a1b34f621a2a 317-318,321
+  s_3e7dea5cde3f9e::t_030e0efee84d86 330
+src/modules/AudioEngine/AGENTS.md
+  s_3e7dea5cde3f9e::t_bb1dce7acbc0c6 32
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_3e7dea5cde3f9e::t_c3149dce426f6b 27
+  s_3e7dea5cde3f9e::t_ce6d888c0c3e12 263-265
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_3e7dea5cde3f9e::t_01bf845eb61959 5
+  s_3e7dea5cde3f9e::t_1653fabddc2860 533-539,542-546
+  s_1c08b47ac3792f::t_049dd7e034e849 548-549
+src/modules/Transport/services/__tests__/heldNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_1fbcb61678dca5 1-103,105-129
+  s_3e7dea5cde3f9e::t_bfbd29323d9e2e 104
+release/open-source-inventory.json
+  s_3e7dea5cde3f9e::t_b0c4dc6fd6293f 1211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9da93d433e60fc4733c4abaa0fe7ba8e0d4901f7",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
