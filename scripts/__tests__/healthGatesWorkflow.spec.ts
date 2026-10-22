@@ -4890,6 +4890,20 @@ export -f sudo timeout sleep apt-get
             'health-gates.yml job scope must read exactly its pinned secrets: none'
         );
 
+        const jobToken = cloneWorkflows('job token on static');
+        jobAt(jobToken.validation, 'static').env = { GH_TOKEN: '${{ github.token }}' };
+        expect(surface(jobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
+
+        const spacedJobToken = cloneWorkflows('spaced job token on static');
+        jobAt(spacedJobToken.validation, 'static').env = { GH_TOKEN: '${{ GitHub . Token }}' };
+        expect(surface(spacedJobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
+
+        const upperCaseContext = cloneWorkflows('upper-case secrets context on static');
+        jobAt(upperCaseContext.validation, 'static').env = { TOKEN: '${{ SECRETS.VERCEL_TOKEN }}' };
+        expect(surface(upperCaseContext)).toThrow(
+            'validation.yml job static must read exactly its pinned secrets: none'
+        );
+
         const leakedWorkflowSecret = cloneWorkflows('workflow-level secret');
         leakedWorkflowSecret.validation.env = { TOKEN: '${{ secrets.VERCEL_TOKEN }}' };
         expect(surface(leakedWorkflowSecret)).toThrow('validation.yml must not read a secret outside a pinned job');

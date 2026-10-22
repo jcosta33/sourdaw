@@ -25,16 +25,18 @@ export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
     'semantic-review.yml': { coverage: { contents: 'read' } },
 };
 
-// The only jobs that may read a secret, each pinned to the exact names it reads.
+// The only jobs that may read a secret or the job token, each pinned to the
+// exact names it reads.
 // A secret anywhere else — workflow, job, or step `env`, an action input, a
 // condition, or `secrets: inherit` into a reusable workflow — hands a credential
 // to code that never needed one, and on a pull-request trigger to the head's code.
 export const SECRET_REFERENCE_PINS: JobPins<readonly string[]> = {
+    'health-gates.yml': { admission: ['GITHUB_TOKEN'] },
     'nightly.yml': {
-        'deploy-web': ['VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
+        'deploy-web': ['GITHUB_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
         'nightly-report': ['GITHUB_TOKEN'],
     },
-    'semantic-review.yml': { assess: ['JEV_KEY'] },
+    'semantic-review.yml': { assess: ['GITHUB_TOKEN', 'JEV_KEY'] },
 };
 
 // A deployment environment unlocks that environment's own secrets and
@@ -113,12 +115,20 @@ function expressionsIn(value: unknown, key = ''): string[] {
     return [];
 }
 
-// The secret names a value reads. Reading the context whole (`toJSON(secrets)`,
-// `secrets[name]`) is reported as `*`, which no pin admits.
+// The secret names a value reads, matched case-insensitively as GitHub matches
+// contexts. `github.token` is the job token `secrets.GITHUB_TOKEN` names, so
+// both count as GITHUB_TOKEN. Reading either context whole (`toJSON(secrets)`,
+// `secrets[name]`, `toJSON(github)`, `github[name]`) is reported as `*`, which
+// no pin admits.
 function secretNamesIn(value: unknown): string[] {
-    const names = expressionsIn(value).flatMap((expression) =>
-        Array.from(expression.matchAll(/\bsecrets\b(\s*\.\s*([A-Za-z_][A-Za-z0-9_]*))?/g), (match) => match[2] ?? '*')
-    );
+    const names = expressionsIn(value).flatMap((expression) => [
+        ...Array.from(
+            expression.matchAll(/\bsecrets\b(\s*\.\s*([A-Za-z_][A-Za-z0-9_]*))?/gi),
+            (match) => match[2]?.toUpperCase() ?? '*'
+        ),
+        ...Array.from(expression.matchAll(/\bgithub\s*\.\s*token\b/gi), () => 'GITHUB_TOKEN'),
+        ...Array.from(expression.matchAll(/\bgithub\s*[[)]/gi), () => '*'),
+    ]);
     return [...new Set(names)].sort();
 }
 
