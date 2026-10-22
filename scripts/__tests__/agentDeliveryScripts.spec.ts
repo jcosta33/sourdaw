@@ -1037,7 +1037,7 @@ describe('package scripts and gitignore', () => {
             'only the gate job may emit the stable Gate summary check name'
         );
         expect(gate.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowArrayAt(gate, 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
+        expect(workflowArrayAt(gate, 'needs')).toEqual(['admission', 'scope', 'validation', 'affected', 'codeql']);
         const gateStep = workflowStep(gate, 'Require selected checks to succeed');
         expect(gateStep.if).toBe(REQUIRED_GATE_CONDITION);
         expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
@@ -3519,6 +3519,8 @@ describe('package scripts and gitignore', () => {
                 publicReviews: () => [],
                 publicReviewComments: () => [],
                 postReview: () => expect.fail('review creation should not start'),
+                applyApprovalLabel: () => expect.fail('review creation should not start'),
+                removeApprovalLabel: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),
             publish: () => {

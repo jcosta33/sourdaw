@@ -23,6 +23,13 @@ export const AUTHOR_BOT_COMMIT_LOGIN = 'hplovecraft208';
 export const AUTHOR_BOT_COMMIT_NAME = `${AUTHOR_BOT_COMMIT_LOGIN}[bot]`;
 export const AUTHOR_BOT_COMMIT_EMAIL = `${AUTHOR_BOT_DATABASE_ID}+${AUTHOR_BOT_COMMIT_NAME}@users.noreply.github.com`;
 
+/**
+ * The label the reviewer App applies after it approves a head. Its `labeled` event is the only event
+ * that starts the heavy checks and the required `Gate` (`.github/workflows/health-gates.yml`), and the
+ * workflow admits it only when this App approved that exact head (`scripts/ciApprovalAdmission.ts`).
+ */
+export const CI_APPROVAL_LABEL = 'ci:approved';
+
 export function isOrchestratorUserNodeId(nodeId: string | undefined | null): boolean {
     return nodeId === ORCHESTRATOR_USER_NODE_ID;
 }

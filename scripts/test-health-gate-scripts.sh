@@ -183,6 +183,7 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
 // vitest spec can never drift apart: the whole-file snapshot, the shard
 // matrices, the permission-free files, and every job's step inventory.
 const {
+    assertApprovalGatedRequiredCheck,
     assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
@@ -207,6 +208,7 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
 const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
@@ -393,7 +395,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['scope', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['admission', 'scope', 'validation', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -437,12 +439,30 @@ expect(workflow.name === 'Health gates', 'workflow name must stay Health gates')
 // conclusion is `skipped` as satisfying a required status check, and prefers
 // the newest run of that name, so an event that can reach `gate` and skip it
 // mints a passing `Gate` over a red head. A `pull_request_review` trigger did
-// exactly that in production. `pull_request` is the only event here, and it can
-// never skip `gate`.
+// exactly that in production. A labeled `pull_request` is the only event here,
+// it can never skip `gate`, and `gate` fails unless the trusted admission
+// admitted the reviewer App's approval of the exact head. The shared contract
+// holds the whole boundary, including the cheap per-push workflow's lack of Gate.
 expect(
     JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
 );
+let approvalGateError;
+try {
+    assertApprovalGatedRequiredCheck({
+        'health-gates.yml': workflow,
+        'pr-checks.yml': prChecks,
+        'validation.yml': validationWorkflow,
+        'heavy-gates.yml': heavyWorkflow,
+        'nightly.yml': nightly,
+        'quantum-measurements.yml': hostedQuantumMeasurement,
+        'wasm-artifacts.yml': hostedWasm,
+        'semantic-review.yml': semanticReview,
+    });
+} catch (error) {
+    approvalGateError = error;
+}
+expect(approvalGateError === undefined, `the approval-gated Gate boundary must hold: ${approvalGateError?.message ?? ''}`);
 expect(gate?.if === '${{ always() }}', 'Gate must evaluate cancelled upstream jobs rather than become a skipped required check');
 expect(gateStep?.if === '${{ always() }}', 'Gate assertion must run even after cancellation');
 // The heavy lane is reusable and only the pull-request workflow calls it.
@@ -478,6 +498,7 @@ function gateNameViolations(file, jobs) {
     return violations;
 }
 for (const [file, parsed] of [
+    ['pr-checks.yml', prChecks],
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
@@ -1140,6 +1161,7 @@ expect(
 
 const workflowsByFile = {
     'health-gates.yml': workflow,
+    'pr-checks.yml': prChecks,
     'validation.yml': validationWorkflow,
     'heavy-gates.yml': heavyWorkflow,
     'nightly.yml': nightly,
@@ -1268,6 +1290,7 @@ expect(
     'HeavyGate must require the exact outcomes for selected browser jobs'
 );
 const requiredResults = (codeql, overrides = {}) => JSON.stringify({
+    admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
     scope: { result: overrides.scope ?? 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql } },
     validation: { result: overrides.validation ?? 'success' },
     affected: { result: overrides.affected ?? 'success' },
@@ -1281,6 +1304,18 @@ for (const job of expectedGateNeeds) {
 }
 expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('false', { codeql: 'success' }) }) !== 0,
     'unexpected CodeQL execution must fail Gate');
+expect(
+    workflowShellStatus(gateRun, {
+        RESULTS: JSON.stringify({
+            admission: { result: 'success', outputs: { admitted: 'false', reason: 'not approved' } },
+            scope: { result: 'skipped', outputs: {} },
+            validation: { result: 'skipped' },
+            affected: { result: 'skipped' },
+            codeql: { result: 'skipped' },
+        }),
+    }) !== 0,
+    'a refused approval admission must fail Gate rather than pass on skipped checks'
+);
 const browserResults = (e2e, report, hardware) => JSON.stringify({
     e2e: { result: e2e }, 'e2e-report': { result: report }, 'browser-ai-webgpu': { result: hardware },
 });

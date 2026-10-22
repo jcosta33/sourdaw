@@ -23,6 +23,8 @@ import {
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
+    ADMITTED_CONDITION,
+    assertApprovalGatedRequiredCheck,
     assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
@@ -240,7 +242,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['scope', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['admission', 'scope', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -470,6 +472,7 @@ const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLA
 
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
+const { parsed: prChecksWorkflow } = loadWorkflow('pr-checks.yml');
 const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
@@ -1475,6 +1478,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
 
 type WorkflowSet = {
     health: UnknownRecord;
+    prChecks: UnknownRecord;
     validation: UnknownRecord;
     cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
@@ -1487,6 +1491,7 @@ type WorkflowSet = {
 function workflowSet(): WorkflowSet {
     return {
         health: workflow,
+        prChecks: prChecksWorkflow,
         validation: validationWorkflow,
         cargoDependencySeed,
         heavy: heavyWorkflow,
@@ -1501,6 +1506,7 @@ function cloneWorkflows(label: string): WorkflowSet {
     const clone = structuredClone(workflowSet());
     return {
         health: asRecord(clone.health, `${label} health`),
+        prChecks: asRecord(clone.prChecks, `${label} PR checks`),
         validation: asRecord(clone.validation, `${label} validation`),
         cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
@@ -1531,6 +1537,7 @@ function assertBlockingSuites(set: WorkflowSet): void {
 function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, UnknownRecord]> {
     return [
         ['health-gates.yml', set.health],
+        ['pr-checks.yml', set.prChecks],
         ['validation.yml', set.validation],
         ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
@@ -1778,24 +1785,11 @@ function assertValidationScopeConditions(candidate: UnknownRecord): void {
 
 // The single invariant the whole split exists to hold: `Gate` is the required
 // context, GitHub counts a `skipped` conclusion as satisfying a required check,
-// and it prefers the newest run of that name. So only a `pull_request` run of
-// `health-gates.yml` may mint that name, and `gate` must be unable to skip.
+// and it prefers the newest run of that name. So only a labeled `pull_request`
+// run of `health-gates.yml` may mint that name, `gate` must be unable to skip,
+// and it must fail unless the reviewer App approved the exact head.
 function assertRequiredCheckIsolation(set: WorkflowSet): void {
-    if (JSON.stringify(Object.keys(recordAt(set.health, 'on'))) !== JSON.stringify([...HEALTH_GATES_TRIGGERS])) {
-        throw new Error(
-            'health-gates.yml must answer to pull_request alone, or a skipped Gate can satisfy the required check'
-        );
-    }
-    if (jobAt(set.health, 'gate').if !== GATE_CONDITION) {
-        throw new Error('Gate must run after cancellation');
-    }
-    for (const [file, candidate] of workflowFiles(set).filter(([file]) => file !== 'health-gates.yml')) {
-        for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
-            if (jobCheckName(id, job) === REQUIRED_CHECK_NAME) {
-                throw new Error(`${file} must not name a job ${REQUIRED_CHECK_NAME}`);
-            }
-        }
-    }
+    assertApprovalGatedRequiredCheck(Object.fromEntries(workflowFiles(set)));
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
         throw new Error('heavy-gates.yml must be reusable-only');
     }
@@ -1872,6 +1866,18 @@ function assertJobGraph(set: WorkflowSet): void {
     assertNightlyReportCoverage(set);
     assertDeviceWriteBoundaryCensus(set);
     assertSummaryMembership(set);
+    assertRequiredScopePlan(set.prChecks);
+    if (JSON.stringify(Object.keys(recordAt(set.prChecks, 'jobs'))) !== JSON.stringify(['scope', 'validation'])) {
+        throw new Error('pr-checks.yml must run only the scope plan and the validation lane');
+    }
+    const pushValidation = jobAt(set.prChecks, 'validation');
+    if (
+        pushValidation.uses !== VALIDATION_CALL ||
+        pushValidation.needs !== 'scope' ||
+        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
+    ) {
+        throw new Error('push validation must consume the affected scope exactly as the required lane does');
+    }
 }
 
 // Both trains run the census once, in their static contract job, and a
@@ -3173,12 +3179,102 @@ describe('health gates workflow contract', () => {
         const reviewTriggered = cloneWorkflows('review-triggered');
         recordAt(reviewTriggered.health, 'on').pull_request_review = { types: ['submitted'] };
         expect(() => assertRequiredCheckIsolation(reviewTriggered)).toThrow(
-            'health-gates.yml must answer to pull_request alone'
+            'health-gates.yml must answer to labeled pull_request events alone'
         );
+
+        // A second event type reaches Gate on every push again, and a run-completion
+        // trigger runs outside the pull_request event entirely.
+        for (const events of [
+            { pull_request: { types: ['labeled', 'synchronize'] } },
+            { pull_request: { types: ['labeled'] }, workflow_run: { workflows: ['PR checks'] } },
+            { pull_request_target: { types: ['labeled'] } },
+        ]) {
+            const widenedTrigger = cloneWorkflows('widened trigger');
+            widenedTrigger.health.on = events;
+            expect(() => assertRequiredCheckIsolation(widenedTrigger)).toThrow(
+                'health-gates.yml must answer to labeled pull_request events alone'
+            );
+        }
 
         const skippableGate = cloneWorkflows('skippable gate');
         jobAt(skippableGate.health, 'gate').if = '${{ !cancelled() }}';
         expect(() => assertRequiredCheckIsolation(skippableGate)).toThrow('Gate must run after cancellation');
+
+        // Gating the Gate itself on admission would skip it on every unadmitted
+        // label event, and a skipped Gate satisfies the required check.
+        const admissionSkippedGate = cloneWorkflows('admission-skipped gate');
+        jobAt(admissionSkippedGate.health, 'gate').if = ADMITTED_CONDITION;
+        expect(() => assertRequiredCheckIsolation(admissionSkippedGate)).toThrow('Gate must run after cancellation');
+
+        const skippableGateStep = cloneWorkflows('skippable gate step');
+        stepNamed(jobAt(skippableGateStep.health, 'gate'), 'Require selected checks to succeed').if =
+            ADMITTED_CONDITION;
+        expect(() => assertRequiredCheckIsolation(skippableGateStep)).toThrow('Gate must run after cancellation');
+
+        const unadmittedGate = cloneWorkflows('unadmitted gate');
+        const unadmittedNeeds = arrayAt(jobAt(unadmittedGate.health, 'gate'), 'needs');
+        unadmittedNeeds.splice(unadmittedNeeds.indexOf('admission'), 1);
+        expect(() => assertRequiredCheckIsolation(unadmittedGate)).toThrow(
+            'Gate must fail unless approval admission admitted the head'
+        );
+
+        const ungatedHeavyRun = cloneWorkflows('ungated heavy run');
+        delete jobAt(ungatedHeavyRun.health, 'scope').if;
+        expect(() => assertRequiredCheckIsolation(ungatedHeavyRun)).toThrow(
+            'the heavy checks must start only after approval admission admits the head'
+        );
+
+        const bypassingCodeql = cloneWorkflows('bypassing CodeQL');
+        jobAt(bypassingCodeql.health, 'codeql').needs = 'admission';
+        expect(() => assertRequiredCheckIsolation(bypassingCodeql)).toThrow(
+            'health-gates.yml job codeql must wait for approval admission through scope'
+        );
+
+        // Candidate code deciding its own admission: the head could admit itself.
+        const candidateAdmission = cloneWorkflows('candidate admission');
+        recordAt(stepNamed(jobAt(candidateAdmission.health, 'admission'), 'Checkout trusted admission'), 'with').ref =
+            '${{ github.event.pull_request.head.sha }}';
+        expect(() => assertRequiredCheckIsolation(candidateAdmission)).toThrow(
+            'approval admission must decide from the default branch, never the candidate head'
+        );
+
+        // An older head's approval admits when the decision reads any SHA but the event head.
+        const olderHeadAdmission = cloneWorkflows('older-head admission');
+        recordAt(stepNamed(jobAt(olderHeadAdmission.health, 'admission'), 'Decide admission'), 'env').HEAD_SHA =
+            '${{ github.event.pull_request.base.sha }}';
+        expect(() => assertRequiredCheckIsolation(olderHeadAdmission)).toThrow(
+            'approval admission must decide on the event head, label and sender with the trusted script'
+        );
+
+        // Any approval admits when the decision no longer runs the reviewer-identity check.
+        const anyApproverAdmission = cloneWorkflows('any-approver admission');
+        stepNamed(jobAt(anyApproverAdmission.health, 'admission'), 'Decide admission').run =
+            'echo admitted=true >> "$GITHUB_OUTPUT"';
+        expect(() => assertRequiredCheckIsolation(anyApproverAdmission)).toThrow(
+            'approval admission must decide on the event head, label and sender with the trusted script'
+        );
+
+        const softenedAdmission = cloneWorkflows('softened admission');
+        jobAt(softenedAdmission.health, 'admission')['continue-on-error'] = true;
+        expect(() => assertRequiredCheckIsolation(softenedAdmission)).toThrow(
+            'approval admission must not declare continue-on-error'
+        );
+
+        const mintingPushChecks = cloneWorkflows('minting push checks');
+        recordAt(mintingPushChecks.prChecks, 'jobs').gate = jobAt(workflow, 'gate');
+        expect(() => assertRequiredCheckIsolation(mintingPushChecks)).toThrow('pr-checks.yml must not name a job Gate');
+
+        const renamedPushValidation = cloneWorkflows('renamed push validation');
+        jobAt(renamedPushValidation.prChecks, 'validation').name = REQUIRED_CHECK_NAME;
+        expect(() => assertRequiredCheckIsolation(renamedPushValidation)).toThrow(
+            'pr-checks.yml must not name a job Gate'
+        );
+
+        const labeledPushChecks = cloneWorkflows('labeled push checks');
+        labeledPushChecks.prChecks.on = { pull_request: { types: ['opened', 'synchronize', 'labeled'] } };
+        expect(() => assertRequiredCheckIsolation(labeledPushChecks)).toThrow(
+            'pr-checks.yml must answer to pull-request pushes alone'
+        );
 
         const shadowedGate = cloneWorkflows('shadowed gate');
         jobAt(shadowedGate.heavy, 'heavy-gate').name = REQUIRED_CHECK_NAME;
@@ -3248,6 +3344,12 @@ describe('health gates workflow contract', () => {
         );
 
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
+        expect(() => assertWorkflowPermissions(prChecksWorkflow)).not.toThrow();
+        expect(prChecksWorkflow.concurrency).toEqual({
+            group: 'pr-checks-${{ github.event.pull_request.number }}',
+            'cancel-in-progress': true,
+        });
+        expect(() => assertNoJobLevelConcurrency(prChecksWorkflow, 'pr-checks.yml')).not.toThrow();
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
@@ -4540,7 +4642,13 @@ export -f sudo timeout sleep apt-get
         expect(shadow.needs).toBe('scope');
         expect(shadow.outputs).toBeUndefined();
         expect(shadow['continue-on-error']).toBeUndefined();
-        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
+        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual([
+            'admission',
+            'scope',
+            'validation',
+            'affected',
+            'codeql',
+        ]);
         expect(jobAt(health, 'validation').needs).toBe('scope');
         expect(jobAt(health, 'affected').needs).toEqual(['scope', 'validation']);
         expect(stepNamed(shadow, 'Checkout candidate head').with).toEqual({
@@ -4586,6 +4694,7 @@ export -f sudo timeout sleep apt-get
         });
         const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
         const required = JSON.stringify({
+            admission: { result: 'success', outputs: { admitted: 'true' } },
             scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },
             validation: { result: 'success' },
             affected: { result: 'success' },
@@ -5436,8 +5545,16 @@ export -f sudo timeout sleep apt-get
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
         const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
-        const requiredResults = (codeql: 'true' | 'false', overrides: Record<string, JobResult> = {}) =>
+        const requiredResults = (
+            codeql: 'true' | 'false',
+            overrides: Record<string, JobResult> = {},
+            admitted: 'true' | 'false' = 'true'
+        ) =>
             JSON.stringify({
+                admission: {
+                    result: overrides.admission ?? 'success',
+                    outputs: { admitted, reason: 'the reviewer App has not approved head abc' },
+                },
                 scope: {
                     result: overrides.scope ?? 'success',
                     outputs: { browser: 'true', 'browser-ai': 'false', codeql },
@@ -5448,11 +5565,28 @@ export -f sudo timeout sleep apt-get
             });
         expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
-        for (const dependency of ['scope', 'validation', 'affected', 'codeql']) {
+        for (const dependency of ['admission', 'scope', 'validation', 'affected', 'codeql']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
                 expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }
         }
+        // A refused admission skips every heavy job; Gate must fail, never pass on the skips, and say why.
+        const refused = JSON.stringify({
+            admission: {
+                result: 'success',
+                outputs: { admitted: 'false', reason: 'the reviewer App has not approved head abc' },
+            },
+            scope: { result: 'skipped', outputs: {} },
+            validation: { result: 'skipped' },
+            affected: { result: 'skipped' },
+            codeql: { result: 'skipped' },
+        });
+        expect(runResultsGuard(gateScript, refused)).not.toBe(0);
+        expect(
+            spawnSync('bash', ['-c', gateScript], { encoding: 'utf8', env: { ...process.env, RESULTS: refused } })
+                .stdout
+        ).toMatch(/^::error title=Gate not admitted::the reviewer App has not approved head abc\n/u);
+        expect(runResultsGuard(gateScript, requiredResults('true', {}, 'false'))).not.toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false', { codeql: 'success' }))).not.toBe(0);
         expect(
             runResultsGuard(gateScript, requiredResults('true').replace('"browser":"true"', '"browser":""'))

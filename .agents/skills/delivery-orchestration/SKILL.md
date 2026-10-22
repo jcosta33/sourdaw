@@ -99,10 +99,11 @@ The delivery sequence, in order:
 1. `lane:publish` — push the lane and open or update the PR (mechanics below).
    It pushes without `--force` and refuses uncommitted changes: the publishing
    session commits the work itself with a conventional subject first.
-2. Wait for `Gate` on the head, then `review:prepare <pr>` — write the bundle
-   (below) and dispatch blind reviewers against it under the root Review rules.
+2. Wait for the cheap `PR checks` run on the head (pushes no longer run `Gate`),
+   then `review:prepare <pr>` — write the bundle (below) and dispatch blind
+   reviewers against it under the root Review rules.
    A head that conflicts with its base gets no GitHub merge ref, so no
-   `pull_request` workflow run is created and `Gate` can never appear: waiting
+   `pull_request` workflow run is created and no check can ever appear: waiting
    on it waits forever. When `lane:publish` reports a conflicted head, read
    `gh pr view <pr> --json mergeable` and resolve the reported paths with a
    push before waiting; an `UNKNOWN` answer is GitHub still computing, so check
@@ -114,10 +115,16 @@ The delivery sequence, in order:
    thread and leaves the thread open; let the reviewer confirm it with
    `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
 5. On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the
-   current head records the delivery authorization in the head's dossier.
-6. The author runs `deliver <pr>` through the protected primary checkout's
-   package route — it squash-merges as the author App after the reviewer APPROVE
-   (below). Lane files are data, never executable delivery code.
+   current head records the delivery authorization in the head's dossier, and
+   `review:publish` then re-applies the `ci:approved` label as the reviewer App.
+   That label event alone starts the heavy checks and `Gate`, so CI capacity is
+   spent once per approved head; `REQUEST_CHANGES` removes the label. Re-running
+   `review:publish` on the same head replays the review and re-applies the label,
+   which restarts a `Gate` that a later label event failed or cancelled.
+6. Wait for the approval-triggered `Gate`, then the author runs `deliver <pr>`
+   through the protected primary checkout's package route — it squash-merges as
+   the author App after the reviewer APPROVE (below) and a green `Gate`. Lane
+   files are data, never executable delivery code.
 
 `review:accept <pr>` remains only for legacy pre-policy heads: a plan-carrying
 bundle whose dossier already carries the reviewer-recorded delivery authorization
