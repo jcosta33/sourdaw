@@ -6,8 +6,9 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { createTrack, toggleInputMonitoring } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack, toggleInputMonitoring } from '#/modules/Arrangement/useCases';
+import { inputMonitoringSession } from '#/modules/AudioEngine/repositories/audioRecorder/inputMonitoringSession';
 import {
     configureInputMonitoringProjectAccess,
     startInputMonitoring,
@@ -15,8 +16,6 @@ import {
     syncAutoInputMonitoring,
 } from '#/modules/AudioEngine/useCases';
 import { createCrdtDoc, getCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
-
-import { inputMonitoringSession } from '#/modules/AudioEngine/repositories/audioRecorder/inputMonitoringSession';
 
 import { setInputMonitoring } from '../setInputMonitoring';
 
