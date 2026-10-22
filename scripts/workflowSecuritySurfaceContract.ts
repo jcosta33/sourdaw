@@ -71,6 +71,19 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
 export const REQUIRED_CHECK_NAME = 'Gate';
 export const REQUIRED_CHECK_OWNER = { workflow: 'health-gates.yml', job: 'gate' } as const;
 
+// GitHub evaluates expressions in a job's `name`, so `${{ 'Ga' }}te` mints a
+// check named Gate that no literal comparison sees. These are the only job
+// names that may carry an expression, each pinned exactly; every one opens with
+// a literal prefix, so no matrix value or output can evaluate it to Gate.
+export const JOB_NAME_EXPRESSION_PINS: JobPins<string> = {
+    'heavy-gates.yml': { e2e: 'Affected end-to-end ${{ matrix.id }}' },
+    'nightly.yml': { unit: 'Unit suite ${{ matrix.shard }}/4', e2e: 'End-to-end ${{ matrix.shard }}/12' },
+    'semantic-review.yml': {
+        coverage: "Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}",
+    },
+    'validation.yml': { unit: 'Unit suite ${{ matrix.shard }}/4' },
+};
+
 type WorkflowRecord = Readonly<Record<string, unknown>>;
 
 function workflowRecord(value: unknown, label: string): WorkflowRecord {
@@ -213,6 +226,10 @@ export function assertCredentiallessCheckouts(workflows: Readonly<Record<string,
 export function assertRequiredCheckNameExclusive(workflows: Readonly<Record<string, unknown>>): void {
     for (const [file, workflow] of registeredWorkflows(workflows)) {
         for (const [jobId, job] of jobsOf(file, workflow)) {
+            const pinnedExpression = JOB_NAME_EXPRESSION_PINS[file]?.[jobId];
+            if (typeof job.name === 'string' && job.name.includes('${{') && job.name !== pinnedExpression) {
+                throw new Error(`${file} job ${jobId} must not compute its check name from an expression`);
+            }
             const owner = file === REQUIRED_CHECK_OWNER.workflow && jobId === REQUIRED_CHECK_OWNER.job;
             if (!owner && (job.name ?? jobId) === REQUIRED_CHECK_NAME) {
                 throw new Error(

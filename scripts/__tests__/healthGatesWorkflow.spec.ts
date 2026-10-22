@@ -4929,6 +4929,18 @@ export -f sudo timeout sleep apt-get
             'validation.yml job lint must pin "some-org/action-setup@main" to a full commit SHA or a local ./ path'
         );
 
+        const computedGate = cloneWorkflows('computed Gate name on push checks');
+        jobAt(computedGate.prChecks, 'scope').name = "${{ 'Ga' }}te";
+        expect(surface(computedGate)).toThrow(
+            'pr-checks.yml job scope must not compute its check name from an expression'
+        );
+
+        const computedShardName = cloneWorkflows('matrix-driven name change');
+        jobAt(computedShardName.validation, 'unit').name = '${{ matrix.shard }}';
+        expect(surface(computedShardName)).toThrow(
+            'validation.yml job unit must not compute its check name from an expression'
+        );
+
         const secondGate = cloneWorkflows('second Gate in health gates');
         jobAt(secondGate.health, 'admission').name = 'Gate';
         expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
