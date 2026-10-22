@@ -232,13 +232,15 @@ describe('live store edits on the existing writer pass', () => {
     // For this authored .1 -> .6 jump, the independent one-pole solution is
     // .6 - .5 * .6^n. The existing 5e-5 delivery gate emits ticks 1..17 and 19;
     // tick 18 and the final residual fit inside the last delivered value's bound.
-    function editedTrajectory(regionStartSeconds: number): readonly { frame: number; value: number }[] {
-        const firstMovingTick = Math.ceil((0.05 - regionStartSeconds) / 0.01);
+    // At origin .02, the compiled step is .05 - .02 = .030000000000000002,
+    // past the .03 slew tick, so movement starts at absolute frame 2880.
+    // At origin 0, the .05 tick reaches the step at frame 2400.
+    function editedTrajectory(seedFrame: number, firstMovingFrame: number): readonly { frame: number; value: number }[] {
         const deliveredTicks = [...Array.from({ length: 17 }, (_, index) => index + 1), 19];
         return [
-            { frame: Math.round(regionStartSeconds * SAMPLE_RATE), value: 0.1 },
+            { frame: seedFrame, value: 0.1 },
             ...deliveredTicks.map((tick) => ({
-                frame: Math.round((regionStartSeconds + (firstMovingTick + tick - 1) * 0.01) * SAMPLE_RATE),
+                frame: firstMovingFrame + (tick - 1) * 480,
                 value: 0.6 - 0.5 * 0.6 ** tick,
             })),
         ];
@@ -339,7 +341,7 @@ describe('live store edits on the existing writer pass', () => {
         const edited = pass.targets.find(
             (slot) => slot.target.kind === 'device-parameter' && slot.target.parameterId === '4'
         )!;
-        const expected = editedTrajectory(0.02);
+        const expected = editedTrajectory(960, 2880);
         expectTrajectory(edited.writes, expected);
         expectTrajectory(
             deviceAWrites(commands).filter((write) => write.shape === 'step'),
@@ -534,7 +536,7 @@ describe('live store edits on the existing writer pass', () => {
             batchesApplied: admittedBatch,
             writerEpoch: epoch,
         });
-        const expected = editedTrajectory(0);
+        const expected = editedTrajectory(0, 2400);
         const seamWrites = deviceAWrites(batches.at(-1)!.commands);
         expectTrajectory(
             seamWrites,

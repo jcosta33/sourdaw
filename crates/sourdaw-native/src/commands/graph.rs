@@ -7417,8 +7417,14 @@ mod tests {
             let (edge_left, edge_right) = renderer.render(128);
             assert_eq!(edge_left.len(), 128);
             assert_eq!(edge_right.len(), 128);
-            assert_eq!(edge_left[0], 0.25, "{gate} retains the old level at the edge");
-            assert_eq!(edge_right[0], 0.25, "{gate} retains the old level at the edge");
+            assert_eq!(
+                edge_left[0], 0.25,
+                "{gate} retains the old level at the edge"
+            );
+            assert_eq!(
+                edge_right[0], 0.25,
+                "{gate} retains the old level at the edge"
+            );
             for (index, (left, right)) in edge_left.iter().zip(&edge_right).enumerate() {
                 let edge_expected = if gate == "track-solo-gate" {
                     // The solo gate precedes the cue tap and follows the existing
@@ -7464,8 +7470,14 @@ mod tests {
             let (opening_left, opening_right) = renderer.render(4_096);
             assert_eq!(opening_left.len(), 4_096);
             assert_eq!(opening_right.len(), 4_096);
-            assert_eq!(opening_left[0], expected, "{gate} reopening keeps the closed edge");
-            assert_eq!(opening_right[0], expected, "{gate} reopening keeps the closed edge");
+            assert_eq!(
+                opening_left[0], expected,
+                "{gate} reopening keeps the closed edge"
+            );
+            assert_eq!(
+                opening_right[0], expected,
+                "{gate} reopening keeps the closed edge"
+            );
             let (restored_left, restored_right) = renderer.render(128);
             assert_eq!(restored_left.len(), 128);
             assert_eq!(restored_right.len(), 128);
