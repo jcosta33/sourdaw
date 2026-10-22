@@ -1822,7 +1822,7 @@ function assertPushChecksJob(health: UnknownRecord): void {
         !run.includes('actions/workflows/pr-checks.yml/runs?head_sha=$HEAD_SHA&event=pull_request') ||
         !run.includes('max_by(.id)') ||
         !run.includes('.head_repository.full_name == $repo') ||
-        !run.includes('any(.pull_requests[]?; .number == $pr)') ||
+        !run.includes('(.pull_requests | length == 1 and .[0].number == $pr)') ||
         !run.includes('if [ "$verdict" != "success" ]; then') ||
         !run.includes('exit 1')
     ) {
@@ -4779,6 +4779,11 @@ export -f sudo timeout sleep apt-get
                 runPushChecks({ workflow_runs: [run(5, 'completed', 'failure'), run(7, 'completed', 'success')] })
                     .status
             ).toBe(0);
+            expect(
+                runPushChecks({
+                    workflow_runs: [run(7, 'completed', 'success', HEAD, { pullRequests: [PULL_REQUEST] })],
+                }).status
+            ).toBe(0);
             // Runs of other pull requests or forks at the same head are ignored, not counted against it.
             expect(
                 runPushChecks({
@@ -4816,6 +4821,13 @@ export -f sudo timeout sleep apt-get
                     workflow_runs: [
                         run(5, 'completed', 'failure'),
                         run(7, 'completed', 'success', HEAD, { repository: 'fork/repository', pullRequests: [] }),
+                    ],
+                },
+                // A run lists every open pull request sharing the head, so it cannot vouch for this one.
+                {
+                    workflow_runs: [
+                        run(5, 'completed', 'failure'),
+                        run(7, 'completed', 'success', HEAD, { pullRequests: [PULL_REQUEST, 43] }),
                     ],
                 },
                 // The repository bound independently of the pull request number.

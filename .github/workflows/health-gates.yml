@@ -110,7 +110,7 @@ jobs:
   # The cheap validation lane already ran on this exact head in pr-checks.yml,
   # so Gate reuses that verdict instead of running validation.yml a second
   # time. The job reads this pull request's newest PR checks run of the head
-  # (same repository, same pull request number) through the API with a
+  # (same repository, listing only this pull request) through the API with a
   # read-only token and fails unless it is completed and successful: a missing,
   # running, cancelled or red run refuses the head rather than passing it.
   push-checks:
@@ -135,7 +135,7 @@ jobs:
             [.workflow_runs[]?
               | select(.head_sha == $sha and .event == "pull_request"
                   and .head_repository.full_name == $repo
-                  and any(.pull_requests[]?; .number == $pr))]
+                  and (.pull_requests | length == 1 and .[0].number == $pr))]
             | max_by(.id) as $run
             | if $run == null then "missing"
               elif $run.status != "completed" then "\($run.status)"

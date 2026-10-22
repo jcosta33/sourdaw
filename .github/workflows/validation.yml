@@ -359,7 +359,8 @@ jobs:
 
       # Release provenance (tracked sets, licenses, trademark, asset digests)
       # is not checked here. `test:release-inventory` runs in nightly.yml and
-      # in the release cut, so an ordinary pull request never needs a restamp.
+      # in `release:proof:assemble`, so an ordinary pull request never needs
+      # a restamp.
 
       - name: Test collection scope
         if: needs.decide.outputs.tooling != 'true'
