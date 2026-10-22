@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+    CI_APPROVAL_LABEL,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     ORCHESTRATOR_USER_NODE_ID,
@@ -312,7 +313,6 @@ function publishPreparedReviewForActor(
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
         const replayed = recordedPublicationReplay(number, prepared.head, document, actorNodeId, port);
         if (replayed !== undefined) {
-            syncApprovalLabel(number, document.event, port);
             port.log(String(replayed));
             return replayed;
         }
@@ -340,7 +340,6 @@ function publishPreparedReviewForActor(
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
         recordPublicationBindings(number, prepared.head, document, posted.id, port, prepared.reviewReassessment);
-        syncApprovalLabel(number, document.event, port);
     } else {
         recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
     }
@@ -349,17 +348,25 @@ function publishPreparedReviewForActor(
 }
 
 /**
- * Runs after the review stands and its binding is recorded, and again on an exact replay, so
- * re-running `review:publish` re-applies a label a failed write left missing or another label
- * event's failing `Gate` superseded. The orchestrator's legacy acceptance never labels: admission
- * requires the reviewer App's own approval.
+ * Runs once the publication lock is released, after a fresh review and its dossier binding or an
+ * exact replay, so a failed label write cannot strand the lock behind a review that already stands:
+ * a plain re-run replays the recorded publication and retries the label. The orchestrator's legacy
+ * acceptance never labels: admission requires the reviewer App's own approval.
  */
-function syncApprovalLabel(number: number, event: ReviewEvent, port: PublishReviewPort): void {
-    if (event === 'APPROVE') {
-        port.applyApprovalLabel(number);
-        return;
+function syncApprovalLabel(number: number, reviewId: number, event: ReviewEvent, port: PublishReviewPort): void {
+    try {
+        if (event === 'APPROVE') {
+            port.applyApprovalLabel(number);
+        } else {
+            port.removeApprovalLabel(number);
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fail(
+            `review ${reviewId} stands on PR #${number}, but the ${CI_APPROVAL_LABEL} label write failed (${message}); ` +
+                `re-run pnpm review:publish ${number} to replay the review and retry the label`
+        );
     }
-    port.removeApprovalLabel(number);
 }
 
 function assertAcceptancePreconditions(
@@ -558,7 +565,7 @@ async function coordinateReviewPublication(
                     preflightPort
                 );
             }
-            await dependencies.serializeMutation(
+            const reviewId = await dependencies.serializeMutation(
                 primaryRoot,
                 number,
                 async (boundary) =>
@@ -582,6 +589,9 @@ async function coordinateReviewPublication(
                     },
                 }
             );
+            if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+                syncApprovalLabel(number, reviewId, prepared.document.event, preflightPort);
+            }
         } finally {
             auth.session.dispose();
         }

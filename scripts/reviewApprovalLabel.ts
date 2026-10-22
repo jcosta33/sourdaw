@@ -12,6 +12,10 @@ function isNotFound(error: unknown): boolean {
     return error instanceof Error && /\bHTTP 404\b/u.test(error.message);
 }
 
+function isAlreadyExists(error: unknown): boolean {
+    return error instanceof Error && /\bHTTP 422\b/u.test(error.message) && error.message.includes('already_exists');
+}
+
 function ensureApprovalLabelExists(gh: GhCall): void {
     try {
         gh(['api', `repos/${REQUIRED_REPOSITORY}/labels/${APPROVAL_LABEL_PATH}`]);
@@ -21,14 +25,21 @@ function ensureApprovalLabelExists(gh: GhCall): void {
             throw error;
         }
     }
-    gh(
-        ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/labels`, '--input', '-'],
-        JSON.stringify({
-            name: CI_APPROVAL_LABEL,
-            color: '0e8a16',
-            description: 'The reviewer App approved this exact head',
-        })
-    );
+    try {
+        gh(
+            ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/labels`, '--input', '-'],
+            JSON.stringify({
+                name: CI_APPROVAL_LABEL,
+                color: '0e8a16',
+                description: 'The reviewer App approved this exact head',
+            })
+        );
+    } catch (error) {
+        // A concurrent publication created it between the read and this write.
+        if (!isAlreadyExists(error)) {
+            throw error;
+        }
+    }
 }
 
 /** Takes the label off the pull request, succeeding when it was not applied. */

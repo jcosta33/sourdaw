@@ -317,6 +317,7 @@ const REVIEW_REPAIR_TOOLING = [
 ];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/reviewApprovalLabel.ts',
     'scripts/reviewRiskPolicy.ts',
     'scripts/savedProjectStatePaths.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
