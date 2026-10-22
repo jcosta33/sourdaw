@@ -1,0 +1,52 @@
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_3e7dea5cde3f9e::t_4936f786df4523 37
+  s_3e7dea5cde3f9e::t_642c7fa1afb3fa 19-21
+src/infra/store/storage/types.ts
+  s_3e7dea5cde3f9e::t_301f9a069df631 1-10
+  s_3e7dea5cde3f9e::t_3f1ec6bd2f79a6 43
+src/infra/store/types.ts
+  s_3e7dea5cde3f9e::t_9fba9d4526c6ca 3
+  s_3e7dea5cde3f9e::t_61916fe6a64e18 75
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionKeepsRuntimeState.integration.spec.ts
+  s_3e7dea5cde3f9e::t_05dd8c350ccde1 74
+  s_3e7dea5cde3f9e::t_d3892feddcff15 118-143
+  s_3e7dea5cde3f9e::t_a1ff237ed7e312 1-73,75-117,144-156
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_3e7dea5cde3f9e::t_8072cd22453ee2 46
+  s_3e7dea5cde3f9e::t_7a40f5cd55ca31 28
+  s_3e7dea5cde3f9e::t_43c9bae457c6db 69
+  s_3e7dea5cde3f9e::t_90fbbb445ae72f 1
+  s_3e7dea5cde3f9e::t_a1466ddb65a93c 81
+src/infra/store/storage/__tests__/createAutomergeStorage.keepLocalRuntimeState.spec.ts
+  s_3e7dea5cde3f9e::t_4a45234411791a 1-133
+src/infra/store/storage/createAutomergeStorage.ts
+  s_3e7dea5cde3f9e::t_23b4fcd952f26d 2612-2615
+  s_3e7dea5cde3f9e::t_824aeec686c802 2642-2645
+  s_3e7dea5cde3f9e::t_7aafc50e774192 2646
+  s_3e7dea5cde3f9e::t_ed190485e297c9 2579-2583
+  s_3e7dea5cde3f9e::t_1c86211d6c1602 2616
+  s_3e7dea5cde3f9e::t_3cf2b0b7805107 2531
+  s_3e7dea5cde3f9e::t_7d11a4f015ad99 1634-1647
+  s_3e7dea5cde3f9e::t_ad79a68931b763 2477
+  s_3e7dea5cde3f9e::t_19c26a5e9f7182 6
+  s_3e7dea5cde3f9e::t_09b377c022181d 2527-2530
+src/infra/store/createStore.ts
+  s_3e7dea5cde3f9e::t_ae07f2e19e33a1 4
+  s_3e7dea5cde3f9e::t_91cb42a0836e3b 266,270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ee60dbe5c987070d973ca8d4610e72d6b3aa606",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
