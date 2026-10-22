@@ -27,7 +27,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     restoreUndoHistory: vi.fn(),
 }));
 // The switch stops the transport first; these cases pin root identity, not the stop.
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn(() => Promise.resolve()) }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    stopPlayback: vi.fn(() => Promise.resolve()),
+    isTransportIdle: vi.fn(() => true),
+}));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
