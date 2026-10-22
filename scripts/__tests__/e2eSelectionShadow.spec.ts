@@ -22,6 +22,7 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { selectAffectedE2e, specsForOwners, type SourceNode } from '../e2eAffectedGraph';
 import {
     hashInventoryFile,
     listIntegrationInventory,
@@ -114,7 +115,7 @@ function withIntegrationCheckout(
         );
         run(root, git('rev-parse', 'HEAD'), head, base, first);
     } finally {
-        rmSync(root, { recursive: true, force: true });
+        rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
 }
 
@@ -129,7 +130,12 @@ function withShadowCliCheckouts(
         | 'deleted'
         | 'merge-deleted'
         | 'integration-matcher'
-        | 'invalid-scope',
+        | 'invalid-scope'
+        | 'control-config-missing'
+        | 'manifest-main-moved'
+        | 'planner-edit'
+        | 'stale-base'
+        | 'policy-drift',
     run: (
         result: ReturnType<typeof spawnSync>,
         report: Record<string, unknown>,
@@ -138,7 +144,8 @@ function withShadowCliCheckouts(
         integration: string
     ) => void,
     dirtyControlPath?: string,
-    advertiseCleanControl = false
+    advertiseCleanControl = false,
+    scopeOverride?: (plan: ReturnType<typeof selectValidationPlan>) => unknown
 ): void {
     const root = mkdtempSync(join(process.cwd(), '.agents/shadow-cli-'));
     const repository = join(root, 'repository');
@@ -160,9 +167,11 @@ function withShadowCliCheckouts(
         'pnpm-lock.yaml',
         'playwright.config.ts',
         'scripts/e2eSelectionShadow.ts',
+        'scripts/e2eSelectionShadowAgreement.ts',
         'scripts/e2eSelectionShadowCompatibility.ts',
         'scripts/e2eSelectionShadowCertificate.json',
         'scripts/e2eSelectionShadowIntegration.ts',
+        'scripts/e2eAffectedGraph.ts',
         'scripts/e2eShardPartition.ts',
         'scripts/e2eCollectorInventory.ts',
         'scripts/e2eSpecDurations.json',
@@ -171,6 +180,9 @@ function withShadowCliCheckouts(
     ];
     const copyControl = () => {
         for (const path of controlPaths) {
+            if (capability === 'control-config-missing' && path === 'playwright.config.ts') {
+                continue;
+            }
             const destination = join(repository, path);
             mkdirSync(resolve(destination, '..'), { recursive: true });
             copyFileSync(path, destination);
@@ -183,13 +195,31 @@ function withShadowCliCheckouts(
         mkdirSync(join(repository, 'tests/e2e'), { recursive: true });
         writeFileSync(join(repository, SMOKE_SPEC), 'smoke\n');
         writeFileSync(join(repository, 'tests/e2e/example.spec.ts'), 'example\n');
-        if (!['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
+        writeFileSync(join(repository, 'tests/e2e/tunerCli.spec.ts'), 'tuner\n');
+        mkdirSync(join(repository, 'scripts'), { recursive: true });
+        writeFileSync(join(repository, 'scripts/e2eSuiteOwners.json'), syntheticOwnersManifest(CLI_SPECS));
+        if (
+            !['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope', 'control-config-missing'].includes(
+                capability
+            )
+        ) {
             copyControl();
         }
-        commit('base');
+        const originalBase = commit('base');
         git('checkout', '-q', '-b', 'candidate');
-        mkdirSync(join(repository, 'src'));
-        writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
+        mkdirSync(join(repository, 'src/modules/Tuner/presentations'), { recursive: true });
+        writeFileSync(join(repository, 'src/modules/Tuner/presentations/feature.ts'), 'export const tuner = true;\n');
+        if (capability === 'planner-edit') {
+            const planner = join(repository, 'scripts/prValidationScope.ts');
+            writeFileSync(
+                planner,
+                readFileSync(planner, 'utf8').replace(
+                    'const REVIEW_TOOLING = new Set([',
+                    "const REVIEW_TOOLING = new Set([\n    'newReviewTool',"
+                )
+            );
+            writeFileSync(join(repository, 'scripts/newReviewTool.ts'), 'export const reviewTool = true;\n');
+        }
         if (capability === 'malformed') {
             writeFileSync(join(repository, 'scripts/e2eSelectionShadowCertificate.json'), '{ invalid json\n');
         }
@@ -231,11 +261,30 @@ function withShadowCliCheckouts(
         }
         const head = git('rev-parse', 'HEAD');
         git('checkout', '-q', 'main');
-        if (['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
+        if (
+            ['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope', 'control-config-missing'].includes(
+                capability
+            )
+        ) {
             copyControl();
         }
         writeFileSync(join(repository, 'integration.txt'), 'integration\n');
+        if (capability === 'policy-drift') {
+            const config = join(repository, 'playwright.config.ts');
+            writeFileSync(config, `${readFileSync(config, 'utf8')}\n// Main moved the collection policy.\n`);
+        }
+        if (capability === 'manifest-main-moved') {
+            // Main now has Tuner own both suites; the candidate still carries the original manifest.
+            writeFileSync(
+                join(repository, 'scripts/e2eSuiteOwners.json'),
+                syntheticOwnersManifest(CLI_SPECS, () => 'Tuner')
+            );
+        }
         const control = commit('control');
+        if (capability === 'control-config-missing') {
+            copyFileSync('playwright.config.ts', join(repository, 'playwright.config.ts'));
+            commit('integration adds the Playwright config the control lacks');
+        }
         if (capability === 'integration-matcher') {
             const config = join(repository, 'playwright.config.ts');
             const source = readFileSync(config, 'utf8');
@@ -261,18 +310,29 @@ function withShadowCliCheckouts(
         const integration = git('rev-parse', 'HEAD');
         git('worktree', 'add', '-q', '--detach', candidateRoot, head);
         git('worktree', 'add', '-q', '--detach', integrationRoot, integration);
-        git('worktree', 'add', '-q', '--detach', controlRoot, control);
+        // The pull_request event keeps the PR's original base while the merge ref follows main.
+        const shadowBase = capability === 'stale-base' ? originalBase : control;
+        git('worktree', 'add', '-q', '--detach', controlRoot, shadowBase);
         if (advertiseCleanControl) {
-            git('worktree', 'add', '-q', '--detach', cleanControlRoot, control);
+            git('worktree', 'add', '-q', '--detach', cleanControlRoot, shadowBase);
         }
         if (dirtyControlPath) {
             const file = join(controlRoot, dirtyControlPath);
             writeFileSync(file, `${readFileSync(file, 'utf8')}\n// Dirty executing control source.\n`);
         }
-        const changed = git('diff', '--name-only', `${control}...${head}`).split('\n');
-        const plan = selectValidationPlan(changed, [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
+        const changed = git('diff', '--name-only', `${shadowBase}...${head}`).split('\n');
+        if (capability === 'stale-base') {
+            changed.push(...git('diff', '--name-only', shadowBase, integration).split('\n'));
+        }
+        const plan = selectValidationPlan([...new Set(changed)].sort(), CLI_SPECS);
         mkdirSync(join(candidateRoot, 'shadow-scope'));
-        const scopeText = JSON.stringify(capability === 'invalid-scope' ? { ...plan, browser: false } : plan);
+        let scope: unknown = plan;
+        if (capability === 'invalid-scope') {
+            scope = { ...plan, browser: false };
+        } else if (scopeOverride) {
+            scope = scopeOverride(plan);
+        }
+        const scopeText = JSON.stringify(scope);
         writeFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), scopeText);
         writeFileSync(join(candidateRoot, 'github-output.txt'), 'preserved\n');
         const cliArgs = [join(controlRoot, 'scripts/e2eSelectionShadow.ts'), 'shadow-scope/pr-validation-scope.json'];
@@ -281,7 +341,7 @@ function withShadowCliCheckouts(
             encoding: 'utf8',
             env: {
                 ...process.env,
-                BASE_SHA: control,
+                BASE_SHA: shadowBase,
                 HEAD_SHA: head,
                 INTEGRATION_SHA: integration,
                 INTEGRATION_ROOT: integrationRoot,
@@ -309,7 +369,7 @@ function withShadowCliCheckouts(
                         argv: [process.execPath, ...cliArgs],
                         executingControlRoot: controlRoot,
                         advertisedControlRoot: advertiseCleanControl ? cleanControlRoot : controlRoot,
-                        base: control,
+                        base: shadowBase,
                         head,
                         integration,
                         exitCode: result.status,
@@ -324,7 +384,7 @@ function withShadowCliCheckouts(
                 )}\n`
             );
         }
-        run(result, report, control, head, integration);
+        run(result, report, shadowBase, head, integration);
         expect(readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8')).toBe(scopeText);
         expect(readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8')).toBe('preserved\n');
     } finally {
@@ -335,6 +395,37 @@ function withShadowCliCheckouts(
         }
         rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
+}
+
+const CLI_SPECS = [SMOKE_SPEC, 'tests/e2e/example.spec.ts', 'tests/e2e/tunerCli.spec.ts'];
+
+function syntheticOwnerOf(spec: string): string {
+    for (const [prefix, owner] of [
+        ['tests/e2e/browserAi', 'BrowserAi'],
+        ['tests/e2e/bacteria', 'Bacteria'],
+        ['tests/e2e/tuner', 'Tuner'],
+    ] as const) {
+        if (spec.startsWith(prefix)) {
+            return owner;
+        }
+    }
+    return 'Other';
+}
+
+// Every collected spec is owned, so a narrowed selection stays small enough to tell owners apart.
+function syntheticOwnersManifest(specs: readonly string[], ownerOf = syntheticOwnerOf): string {
+    const entries = specs.filter((spec) => spec !== SMOKE_SPEC).map((spec) => ({ spec, owners: [ownerOf(spec)] }));
+    const owners = [...new Set(entries.flatMap((entry) => entry.owners))].sort();
+    return JSON.stringify({ version: 1, owners, entries });
+}
+
+function thrownBy(run: () => unknown): unknown {
+    try {
+        run();
+    } catch (error) {
+        return error;
+    }
+    throw new Error('Expected the call to throw');
 }
 
 function fixture(
@@ -380,6 +471,7 @@ function fixture(
         candidateBase: baseText,
         candidateHead: baseText.replace('Scoring', 'Pitch display'),
         durationText,
+        readOwnersManifest: () => syntheticOwnersManifest(inventory.map((row) => row.path)),
         livePlan: selectValidationPlan(
             [candidate],
             inventory.map((row) => row.path)
@@ -438,6 +530,197 @@ describe('E2E selection shadow', () => {
         30_000
     );
 
+    it.each(['absent', 'present'] as const)(
+        'fails when the %s candidate executes a modified control agreement rule',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(
+                        /Shadow rule in checkout disagrees with the immutable head: scripts\/e2eSelectionShadowAgreement\.ts/
+                    );
+                },
+                'scripts/e2eSelectionShadowAgreement.ts'
+            );
+        },
+        30_000
+    );
+
+    it('fails, rather than skips, when the control checkout dirties a planner source on the absent route', () => {
+        withShadowCliCheckouts(
+            'absent',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                expect(report.measurementStatus).toBe('failed');
+                expect(report.failureReason).toMatch(
+                    /Control checkout differs from its immutable base: playwright\.config\.ts/
+                );
+            },
+            'playwright.config.ts'
+        );
+    }, 30_000);
+
+    const cliFeature = 'src/modules/Tuner/presentations/feature.ts';
+    const cliNarrowed = (
+        manifestText: string,
+        owners?: string[]
+    ): ((plan: ReturnType<typeof selectValidationPlan>) => ReturnType<typeof selectValidationPlan>) => {
+        return (plan) => {
+            const manifest: unknown = JSON.parse(manifestText);
+            const graph: SourceNode[] = [{ source: cliFeature, dependencies: [] }];
+            const selected = selectAffectedE2e([cliFeature], CLI_SPECS, manifest, graph);
+            if (selected.kind !== 'narrow') {
+                throw new Error(`The CLI scope must narrow: ${selected.reason}`);
+            }
+            let affected = selected;
+            if (owners) {
+                affected = { ...selected, owners, specs: specsForOwners(new Set(owners), CLI_SPECS, manifest) };
+            }
+            const planned = selectValidationPlan(
+                plan.reasons.map((row) => row.path),
+                CLI_SPECS,
+                undefined,
+                false,
+                affected
+            );
+            if (!planned.reasons.some((row) => row.reason.startsWith('affected feature owners'))) {
+                throw new Error('The CLI scope must carry an owners row');
+            }
+            return planned;
+        };
+    };
+    const narrowedScope = (forge?: (plan: ReturnType<typeof selectValidationPlan>) => unknown) => {
+        const narrowed = cliNarrowed(syntheticOwnersManifest(CLI_SPECS));
+        return (plan: ReturnType<typeof selectValidationPlan>) => {
+            const planned = narrowed(plan);
+            return forge ? forge(planned) : planned;
+        };
+    };
+
+    it.each([
+        ['absent', 'unsupported'],
+        ['present', 'complete'],
+    ] as const)(
+        'agrees with a planner-made graph-narrowed scope on the %s route',
+        (capability, measurementStatus) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+                    expect(report.measurementStatus).toBe(measurementStatus);
+                    expect(report).not.toHaveProperty('failureReason');
+                },
+                undefined,
+                false,
+                narrowedScope()
+            );
+        },
+        60_000
+    );
+
+    it.each(['absent', 'present'] as const)(
+        'fails a graph-narrowed scope with an empty matrix on the %s route',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(/Authoritative scope artifact disagrees/);
+                },
+                undefined,
+                false,
+                narrowedScope((planned) => ({ ...planned, matrix: { include: [] } }))
+            );
+        },
+        60_000
+    );
+
+    it.each(['absent', 'present'] as const)(
+        'fails a graph-narrowed scope that adds an unregistered owner beside a registered one on the %s route',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.failureReason).toMatch(/unregistered owner/);
+                },
+                undefined,
+                false,
+                cliNarrowed(syntheticOwnersManifest(CLI_SPECS), ['Nobody', 'Tuner'])
+            );
+        },
+        60_000
+    );
+
+    it.each(['absent', 'present'] as const)(
+        'fails a graph-narrowed scope whose owners are not sorted on the %s route',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.failureReason).toMatch(/not one sorted, unique list/);
+                },
+                undefined,
+                false,
+                cliNarrowed(syntheticOwnersManifest(CLI_SPECS), ['Tuner', 'Other'])
+            );
+        },
+        60_000
+    );
+
+    it('reads the owner manifest from the integration commit, not the candidate checkout', () => {
+        const moved = syntheticOwnersManifest(CLI_SPECS, () => 'Tuner');
+        withShadowCliCheckouts(
+            'manifest-main-moved',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+                expect(report.measurementStatus).toBe('complete');
+            },
+            undefined,
+            false,
+            cliNarrowed(moved)
+        );
+    }, 60_000);
+
+    it('fails, rather than skips, when the control planner source is missing', () => {
+        withShadowCliCheckouts('control-config-missing', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(
+                /Control selector or planner is missing or nonregular: playwright\.config\.ts/
+            );
+        });
+    }, 30_000);
+
+    it('skips, not fails, when the candidate edits the planner and the control still holds the old one', () => {
+        withShadowCliCheckouts(
+            'planner-edit',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+                expect(report).toMatchObject({
+                    measurementStatus: 'skipped',
+                    skipReason: 'integration-selector-differs-from-control',
+                });
+                expect(report).not.toHaveProperty('failureReason');
+            },
+            undefined,
+            false,
+            (plan) => ({
+                ...plan,
+                reasons: plan.reasons.map((row) => {
+                    if (row.path !== 'scripts/newReviewTool.ts') {
+                        return row;
+                    }
+                    return { ...row, reason: 'known review tooling; security/static checks without browser execution' };
+                }),
+            })
+        );
+    }, 30_000);
+
     it('reports an older head without shadow capability as unsupported full coverage', () => {
         withShadowCliCheckouts('absent', (result, report, base, head, integration) => {
             expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
@@ -450,7 +733,7 @@ describe('E2E selection shadow', () => {
                 candidateSpecs: null,
                 excludedSpecs: 0,
                 measuredReduction: 0,
-                counts: { inventory: 1, candidate: null, liveSelected: 1 },
+                counts: { inventory: 2, candidate: null, liveSelected: 2 },
             });
             expect(report.authoritativeScopeSha256).toMatch(/^[0-9a-f]{64}$/);
         });
@@ -460,7 +743,7 @@ describe('E2E selection shadow', () => {
         withShadowCliCheckouts('present', (result, report) => {
             expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
             expect(report.measurementStatus).toBe('complete');
-            expect(report.candidateSpecs).toEqual(['tests/e2e/example.spec.ts']);
+            expect(report.candidateSpecs).toEqual(['tests/e2e/example.spec.ts', 'tests/e2e/tunerCli.spec.ts']);
         });
     }, 30_000);
 
@@ -510,11 +793,35 @@ describe('E2E selection shadow', () => {
         });
     }, 30_000);
 
-    it('fails when integration changes Playwright collection policy for an older head', () => {
+    it('reports integration changing Playwright collection policy for an older head as an explained skip', () => {
         withShadowCliCheckouts('integration-matcher', (result, report) => {
-            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
-            expect(report.measurementStatus).toBe('failed');
-            expect(report.failureReason).toMatch(/playwright\.config\.ts/);
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report.measurementStatus).toBe('skipped');
+            expect(report.skipReason).toBe('integration-selector-differs-from-control');
+            expect(report.skipDetail).toMatch(/playwright\.config\.ts/);
+        });
+    }, 30_000);
+
+    it('measures a supported head when the event base lags the integration first parent', () => {
+        withShadowCliCheckouts('stale-base', (result, report, base, head, integration) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({ measurementStatus: 'complete', base, head, integrationSha: integration });
+        });
+    }, 30_000);
+
+    it('reports changed integration execution policy as an explained skip, not a failure', () => {
+        withShadowCliCheckouts('policy-drift', (result, report, base, head, integration) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({
+                measurementStatus: 'skipped',
+                skipReason: 'integration-execution-policy-differs',
+                base,
+                head,
+                integrationSha: integration,
+                controlSha: base,
+            });
+            expect(report.skipDetail).toMatch(/playwright\.config\.ts/);
+            expect(report).not.toHaveProperty('failureReason');
         });
     }, 30_000);
 
@@ -604,12 +911,16 @@ describe('E2E selection shadow', () => {
             expect(() =>
                 measureShadow({ ...input, sourceHashes: { ...input.sourceHashes, [path]: 'missing-or-nonregular' } })
             ).toThrow(`Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`);
-            expect(() =>
+            const error = thrownBy(() =>
                 measureShadow({
                     ...input,
                     integrationSourceHashes: { ...input.integrationSourceHashes, [path]: '0'.repeat(64) },
                 })
-            ).toThrow(`Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`);
+            );
+            expect(error).toMatchObject({
+                code: 'integration-duration-planner-differs',
+                message: `Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`,
+            });
         }
     );
     it('binds the two-parent integration commit and reads exact regular Git bytes', () => {
@@ -1160,21 +1471,25 @@ describe('E2E selection shadow', () => {
         ).toThrow('Authoritative scope artifact disagrees');
     });
 
-    it('refuses a changed integration selector or collector before authenticating the plan', () => {
+    it('skips with a reason when the integration selector or collector differs, before authenticating the plan', () => {
         for (const path of ['scripts/prValidationScope.ts', 'scripts/vitestCollectionPatterns.ts']) {
             const integrationSourceHashes = { ...fixture().integrationSourceHashes, [path]: '0'.repeat(64) };
-            expect(() => measureShadow(fixture({ integrationSourceHashes }))).toThrow(
-                `Integration selector or collector differs from candidate head: ${path}`
-            );
+            const error = thrownBy(() => measureShadow(fixture({ integrationSourceHashes })));
+            expect(error).toMatchObject({
+                code: 'integration-selector-differs',
+                message: `Integration selector or collector differs from candidate head: ${path}`,
+            });
         }
     });
 
-    it('refuses a changed integration Playwright or required execution policy', () => {
+    it('skips with a reason when the integration Playwright or required execution policy differs', () => {
         for (const path of ['playwright.config.ts', '.github/workflows/heavy-gates.yml']) {
             const integrationSourceHashes = { ...fixture().integrationSourceHashes, [path]: '0'.repeat(64) };
-            expect(() => measureShadow(fixture({ integrationSourceHashes }))).toThrow(
-                `Integration execution policy differs from candidate head: ${path}`
-            );
+            const error = thrownBy(() => measureShadow(fixture({ integrationSourceHashes })));
+            expect(error).toMatchObject({
+                code: 'integration-execution-policy-differs',
+                message: `Integration execution policy differs from candidate head: ${path}`,
+            });
         }
     });
 
@@ -1207,5 +1522,290 @@ describe('E2E selection shadow', () => {
                 })
             )
         ).toThrow('Authoritative scope artifact disagrees');
+    });
+});
+
+describe('E2E selection shadow agreement with the authoritative scope', () => {
+    const inventoryPaths = inventory.map((row) => row.path);
+    const mainOnlySpec = 'tests/e2e/tuner.spec.ts';
+    const mainOnlyDiff = `M\0docs/06-testing.md\0M\0${mainOnlySpec}\0`;
+    const diagnostic = { path: 'affected graph', reason: 'unknown or shared changed source' };
+    const disagrees = 'Authoritative scope artifact disagrees with the current selector or inventory';
+
+    it('measures the union of the candidate diff and the integration delta when the event base lags main', () => {
+        const livePlan = selectValidationPlan([candidate, 'docs/06-testing.md', mainOnlySpec].sort(), inventoryPaths);
+        const report = measureShadow(fixture({ livePlan, integrationDiff: mainOnlyDiff }));
+        expect(report.measurementStatus).toBe('complete');
+        expect(report.counts).toEqual({ inventory: 313, candidate: 313, liveSelected: 313 });
+    });
+
+    it('still refuses a plan that carries a path neither diff contains', () => {
+        const livePlan = selectValidationPlan([candidate, 'docs/06-testing.md', mainOnlySpec].sort(), inventoryPaths);
+        expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
+        expect(() => measureShadow(fixture({ livePlan, integrationDiff: 'M\0docs/06-testing.md\0' }))).toThrow(
+            disagrees
+        );
+    });
+
+    it('admits the authoritative full-fallback affected-graph diagnostic and nothing else', () => {
+        const plan = selectValidationPlan([candidate], inventoryPaths);
+        const withDiagnostic = { ...plan, reasons: [...plan.reasons, diagnostic] };
+        expect(measureShadow(fixture({ livePlan: withDiagnostic })).measurementStatus).toBe('complete');
+        const [firstGroup, ...otherGroups] = plan.matrix.include;
+        const shortMatrix = {
+            include: [{ ...firstGroup, specs: firstGroup?.specs.slice(1) ?? [] }, ...otherGroups],
+        };
+        for (const livePlan of [
+            { ...withDiagnostic, matrix: shortMatrix },
+            { ...withDiagnostic, codeql: !plan.codeql },
+            { ...withDiagnostic, profile: 'tooling' },
+            { ...withDiagnostic, reasons: [diagnostic, ...plan.reasons] },
+            { ...withDiagnostic, reasons: [...plan.reasons, diagnostic, diagnostic] },
+            { ...plan, reasons: [{ ...plan.reasons[0], reason: 'documentation; no browser execution' }, diagnostic] },
+        ]) {
+            expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
+        }
+    });
+
+    const synthetic = syntheticOwnersManifest(inventoryPaths);
+    const manifest: unknown = JSON.parse(synthetic);
+    const source = (owner: string, name = 'Panel') => `src/modules/${owner}/presentations/views/${name}.tsx`;
+    const tunerSource = candidate;
+    const changedSpec = 'tests/e2e/mixer.spec.ts';
+    // The real selector over a small synthetic graph, so the plan is genuinely planner-made.
+    const plannerMade = (
+        changed: readonly string[],
+        consumers: readonly [consumer: string, dependency: string][] = [],
+        paths: readonly string[] = changed
+    ) => {
+        const sources = Array.from(new Set([...changed, ...consumers.flat()]));
+        const graph: SourceNode[] = sources.map((node) => ({
+            source: node,
+            dependencies: consumers
+                .filter(([consumer]) => consumer === node)
+                .map(([, dependency]) => ({ resolved: dependency })),
+        }));
+        const affected = selectAffectedE2e(
+            paths.filter((path) => path.startsWith('src/modules/')),
+            inventoryPaths,
+            manifest,
+            graph
+        );
+        if (affected.kind !== 'narrow') {
+            throw new Error(`Expected a narrowed selection: ${affected.reason}`);
+        }
+        return { affected, plan: selectValidationPlan([...paths].sort(), inventoryPaths, undefined, false, affected) };
+    };
+    const extraDiff = (...paths: string[]) => paths.map((path) => `M\0${path}\0`).join('');
+    const measure = (livePlan: unknown, integrationDiff?: string) =>
+        measureShadow(fixture({ livePlan, integrationDiff }));
+
+    describe('agrees with a graph-narrowed plan the planner made', () => {
+        it('for one owner', () => {
+            const { affected, plan } = plannerMade([tunerSource]);
+            expect(affected.owners).toEqual(['Tuner']);
+            const report = measure(plan);
+            expect(report.measurementStatus).toBe('complete');
+            expect(report.authoritativeDiagnostics).toEqual([
+                expect.stringContaining('affected-graph-owners-unverified: Tuner'),
+            ]);
+            expect(plan.matrix.include.flatMap((group) => group.specs)).not.toContain(SMOKE_SPEC);
+        });
+
+        it('for several owners reached through a consumer', () => {
+            const consumer = source('Bacteria', 'Consumer');
+            const { affected, plan } = plannerMade([tunerSource], [[consumer, tunerSource]], [tunerSource, consumer]);
+            expect(affected.owners).toEqual(['Bacteria', 'Tuner']);
+            expect(measure(plan, extraDiff(consumer)).measurementStatus).toBe('complete');
+        });
+
+        it('beside a changed browser spec', () => {
+            const { plan } = plannerMade([tunerSource], [], [tunerSource, changedSpec]);
+            expect(plan.matrix.include.flatMap((group) => group.specs)).toContain(changedSpec);
+            expect(measure(plan, extraDiff(changedSpec)).measurementStatus).toBe('complete');
+        });
+
+        it('for a Browser AI owner', () => {
+            const aiSource = source('BrowserAi');
+            const { affected, plan } = plannerMade([tunerSource, aiSource]);
+            expect(affected.browserAi).toBe(true);
+            expect(plan.browserAi).toBe(true);
+            expect(measure(plan, extraDiff(aiSource)).measurementStatus).toBe('complete');
+        });
+
+        it('when the event base lags and the integration delta adds another changed source', () => {
+            const delta = source('Bacteria', 'FromMain');
+            const { plan } = plannerMade([tunerSource, delta]);
+            expect(measure(plan, extraDiff(delta)).measurementStatus).toBe('complete');
+            expect(() => measure(plan)).toThrow(disagrees);
+        });
+    });
+
+    describe('fails a graph-narrowed plan the planner cannot have made', () => {
+        const honest = () => plannerMade([tunerSource]).plan;
+        const infra = 'src/infra/clock.ts';
+
+        it.each([
+            ['a smoke-only matrix', () => ({ ...honest(), matrix: { include: [{ id: 1, specs: [SMOKE_SPEC] }] } })],
+            ['an empty matrix', () => ({ ...honest(), matrix: { include: [] } })],
+            [
+                'a duplicate spec',
+                () => {
+                    const plan = honest();
+                    const [first, ...rest] = plan.matrix.include;
+                    const specs = first?.specs ?? [];
+                    return { ...plan, matrix: { include: [{ id: 1, specs: [...specs, specs[0]] }, ...rest] } };
+                },
+            ],
+            [
+                'an extra matrix group key',
+                () => {
+                    const plan = honest();
+                    return {
+                        ...plan,
+                        matrix: { include: plan.matrix.include.map((group) => ({ ...group, extra: 1 })) },
+                    };
+                },
+            ],
+            ['an extra top-level key', () => ({ ...honest(), extra: true })],
+            ['a codeql change', () => ({ ...honest(), codeql: !honest().codeql })],
+            ['a profile change', () => ({ ...honest(), profile: 'tooling' as const })],
+            ['a version change', () => ({ ...honest(), version: 2 })],
+            ['a browser change', () => ({ ...honest(), browser: false })],
+            ['the full-fallback diagnostic', () => ({ ...honest(), reasons: [...honest().reasons, diagnostic] })],
+            ['an unknown owner', () => forgedOwners(['Nobody'])],
+            [
+                'a spec outside the inventory',
+                () => ({
+                    ...honest(),
+                    matrix: { include: [{ id: 1, specs: ['tests/e2e/notInIntegration.spec.ts'] }] },
+                }),
+            ],
+        ])('with %s', (_name, build) => {
+            expect(() => measure(build())).toThrow(disagrees);
+        });
+
+        function forgedOwners(owners: string[], paths = [tunerSource]) {
+            const specs = owners.flatMap((owner) =>
+                inventoryPaths.filter((spec) => syntheticOwnerOf(spec) === owner && spec !== SMOKE_SPEC)
+            );
+            return selectValidationPlan(paths, inventoryPaths, undefined, false, {
+                kind: 'narrow',
+                owners,
+                specs,
+                browserAi: false,
+            });
+        }
+
+        it('when the owners name one of their many specs', () => {
+            const tunerSpecs = inventoryPaths.filter((spec) => syntheticOwnerOf(spec) === 'Tuner');
+            expect(tunerSpecs.length).toBeGreaterThan(1);
+            const livePlan = selectValidationPlan([tunerSource], inventoryPaths, undefined, false, {
+                kind: 'narrow',
+                owners: ['Tuner'],
+                specs: [tunerSpecs[0] ?? ''],
+                browserAi: false,
+            });
+            expect(() => measure(livePlan)).toThrow(disagrees);
+        });
+
+        it('when a non-owner row carries a different reason', () => {
+            const { plan } = plannerMade([tunerSource], [], [tunerSource, 'docs/a.md']);
+            const reasons = plan.reasons.map((row) => (row.path === 'docs/a.md' ? { ...row, reason: 'other' } : row));
+            expect(() => measure({ ...plan, reasons }, extraDiff('docs/a.md'))).toThrow(disagrees);
+        });
+
+        it('when a changed browser spec is dropped from the matrix', () => {
+            const { plan } = plannerMade([tunerSource], [], [tunerSource, changedSpec]);
+            const specs = plan.matrix.include.flatMap((group) => group.specs).filter((spec) => spec !== changedSpec);
+            const livePlan = { ...plan, matrix: { include: [{ id: 1, specs }] } };
+            expect(() => measure(livePlan, extraDiff(changedSpec))).toThrow(disagrees);
+        });
+
+        it('when browserAi is off for a selected Browser AI spec', () => {
+            const aiSource = source('BrowserAi');
+            const { plan } = plannerMade([tunerSource, aiSource]);
+            expect(() => measure({ ...plan, browserAi: false }, extraDiff(aiSource))).toThrow(disagrees);
+        });
+
+        it('over a deletion', () => {
+            const gone = source('Tuner', 'Retired');
+            const livePlan = plannerMade([tunerSource, gone]).plan;
+            expect(() => measure(livePlan, `D\0${gone}\0`)).toThrow(disagrees);
+        });
+
+        it('over a rename', () => {
+            const gone = source('Tuner', 'Retired');
+            const moved = source('Tuner', 'Moved');
+            const livePlan = plannerMade([tunerSource, gone, moved]).plan;
+            expect(() => measure(livePlan, `R100\0${gone}\0${moved}\0`)).toThrow(disagrees);
+        });
+
+        it('for a changed test file the dependency graph never holds', () => {
+            const spec = 'src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx';
+            const { affected } = plannerMade([tunerSource]);
+            const livePlan = selectValidationPlan(
+                [tunerSource, spec].sort(),
+                inventoryPaths,
+                undefined,
+                false,
+                affected
+            );
+            expect(() => measure(livePlan, extraDiff(spec))).toThrow(disagrees);
+        });
+
+        it('for a changed non-script file under a feature', () => {
+            const style = 'src/modules/Tuner/presentations/views/TunerPanel.css';
+            const { affected } = plannerMade([tunerSource]);
+            const livePlan = selectValidationPlan(
+                [tunerSource, style].sort(),
+                inventoryPaths,
+                undefined,
+                false,
+                affected
+            );
+            expect(() => measure(livePlan, extraDiff(style))).toThrow(disagrees);
+        });
+
+        it('on a path outside src/modules', () => {
+            const { affected } = plannerMade([tunerSource]);
+            const full = selectValidationPlan([tunerSource, infra].sort(), inventoryPaths, undefined, false, affected);
+            expect(() => measure(full, extraDiff(infra))).toThrow(disagrees);
+        });
+
+        it('when an owners row replaces a non-module full-coverage row', () => {
+            const full = selectValidationPlan([tunerSource, infra].sort(), inventoryPaths);
+            const livePlan = {
+                ...full,
+                reasons: full.reasons.map((row) =>
+                    row.path === infra ? { ...row, reason: 'affected feature owners: Tuner' } : row
+                ),
+            };
+            expect(() => measure(livePlan, extraDiff(infra))).toThrow(disagrees);
+        });
+
+        it('when a changed feature source belongs to an owner the plan does not claim', () => {
+            const other = source('Bacteria', 'Unclaimed');
+            const livePlan = forgedOwners(['Tuner'], [tunerSource, other].sort());
+            expect(() => measure(livePlan, extraDiff(other))).toThrow(disagrees);
+        });
+
+        it('when the diagnostic row sits on a plan with a src/infra path', () => {
+            const plan = selectValidationPlan([tunerSource, infra].sort(), inventoryPaths);
+            const livePlan = { ...plan, reasons: [...plan.reasons, diagnostic] };
+            expect(() => measure(livePlan, extraDiff(infra))).toThrow(disagrees);
+        });
+
+        it('when the diagnostic row sits on a plan with a deletion', () => {
+            const gone = source('Tuner', 'Retired');
+            const plan = selectValidationPlan([tunerSource, gone].sort(), inventoryPaths);
+            const livePlan = { ...plan, reasons: [...plan.reasons, diagnostic] };
+            expect(() => measure(livePlan, `D\0${gone}\0`)).toThrow(disagrees);
+        });
+    });
+
+    it('still agrees with the full-fallback diagnostic when the planner could have tried the helper', () => {
+        const plan = selectValidationPlan([candidate], inventoryPaths);
+        expect(measure({ ...plan, reasons: [...plan.reasons, diagnostic] }).measurementStatus).toBe('complete');
     });
 });

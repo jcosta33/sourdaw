@@ -31,6 +31,17 @@ The planner retains the broad validation profile for product changes, CodeQL sel
 literal filenames at the runner boundary, and the required Gate's selected-job checks. A failed
 graph or missing dependency installation must never produce an empty or silently narrowed matrix.
 
+The advisory selection shadow recomputes the plan from the control checkout's own planner. It does not
+run the graph helper, so it cannot derive which owners a change reaches through consumers. It
+therefore verifies a graph-narrowed plan by rebuilding it: the planner must have been able to narrow
+(`canNarrow`), the claimed owners must be registered in `scripts/e2eSuiteOwners.json` as read from the
+integration checkout and include the owner of every changed feature source, and the plan the control
+planner builds for those owners (`specsForOwners`) must equal the authoritative plan exactly. Owners
+reached only through consumers are reported as unverified (`affected-graph-owners-unverified`). The
+full-fallback diagnostic row is stripped only where the planner could have tried the helper. Any other
+difference is a disagreement. A candidate that edits the planner, collector, partition, graph helper, or
+Playwright config is a skip, because the control cannot reproduce its plan.
+
 This follows the affected-task pattern of comparing Git changes with reverse dependencies described
 by [Nx](https://nx.dev/docs/features/ci-features/affected), using the already installed
 dependency-cruiser rather than adopting Nx. Google's [TAP account](https://abseil.io/resources/swe-book/html/ch23.html)

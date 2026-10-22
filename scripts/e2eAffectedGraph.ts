@@ -32,8 +32,34 @@ function isKnownFeatureSource(path: string, knownOwners: ReadonlySet<string>): b
     return path.startsWith(`src/modules/${owner}/presentations/`);
 }
 
+/** The owners of changed sources, or null when any source is not a known feature source. */
+export function changedSourceOwners(
+    changedSources: readonly string[],
+    knownOwners: ReadonlySet<string>
+): string[] | null {
+    if (changedSources.length === 0 || changedSources.some((path) => !isKnownFeatureSource(path, knownOwners))) {
+        return null;
+    }
+    return [...new Set(changedSources.map((path) => ownerOf(path, knownOwners)!))].sort();
+}
+
 function isValidSpec(path: string): boolean {
     return isPlaywrightCollected(path) && !path.split('/').includes('..') && !path.split('/').includes('node_modules');
+}
+
+// The graph is cruised over these roots, minus tests, and only sources the installed cruise can parse
+// (it always reads these extensions) enter it. A changed path outside that set is absent from the
+// graph, and the helper then widens to the full suite.
+const GRAPH_ROOTS = ['src', 'public'] as const;
+const GRAPH_EXCLUDE_PATTERN = '(?:^|/)__tests__/|\\.(spec|test)\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$';
+const GRAPH_SOURCE_EXTENSION = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+export function graphCanHoldSource(path: string): boolean {
+    return (
+        GRAPH_ROOTS.some((root) => path.startsWith(`${root}/`)) &&
+        GRAPH_SOURCE_EXTENSION.test(path) &&
+        !new RegExp(GRAPH_EXCLUDE_PATTERN).test(path)
+    );
 }
 
 function isOwnerRegistry(value: unknown): value is string[] {
@@ -108,6 +134,32 @@ function suiteOwners(
         throw new Error('E2E owner has no suite');
     }
     return { owners, suites: entries };
+}
+
+/** The registry of feature owners the manifest declares, validated against the inventory. */
+export function knownFeatureOwners(manifest: unknown, availableSpecs: readonly string[]): ReadonlySet<string> {
+    return suiteOwners(manifest, new Set(availableSpecs)).owners;
+}
+
+/** Browser AI proofs trigger the separate hardware admission job. */
+export function selectsBrowserAi(specs: readonly string[]): boolean {
+    return specs.some((spec) => spec.startsWith('tests/e2e/browserAi'));
+}
+
+/** Exactly the specs a narrowed selection runs for an owner set: unowned suites and those owned by it. */
+export function specsForOwners(
+    owners: ReadonlySet<string>,
+    availableSpecs: readonly string[],
+    manifest: unknown
+): string[] {
+    const inventory = new Set(availableSpecs);
+    const { suites } = suiteOwners(manifest, inventory);
+    return Array.from(inventory)
+        .filter(
+            (spec) =>
+                spec !== SMOKE_SPEC && (!suites.has(spec) || [...suites.get(spec)!].some((owner) => owners.has(owner)))
+        )
+        .sort();
 }
 
 function isValidDependency(value: unknown): value is SourceNode['dependencies'][number] {
@@ -440,8 +492,8 @@ export function selectAffectedE2e(
         ) {
             return { kind: 'full', reason: 'invalid E2E inventory' };
         }
-        const { owners: knownOwners, suites: ownedSuites } = suiteOwners(manifest, inventory);
-        if (changedSources.length === 0 || changedSources.some((path) => !isKnownFeatureSource(path, knownOwners))) {
+        const { owners: knownOwners } = suiteOwners(manifest, inventory);
+        if (changedSourceOwners(changedSources, knownOwners) === null) {
             return { kind: 'full', reason: 'unknown or shared changed source' };
         }
         const { modules, reverse } = reverseGraph(graph);
@@ -451,17 +503,11 @@ export function selectAffectedE2e(
             }
         }
         const owners = affectedOwners(changedSources, knownOwners, modules, reverse, hasOpaqueDependency);
-        const specs = Array.from(inventory)
-            .filter(
-                (spec) =>
-                    spec !== SMOKE_SPEC &&
-                    (!ownedSuites.has(spec) || [...ownedSuites.get(spec)!].some((owner) => owners.has(owner)))
-            )
-            .sort();
+        const specs = specsForOwners(owners, availableSpecs, manifest);
         return {
             kind: 'narrow',
             specs,
-            browserAi: specs.some((spec) => spec.startsWith('tests/e2e/browserAi')),
+            browserAi: selectsBrowserAi(specs),
             owners: [...owners].sort(),
         };
     } catch (error) {
@@ -521,12 +567,12 @@ export async function loadAffectedE2e(
         }
         const { cruise } = await import('dependency-cruiser');
         const result = await cruise(
-            ['src', 'public'],
+            [...GRAPH_ROOTS],
             {
                 baseDir: root,
                 outputType: 'json',
                 doNotFollow: { path: 'node_modules' },
-                exclude: { path: '(?:^|/)__tests__/|\\.(spec|test)\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$' },
+                exclude: { path: GRAPH_EXCLUDE_PATTERN },
                 tsConfig: { fileName: configPath },
                 tsPreCompilationDeps: 'specify',
             },
