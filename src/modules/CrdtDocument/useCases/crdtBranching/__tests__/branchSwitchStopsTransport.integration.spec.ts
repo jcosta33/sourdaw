@@ -250,6 +250,22 @@ describe('branch switch stops the transport', () => {
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('take committed during the rollback is discarded'));
     });
 
+    it('does not report a discarded take when nothing was recording at the rollback', async () => {
+        await forkProjectBranch('feature');
+        const outgoingBranchId = branchStore.value?.activeBranchId;
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const persistence = holdNextPersistence();
+
+        const switching = switchBranch('main');
+        const switchOutcome = expect(switching).rejects.toThrow('quota exceeded');
+        await vi.waitFor(() => expect(branchStore.value?.activeBranchId).toBe('main'));
+        persistence.reject(new Error('quota exceeded'));
+        await switchOutcome;
+
+        expect(branchStore.value?.activeBranchId).toBe(outgoingBranchId);
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('discarded'));
+    });
+
     it('stops the transport before the outgoing snapshot is restored', async () => {
         await forkProjectBranch('feature');
         const persistence = holdNextPersistence();
