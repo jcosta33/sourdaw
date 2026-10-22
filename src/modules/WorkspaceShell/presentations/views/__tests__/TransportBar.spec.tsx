@@ -368,7 +368,11 @@ describe('TransportBar', () => {
                     'aria-selected',
                     'true'
                 );
-                expect(screen.getByRole('status')).toHaveTextContent('Selected Verse, Voice');
+                const selectedClipStatuses = screen
+                    .getAllByRole('status')
+                    .filter((status) => status.textContent?.startsWith('Selected Verse, Voice'));
+                expect(selectedClipStatuses).toHaveLength(1);
+                expect(selectedClipStatuses[0]).toHaveTextContent('Selected Verse, Voice');
                 fireEvent.keyDown(listbox, { key: 'Escape' });
                 await waitFor(() =>
                     expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument()
