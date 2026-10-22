@@ -182,10 +182,13 @@ jobs:
     # runner overhead. Checkout took 44s at most in 88 successful admissions
     # from 2026-10-11 to 2026-10-21, but a slow merge-ref fetch hit a 1-minute
     # cap at 38% of the tree update (run 39588034702), so it has three. Set up
-    # pnpm usually finishes in seconds yet ran into a 1-minute cap (run
-    # 39703602835), and Set up Node, which fetches Node and restores the pnpm
-    # store, has taken over 40% of one, so each has three.
-    timeout-minutes: 36
+    # pnpm's self-installer reads the npm registry, and during the registry
+    # slowdown of 2026-10-22 02:18-03:21Z that step took about 5 minutes on
+    # macOS (304s in job 119609756189) while admissions died at a 1-minute
+    # cap (run 39703602835), so it has seven. Set up Node, which fetches Node
+    # and restores the pnpm store, has taken over 40% of a 1-minute cap, so it
+    # has three.
+    timeout-minutes: 40
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -196,7 +199,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        timeout-minutes: 3
+        timeout-minutes: 7
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: package.json
