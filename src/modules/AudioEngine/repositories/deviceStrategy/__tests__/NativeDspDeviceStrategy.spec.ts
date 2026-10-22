@@ -72,15 +72,15 @@ vi.mock('../../../engine/ProofNode', () => ({
     createProofNode: creators.createProofNode,
 }));
 vi.mock('../../../engine/ProofChamberNode', () => ({
-    isProofChamberDevice: (t: string) => t === 'proofChamber',
+    isProofChamberDevice: (t: string) => t === 'dutch-oven',
     createProofChamberNode: creators.createProofChamberNode,
 }));
 vi.mock('../../../engine/ScoringNode', () => ({
-    isScoringDevice: (t: string) => t === 'scoring',
+    isScoringDevice: (t: string) => t === 'native-scoring',
     createScoringNode: creators.createScoringNode,
 }));
 vi.mock('../../../engine/GrandBouleNode', () => ({
-    isGrandBouleDevice: (t: string) => t === 'grandBoule',
+    isGrandBouleDevice: (t: string) => t === 'grand-boule',
     createGrandBouleNode: creators.createGrandBouleNode,
 }));
 vi.mock('../../../engine/CrustNode', () => ({
@@ -250,9 +250,9 @@ describe('createNativeDspStrategy factory dispatch', () => {
         ['bacteria', 'createBacteriaNode'],
         ['grinder', 'createGrinderNode'],
         ['proof', 'createProofNode'],
-        ['proofChamber', 'createProofChamberNode'],
-        ['scoring', 'createScoringNode'],
-        ['grandBoule', 'createGrandBouleNode'],
+        ['dutch-oven', 'createProofChamberNode'],
+        ['native-scoring', 'createScoringNode'],
+        ['grand-boule', 'createGrandBouleNode'],
         ['knead', 'createKneadNode'],
     ] as const)('dispatches %s to the matching node creator', async (type, fnName) => {
         for (const [, fn] of Object.entries(creators)) {
@@ -430,7 +430,7 @@ describe('createNativeDspStrategy factory dispatch', () => {
     it('turns an offline GrandBoule processor fault into a rejected strategy signal', async () => {
         creators.createGrandBouleNode.mockClear();
         const strategy = await createNativeDspStrategy(ctx, {
-            type: 'grandBoule',
+            type: 'grand-boule',
             parameterValues: {},
         } as never);
         const onFault = creators.createGrandBouleNode.mock.calls[0]?.[2];
