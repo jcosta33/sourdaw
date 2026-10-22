@@ -1,0 +1,71 @@
+tests/e2e/clips.spec.ts
+  s_29d8df116c5b92::t_60b08ab33fbeb4 26-34,41-42,48-49,51-52,56,58,62-63
+  s_29d8df116c5b92::t_b78283e95e91c5 53-55
+tests/e2e/midiModSetlistDeep.spec.ts
+  s_29d8df116c5b92::t_4dbbd78bbe6498 90
+  s_29d8df116c5b92::t_6679fc0f4d6e45 2,178-180
+tests/e2e/inspectorDeepTestId.spec.ts
+  s_29d8df116c5b92::t_b82c289ec0f96f 3
+  s_29d8df116c5b92::t_319e54ed05443d 37
+tests/e2e/sessionLoopStationDeepTestId.spec.ts
+  s_29d8df116c5b92::t_8ca4abada1ceea 12-14,53
+  s_29d8df116c5b92::t_b82c289ec0f96f 3
+  s_29d8df116c5b92::t_91c8193e3325d8 2
+tests/e2e/projectPreferencesTestId.spec.ts
+  s_29d8df116c5b92::t_319e54ed05443d 40
+tests/e2e/clipInspectorControls.spec.ts
+  s_29d8df116c5b92::t_304657dd818b72 84-86,90-98
+  s_29d8df116c5b92::t_b78283e95e91c5 2,28-33,83,87-89
+tests/e2e/timelineNavigation.spec.ts
+  s_29d8df116c5b92::t_319e54ed05443d 28,155
+tests/e2e/e2eWorkflow.spec.ts
+  s_29d8df116c5b92::t_4dbbd78bbe6498 18
+  s_29d8df116c5b92::t_9237d655582558 2
+tests/e2e/templateAndInspectorFinal.spec.ts
+  s_29d8df116c5b92::t_8126e9ab529dcc 207-212,216-218,220
+  s_29d8df116c5b92::t_4dbbd78bbe6498 203,213-215,219,222-223
+  s_29d8df116c5b92::t_4bb3f9557c8945 224-226
+tests/e2e/clipContextMenuDeepTestId.spec.ts
+  s_29d8df116c5b92::t_319e54ed05443d 21
+  s_29d8df116c5b92::t_b82c289ec0f96f 3
+tests/e2e/takeLanesTestId.spec.ts
+  s_29d8df116c5b92::t_8ca4abada1ceea 35
+tests/e2e/setlistLoopStationTestId.spec.ts
+  s_29d8df116c5b92::t_8ca4abada1ceea 23,42
+tests/e2e/midiUndoPlaybackTestId.spec.ts
+  s_29d8df116c5b92::t_8ca4abada1ceea 74
+tests/e2e/inspectorClip.spec.ts
+  s_29d8df116c5b92::t_304657dd818b72 36-42,44
+  s_29d8df116c5b92::t_440074f7e4d607 2
+tests/e2e/timelineClipTestId.spec.ts
+  s_29d8df116c5b92::t_304657dd818b72 55-58
+tests/e2e/finalBatch.spec.ts
+  s_29d8df116c5b92::t_8ca4abada1ceea 161
+  s_29d8df116c5b92::t_1385d2d5ea8cab 2
+tests/e2e/setlistLoopStation.spec.ts
+  s_29d8df116c5b92::t_8ca4abada1ceea 60,69
+  s_29d8df116c5b92::t_ba50f87ebc9b04 2
+tests/e2e/inputMonitoringTestId.spec.ts
+  s_29d8df116c5b92::t_4dbbd78bbe6498 47
+tests/e2e/collaborationTestId.spec.ts
+  s_29d8df116c5b92::t_304657dd818b72 32
+tests/e2e/inspectorTrack.spec.ts
+  s_29d8df116c5b92::t_319e54ed05443d 46-47,80-81
+  s_29d8df116c5b92::t_f4b4012bee8b59 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c4d90110190350843e4d654b586ee5ee6398e6f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
