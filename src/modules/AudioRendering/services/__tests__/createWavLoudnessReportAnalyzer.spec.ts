@@ -75,7 +75,14 @@ describe('emitted WAV loudness analysis', () => {
         expect(() => truncated.finish()).toThrow('Incomplete WAV');
         const nonfinite = bytes.slice();
         new DataView(nonfinite.buffer).setFloat32(46, Number.NaN, true);
-        expect(() => createWavLoudnessReportAnalyzer(createIncrementalMd5()).write(nonfinite)).toThrow('nonfinite');
+        let nonfiniteError: unknown;
+        try {
+            createWavLoudnessReportAnalyzer(createIncrementalMd5()).write(nonfinite);
+        } catch (error) {
+            nonfiniteError = error;
+        }
+        expect(nonfiniteError).toBeInstanceOf(TypeError);
+        expect(nonfiniteError).toHaveProperty('message', 'WAV report input has nonfinite audio.');
     });
 
     it('distinguishes empty, short and silent meters without numeric zero claims', async () => {

@@ -152,7 +152,7 @@ export function createWavLoudnessReportAnalyzer(
                     value = sampleView.getFloat32(0, true);
                 }
                 if (!Number.isFinite(value)) {
-                    throw new Error('WAV report input has nonfinite audio.');
+                    throw new TypeError('WAV report input has nonfinite audio.');
                 }
                 channels[channelIndex]![blockUsed] = value;
                 sampleUsed = 0;
