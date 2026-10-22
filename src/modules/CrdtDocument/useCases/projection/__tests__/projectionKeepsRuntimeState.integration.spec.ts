@@ -6,6 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore } from '#/modules/Arrangement/stores';
+import { midiLearnStore, sanitizeMidiLearnState } from '#/modules/ControlSurface/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { createCrdtDoc } from '../../createCrdtDoc';
@@ -24,10 +25,32 @@ import { setupProjectionBridge } from '../setupProjectionBridge';
 type RootDocument = {
     transport?: { tempo?: number; metronomeEnabled?: boolean };
     markers?: { markers: { id: string; beat: number; name: string; color: string }[]; sections: never[] };
+    midiLearn?: {
+        mappingsSchemaVersion: number;
+        mappings: {
+            id: string;
+            channel: number;
+            cc: number;
+            targetType: 'trackGain';
+            trackId: string;
+            minValue: number;
+            maxValue: number;
+        }[];
+    };
 };
 
 const PEER_ACTOR_ID = 'bbbbbbbbbbbbbbbb';
 const PLAYHEAD_BEAT = 12;
+const LEARNING_TARGET = { targetType: 'trackGain', trackId: 'track-learning' } as const;
+const PEER_MAPPING = {
+    id: 'mapping-peer',
+    channel: 1,
+    cc: 7,
+    targetType: 'trackGain',
+    trackId: 'track-peer',
+    minValue: 0,
+    maxValue: 1,
+} as const;
 
 let unsubscribe_projection: (() => void) | null = null;
 
@@ -57,6 +80,15 @@ function start_recording_playback(): void {
     flushAutomergeStorageWrites();
 }
 
+function arm_midi_learn(): void {
+    const current = midiLearnStore.value;
+    if (!current) {
+        throw new Error('Expected the MIDI Learn store to be initialised');
+    }
+    midiLearnStore.set({ ...current, isLearning: true, learningTarget: LEARNING_TARGET });
+    flushAutomergeStorageWrites();
+}
+
 function expect_playback_running(): void {
     expect(transportStore.value).toMatchObject({
         isPlaying: true,
@@ -72,6 +104,7 @@ describe('projecting the document into the transport store', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         transportStore.set(defaultTransportState);
+        midiLearnStore.set(sanitizeMidiLearnState(undefined));
         flushAutomergeStorageWrites();
         unsubscribe_projection = setupProjectionBridge();
     });
@@ -139,6 +172,28 @@ describe('projecting the document into the transport store', () => {
 
         expect(live_document().transport).toBeUndefined();
         expect_playback_running();
+    });
+
+    it('keeps an armed MIDI learn and takes the mappings from the document when a collaborator maps a controller', () => {
+        arm_midi_learn();
+
+        receive_remote_edit((draft) => {
+            draft.midiLearn = {
+                mappingsSchemaVersion: midiLearnStore.value?.mappingsSchemaVersion ?? 1,
+                mappings: [PEER_MAPPING],
+            };
+        });
+
+        expect(midiLearnStore.value?.mappings.map((mapping) => mapping.id)).toEqual([PEER_MAPPING.id]);
+        expect(midiLearnStore.value).toMatchObject({ isLearning: true, learningTarget: LEARNING_TARGET });
+    });
+
+    it('resets an armed MIDI learn when a project load re-projects the document', () => {
+        arm_midi_learn();
+
+        projectCrdtToStores({ resetProjections: true });
+
+        expect(midiLearnStore.value).toMatchObject({ isLearning: false, learningTarget: null });
     });
 
     it('resets the runtime transport state when a project load re-projects the document', () => {
