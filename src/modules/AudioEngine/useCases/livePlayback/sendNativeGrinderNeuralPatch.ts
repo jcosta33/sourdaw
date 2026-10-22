@@ -62,6 +62,19 @@ function sameModel(a: NativeGrinderModelReceipt, b: NativeGrinderModelReceipt): 
         a.contentHash === b.contentHash
     );
 }
+function assertDrainLifetime(
+    backend: AudioGraphBackend,
+    epoch: number,
+    sessionBackend: AudioGraphBackend | null,
+    disposedReason: string
+): void {
+    if (backend.disposed !== false) {
+        throw new Error(disposedReason);
+    }
+    if (nativeLiveGraphSession.rearmEpoch !== epoch || nativeLiveGraphSession.backend !== sessionBackend) {
+        throw new Error('Native NAM session changed during drain');
+    }
+}
 async function drain(
     backend: AudioGraphBackend,
     result: AudioGraphApplyResult,
@@ -77,20 +90,15 @@ async function drain(
     const deadline = performance.now() + 5000;
     while (performance.now() < deadline) {
         current();
-        if (backend.disposed !== false) {
-            throw new Error('Native NAM backend disposed or lifetime readback unavailable');
-        }
-        if (nativeLiveGraphSession.rearmEpoch !== epoch || nativeLiveGraphSession.backend !== foundBackend) {
-            throw new Error('Native NAM session changed during drain');
-        }
+        assertDrainLifetime(
+            backend,
+            epoch,
+            foundBackend,
+            'Native NAM backend disposed or lifetime readback unavailable'
+        );
         const position = await getEngineTransportPosition();
         current();
-        if (backend.disposed !== false) {
-            throw new Error('Native NAM backend disposed during drain');
-        }
-        if (nativeLiveGraphSession.rearmEpoch !== epoch || nativeLiveGraphSession.backend !== foundBackend) {
-            throw new Error('Native NAM session changed during drain');
-        }
+        assertDrainLifetime(backend, epoch, foundBackend, 'Native NAM backend disposed during drain');
         if (!position.running || position.engineId !== accepted.engineId) {
             throw new Error('Native NAM engine changed or stopped during drain');
         }

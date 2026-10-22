@@ -122,6 +122,103 @@ describe('sendNativeGrinderNeuralPatch actual receipt drain', () => {
             })
         ).rejects.toThrow(/fence/);
     });
+
+    it('refuses a disposed backend before entering native readback', async () => {
+        const current = backend();
+        nativeLiveGraphSession.backend = current;
+        current.dispose();
+        vi.mocked(getEngineTransportPosition).mockClear();
+
+        await expect(
+            sendNativeGrinderNeuralPatch({ kind: 'drain', backend: current, result: admitted })
+        ).rejects.toThrow('Native NAM backend disposed or lifetime readback unavailable');
+
+        expect(getEngineTransportPosition).not.toHaveBeenCalled();
+        expect(current.apply).not.toHaveBeenCalled();
+    });
+
+    it('refuses a stale session witness before entering native readback', async () => {
+        const current = backend();
+        nativeLiveGraphSession.backend = current;
+        vi.mocked(getEngineTransportPosition).mockClear();
+
+        await expect(
+            sendNativeGrinderNeuralPatch({
+                kind: 'drain',
+                backend: current,
+                result: admitted,
+                session: { backend: current, epoch: nativeLiveGraphSession.rearmEpoch + 1 },
+            })
+        ).rejects.toThrow('Native NAM session changed during drain');
+
+        expect(getEngineTransportPosition).not.toHaveBeenCalled();
+        expect(current.apply).not.toHaveBeenCalled();
+    });
+
+    it('requires explicit lifetime readback before entering native readback', async () => {
+        const current: AudioGraphBackend = {
+            backendId: 'native-live',
+            apply: vi.fn(async () => admitted),
+            dispose: vi.fn(),
+        };
+        nativeLiveGraphSession.backend = current;
+        vi.mocked(getEngineTransportPosition).mockClear();
+
+        await expect(
+            sendNativeGrinderNeuralPatch({ kind: 'drain', backend: current, result: admitted })
+        ).rejects.toThrow('Native NAM backend disposed or lifetime readback unavailable');
+
+        expect(getEngineTransportPosition).not.toHaveBeenCalled();
+        expect(current.apply).not.toHaveBeenCalled();
+    });
+
+    it.each(['disposal', 'epoch', 'backend'] as const)(
+        'refuses %s after native readback was entered even with a matching receipt',
+        async (change) => {
+            const current = backend();
+            nativeLiveGraphSession.backend = current;
+            const epoch = nativeLiveGraphSession.rearmEpoch;
+            let entered!: () => void;
+            const observed = new Promise<void>((resolve) => {
+                entered = resolve;
+            });
+            let release!: (position: Awaited<ReturnType<typeof getEngineTransportPosition>>) => void;
+            const readback = new Promise<Awaited<ReturnType<typeof getEngineTransportPosition>>>((resolve) => {
+                release = resolve;
+            });
+            vi.mocked(getEngineTransportPosition).mockImplementation(() => {
+                entered();
+                return readback;
+            });
+            const pending = sendNativeGrinderNeuralPatch({ kind: 'drain', backend: current, result: admitted });
+            let reason = 'Native NAM session changed during drain';
+            if (change === 'disposal') {
+                reason = 'Native NAM backend disposed during drain';
+            }
+            const rejected = expect(pending).rejects.toThrow(reason);
+            try {
+                await observed;
+                if (change === 'disposal') {
+                    current.dispose();
+                } else if (change === 'epoch') {
+                    nativeLiveGraphSession.rearmEpoch += 1;
+                } else {
+                    nativeLiveGraphSession.backend = backend();
+                }
+                release({
+                    ...stoppedEngineTransportPosition,
+                    running: true,
+                    engineId: receipt.engineId,
+                    batchesApplied: 7,
+                    grinderModels: [receipt],
+                });
+                await rejected;
+                expect(current.apply).not.toHaveBeenCalled();
+            } finally {
+                nativeLiveGraphSession.rearmEpoch = epoch;
+            }
+        }
+    );
 });
 
 function holdingGrinder(): Track {
