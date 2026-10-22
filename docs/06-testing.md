@@ -869,7 +869,8 @@ carry no reserve. It requires a 5 GiB free reserve at admission and throughout e
 guards inherit the chosen reserve. Supply the desired override again on `--recover`. Disk pressure
 during a run stops the process tree with the existing `pressure` failure receipt and a disk-specific
 diagnostic. Pressure at admission is a plain refusal with a non-zero exit and no receipt, since
-nothing ran; its message points to the bullet "When the system volume is below the reserve" in AGENTS.md Resource Safety, which lists the clearable caches.
+nothing ran; its message carries the cleanup guidance (delete only definite regenerable caches and agent junk, never
+anything a running process holds, report what was freed), which AGENTS.md deliberately omits.
 Unavailable or invalid disk sampling fails closed with `monitor`. Cleanup uncertainty never turns a
 stopped run into success.
 

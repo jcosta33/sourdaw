@@ -660,12 +660,8 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             expect(result.reason).toBe(unavailable ? 'monitor' : 'pressure');
             expect(result.output).toMatch(unavailable ? /disk space could not be measured/ : /disk space below/);
             if (!unavailable) {
-                expect(result.output).toContain(
-                    'AGENTS.md Resource Safety: "When the system volume is below the reserve"'
-                );
-                expect(readFileSync(join(process.cwd(), 'AGENTS.md'), 'utf8')).toContain(
-                    'When the system volume is below the reserve'
-                );
+                expect(result.output).toContain('definite caches');
+                expect(result.output).toContain('never anything a running process holds');
             }
             expect(result.refusedBeforeStart).toBe(unavailable ? undefined : true);
             expect(sampled).toEqual(['/']);

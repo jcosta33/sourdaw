@@ -28,7 +28,7 @@ export function diskStorageFailure(
         if (available < reserveBytes) {
             return {
                 reason: 'pressure',
-                message: `available disk space below ${Math.ceil(reserveBytes / 1024 ** 2)} MiB reserve: ${path} (${Math.floor(available / 1024 ** 2)} MiB available); free space on the system volume (see AGENTS.md Resource Safety: "When the system volume is below the reserve") and retry`,
+                message: `available disk space below ${Math.ceil(reserveBytes / 1024 ** 2)} MiB reserve: ${path} (${Math.floor(available / 1024 ** 2)} MiB available); free space on the system volume by deleting only definite caches and junk produced by agent work (updater download caches, pnpm store prune, your own probe copies and scratch temp files), never anything a running process holds or anything you cannot identify as regenerable, report what you freed, and retry`,
             };
         }
     }
