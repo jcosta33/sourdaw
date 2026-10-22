@@ -68,8 +68,8 @@ import { applyClipAutomationLaneTransition } from '../../../useCases/clip/applyC
 import { clipAutomationLaneTransitionMatchesStore } from '../../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../../useCases/clipEditing/clipSplitStateRestorable';
 import { replaceClipSplitTrackState } from '../../../useCases/clipEditing/replaceClipSplitTrackState';
-import { removeTakesForClips } from '../../../useCases/comping/removeTakesForClips';
 import { planTakeRetirement } from '../../../useCases/comping/planTakeRetirement';
+import { removeTakesForClips } from '../../../useCases/comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../../../useCases/comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../../../useCases/comping/restoreTakesForClip';
 import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
