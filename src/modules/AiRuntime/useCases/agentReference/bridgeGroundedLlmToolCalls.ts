@@ -37,7 +37,6 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
-import { explicitlyRemovesCommand } from '../../validators/admitProposalRefinement';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import { getCompiledTransformTargetIds } from '../getCompiledTransformTargetIds';
@@ -144,6 +143,7 @@ import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilit
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
+import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementClauseReader } from './refinementClauseReader';
 import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
 import { resolveCompleteClipReference } from './resolveCompleteClipReference';
@@ -5676,14 +5676,16 @@ function findSilentOmission(input: {
         if (input.inheritedOrRestated.has(index) || input.removed.has(index)) {
             continue;
         }
-        const removed = explicitlyRemovesCommand({
+        const removal = readStoredCardRemoval({
             prompt: input.prompt,
             command: pendingActions[index]!,
             pendingActions,
             context: input.context,
-            createdObject: proposalCommandShape.createdObject,
         });
-        if (!removed) {
+        if (removal.status === 'ambiguous') {
+            return removal.reason;
+        }
+        if (removal.status === 'keeps') {
             return `Refined proposal omits a pending ${describePendingCommand(command, input.context)} command without an explicit request to remove it`;
         }
     }

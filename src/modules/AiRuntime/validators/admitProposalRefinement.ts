@@ -52,6 +52,18 @@ export type ReadCreatedObject = (
     context: ProjectContext
 ) => { idFields: readonly string[]; names: readonly string[] } | null;
 
+/**
+ * What a request asks of one command of the stored card it refines, read by the refinement reader the
+ * caller supplies, so a stored card and a card with a grounding basis are read by one removal reading:
+ * the request removes it, keeps it, or removes a creation it cannot tell from another.
+ */
+export type ReadCommandRemoval = (input: {
+    prompt: string;
+    command: Command;
+    pendingActions: readonly Command[];
+    context: ProjectContext;
+}) => { status: 'removes' } | { status: 'keeps' } | { status: 'ambiguous'; reason: string };
+
 type CreatedObjectOf = (command: Command) => ReturnType<ReadCreatedObject>;
 
 function payloadOf(command: Command): Record<string, unknown> {
@@ -78,6 +90,22 @@ function statedIdEntries(command: Command, createdObjectOf: CreatedObjectOf): Ar
 }
 
 /**
+ * What a stored command creates, if anything, and the object ids it acts on, without the ids the
+ * application minted for what it creates.
+ */
+export function readStoredCommandObjects(
+    command: Command,
+    createdObject: ReadCreatedObject,
+    context: ProjectContext
+): { created: ReturnType<ReadCreatedObject>; targetIds: string[] } {
+    const createdObjectOf = readsCreatedObjects(createdObject, context);
+    return {
+        created: createdObjectOf(command),
+        targetIds: statedIdEntries(command, createdObjectOf).map(([, value]) => value),
+    };
+}
+
+/**
  * A target is identified by the command's explicit object ids, not by its place in the batch. A
  * creation is identified by where it creates and what it names, never by the id minted for it, which
  * every grounding mints afresh. A creation that names nothing ("split clip-1 at bar 4") has nothing
@@ -95,338 +123,12 @@ function targetOf(command: Command, createdObjectOf: CreatedObjectOf): string {
     return [command.type, ...ids, ...names].join('|');
 }
 
-function operationPattern(actionType: string): RegExp | null {
-    if (actionType === 'setTrackPan') {
-        return /\bpan(?:ning)?\b/i;
-    }
-    if (actionType === 'setTrackGain') {
-        return /\b(?:gain|fader|level)\b/i;
-    }
-    if (actionType === 'muteTrack') {
-        return /\bmute\b/i;
-    }
-    const operation = actionType
-        .match(/[A-Z][a-z]+|^[a-z]+/g)
-        ?.at(-1)
-        ?.toLowerCase();
-    return operation === undefined ? null : new RegExp(`\\b${operation}\\b`, 'i');
-}
-
-/**
- * Whether a removal verb opens its clause, after nothing but `please`, `and` or `then`. A removal verb
- * anywhere else ("don’t remove", "you shouldn't remove", "no need to remove") removes nothing.
- */
-function opensClause(clause: string, removalIndex: number): boolean {
-    return /^\s*(?:(?:please|and|then)\s+)*$/iu.test(clause.slice(0, removalIndex));
-}
-
-const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|keep|retain|preserve|leave)\b/gi;
-const REMOVAL = /^(?:remove|drop|omit|exclude|skip)$/i;
-const BINDING_WORDS = new Set([
-    'the',
-    'new',
-    'its',
-    'pending',
-    'proposed',
-    'command',
-    'change',
-    'track',
-    'clip',
-    'pan',
-    'panning',
-    'mute',
-    'gain',
-    'fader',
-    'level',
-    'from',
-    'of',
-    'on',
-    'for',
-]);
-
-function quotedRanges(text: string): Array<{ start: number; end: number; contentEnd: number; complete: boolean }> {
-    const ranges: Array<{ start: number; end: number; contentEnd: number; complete: boolean }> = [];
-    let opened: { start: number; close: string } | null = null;
-    for (let index = 0; index < text.length; index += 1) {
-        const character = text[index];
-        if (opened !== null) {
-            if (character === opened.close) {
-                ranges.push({ start: opened.start, end: index + 1, contentEnd: index, complete: true });
-                opened = null;
-            }
-            continue;
-        }
-        if (character !== '"' && character !== "'" && character !== '“' && character !== '‘') {
-            continue;
-        }
-        if (
-            character === "'" &&
-            /[\p{L}\p{N}]/u.test(text[index - 1] ?? '') &&
-            /[\p{L}\p{N}]/u.test(text[index + 1] ?? '')
-        ) {
-            continue;
-        }
-        let close = character;
-        if (character === '“') {
-            close = '”';
-        } else if (character === '‘') {
-            close = '’';
-        }
-        opened = { start: index, close };
-    }
-    if (opened !== null) {
-        ranges.push({ start: opened.start, end: text.length, contentEnd: text.length, complete: false });
-    }
-    return ranges;
-}
-
-function clausesOf(prompt: string): string[] {
-    const quotes = quotedRanges(prompt);
-    const clauses: string[] = [];
-    let start = 0;
-    for (let index = 0; index < prompt.length; index += 1) {
-        if (/[.,;]/.test(prompt[index] ?? '') && !quotes.some((quote) => index >= quote.start && index < quote.end)) {
-            clauses.push(prompt.slice(start, index));
-            start = index + 1;
-        }
-    }
-    clauses.push(prompt.slice(start));
-    return clauses;
-}
-
-function targetMentions(clause: string, context: ProjectContext, targetIds: readonly string[]) {
-    const candidates = new Map<string, Set<string>>();
-    for (const track of context.tracks) {
-        for (const name of [track.name, track.id]) {
-            const ids = candidates.get(name.toLowerCase()) ?? new Set<string>();
-            ids.add(track.id);
-            candidates.set(name.toLowerCase(), ids);
-        }
-    }
-    for (const id of targetIds) {
-        const ids = candidates.get(id.toLowerCase()) ?? new Set<string>();
-        ids.add(id);
-        candidates.set(id.toLowerCase(), ids);
-    }
-    const names = Array.from(candidates.keys())
-        .filter(Boolean)
-        .sort((left, right) => right.length - left.length);
-    const quotes = quotedRanges(clause);
-    const mentions: Array<{ id: string | null; start: number; end: number }> = [];
-    for (const name of names) {
-        const ids = candidates.get(name)!;
-        const id = ids.size === 1 ? [...ids][0]! : null;
-        const escaped = name.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        for (const match of clause.matchAll(new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'giu'))) {
-            const start = match.index ?? 0;
-            const end = start + name.length;
-            const quote = quotes.find((range) => start < range.end && end > range.start);
-            if (quote !== undefined && (!quote.complete || start !== quote.start + 1 || end !== quote.contentEnd)) {
-                continue;
-            }
-            const bindingStart = quote?.start ?? start;
-            const bindingEnd = quote?.end ?? end;
-            if (!mentions.some((other) => bindingStart < other.end && bindingEnd > other.start)) {
-                mentions.push({ id, start: bindingStart, end: bindingEnd });
-            }
-        }
-    }
-    return mentions.sort((left, right) => left.start - right.start);
-}
-
-function onlyBindingWords(text: string): boolean {
-    return (
-        text === '' ||
-        text
-            .toLowerCase()
-            .split(/\s+/)
-            .every((word) => BINDING_WORDS.has(word))
-    );
-}
-
-function intentionForMention(input: {
-    clause: string;
-    mentions: ReturnType<typeof targetMentions>;
-    directives: RegExpMatchArray[];
-    index: number;
-    /** The word the operation is named by, or `null` when the mention names the whole change, as a created object's name does. */
-    operation: RegExp | null;
-}): 'remove' | 'preserve' | null {
-    const { clause, mentions, directives, index, operation } = input;
-    const mention = mentions[index]!;
-    const previousEnd = mentions[index - 1]?.end ?? 0;
-    const directive = directives.findLast((entry) => {
-        const at = entry.index ?? 0;
-        return at >= previousEnd && at < mention.start;
-    });
-    if (!directive) {
-        return null;
-    }
-    const at = directive.index ?? 0;
-    const beforeTarget = clause.slice(at + directive[0].length, mention.start).trim();
-    if (!onlyBindingWords(beforeTarget)) {
-        return null;
-    }
-    const intention = REMOVAL.test(directive[0]) && opensClause(clause, at) ? 'remove' : 'preserve';
-    if (operation === null) {
-        return intention;
-    }
-    const nextDirective = directives.find((entry) => (entry.index ?? 0) > mention.end)?.index;
-    const nextTarget = mentions[index + 1]?.start;
-    const end = Math.min(nextDirective ?? clause.length, nextTarget ?? clause.length);
-    const afterTarget = clause.slice(mention.end, end);
-    const afterMatch = operation.exec(afterTarget);
-    const beforeOperation = afterMatch === null ? '' : afterTarget.slice(0, afterMatch.index ?? 0).trim();
-    if (
-        (afterMatch !== null && !onlyBindingWords(beforeOperation)) ||
-        (!operation.test(beforeTarget) && afterMatch === null)
-    ) {
-        return null;
-    }
-    return intention;
-}
-
-type MentionIntention = {
-    clause: string;
-    mention: ReturnType<typeof targetMentions>[number];
-    intention: 'remove' | 'preserve';
-};
-
-/** Each mention of this id a directive governs, by clause, with what the directive asks of it. */
-function readMentionIntentions(input: {
-    prompt: string;
-    context: ProjectContext;
-    candidateIds: readonly string[];
-    id: string;
-    operation: RegExp | null;
-}): MentionIntention[] {
-    return clausesOf(input.prompt).flatMap((clause) => {
-        const mentions = targetMentions(clause, input.context, input.candidateIds);
-        const quotes = quotedRanges(clause);
-        const directives = Array.from(clause.matchAll(DIRECTIVE)).filter(
-            (entry) => !quotes.some((quote) => (entry.index ?? 0) >= quote.start && (entry.index ?? 0) < quote.end)
-        );
-        return mentions.flatMap((mention, index) => {
-            if (mention.id !== input.id) {
-                return [];
-            }
-            const intention = intentionForMention({ clause, mentions, directives, index, operation: input.operation });
-            return intention === null ? [] : [{ clause, mention, intention }];
-        });
-    });
-}
-
-/** Whether every clause naming this id with a directive removes it, and at least one does. */
-function removesMentioned(intentions: readonly MentionIntention[]): boolean {
-    return (
-        intentions.some((entry) => entry.intention === 'remove') &&
-        !intentions.some((entry) => entry.intention === 'preserve')
-    );
-}
-
-type PendingCreation = { command: Command; names: readonly string[]; hostIds: readonly string[] };
-
-/**
- * The hosts a removal names after the created object it removes, across binding words only ("the
- * compressor from Bass", "the compressor on Bass").
- */
-function findNamedHosts(
-    entry: MentionIntention,
-    creations: readonly PendingCreation[],
-    context: ProjectContext
-): Set<string> {
-    const hostIds = Array.from(new Set(creations.flatMap((creation) => creation.hostIds)));
-    const { clause, mention } = entry;
-    return new Set(
-        targetMentions(clause, context, hostIds).flatMap((host) => {
-            if (host.id === null || host.start < mention.end) {
-                return [];
-            }
-            return onlyBindingWords(clause.slice(mention.end, host.start).trim()) ? [host.id] : [];
-        })
-    );
-}
-
-/**
- * The pending creations one removal of a name picks out: those it names by name and host, or, when it
- * names no host, every pending creation of that name.
- */
-function pickCreations(
-    entry: MentionIntention,
-    name: string,
-    creations: readonly PendingCreation[],
-    context: ProjectContext
-): Command[] {
-    const sameName = creations.filter((creation) =>
-        creation.names.some((candidate) => candidate.toLowerCase() === name.toLowerCase())
-    );
-    const hosts = findNamedHosts(entry, sameName, context);
-    const picked =
-        hosts.size === 0 ? sameName : sameName.filter((creation) => creation.hostIds.some((id) => hosts.has(id)));
-    return picked.map((creation) => creation.command);
-}
-
-/**
- * Whether the request expressly drops this pending command, by its own target and operation. A
- * creation is dropped by the name of what it creates ("remove the compressor"), which names the whole
- * change; the id minted for it names nothing the user can say. That removal must pick out exactly this
- * one pending creation, by its name and host ("remove the compressor from Bass") or by a name no other
- * pending creation shares; otherwise it removes nothing.
- */
-export function explicitlyRemovesCommand(input: {
-    prompt: string;
-    command: Command;
-    pendingActions: readonly Command[];
-    context: ProjectContext;
-    createdObject: ReadCreatedObject;
-}): boolean {
-    const { prompt, command, context } = input;
-    const createdObjectOf = readsCreatedObjects(input.createdObject, context);
-    const created = createdObjectOf(command);
-    if (created !== null) {
-        const creations = input.pendingActions.flatMap((pending): PendingCreation[] => {
-            const names = createdObjectOf(pending)?.names;
-            if (names === undefined) {
-                return [];
-            }
-            const hostIds = statedIdEntries(pending, createdObjectOf).map(([, value]) => value);
-            return [{ command: pending, names, hostIds }];
-        });
-        return created.names.some((name) => {
-            const intentions = readMentionIntentions({
-                prompt,
-                context,
-                candidateIds: created.names,
-                id: name,
-                operation: null,
-            });
-            return (
-                removesMentioned(intentions) &&
-                intentions.some((entry) => {
-                    const picked = pickCreations(entry, name, creations, context);
-                    return picked.length === 1 && picked[0] === command;
-                })
-            );
-        });
-    }
-    const targetIds = statedIdEntries(command, createdObjectOf).map(([, value]) => value);
-    if (targetIds.length === 0) {
-        return false;
-    }
-    const operation = operationPattern(command.type);
-    if (operation === null) {
-        return false;
-    }
-    return targetIds.every((id) =>
-        removesMentioned(readMentionIntentions({ prompt, context, candidateIds: targetIds, id, operation }))
-    );
-}
-
 /**
  * A provider may add or change grounded commands, and may remove a command the user expressly
  * dropped. It may not silently lose a command from the full held card, nor create again what the user
- * removed from it. The caller supplies the
- * stored snapshot: thread_context can omit command arguments to stay inside its provider budget.
+ * removed from it, and a removal naming a creation several pending creations share is refused rather
+ * than read as either. The caller supplies the stored snapshot: thread_context can omit command
+ * arguments to stay inside its provider budget.
  */
 export function validateRefinedProposalActions(input: {
     pendingActions: readonly Command[] | null;
@@ -434,6 +136,7 @@ export function validateRefinedProposalActions(input: {
     prompt: string;
     context: ProjectContext;
     createdObject: ReadCreatedObject;
+    readRemoval: ReadCommandRemoval;
 }): { status: 'valid' } | { status: 'refused'; reason: string } {
     // Persistence rechecks live authority. A card cancelled during planning receives that
     // authoritative reason there, even when its displayed status has not settled.
@@ -443,14 +146,8 @@ export function validateRefinedProposalActions(input: {
     const remaining = [...input.actions];
     const oldActions = input.pendingActions;
     const createdObjectOf = readsCreatedObjects(input.createdObject, input.context);
-    const requestRemoves = (old: Command): boolean =>
-        explicitlyRemovesCommand({
-            prompt: input.prompt,
-            command: old,
-            pendingActions: oldActions,
-            context: input.context,
-            createdObject: input.createdObject,
-        });
+    const removalOf = (old: Command) =>
+        input.readRemoval({ prompt: input.prompt, command: old, pendingActions: oldActions, context: input.context });
     const keptRemoval = (old: Command): { status: 'refused'; reason: string } => ({
         status: 'refused',
         reason: `Refined proposal keeps the pending ${old.type} command the request removes.`,
@@ -462,7 +159,11 @@ export function validateRefinedProposalActions(input: {
             changed.push(old);
             continue;
         }
-        if (requestRemoves(old)) {
+        const removal = removalOf(old);
+        if (removal.status === 'ambiguous') {
+            return { status: 'refused', reason: removal.reason };
+        }
+        if (removal.status === 'removes') {
             return keptRemoval(old);
         }
         remaining.splice(exact, 1);
@@ -470,11 +171,14 @@ export function validateRefinedProposalActions(input: {
     for (const old of changed) {
         const identity = targetOf(old, createdObjectOf);
         const changedIndex = remaining.findIndex((next) => targetOf(next, createdObjectOf) === identity);
-        const removed = requestRemoves(old);
+        const removal = removalOf(old);
+        if (removal.status === 'ambiguous') {
+            return { status: 'refused', reason: removal.reason };
+        }
         if (changedIndex >= 0) {
             // A creation pairs under the fresh id every grounding mints, so pairing alone would keep
             // one the request removes.
-            if (removed) {
+            if (removal.status === 'removes') {
                 return keptRemoval(old);
             }
             // The ordinary grounding route has already checked this changed command against the
@@ -482,7 +186,7 @@ export function validateRefinedProposalActions(input: {
             remaining.splice(changedIndex, 1);
             continue;
         }
-        if (!removed) {
+        if (removal.status !== 'removes') {
             return {
                 status: 'refused',
                 reason: `Refined proposal omits a pending ${old.type} command without an explicit request to remove it.`,

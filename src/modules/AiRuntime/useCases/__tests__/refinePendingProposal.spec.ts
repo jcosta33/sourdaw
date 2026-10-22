@@ -35,6 +35,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { validateRefinedProposalActions } from '../../validators/admitProposalRefinement';
 import { proposalCommandShape } from '../agentReference/proposalCommandShape';
+import { readStoredCardRemoval } from '../agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
@@ -477,6 +478,7 @@ describe('refining the pending proposal', () => {
                 prompt,
                 context,
                 createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
             }).status;
 
         expect(admission('Drop Guitar Left pan and leave Guitar pan as proposed.', guitarPan)).toBe('refused');

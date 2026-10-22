@@ -57,6 +57,7 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { readStoredCardRemoval } from './agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -1064,6 +1065,7 @@ const planPromptIntent = inject({ logger })(
                             prompt,
                             context,
                             createdObject: proposalCommandShape.createdObject,
+                            readRemoval: readStoredCardRemoval,
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1135,6 +1137,7 @@ const planPromptIntent = inject({ logger })(
                             prompt,
                             context,
                             createdObject: proposalCommandShape.createdObject,
+                            readRemoval: readStoredCardRemoval,
                         });
                         if (preservation.status === 'refused') {
                             return {

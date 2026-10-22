@@ -8,6 +8,7 @@ import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import { type PromptClause } from './groundingStrategies/promptScope';
+import { refinementValueUnits } from './refinementValueUnits';
 
 export type RefinementClause = PromptClause & { start: number; end: number };
 
@@ -103,6 +104,9 @@ const COMPARATIVE_WORDS: ReadonlySet<string> = new Set([
  * two clauses, so `and`, `but` and `then` open only the refinement's first clause ("and lower it 2 dB").
  */
 const CLAUSE_OPENING_WORDS: ReadonlySet<string> = new Set(['and', 'but', 'then', 'please']);
+const ARTICLE_WORDS: ReadonlySet<string> = new Set(['the', 'a', 'an']);
+/** The connectors a figure is read after, which belong to the figure rather than the action. */
+const CONNECTOR_WORDS: ReadonlySet<string> = new Set(['to', 'at', 'by']);
 /** A quotation mark: a value clause quoting anything states words this reading never reads. */
 const QUOTE_MARK = /["'“”‘’«»`]/u;
 /**
@@ -133,38 +137,12 @@ const VALUE_CLAUSE_WORDS: ReadonlySet<string> = new Set([
     'please',
 ]);
 
-/** Each unit a figure may be stated in, by its canonical spelling, and the words that spell it. */
-const UNIT_WORDS: ReadonlyArray<{ unit: string; pattern: RegExp }> = [
-    { unit: '%', pattern: /^\s*(?:%|percent|per\s+cent)(?![\p{L}\p{N}])/iu },
-    { unit: 'dB', pattern: /^\s*(?:d\s?b|decibels?)(?![\p{L}\p{N}])/iu },
-    { unit: 'kHz', pattern: /^\s*(?:khz|kilohertz)(?![\p{L}\p{N}])/iu },
-    { unit: 'Hz', pattern: /^\s*(?:hz|hertz)(?![\p{L}\p{N}])/iu },
-    { unit: 'bpm', pattern: /^\s*bpm(?![\p{L}\p{N}])/iu },
-    { unit: 'ms', pattern: /^\s*(?:ms|milliseconds?)(?![\p{L}\p{N}])/iu },
-    { unit: 'beats', pattern: /^\s*beats?(?![\p{L}\p{N}])/iu },
-    { unit: 'bars', pattern: /^\s*bars?(?![\p{L}\p{N}])/iu },
-    { unit: 'semitones', pattern: /^\s*semitones?(?![\p{L}\p{N}])/iu },
-    { unit: 'cents', pattern: /^\s*cents?(?![\p{L}\p{N}])/iu },
-    { unit: 's', pattern: /^\s*(?:s|secs?|seconds?)(?![\p{L}\p{N}])/iu },
-];
-
-/** The unit word a text opens with, by its canonical spelling, and how much of the text it takes. */
-function readUnitWord(text: string): { unit: string; length: number } | null {
-    for (const { unit, pattern } of UNIT_WORDS) {
-        const match = pattern.exec(text);
-        if (match !== null) {
-            return { unit, length: match[0].length };
-        }
-    }
-    return null;
-}
-
 /** The unit a figure is stated in, and how much of the text after it the unit word takes. */
 function readUnit(raw: string, after: string): { unit: StatedFigure['unit']; length: number } {
     if (raw.endsWith('%')) {
         return { unit: '%', length: 0 };
     }
-    return readUnitWord(after) ?? { unit: null, length: 0 };
+    return refinementValueUnits.unitWord(after) ?? { unit: null, length: 0 };
 }
 
 /**
@@ -310,11 +288,6 @@ function readFigureComparative(clause: RefinementClause): string | null {
     return typeof figure === 'string' ? null : findComparativeWord(figure.words);
 }
 
-/** Whether the words name a unit a figure is read in. */
-function statesUnitWord(words: string): boolean {
-    return words.split(' ').some((word) => readUnitWord(word)?.length === word.length);
-}
-
 /** Whether a clause states anything of a value: a figure, a level direction, a pan side or a unit. */
 function statesValue(clause: RefinementClause): boolean {
     const words = normalizePromptText(clause.masked);
@@ -322,7 +295,7 @@ function statesValue(clause: RefinementClause): boolean {
         findPromptNumbers(clause.masked).length > 0 ||
         readDirection(words) !== null ||
         readSide(words) !== null ||
-        statesUnitWord(words)
+        refinementValueUnits.statesUnitWord(words)
     );
 }
 
@@ -345,15 +318,62 @@ function readPendingDirection(command: ProposalGroundingCommand): -1 | 1 | null 
     return value.value < 0 ? -1 : 1;
 }
 
+/** The words of a clause with every object name masked, its opening words and articles left out. */
+function readActionWords(masked: string): string[] {
+    const tokens = normalizePromptText(masked)
+        .split(' ')
+        .filter((word) => word.length > 0);
+    const verbIndex = tokens.findIndex((word) => !CLAUSE_OPENING_WORDS.has(word));
+    return tokens.slice(verbIndex < 0 ? tokens.length : verbIndex).filter((word) => !ARTICLE_WORDS.has(word));
+}
+
 /**
- * What to ask of a clause that states a direction, side or unit but no figure for a pending command.
- * It restates the command only in the direction the command already takes ("turn Vocals down" against
- * a pending cut); a direction against it, a direction for a value that takes none, a level direction
- * beside a pan, or a unit with no figure ("turn Vocals up two dB") leaves the value open.
+ * The words a pending command's source clause states its action in: the clause's words beside its one
+ * figure, without the unit and connector that figure is read in ("turn Vocals down 3 dB" is "turn
+ * down", "mute Bass" is "mute"). `null` when the clause states its value in a shape no figure reads.
  */
-function findRestatementQuestion(clause: RefinementClause, command: ProposalGroundingCommand): string | null {
+function readOwnActionWords(sourceClause: RefinementClause): string[] | null {
+    const figure = readFigure(sourceClause);
+    if (figure === 'none') {
+        return readActionWords(sourceClause.masked);
+    }
+    if (typeof figure === 'string') {
+        return null;
+    }
+    return readActionWords(figure.words).filter((word) => !CONNECTOR_WORDS.has(word));
+}
+
+function isSameWords(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((word, index) => word === right[index]);
+}
+
+/**
+ * What to ask of a clause that states no figure for a pending command it can mean. Naming a pending
+ * object, it restates that command only in the pending command's own action words, as its source
+ * clause stated them, plus articles: any other word ("unmute", "off", "only", "just", "instead of",
+ * "excluding", a direction against it, a unit) says something about the change this reading cannot
+ * bind, so it is asked. Naming none, it restates the command only in the direction the command already
+ * takes ("turn it down" against a pending cut); a direction against it, a direction for a value that
+ * takes none, a level direction beside a pan, or a unit with no figure leaves the value open.
+ */
+function findRestatementQuestion(input: {
+    clause: RefinementClause;
+    command: ProposalGroundingCommand;
+    namesObjects: boolean;
+    /** The pending command's own action words, or `null` when its source clause states none this reading reads. */
+    ownActionWords: readonly string[] | null;
+}): string | null {
+    const { clause, command } = input;
     if (findPromptNumbers(clause.masked).length > 0) {
         return null;
+    }
+    if (input.namesObjects) {
+        const own = input.ownActionWords;
+        if (own !== null && isSameWords(readActionWords(clause.masked), own)) {
+            return null;
+        }
+        const asProposed = own === null || own.length === 0 ? '' : ` ("${own.join(' ')}")`;
+        return `"${clause.text.trim()}" does not restate the pending change in the words that proposed it${asProposed}. Say what it should be instead, for example "make it 2 dB".`;
     }
     const words = normalizePromptText(clause.masked);
     const level = readDirection(words);
@@ -362,7 +382,7 @@ function findRestatementQuestion(clause: RefinementClause, command: ProposalGrou
     if (command.type === 'setTrackPan') {
         stated = level === null ? side : 'conflicting';
     }
-    if (!statesUnitWord(words) && (stated === null || stated === readPendingDirection(command))) {
+    if (!refinementValueUnits.statesUnitWord(words) && (stated === null || stated === readPendingDirection(command))) {
         return null;
     }
     return `"${clause.text.trim()}" does not say what the value should be. State the new value, for example "make it 2 dB".`;
@@ -374,6 +394,7 @@ export const refinementFigure = {
     statesValue,
     canMean,
     restatementQuestion: findRestatementQuestion,
+    ownActionWords: readOwnActionWords,
 } as const;
 
 function getLevelArguments(actionType: string): { absolute: string | null; relative: string | null } {
@@ -521,26 +542,18 @@ function resolveLevelValue(
     return resolveRelativeLevel(levels.relative, value, figure);
 }
 
-/** The device parameter a pending command sets, when it sets one. */
-function findPendingParameter(command: ProposalGroundingCommand, context: ProjectContext) {
-    const deviceId = command.targets.find((target) => target.argument === 'deviceId')?.id;
-    const paramId = command.targets.find((target) => target.argument === 'paramId')?.id;
-    return context.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)
-        ?.parameters?.find((candidate) => candidate.id === paramId);
-}
-
 function isSignedDomain(command: ProposalGroundingCommand, context: ProjectContext): boolean {
     if (command.type === 'setTrackPan') {
         return true;
     }
-    return (findPendingParameter(command, context)?.minValue ?? 0) < 0 || (command.value?.value ?? 0) < 0;
+    return (
+        (refinementValueUnits.pendingParameter(command, context)?.minValue ?? 0) < 0 || (command.value?.value ?? 0) < 0
+    );
 }
 
 /** A wet/dry mix parameter, by its name or id: "Mix", "Reverb Mix", "Wet", `delayMix`. */
 function isMixParameter(command: ProposalGroundingCommand, context: ProjectContext): boolean {
-    const parameter = findPendingParameter(command, context);
+    const parameter = refinementValueUnits.pendingParameter(command, context);
     if (parameter === undefined) {
         return false;
     }
@@ -593,41 +606,12 @@ function resolvePlainValue(
     return { status: 'bound', argument: value.argument, expected: null, keptPendingDirection: false };
 }
 
-/**
- * The unit a pending value is stated in: dB for a level, a device parameter's own declared unit, a
- * percentage for a pan or a linear level the registry scales, and otherwise the unit a value argument
- * is named for (`bpm`, `semitones`, `beats`); `null` when it takes none.
- */
-function getOwnUnit(command: ProposalGroundingCommand, context: ProjectContext): string | null {
-    const { value } = command;
-    if (value === null) {
-        return null;
-    }
-    if (value.unit === 'dB') {
-        return 'dB';
-    }
-    const parameter = findPendingParameter(command, context);
-    if (parameter !== undefined) {
-        return parameter.unit.trim().length === 0 ? null : (readUnitWord(parameter.unit)?.unit ?? parameter.unit);
-    }
-    const rule = getExecutableAppActionGroundingRules(command.type)?.valueRules.find(
-        (candidate) => candidate.argument === value.argument
-    );
-    if (
-        rule?.kind === 'number-if-present' &&
-        (rule.direction === 'pan' || rule.scale === 'unit-interval' || rule.scale === 'percentage-only')
-    ) {
-        return '%';
-    }
-    return readUnitWord(value.argument)?.unit ?? null;
-}
-
 /** A figure can mean a pending value it states no unit for, or one stated in the value's own unit. */
 function isUnitCompatible(command: ProposalGroundingCommand, figure: StatedFigure, context: ProjectContext): boolean {
     if (command.value === null) {
         return false;
     }
-    return figure.unit === null || figure.unit === getOwnUnit(command, context);
+    return figure.unit === null || figure.unit === refinementValueUnits.ownUnit(command, context);
 }
 
 /**
@@ -643,7 +627,7 @@ function readUnitMismatch(
     const valued = scoped.filter((view) => view.command.value !== null);
     const [only] = valued;
     if (valued.length === 1 && only !== undefined && only.command.value?.unit !== 'dB') {
-        const own = getOwnUnit(only.command, context);
+        const own = refinementValueUnits.ownUnit(only.command, context);
         const stated = `${figure.raw} ${figure.unit ?? ''}`.trim();
         return {
             kind: 'clarify',
@@ -703,15 +687,27 @@ export function bindRefinementFigure(input: {
     removed: readonly PendingCommandView[];
     namesObjects: boolean;
     statesAction: boolean;
+    /** Each pending command's own action words, by its index, or `null` when its source states none. */
+    ownActionWords: (index: number) => readonly string[] | null;
     context: ProjectContext;
 }): FigureRead {
     const { clause, scoped } = input;
     const figure = readFigure(clause);
     if (figure === 'none') {
-        if (input.namesObjects && input.statesAction && scoped.length > 0) {
-            return { kind: 'restated' };
+        if (!input.namesObjects || scoped.length === 0) {
+            return { kind: 'addition' };
         }
-        return { kind: 'addition' };
+        const question = scoped
+            .map((view) =>
+                findRestatementQuestion({
+                    clause,
+                    command: view.command,
+                    namesObjects: true,
+                    ownActionWords: input.ownActionWords(view.index),
+                })
+            )
+            .find((candidate) => candidate !== null);
+        return question === undefined ? { kind: 'restated' } : { kind: 'clarify', question };
     }
     if (figure === 'several') {
         return {
