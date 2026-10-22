@@ -456,7 +456,9 @@ export async function scheduleTrackClips({
         pitchBendRangeSemitones?: number;
         /** The note's projected start, from which its recorded expression curves are placed. */
         startBeat?: number;
-        expression?: NonNullable<MidiStoreState>['notesByClipId'][string][number]['expression'];
+        /** How far into the note `startBeat` is when a clip cut took its head off; the curves count from the note's start. */
+        beatsIntoNote?: number;
+        expression?: NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
         clipGain: number;
     };
     /** The clamped MPE a note carries, in the wire units project truth stores. */
@@ -626,6 +628,7 @@ export async function scheduleTrackClips({
                         : projectNoteExpressionCurves({
                               note,
                               startBeat: note.startBeat,
+                              beatsIntoNote: note.beatsIntoNote,
                               releaseFrame: frameAtSeconds(endTime),
                               frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
                           });
@@ -936,6 +939,7 @@ export async function scheduleTrackClips({
                         pitchBend: note.pitchBend,
                         pitchBendRangeSemitones: note.pitchBendRangeSemitones,
                         startBeat: note.startBeat,
+                        beatsIntoNote: note.beatsIntoNote,
                         expression: note.expression,
                         clipGain: clip.gain,
                     };
