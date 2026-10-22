@@ -97,13 +97,20 @@ const STATIC_SUITE_STEPS = [
     'Desktop shell types',
     'Format',
     'Command argument schemas',
-    'Release inventory',
     'Test collection scope',
     'Barrel mock coverage',
     'Device write boundary census',
     'Release proof',
     'Agent delivery scripts',
     'Health gate infrastructure',
+] as const;
+// Release provenance (tracked sets, licenses, trademark, asset digests) is
+// checked nightly and by the release proof, never on a pull request: a pull
+// request that edits package.json must not need a restamp to pass.
+const NIGHTLY_STATIC_SUITE_STEPS = [
+    ...STATIC_SUITE_STEPS.slice(0, STATIC_SUITE_STEPS.indexOf('Test collection scope')),
+    'Release inventory',
+    ...STATIC_SUITE_STEPS.slice(STATIC_SUITE_STEPS.indexOf('Test collection scope')),
 ] as const;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
@@ -247,7 +254,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
-        static: [...SETUP_PNPM_NODE, ...STATIC_SUITE_STEPS],
+        static: [...SETUP_PNPM_NODE, ...NIGHTLY_STATIC_SUITE_STEPS],
         lint: [...SETUP_PNPM_NODE, 'Lint'],
         boundaries: [...SETUP_PNPM_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,

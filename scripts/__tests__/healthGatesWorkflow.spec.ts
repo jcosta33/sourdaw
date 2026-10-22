@@ -823,7 +823,9 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
         }
     }
     if (jobAt(candidate, 'static').if !== undefined) {
-        throw new Error('release inventory answers to prose changes, so static must stay unconditional');
+        throw new Error(
+            'wasm freshness and the script contracts answer to prose-classified changes, so static must stay unconditional'
+        );
     }
 }
 
@@ -3500,7 +3502,7 @@ describe('health gates workflow contract', () => {
         );
         jobAt(conditionalInventory, 'static').if = CODE_CONDITION;
         expect(() => assertProseSkippingJobs(conditionalInventory)).toThrow(
-            'release inventory answers to prose changes, so static must stay unconditional'
+            'wasm freshness and the script contracts answer to prose-classified changes, so static must stay unconditional'
         );
 
         const alwaysLinting = asRecord(structuredClone(validationWorkflow), 'unconditional lint validationWorkflow');
@@ -3590,7 +3592,6 @@ describe('health gates workflow contract', () => {
         for (const name of [
             'Script types',
             'Format',
-            'Release inventory',
             'Release proof',
             'Agent delivery scripts',
             'Health gate infrastructure',
@@ -4633,6 +4634,38 @@ export -f sudo timeout sleep apt-get
             jobAt(softenedJob[wiring.workflow], suite)['continue-on-error'] = true;
             expect(() => assertJobGraph(softenedJob)).toThrow(`${suite} must not use job-level continue-on-error`);
         }
+    });
+
+    it('keeps release provenance out of pull-request validation and in the nightly train', () => {
+        const validationStatic = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
+        const nightlyStatic = jobSteps('nightly.yml', 'static', jobAt(nightly, 'static'));
+        expect(validationStatic.map((step) => step.name)).not.toContain('Release inventory');
+        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(stringAt(stepNamed(jobAt(nightly, 'static'), 'Release inventory'), 'run')).toBe(
+            'pnpm test:release-inventory'
+        );
+        expect(stepNamed(jobAt(nightly, 'static'), 'Release inventory').if).toBeUndefined();
+        for (const workflowText of [
+            readFileSync(join(repositoryRoot, '.github/workflows/validation.yml'), 'utf8'),
+            readFileSync(join(repositoryRoot, '.github/workflows/pr-checks.yml'), 'utf8'),
+            readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8'),
+        ]) {
+            expect(workflowText).not.toMatch(/^\s+run: .*test:release-inventory/mu);
+        }
+
+        // Mutation: restoring the inventory step to pull-request validation (or
+        // dropping it from the nightly train) drifts from the pinned inventory.
+        const restored = cloneWorkflows('release inventory restored to validation');
+        const staticSteps = arrayAt(jobAt(restored.validation, 'static'), 'steps');
+        staticSteps.splice(staticSteps.length - 1, 0, {
+            name: 'Release inventory',
+            run: 'pnpm test:release-inventory',
+        });
+        expect(() => assertStepInventory(restored)).toThrow('validation.yml job static steps drifted');
+
+        const dropped = cloneWorkflows('release inventory dropped from nightly');
+        removeStepNamed(jobAt(dropped.nightly, 'static'), 'Release inventory');
+        expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
