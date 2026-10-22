@@ -278,6 +278,19 @@ describe('recorded controller take', () => {
             ]);
         });
 
+        it('reads a wrap from any earlier row of the take, however close to the clip start', () => {
+            holdPedal(0, 64, 127);
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 0.25, channel: 0 } });
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 0, beat: 0, channel: 0 } });
+
+            expect(bare(planRecordedControllers({ clip: spanOf(CLIP) }).cc)).toEqual([
+                { controller: 64, value: 127, beat: 0, channel: 0 },
+                { controller: 1, value: 10, beat: 0.25, channel: 0 },
+                { controller: 64, value: 0, beat: 0, channel: 0 },
+            ]);
+        });
+
         it('records nothing extra for pedals at rest', () => {
             holdPedal(0, 64, 0);
             holdPedal(0, 66, 0);
@@ -471,6 +484,16 @@ describe('recorded controller take', () => {
                 { controller: 1, value: 100, beat: 2, channel: 0 },
                 { controller: 64, value: 0, beat: 4, channel: 0 },
             ]);
+        });
+
+        it('lifts a pedal on its own when another pedal of the same channel was released after it', () => {
+            beginTake();
+            press(64, 127, 1);
+            press(66, 127, 1);
+            press(66, 0, 2);
+
+            expect(plannedCc().at(-1)).toEqual({ controller: 64, value: 0, beat: 4, channel: 0 });
+            expect(plannedCc()).toHaveLength(4);
         });
 
         it('closes a loop take whose last pass lifts early after a press late in the clip', () => {
