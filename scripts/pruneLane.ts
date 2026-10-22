@@ -14,9 +14,9 @@
 // Rules, with reasons:
 // - Only registered worktrees under `.agents/worktrees` are prunable; the primary
 //   checkout is refused outright, because its artifacts serve every lane's workflow.
-// - A lane a process is using (its working directory, per the same `lsof` check
-//   removal trusts) is refused: deleting artifacts under a live cargo/pnpm run
-//   breaks that run.
+// - A lane a process is using — its working directory inside the lane, or any open
+//   file under it (a build run from another directory holding lane files) — is
+//   refused: deleting artifacts under a live cargo/pnpm run breaks that run.
 // - A dirty lane is refused. Dirt means uncommitted work — a lane mid-task, not an
 //   idle one — and the fleet's disk problem is idle lanes.
 // - The author lock (`active:sourdaw-author`) does NOT block pruning. Every lane is
@@ -61,8 +61,9 @@ the next cargo/pnpm/desktop build rebuilds what was deleted.
 
 Safety rules:
 - refuses the primary checkout; only registered worktrees under .agents/worktrees
-- refuses a lane a process is using (artifacts may be mid-build) and the lane
-  holding this process's working directory
+- refuses a lane a process is using, by working directory or any open file under
+  it (artifacts may be mid-build), and the lane holding this process's working
+  directory
 - refuses a dirty lane: uncommitted work means mid-task, not idle
 - the author lock (active:sourdaw-author) does not block pruning — it marks
   ownership, not activity, and every lane holds it until removal; a live
@@ -256,7 +257,9 @@ export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
         currentDirectory: () => realpathSync(process.cwd()),
         active: (path) => {
             let pid: number | undefined;
-            for (const line of shell.capture('lsof', ['-a', '-d', 'cwd', '-F', 'pn']).split('\n')) {
+            // Without `-d cwd` lsof lists every open file, the working directory included, so a
+            // build holding lane files open from elsewhere counts as using the lane.
+            for (const line of shell.capture('lsof', ['-nP', '-F', 'pn']).split('\n')) {
                 if (line.startsWith('p')) {
                     pid = Number(line.slice(1));
                     continue;

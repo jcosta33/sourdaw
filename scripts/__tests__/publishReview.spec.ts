@@ -5075,6 +5075,28 @@ describe('fresh reviewer dossier publication', () => {
         };
     }
 
+    /** A tooling change under `scripts/`: small by size, but reviewed with the module-boundaries stance. */
+    function toolingRiskPlan(): ReviewRiskPlan {
+        return riskPlan({
+            riskClasses: ['small-tooling'],
+            requiredStances: ['correctness', 'module-boundaries', 'test-validity'],
+            triggers: ['small-tooling:handwritten-lines<=200:outside-src'],
+        });
+    }
+
+    /** A patch adding `added` lines to one file, the shape `git diff` writes into a bundle's diff.patch. */
+    function patchAdding(path: string, added: number): string {
+        return [
+            `diff --git a/${path} b/${path}`,
+            'index 1111111..2222222 100644',
+            `--- a/${path}`,
+            `+++ b/${path}`,
+            `@@ -1,0 +1,${added} @@`,
+            ...Array.from({ length: added }, (_, index) => `+line ${index}`),
+            '',
+        ].join('\n');
+    }
+
     /** The round's default draws: three distinct stances, one of them strongest. */
     const defaultDraws: ReviewDraw[] = [
         { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
@@ -5477,7 +5499,11 @@ describe('fresh reviewer dossier publication', () => {
         });
 
         it('publishes a docs-only bundle with one draw', () => {
-            const fixture = dossierFixture({ plan: docsOnlyPlan, draws: [defaultDraws[1]] });
+            const fixture = dossierFixture({
+                plan: docsOnlyPlan,
+                draws: [defaultDraws[1]],
+                diff: patchAdding('docs/06-testing.md', 3),
+            });
             try {
                 expect(publishReview(number, fixture.port)).toBe(99);
                 expect(completedStances(parseReviewDossier(fixture.readDossier())).map((draw) => draw.stance)).toEqual([
@@ -5500,13 +5526,13 @@ describe('fresh reviewer dossier publication', () => {
         });
 
         it.each([
-            ['docs-only', 0, 1, docsOnlyPlan],
-            ['small', 1, 2, riskPlan()],
-            ['ordinary', 2, 3, ordinaryPlan],
+            ['docs-only', 0, 1, docsOnlyPlan, patchAdding('docs/06-testing.md', 3)],
+            ['small', 1, 2, riskPlan(), patchAdding('src/modules/Tuner/x.ts', 3)],
+            ['ordinary', 2, 3, ordinaryPlan, patchAdding('src/modules/Tuner/x.ts', 250)],
         ] as const)(
             'refuses a %s round with %i distinct stances, below its floor of %i',
-            (label, count, floor, plan) => {
-                const fixture = dossierFixture({ plan, draws: defaultDraws.slice(0, count) });
+            (label, count, floor, plan, diff) => {
+                const fixture = dossierFixture({ plan, draws: defaultDraws.slice(0, count), diff });
                 try {
                     expect(refusedBeforeSideEffects(fixture)).toBe(
                         `review.json draws cover ${count} distinct stances; the ${label} risk plan requires at least ${floor}`
@@ -5520,7 +5546,8 @@ describe('fresh reviewer dossier publication', () => {
         it('refuses a specialist round with no strongest draw, and publishes it with one', () => {
             expect(governancePlan.riskClasses).toEqual(['native-security']);
             const standard = defaultDraws.map((draw): ReviewDraw => ({ ...draw, tier: 'standard' }));
-            const refused = dossierFixture({ plan: governancePlan, draws: standard });
+            const governanceDiff = patchAdding('scripts/publishReview.ts', 1);
+            const refused = dossierFixture({ plan: governancePlan, draws: standard, diff: governanceDiff });
             try {
                 expect(refusedBeforeSideEffects(refused)).toBe(
                     'review.json draws need at least one strongest-tier draw for the native-security risk plan'
@@ -5528,11 +5555,40 @@ describe('fresh reviewer dossier publication', () => {
             } finally {
                 removeTemporaryDirectory(refused.root);
             }
-            const admitted = dossierFixture({ plan: governancePlan });
+            const admitted = dossierFixture({ plan: governancePlan, diff: governanceDiff });
             try {
                 expect(publishReview(number, admitted.port)).toBe(99);
             } finally {
                 removeTemporaryDirectory(admitted.root);
+            }
+        });
+
+        it('refuses a hand-edited risk plan that lowers the floor below what the bundle diff earns', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                draws: defaultDraws.slice(0, 2),
+                diff: patchAdding('src/modules/Tuner/x.ts', 250),
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    'review risk plan riskClasses small differ from the ordinary the bundle diff.patch earns'
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a risk plan that drops a specialist class the bundle diff earns', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                diff: patchAdding('.github/CODEOWNERS', 1),
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    'review risk plan riskClasses small differ from the native-security the bundle diff.patch earns'
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
             }
         });
 
@@ -6016,6 +6072,29 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('replays a recorded publication without re-deriving its risk plan from the diff', () => {
+        const landedReview: RemotePublishedReview = {
+            id: 5272945685,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            diff: patchAdding('src/modules/Tuner/x.ts', 250),
+            dossier: canonicalPersistedDossier(5272945685),
+            remoteReviews: { 5272945685: landedReview },
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(5272945685);
+            expect(fixture.calls).not.toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('binds the landed review and each posted comment into the dossier on REQUEST_CHANGES', () => {
         const comment = {
             path: 'scripts/target.ts',
@@ -6051,7 +6130,7 @@ describe('fresh reviewer dossier publication', () => {
             body: 'rendered',
         };
         const fixture = dossierFixture({
-            plan: riskPlan(),
+            plan: toolingRiskPlan(),
             document: changesDocument,
             diff,
             reviewComments: [postedComment],
@@ -6088,7 +6167,7 @@ describe('fresh reviewer dossier publication', () => {
             done: 'read the comparison base',
         };
         return dossierFixture({
-            plan: riskPlan(),
+            plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
                 body: 'One blocking finding.',
@@ -6287,7 +6366,7 @@ describe('fresh reviewer dossier publication', () => {
             '',
         ].join('\n');
         const fixture = dossierFixture({
-            plan: riskPlan(),
+            plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
                 body: 'One blocking finding.',
@@ -6328,7 +6407,7 @@ describe('fresh reviewer dossier publication', () => {
             '',
         ].join('\n');
         const fixture = dossierFixture({
-            plan: riskPlan(),
+            plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
                 body: 'One blocking finding.',

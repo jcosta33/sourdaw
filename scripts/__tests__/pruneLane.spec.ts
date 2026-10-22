@@ -272,6 +272,30 @@ describe('prune shell boundary', () => {
     });
 });
 
+describe('prune lane-in-use detection', () => {
+    const portWithLsof = (output: string) =>
+        shellPort({
+            capture: (command: string) => {
+                if (command === 'lsof') {
+                    return output;
+                }
+                throw new Error(`unexpected capture: ${command}`);
+            },
+        });
+
+    it('treats a lane as in use when another process holds a file open under it from elsewhere', () => {
+        const port = portWithLsof(`p999\nn/elsewhere/build\nf12\nn${target}/target/debug/deps/lib.rlib`);
+
+        expect(port.active(target)).toBe(true);
+    });
+
+    it('ignores open files outside the lane and this process own descriptors', () => {
+        const port = portWithLsof(`p999\nn/elsewhere/build\nn${target}-sibling/file\np${process.pid}\nn${target}/x`);
+
+        expect(port.active(target)).toBe(false);
+    });
+});
+
 describe('prunes a real worktree without touching git state', () => {
     it('removes only ignored artifacts and leaves the worktree registered and locked', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-'));
