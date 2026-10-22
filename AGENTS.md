@@ -238,25 +238,6 @@ locally at other lanes' expense.
   lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
-- When the system volume is below the reserve, clear only the items below, then retry. The guard
-  reserves disk on the system volume alone because filling it freezes the machine. This is the
-  owner's explicit exception to the global rule against deleting shared state, limited to these
-  items:
-    - A cache folder under `~/Library/Caches/*.ShipIt` or `~/Library/Caches/*-updater`, only when no
-      running process holds it (`pgrep -f <folder>`, `lsof +D <folder>`); a ShipIt folder with a
-      running ShipIt is an install in progress, so leave it.
-    - Probe copies at `/Volumes/Development/review-probes/sourdaw-<pr>-*` whose PR is merged or
-      closed (`gh pr view <pr> --json state`), never an open PR; and your own scratch temp files.
-    - Build outputs of an idle lane through `pnpm lane:prune <path>`, which refuses a lane in use;
-      never raw `cargo clean` or `rm`.
-    - `pnpm store prune` only while no pnpm install runs, adding `--store-dir` for each home store
-      under `~/Library/pnpm/store/*` (the repository store lives on the external volume).
-    - `brew cleanup`, which removes old downloads and superseded formula versions and may
-      autoremove unneeded formulae.
-
-    Never delete user documents or media, other agents' lanes, worktrees, review bundles,
-    `~/.agents/artifacts`, git objects, or anything you cannot identify as a regenerable cache. Report
-    what you cleared and how much space it freed.
 
 ## Checks
 
