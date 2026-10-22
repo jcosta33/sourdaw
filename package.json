@@ -163,7 +163,7 @@
         "@webgpu/types": "^0.1.74",
         "babel-plugin-react-compiler": "^1.0.0",
         "dependency-cruiser": "^18.4.0",
-        "electron": "44.4.5",
+        "electron": "44.5.0",
         "electron-builder": "^26.15.3",
         "esbuild": "0.28.2",
         "eslint": "^10.11.0",
