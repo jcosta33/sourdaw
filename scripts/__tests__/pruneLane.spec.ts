@@ -277,13 +277,14 @@ describe('prune lane-in-use detection', () => {
     const portWithLsof = (output: string) =>
         shellPort({
             capture: (command: string, args: string[]) => {
+                if (command === 'lsof' && args.includes('cwd')) {
+                    return output
+                        .split('\n')
+                        .filter((line, index, lines) => !line.startsWith('n') || lines[index - 1] === 'fcwd')
+                        .join('\n');
+                }
                 if (command === 'lsof') {
-                    return args.includes('cwd')
-                        ? output
-                              .split('\n')
-                              .filter((line, index, lines) => !line.startsWith('n') || lines[index - 1] === 'fcwd')
-                              .join('\n')
-                        : output;
+                    return output;
                 }
                 throw new Error(`unexpected capture: ${command}`);
             },
