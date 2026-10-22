@@ -1,0 +1,57 @@
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_5a47f2803020e8 65-87,115-133
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_59e31a5c6f3e31::t_5a47f2803020e8 278,612,657
+src/modules/AudioRendering/models/__tests__/deliveryPresets.spec.ts
+  s_59e31a5c6f3e31::t_5e8c3126be8b1d 21-25
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_eef593786d960b 167-187,296,303,307-311,316-318,325,327,336-338,353-355,358-360,387-389,397-404,410,1397,1399
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_59e31a5c6f3e31::t_b96c2c72419086 131,146-151,155-165
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createDeliveryPcmSource.spec.ts
+  s_59e31a5c6f3e31::t_e5a4c8450e6179 23-25,113-117
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/exportFormatParity.spec.ts
+  s_59e31a5c6f3e31::t_ad925e4e2ab46c 311,313
+src/modules/AudioRendering/repositories/audioEncoders/applyExportNormalization.ts
+  s_59e31a5c6f3e31::t_f2f1d84116cee6 41,43,46-48,51-60
+src/modules/AudioRendering/repositories/audioEncoders/createDeliveryPcmSource.ts
+  s_59e31a5c6f3e31::t_8f2abbdca4ea1a 32,34-37,43,45,47-49,65,67,69-71,74-79,96-98,102-107,112,114
+src/modules/AudioRendering/repositories/audioEncoders/readExportPcmBlock.ts
+  s_59e31a5c6f3e31::t_41d62dc40a9e02 20,22,25-39,41
+src/modules/AudioRendering/useCases/__tests__/applyDeliveryPreset.spec.ts
+  s_59e31a5c6f3e31::t_2c21f6bffc36f4 8
+src/modules/AudioRendering/useCases/applyDeliveryPreset.ts
+  s_59e31a5c6f3e31::t_8c3f6c38f9cb84 9-11
+src/modules/AudioRendering/useCases/audioExport/__tests__/prepareDeliveryTarget.spec.ts
+  s_59e31a5c6f3e31::t_f81dab0a580571 24,64-66
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_59e31a5c6f3e31::t_c22ba697902d90 215-216,218,249,391,393,407-409
+src/modules/AudioRendering/useCases/audioExport/prepareDeliveryTarget.ts
+  s_59e31a5c6f3e31::t_9816a2561db563 26-28,32-39,44-45,47-49,51-52,54-59,61-63,76-85,96-112
+src/modules/AudioRendering/useCases/resolveDeliveryTargets.ts
+  s_59e31a5c6f3e31::t_e2e09587b7a716 17-19,22-27,38-43,45,47-48,50,52,54-57,60,62,64,66-67,69-70,72-87,94
+src/utils/audioMetering/__tests__/measureIntegratedLoudness.spec.ts
+  s_59e31a5c6f3e31::t_dd23940ea997f8 146,148,155,157
+src/utils/audioMetering/__tests__/measureTruePeak.spec.ts
+  s_59e31a5c6f3e31::t_d5ebb6620c7d43 203-205
+src/utils/audioMetering/measureIntegratedLoudness.ts
+  s_59e31a5c6f3e31::t_c0c7f605cd0112 33,35,51,53,56,64,67,69,105,107,118-120
+src/utils/audioMetering/measureTruePeak.ts
+  s_59e31a5c6f3e31::t_bfaa2dde708eed 99-101,107-109,111,113-118,122-128,142-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15b6f5982aef922971d714c16310dc14db934088",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
