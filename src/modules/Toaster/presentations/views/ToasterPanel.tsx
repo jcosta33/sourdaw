@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
 import { Cpu, Play, Send, Square } from 'lucide-react';
 
@@ -70,7 +70,7 @@ const SectionCard = ({
     title: string;
     detail?: string;
     className?: string;
-    children: ReactElement | ReactElement[];
+    children: ReactNode;
 }): ReactElement => (
     <DawPluginSectionCard
         className={cn('toaster-window shrink-0', className)}
