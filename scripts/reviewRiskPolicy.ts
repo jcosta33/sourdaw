@@ -4,7 +4,8 @@
  * `planReviewRisk` derives, from a change's changed paths alone, which review stances that change
  * proportionally requires. `parseReviewRiskPlan` re-validates the `risk-plan.json` that
  * `review:prepare` writes, recomputing the stance union from `riskClasses` so a hand-edited plan can
- * neither widen nor narrow its own review.
+ * neither widen nor narrow its own review. `reviewStanceFloor` turns a plan into the minimum number
+ * of distinct stances a fresh reviewer publication must draw (ADR 0054).
  */
 
 import { fail } from './prContract.ts';
@@ -16,6 +17,7 @@ export const REVIEW_RISK_PLAN_FORMAT = 'risk-plan-v1';
 export const REVIEW_SMALL_CHANGE_LINE_BUDGET = 200;
 
 const REVIEW_RISK_CLASSES = [
+    'docs-only',
     'small',
     'ordinary',
     'test-only',
@@ -54,6 +56,7 @@ export type ReviewRiskPlan = {
  * contributes a stance outside its own entry, which is the omission rule AC-011 tests.
  */
 const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
+    'docs-only': ['correctness'],
     small: ['correctness', 'test-validity'],
     'test-only': ['test-validity'],
     ordinary: ['correctness', 'code-craft', 'module-boundaries', 'test-validity'],
@@ -117,7 +120,6 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewDossierChain.ts',
     'scripts/reviewDossierPublication.ts',
     'scripts/reviewDossierReassessed.ts',
-    'scripts/reviewDossierSemanticAssessment.ts',
     'scripts/reviewDossierViews.ts',
     'scripts/reviewPublicationBinding.ts',
     'scripts/reviewPublicationLegacyIncidents.ts',
@@ -271,12 +273,18 @@ function decideFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
     return [sizeFinding(handwritten)];
 }
 
-function testOnlyFindings(): RiskFinding[] {
-    return [{ riskClass: 'test-only', triggers: ['test-only:all-paths-are-tests'] }];
+function allSidesInGroup(paths: readonly ReviewChangedPath[], group: ReviewChangedPath['group']): boolean {
+    return paths.length > 0 && paths.every((entry) => sidesOf(entry).every((side) => side.group === group));
 }
 
-function isTestOnly(paths: readonly ReviewChangedPath[]): boolean {
-    return paths.length > 0 && paths.every((entry) => sidesOf(entry).every((side) => side.group === 'tests'));
+function classifyFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
+    if (allSidesInGroup(paths, 'tests')) {
+        return [{ riskClass: 'test-only', triggers: ['test-only:all-paths-are-tests'] }];
+    }
+    if (allSidesInGroup(paths, 'docs')) {
+        return [{ riskClass: 'docs-only', triggers: ['docs-only:all-paths-are-docs'] }];
+    }
+    return decideFindings(paths);
 }
 
 export function planReviewRisk(input: {
@@ -285,7 +293,7 @@ export function planReviewRisk(input: {
     baseSha: string;
     paths: readonly ReviewChangedPath[];
 }): ReviewRiskPlan {
-    const findings = isTestOnly(input.paths) ? testOnlyFindings() : decideFindings(input.paths);
+    const findings = classifyFindings(input.paths);
     const riskClasses = findings.map((finding) => finding.riskClass).sort();
     return {
         format: REVIEW_RISK_PLAN_FORMAT,
@@ -297,6 +305,31 @@ export function planReviewRisk(input: {
         triggers: [...new Set(findings.flatMap((finding) => finding.triggers))].sort(),
     };
 }
+
+/**
+ * Classes whose own review is narrow enough for a fixed floor below three. Every other plan needs
+ * three distinct stances, or every stance its classes earn when they earn fewer.
+ */
+const FIXED_STANCE_FLOORS: Partial<Record<ReviewRiskClass, number>> = {
+    'docs-only': 1,
+    'test-only': 1,
+    small: 2,
+};
+const DEFAULT_STANCE_FLOOR = 3;
+
+/** The minimum number of distinct stances a fresh reviewer publication on this plan must draw. */
+export function reviewStanceFloor(plan: Pick<ReviewRiskPlan, 'riskClasses'>): number {
+    const [only] = plan.riskClasses;
+    const fixed = plan.riskClasses.length === 1 && only !== undefined ? FIXED_STANCE_FLOORS[only] : undefined;
+    return fixed ?? Math.min(DEFAULT_STANCE_FLOOR, earnedStances(plan.riskClasses).length);
+}
+
+/** Specialist classes whose review must include at least one strongest-tier draw. */
+export const STRONGEST_DRAW_CLASSES: ReadonlySet<ReviewRiskClass> = new Set([
+    'native-security',
+    'realtime-audio',
+    'undo',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

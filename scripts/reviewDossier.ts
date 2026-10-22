@@ -95,10 +95,9 @@ export type ReviewDossierEvent =
           unresolvedThreads: number;
           intent: 'deliver';
       }
-    // The escalation reassessment the reviewer publication consumed (#4584): the orchestrator's
-    // `reassessment.json` recorded the observed reviewer request-changes rounds before the next
-    // fresh publication was allowed past the threshold. Records persisted before this kind
-    // existed carry none.
+    // The escalation reassessment a reviewer publication consumed under the retired threshold gate
+    // (#4584, retired by ADR 0054). Fresh publications no longer write it; records carrying it
+    // keep verifying.
     | ReviewReassessedDossierEvent;
 
 export type ReviewDossierEventRecord = ReviewDossierEvent & {
@@ -119,31 +118,13 @@ export type ReviewDossier = {
     limitations: string[];
     recommendation: 'approve' | 'request-changes';
     /**
-     * Required of the caller input and of a canonical record supplied for a fresh publication,
-     * enforced at that boundary; the read path tolerates its absence so a record persisted before the
-     * field existed keeps verifying rather than being refused for a field it never carried (the same
-     * historical tolerance `exhaustion` gets). Present, its value must be one of the four tokens.
+     * Historical fields from the retired semantic-review publication duties (ADR 0050, retired by
+     * ADR 0054). Records that carry them keep verifying, digest-covered, byte-identically; fresh
+     * publications no longer write them. Each records an outcome or acknowledgement, never a
+     * verdict, an approval, or merge authority.
      */
     assessmentImpact?: AssessmentImpact;
-    /**
-     * The acknowledgement the orchestrator records when the round's `assessmentImpact` is `none` and
-     * the delivered assessment withheld or left anything unresolved: a single-line reason why it had
-     * no effect. Optional on the read path, exactly as `assessmentImpact` is, so a record persisted
-     * before the field existed keeps verifying; required only by the publication gate when the
-     * bundle's assessment record shows a delivered assessment with anything withheld or unresolved.
-     * It records an acknowledgement, never agreement, and confers no verdict, approval or merge
-     * authority.
-     */
     assessmentIgnoredReason?: string;
-    /**
-     * The round's typed outcome for each fired semantic signal, one entry per signal, or undefined on
-     * a record persisted before the field existed (the same historical tolerance `assessmentImpact`
-     * gets). Each entry names the signal's rule and path and carries one of the five dispositions; the
-     * optional `artifact` links what supports the outcome. It records what became of a signal the
-     * assessment fired — never agreement with it — and no entry is a verdict, an approval, or merge
-     * authority. Whether an entry names a signal the delivered assessment actually fired is the
-     * publication gate's check; this field's own shape is all the record validates.
-     */
     signalDispositions?: ReviewDossierSignalDisposition[];
     headDigest: string;
     dossierDigest: string;
@@ -161,6 +142,7 @@ export type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDige
  * need no membership map.
  */
 const RISK_CLASS_MEMBERSHIP: Record<ReviewRiskClass, true> = {
+    'docs-only': true,
     small: true,
     ordinary: true,
     'test-only': true,
@@ -644,13 +626,16 @@ function dispatchedStances(events: readonly ReviewDossierEvent[]): ReviewDossier
 export function assembleReviewDossier(input: {
     plan: ReviewRiskPlan;
     events: readonly ReviewDossierEvent[];
-    discarded: unknown;
+    discarded?: unknown;
     evidence: readonly { observable: string; verification: string; observed: string }[];
     limitations: readonly string[];
     recommendation: 'approve' | 'request-changes';
-    assessmentImpact: AssessmentImpact;
+    /**
+     * Historical fields: `review:publish` no longer writes them (ADR 0054), but the format keeps
+     * reading and writing them so records that carry them verify and reserialize unchanged.
+     */
+    assessmentImpact?: AssessmentImpact;
     assessmentIgnoredReason?: string;
-    /** One typed outcome per fired signal; absent when the round records none. */
     signalDispositions?: readonly ReviewDossierSignalDisposition[];
 }): ReviewDossier {
     const callerEvents = input.events.map((event, index) => readEventRecord(event, `event ${index}`, false).event);
@@ -660,7 +645,7 @@ export function assembleReviewDossier(input: {
         baseSha: readNonBlankString('baseSha', input.plan.baseSha),
         riskClasses: readRiskClasses(input.plan.riskClasses),
         requiredStances: dispatchedStances(callerEvents),
-        events: [...callerEvents, ...readArray('discarded', input.discarded).map(readDiscardedEntry)],
+        events: [...callerEvents, ...readArray('discarded', input.discarded ?? []).map(readDiscardedEntry)],
         evidence: readEvidence(input.evidence),
         limitations: readLimitations(input.limitations),
         recommendation: readLiteral(
@@ -669,8 +654,10 @@ export function assembleReviewDossier(input: {
             isRecommendation,
             'approve or request-changes'
         ),
-        assessmentImpact: readAssessmentImpact(input.assessmentImpact),
     };
+    if (input.assessmentImpact !== undefined) {
+        payload.assessmentImpact = readAssessmentImpact(input.assessmentImpact);
+    }
     if (input.assessmentIgnoredReason !== undefined) {
         payload.assessmentIgnoredReason = readAssessmentIgnoredReason(input.assessmentIgnoredReason);
     }

@@ -56,12 +56,12 @@ import {
     type ReviewDocument,
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
-import { readDossierStanceDraws } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import {
     assertAcceptanceAuthorization,
     assertAcceptanceDossierAccounting,
     assertReviewRoundPublicationAdmitted,
+    bundleReplaysRecordedPublication,
     prepareReviewDossierPublication,
     recordAcceptanceAuthorization,
     recordedPublicationReplay,
@@ -73,8 +73,6 @@ import {
     type PublishedReviewComment,
     type RemotePublishedReview,
 } from './reviewPublicationRemoteInspection.ts';
-
-import type { ReviewReassessment } from './reviewRoundEscalation.ts';
 
 export type { PublishedReviewComment } from './reviewPublicationRemoteInspection.ts';
 
@@ -129,7 +127,7 @@ export type PublishReviewPort = {
     remoteReview?: (number: number, reviewId: number) => RemotePublishedReview | undefined;
     /**
      * The pull request's whole public review history and review comments, needed to count reviewer
-     * request-changes rounds for the escalation gate (#4584).
+     * request-changes rounds for the round freeze (ADR 0054).
      */
     publicReviews?: (number: number) => PublicReview[];
     publicReviewComments?: (number: number) => PublicReviewComment[];
@@ -213,8 +211,6 @@ export type PreparedReviewPublication = {
     document: ReviewDocument;
     payloadDigest: string;
     approvalContext?: ReviewBundleContext;
-    /** The escalation reassessment the dossier gate consumed, when the round threshold required one. */
-    reviewReassessment?: ReviewReassessment;
 };
 
 function prepareReviewPublication(
@@ -235,30 +231,24 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
-    // The acceptance identity never reads the dossier, and its diversity check is exempt anyway.
-    const stanceDraws = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? undefined : readDossierStanceDraws(port, bundle);
-    assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
-    // The round escalation decision precedes approval context and comment preflight so a missing
-    // reassessment is named even when the manifest cannot be read (#4754).
-    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+    // Reviewer diversity and the round freeze bound fresh posts; a recorded replay posts nothing. The
+    // freeze precedes approval context and comment preflight so a frozen pull request is named even
+    // when the manifest cannot be read (#4754).
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID && !bundleReplaysRecordedPublication(bundle, port)) {
+        assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
         assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
     }
     // The approval context and the comment preflight run before the dossier publication, and the
-    // order matters: a refusal here must not have written the canonical dossier, because a comment
-    // whose position is wrong is repaired by moving it, and a dossier that already pinned the old
-    // position refuses the repair. The escalation gate runs above and again inside the dossier
-    // publication.
+    // order matters: a refusal here must not have written the canonical dossier.
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
-    const reviewReassessment =
-        actorNodeId !== ORCHESTRATOR_USER_NODE_ID
-            ? prepareReviewDossierPublication({ number, head, bundle, document, port })
-            : undefined;
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+        prepareReviewDossierPublication({ number, head, bundle, document, port });
+    }
     return {
         head,
         document,
         approvalContext,
-        reviewReassessment,
         payloadDigest: reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: head,
@@ -339,7 +329,7 @@ function publishPreparedReviewForActor(
         fail('orchestrator acceptance response does not match the User actor and prepared head');
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        recordPublicationBindings(number, prepared.head, document, posted.id, port, prepared.reviewReassessment);
+        recordPublicationBindings(number, prepared.head, document, posted.id, port);
     } else {
         recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
     }

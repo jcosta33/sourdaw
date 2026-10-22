@@ -42,10 +42,8 @@ habit or agent confidence.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
-author's, recording the fallback in the review document: the published body names the reviewer
-model, and a draw on an authoring model records its own exhaustion; a document-level whole-round
-`modelExhaustion` covers every draw; per-draw exhaustion excuses the document-level field in a
-mixed round.
+author's, recording the fallback in the review document: `modelExhaustion` names what made every
+other model unavailable, and the published body names each reviewer model that matches an author.
 
 Design the whole requested outcome before dispatch, then give each agent one independently safe
 behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
@@ -77,55 +75,28 @@ prose, the author's transcript, or orchestrator reasoning. Prior findings anchor
 Reviewers never confer; findings meet only in the orchestrator.
 
 Derive the stances from the task, never from a menu or habit: enumerate the material risks this
-diff creates, then assign one independent stance to each, named for the specific risk it attacks.
-A stance any diff would admit — "correctness" above all — is the baseline every reviewer already
-holds, not a stance. Independence is distinct failure modes, never distinct files: stances pinned
-to different touched paths that share one probe library are one stance. Three is a minimum, not a
-target: fewer than three named risks means the enumeration was too narrow. Record the dispatched
-set in the bundle's `stances.json` before dispatch, one line per stance naming the failure mode
-that admits it — the input or state that breaks — never the path the diff touches; as each draw
-reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
-The caller writes it, no script generates it, and the orchestrator confirms its presence and
-substance before publication. For a fresh plan-carrying reviewer POST, `stances.json` uses
-`format: "stances-admission-v1"` and binds `pr`, `headSha`, and `baseSha` to the risk plan. Its
-`stances` array has at least three unique names; each `{ stance, admittedBy, draws }` row holds
-one draw per completed `(stance, reviewerModel)` pair. Each draw records `reviewerModel`, optional
-`exhaustion` matching the dossier draw, and a `baselineProbe` with bounded, single-line,
-evidence-safe `spec`, `mutation`, `observed`, and `result`. Only `result: "mutation-detected"`
-admits publication; `still-green` and `not-run` record failures but do not discharge the probe.
-Specialist plans (`native-security`, `realtime-audio`, `undo`) also require one completed
-`strongest` dossier draw, on any recorded stance. This checks caller evidence structurally;
-the orchestrator still verifies that the probe ran and the stances address independent risks.
-Published exact replay and recovered binding retain their historical caller-record rules.
-`pnpm stances:check <bundle>` tests each admission line with a typed
-judgment and fails lines that name touched paths instead of failure modes. The checker pins a
-versioned model rather than a moving alias — environment and provider defaults cannot silently select
-another, its run names the model that answered, validated against that pin, in its summary line, and
-changing the pin is a deliberate,
-reviewable change. Run it before dispatch
-when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
-its inability to run — a missing key, an unavailable or degraded service, or a malformed response —
-is a disclosed limitation, never a stop, and the orchestrator's substance duty stands either way.
+diff creates, then assign one independent stance to each, named for the failure mode that admits
+it — the input or state that breaks, never the path the diff touches. A stance any diff would admit
+— "correctness" above all — is the baseline every reviewer already holds, not a stance.
+Independence is distinct failure modes, never distinct files: stances pinned to different touched
+paths that share one probe library are one stance. Dispatch one stance per independent risk, never
+fewer than the risk plan's floor below.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,
 data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
-diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes. A
-`native-security`, `realtime-audio`, or `undo` class, and any change inside a trusted GitHub-write
-closure, requires at least one strongest-tier draw, and the orchestrator may raise any draw to the
-strongest tier when the material risk justifies it.
-The orchestrator may combine two independent strongest-tier draws from different models on one
-stance to expose different findings; this extends model diversity, not the stance count, and each
-draw records its own completed entry and baseline probe.
+diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes. Two
+independent strongest-tier draws from different models may share one stance to expose different
+findings; that extends model diversity, not the stance count.
 
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
 each existing check to fail and whether it observes what its name claims. A pass alone is not
 evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
-mutation, then run the named spec; remaining green fails the round. Each draw reports its
-baseline probe — the spec it ran, the mutation it applied, the observed result — and its
-exhaustion when it fell back to an authoring model, and the orchestrator records these in
-`stances.json` beside the stances. The orchestrator validates or the
-author repairs in the change's existing lane; reviewers have no writable tree. Reviewers create a probe worktree and report a probe they cannot run as the probe-isolation rules in `.agents/skills/review-stances/README.md` prescribe.
+mutation, then run the named spec; remaining green fails the round. The probe is a reviewer duty
+the orchestrator checks in the report, not a publication gate. Reviewers have no writable tree:
+they create a probe worktree and report a probe they cannot run as the probe-isolation rules in
+`.agents/skills/review-stances/README.md` prescribe, and the orchestrator validates or the author
+repairs in the change's existing lane.
 
 Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
 whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without
@@ -142,144 +113,69 @@ Scale evidence to the claim. Check findings against the live head and surroundin
 diff alone. Merge-blocking findings require the reproduction's input, state, or mutation and observed
 result. Baseline-probe findings name the mutation that should have failed the check but did not.
 
-The orchestrator validates every finding against live code before acting. Discard incorrect,
-out-of-scope, or personal-style findings; never forward them. Write each discard and its one-line
-reason in the bundle's `discarded.json` beside `review.json`; the caller writes both, no script
-generates them. This records independent judgement. After the posting step below, dispatch survivors
-as precise repairs in the orchestrator's own words to avoid anchoring the author. Authors never
-judge findings against their own work.
+Blind reviewers report only to the orchestrator, which validates every finding against live code
+before acting. Discard incorrect, out-of-scope, or personal-style findings; never forward or post
+them. After the posting step below, dispatch survivors as precise repairs in the orchestrator's own
+words to avoid anchoring the author. Authors never judge findings against their own work. Validate
+before posting: `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and only a head
+addressing the finding can resolve it, so a wrongly posted finding blocks delivery without a repair
+to make.
 
-Blind reviewers report only to the orchestrator. Post only validated findings through
-`review:publish`, composed in `review.json`; never post discards. Validate before posting:
-`deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and only a head addressing the finding
-can resolve it. A wrongly posted finding therefore blocks delivery without a repair to make.
-
-`review:prepare` records the change's risk classes — `small`, `ordinary`, `test-only`,
+`review:prepare` records the change's risk classes — `docs-only`, `small`, `ordinary`, `test-only`,
 `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
 derived from the same path classification as the size report beside it so the two cannot disagree.
 The classification encodes semantic risk beyond size: playback-timing, project-persistence, and
 every trusted GitHub-write closure path earn their specialist class however small the diff
-(#3377). The plan is an input to the stance enumeration, never a stance requirement: its classes
-and their standing stance mapping name risk surfaces the enumeration must weigh, and the derived
-stances remain the orchestrator's judgement recorded in `stances.json`.
+(#3377). The plan's classes name risk surfaces the stance enumeration must weigh; they never name
+the stances.
+
+`review.json` is the round's only caller document
+([ADR 0054](./.agents/decisions/0054-proportional-machine-checked-review-floor.md)). Beside the
+event, body, comments, `reviewerModel`, and approval evidence it carries `draws`, one
+`{ stance, reviewerModel, tier, outcome }` per completed draw (`tier` is `economy`, `standard`, or
+`strongest`; `outcome` is `clean` or `findings`), and optional `discarded`, one `{ finding, reason }`
+per discard, never posted. `review:publish` itself derives the head-bound record `deliver` reads
+from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publication is refused
+before any remote write unless its draws cover the plan's floor of distinct stances — one for
+`docs-only` and `test-only`, two for `small`, otherwise three, or every stance the plan's classes
+earn when they earn fewer — and unless a `realtime-audio`, `native-security`, or `undo` plan carries
+a `strongest` draw. The floor is the minimum the record can prove; whether the stances attack
+independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
+files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are
+ignored with one log line. Re-publishing a head whose record already binds its
+publication replays that record unchanged, and records persisted under earlier contracts keep
+replaying and verifying.
 
 `pnpm review:semantic scan --pr <pr>` may be run before dispatch to surface risks the enumeration
 should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <path>` after independent
 findings are collected and before `review.json` is written. Both are advisory and optional: their
 output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
 a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
-deterministic check, or publish anything. One duty survives the advisory status: a fired signal the
-bundle's `semantic-ci.json` records (a scan signal whose disposition is `recommend_investigation`)
-must be disposed of by name — its token `semantic-signal <ruleId> <path>` in a stance's `admittedBy`,
-a discarded finding, a dossier limitation, or a dossier `signalDispositions` entry naming that
-signal — before `review:publish` will make a fresh publication;
-the duty forces the round to name what fired, never to act on it. Their sidecars live outside the review bundle, in gitignored
-`.agents/semantic-review/`, so a blind reviewer is never handed a proposed verdict. They never
-substitute for the reproduction and baseline-probe duties below, and no semantic result may approve,
-request changes, resolve a thread, or merge
-([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md),
-[ADR 0050](./.agents/decisions/0050-fired-semantic-signals-carry-a-disposal-duty.md)).
+deterministic check, or publish anything. `review:publish` imposes no duty on their output. Their
+sidecars live outside the review bundle, in gitignored `.agents/semantic-review/`, so a blind reviewer
+is never handed a proposed verdict. They never substitute for the reproduction and baseline-probe
+duties above, and no semantic result may approve, request changes, resolve a thread, or merge
+([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 
 The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
 same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
 still gets it. Read it the same way: green means the assessment was delivered, never that the change is
-clean, and a red check means no assessment was delivered at all — a coverage gap to disclose in the
-review document, not a finding to weigh and not a blocker. A stacked lane whose base is another lane
-branch is not assessed: it would run that branch's revision of the command rather than the default
-branch's, which the command's own trusted-execution assertion refuses.
+clean, and a red check means no assessment was delivered at all — a coverage gap, not a finding to
+weigh and not a blocker. A stacked lane whose base is another lane branch is not assessed: it would
+run that branch's revision of the command rather than the default branch's, which the command's own
+trusted-execution assertion refuses.
 
-Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one completed
-entry per dispatched draw, each recording its stance, reviewer model, tier, and outcome; one stance
-may carry several draws with distinct models, and a draw that fell back to an authoring model
-records its exhaustion. Alongside the draw entries go the bounded evidence claims, the
-limitations, and the required `assessmentImpact`: how the round's advisory semantic assessment
-influenced it — `finding-led` only when the round carries an accepted finding the assessment
-surfaced, `stance-changed` only when it changed the dispatched stance enumeration, `limitation-only`
-when it produced a disclosed limitation without changing the round, and `none` when it had no
-effect. The orchestrator chooses it honestly for the round; it records influence, never agreement,
-and is not a verdict, an approval, or merge authority. `limitation-only` is refused when the round
-discloses no limitation, and `finding-led` when it accepts no finding; `none` and `stance-changed`
-are the orchestrator's attestation, which the record cannot decide for or against. Accepted findings
-are not declared there; they are the review document's own inline comments. `review:publish` refuses
-a fresh reviewer publication before any remote write when the dossier is missing, malformed, or
-rebound from the head the plan binds; when the caller input omits `assessmentImpact` or carries a
-value outside the four tokens; when its recorded impact contradicts the round's own limitations or
-accepted findings; when a persisted record's claimed publication does not stand live and exact on
-this head, reported as that failure and never as a missing field; when the bundle carries
-`stances.json`, every
-dossier entry must match a recorded stance and every recorded stance an entry (draws on one stance
-share its single recorded entry); when its accepted findings do not match the document's comments
-one-to-one; or when its recommendation disagrees with the document's event. It then persists the
-canonical append-only record bound to the head, with `assessmentImpact` beside `recommendation` and
-covered by `dossierDigest`; re-publishing the same head replays that record unchanged rather than
-minting a second one. The caller input always carries `assessmentImpact`. The bundle's own persisted
-record for the head may omit it — that is the shape every pre-field dossier on disk has — and a
-re-published bundle keeps working; a persisted record that claims a publication is not trusted on
-that claim alone, because its self-asserted `review-published` event is the caller's, so the named
-review must stand live and exact or the publication is refused for that failure.
+A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
+`scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
+refuses every fresh reviewer publication on it, approve or request changes, and no caller document
+lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
+`pr:supersede` once the replacement merges. `review:repair` and `review:confirm` stay open so
+unresolved threads remain resolvable; preparation and repair log
+`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>`.
 
-A round may answer a fired signal with a typed outcome instead of the literal citation token: the
-optional `signalDispositions` list carries one entry per fired signal, each naming the signal's
-`ruleId` and `path`, a `disposition` of `confirmed-and-fixed`, `confirmed-existing`, `false-positive`,
-`insufficient-evidence`, or `not-investigated`, and an optional bounded single-line `artifact`
-reference — an issue number or URL, a reviewer finding, a repair commit, or a regression test path —
-carrying the same evidence-value safety rules as every other recorded value. A typed entry disposes
-of the signal it names whatever disposition it records, and the literal token keeps working, so a
-round is never forced to agree with the model or to write prose to dismiss a false alarm. Entries match
-a fired signal by its exact `ruleId` and `path` pair, never by their space-joined citation text, and a
-free-text citation disposes wherever it names that signal — prose after it, punctuation included,
-never blocks it — unless another fired signal's longer citation contains that occurrence, wherever
-inside that longer citation the token sits, where the token names that longer signal instead. Validation
-is structural only: an unknown disposition token, an entry naming a signal the delivered assessment
-did not fire, two entries for one signal, or any entry when the record delivered nothing
-(`no-assessment`) is refused, and no disposition requires a posted comment or an issue — a
-`confirmed-*` outcome records what the round found, never agreement, and confers no verdict,
-approval, or merge authority. The list is folded into the canonical record beside
-`assessmentImpact` and covered by `dossierDigest`, so a record persisted before it existed keeps
-verifying byte-identically.
-
-When the bundle's `semantic-ci.json` records a delivered assessment that withheld any scope entry or
-left any question unresolved, `review:publish` refuses a fresh publication unless the dossier either
-cites the assessment or declares it ignored. Citing it is a `limitation` naming the assessment's
-artifact identity or one of the paths it withheld — the round's own text, never a non-`none` impact
-token by itself. Declaring it ignored is `assessmentImpact: none` with an
-`assessmentIgnoredReason`: one bounded, single-line, evidence-safe reason the orchestrator records for
-why the assessment had no effect. A `none` with no reason is refused naming `assessmentIgnoredReason`
-and the withheld figure; a reason beside a non-`none` token is refused naming `assessmentIgnoredReason`
-and the token it contradicts. The reason is folded into the canonical record beside `assessmentImpact`
-and covered by `dossierDigest`, so the acknowledgement is bound to what was accepted; records persisted
-before it existed keep verifying byte-identically. It records an acknowledgement, never agreement, and
-confers no verdict, approval or merge authority — ADR 0047 still governs. When the record instead
-shows `no-assessment` — CI ran and delivered nothing for the head — `review:publish` refuses
-`assessmentImpact: none` outright, with or without a reason, and requires a limitation citing the
-record's own reason as the token `semantic-ci <reason>` (for example `semantic-ci red-check`),
-regardless of impact. A bundle with no `semantic-ci.json` file at all — a historical bundle prepared
-before `review:prepare` wrote the record — still carries no such requirement; a bundle whose manifest
-records generating that file but carries no such file on disk is refused instead of read as
-undelivered.
-
-A pull request that has taken the reviewer change-request escalation threshold — the constant
-`REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer
-`REQUEST_CHANGES` rounds refuses the next fresh reviewer publication until the orchestrator records an
-explicit reassessment for that head in the bundle's `reassessment.json` beside the other caller
-documents, at every count from that threshold onward. The observed count is reconstructed from
-the pull request's public review history and
-flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; the same log names the
-reassessment duty at every escalated count. The consumed reassessment enters the durable record as one
-addition-only `review-reassessed` dossier event. `review:repair` is never blocked by this: unresolved
-threads must stay resolvable, so it logs the flag and never refuses on it.
-
-A pull request that reaches `REVIEW_ROUND_WARNING_THRESHOLD` — five reviewer `REQUEST_CHANGES`
-rounds — logs `review-round-warning:<pr>:request-changes=<n>:threshold=<t>` at preparation,
-publication, and repair. The warning asks the agent to make sure it knows what it is doing and
-to review the churn and remaining findings. It does not block another review when a valid
-reassessment and all other publication requirements are met. `review:repair` and `review:confirm`
-remain open so unresolved threads can be resolved
-([ADR 0053](./.agents/decisions/0053-freeze-pull-requests-at-five-review-rounds.md)).
-
-Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
-bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a
-bearer token, or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
+Every recorded value — draws, discards, and approval claims — is single-line, trimmed and bounded,
+and refused when it carries a credential-shaped value, a private-key header, a JWT, a bearer token,
+or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
 
 A lane that adds credential-shaped or armored-key fixtures composes them at runtime from their parts;
 the pull-request diff secret scan is a required gate and matches those literals in source.
@@ -294,10 +190,9 @@ threads whose recorded repair validates through `review:confirm`, and a refusal 
 `review:resolve` keeps its exact `Done` path for legacy roots. Never repair first and approve in
 one motion: the public record must retain the reviewer identity's findings against the original
 head and the author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its
-exclusive script calls, `review.json`, and `discarded.json`. One blind reviewer-App APPROVE on the
-current head is the delivery gate: the reviewer App records the independent review, its APPROVE
-publication records the delivery authorization, and the author then merges through `deliver` as the
-immutable author App.
+exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
+delivery gate: the reviewer App records the independent review, its APPROVE publication records the
+delivery authorization, and the author then merges through `deliver` as the immutable author App.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under

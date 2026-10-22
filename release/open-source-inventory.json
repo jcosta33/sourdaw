@@ -2178,11 +2178,6 @@
         },
         {
             "surface": "project-source",
-            "file": "scripts/checkStancesRecord.ts",
-            "value": "https://api.typesafe.ai/v1/systemone"
-        },
-        {
-            "surface": "project-source",
             "file": "scripts/dependencyLicenseReport.ts",
             "value": "https://crates.io/api/v1/crates/${slot}/${slot}/download",
             "templateSha256": "76033b3c969dd78f5a5033be69b396efae1e6de3ab36abb07552ce9c721667ae"

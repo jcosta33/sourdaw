@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { GOVERNANCE_TRANSITION_PATHS, parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
+import {
+    GOVERNANCE_TRANSITION_PATHS,
+    parseReviewRiskPlan,
+    planReviewRisk,
+    reviewStanceFloor,
+} from '../reviewRiskPolicy.ts';
 import {
     BOOTSTRAP_PATH,
     commandEntries,
@@ -20,6 +25,7 @@ import type { TrustedGithubWriteCommand } from '../trustedGithubWriteBootstrap.t
  * or an unearned addition reddens this spec.
  */
 const EARNED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
+    'docs-only': ['correctness'],
     small: ['correctness', 'test-validity'],
     'test-only': ['test-validity'],
     ordinary: ['correctness', 'code-craft', 'module-boundaries', 'test-validity'],
@@ -468,12 +474,28 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toEqual(['test-only:all-paths-are-tests']);
     });
 
-    it('should call a docs-only change small, since docs never trigger a specialist class', () => {
-        const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3)]);
+    it('should call a change that touches only docs docs-only, earning one stance', () => {
+        const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3), changed('AGENTS.md', 'docs', 4, 9)]);
+
+        expect(result.riskClasses).toEqual(['docs-only']);
+        expect(result.requiredStances).toEqual(['correctness']);
+        expect(result.triggers).toEqual(['docs-only:all-paths-are-docs']);
+    });
+
+    it.each([
+        ['a test', changed('scripts/__tests__/reviewDiffSummary.spec.ts', 'tests', 1, 0)],
+        ['a handwritten path', handwritten('scripts/reviewDiffSummary.ts', 1, 0)],
+        ['a generated path', changed('pnpm-lock.yaml', 'generated', 1, 0)],
+    ])('should not call docs plus %s docs-only', (_label, other) => {
+        const result = reviewPlan([changed('docs/06-testing.md', 'docs', 12, 3), other]);
+
+        expect(result.riskClasses).not.toContain('docs-only');
+    });
+
+    it('should not call a rename out of handwritten code into docs docs-only', () => {
+        const result = reviewPlan([renamed('docs/notes.md', 'scripts/notes.ts', 1, 1, 'docs', 'handwritten')]);
 
         expect(result.riskClasses).toEqual(['small']);
-        expect(result.requiredStances).toEqual(['correctness', 'test-validity']);
-        expect(result.triggers).toEqual(['small:handwritten-lines<=200']);
     });
 
     it('should call an empty path list small', () => {
@@ -506,6 +528,26 @@ describe('planReviewRisk', () => {
         expect(overBudget.riskClasses).toEqual(['ordinary']);
         expect(overBudget.requiredStances).toEqual(earned(['ordinary']));
         expect(overBudget.requiredStances).toContain('code-craft');
+    });
+});
+
+describe('reviewStanceFloor', () => {
+    it.each([
+        [['docs-only'], 1],
+        [['test-only'], 1],
+        [['small'], 2],
+        [['ordinary'], 3],
+        [['cross-domain'], 3],
+        [['realtime-audio'], 3],
+        [['native-security', 'realtime-audio'], 3],
+        [['native-security', 'undo'], 3],
+    ] as const)('should require %j plans to draw %i distinct stances', (riskClasses, floor) => {
+        expect(reviewStanceFloor({ riskClasses: [...riskClasses] })).toBe(floor);
+    });
+
+    it('should cap the default floor at the stances the classes earn', () => {
+        // A hand-built combination the policy never emits still earns its classes' union, never more.
+        expect(reviewStanceFloor({ riskClasses: ['small', 'test-only'] })).toBe(2);
     });
 });
 

@@ -365,8 +365,6 @@ const PR_4902_PATHS = [
     'scripts/trustedGithubWriteBootstrap.ts',
 ];
 const KNOWN_NODE_REVIEW_TOOLING = [
-    'scripts/checkStancesRecord.ts',
-    'scripts/__tests__/checkStancesRecord.spec.ts',
     'scripts/typesafeRequest.ts',
     'scripts/__tests__/typesafeRequest.spec.ts',
     'scripts/semanticReviewEvaluation.ts',
@@ -404,7 +402,6 @@ const REVIEW_HELPER_STEMS = [
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -1097,7 +1094,6 @@ describe('required affected verification', () => {
             })),
         });
         const nodePaths = [
-            'scripts/checkStancesRecord.ts',
             'scripts/typesafeRequest.ts',
             'scripts/semanticReview/evaluation/runEvaluation.ts',
             'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
