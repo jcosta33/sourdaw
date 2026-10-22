@@ -1,0 +1,26 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_b6df9592e04c6a 11-13,34,354,568-584,598-617,689-729,774-802
+  s_59e31a5c6f3e31::t_8b89dd5e63e998 803-811,902-923,926-932
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_77a7f4e6bb514e 23,265,302-304,367,389,638
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/deviceAutomationUndoExclusion.integration.spec.ts
+  s_59e31a5c6f3e31::t_b6df9592e04c6a 6,8,26-27
+src/components/ui/bipolar-slider.tsx
+  s_59e31a5c6f3e31::t_77a7f4e6bb514e 21-45,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "687c8c41c7dee28f3d55204d997d043dd2917f67",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
