@@ -43,6 +43,7 @@ export function stopPlayheadScheduler(): void {
         finalizeAutomaticRecording(playheadPositionRef.current);
         schedulerSession.punchRecordingActive = false;
     }
+    schedulerSession.punchRecordingOwner = null;
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
     playheadClockRef.beat = 0;

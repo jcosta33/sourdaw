@@ -91,6 +91,14 @@ export const schedulerSession = {
     // instant passes and the sources have stopped themselves.
     pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
+    // The admitted punch occurrence follows the MIDI recording journal's pass
+    // clock. A loop boundary replaces this pair only before its first out beat.
+    punchRecordingOwner: null as {
+        outBeat: number;
+        audioTime: number;
+        timelineBeat: number;
+        terminal: boolean;
+    } | null,
     onStopRequested: null as (() => void) | null,
     // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
     // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval

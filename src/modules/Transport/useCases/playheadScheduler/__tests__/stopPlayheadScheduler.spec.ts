@@ -4,6 +4,7 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
 import { postStoredControllerMove } from '../../scheduling/postStoredControllerMove';
+import { schedulerSession } from '../schedulerSession';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
 
 /** The device nodes each track's strip holds, as the engine double answers `getTrackStrip`. */
@@ -50,6 +51,8 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         vi.clearAllMocks();
         deviceNodesByTrack.clear();
         forgetStoredControllerEngagements();
+        schedulerSession.punchRecordingActive = false;
+        schedulerSession.punchRecordingOwner = null;
     });
 
     it('lifts a pedal stored playback left down on that device only, never one the user holds live', () => {
@@ -146,5 +149,15 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         stopPlayheadScheduler();
 
         expect(getTrackStrip).not.toHaveBeenCalled();
+    });
+
+    it('retires the admitted punch occurrence on Stop', () => {
+        schedulerSession.punchRecordingActive = true;
+        schedulerSession.punchRecordingOwner = { outBeat: 8, audioTime: 0.1, timelineBeat: 7.9, terminal: false };
+
+        stopPlayheadScheduler();
+
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        expect(schedulerSession.punchRecordingOwner).toBeNull();
     });
 });

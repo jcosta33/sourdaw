@@ -1625,11 +1625,14 @@ describe('startPlayheadScheduler', () => {
         await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
         expect(capturedOnTerminal).not.toBeNull();
 
-        // Roll to the punch-out point and cross it.
-        schedulerSession.accumulatedPosition = 7.9;
-        ctxTime.now = 0.3;
-        emitSchedulerTick(worker);
-        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        // Follow the admitted occurrence to its beat-8 out. Jumping only the
+        // scheduler position here would leave the recording's dated interval
+        // at beat 0, so a stop at 0.3 s would be outside its actual gesture.
+        for (let tick = 2; tick <= 40; tick++) {
+            ctxTime.now = tick / 10;
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        }
 
         // Zero-length payloads here mean the entry captured the pre-finalization
         // anchor and can overwrite the span the finalizer owns.
@@ -1697,6 +1700,10 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        // This already-open gesture was admitted at beat 7.9 when the audio
+        // clock read 0.1 s; its beat-8 out therefore sounds at 0.15 s.
+        schedulerSession.punchRecordingOwner = { outBeat: 8, audioTime: 0.1, timelineBeat: 7.9, terminal: false };
+        ctxTime.now = 0.1;
         // The finalizer's own promise is pending: the tick must still complete,
         // and the promise must be owned so a user-facing stop can await it.
         let release!: () => void;
@@ -1765,8 +1772,10 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        schedulerSession.punchRecordingOwner = { outBeat: 8, audioTime: 0.1, timelineBeat: 7.9, terminal: false };
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
-        // 0.2s delta at 120bpm = 0.4 beats → from 7.9 to 8.3, crossing punchOut 8.
+        // 0.1s elapsed at 120 BPM advances from 7.9 to 8.1, past punch-out.
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1777,7 +1786,7 @@ describe('startPlayheadScheduler', () => {
 
         expect(audioEngineMocks.stopAudioRecording).toHaveBeenCalledTimes(1);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledTimes(1);
-        // The tick overshoots to 8.3; the take ends at the punch-out point.
+        // The tick overshoots to 8.1; the take ends at the punch-out point.
         expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(
             8,
@@ -1900,6 +1909,8 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        schedulerSession.punchRecordingOwner = { outBeat: 8, audioTime: 0.1, timelineBeat: 7.9, terminal: false };
+        ctxTime.now = 0.1;
         // stopAudioRecording flips generation stale; the post-await isCurrent
         // guard must abort before scheduling anything.
         audioEngineMocks.stopAudioRecording.mockImplementationOnce(async () => {
@@ -1915,5 +1926,15 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(vi.mocked(scheduleMetronome)).not.toHaveBeenCalled();
+    });
+
+    it('retires the admitted punch occurrence on scheduler disposal', () => {
+        schedulerSession.punchRecordingActive = true;
+        schedulerSession.punchRecordingOwner = { outBeat: 8, audioTime: 0.1, timelineBeat: 7.9, terminal: false };
+
+        disposePlayheadScheduler();
+
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        expect(schedulerSession.punchRecordingOwner).toBeNull();
     });
 });
