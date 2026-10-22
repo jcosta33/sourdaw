@@ -1,0 +1,84 @@
+scripts/aptWithoutMicrosoftFeed.sh
+  s_ba8dd89de9aac7::t_8b51b8ec478fbc 1-21,25-32,34-35,49,51-56,58-78,80-156
+  s_ba8dd89de9aac7::t_a03ba065ae5014 157-164
+  s_ba8dd89de9aac7::t_6d26390bdd6969 22-24,33,36-42,57,79
+  s_ba8dd89de9aac7::t_ae614f61222384 43-48,50
+docs/06-testing.md
+  s_ba8dd89de9aac7::t_74c4141b501d9e 836-844
+scripts/__tests__/aptWithoutMicrosoftFeed.spec.ts
+  s_ba8dd89de9aac7::t_a9b583cf30a064 1-188,213-223,225,229,231
+  s_ba8dd89de9aac7::t_17c0b1c4f45c3e 224,226-228,230
+  s_ba8dd89de9aac7::t_1758f8a7801c9f 189-212
+.github/workflows/heavy-gates.yml
+  s_ba8dd89de9aac7::t_0e0a2f7b57f0ab 182-183
+  s_ba8dd89de9aac7::t_0b2c8fb54d877a 73-77,92,181,194
+  s_3e7dea5cde3f9e::t_a5907fe2e1270d 184,208
+  s_ba8dd89de9aac7::t_e4413ce9d21def 188-190
+  s_ba8dd89de9aac7::t_d30f045295e121 202
+  s_3e7dea5cde3f9e::t_e72e34416b01e6 185-187,191
+.github/workflows/cargo-dependency-seed.yml
+  s_ba8dd89de9aac7::t_512cd60614b1b3 38
+.github/workflows/nightly.yml
+  s_ba8dd89de9aac7::t_87928ed5ca5736 225-237,242,249-254,257,266,336,636-640,651
+.github/workflows/quantum-measurements.yml
+  s_ba8dd89de9aac7::t_eb93ab70594d5c 33,98-101,121
+.github/workflows/validation.yml
+  s_ba8dd89de9aac7::t_e1a3db937e479a 568-574,576,633-637,648,728-730,747
+scripts/__tests__/fixtures/aptConfigStub/apt-config
+  s_ba8dd89de9aac7::t_dbebf439488d04 1-22
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ba8dd89de9aac7::t_d1cd7d648d3850 319,417,898,934,1009,1593-1594,1598-1600,1606,1614,1617-1624,1627,1635,1702,1948,2386,2450,2779
+  s_3e7dea5cde3f9e::t_7497349506f479 435
+  s_ba8dd89de9aac7::t_bf2a6da0aa9740 413,427
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_ba8dd89de9aac7::t_c47ab4dac49fa7 89-93,97,112-113,221-222,849-851,882-884,1550-1575,2021-2023,3515-3516,3518-3520,3649-3652,3737,3742-3745,3903-3906,3911-3916,3925-3928,4154-4186,4856,4858,4862,4864,5102-5109,5137-5138
+  s_3e7dea5cde3f9e::t_102fa3ac8e8b74 227
+  s_ba8dd89de9aac7::t_ebdc838091a5e2 213,224-226
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_ba8dd89de9aac7::t_f460b88683f595 394-395,412,426-431,437-440,449,534
+scripts/healthGateWorkflowContract.ts
+  s_ba8dd89de9aac7::t_ab4f10b3257424 85-95,198,273
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_ba8dd89de9aac7::t_2dc0fa5aa9c133 39,134-137,182-186
+scripts/test-health-gate-scripts.sh
+  s_ba8dd89de9aac7::t_e761b40ffb5c2b 1035-1036,1193-1194
+release/open-source-inventory.json
+  s_ba8dd89de9aac7::t_9f6420c8353fab 2130-2132
+  s_1c08b47ac3792f::t_e7bd3905c71050 2128-2129
+scripts/__tests__/prValidationScope.spec.ts
+  s_ba8dd89de9aac7::t_a64d17ce489413 17
+  s_ba8dd89de9aac7::t_00447857741c0d 6,375-381,414-431,436-441,849-863
+  s_ba8dd89de9aac7::t_6b0e7aeb65243d 432-435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4119ad7ecbda15b301e556360a35c445a2426c8c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
