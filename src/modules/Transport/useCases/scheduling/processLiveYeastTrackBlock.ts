@@ -327,10 +327,7 @@ export async function processLiveYeastTrackBlock({
                 startBeat: eventPpq,
                 duration,
             };
-            const headCutBeats =
-                identifiedTemplate && event.noteInstanceId
-                    ? headCutBeatsByInstance.get(event.noteInstanceId)
-                    : undefined;
+            const headCutBeats = event.noteInstanceId ? headCutBeatsByInstance.get(event.noteInstanceId) : undefined;
             if (headCutBeats !== undefined) {
                 outputNote.beatsIntoNote = headCutBeats;
             }

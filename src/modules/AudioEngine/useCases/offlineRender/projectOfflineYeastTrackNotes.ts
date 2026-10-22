@@ -151,7 +151,6 @@ export function projectOfflineYeastTrackNotes({
                 // would replay on a pitch they were not played on.
                 scheduledNotes.push({
                     ...projectedNote,
-                    beatsIntoNote: identifiedNote ? projectedNote.beatsIntoNote : undefined,
                     pressure: sourceNote?.pressure,
                     slide: sourceNote?.slide,
                     pitchBend: sourceNote?.pitchBend,

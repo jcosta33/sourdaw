@@ -2014,6 +2014,27 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             expect(arrivals.order).toEqual(['noteOn', 'expression', 'expression', 'noteOff']);
         });
 
+        it('collapses points the dispatch lands on one frame, which truncates samples 26 and 27 to the same one', async () => {
+            // Sample 27 over 48 kHz and back is 26.999..., and the dispatch (`schedulePendingSuspends`) floors it, so
+            // two points a sample apart arrive on one frame and the later has the last word. Rounding would keep both.
+            const arrivals = await dispatchOneNote({
+                startBeat: 0,
+                duration: 1,
+                pressure: 10,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 26 / 24_000, value: 40 },
+                        { offsetBeats: 27 / 24_000, value: 60 },
+                    ],
+                },
+            });
+
+            expect(pressures(arrivals)).toEqual([
+                [0, 10],
+                [26, 60],
+            ]);
+        });
+
         it('sends no curve to Toaster, which has no voice to bend', async () => {
             const arrivals = await dispatchOneNote(curvedNote, { deviceType: 'toaster' });
 
