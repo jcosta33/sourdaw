@@ -30,8 +30,9 @@ export function createIntegratedLoudnessAccumulator(input: {
 }) {
     const blockFrames = Math.round(BLOCK_SECONDS * input.sampleRate);
     const stepFrames = Math.round(BLOCK_STEP_SECONDS * input.sampleRate);
-    if (blockFrames < 1 || stepFrames < 1 || !Number.isSafeInteger(blockFrames) || input.numberOfChannels < 1)
+    if (blockFrames < 1 || stepFrames < 1 || !Number.isSafeInteger(blockFrames) || input.numberOfChannels < 1) {
         throw new Error('Invalid loudness meter shape.');
+    }
     const { shelf, highPass } = createKWeightingFilters(input.sampleRate);
     const filters = Array.from({ length: input.numberOfChannels }, () => ({
         shelf: { x1: 0, x2: 0, y1: 0, y2: 0 },
@@ -47,11 +48,12 @@ export function createIntegratedLoudnessAccumulator(input: {
     return {
         push(channels: readonly Float32Array[]) {
             const length = channels[0]?.length ?? 0;
-            if (channels.length !== input.numberOfChannels || channels.some((channel) => channel.length !== length))
+            if (channels.length !== input.numberOfChannels || channels.some((channel) => channel.length !== length)) {
                 throw new Error('Invalid loudness PCM block.');
+            }
             for (let start = 0; start < length; start += 4096) {
                 const count = Math.min(4096, length - start);
-                filters.forEach((filter, channel) => {
+                for (const [channel, filter] of filters.entries()) {
                     const samples = filter.samples.subarray(0, count);
                     for (let frame = 0; frame < count; frame++) {
                         const value = channels[channel]![start + frame]!;
@@ -59,12 +61,12 @@ export function createIntegratedLoudnessAccumulator(input: {
                     }
                     applyBiquad(samples, shelf, filter.shelf);
                     applyBiquad(samples, highPass, filter.highPass);
-                });
+                }
                 for (let frame = 0; frame < count; frame++) {
                     let power = 0;
-                    filters.forEach((filter, channel) => {
+                    for (const [channel, filter] of filters.entries()) {
                         power += loudnessChannelWeight(channel) * filter.samples[frame]! ** 2;
-                    });
+                    }
                     const slot = frames % blockFrames;
                     energy += power - history[slot]!;
                     history[slot] = power;
@@ -100,8 +102,9 @@ export function measureIntegratedLoudness({
         stepFrames <= 0 ||
         length < blockFrames ||
         channels.length === 0
-    )
+    ) {
         return null;
+    }
     const replay = (relativeGatePower?: number) => {
         const meter = createIntegratedLoudnessAccumulator({
             numberOfChannels: channels.length,
@@ -112,7 +115,9 @@ export function measureIntegratedLoudness({
             const count = Math.min(4096, length - start);
             meter.push(
                 channels.map((channel) => {
-                    if (channel.length >= start + count) return channel.subarray(start, start + count);
+                    if (channel.length >= start + count) {
+                        return channel.subarray(start, start + count);
+                    }
                     const padded = new Float32Array(count);
                     padded.set(channel.subarray(start, start + count));
                     return padded;

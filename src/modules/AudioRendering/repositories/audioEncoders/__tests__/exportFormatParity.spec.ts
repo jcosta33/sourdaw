@@ -308,8 +308,9 @@ describe('replayable converted real codec bytes', () => {
             const actual = a.take_samples();
             expect(b.take_samples()).toEqual(actual);
             let error = 0;
-            for (let frame = 256; frame < 44100 - 256; frame++)
+            for (let frame = 256; frame < 44100 - 256; frame++) {
                 error += (actual[frame]! - 0.2 * Math.sin((2 * Math.PI * 1000 * frame) / 44100)) ** 2;
+            }
             expect(error / (44100 - 512)).toBeLessThan(0.000001);
         }
     });

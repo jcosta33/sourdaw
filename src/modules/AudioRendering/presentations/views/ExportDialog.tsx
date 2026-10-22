@@ -164,19 +164,27 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [tailSeconds, setTailSeconds] = useState(DEFAULT_EXPORT_TAIL_SECONDS);
     const [autoTail, setAutoTail] = useState(true);
     const [renderTargetTrackId, setRenderTargetTrackId] = useState<string>('new');
-    const [customDraft, setCustomDraft] = useState<DeliveryDraft>(() => ({
-        settings: {
-            formats: [...defaults.formats],
-            sampleRate: defaults.sampleRate,
-            bitDepth: defaults.bitDepth === 16 ? 16 : defaults.bitDepth === 32 ? 32 : 24,
-            channels: defaults.channels ?? 2,
-            mp3BitRate: defaults.mp3BitRate,
-            normalization: defaults.normalization,
-            targetLufs: defaults.targetLufs ?? R128_TARGET_LUFS,
-            ceilingDbTp: defaults.ceilingDbTp ?? R128_CEILING_DB_TP,
-        },
-        dither: defaults.dither,
-    }));
+    const [customDraft, setCustomDraft] = useState<DeliveryDraft>(() => {
+        let initialBitDepth: DeliveryDraft['settings']['bitDepth'] = 24;
+        if (defaults.bitDepth === 16) {
+            initialBitDepth = 16;
+        } else if (defaults.bitDepth === 32) {
+            initialBitDepth = 32;
+        }
+        return {
+            settings: {
+                formats: [...defaults.formats],
+                sampleRate: defaults.sampleRate,
+                bitDepth: initialBitDepth,
+                channels: defaults.channels ?? 2,
+                mp3BitRate: defaults.mp3BitRate,
+                normalization: defaults.normalization,
+                targetLufs: defaults.targetLufs ?? R128_TARGET_LUFS,
+                ceilingDbTp: defaults.ceilingDbTp ?? R128_CEILING_DB_TP,
+            },
+            dither: defaults.dither,
+        };
+    });
     const [targetDrafts, setTargetDrafts] = useState<Record<string, DeliveryDraft>>({});
     const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
     const [deliveryPreset, setDeliveryPreset] = useState('custom');
@@ -285,31 +293,38 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
         setCustomDraft(draft);
-        if (typeof settings.sampleRate === 'number')
+        if (typeof settings.sampleRate === 'number') {
             saveExportSettings({
                 ...settings,
                 formats: [...settings.formats],
                 sampleRate: settings.sampleRate,
                 dither: nextDither,
             });
+        }
     };
     const toggleFormat = (format: ExportFormat) => {
         const next = new Set(formats);
-        if (next.has(format) && next.size > 1) next.delete(format);
-        else next.add(format);
+        if (next.has(format) && next.size > 1) {
+            next.delete(format);
+        } else {
+            next.add(format);
+        }
         updateDraft({ ...activeDraft.settings, formats: [...next] });
     };
     const updateSampleRate = (rate: number) => updateDraft({ ...activeDraft.settings, sampleRate: rate });
     const updateBitDepth = (depth: number) => {
-        if (depth === 16 || depth === 24 || depth === 32) updateDraft({ ...activeDraft.settings, bitDepth: depth });
+        if (depth === 16 || depth === 24 || depth === 32) {
+            updateDraft({ ...activeDraft.settings, bitDepth: depth });
+        }
     };
     const updateMp3BitRate = (rate: Mp3BitRate) => updateDraft({ ...activeDraft.settings, mp3BitRate: rate });
     const updateDither = (value: ExportDither) => updateDraft(activeDraft.settings, value);
     const updateNormalization = (value: ExportNormalization) =>
         updateDraft({ ...activeDraft.settings, normalization: value });
     const updateTargetLufs = (value: number) => {
-        if (Number.isFinite(value) && value >= MIN_EXPORT_TARGET_LUFS && value <= MAX_EXPORT_TARGET_LUFS)
+        if (Number.isFinite(value) && value >= MIN_EXPORT_TARGET_LUFS && value <= MAX_EXPORT_TARGET_LUFS) {
             updateDraft({ ...activeDraft.settings, targetLufs: value });
+        }
     };
     const selectDeliveryPreset = (id: string) => {
         if (id === 'custom') {
@@ -318,7 +333,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
         const preset = deliveryPresets.find((candidate) => candidate.id === id);
-        if (!preset) return;
+        if (!preset) {
+            return;
+        }
         setTargetDrafts((current) => ({
             ...current,
             [id]: current[id] ?? { settings: applyDeliveryPreset({ preset }), dither: customDraft.dither },
@@ -333,10 +350,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         }
         const remaining = selectedTargetIds.filter((selected) => selected !== id);
         setSelectedTargetIds(remaining);
-        if (deliveryPreset === id) setDeliveryPreset(remaining[0] ?? 'custom');
+        if (deliveryPreset === id) {
+            setDeliveryPreset(remaining[0] ?? 'custom');
+        }
     };
     const resetDeliveryTarget = () => {
-        if (activeFactory) updateDraft(applyDeliveryPreset({ preset: activeFactory, reset: true }));
+        if (activeFactory) {
+            updateDraft(applyDeliveryPreset({ preset: activeFactory, reset: true }));
+        }
     };
 
     const handleCancel = () => {
@@ -363,7 +384,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     sourceSampleRate: audioContextSnapshot?.sampleRate,
                     targets: ids.map((id) => {
                         const draft = id === 'custom' ? customDraft : targetDrafts[id];
-                        if (!draft) throw new Error('Delivery target settings are unavailable.');
+                        if (!draft) {
+                            throw new Error('Delivery target settings are unavailable.');
+                        }
                         const settings = {
                             ...draft.settings,
                             bitDepth: resolveExportBitDepths({
@@ -371,12 +394,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 selectedBitDepth: draft.settings.bitDepth,
                             }).bitDepth,
                         };
+                        let metadata: typeof podcastMetadata | undefined;
+                        if (id === 'podcast-rss-mp3') {
+                            metadata = {
+                                title: podcastMetadata.title,
+                                artist: podcastMetadata.artist,
+                                description: podcastMetadata.description,
+                            };
+                        }
                         return {
                             id,
                             name: deliveryPresets.find((preset) => preset.id === id)?.name ?? 'Custom',
                             settings,
                             dither: resolveExportDither(draft.dither),
-                            metadata: id === 'podcast-rss-mp3' ? { ...podcastMetadata } : undefined,
+                            metadata,
                         };
                     }),
                 });
@@ -1363,8 +1394,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         disabled={exporting}
                                         onChange={(event) => {
                                             const value = Number(event.target.value);
-                                            if (Number.isFinite(value) && value >= -20 && value <= 0)
+                                            if (Number.isFinite(value) && value >= -20 && value <= 0) {
                                                 updateDraft({ ...activeDraft.settings, ceilingDbTp: value });
+                                            }
                                         }}
                                     />
                                     <p className="mt-1.5 text-dense text-muted-foreground/70">

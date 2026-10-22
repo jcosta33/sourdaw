@@ -38,20 +38,26 @@ export function applyExportNormalization({
     apply = true,
     measurements,
 }: ApplyExportNormalizationInput): ApplyExportNormalizationOutput {
-    if (buffer.readChannels && (apply || !measurements))
+    if (buffer.readChannels && (apply || !measurements)) {
         throw new Error('Replayable borrowed PCM requires measurements and apply:false.');
+    }
     const channels: Float32Array[] = [];
     if (buffer.getChannelData && (!measurements || apply)) {
-        for (let index = 0; index < buffer.numberOfChannels; index++) channels.push(buffer.getChannelData(index));
+        for (let index = 0; index < buffer.numberOfChannels; index++) {
+            channels.push(buffer.getChannelData(index));
+        }
     }
 
-    const measuredLufs = measurements
-        ? measurements.integratedLufs
-        : measureIntegratedLoudness({
-              channels,
-              length: buffer.length,
-              sampleRate: buffer.sampleRate,
-          });
+    let measuredLufs: number | null;
+    if (measurements) {
+        measuredLufs = measurements.integratedLufs;
+    } else {
+        measuredLufs = measureIntegratedLoudness({
+            channels,
+            length: buffer.length,
+            sampleRate: buffer.sampleRate,
+        });
+    }
     const truePeak = measurements ? measurements.truePeak : measureTruePeak({ channels, length: buffer.length });
 
     const { gain, limitedByCeiling } = resolveNormalizationGain({

@@ -17,18 +17,27 @@ export function readExportPcmBlock(input: {
         start + length > source.length ||
         !Number.isSafeInteger(source.numberOfChannels) ||
         source.numberOfChannels < 1
-    )
+    ) {
         throw new Error('Invalid export PCM window.');
+    }
     const readChannels = source.readChannels;
     const getChannelData = source.getChannelData;
-    if (!readChannels && !getChannelData) throw new Error('Export PCM reader is unavailable.');
-    const channels = readChannels
-        ? readChannels.call(source, start, length)
-        : Array.from({ length: source.numberOfChannels }, (_, channel) => {
-              if (!getChannelData) throw new Error('Export PCM reader is unavailable.');
-              return getChannelData.call(source, channel).subarray(start, start + length);
-          });
-    if (channels.length !== source.numberOfChannels || channels.some((channel) => channel.length !== length))
+    if (!readChannels && !getChannelData) {
+        throw new Error('Export PCM reader is unavailable.');
+    }
+    let channels: readonly Float32Array[];
+    if (readChannels) {
+        channels = readChannels.call(source, start, length);
+    } else {
+        channels = Array.from({ length: source.numberOfChannels }, (_, channel) => {
+            if (!getChannelData) {
+                throw new Error('Export PCM reader is unavailable.');
+            }
+            return getChannelData.call(source, channel).subarray(start, start + length);
+        });
+    }
+    if (channels.length !== source.numberOfChannels || channels.some((channel) => channel.length !== length)) {
         throw new Error('Invalid export PCM block.');
+    }
     return channels;
 }

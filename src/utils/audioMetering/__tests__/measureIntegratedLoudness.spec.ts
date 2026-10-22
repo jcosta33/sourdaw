@@ -143,16 +143,18 @@ describe('incremental integrated loudness', () => {
         tone.fill(0, SAMPLE_RATE, SAMPLE_RATE * 2);
         const channels = [tone, tone];
         const first = createIntegratedLoudnessAccumulator({ numberOfChannels: 2, sampleRate: SAMPLE_RATE });
-        for (let frame = 0; frame < tone.length; frame += 997)
+        for (let frame = 0; frame < tone.length; frame += 997) {
             first.push(channels.map((c) => c.subarray(frame, frame + 997)));
+        }
         const relativeGatePower = first.relativeGatePower();
         const second = createIntegratedLoudnessAccumulator({
             numberOfChannels: 2,
             sampleRate: SAMPLE_RATE,
             relativeGatePower,
         });
-        for (let frame = 0; frame < tone.length; frame += 4096)
+        for (let frame = 0; frame < tone.length; frame += 4096) {
             second.push(channels.map((c) => c.subarray(frame, frame + 4096)));
+        }
         expect(second.integratedLufs()).toBeCloseTo(
             measureIntegratedLoudness({ channels, length: tone.length, sampleRate: SAMPLE_RATE })!,
             9
