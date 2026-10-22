@@ -537,12 +537,14 @@ describe('startPlayheadScheduler', () => {
             trackId: 'track-1',
             pitch: 64,
             channel: 0,
+            receiverId: 'device-1',
+            releaseBeat: 4,
             changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
         });
 
         startPlayheadScheduler();
 
-        expect(takeHeldNoteExpression('track-1', 0, 8)).toEqual([]);
+        expect(takeHeldNoteExpression({ trackId: 'track-1', fromBeat: 0, toBeat: 8, fromFrame: 0 })).toEqual([]);
     });
 
     it('wraps the playhead at loopEnd and clears scheduling state for the next pass', async () => {

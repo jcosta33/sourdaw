@@ -36,6 +36,7 @@ import { type TransportState } from '../../models/TransportState';
 import {
     forgetHeldNoteExpression,
     holdNoteExpression,
+    keepHeldNoteExpressionOnReceiver,
     takeHeldNoteExpression,
 } from '../../services/heldNoteExpression';
 import {
@@ -1005,6 +1006,12 @@ export async function scheduleMidiNotes(
         if (track.kind !== 'midi') {
             continue;
         }
+        // A bypass or a swap panics the notes the instrument was voicing outside the transport teardown, so
+        // what a muted or gapped window left parked for them must not post to the voice that is gone, or to
+        // the next note the instrument starts on that pitch.
+        const playbackReceiver = resolvePlaybackNoteReceiver(track.devices);
+        const playbackReceiverId = isBypassedNoteReceiver(playbackReceiver) ? undefined : playbackReceiver?.device.id;
+        keepHeldNoteExpressionOnReceiver(track.id, playbackReceiverId);
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             noteStoredControllersTrackMuteWithheld(track.id);
             continue;
@@ -1214,9 +1221,16 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
-        // The changes of notes an earlier window started that fall in this window. Taken before the clips
-        // schedule, so a note starting now holds only the changes of windows after this one.
-        for (const { pitch, channel, change } of takeHeldNoteExpression(track.id, fromBeat, toBeat)) {
+        // The changes of notes an earlier window started that fall in this window, and the expression in
+        // force at its start for a note this track's earlier windows did not run for (a mute). Taken before
+        // the clips schedule, so a note starting now holds only the changes of windows after this one.
+        const heldDue = takeHeldNoteExpression({
+            trackId: track.id,
+            fromBeat,
+            toBeat,
+            fromFrame: sampleFrameAtBeatOnTrack(track.id)(fromBeat),
+        });
+        for (const { pitch, channel, change } of heldDue) {
             postNoteExpression({
                 posts,
                 trackId: track.id,
@@ -1637,6 +1651,8 @@ export async function scheduleMidiNotes(
                                 trackId: track.id,
                                 pitch,
                                 channel: noteChannel,
+                                receiverId: playbackReceiverId,
+                                releaseBeat: noteEndBeat,
                                 changes: curveChanges.filter((change) => change.beat >= toBeat),
                             });
                             // Grand Boule is the one worklet synth whose
