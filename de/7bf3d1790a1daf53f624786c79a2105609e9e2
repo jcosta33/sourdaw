@@ -1,0 +1,53 @@
+src/modules/ControlSurface/repositories/readHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 1-3
+src/modules/ControlSurface/useCases/hardware/exportHardwareMappings.ts
+  s_59e31a5c6f3e31::t_e7a36115ea7592 5
+src/modules/ControlSurface/presentations/views/HardwareMappingManager.tsx
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 1-145
+src/modules/ControlSurface/presentations/views/index.ts
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 5
+src/modules/ControlSurface/useCases/hardware/__tests__/importHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_fa6dda0b5d59bd 119-151
+src/modules/Preferences/presentations/views/preferences/MidiSection.tsx
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 10,69
+src/modules/ControlSurface/useCases/hardware/importHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 1-46
+src/modules/ControlSurface/useCases/hardware/__tests__/downloadHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_cb0528fc5c2325 21,38-39,48-51
+  s_59e31a5c6f3e31::t_888402aae28312 1-20,22-37,40-47,52-73
+src/modules/ControlSurface/repositories/downloadHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 1-5
+src/modules/ControlSurface/AGENTS.md
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 28
+src/modules/ControlSurface/useCases/hardware/__tests__/importHardwareMappingsFile.spec.ts
+  s_59e31a5c6f3e31::t_fa6dda0b5d59bd 76-95
+  s_59e31a5c6f3e31::t_888402aae28312 1-75,96-139
+src/modules/ControlSurface/useCases/hardware/__tests__/exportHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_fa6dda0b5d59bd 5,40-51
+  s_59e31a5c6f3e31::t_ece7f2d1ab1f81 52
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_59e31a5c6f3e31::t_70dbade7740afb 59-105
+src/modules/ControlSurface/presentations/views/__tests__/HardwareMappingManager.spec.tsx
+  s_59e31a5c6f3e31::t_e9763f648805d1 1-162,199-217
+  s_59e31a5c6f3e31::t_e7a36115ea7592 163-198
+src/modules/ControlSurface/useCases/hardware/downloadHardwareMappings.ts
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 1-21
+src/modules/ControlSurface/useCases/hardware/importHardwareMappings.ts
+  s_59e31a5c6f3e31::t_76d0fe61b62aef 38,44-50,53-59,83,86,95,100-105,110,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de7bf3d1790a1daf53f624786c79a2105609e9e2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
