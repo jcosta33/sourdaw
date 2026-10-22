@@ -27,6 +27,9 @@ export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
 export { decodeMidiClipDataSnapshots } from './midiClipData/decodeMidiClipDataSnapshots';
+export { commitRecordedControllers } from './recordedControllerTake/commitRecordedControllers';
+export { discardRecordedControllers } from './recordedControllerTake/discardRecordedControllers';
+export { planRecordedControllers } from './recordedControllerTake/planRecordedControllers';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 export { downloadMidiFile } from './exportMidiFile';

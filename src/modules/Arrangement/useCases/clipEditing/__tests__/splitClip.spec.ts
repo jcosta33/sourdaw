@@ -36,6 +36,7 @@ import { getAutomationLanes, getAutomationValueAtBeat, restoreAutomationSnapshot
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { gainSeamPointId } from '../../../models/GainSeamPointId';
 import { type Clip } from '../../../models/Track';
 import { type TrackState } from '../../../repositories/track/getTrackState';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
@@ -361,7 +362,7 @@ describe('splitClip', () => {
             enabled: true,
             points: [
                 { id: 'p0', beatOffset: 0, gainDb: 0 },
-                { id: 'gep-split-new-clip-right-left', beatOffset: 4, gainDb: -8 },
+                { id: gainSeamPointId('new-clip-right', 'left'), beatOffset: 4, gainDb: -8 },
                 { id: 'p6', beatOffset: 6, gainDb: -12 },
             ],
         });
@@ -370,7 +371,7 @@ describe('splitClip', () => {
             enabled: true,
             points: [
                 { id: 'p0', beatOffset: -4, gainDb: 0 },
-                { id: 'gep-split-new-clip-right-right', beatOffset: 0, gainDb: -8 },
+                { id: gainSeamPointId('new-clip-right', 'right'), beatOffset: 0, gainDb: -8 },
                 { id: 'p6', beatOffset: 2, gainDb: -12 },
             ],
         });
