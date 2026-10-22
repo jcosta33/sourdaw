@@ -4955,6 +4955,14 @@ export -f sudo timeout sleep apt-get
             'validation.yml job unit must not compute its check name from an expression'
         );
 
+        const emptyNamedGate = cloneWorkflows('empty-named Gate-keyed nightly job');
+        recordAt(emptyNamedGate.nightly, 'jobs').Gate = {
+            name: '',
+            'runs-on': 'ubuntu-latest',
+            steps: [{ name: 'Pass', run: 'true' }],
+        };
+        expect(surface(emptyNamedGate)).toThrow('nightly.yml job Gate must not be named Gate');
+
         const secondGate = cloneWorkflows('second Gate in health gates');
         jobAt(secondGate.health, 'admission').name = 'Gate';
         expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');

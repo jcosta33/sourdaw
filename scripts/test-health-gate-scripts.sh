@@ -494,7 +494,7 @@ expect(
 function gateNameViolations(file, jobs) {
     const violations = [];
     for (const [id, job] of Object.entries(jobs ?? {})) {
-        if ((job?.name ?? id) === 'Gate') {
+        if ((typeof job?.name === 'string' && job.name !== '' ? job.name : id) === 'Gate') {
             violations.push(
                 `${file} job ${id} must not be named Gate; only a pull_request run of health-gates.yml may mint that check`
             );
@@ -520,6 +520,10 @@ for (const [file, parsed] of [
 expect(
     gateNameViolations('mutant.yml', { Gate: { needs: ['decide'] } }).length === 1,
     'the Gate-name guard must catch an unnamed Gate-keyed job'
+);
+expect(
+    gateNameViolations('mutant.yml', { Gate: { name: '', needs: ['decide'] } }).length === 1,
+    'the Gate-name guard must catch an empty-named Gate-keyed job'
 );
 expect(heavyGate?.name === 'HeavyGate', 'the heavy summary must keep its own distinct, non-required name');
 expect(

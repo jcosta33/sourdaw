@@ -7,6 +7,7 @@
  * pin and a review reads that pin's diff.
  */
 
+import { workflowJobCheckName } from './approvalGatedWorkflowContract.ts';
 import { HEALTH_GATE_WORKFLOW_FILES } from './healthGateWorkflowContract.ts';
 
 type JobPins<Value> = Readonly<Record<string, Readonly<Record<string, Value>>>>;
@@ -68,8 +69,8 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
 };
 
 // `Gate` is the one required context, and GitHub satisfies it with the newest
-// check run of that name, so exactly one job may carry it. An unnamed job's
-// check run is named after its id.
+// check run of that name, so exactly one job may carry it. A job whose `name`
+// is absent or empty has its check run named after its id.
 export const REQUIRED_CHECK_NAME = 'Gate';
 export const REQUIRED_CHECK_OWNER = { workflow: 'health-gates.yml', job: 'gate' } as const;
 
@@ -241,7 +242,7 @@ export function assertRequiredCheckNameExclusive(workflows: Readonly<Record<stri
                 throw new Error(`${file} job ${jobId} must not compute its check name from an expression`);
             }
             const owner = file === REQUIRED_CHECK_OWNER.workflow && jobId === REQUIRED_CHECK_OWNER.job;
-            if (!owner && (job.name ?? jobId) === REQUIRED_CHECK_NAME) {
+            if (!owner && workflowJobCheckName(jobId, job) === REQUIRED_CHECK_NAME) {
                 throw new Error(
                     `${file} job ${jobId} must not be named ${REQUIRED_CHECK_NAME}; only the ${REQUIRED_CHECK_OWNER.workflow} ${REQUIRED_CHECK_OWNER.job} job may mint that check`
                 );
