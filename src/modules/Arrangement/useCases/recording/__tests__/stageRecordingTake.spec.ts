@@ -84,6 +84,50 @@ describe('provisional recording take staging', () => {
         expect(fixture.state.lanes[0]!.takes).toEqual([{ ...planned, endBeat: 11.5 }]);
     });
 
+    it('stages its own capture when a cancelled planned replacement now belongs to another clip', () => {
+        const peer = {
+            ...initialTake(),
+            clipId: 'peer-clip',
+            startBeat: 8,
+            endBeat: 12,
+            sourceOffsetBeats: 0,
+            passAnchorSeconds: 0,
+            passDepthSeconds: 0.1,
+            passSourceEndSeconds: 2.1,
+        };
+        fixture.state.lanes[0]!.takes = [peer];
+        const before = structuredClone(fixture.state);
+        const existingIds = fixture.state.lanes.flatMap((lane) => lane.takes.map((take) => take.id));
+        fixture.replacementTakeId.mockReturnValue(peer.id);
+
+        stageRecordingTake({
+            trackId: 'track',
+            clipId: 'capture',
+            name: 'Captured pass',
+            startBeat: 9,
+            endBeat: 11.5,
+            sourceOffsetBeats: 4,
+            passEndContextSeconds: 50.35,
+            plannedPassEnd: false,
+        });
+
+        const [retained, captured] = fixture.state.lanes[0]!.takes;
+        expect(retained).toBe(peer);
+        expect(retained).toEqual(before.lanes[0]!.takes[0]);
+        expect(fixture.state.lanes[0]!.takes).toHaveLength(2);
+        expect(captured).toEqual({
+            id: expect.stringMatching(/^take-[0-9a-f-]{36}$/),
+            clipId: 'capture',
+            name: 'Captured pass',
+            startBeat: 9,
+            endBeat: 11.5,
+            sourceOffsetBeats: 4,
+            selected: false,
+        });
+        expect(existingIds).not.toContain(captured!.id);
+        expect(fixture.stage).toHaveBeenCalledExactlyOnceWith(captured, 50.35, false);
+    });
+
     it('continues ordinary take staging without a replacement request', () => {
         stageRecordingTake({
             trackId: 'track',

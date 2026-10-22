@@ -61,7 +61,9 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
     } else {
         const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
         if (replacementId !== undefined) {
-            replacement = lane?.takes.find((candidate) => candidate.id === replacementId);
+            replacement = lane?.takes.find(
+                (candidate) => candidate.id === replacementId && candidate.clipId === input.clipId
+            );
         }
         if (replacement) {
             take = { ...replacement, endBeat: input.endBeat };

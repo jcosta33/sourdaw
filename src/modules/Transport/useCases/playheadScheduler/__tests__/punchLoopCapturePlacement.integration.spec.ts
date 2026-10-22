@@ -1000,6 +1000,46 @@ describe('punch audio capture loop placement', () => {
         expectProjectProjection();
     });
 
+    it('joins native playback on its audible clock without moving the producer first frame', async () => {
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 9.8 });
+        playheadPositionRef.current = 9.8;
+        playheadClockRef.beat = 9.8;
+        playheadClockRef.audioTimeSeconds = 51;
+        const producerStartsAtNativeRead: number[] = [];
+        const nativeCursor = vi.fn(() => {
+            producerStartsAtNativeRead.push(hardware.starts);
+            return 10;
+        });
+        const audioTime = vi.fn(() => hardware.now);
+        setGestureClockSource({ getAudioTimeSeconds: audioTime, readNativeCursorBeats: nativeCursor });
+
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        expect(hardware.starts).toBe(1);
+        expect(hardware.zeroFrame).toBe(2448000);
+        expect(hardware.correlation).toEqual({ beat: 9.8, contextSeconds: 51 });
+        expect(producerStartsAtNativeRead).toEqual([0]);
+        expect(nativeCursor).toHaveBeenCalledOnce();
+        expect(audioTime).toHaveBeenCalledOnce();
+
+        hardware.now = 51.5;
+        await stopPlayback();
+
+        const [clip] = recordedClips();
+        expect(clip?.startBeat).toBeCloseTo(9.8, 10);
+        expect(clip?.endBeat).toBeCloseTo(10.8, 10);
+        expect(clip?.audioOffsetBeats ?? 0).toBe(0);
+        expect(hardware.zeroFrame).toBe(2448000);
+        expect(hardware.buffer?.duration).toBe(0.5);
+        expect(hardware.buffer?.length).toBe(24000);
+        expect(hardware.buffer?.getChannelData(0)[0]).toBe(0);
+        expect(hardware.buffer?.getChannelData(0)[23999]).toBe(23999);
+        expect(audioBufferCache.get(clip!.audioBufferId!)).toBe(hardware.buffer);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expectProjectProjection();
+    });
+
     it.each([
         { route: 'manual', boundary: 'ordinary' },
         { route: 'punch', boundary: 'ordinary' },

@@ -16,6 +16,7 @@ import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } 
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { getGestureClockSource } from '../../stores/gestureClockSource';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -35,7 +36,8 @@ import { stopActiveRecording } from './stopActiveRecording';
  * rather than a duration because the finaliser can run before the roll answers
  * — Record pressed again inside the hold stops the take from within it — and a
  * duration written after the roll would still read zero there. A capture joining
- * playback retains the scheduler's committed context/song pair instead. The
+ * playback retains its audible context/song pair: the native cursor while
+ * active, or the scheduler's committed pair otherwise. The
  * lead is written with a new roll's request, before the finaliser can run.
  */
 type TransportHold = {
@@ -50,6 +52,13 @@ type TransportHold = {
 type CaptureClock = ReturnType<ReturnType<typeof createRecordingCaptureClocks>['create']>;
 
 function capturePlayingAdmissionClock(hold: TransportHold, changes: readonly TempoChange[], tempo: number): void {
+    const source = getGestureClockSource();
+    const nativeCursor = source?.readNativeCursorBeats() ?? null;
+    if (source && nativeCursor !== null) {
+        hold.rolledAtContextSeconds = source.getAudioTimeSeconds();
+        hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, nativeCursor, tempo);
+        return;
+    }
     hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
     hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, playheadClockRef.beat, tempo);
 }
