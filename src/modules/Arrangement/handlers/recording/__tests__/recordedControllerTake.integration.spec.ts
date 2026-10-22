@@ -358,6 +358,73 @@ describe('recorded controller take commit', () => {
             expect(midiStore.value?.ccByClipId[discardedClipId]).toBeUndefined();
         });
 
+        // Stored playback and export admit a MIDI clip only when it has a note
+        // list (`resolveStoredControllerClips.spec.ts` pins that gate), so a
+        // take of controllers alone must carry an empty one or it is silent.
+        describe('a take of controllers and no notes', () => {
+            const playableControllers = (clipId: string) => {
+                const clip = trackStore.value!.tracks.flatMap((track) => track.clips).find(({ id }) => id === clipId)!;
+                const moves = projectClipControllerEvents({
+                    controlChanges: midiStore.value?.ccByClipId[clipId] ?? [],
+                    clip,
+                    fromBeat: 0,
+                    toBeat: 12,
+                });
+                return moves.map(({ controller, value, beat }) => ({ controller, value, beat }));
+            };
+
+            it('commits an empty note list so the stored pedal plays, and undo and redo carry the list with the clip', async () => {
+                const clipId = await startLiveTake();
+                sendLive(4.5, 0xb0, 64, 127);
+                sendLive(5.5, 0xb0, 64, 0);
+
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(midiStore.value?.notesByClipId[clipId]).toEqual([]);
+                expect(playableControllers(clipId)).toEqual([
+                    { controller: 64, value: 127, beat: 4.5 },
+                    { controller: 64, value: 0, beat: 5.5 },
+                ]);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.notesByClipId[clipId]).toBeUndefined();
+                expect(midiStore.value?.ccByClipId[clipId]).toBeUndefined();
+
+                await redo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.notesByClipId[clipId]).toEqual([]);
+                expect(playableControllers(clipId)).toHaveLength(2);
+            });
+
+            it('commits an empty note list for a take that recorded nothing at all', async () => {
+                const clipId = await startLiveTake();
+
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(midiStore.value?.notesByClipId[clipId]).toEqual([]);
+            });
+
+            it('keeps the notes a take recorded rather than replacing them with an empty list', async () => {
+                const clipId = await startLiveTake();
+                appendRecordedMidiNote({
+                    clipId,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                });
+                sendLive(4.5, 0xb0, 64, 127);
+
+                await stopRecording(8);
+                transportStore.set({ ...transportStore.value!, isRecording: false });
+                flushAutomergeStorageWrites();
+
+                expect(midiStore.value?.notesByClipId[clipId]?.map(({ id }) => id)).toEqual(['note-1']);
+            });
+        });
+
         /** Hold the project's snapshot transaction, as a collaboration persist does, until `release` is called. */
         async function holdSnapshotTransaction(): Promise<{ release: () => void; settled: Promise<unknown> }> {
             let release!: () => void;

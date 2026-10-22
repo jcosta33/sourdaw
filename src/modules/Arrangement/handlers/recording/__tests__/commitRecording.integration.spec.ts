@@ -155,6 +155,8 @@ describe('recording gesture commit (issue #4439)', () => {
             audioBufferId: 'rec-buffer-1',
         });
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
+        // Only a MIDI take carries a note list; redo gives an audio clip none.
+        expect(midiStore.value?.notesByClipId[provisional.id]).toBeUndefined();
     });
 
     // The ordinary audio terminal commits buffer truth: a 0.125 s capture is

@@ -86,6 +86,15 @@ function beginTake(clipId = CLIP): void {
     beginRecordedControllerTake();
 }
 
+/**
+ * A commit that has no rows to land stores no controller or bend list. It still
+ * gives the clip an empty note list, which is not a controller row.
+ */
+function expectNoControllerRowsStored(): void {
+    expect(mocks.midi.value?.ccByClipId).toEqual({});
+    expect(mocks.midi.value?.pitchBendByClipId).toEqual({});
+}
+
 describe('recorded controller take', () => {
     beforeEach(() => {
         vi.mocked(midiStore.set).mockClear();
@@ -194,12 +203,26 @@ describe('recorded controller take', () => {
             expect(recordedControllerTakeState.buffers.has(CLIP)).toBe(false);
         });
 
-        it('writes nothing for a take that recorded no controller', () => {
+        it('writes no controller row for a take that recorded no controller', () => {
             beginTake();
 
             commitRecordedControllers({ clip: spanOf(CLIP) });
 
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
+        });
+
+        it('gives the clip an empty note list in the write that lands its rows and leaves other clips alone', () => {
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
+            const note = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+            mocks.midi.value = { notesByClipId: { [NEXT_CLIP]: [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            expect(midiStore.set).toHaveBeenCalledTimes(1);
+            expect(mocks.midi.value?.notesByClipId[CLIP]).toEqual([]);
+            expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toHaveLength(1);
+            expect(mocks.midi.value?.notesByClipId[NEXT_CLIP]).toEqual([note]);
         });
 
         it('drops a clip buffer and starting pedals unwritten when its commit will not land', () => {
@@ -306,7 +329,7 @@ describe('recorded controller take', () => {
 
             commitRecordedControllers({ clip: spanOf(CLIP) });
 
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
         });
 
         it('adds no duplicate where the take records the controller and channel at beat 0 itself', () => {
@@ -363,7 +386,7 @@ describe('recorded controller take', () => {
             beginRecordedControllerTake();
 
             commitRecordedControllers({ clip: spanOf('rec-clip-other') });
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
 
             commitRecordedControllers({ clip: spanOf(CLIP) });
             // The pedal seeded at beat 0 and the lift that ends it.
@@ -380,7 +403,7 @@ describe('recorded controller take', () => {
 
             commitRecordedControllers({ clip: spanOf('existing-clip') });
 
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
         });
 
         it('plans the same pedal rows, ids included, that the commit writes', () => {
@@ -428,7 +451,7 @@ describe('recorded controller take', () => {
 
             commitRecordedControllers({ clip: spanOf(CLIP) });
 
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
         });
     });
 
@@ -615,7 +638,7 @@ describe('recorded controller take', () => {
             expect(recordedControllerTakeState.buffers.size).toBe(0);
             commitRecordedControllers({ clip: spanOf(NEXT_CLIP) });
             commitRecordedControllers({ clip: spanOf(CLIP) });
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
         });
 
         it('does not let a take whose clip was removed leak into the next take', () => {
@@ -629,7 +652,7 @@ describe('recorded controller take', () => {
 
             expect(recordedControllerTakeState.buffers.size).toBe(0);
             commitRecordedControllers({ clip: spanOf(CLIP) });
-            expect(midiStore.set).not.toHaveBeenCalled();
+            expectNoControllerRowsStored();
         });
 
         it('keeps the buffer and pedals of an earlier take whose commit is still waiting when the next take begins', () => {

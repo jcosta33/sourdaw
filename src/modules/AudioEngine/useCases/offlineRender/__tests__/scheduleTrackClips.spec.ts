@@ -2434,6 +2434,25 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
         ]);
     });
 
+    // A controller-only recorded take commits an empty note list, and the export
+    // admits a MIDI clip by that list alone.
+    it('queues the stored pedal of a clip whose note list is empty', async () => {
+        const { events } = await scheduleWithPedalLane({
+            shape: ({ midi }) => {
+                midi.notesByClipId['clip-1'] = [];
+            },
+        });
+
+        expect(
+            events
+                .filter(isPendingControlWorkletEvent)
+                .map(({ time, controller, value }) => ({ time, controller, value }))
+        ).toEqual([
+            { time: 0.5, controller: 64, value: 127 },
+            { time: 1, controller: 64, value: 0 },
+        ]);
+    });
+
     it('releases the last note of one clip before the carry its successor on the track opens with', async () => {
         const { arrivals } = await scheduleWithPedalLane({
             controlChanges: [],
