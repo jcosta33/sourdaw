@@ -1,0 +1,60 @@
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_dd4177b57ab8eb 315-317,327
+  s_1c08b47ac3792f::t_22895761e88eef 659
+  s_1c08b47ac3792f::t_9f91dc91e7f578 103-104
+  s_1c08b47ac3792f::t_041454623e7e18 580
+  s_1c08b47ac3792f::t_9e4252b3e9f9c4 606-628
+  s_1c08b47ac3792f::t_e4d554d22fa28f 212-223,228-230
+  s_1c08b47ac3792f::t_096d094b02aa26 28-29
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_2c2b2d94ebe44c 45
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_1c08b47ac3792f::t_66743f3bd34d05 63-64
+  s_1c08b47ac3792f::t_6508ddfc30f970 237-240
+  s_1c08b47ac3792f::t_9240ba21afa615 26-30,37,42-49,52-53
+src/modules/AiRuntime/useCases/agentReference/readStoredCardRemoval.ts
+  s_1c08b47ac3792f::t_858ee8674b9cb3 55-56
+  s_1c08b47ac3792f::t_3a687dccd85e9c 218-252,256-258,300,356
+  s_1c08b47ac3792f::t_047dee6da2d44f 253-255
+  s_1c08b47ac3792f::t_58f4b8a8f7d319 294-298
+  s_1c08b47ac3792f::t_3438467e5137b4 348-355
+  s_1c08b47ac3792f::t_9fe49c2ff6ff54 259-260,264-265,299,301,334,341,357-358
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_ed9c54face0d20 73-75
+  s_1c08b47ac3792f::t_6d84ce99f9eab0 49-50
+  s_1c08b47ac3792f::t_6795eee8af7126 274
+  s_1c08b47ac3792f::t_8265f1ce844713 72,76-77
+  s_1c08b47ac3792f::t_30feafcbe605f3 748-753
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_b073f40430a298 6030-6031
+  s_1c08b47ac3792f::t_615ee74ddd6c6c 5940
+  s_1c08b47ac3792f::t_99704d3680d3b5 6092
+  s_1c08b47ac3792f::t_4771d79e337bd0 6001-6003,6009-6025,6027-6029,6032-6055,6057-6091,6093-6095
+  s_1c08b47ac3792f::t_bee7fb0914edba 5949-5951
+  s_1c08b47ac3792f::t_74bdb902fb81fe 6004-6008
+  s_1c08b47ac3792f::t_d86db2686d0e0c 6178
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_cd21ab36d898cc 1673-1675
+  s_1c08b47ac3792f::t_8050590400c27a 2009-2029
+  s_1c08b47ac3792f::t_64cfb50a3393c1 1981-1984
+  s_1c08b47ac3792f::t_8c440c5cb83f0a 2336-2423,2661
+  s_1c08b47ac3792f::t_80ef79cd045093 2541-2644,2646-2655
+  s_1c08b47ac3792f::t_661913127d5358 2645
+  s_1c08b47ac3792f::t_ed7f2a3ac58afa 2030-2031,2424-2431,2656-2660,2662
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43696c07daa4aa7c7c2b8d254a8741bdf6c8fa8e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
