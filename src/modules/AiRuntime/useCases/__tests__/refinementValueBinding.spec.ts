@@ -356,7 +356,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(result).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('removes') });
         });
 
-        it('row 8: a removal naming only part of a name is refused, and "not" an object off the card protects it', () => {
+        it('row 8: a removal naming only part of a name is refused or asked, and "not" an object off the card protects it', () => {
             const bassKept = refine(P1_CARD, 'not the bass', [vocalsBy(-3), snareBy(-2)]);
 
             expect(commandsOf(bassKept)).toEqual([
@@ -370,10 +370,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('names no single'),
             });
-            expect(refine(P1_CARD, 'not the snare drum', [vocalsBy(-3)])).toMatchObject({
-                status: 'rejected',
-                rejectionReason: expect.stringContaining('names no single'),
-            });
+            expect(refine(P1_CARD, 'not the snare drum', [vocalsBy(-3)]).status).toBe('clarify');
             expect(commandsOf(refine(P1_CARD, 'leave the snare alone', [vocalsBy(-3)]))).toEqual([
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
             ]);
@@ -682,62 +679,61 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
-        it('"not" or "except" before a pending track and a figure removes that track\'s change and protects it', () => {
+        it('"not", "except", "except for" or "without" before a pending track removes its change and protects it', () => {
             for (const refinement of [
-                'make the vocals 1.5 dB, not the snare at 2 dB',
-                'make the vocals 1.5 dB, except the snare at 2 dB',
+                'not the snare',
+                'except the snare',
+                'except for the snare',
+                'without the snare',
             ]) {
-                expect(statusOf(P1_CARD, refinement, [vocalsBy(-1.5), snareAt(2)])).toMatchObject({
-                    status: 'rejected',
-                });
-                const result = refine(P1_CARD, refinement, [vocalsBy(-1.5)]);
+                const result = refine(P1_CARD, refinement, [vocalsBy(-3)]);
 
-                expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 }]);
+                expect({ refinement, commands: commandsOf(result) }).toEqual({
+                    refinement,
+                    commands: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }],
+                });
                 expect(result.status === 'grounded' ? result.groundingBasis?.protectedUnchanged : null).toEqual(
                     expect.arrayContaining([{ id: 'track-snare', name: 'Snare' }])
                 );
+                expect({ refinement, status: refine(P1_CARD, refinement, P1_PLAN).status }).toEqual({
+                    refinement,
+                    status: 'rejected',
+                });
             }
         });
 
-        it('"don\'t turn the snare down 2 dB" removes the pending Snare change rather than keeping it', () => {
-            expect(refine(P1_CARD, "don't turn the snare down 2 dB", [vocalsBy(-3), snareBy(-2)])).toMatchObject({
-                status: 'rejected',
-                rejectionReason: expect.stringContaining('removes'),
-            });
-            const result = refine(P1_CARD, "don't turn the snare down 2 dB", [vocalsBy(-3)]);
-
-            expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }]);
-            expect(result.status === 'grounded' ? result.groundingBasis?.protectedUnchanged : null).toEqual(
-                expect.arrayContaining([{ id: 'track-snare', name: 'Snare' }])
-            );
+        it('any other negated clause naming an object or stating a figure asks, whatever the batch keeps', () => {
+            const refinements = [
+                "don't raise Snare",
+                "don't turn Snare up 2 dB",
+                'never boost Snare',
+                'do not change the snare',
+                "don't drop the snare",
+                "don't turn the snare down 2 dB",
+                "don't turn the bass down 2 dB",
+                'make the vocals 1.5 dB, not the snare at 2 dB',
+                'make the vocals 1.5 dB, except the snare at 2 dB',
+            ];
+            for (const refinement of refinements) {
+                for (const calls of [[vocalsBy(-3)], P1_PLAN, [vocalsBy(-1.5)], [vocalsBy(-1.5), snareAt(2)]]) {
+                    expect(statusOf(P1_CARD, refinement, calls)).toEqual({ refinement, calls, status: 'clarify' });
+                }
+            }
         });
 
-        it('"don\'t drop the snare" without a figure keeps the Snare change rather than removing it', () => {
-            expect(refine(P1_CARD, "don't drop the snare", [vocalsBy(-3)])).toMatchObject({
-                status: 'rejected',
-                rejectionReason: expect.stringContaining('omits'),
-            });
-        });
-
-        it('a negated clause naming no pending change asks', () => {
-            expect(statusOf(P1_CARD, "don't turn the bass down 2 dB", [vocalsBy(-3), snareBy(-2)])).toMatchObject({
-                status: 'clarify',
-            });
-        });
-
-        it('a negated level clause removes only the level of the object it names, keeping its pan', () => {
+        it('a negation with an operation word removes only that operation of the object it names, keeping its pan', () => {
             const snarePan = { name: 'setTrackPan', arguments: { trackId: 'track-snare', pan: -30 } };
             const card = {
                 prompt: 'turn Vocals down 3 dB, turn Snare down 2 dB and pan Snare 30% left',
                 calls: [vocalsBy(-3), snareBy(-2), snarePan],
             };
-            const result = refine(card, "don't turn the snare down 2 dB", [vocalsBy(-3), snarePan]);
+            const result = refine(card, 'not the snare gain', [vocalsBy(-3), snarePan]);
 
             expect(commandsOf(result)).toEqual([
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
                 { type: 'setTrackPan', trackId: 'track-snare', pan: -30 },
             ]);
-            expect(refine(card, "don't turn the snare down 2 dB", [vocalsBy(-3)])).toMatchObject({
+            expect(refine(card, 'not the snare gain', [vocalsBy(-3)])).toMatchObject({
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('omits a pending setTrackPan'),
             });
@@ -1459,8 +1455,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ).toEqual({ status: 'valid' });
         });
 
-        it('removes a created device only when the refinement names it', () => {
-            expect(admission('turn Vocals down 2 dB, not the compressor', [vocalsBy(-2)])).toEqual({ status: 'valid' });
+        it('removes a created device only when the refinement removes it by name', () => {
+            expect(admission('turn Vocals down 2 dB, remove the compressor', [vocalsBy(-2)])).toEqual({
+                status: 'valid',
+            });
+            expect(admission('turn Vocals down 2 dB, not the compressor', [vocalsBy(-2)])).toMatchObject({
+                status: 'refused',
+            });
             expect(admission('turn Vocals down 2 dB', [vocalsBy(-2)])).toMatchObject({
                 status: 'refused',
                 reason: expect.stringContaining('omits a pending addDevice'),
@@ -1615,6 +1616,160 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('the clause grammar a refinement is read in', () => {
+        const UP_CARD = { prompt: 'turn Vocals up 3 dB', calls: [vocalsBy(3)] };
+        const AT_CARD = {
+            prompt: 'put Vocals at -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        };
+        const vocalsAt = (gainDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', gainDb },
+        });
+        /** Every call a figure could have been read into against a pending level: either sign, moved or landed. */
+        const levelCalls = (figure: number): ProviderCall[][] => [
+            [vocalsBy(-figure)],
+            [vocalsBy(figure)],
+            [vocalsBy(-3 - figure)],
+            [vocalsAt(-figure)],
+            [vocalsAt(figure)],
+        ];
+        const bassPan = (pan: number): ProviderCall => ({
+            name: 'setTrackPan',
+            arguments: { trackId: 'track-bass', pan },
+        });
+        const PAN_CARD = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
+        const tempo = (bpm: number): ProviderCall => ({ name: 'setTempo', arguments: { bpm } });
+        const TEMPO_CARD = { prompt: 'set tempo to 120', calls: [tempo(120)] };
+
+        function questionOf(result: ReturnType<typeof ground>): string {
+            return result.status === 'clarify' ? (result.planningOutcome.questions[0] ?? '') : '';
+        }
+
+        function expectAsked(
+            card: { prompt: string; calls: readonly ProviderCall[] },
+            refinements: readonly string[],
+            callSets: readonly (readonly ProviderCall[])[],
+            context: ProjectContext = CONTEXT
+        ) {
+            for (const refinement of refinements) {
+                for (const calls of callSets) {
+                    expect({ refinement, calls, status: refine(card, refinement, calls, context).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'clarify',
+                    });
+                }
+            }
+        }
+
+        it('a clause naming a VCA group no pending command acts on is an addition and never binds the Vocals', () => {
+            const rows: Array<[string, string]> = [
+                ['Drums', 'turn Drums down 2 dB'],
+                ['Drums', 'make Drums 2 dB'],
+                ['Drums', 'raise Drums by 2 dB'],
+                ['Drums', 'put Drums at 2 dB'],
+                ['Drums VCA', 'turn Drums VCA down 2 dB'],
+            ];
+            for (const [name, refinement] of rows) {
+                const context: ProjectContext = {
+                    ...CONTEXT,
+                    vcaGroups: [
+                        { id: 'vca-drums', name, gain: 1, muted: false, trackIds: ['track-snare', 'track-drum-bus'] },
+                    ],
+                };
+                for (const calls of [...levelCalls(2), [vocalsBy(-3)]]) {
+                    expect({ refinement, calls, status: refine(P0_CARD, refinement, calls, context).status }).toEqual({
+                        refinement,
+                        calls,
+                        status: 'rejected',
+                    });
+                }
+            }
+        });
+
+        it('a value for one pending command stated across two clauses asks, in either order and across any separator', () => {
+            expectAsked(
+                P0_CARD,
+                [
+                    'turn Vocals up, make it 2 dB',
+                    'raise Vocals, make it 2 dB',
+                    'turn Vocals up and make it 2 dB',
+                    'turn Vocals up but make it 2 dB',
+                    'turn Vocals up, and then make it 2 dB',
+                    'turn Vocals up, 2 dB',
+                    'make it 2 dB, Vocals louder',
+                    'Vocals louder. Make it 2 dB',
+                ],
+                levelCalls(2)
+            );
+            expectAsked(UP_CARD, ['turn Vocals down, make it 2 dB'], levelCalls(2));
+        });
+
+        it('a clause with no figure keeps the pending value only in the direction it already takes', () => {
+            expectAsked(
+                P0_CARD,
+                ['turn Vocals up', 'turn Vocals up two dB'],
+                [[vocalsBy(-3)], [vocalsBy(3)], [vocalsBy(-2)], [vocalsBy(2)]]
+            );
+            expectAsked(UP_CARD, ['turn Vocals up two dB'], [[vocalsBy(3)], [vocalsBy(2)]]);
+            expect(commandsOf(refine(P0_CARD, 'turn Vocals down', [vocalsBy(-3)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+            ]);
+        });
+
+        it('a conjunction opening the refinement opens its clause ahead of the verb', () => {
+            for (const refinement of ['and make it 1.5 dB', 'then make it 1.5 dB']) {
+                expect({ refinement, commands: commandsOf(refine(P0_CARD, refinement, [vocalsBy(-1.5)])) }).toEqual({
+                    refinement,
+                    commands: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 }],
+                });
+            }
+        });
+
+        it('asks when anything but whitespace stands between the connector and the figure', () => {
+            for (const refinement of ['put it at the 6 dB', 'bring it to a 2 dB cut']) {
+                for (const calls of levelCalls(refinement.includes('6') ? 6 : 2)) {
+                    const result = refine(P0_CARD, refinement, calls);
+
+                    expect({ refinement, calls, question: questionOf(result) }).toEqual({
+                        refinement,
+                        calls,
+                        question: expect.stringContaining('Words stand between'),
+                    });
+                }
+            }
+        });
+
+        it('asks when the value clause quotes text', () => {
+            expectAsked(P0_CARD, ['make it 2 dB "down"', "make it 2 dB 'quieter'"], levelCalls(2));
+        });
+
+        it('asks when a pan clause states both sides', () => {
+            expectAsked(PAN_CARD, ['pan it right 20 left', 'pan it 20 left right'], [[bassPan(20)], [bassPan(-20)]]);
+        });
+
+        it('asks when a sign contradicts the direction word beside it', () => {
+            for (const card of [P0_CARD, AT_CARD]) {
+                expectAsked(card, ['lower it +2 dB', 'raise it -2 dB'], levelCalls(2));
+            }
+        });
+
+        it('asks when a plain value states a direction beside its landing', () => {
+            const result = refine(TEMPO_CARD, 'bring it down to 100 bpm', [tempo(100)]);
+
+            expect(questionOf(result)).toContain('Say where the value should land');
+            expect(commandsOf(refine(TEMPO_CARD, 'bring it to 100 bpm', [tempo(100)]))).toEqual([{ type: 'setTempo' }]);
+        });
+
+        it('asks about a symbol a space before the figure or touching it after', () => {
+            for (const calls of [[vocalsBy(-1.5)], [vocalsBy(1.5)]]) {
+                expect(questionOf(refine(UP_CARD, 'by ➖ 1.5 dB', calls))).toContain('"➖"');
+            }
+            expect(questionOf(refine(PD_CARD, 'set it to 50➖', [reverbMix(50)]))).toContain('"➖"');
+        });
+    });
+
     describe('pairing a refined batch with the stored card it refines', () => {
         const PAIRING_CONTEXT = projectContext([
             projectTrack('track-guitar', 'Guitar'),
@@ -1651,7 +1806,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }).status;
         }
 
-        it('a negation before a verb removes nothing, while one naming the object directly removes it', () => {
+        it('a negation removes nothing from a stored card, while a removal verb naming the object removes it', () => {
             const compressor = compressorOn('track-guitar', 'd1');
             const rows: Array<[readonly StoredCommand[], readonly StoredCommand[], string, string]> = [
                 [
@@ -1673,12 +1828,48 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     'Set the vocal gain to 60%, but do not change the guitar pan.',
                     'refused',
                 ],
-                [[compressor], [eqOn('track-guitar', 'd2')], 'Add an EQ, not the compressor.', 'valid'],
-                [[guitarPan], [], 'not the guitar pan', 'valid'],
+                [[compressor], [eqOn('track-guitar', 'd2')], 'Add an EQ, not the compressor.', 'refused'],
+                [[guitarPan], [], 'not the guitar pan', 'refused'],
+                [[compressor], [eqOn('track-guitar', 'd2')], 'Add an EQ, remove the compressor.', 'valid'],
+                [[guitarPan], [], 'drop the guitar pan', 'valid'],
+                [[guitarPan, vocalGain(0.5)], [], 'Remove the guitar pan, not the vocal gain', 'refused'],
             ];
             for (const [pending, next, prompt, status] of rows) {
                 expect({ prompt, status: admission(pending, next, prompt) }).toEqual({ prompt, status });
             }
+        });
+
+        it('a removal of a created object picks out exactly one pending creation, by name and host or a unique name', () => {
+            const guitarCompressor = compressorOn('track-guitar', 'device-command-1');
+            const bassCompressor = compressorOn('track-bass', 'device-command-2');
+            const guitarEq = eqOn('track-guitar', 'device-command-3');
+            const twoCompressors = [guitarCompressor, bassCompressor, vocalGain(0.5)];
+            const rows: Array<[readonly StoredCommand[], readonly StoredCommand[], string, string]> = [
+                [[guitarCompressor, guitarEq], [], 'Remove the compressor, not the EQ', 'refused'],
+                [
+                    [guitarCompressor, guitarEq],
+                    [compressorOn('track-guitar', 'device-command-4')],
+                    'Remove the compressor, not the EQ',
+                    'refused',
+                ],
+                [twoCompressors, [vocalGain(0.5)], 'Make vocal gain 2, not the compressor on Bass', 'refused'],
+                [twoCompressors, [guitarCompressor, vocalGain(0.5)], 'Remove the compressor from Bass', 'valid'],
+                [twoCompressors, [guitarCompressor, vocalGain(0.5)], 'Remove the compressor', 'refused'],
+                [twoCompressors, [guitarCompressor, vocalGain(0.5)], 'Remove the compressor from Keys', 'refused'],
+                [[guitarCompressor, vocalGain(0.5)], [vocalGain(0.5)], 'Remove the compressor', 'valid'],
+            ];
+            for (const [pending, next, prompt, status] of rows) {
+                expect({ prompt, status: admission(pending, next, prompt) }).toEqual({ prompt, status });
+            }
+        });
+
+        it('a removal drops a command acting on two objects only when it names both', () => {
+            const reverbMix40: StoredCommand = {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-reverb', paramId: 'mix', value: 40 },
+            };
+
+            expect(admission([reverbMix40], [], 'drop the mix parameter')).toBe('refused');
         });
 
         it('a creation that names nothing pairs only with the same creation under a fresh id', () => {

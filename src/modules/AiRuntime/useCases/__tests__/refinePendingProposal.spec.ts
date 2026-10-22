@@ -508,7 +508,8 @@ describe('refining the pending proposal', () => {
 
         expect(proposedIds()).toEqual([pendingId]);
         expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
-        expect(lastAssistantMessage()?.content).toContain('omits');
+        // A negated verb ("do not drop") is no removal form, so the refinement is asked rather than read.
+        expect(lastAssistantMessage()?.content).toContain('says what not to do');
         expectMixUntouched();
     });
 

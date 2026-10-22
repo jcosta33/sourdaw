@@ -40,6 +40,8 @@ type StatedFigure = {
     /** The unit the figure is stated in, by its canonical spelling (`%`, `dB`, `Hz`, `bpm`, ...). */
     unit: string | null;
     connector: 'absolute' | 'relative' | null;
+    /** The connector word stated before the figure with other words between them ("at the 6 dB"), if any. */
+    separatedConnector: string | null;
     direction: -1 | 1 | null | 'conflicting';
     /** The words beside the figure, read from the clause with every object name masked. */
     words: string;
@@ -57,13 +59,13 @@ type MoveDirection = { status: 'direction'; sign: -1 | 1; kept: boolean } | { st
 /** The words that move a level down or up: the scope phrases any level request is read by, plus `down` and `up`. */
 const LOWERING_PHRASES: readonly string[] = [...QUIETER_SCOPE_PHRASES, 'down'];
 const RAISING_PHRASES: readonly string[] = [...LOUDER_SCOPE_PHRASES, 'up'];
-export const LEVEL_DIRECTION_PHRASES: readonly string[] = [...LOWERING_PHRASES, ...RAISING_PHRASES];
+const LEVEL_DIRECTION_PHRASES: readonly string[] = [...LOWERING_PHRASES, ...RAISING_PHRASES];
 /** The words the level phrases are spelled in, which a value clause reads as the direction they state. */
 const LEVEL_DIRECTION_WORDS: ReadonlySet<string> = new Set(
     LEVEL_DIRECTION_PHRASES.flatMap((phrase) => phrase.split(' '))
 );
 
-export const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
+const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
 /** Words a pan clause reads itself: the operation and the side it lands on. */
 const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WORDS]);
 /**
@@ -96,8 +98,13 @@ const COMPARATIVE_WORDS: ReadonlySet<string> = new Set([
     'quieter',
     'softer',
 ]);
-/** Conjunctions that may open a clause ahead of its verb, so "and lower it 2 dB" still opens on "lower". */
+/**
+ * Words that may open a clause ahead of its verb. The clause splitter consumes a conjunction between
+ * two clauses, so `and`, `but` and `then` open only the refinement's first clause ("and lower it 2 dB").
+ */
 const CLAUSE_OPENING_WORDS: ReadonlySet<string> = new Set(['and', 'but', 'then', 'please']);
+/** A quotation mark: a value clause quoting anything states words this reading never reads. */
+const QUOTE_MARK = /["'“”‘’«»`]/u;
 /**
  * The closed vocabulary a value clause is read in. Beside its figure, the unit word that figure is read
  * in and the object names it states, a clause binds a value only when every other word is one of these:
@@ -160,14 +167,22 @@ function readUnit(raw: string, after: string): { unit: StatedFigure['unit']; len
     return readUnitWord(after) ?? { unit: null, length: 0 };
 }
 
-function readConnector(before: string): StatedFigure['connector'] {
-    if (/\b(?:at|to)\s*$/iu.test(before)) {
-        return 'absolute';
+/**
+ * The connector the figure follows: `at`/`to` lands it, `by` moves it. A connector reads only when
+ * nothing but whitespace stands between it and the figure (or the sign before it); the last connector
+ * of the clause with words after it is returned as separated, since "at the 6 dB" or "to a 2 dB cut"
+ * may say something about the figure this reading cannot tell.
+ */
+function readConnector(before: string): Pick<StatedFigure, 'connector' | 'separatedConnector'> {
+    const last = Array.from(before.matchAll(/(?<![\p{L}\p{N}])(at|to|by)(?![\p{L}\p{N}])/giu)).at(-1);
+    if (last === undefined) {
+        return { connector: null, separatedConnector: null };
     }
-    if (/\bby\s*$/iu.test(before)) {
-        return 'relative';
+    const word = last[1]!.toLowerCase();
+    if (before.slice(last.index + last[0].length).trim().length > 0) {
+        return { connector: null, separatedConnector: word };
     }
-    return null;
+    return { connector: word === 'by' ? 'relative' : 'absolute', separatedConnector: null };
 }
 
 function namesPhrase(words: string, phrase: string): boolean {
@@ -206,8 +221,18 @@ function findUnreadWord(words: string, alsoRead: ReadonlySet<string>): string | 
     );
 }
 
-function statesWord(words: string, vocabulary: ReadonlySet<string>): boolean {
-    return words.split(' ').some((word) => vocabulary.has(word));
+/** The side a pan clause's words state: `left` is negative, `right` positive. */
+function readSide(words: string): -1 | 1 | null | 'conflicting' {
+    const tokens = new Set(words.split(' ').filter((word) => PAN_SIDE_WORDS.has(word)));
+    const left = tokens.has('left');
+    const right = tokens.has('right');
+    if (left && right) {
+        return 'conflicting';
+    }
+    if (left) {
+        return -1;
+    }
+    return right ? 1 : null;
 }
 
 /**
@@ -223,7 +248,7 @@ function findComparativeWord(words: string): string | null {
 }
 
 /** The one figure a clause states, with its unit, connector and direction, read from the masked clause. */
-function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several' | 'unreadable' {
+function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several' | 'unreadable' | 'quoted' {
     const numbers = findPromptNumbers(clause.masked);
     const [number] = numbers;
     if (number === undefined) {
@@ -231,6 +256,9 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
     }
     if (numbers.length > 1) {
         return 'several';
+    }
+    if (QUOTE_MARK.test(clause.masked)) {
+        return 'quoted';
     }
     const value = parsePromptNumberValue(number.raw.endsWith('%') ? number.raw.slice(0, -1) : number.raw);
     if (value === null) {
@@ -254,7 +282,7 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         sign,
         raw,
         unit: unit.unit,
-        connector: readConnector(before),
+        ...readConnector(before),
         direction: readDirection(words),
         words,
         symbol: findTouchingMark(before, after),
@@ -282,16 +310,70 @@ function readFigureComparative(clause: RefinementClause): string | null {
     return typeof figure === 'string' ? null : findComparativeWord(figure.words);
 }
 
-/** The unit a clause's one figure is stated in, or `null` when it states no unit or not exactly one figure. */
-function readFigureUnit(clause: RefinementClause): string | null {
+/** Whether the words name a unit a figure is read in, other than the `s` an apostrophe leaves ("let's"). */
+function statesUnitWord(words: string): boolean {
+    return words.split(' ').some((word) => word !== 's' && readUnitWord(word)?.length === word.length);
+}
+
+/** Whether a clause states anything of a value: a figure, a level direction, a pan side or a unit. */
+function statesValue(clause: RefinementClause): boolean {
+    const words = normalizePromptText(clause.masked);
+    return (
+        findPromptNumbers(clause.masked).length > 0 ||
+        readDirection(words) !== null ||
+        readSide(words) !== null ||
+        statesUnitWord(words)
+    );
+}
+
+/** Whether a clause's figure can mean this pending command: any clause without one figure can. */
+function canMean(clause: RefinementClause, command: ProposalGroundingCommand, context: ProjectContext): boolean {
     const figure = readFigure(clause);
-    return typeof figure === 'string' ? null : figure.unit;
+    return typeof figure === 'string' || isUnitCompatible(command, figure, context);
+}
+
+/** The way a pending change already moves: a level move's sign, or a pan's side. */
+function readPendingDirection(command: ProposalGroundingCommand): -1 | 1 | null {
+    const { value } = command;
+    if (value === null || value.value === 0) {
+        return null;
+    }
+    const signed = command.type === 'setTrackPan' || (value.unit === 'dB' && value.form === 'relative');
+    if (!signed) {
+        return null;
+    }
+    return value.value < 0 ? -1 : 1;
+}
+
+/**
+ * What to ask of a clause that states a direction, side or unit but no figure for a pending command.
+ * It restates the command only in the direction the command already takes ("turn Vocals down" against
+ * a pending cut); a direction against it, a direction for a value that takes none, a level direction
+ * beside a pan, or a unit with no figure ("turn Vocals up two dB") leaves the value open.
+ */
+function findRestatementQuestion(clause: RefinementClause, command: ProposalGroundingCommand): string | null {
+    if (findPromptNumbers(clause.masked).length > 0) {
+        return null;
+    }
+    const words = normalizePromptText(clause.masked);
+    const level = readDirection(words);
+    const side = readSide(words);
+    let stated: ReturnType<typeof readSide> = side === null ? level : 'conflicting';
+    if (command.type === 'setTrackPan') {
+        stated = level === null ? side : 'conflicting';
+    }
+    if (!statesUnitWord(words) && (stated === null || stated === readPendingDirection(command))) {
+        return null;
+    }
+    return `"${clause.text.trim()}" does not say what the value should be. State the new value, for example "make it 2 dB".`;
 }
 
 /** How the one figure a refinement clause states reads, beside the value it binds. */
 export const refinementFigure = {
     comparative: readFigureComparative,
-    unit: readFigureUnit,
+    statesValue,
+    canMean,
+    restatementQuestion: findRestatementQuestion,
 } as const;
 
 function getLevelArguments(actionType: string): { absolute: string | null; relative: string | null } {
@@ -487,6 +569,9 @@ function resolvePlainValue(
     context: ProjectContext
 ): ValueResolution {
     const isPan = command.type === 'setTrackPan';
+    if (isPan && readSide(figure.words) === 'conflicting') {
+        return clarify(`Which side should it pan to? Say "${figure.magnitude} left" or "${figure.magnitude} right".`);
+    }
     if (figure.sign !== null) {
         const unsigned = String(figure.magnitude);
         return clarify(
@@ -501,7 +586,7 @@ function resolvePlainValue(
     if (figure.connector === 'absolute') {
         return { status: 'bound', argument: value.argument, expected: null, keptPendingDirection: false };
     }
-    const statesSide = isPan && statesWord(figure.words, PAN_SIDE_WORDS);
+    const statesSide = isPan && readSide(figure.words) !== null;
     if (isSignedDomain(command, context) && !statesSide) {
         return clarify(`Should ${figure.raw} be positive or negative?`);
     }
@@ -631,10 +716,22 @@ export function bindRefinementFigure(input: {
     if (figure === 'several' || figure === 'unreadable') {
         return { kind: 'refused', reason: `The refinement clause "${clause.text.trim()}" states more than one value.` };
     }
+    if (figure === 'quoted') {
+        return {
+            kind: 'clarify',
+            question: `What should the value be? "${clause.text.trim()}" quotes words beside its figure; state the new value without them, as in "make it 2 dB".`,
+        };
+    }
     if (figure.symbol !== null) {
         return {
             kind: 'clarify',
             question: `What does "${figure.symbol}" beside ${figure.raw} mean? Restate the value without it, writing a sign as "-", "+", "minus" or "plus".`,
+        };
+    }
+    if (figure.separatedConnector !== null) {
+        return {
+            kind: 'clarify',
+            question: `What should the value be? Words stand between "${figure.separatedConnector}" and ${figure.raw}; state it as "${figure.separatedConnector} ${figure.raw}".`,
         };
     }
     const unit = figure.unit === 'dB' ? ' dB' : '';

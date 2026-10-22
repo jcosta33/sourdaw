@@ -119,14 +119,8 @@ function isNegatedRemoval(clause: string, removalIndex: number): boolean {
     );
 }
 
-const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|not|except|without|keep|retain|preserve|leave)\b/gi;
-const REMOVAL = /^(?:remove|drop|omit|exclude|skip|not|except|without)$/i;
-/**
- * A negation removes only the object it names directly ("not the compressor", "except for the snare");
- * one before a verb ("do not change the compressor") negates that verb and removes nothing.
- */
-const NEGATION = /^(?:not|except|without)$/i;
-const NEGATED_REFERENCE_LEAD = /^(?:for\b\s*)?(?:the|a|an)?$/i;
+const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|keep|retain|preserve|leave)\b/gi;
+const REMOVAL = /^(?:remove|drop|omit|exclude|skip)$/i;
 const BINDING_WORDS = new Set([
     'the',
     'new',
@@ -249,14 +243,6 @@ function onlyBindingWords(text: string): boolean {
     );
 }
 
-/** Whether the words between a directive and the object it names leave the directive acting on that object. */
-function directsAtTarget(directive: string, beforeTarget: string): boolean {
-    if (NEGATION.test(directive)) {
-        return NEGATED_REFERENCE_LEAD.test(beforeTarget);
-    }
-    return onlyBindingWords(beforeTarget);
-}
-
 function intentionForMention(input: {
     clause: string;
     mentions: ReturnType<typeof targetMentions>;
@@ -277,7 +263,7 @@ function intentionForMention(input: {
     }
     const at = directive.index ?? 0;
     const beforeTarget = clause.slice(at + directive[0].length, mention.start).trim();
-    if (!directsAtTarget(directive[0], beforeTarget)) {
+    if (!onlyBindingWords(beforeTarget)) {
         return null;
     }
     const intention = REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';
@@ -299,15 +285,21 @@ function intentionForMention(input: {
     return intention;
 }
 
-/** Whether every clause naming this id with a directive removes it, and at least one does. */
-function removesMentioned(input: {
+type MentionIntention = {
+    clause: string;
+    mention: ReturnType<typeof targetMentions>[number];
+    intention: 'remove' | 'preserve';
+};
+
+/** Each mention of this id a directive governs, by clause, with what the directive asks of it. */
+function readMentionIntentions(input: {
     prompt: string;
     context: ProjectContext;
     candidateIds: readonly string[];
     id: string;
     operation: RegExp | null;
-}): boolean {
-    const intentions = clausesOf(input.prompt).flatMap((clause) => {
+}): MentionIntention[] {
+    return clausesOf(input.prompt).flatMap((clause) => {
         const mentions = targetMentions(clause, input.context, input.candidateIds);
         const quotes = quotedRanges(clause);
         const directives = Array.from(clause.matchAll(DIRECTIVE)).filter(
@@ -318,30 +310,103 @@ function removesMentioned(input: {
                 return [];
             }
             const intention = intentionForMention({ clause, mentions, directives, index, operation: input.operation });
-            return intention === null ? [] : [intention];
+            return intention === null ? [] : [{ clause, mention, intention }];
         });
     });
-    return intentions.includes('remove') && !intentions.includes('preserve');
+}
+
+/** Whether every clause naming this id with a directive removes it, and at least one does. */
+function removesMentioned(intentions: readonly MentionIntention[]): boolean {
+    return (
+        intentions.some((entry) => entry.intention === 'remove') &&
+        !intentions.some((entry) => entry.intention === 'preserve')
+    );
+}
+
+type PendingCreation = { command: Command; names: readonly string[]; hostIds: readonly string[] };
+
+/**
+ * The hosts a removal names after the created object it removes, across binding words only ("the
+ * compressor from Bass", "the compressor on Bass").
+ */
+function findNamedHosts(
+    entry: MentionIntention,
+    creations: readonly PendingCreation[],
+    context: ProjectContext
+): Set<string> {
+    const hostIds = Array.from(new Set(creations.flatMap((creation) => creation.hostIds)));
+    const { clause, mention } = entry;
+    return new Set(
+        targetMentions(clause, context, hostIds).flatMap((host) => {
+            if (host.id === null || host.start < mention.end) {
+                return [];
+            }
+            return onlyBindingWords(clause.slice(mention.end, host.start).trim()) ? [host.id] : [];
+        })
+    );
+}
+
+/**
+ * The pending creations one removal of a name picks out: those it names by name and host, or, when it
+ * names no host, every pending creation of that name.
+ */
+function pickCreations(
+    entry: MentionIntention,
+    name: string,
+    creations: readonly PendingCreation[],
+    context: ProjectContext
+): Command[] {
+    const sameName = creations.filter((creation) =>
+        creation.names.some((candidate) => candidate.toLowerCase() === name.toLowerCase())
+    );
+    const hosts = findNamedHosts(entry, sameName, context);
+    const picked =
+        hosts.size === 0 ? sameName : sameName.filter((creation) => creation.hostIds.some((id) => hosts.has(id)));
+    return picked.map((creation) => creation.command);
 }
 
 /**
  * Whether the request expressly drops this pending command, by its own target and operation. A
- * creation is dropped by the name of what it creates ("not the compressor"), which names the whole
- * change; the id minted for it names nothing the user can say.
+ * creation is dropped by the name of what it creates ("remove the compressor"), which names the whole
+ * change; the id minted for it names nothing the user can say. That removal must pick out exactly this
+ * one pending creation, by its name and host ("remove the compressor from Bass") or by a name no other
+ * pending creation shares; otherwise it removes nothing.
  */
-export function explicitlyRemovesCommand(
-    prompt: string,
-    command: Command,
-    context: ProjectContext,
-    createdObject: ReadCreatedObject
-): boolean {
-    const createdObjectOf = readsCreatedObjects(createdObject, context);
+export function explicitlyRemovesCommand(input: {
+    prompt: string;
+    command: Command;
+    pendingActions: readonly Command[];
+    context: ProjectContext;
+    createdObject: ReadCreatedObject;
+}): boolean {
+    const { prompt, command, context } = input;
+    const createdObjectOf = readsCreatedObjects(input.createdObject, context);
     const created = createdObjectOf(command);
     if (created !== null) {
-        const { names } = created;
-        return names.some((name) =>
-            removesMentioned({ prompt, context, candidateIds: names, id: name, operation: null })
-        );
+        const creations = input.pendingActions.flatMap((pending): PendingCreation[] => {
+            const names = createdObjectOf(pending)?.names;
+            if (names === undefined) {
+                return [];
+            }
+            const hostIds = statedIdEntries(pending, createdObjectOf).map(([, value]) => value);
+            return [{ command: pending, names, hostIds }];
+        });
+        return created.names.some((name) => {
+            const intentions = readMentionIntentions({
+                prompt,
+                context,
+                candidateIds: created.names,
+                id: name,
+                operation: null,
+            });
+            return (
+                removesMentioned(intentions) &&
+                intentions.some((entry) => {
+                    const picked = pickCreations(entry, name, creations, context);
+                    return picked.length === 1 && picked[0] === command;
+                })
+            );
+        });
     }
     const targetIds = statedIdEntries(command, createdObjectOf).map(([, value]) => value);
     if (targetIds.length === 0) {
@@ -351,7 +416,9 @@ export function explicitlyRemovesCommand(
     if (operation === null) {
         return false;
     }
-    return targetIds.every((id) => removesMentioned({ prompt, context, candidateIds: targetIds, id, operation }));
+    return targetIds.every((id) =>
+        removesMentioned(readMentionIntentions({ prompt, context, candidateIds: targetIds, id, operation }))
+    );
 }
 
 /**
@@ -392,7 +459,14 @@ export function validateRefinedProposalActions(input: {
             remaining.splice(changedIndex, 1);
             continue;
         }
-        if (!explicitlyRemovesCommand(input.prompt, old, input.context, input.createdObject)) {
+        const removed = explicitlyRemovesCommand({
+            prompt: input.prompt,
+            command: old,
+            pendingActions: oldActions,
+            context: input.context,
+            createdObject: input.createdObject,
+        });
+        if (!removed) {
             return {
                 status: 'refused',
                 reason: `Refined proposal omits a pending ${old.type} command without an explicit request to remove it.`,

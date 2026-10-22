@@ -5671,14 +5671,19 @@ function findSilentOmission(input: {
     prompt: string;
     context: ProjectContext;
 }): string | null {
+    const pendingActions = input.basis.commands.map((command) => ({ type: command.type, payload: command.payload }));
     for (const [index, command] of input.basis.commands.entries()) {
         if (input.inheritedOrRestated.has(index) || input.removed.has(index)) {
             continue;
         }
-        const pendingCommand = { type: command.type, payload: command.payload };
-        if (
-            !explicitlyRemovesCommand(input.prompt, pendingCommand, input.context, proposalCommandShape.createdObject)
-        ) {
+        const removed = explicitlyRemovesCommand({
+            prompt: input.prompt,
+            command: pendingActions[index]!,
+            pendingActions,
+            context: input.context,
+            createdObject: proposalCommandShape.createdObject,
+        });
+        if (!removed) {
             return `Refined proposal omits a pending ${describePendingCommand(command, input.context)} command without an explicit request to remove it`;
         }
     }
@@ -5962,6 +5967,22 @@ function bridgeRefinedLlmToolCalls(
             actions: [],
             rejections: [],
             clarification: { reason: removals.reason, questions: [removals.question] },
+        };
+    }
+    // Clause combination binds the refinement text before any route reads it: a batch the text grounds
+    // by itself would otherwise read "turn Vocals up, make it 2 dB" as one value across two clauses.
+    const combination = refinementClauseReader.combination({
+        text: prompt,
+        basis,
+        context,
+        removalClauseStarts: removals.removalClauseStarts,
+        removedCommandIndexes: removals.removedCommandIndexes,
+    });
+    if (combination.status === 'clarify') {
+        return {
+            actions: [],
+            rejections: [],
+            clarification: { reason: combination.reason, questions: [combination.question] },
         };
     }
     const protectedObjects = getRefinementProtectedObjects({
