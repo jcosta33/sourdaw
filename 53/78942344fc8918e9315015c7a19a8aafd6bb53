@@ -1,0 +1,131 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_3e7dea5cde3f9e::t_686399b79c8408 39-58
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_3e7dea5cde3f9e::t_4936f786df4523 37
+  s_3e7dea5cde3f9e::t_642c7fa1afb3fa 19-21
+src/infra/store/storage/types.ts
+  s_3e7dea5cde3f9e::t_301f9a069df631 1-10
+  s_3e7dea5cde3f9e::t_3f1ec6bd2f79a6 43
+src/infra/store/types.ts
+  s_3e7dea5cde3f9e::t_9fba9d4526c6ca 3
+  s_3e7dea5cde3f9e::t_61916fe6a64e18 75
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionKeepsRuntimeState.integration.spec.ts
+  s_3e7dea5cde3f9e::t_05dd8c350ccde1 106
+  s_3e7dea5cde3f9e::t_d3892feddcff15 151-176
+  s_3e7dea5cde3f9e::t_a1ff237ed7e312 1-8,10-27,40-43,54-82,92-105,108-150,199-211
+  s_3e7dea5cde3f9e::t_c600faf609cc85 88
+  s_3e7dea5cde3f9e::t_7af20ef4245ed7 107
+  s_3e7dea5cde3f9e::t_89a0d4418e300c 177-182,184-197
+  s_3e7dea5cde3f9e::t_63ed4a085071f6 183
+  s_3e7dea5cde3f9e::t_6f66d6e9ffafed 28-39,44-53
+  s_3e7dea5cde3f9e::t_8f3791303ace00 9
+  s_3e7dea5cde3f9e::t_68e288e5d87989 83-87,89-91
+  s_3e7dea5cde3f9e::t_613fd17aa5d249 198
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_3e7dea5cde3f9e::t_8072cd22453ee2 46
+  s_3e7dea5cde3f9e::t_7a40f5cd55ca31 28
+  s_3e7dea5cde3f9e::t_43c9bae457c6db 69
+  s_3e7dea5cde3f9e::t_90fbbb445ae72f 1
+  s_3e7dea5cde3f9e::t_a1466ddb65a93c 81
+src/infra/store/storage/__tests__/createAutomergeStorage.keepLocalRuntimeState.spec.ts
+  s_3e7dea5cde3f9e::t_4a45234411791a 1-6,8-36,39,41-48,51-111,152-166,168-171,176-182
+  s_3e7dea5cde3f9e::t_403aa3bb344ff3 112-151
+  s_3e7dea5cde3f9e::t_8d1b4b0d6cecf2 167,172-175
+  s_3e7dea5cde3f9e::t_e3dd4c644c2c87 7
+  s_3e7dea5cde3f9e::t_b4a5cf608359c1 37-38,40,49-50
+src/infra/store/storage/createAutomergeStorage.ts
+  s_3e7dea5cde3f9e::t_23b4fcd952f26d 2612-2615
+  s_3e7dea5cde3f9e::t_824aeec686c802 2642-2645
+  s_3e7dea5cde3f9e::t_7aafc50e774192 2646
+  s_3e7dea5cde3f9e::t_ed190485e297c9 2579-2583
+  s_3e7dea5cde3f9e::t_1c86211d6c1602 2616
+  s_3e7dea5cde3f9e::t_3cf2b0b7805107 2531
+  s_3e7dea5cde3f9e::t_7d11a4f015ad99 1634-1647
+  s_3e7dea5cde3f9e::t_ad79a68931b763 2477
+  s_3e7dea5cde3f9e::t_19c26a5e9f7182 6
+  s_3e7dea5cde3f9e::t_09b377c022181d 2527-2530
+src/infra/store/createStore.ts
+  s_3e7dea5cde3f9e::t_ae07f2e19e33a1 4
+  s_3e7dea5cde3f9e::t_91cb42a0836e3b 266,270
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_3e7dea5cde3f9e::t_ecd23b32e5e8e2 3-4
+  s_3e7dea5cde3f9e::t_30e5bb205fb54a 18,24,28,30,36
+  s_3e7dea5cde3f9e::t_af1d44a5f511e0 60-75
+src/modules/ControlSurface/stores/midiLearnStore.ts
+  s_3e7dea5cde3f9e::t_1c4650da0ea334 149-156
+src/modules/Transport/useCases/transportControls/__tests__/isTransportIdle.spec.ts
+  s_3e7dea5cde3f9e::t_98e9df415dc2e4 1-26,34-57
+  s_3e7dea5cde3f9e::t_5e5dc03625cbb9 27-33
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_3e7dea5cde3f9e::t_b027f9d9dc0e37 156-194
+  s_3e7dea5cde3f9e::t_b7e00185039001 3
+  s_3e7dea5cde3f9e::t_29610f8f08f863 246-247
+  s_3e7dea5cde3f9e::t_5553e6829bccb6 11
+  s_3e7dea5cde3f9e::t_7231e170fa1aa1 103-104,106-108
+  s_1c08b47ac3792f::t_eece124ae40481 207-245,248-253,276-343
+  s_3e7dea5cde3f9e::t_3f41effcb7f6a5 261-274,276-277
+  s_3e7dea5cde3f9e::t_2c643d03348c90 254-258
+  s_3e7dea5cde3f9e::t_125729f3cd76cb 28,31
+  s_3e7dea5cde3f9e::t_fbb7c158a427b5 275
+  s_3e7dea5cde3f9e::t_2905ce21fd4e66 32
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_3e7dea5cde3f9e::t_490ad83b7b4b8b 301-358,360-363
+  s_3e7dea5cde3f9e::t_a720a822d1a131 168
+  s_3e7dea5cde3f9e::t_29bf83a3abb933 117,120-123
+  s_1c08b47ac3792f::t_690c8261b51f1a 359,364
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_fd9e53db8fd1ba 8
+src/modules/CrdtDocument/useCases/crdtBranching/switchBranch.ts
+  s_3e7dea5cde3f9e::t_4ad80a05ba3645 6
+  s_3e7dea5cde3f9e::t_95b442ff951845 160-168
+  s_3e7dea5cde3f9e::t_65d6698bc32060 46-64,70-72
+  s_3e7dea5cde3f9e::t_acead29b71782f 110-113
+  s_3e7dea5cde3f9e::t_8e13cdeab4990e 174
+  s_3e7dea5cde3f9e::t_98c546b0d22eee 1
+  s_3e7dea5cde3f9e::t_4635170d391f8f 7
+  s_3e7dea5cde3f9e::t_523abc3d7b83c1 65-69
+src/modules/Transport/useCases/transportControls/isTransportIdle.ts
+  s_3e7dea5cde3f9e::t_f4ee6e4ab8d67c 1-17
+src/modules/Transport/useCases/index.ts
+  s_3e7dea5cde3f9e::t_e8f27cfcae22f7 51
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_3e7dea5cde3f9e::t_a3f0b222ca3c35 30-33
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchLineageTransition.ts
+  s_3e7dea5cde3f9e::t_dbece64d103197 12
+  s_3e7dea5cde3f9e::t_b4c3e15226881f 21,28
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_3e7dea5cde3f9e::t_2ad933db9b07f3 237
+  s_3e7dea5cde3f9e::t_4fcdf7546b5f37 180
+  s_3e7dea5cde3f9e::t_7a7940a6f1878d 32-37
+  s_3e7dea5cde3f9e::t_00c56168a2c7af 81-103,111,119,121,125-132
+  s_3e7dea5cde3f9e::t_795a54e494550b 133
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_3e7dea5cde3f9e::t_c53f63c8df1871 320-321
+  s_3e7dea5cde3f9e::t_d95aedcd7ea53b 278-319,322-349
+src/modules/CrdtDocument/AGENTS.md
+  s_3e7dea5cde3f9e::t_05a55dd16ead8a 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5378942344fc8918e9315015c7a19a8aafd6bb53",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
