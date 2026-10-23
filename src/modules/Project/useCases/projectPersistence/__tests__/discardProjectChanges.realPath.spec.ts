@@ -17,12 +17,19 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson } from '../../../repositories/project/readNamedProjectJson';
+import { writeProjectJson } from '../../../repositories/project/writeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { discardProjectChanges } from '../discardProjectChanges';
+import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
+import { saveProject } from '../saveProject/saveProject';
+
+/** How many take commits have settled, as the Transport counts them. */
+const takes = vi.hoisted(() => ({ settled: 0 }));
 
 vi.mock('../../../repositories/project/readNamedProjectJson', () => ({ readNamedProjectJson: vi.fn() }));
 vi.mock('../../../repositories/project/writeProjectJson', () => ({ writeProjectJson: vi.fn() }));
@@ -156,9 +163,13 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
+    isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
+    countSettledTakes: () => takes.settled,
 }));
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 vi.mock('../helpers/hydrateModuleStoresFromProjectData', () => ({ hydrateModuleStoresFromProjectData: vi.fn() }));
@@ -186,6 +197,11 @@ const savedProject = JSON.stringify({
 
 describe('discardProjectChanges real load path', () => {
     beforeEach(() => {
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
+        vi.mocked(saveProject).mockReset();
+        vi.mocked(writeProjectJson).mockReset();
+        vi.mocked(notifyUser).mockReset();
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             projectId: 'original-project',
@@ -235,5 +251,34 @@ describe('discardProjectChanges real load path', () => {
         expect(projectStore.value?.projectId).toBe('original-project');
         expect(projectStore.value?.dirty).toBe(true);
         expect(resetCrdtProject).not.toHaveBeenCalled();
+    });
+
+    /** The take a recording stop commits into the project being discarded. */
+    function closeATakeDuringTheStop(): void {
+        vi.mocked(stopPlayback).mockImplementation(() => {
+            takes.settled++;
+            return Promise.resolve();
+        });
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(resetCrdtProject).mockImplementation((_name, onAuthorityReplaced, isTransportQuiet) => {
+            if (!isTransportQuiet?.()) {
+                return Promise.resolve({ status: 'transport-active' });
+            }
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+        });
+    }
+
+    it('replaces a never-saved project without saving it when a take closes during the stop', async () => {
+        closeATakeDuringTheStop();
+        vi.mocked(readNamedProjectJson).mockResolvedValue(null);
+
+        await expect(discardProjectChanges()).resolves.toBe(true);
+
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
+        expect(saveProject).not.toHaveBeenCalled();
+        expect(writeProjectJson).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+        expect(projectStore.value?.projectId).not.toBe('original-project');
     });
 });

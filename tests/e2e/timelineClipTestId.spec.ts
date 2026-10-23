@@ -52,9 +52,9 @@ test.describe('Timeline clip operations — test-id targeted', () => {
         // Right-click the clip to get its context menu.
         await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
 
-        // Should see at least some menu items.
-        const menuItems = page.getByRole('menuitem');
-        const count = await menuItems.count();
-        expect(count).toBeGreaterThan(0);
+        const menu = page.getByRole('menu');
+        await expect(menu).toBeVisible();
+        await expect(menu.getByRole('menuitem', { name: 'Quantize (1/16)', exact: true })).toBeVisible();
+        await expect(menu.getByRole('menuitem', { name: 'Export as MIDI…', exact: true })).toBeVisible();
     });
 });
