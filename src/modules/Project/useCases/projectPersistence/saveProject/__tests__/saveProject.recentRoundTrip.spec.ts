@@ -52,6 +52,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
