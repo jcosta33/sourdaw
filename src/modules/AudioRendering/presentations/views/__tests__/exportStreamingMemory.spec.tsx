@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { unzipSync } from 'fflate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
@@ -10,7 +11,6 @@ import {
     configureOfflinePpqEndpointProjection,
 } from '#/modules/AudioEngine/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
-import { unzipSync } from 'fflate';
 
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings } from '../exportSettings';
@@ -466,7 +466,9 @@ describe('connected stem export output ownership', () => {
         stemRender.frames = 44100;
         mocks.trackStore.value = { tracks: stemRender.tracks, selectedTrackId: null, ghostClips: [] };
         vi.clearAllMocks();
-        mocks.audioContext = asBaseAudioContext(createMockAudioContext());
+        const audioContext = createMockAudioContext();
+        audioContext.sampleRate = 44100;
+        mocks.audioContext = asBaseAudioContext(audioContext);
         mocks.getAudioContext.mockImplementation(() => mocks.audioContext);
         mocks.restoreCachedAudioBuffersFromIdb.mockResolvedValue(0);
         mocks.automationStore.value = { lanes: [] };
@@ -572,6 +574,228 @@ describe('connected stem export output ownership', () => {
             expect(bytes.byteLength).toBe(44 + 44100 * 2 * 3);
         }
         vi.unstubAllGlobals();
+    }, 20000);
+    it('consumes two independently converted WAV targets before releasing each of64 rendered stems', async () => {
+        const deadline = Date.now() + 20000;
+        const actualEngine = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
+            '#/modules/AudioEngine/useCases'
+        );
+        const chunks: Uint8Array[] = [];
+        const gameFinalWrite = Promise.withResolvers<void>();
+        const releaseGameWrite = Promise.withResolvers<void>();
+        type WavHeader = { rate: number; channels: number; bitDepth: number; dataLength: number };
+        let lastHeader: WavHeader | undefined;
+        let wavHeaders = 0;
+        let physicalWrites = 0;
+        let physicalBytes = 0;
+        let gamePcmRemaining: number | undefined;
+        let gameWriteHeld = false;
+        let gameWriteReleased = false;
+        let writerAcquired = false;
+        let exportStarted = false;
+        let closed = false;
+        let closeCalls = 0;
+        let abortCalls = 0;
+        let closeObservation: Promise<void> | undefined;
+        let failure: Error | undefined;
+        const phase = () => {
+            const loggedError: unknown = mocks.loggerError.mock.lastCall?.[0];
+            return {
+                ...ownership,
+                physicalWrites,
+                physicalBytes,
+                wavHeaders,
+                lastHeader,
+                gamePcmRemaining,
+                gameWriteHeld,
+                gameWriteReleased,
+                writerAcquired,
+                closed,
+                closeCalls,
+                abortCalls,
+                error: loggedError instanceof Error ? loggedError.message.slice(0, 500) : undefined,
+                cause: loggedError instanceof Error ? String(loggedError.cause).slice(0, 500) : undefined,
+            };
+        };
+        const withPhase = (error: unknown): Error => {
+            const result = error instanceof Error ? error : new Error(String(error));
+            if (!result.message.includes('\nStem output phase:')) {
+                result.message += `\nStem output phase: ${JSON.stringify(phase())}`;
+            }
+            return result;
+        };
+        const readWavHeader = (bytes: Uint8Array): WavHeader | undefined => {
+            if (bytes.byteLength !== 44) {
+                return undefined;
+            }
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            if (view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57415645) {
+                return undefined;
+            }
+            const header = {
+                rate: view.getUint32(24, true),
+                channels: view.getUint16(22, true),
+                bitDepth: view.getUint16(34, true),
+                dataLength: view.getUint32(40, true),
+            };
+            wavHeaders++;
+            lastHeader = header;
+            expect(view.getUint32(12)).toBe(0x666d7420);
+            expect(view.getUint32(16, true)).toBe(16);
+            expect(view.getUint16(20, true)).toBe(1);
+            expect(view.getUint32(36)).toBe(0x64617461);
+            expect(header.bitDepth).toBe(24);
+            expect(view.getUint16(32, true)).toBe(header.channels * 3);
+            expect(view.getUint32(28, true)).toBe(header.rate * header.channels * 3);
+            expect(view.getUint32(4, true)).toBe(header.dataLength + 36);
+            const apple = header.rate === 44100 && header.channels === 2 && header.dataLength === 44100 * 6;
+            const game = header.rate === 48000 && header.channels === 1 && header.dataLength === 48000 * 3;
+            expect(apple || game).toBe(true);
+            return header;
+        };
+        const write = async (bytes: Uint8Array) => {
+            physicalWrites++;
+            physicalBytes += bytes.byteLength;
+            chunks.push(bytes.slice());
+            expect(gameWriteHeld).toBe(false);
+            if (gamePcmRemaining !== undefined && gamePcmRemaining > 0) {
+                expect(bytes.byteLength).toBe(Math.min(gamePcmRemaining, 4096 * 3));
+                gamePcmRemaining -= bytes.byteLength;
+                if (gamePcmRemaining === 0) {
+                    expect(bytes.byteLength).toBe(8832);
+                    gameWriteHeld = true;
+                    gameFinalWrite.resolve();
+                    await releaseGameWrite.promise;
+                    gameWriteHeld = false;
+                }
+                return;
+            }
+            const header = readWavHeader(bytes);
+            if (gamePcmRemaining === undefined && header?.rate === 48000) {
+                gamePcmRemaining = header.dataLength;
+            }
+        };
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => {
+                writerAcquired = true;
+                return {
+                    write,
+                    close: async () => {
+                        closeCalls++;
+                        closed = true;
+                    },
+                    abort: async () => {
+                        abortCalls++;
+                    },
+                };
+            },
+        }));
+        try {
+            render(<ExportDialog open onClose={() => {}} />);
+            fireEvent.click(screen.getByTestId('export-mode-stems'));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Apple Music stereo master' }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
+            fireEvent.click(screen.getByRole('button', { name: /^Off$/ }));
+            const start = screen.getByTestId('export-start');
+            exportStarted = true;
+            fireEvent.click(start);
+            closeObservation = waitFor(() => expect(closed).toBe(true), { timeout: 15000, onTimeout: withPhase });
+            await Promise.race([
+                gameFinalWrite.promise,
+                closeObservation.then(() => {
+                    throw withPhase(new Error('The writer closed before the first Game WAV final PCM write.'));
+                }),
+            ]);
+            expect(gameWriteHeld).toBe(true);
+            expect(gamePcmRemaining).toBe(0);
+            expect(ownership.rendered).toBe(1);
+            expect(ownership.consumed).toBe(0);
+            expect(closed).toBe(false);
+            expect(closeCalls).toBe(0);
+            expect(abortCalls).toBe(0);
+            gameWriteReleased = true;
+            releaseGameWrite.resolve();
+            await closeObservation;
+            expect(ownership.rendered).toBe(64);
+            expect(ownership.consumed).toBe(64);
+            expect(ownership.peakRetained).toBe(1);
+            expect(closeCalls).toBe(1);
+            expect(abortCalls).toBe(0);
+            const archive = new Uint8Array(chunks.reduce((sum, b) => sum + b.length, 0));
+            let offset = 0;
+            for (const b of chunks) {
+                archive.set(b, offset);
+                offset += b.length;
+            }
+            const entries = unzipSync(archive);
+            expect(Object.keys(entries)).toHaveLength(128);
+            for (const [name, bytes] of Object.entries(entries)) {
+                const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                if (name.endsWith('__game-audio-pcm.wav')) {
+                    expect(view.getUint32(24, true)).toBe(48000);
+                    expect(view.getUint16(22, true)).toBe(1);
+                    expect(bytes.length).toBe(44 + 48000 * 3);
+                    expect(bytes.subarray(44).every((b) => b === 0)).toBe(true);
+                } else {
+                    expect(name).toMatch(/__apple-music-stereo-master\.wav$/);
+                    expect(view.getUint32(24, true)).toBe(44100);
+                    expect(view.getUint16(22, true)).toBe(2);
+                }
+            }
+        } catch (error) {
+            failure = withPhase(error);
+        }
+        const cleanupFailures: Error[] = [];
+        const cleanupError = (message: string) => {
+            const errors: Error[] = [];
+            if (failure) {
+                errors.push(failure);
+            }
+            errors.push(...cleanupFailures);
+            return new AggregateError(errors, message);
+        };
+        try {
+            if (exportStarted && !closed) {
+                const cancel = screen.queryByRole('button', { name: 'Turn off Oven' });
+                if (cancel) {
+                    fireEvent.click(cancel);
+                }
+                actualEngine.cancelExport();
+            }
+        } catch (error) {
+            cleanupFailures.push(withPhase(error));
+        }
+        gameWriteReleased = true;
+        releaseGameWrite.resolve();
+        if (closeObservation) {
+            await Promise.allSettled([closeObservation]);
+        }
+        try {
+            if (exportStarted) {
+                await waitFor(
+                    () => {
+                        if (writerAcquired) {
+                            expect(closeCalls + abortCalls).toBe(1);
+                        }
+                        expect(screen.getByTestId('export-mode-stems')).toBeEnabled();
+                    },
+                    { timeout: Math.max(1, deadline - Date.now()), onTimeout: withPhase }
+                );
+            }
+        } catch (error) {
+            cleanupFailures.push(withPhase(error));
+            throw cleanupError(
+                'The original stem export did not reach terminal cleanup; platform globals remain installed.'
+            );
+        }
+        vi.unstubAllGlobals();
+        if (cleanupFailures.length > 0) {
+            throw cleanupError('Stem cleanup failed.');
+        }
+        if (failure) {
+            throw failure;
+        }
     }, 20000);
     it('observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems', async () => {
         const gc: unknown = Reflect.get(globalThis, 'gc');

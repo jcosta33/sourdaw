@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { measureTruePeak } from '../measureTruePeak';
+import { createTruePeakAccumulator, measureTruePeak } from '../measureTruePeak';
 
 const TRUE_PEAK_TAIL_FRAMES = 11;
 
@@ -19,6 +19,46 @@ function expectMatchesZeroPaddedOracle(channels: readonly Float32Array[], length
 }
 
 describe('measureTruePeak', () => {
+    it.each([
+        { number: 15, frequencyDivisor: 4, amplitude: 0.5, phaseDegrees: 0, referenceDbtp: -6 },
+        { number: 16, frequencyDivisor: 4, amplitude: 0.5, phaseDegrees: 45, referenceDbtp: -6 },
+        { number: 17, frequencyDivisor: 6, amplitude: 0.5, phaseDegrees: 60, referenceDbtp: -6 },
+        { number: 18, frequencyDivisor: 8, amplitude: 0.5, phaseDegrees: 67.5, referenceDbtp: -6 },
+        { number: 19, frequencyDivisor: 4, amplitude: 1.41, phaseDegrees: 45, referenceDbtp: 3 },
+    ])(
+        'matches EBU Tech 3341 Table 1 case $number',
+        ({ number, frequencyDivisor, amplitude, phaseDegrees, referenceDbtp }) => {
+            const sampleRate = 48_000;
+            const frameCount = sampleRate / 10;
+            const fadeFrames = sampleRate / 100;
+            const phase = (phaseDegrees * Math.PI) / 180;
+            const frequency = sampleRate / frequencyDivisor;
+            const tone = new Float32Array(frameCount);
+
+            for (let frame = 0; frame < frameCount; frame += 1) {
+                const fadeIn = Math.min(frame / fadeFrames, 1);
+                const fadeOut = Math.min((frameCount - 1 - frame) / fadeFrames, 1);
+                const envelope = Math.min(fadeIn, fadeOut);
+                const angle = (2 * Math.PI * frequency * frame) / sampleRate + phase;
+                tone[frame] = amplitude * envelope * Math.sin(angle);
+            }
+
+            const measuredLinear = measureTruePeak({ channels: [tone, tone.slice()], length: frameCount });
+            const measuredDbtp = 20 * Math.log10(measuredLinear);
+            const errorDb = measuredDbtp - referenceDbtp;
+
+            console.info(
+                `EBU Tech 3341 case ${number}: linear=${measuredLinear.toFixed(8)}, measured=${measuredDbtp.toFixed(4)} dBTP, reference=${referenceDbtp.toFixed(1)} dBTP, error=${errorDb.toFixed(4)} dB`
+            );
+
+            expect(errorDb, `case ${number} error ${errorDb.toFixed(4)} dB`).toBeGreaterThanOrEqual(-0.4);
+            expect(errorDb, `case ${number} error ${errorDb.toFixed(4)} dB`).toBeLessThanOrEqual(0.2);
+            if (number === 19) {
+                expect(measuredLinear).toBeGreaterThan(1);
+            }
+        }
+    );
+
     it('returns 0 for empty input (no samples)', () => {
         const result = measureTruePeak({ channels: [new Float32Array(0)], length: 0 });
 
@@ -149,5 +189,23 @@ describe('measureTruePeak', () => {
 
         // Halving the amplitude should roughly halve the true-peak (linear system).
         expect(halfPeak).toBeCloseTo(fullPeak * 0.5, 2);
+    });
+});
+
+describe('incremental true peak', () => {
+    it('retains every phase/history and drains the final tap exactly once across partitions', () => {
+        const tone = Float32Array.from({ length: 9001 }, (_, i) => Math.sin(i * 1.3));
+        tone[0] = 1.4;
+        tone[tone.length - 1] = -1.6;
+        const expected = measureTruePeak({ channels: [tone], length: tone.length });
+        for (const size of [1, 997, 4096]) {
+            const meter = createTruePeakAccumulator(1);
+            for (let start = 0; start < tone.length; start += size) {
+                meter.push([tone.subarray(start, start + size)]);
+            }
+            expect(meter.finish()).toBeCloseTo(expected, 12);
+            expect(meter.finish()).toBe(expected);
+            expect(() => meter.push([new Float32Array(1)])).toThrow();
+        }
     });
 });
