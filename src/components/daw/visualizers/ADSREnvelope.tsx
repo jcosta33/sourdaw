@@ -26,15 +26,45 @@ type ADSREnvelopeProps = {
 
 type BreakpointId = 'attack' | 'decay' | 'sustain' | 'release';
 
+type ReleaseDragGeometry = {
+    startClientX: number;
+    startValue: number;
+    secondsPerPixel: number;
+};
+
 type EnvelopeGesture = {
     pointerId: number;
     canvas: HTMLCanvasElement;
     breakpoint: BreakpointId;
+    releaseDrag?: ReleaseDragGeometry;
     lastValue?: number;
     change: NonNullable<ADSREnvelopeProps['onParamChange']>;
     commit: ADSREnvelopeProps['onGestureCommit'];
     cancel: ADSREnvelopeProps['onGestureCancel'];
 };
+
+function createReleaseDragGeometry(
+    startClientX: number,
+    startValue: number,
+    attack: number,
+    decay: number,
+    width: number
+): ReleaseDragGeometry | null {
+    const plotWidth = width - 12;
+    const totalTime = Math.max(0.01, attack + decay + 0.4 + startValue);
+    const secondsPerPixel = totalTime / plotWidth;
+    if (
+        !Number.isFinite(startClientX) ||
+        !Number.isFinite(startValue) ||
+        !Number.isFinite(plotWidth) ||
+        plotWidth <= 0 ||
+        !Number.isFinite(secondsPerPixel) ||
+        secondsPerPixel <= 0
+    ) {
+        return null;
+    }
+    return { startClientX, startValue, secondsPerPixel };
+}
 
 function finishGesture(gestureRef: { current: EnvelopeGesture | null }, commit: boolean): void {
     const gesture = gestureRef.current;
@@ -262,6 +292,11 @@ export const ADSREnvelope = ({
         if (!closest) {
             return;
         }
+        const releaseDrag =
+            closest === 'release' ? createReleaseDragGeometry(event.clientX, release, attack, decay, width) : undefined;
+        if (releaseDrag === null) {
+            return;
+        }
         if (onGestureStart && !onGestureStart(closest)) {
             return;
         }
@@ -269,6 +304,7 @@ export const ADSREnvelope = ({
             pointerId: event.pointerId,
             canvas,
             breakpoint: closest,
+            releaseDrag,
             change: onParamChange,
             commit: onGestureCommit,
             cancel: onGestureCancel,
@@ -309,6 +345,15 @@ export const ADSREnvelope = ({
             const ratio = 1 - (my - topY) / (bottomY - topY);
             const clamped = Math.max(0, Math.min(1, ratio));
             change('sustain', clamped);
+        } else if (bp === 'release') {
+            const releaseDrag = gesture.releaseDrag;
+            if (!releaseDrag) {
+                finishGesture(gestureRef, false);
+                return;
+            }
+            const value =
+                releaseDrag.startValue + (event.clientX - releaseDrag.startClientX) * releaseDrag.secondsPerPixel;
+            change('release', Math.max(0.001, Math.min(5, value)));
         } else {
             // Horizontal drag -> time parameter
             const xRatio = Math.max(0, Math.min(1, (mx - pad) / plotW));
@@ -321,10 +366,6 @@ export const ADSREnvelope = ({
             } else if (bp === 'decay') {
                 const val = Math.max(0.001, Math.min(2, mappedTime - attack));
                 change('decay', Math.max(0.001, val));
-            } else if (bp === 'release') {
-                const sustainEnd = attack + decay + 0.4;
-                const val = Math.max(0.001, Math.min(5, mappedTime - sustainEnd));
-                change('release', Math.max(0.001, val));
             }
         }
     };
