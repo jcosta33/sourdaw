@@ -1,0 +1,129 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_52f69953c6b553 302
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_3e7dea5cde3f9e::t_08ceb6ed0f8e41 134
+src/modules/AudioEngine/AGENTS.md
+  s_3e7dea5cde3f9e::t_3865f740dcd348 32
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_3e7dea5cde3f9e::t_dbecd8016646e8 67-69,73
+  s_3e7dea5cde3f9e::t_beb2382c8c3811 125
+src/modules/AudioEngine/useCases/noteExpression/relocateNoteExpression.ts
+  s_3e7dea5cde3f9e::t_af924c193b3a82 59
+  s_3e7dea5cde3f9e::t_dd4f77acdac357 1-19,21-22,37-48,50-51,53-54,56,58,61-64,66-67
+  s_3e7dea5cde3f9e::t_6d4537e9ea7e80 23-36
+  s_3e7dea5cde3f9e::t_1114677f2d68ba 55
+  s_3e7dea5cde3f9e::t_d8403bec917513 57
+  s_3e7dea5cde3f9e::t_5daf201a3b841d 60
+  s_3e7dea5cde3f9e::t_5e69307ea66491 20
+  s_3e7dea5cde3f9e::t_bb80629ebb9729 65
+  s_3e7dea5cde3f9e::t_5d448cc2990e6b 52
+  s_3e7dea5cde3f9e::t_1865aafe9bf9c6 49
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_e31c0fc3fb0f2f 31
+  s_3e7dea5cde3f9e::t_15d3acfc24da34 30
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_3e7dea5cde3f9e::t_3d94bb86f3d376 40
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_3e7dea5cde3f9e::t_656add99f26746 109
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  s_3e7dea5cde3f9e::t_06b0abf27a608c 648-707,709-734,738-744,777-780,783-785,788-804,825-849,852-884
+  s_3e7dea5cde3f9e::t_312effc3c82fe0 20
+  s_3e7dea5cde3f9e::t_b75f136bd8d85a 805-824
+  s_3e7dea5cde3f9e::t_ade75af9caff14 735-737
+  s_3e7dea5cde3f9e::t_cb2e410147b49c 786-787
+  s_3e7dea5cde3f9e::t_6c3ca97255dbd4 850-851
+  s_3e7dea5cde3f9e::t_5f0cbe28c350ee 745-776
+  s_3e7dea5cde3f9e::t_c3093247895e89 456-458
+  s_3e7dea5cde3f9e::t_1f607c16cfe791 781-782
+  s_3e7dea5cde3f9e::t_38a20f22fb6f6b 708
+  s_3e7dea5cde3f9e::t_552b1c725ef2cf 885-886
+src/modules/AudioEngine/useCases/noteExpression/__tests__/relocateNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_0b9665d4f2b641 1-131,134-187
+  s_3e7dea5cde3f9e::t_f2b2ada7e18eac 132-133
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_3e7dea5cde3f9e::t_779bbe8197c9aa 133
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_3e7dea5cde3f9e::t_42343a65921f0e 667-668
+  s_3e7dea5cde3f9e::t_911c319ad7363a 379
+  s_3e7dea5cde3f9e::t_f09d47433e7d34 557
+  s_3e7dea5cde3f9e::t_a3d13cc16fae39 669
+  s_3e7dea5cde3f9e::t_515deb4f4e4800 555-556
+  s_3e7dea5cde3f9e::t_07a5feac3a036e 380
+src/modules/AudioEngine/useCases/index.ts
+  s_3e7dea5cde3f9e::t_cee08957444943 61
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_3e7dea5cde3f9e::t_fcb633c70968f7 104
+src/modules/Transport/useCases/scheduling/relocateHeldNoteExpression.ts
+  s_3e7dea5cde3f9e::t_07d839b588a153 52
+  s_3e7dea5cde3f9e::t_fda9f9badc74dc 49
+  s_3e7dea5cde3f9e::t_a20c6ce3d1a169 60
+  s_3e7dea5cde3f9e::t_fadac8ebea2c72 1-48,50-51,53-56,58-59,61-65
+  s_3e7dea5cde3f9e::t_7b854c7d9cd09c 57
+src/modules/Transport/useCases/scheduling/detachSoundingNoteExpression.ts
+  s_3e7dea5cde3f9e::t_04ab3b1cc6f79b 12
+  s_3e7dea5cde3f9e::t_b42adf4ad4c627 1-11,13-16,18-19
+  s_3e7dea5cde3f9e::t_2c72ab47eaea45 17
+src/modules/Transport/useCases/scheduling/__tests__/relocateHeldNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_8d30b5cf672393 1-183
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_3e7dea5cde3f9e::t_bcbb969fa1dfae 171
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  s_3e7dea5cde3f9e::t_c62727b79fc518 67
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_3e7dea5cde3f9e::t_cdb08e2eed3c6e 1277-1278
+  s_3e7dea5cde3f9e::t_4522236038ebfd 1290
+  s_3e7dea5cde3f9e::t_9401c7e334613c 51
+  s_3e7dea5cde3f9e::t_11753ccc9510fa 868-872
+  s_3e7dea5cde3f9e::t_bbcd4d577d891b 57
+  s_3e7dea5cde3f9e::t_4f42cfcba5a0ab 944
+  s_3e7dea5cde3f9e::t_11bc3f52e7db18 1279
+  s_3e7dea5cde3f9e::t_c63ba01ca23210 1280-1289,1291-1294
+  s_3e7dea5cde3f9e::t_841cc60fa5e8b4 924-926,936-943,945-947
+  s_3e7dea5cde3f9e::t_79159889c296df 933
+  s_3e7dea5cde3f9e::t_ed1e04b111fce6 36
+  s_3e7dea5cde3f9e::t_a0b99688b448a2 873
+  s_59e31a5c6f3e31::t_0ecdf41ec8251b 948
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_3e7dea5cde3f9e::t_c08a2362542e05 152
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_3e7dea5cde3f9e::t_20a55ef844e8ab 144
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_3e7dea5cde3f9e::t_ef0ee8fdad52cd 144
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_3e7dea5cde3f9e::t_648be21dcd5bcc 134
+src/modules/AudioEngine/useCases/noteExpression/findChannelBendInForce.ts
+  s_3e7dea5cde3f9e::t_51ea1adb329a66 12
+  s_3e7dea5cde3f9e::t_0daf82569992fb 1-11,13-19
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_3e7dea5cde3f9e::t_c0408dc87c38ff 5-6
+  s_3e7dea5cde3f9e::t_c068e39d1f682d 249-250
+  s_3e7dea5cde3f9e::t_3b8bdd1c8b9797 348-353
+  s_3e7dea5cde3f9e::t_93909ea9ab7070 98
+  s_3e7dea5cde3f9e::t_54f1d98a7c28fc 822-911
+src/modules/AudioEngine/useCases/noteExpression/startNoteExpression.ts
+  s_3e7dea5cde3f9e::t_4e8f5bb31421ce 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acd54682158345729f04ec6e60d80f4fb8808f81",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
