@@ -222,11 +222,11 @@ describe('clip edits on a comped loop recording', () => {
         expect(mirroredPast().map((entry) => [entry.action, entry.inverseAction])).toEqual([
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0, loopOriginBeat: null } },
             ],
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2, loopOriginBeat: null } },
             ],
         ]);
 
