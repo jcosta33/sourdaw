@@ -130,9 +130,10 @@ export function parseReviewLanePrNumber(name: string): number | undefined {
 /**
  * Regenerable output rooted at a specific worktree path rather than named anywhere in the tree —
  * `release/` itself, and files like `release/desktop-runtime-material.json`, are tracked and must
- * not match on a bare prefix of `release/desktop`.
+ * not match on a bare prefix of `release/desktop`. `.agents/guard-storage-fixtures` is scratch
+ * written by the guard storage specs; the real `.agents/guard-storage` is deliberately not listed.
  */
-const DISPOSABLE_ROOT_PATHS = ['electron/out', 'release/desktop'];
+const DISPOSABLE_ROOT_PATHS = ['electron/out', 'release/desktop', '.agents/guard-storage-fixtures'];
 
 function underDisposableRootPath(normalized: string): boolean {
     return DISPOSABLE_ROOT_PATHS.some((root) => normalized === root || normalized.startsWith(`${root}/`));
