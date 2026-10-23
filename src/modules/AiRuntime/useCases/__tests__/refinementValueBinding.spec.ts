@@ -1203,6 +1203,83 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('a referenced level phrase in a refinement means the pending command on its object that takes a level', () => {
+        const SEND_TRACKS: readonly ProjectTrack[] = [
+            projectTrack('track-vocals', 'Vocals', { sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }] }),
+            ...BASE_TRACKS.slice(1),
+            projectTrack('track-reverb', 'Reverb', { kind: 'bus' }),
+            projectTrack('track-drums', 'Drums'),
+        ];
+        const SEND_CONTEXT = projectContext(SEND_TRACKS);
+        const sendAt = (levelDb: number): ProviderCall => ({
+            name: 'setSend',
+            arguments: { trackId: 'track-vocals', busId: 'track-reverb', levelDb },
+        });
+        const SEND_CARD = { prompt: 'set send from Vocals to Reverb to -6 dB', calls: [sendAt(-6)] };
+        const RAISED_SEND_CARD = { prompt: 'raise Vocals send to Reverb to -6 dB', calls: [sendAt(-6)] };
+        const muteDrums: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-drums', muted: true } };
+        const MUTE_AND_SEND_CARD = {
+            prompt: 'set send from Vocals to Reverb to -6 dB and mute Drums',
+            calls: [sendAt(-6), muteDrums],
+        };
+
+        function sendLevelsOf(result: ReturnType<typeof ground>) {
+            if (result.status !== 'grounded') {
+                return result.status;
+            }
+            return result.actions.flatMap((action) =>
+                action.type === 'setSend' ? [payloadOf(action).levelDb] : [action.type]
+            );
+        }
+
+        it.each([
+            ['Reverb down 2 dB', -8],
+            ['Reverb down 2 dB please', -8],
+            ['Reverb up 2 dB', -4],
+            ['Vocals down 2 dB', -8],
+            ['Vocals up 2 dB', -4],
+        ])('"%s" moves the pending send level, never the fader of the track it names', (refinement, levelDb) => {
+            const result = refine(SEND_CARD, refinement, [sendAt(levelDb)], SEND_CONTEXT);
+
+            expect(sendLevelsOf(result)).toEqual([levelDb]);
+        });
+
+        it('refuses a fader level for the object when the pending send takes the level', () => {
+            const fader: ProviderCall = { name: 'setTrackGain', arguments: { trackId: 'track-reverb', deltaDb: -2 } };
+
+            expect(refine(SEND_CARD, 'Reverb down 2 dB', [fader], SEND_CONTEXT).status).toBe('rejected');
+        });
+
+        it('refuses a send level that is not the pending one moved by the stated change', () => {
+            expect(refine(SEND_CARD, 'Reverb down 2 dB', [sendAt(-4)], SEND_CONTEXT).status).toBe('rejected');
+            expect(refine(SEND_CARD, 'Reverb down 2 dB', [sendAt(-6)], SEND_CONTEXT).status).toBe('rejected');
+        });
+
+        it('reads the phrase on a card that also holds a command on another object', () => {
+            const result = refine(MUTE_AND_SEND_CARD, 'Reverb down 2 dB', [sendAt(-8), muteDrums], SEND_CONTEXT);
+
+            expect(sendLevelsOf(result)).toEqual([-8, 'muteTrack']);
+        });
+
+        it('reads the phrase on a send card whose request was worded as a fader verb', () => {
+            const result = refine(RAISED_SEND_CARD, 'Reverb down 2 dB', [sendAt(-8)], SEND_CONTEXT);
+
+            expect(sendLevelsOf(result)).toEqual([-8]);
+        });
+
+        it('still reads the phrase as a fader level when no pending command on its object takes a level', () => {
+            const result = refine(P0_CARD, 'Vocals down 2 dB', [vocalsBy(-2)]);
+
+            expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 }]);
+        });
+
+        it('reads a phrase on an object only a mute card holds as a fader level, which the card does not take', () => {
+            const muteCard = { prompt: 'mute Drums', calls: [muteDrums] };
+
+            expect(refine(muteCard, 'Drums down 2 dB', [vocalsBy(-2)], SEND_CONTEXT).status).toBe('rejected');
+        });
+    });
+
     describe('protections a refinement inherits', () => {
         const decayDevice: ProjectTrack['devices'][number] = {
             ...reverbDevice,

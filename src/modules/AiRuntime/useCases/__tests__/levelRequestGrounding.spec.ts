@@ -620,3 +620,250 @@ describe('a decibel level stated on a named track without the word gain or volum
         expect(result.actions).toHaveLength(1);
     });
 });
+
+describe('a referenced level phrase grounds a fader only on the track it names', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
+    const compContext: ProjectContext = {
+        ...projectContext,
+        tracks: [
+            {
+                ...drums,
+                deviceCount: 1,
+                devices: [
+                    {
+                        id: 'device-comp',
+                        name: 'Comp',
+                        type: 'Comp',
+                        bypassed: false,
+                        parameters: [
+                            {
+                                id: 'comp-threshold',
+                                name: 'Threshold',
+                                type: 'float',
+                                value: -24,
+                                minValue: -60,
+                                maxValue: 0,
+                                unit: 'dB',
+                            },
+                            {
+                                id: 'comp-makeup',
+                                name: 'Makeup',
+                                type: 'float',
+                                value: 0,
+                                minValue: 0,
+                                maxValue: 24,
+                                unit: 'dB',
+                            },
+                        ],
+                    },
+                ],
+            },
+            keys,
+            master,
+        ],
+        vcaGroups: [{ id: 'vca-strings', name: 'Strings', gain: 1, muted: false, trackIds: [keys.id] }],
+        selectedTrackId: null,
+    };
+
+    function bridgeComp(calls: Parameters<typeof bridge>[0], prompt: string) {
+        return bridge(calls, prompt, compContext);
+    }
+
+    it.each([
+        ['set Threshold to -6 dB on Drums', drums, { gainDb: -6 }],
+        ['set the Threshold to -6 dB on Drums', drums, { gainDb: -6 }],
+        ['Makeup up 2 dB on Drums', drums, { deltaDb: 2 }],
+        ['Threshold down 6 dB on Drums', drums, { deltaDb: -6 }],
+        ['set Strings to -6 dB on Keys', keys, { gainDb: -6 }],
+        ['Strings up 2 dB on Keys', keys, { deltaDb: 2 }],
+    ])('does not read "%s" as a fader level on the track it mentions later', (prompt, track, value) => {
+        const result = bridgeComp([{ name: 'setTrackGain', arguments: { trackId: track.id, ...value } }], prompt);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['set Drums to -6 dB', drums, { gainDb: -6 }],
+        ['set the Drums to -6 dB', drums, { gainDb: -6 }],
+        ['Drums up 2 dB', drums, { deltaDb: 2 }],
+        ['Keys down 2 dB', keys, { deltaDb: -2 }],
+    ])('still grounds "%s" on the track the phrase names', (prompt, track, value) => {
+        const result = bridgeComp([{ name: 'setTrackGain', arguments: { trackId: track.id, ...value } }], prompt);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: track.id, ...value } }]);
+    });
+
+    it('refuses a fader level on the other track when the phrase names a different track', () => {
+        const result = bridgeComp(
+            [{ name: 'setTrackGain', arguments: { trackId: keys.id, gainDb: -6 } }],
+            'set Drums to -6 dB'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+});
+
+describe('a referenced level phrase counts only with nothing but the figure after it', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const drumsContext: ProjectContext = {
+        ...projectContext,
+        tracks: [drums, master],
+        selectedTrackId: null,
+    };
+
+    it.each([
+        'set Drums to normalize to -1 dB',
+        'set Drums to normalize at -6 dB',
+        'set Drums to peak at -6 dB',
+        'set Drums to limit at -1 dB',
+        'set Drums to clip at -1 dB',
+        'set Drums to send -6 dB',
+        'set Drums to -6 dB send',
+        'set Drums to threshold -6 dB',
+        'set Drums to -6 dB threshold',
+        'set Drums to cut 3 dB at 200 Hz',
+        'set Drums to boost 200 Hz by 3 dB',
+    ])('does not read "%s" as a fader level', (prompt) => {
+        const figure = /(-?\d+(?:\.\d+)?) dB/u.exec(prompt)?.[1] ?? '0';
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: Number(figure) } }],
+            prompt,
+            drumsContext
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['set Drums to -6 dB', { gainDb: -6 }],
+        ['set the Drums to -6 dB', { gainDb: -6 }],
+        ['please set Drums to -6 dB', { gainDb: -6 }],
+        ['set Drums to -6 dB please', { gainDb: -6 }],
+        ['set Drums to -6 dB.', { gainDb: -6 }],
+        ['set Drums to +3 dB', { gainDb: 3 }],
+        ['Drums up 2 dB', { deltaDb: 2 }],
+        ['the Drums down 2 dB', { deltaDb: -2 }],
+        ['please Drums up 2 dB please', { deltaDb: 2 }],
+    ])('still grounds "%s"', (prompt, value) => {
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, ...value } }],
+            prompt,
+            drumsContext
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+    });
+});
+
+describe('the words a referenced level phrase is matched on', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
+    const drumsContext: ProjectContext = {
+        ...projectContext,
+        tracks: [drums, keys, master],
+        vcaGroups: [{ id: 'vca-strings', name: 'Strings', gain: 1, muted: false, trackIds: [keys.id] }],
+        selectedTrackId: drums.id,
+    };
+
+    function bridgeDrums(prompt: string, value: Record<string, number>, trackId: string = drums.id) {
+        return bridge([{ name: 'setTrackGain', arguments: { trackId, ...value } }], prompt, drumsContext);
+    }
+
+    it.each([
+        ['Set Drums to -6 dB', { gainDb: -6 }],
+        ['SET THE DRUMS TO -6 DB', { gainDb: -6 }],
+        ['drums UP 2 dB', { deltaDb: 2 }],
+    ])('reads "%s" without regard to case', (prompt, value) => {
+        const result = bridgeDrums(prompt, value);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+    });
+
+    it('lets "the" stand before the reference and no other article', () => {
+        const withThe = bridgeDrums('set the Drums to -6 dB', { gainDb: -6 });
+        const withA = bridgeDrums('set a Drums to -6 dB', { gainDb: -6 });
+        const withAn = bridgeDrums('set an Drums to -6 dB', { gainDb: -6 });
+
+        expect(withThe.actions).toHaveLength(1);
+        expect(withA.actions).toEqual([]);
+        expect(withAn.actions).toEqual([]);
+    });
+
+    it.each([
+        ['set to -6 dB', { gainDb: -6 }],
+        ['set the to -6 dB', { gainDb: -6 }],
+        ['up 2 dB', { deltaDb: 2 }],
+        ['down 2 dB', { deltaDb: -2 }],
+        ['Okay, up 2 dB', { deltaDb: 2 }],
+        ['Okay, down 2 dB', { deltaDb: -2 }],
+    ])('does not read "%s", which names no track, as a level on the selected track', (prompt, value) => {
+        const result = bridgeDrums(prompt, value);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each(['set-Drums to -6 dB', 'set: Drums to -6 dB', 'set, Drums to -6 dB', 'setDrums to -6 dB'])(
+        'does not read "%s", which breaks the words apart another way, as a fader level',
+        (prompt) => {
+            const result = bridgeDrums(prompt, { gainDb: -6 });
+
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it.each(['reset Drums to -6 dB', 'we set Drums to -6 dB', 'then set Drums to -6 dB', 'do not set Drums to -6 dB'])(
+        'does not read "%s", where "set" does not open the clause, as a fader level',
+        (prompt) => {
+            const result = bridgeDrums(prompt, { gainDb: -6 });
+
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it.each(['Drums up is -6 dB', 'Drums up seems to be -6 dB', 'set Drums to is -6 dB'])(
+        'does not read "%s", which describes the level, as a fader level',
+        (prompt) => {
+            const absolute = bridgeDrums(prompt, { gainDb: -6 });
+            const relative = bridgeDrums(prompt, { deltaDb: 6 });
+
+            expect(absolute.actions).toEqual([]);
+            expect(relative.actions).toEqual([]);
+        }
+    );
+
+    it('refuses the phrase continued onto a track when its own reference is not a track', () => {
+        const result = bridge(
+            [
+                { name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } },
+                { name: 'setTrackGain', arguments: { trackId: keys.id, gainDb: -3 } },
+            ],
+            'set Strings to -6 dB, Keys to -3 dB',
+            drumsContext
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map((rejection) => rejection.reason)).toEqual([
+            'Target trackId is not grounded in the user request',
+            'Provider track is not the reference the level phrase names',
+        ]);
+    });
+
+    it('grounds the phrase continued onto a second track when its own reference is a track', () => {
+        const prompt = 'set Drums to -6 dB, Keys to -3 dB';
+
+        const result = bridge(
+            [
+                { name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } },
+                { name: 'setTrackGain', arguments: { trackId: keys.id, gainDb: -3 } },
+            ],
+            prompt,
+            drumsContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'setTrackGain', payload: { trackId: drums.id, gainDb: -6 } },
+            { type: 'setTrackGain', payload: { trackId: keys.id, gainDb: -3 } },
+        ]);
+    });
+});

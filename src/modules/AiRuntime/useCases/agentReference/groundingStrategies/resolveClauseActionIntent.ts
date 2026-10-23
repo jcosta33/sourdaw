@@ -16,6 +16,8 @@ type ClauseActionIntent = {
     actionType: string;
     index: number;
     phrase: string;
+    /** Where the project reference a referenced level phrase acts on sits in the clause. */
+    referenceSlot?: { start: number; end: number };
 };
 
 /** The earliest place the phrase names its action: contiguously, or across one gap the clause admits. */
@@ -52,12 +54,16 @@ export function resolveClauseActionIntent(
     const matches = catalog
         .flatMap((entry) => {
             const vocabulary = getClauseIntentVocabulary(entry, statedLevelForms, creationProposal);
-            const referencedMatches = vocabulary.referencedPhrases.map((phrase) => ({
-                actionType: entry.actionType,
-                index: findReferencedIntentPhrase(maskedText, phrase)?.index ?? -1,
-                phrase,
-            }));
-            const phraseMatches = vocabulary.phrases.map((phrase) => ({
+            const referencedMatches = vocabulary.referencedPhrases.map((phrase): ClauseActionIntent => {
+                const referenced = findReferencedIntentPhrase(maskedText, phrase);
+                return {
+                    actionType: entry.actionType,
+                    index: referenced?.index ?? -1,
+                    phrase,
+                    referenceSlot: referenced?.slot,
+                };
+            });
+            const phraseMatches = vocabulary.phrases.map((phrase): ClauseActionIntent => ({
                 actionType: entry.actionType,
                 index: findPhraseIndex(maskedText, phrase, vocabulary.gaps),
                 phrase,

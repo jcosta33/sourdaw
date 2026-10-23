@@ -31,14 +31,6 @@ function startsWithGappedPhrase(commandSource: string, phrase: string, gaps: Int
     return !describesRatherThanCommands(normalizePromptText(commandSource.slice(gapped.end)));
 }
 
-function startsWithReferencedPhrase(commandSource: string, phrase: string): boolean {
-    const referenced = findReferencedIntentPhrase(commandSource, phrase);
-    if (referenced === null || referenced.index !== 0) {
-        return false;
-    }
-    return !describesRatherThanCommands(normalizePromptText(commandSource.slice(referenced.end)));
-}
-
 export function isExplicitCommandClause(
     maskedText: string,
     catalog: GroundingCatalog,
@@ -68,7 +60,7 @@ export function isExplicitCommandClause(
                 (phrase) =>
                     startsWithPhrase(commandText, phrase) ||
                     startsWithGappedPhrase(commandSource, phrase, vocabulary.gaps)
-            ) || vocabulary.referencedPhrases.some((phrase) => startsWithReferencedPhrase(commandSource, phrase))
+            ) || vocabulary.referencedPhrases.some((phrase) => findReferencedIntentPhrase(maskedText, phrase) !== null)
         );
     });
 }

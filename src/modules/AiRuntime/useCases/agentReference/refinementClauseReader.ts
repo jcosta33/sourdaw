@@ -70,6 +70,35 @@ const RESTRICTION_WORDS =
 const normalizedClause = refinementRequestReading.clauseWords;
 
 /**
+ * A clause whose action comes only from a referenced level phrase ("Reverb down 2 dB") names an object
+ * and a level, not the command that sets it: it means whichever pending command on that object takes a
+ * decibel level. A fader is such a command, so where none does, the clause means nothing the card holds.
+ */
+function readReferencedLevelMeaning(
+    named: readonly CommandView[],
+    catalog: ClauseScopeInput['catalog']
+): readonly CommandView[] {
+    const takesLevel = new Set<string>(
+        catalog.filter((entry) => (entry.decibelLevelForms?.length ?? 0) > 0).map((entry) => entry.actionType)
+    );
+    return named.filter((view) => takesLevel.has(view.command.type));
+}
+
+function readMeantCommands(
+    named: readonly CommandView[],
+    resolvedIntent: ReturnType<typeof resolveClauseActionIntent>,
+    catalog: ClauseScopeInput['catalog']
+): readonly CommandView[] {
+    if (resolvedIntent === null) {
+        return named;
+    }
+    if (resolvedIntent.referenceSlot) {
+        return readReferencedLevelMeaning(named, catalog);
+    }
+    return named.filter((view) => view.command.type === resolvedIntent.actionType);
+}
+
+/**
  * What one clause the refinement does not remove can mean on the pending card. A clause naming any
  * object no pending command acts on is an addition, grounded from the refinement text alone, and never
  * binds a pending command; otherwise it means the kept commands it names, narrowed to the action it
@@ -92,13 +121,14 @@ function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): Cla
     if (references.some((reference) => !refinementCardCommands.intersects(reference.denotes, pendingIds))) {
         return { kind: 'addition' };
     }
-    const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
-    const meant = commands.filter(
+    const resolvedIntent = resolveClauseActionIntent(clause.masked, input.catalog);
+    const intent = resolvedIntent?.actionType ?? null;
+    const named = commands.filter(
         (view) =>
-            (intent === null || view.command.type === intent) &&
-            (references.length === 0 ||
-                references.some((reference) => refinementCardCommands.intersects(reference.denotes, view.denotes)))
+            references.length === 0 ||
+            references.some((reference) => refinementCardCommands.intersects(reference.denotes, view.denotes))
     );
+    const meant = readMeantCommands(named, resolvedIntent, input.catalog);
     return {
         kind: 'scoped',
         meant: meant.filter((view) => !input.removedCommandIndexes.has(view.index)),

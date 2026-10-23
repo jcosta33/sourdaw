@@ -1648,7 +1648,13 @@ function resolveActionPromptScope({
                     takesContinuation = decibelLevelForms.length > 0;
                     continue;
                 }
-                matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
+                matchingScopes.push({
+                    ...clause,
+                    directional: false,
+                    matchedIntentPhrase: intent.phrase,
+                    referencedSlot:
+                        intent.referenceSlot && clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end),
+                });
                 takesContinuation = decibelLevelForms.length > 0;
             }
             continue;
