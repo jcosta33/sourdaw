@@ -1,0 +1,85 @@
+.agents/skills/review-stances/project-integrity.md
+  s_59e31a5c6f3e31::t_20b46688d5b93c 252-274
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_92cdce04943d00 9-20
+crates/daw-core/src/tuning.rs
+  s_59e31a5c6f3e31::t_315cdf650e2cdd 193-198
+crates/daw-core/src/tuning/scala.rs
+  s_59e31a5c6f3e31::t_0fcb7c762e2741 14-51,53-56,59-100,102-104,106-112,114-117,123,128-129,131-135,138-142,170,178,186,194,202-278
+crates/sourdaw-native/src/commands/tuning.rs
+  s_59e31a5c6f3e31::t_d8fac71f067c28 1-4,14-29,32,36-74
+src/modules/Arrangement/useCases/__tests__/importMidiFile.spec.ts
+  s_59e31a5c6f3e31::t_d3e261de384dba 6,8,89-90,521-653
+src/modules/Arrangement/useCases/importMidiFile.ts
+  s_59e31a5c6f3e31::t_b53993ff0ce0fa 4,130-133,135-141,143,146-147,149-160,162-171
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_59e31a5c6f3e31::t_64f5c65755907d 2277-2335
+src/modules/AudioEngine/useCases/offlineRender/__tests__/buildOfflineWebAudioGraph.spec.ts
+  s_59e31a5c6f3e31::t_f58e7b985275f3 1-185
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineAdjustmentLayerParity.spec.ts
+  s_59e31a5c6f3e31::t_71232bd6ae9c16 137-160
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_59e31a5c6f3e31::t_71257685c67c33 3-10,111,204-211,2224-2337,2339-2340,2375-2377,2381-2390,2393-2400,2406-2407,2411-2412,2415,2421,2434,2437-2438,2453-2456
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_59e31a5c6f3e31::t_8292c82ea0ac70 150-151,158-159,179
+src/modules/AudioEngine/useCases/offlineRender/offlineAdjustmentLayers.ts
+  s_59e31a5c6f3e31::t_8ca2344e150a74 39-43,149,170
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_59e31a5c6f3e31::t_3c2b4454202dd5 302,319-320,327-328,333
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_e4966ad45c1efd 257,274
+src/modules/Project/AGENTS.md
+  s_59e31a5c6f3e31::t_b7b0fa5c95fa3f 39
+src/modules/Project/repositories/nativeTuning/__tests__/parseScl.spec.ts
+  s_59e31a5c6f3e31::t_90880930de5586 24,32-66
+src/modules/Project/repositories/nativeTuning/parseScl.ts
+  s_59e31a5c6f3e31::t_8632d853c9c402 6-20,27-34,59-80,87-92,97
+src/modules/Project/useCases/__tests__/importSclFile.nativeWire.spec.ts
+  s_59e31a5c6f3e31::t_d6ca4c26d51af7 1-196
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_59e31a5c6f3e31::t_c55e896b7a3a77 1,6-7,9,31-32,34,37,57,74-154,156-169,182-187,218-223,238-239,248-425
+src/modules/Project/useCases/importSclFile.ts
+  s_59e31a5c6f3e31::t_d940277da61a27 7,10-11,16-23,30-32,34-42,45,56-58,69-71
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_59e31a5c6f3e31::t_44e1b35b9b5885 1,3,14,16-17,19,23,32,128-168,199-201,217-230,232-236,238-242,250,263-268,281-283,288,292-310,321,344-508
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts
+  s_59e31a5c6f3e31::t_7b79052fc7baf9 17,40,57-58,82,88,108,119-121,158,166
+src/modules/Project/useCases/projectPersistence/discardProjectChanges.ts
+  s_59e31a5c6f3e31::t_b35ad81d586caf 1,11,30-50,71-72,105-108
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_59e31a5c6f3e31::t_36f1c15b5b2d99 31-32,43-48
+src/modules/Transport/stores/__tests__/readNextPhysicalBarBoundary.spec.ts
+  s_59e31a5c6f3e31::t_dda057fdda0768 1-69
+src/modules/Transport/stores/index.ts
+  s_59e31a5c6f3e31::t_3ceaf3da9bf85b 25
+src/modules/Transport/stores/readNextPhysicalBarBoundary.ts
+  s_59e31a5c6f3e31::t_54578c2f87c891 1-66
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_59e31a5c6f3e31::t_c1559b5b771052 103-107
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalBranchWitness.integration.spec.ts
+  s_59e31a5c6f3e31::t_fccd6155a396ba 1-393
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_59e31a5c6f3e31::t_4e2ba41c364ba1 125-129,753-759
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_59e31a5c6f3e31::t_34635c2f5f59c2 108-112
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingTakeFromZero.spec.ts
+  s_59e31a5c6f3e31::t_756f33aa1425ee 114-118
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_59e31a5c6f3e31::t_901781fe36bb61 13,114-221,228-236,253-255,257,260-265,271-275,277,282-289,307-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43f0dafed73741dca915167ebb6ab85fc9723646",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
