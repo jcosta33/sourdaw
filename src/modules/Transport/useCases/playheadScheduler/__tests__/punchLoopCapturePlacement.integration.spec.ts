@@ -12,7 +12,12 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
+import {
+    configureOfflineMidiEventProjection,
+    configureOfflinePpqEndpointProjection,
+    renderTrackSubgraphOffline,
+    type startAudioRecording,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -36,6 +41,8 @@ import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { getTransportHandlers } from '../../getTransportHandlers';
+import { projectPpqEndpoints } from '../../projectPpqEndpoints';
+import { resolveTempoAtBeat } from '../../tempoMap/resolveTempoAtBeat';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { finalizeAutomaticRecording } from '../../transportControls/finalizeAutomaticRecording';
 import { pausePlayback } from '../../transportControls/pausePlayback';
@@ -68,6 +75,7 @@ const hardware = vi.hoisted(() => ({
     admissionGate: null as Promise<void> | null,
     rollGate: null as Promise<void> | null,
     nativeHold: false,
+    nativeCursorBeat: null as ((now: number) => number) | null,
     followJump: null as number | null,
     rollStarts: 0,
     rollContinuationAdvance: 0,
@@ -175,7 +183,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                 });
             });
         },
-        readNativeEnginePlayheadSeconds: () => null,
+        readNativeEnginePlayheadSeconds: () => {
+            const beat = hardware.nativeCursorBeat?.(hardware.now);
+            return beat === undefined || !Number.isFinite(beat) ? null : beat / 2;
+        },
     };
 });
 vi.mock('../../transportControls/startNativeSessionAtBeat', () => ({
@@ -342,6 +353,7 @@ describe('punch audio capture loop placement', () => {
         hardware.admissionGate = null;
         hardware.rollGate = null;
         hardware.nativeHold = false;
+        hardware.nativeCursorBeat = null;
         hardware.followJump = null;
         hardware.rollStarts = 0;
         hardware.rollContinuationAdvance = 0;
@@ -1041,6 +1053,361 @@ describe('punch audio capture loop placement', () => {
         const lastFrame = Math.round(hardware.sourceStarts[0]!.durationSeconds * hardware.sampleRate) - 1;
         expect(lastFrame).toBe(4319);
         expect(hardware.buffer!.getChannelData(0)[lastFrame]).toBe(4319);
+        expectProjectProjection();
+    });
+
+    it.each([
+        { route: 'manual', carrier: 'ahead', browserBeat: 9.8 },
+        { route: 'manual', carrier: 'behind', browserBeat: 10.2 },
+        { route: 'punch', carrier: 'ahead', browserBeat: 9.8 },
+        { route: 'punch', carrier: 'behind', browserBeat: 10.2 },
+    ])(
+        'keeps one $route audible native pass boundary when the carrier is $carrier of the browser',
+        async ({ route, browserBeat }) => {
+            hardware.latencySeconds = 0;
+            hardware.now = 51;
+            hardware.nativeCursorBeat = (now) => 8 + ((2 + (now - 51) * 2) % 4);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => hardware.now,
+                readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
+            });
+            if (route === 'punch') {
+                await executeAppAction({ type: 'setPunchIn', payload: { beat: 9 } }, { skipUndo: true });
+                await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+                await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: browserBeat });
+            playheadPositionRef.current = browserBeat;
+            playheadClockRef.beat = browserBeat;
+            playheadClockRef.audioTimeSeconds = 51;
+
+            if (route === 'manual') {
+                toggleRecording();
+                await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+            }
+            startPlayheadScheduler();
+            await advanceUntil(() => hardware.starts === 1);
+            const expectedBoundary = 52 - hardware.zeroFrame / hardware.sampleRate;
+            const expectedFirstFrame = Math.round(expectedBoundary * hardware.sampleRate);
+            await advanceUntil(() => hardware.now >= 52.1875);
+            hardware.now = 52.25;
+            await stopPlayback();
+
+            const placed = lane().takes.filter((take) => take.passDepthSeconds !== undefined);
+            expect(placed).toHaveLength(2);
+            const first = placed.find((take) => take.sourceOffsetBeats === 0)!;
+            const second = placed.find((take) => take.id !== first.id)!;
+            expect(first.passDepthSeconds).toBeCloseTo(0, 10);
+            expect(first.startBeat).toBeCloseTo(route === 'manual' ? 10 : 10.125, 10);
+            expect(first.endBeat).toBeCloseTo(12, 10);
+            expect(first.passSourceEndSeconds).toBeCloseTo(expectedBoundary, 10);
+            expect(second.passDepthSeconds).toBeCloseTo(expectedBoundary, 10);
+            expect(second.passSourceEndSeconds).toBeCloseTo(expectedBoundary + 0.25, 10);
+            expect(second.startBeat).toBe(8);
+            expect(second.endBeat).toBeCloseTo(8.5, 10);
+            expect(hardware.zeroFrame).toBe(route === 'manual' ? 2448000 : 2451000);
+            expect(hardware.buffer?.length).toBe(expectedFirstFrame + 12000);
+            await executeAppAction({
+                type: 'setCompRegion',
+                payload: { trackId: TRACK_ID, takeId: second.id, startBeat: 8, endBeat: 8.5 },
+            });
+            const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+                (clip) => clip.regionStartBeat === 8
+            )!;
+            expect(selected).toBeDefined();
+            expect((selected.audioOffsetBeats ?? 0) / 2).toBeCloseTo(expectedBoundary, 10);
+            const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+                '../../scheduling/scheduleAudioClips'
+            );
+            hardware.sourceStarts = [];
+            scheduleAudioClips(8, 8.5, 8, new Set(), new Set(), [], { ...transportStore.value!, isLooping: false });
+            const source = hardware.sourceStarts.find(
+                (entry) => Math.abs(entry.sourceSeconds - expectedBoundary) < 1e-9
+            )!;
+            expect(source).toBeDefined();
+            expect(source.durationSeconds).toBeCloseTo(0.25, 10);
+            const firstFrame = Math.round(source.sourceSeconds * hardware.sampleRate);
+            const endFrame = Math.round((source.sourceSeconds + source.durationSeconds) * hardware.sampleRate);
+            expect(firstFrame).toBe(expectedFirstFrame);
+            expect(endFrame).toBe(expectedFirstFrame + 12000);
+            expect(hardware.buffer!.getChannelData(0)[firstFrame]).toBe(expectedFirstFrame);
+            expect(hardware.buffer!.getChannelData(0)[endFrame - 1]).toBe(expectedFirstFrame + 11999);
+            expect(endFrame).toBe(hardware.buffer!.length);
+            // Public bounce route runs the real offline comp resolver and playback
+            // projector. The context records the source commands, not rendered DSP.
+            const offlineStarts: { sourceSeconds: number; durationSeconds: number; buffer: AudioBuffer | null }[] = [];
+            const node = () => ({
+                connect: () => {},
+                disconnect: () => {},
+                gain: {
+                    value: 1,
+                    setValueAtTime: () => {},
+                    linearRampToValueAtTime: () => {},
+                    cancelScheduledValues: () => {},
+                },
+                pan: { value: 0 },
+            });
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                class {
+                    sampleRate = hardware.sampleRate;
+                    currentTime = 0;
+                    destination = node();
+                    createGain = node;
+                    createStereoPanner = node;
+                    createBufferSource() {
+                        return {
+                            ...node(),
+                            buffer: null as AudioBuffer | null,
+                            playbackRate: { value: 1 },
+                            start(_when: number, sourceSeconds: number, durationSeconds: number) {
+                                offlineStarts.push({ sourceSeconds, durationSeconds, buffer: this.buffer });
+                            },
+                            stop: () => {},
+                        };
+                    }
+                    startRendering = () => Promise.resolve(hardware.buffer!);
+                }
+            );
+            configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
+            configureOfflineMidiEventProjection({
+                createProjector: () => () => [],
+                selectProbability: () => true,
+                createChordPitchProjector:
+                    () =>
+                    ({ pitch }) =>
+                        pitch,
+                evaluateAutomationValue: () => null,
+            });
+            await renderTrackSubgraphOffline({
+                targetTrackId: TRACK_ID,
+                renderTracks: trackStore.value!.tracks,
+                startBeat: 0,
+                endBeat: 8.5,
+                includeAutomation: false,
+            });
+            expect(offlineStarts).toHaveLength(1);
+            expect(offlineStarts[0]!.sourceSeconds).toBeCloseTo(source.sourceSeconds, 10);
+            expect(offlineStarts[0]!.durationSeconds).toBeCloseTo(source.durationSeconds, 10);
+            expect(offlineStarts[0]!.buffer!.getChannelData(0)[firstFrame]).toBe(expectedFirstFrame);
+            expect(offlineStarts[0]!.buffer!.getChannelData(0)[endFrame - 1]).toBe(expectedFirstFrame + 11999);
+            expectProjectProjection();
+        }
+    );
+
+    it('stages a late native wrap once when the browser has not reached its seam horizon', async () => {
+        hardware.latencySeconds = 0;
+        hardware.now = 51;
+        hardware.nativeCursorBeat = (now) => 8 + ((3.7 + (now - 51) * 2) % 4);
+        setGestureClockSource({
+            getAudioTimeSeconds: () => hardware.now,
+            readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
+        });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.5 });
+        playheadPositionRef.current = 11.5;
+        playheadClockRef.beat = 11.5;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await tick(0.2);
+        expect(schedulerSession.pendingSeam).toBeNull();
+        await tick(0.01);
+        hardware.now = 51.25;
+        await stopPlayback();
+        const placed = lane().takes.filter((take) => take.passDepthSeconds !== undefined);
+        expect(placed).toHaveLength(2);
+        const first = placed.find((take) => take.sourceOffsetBeats === 0)!;
+        expect(first.startBeat).toBeCloseTo(11.7, 10);
+        expect(first.endBeat).toBeCloseTo(12, 10);
+        const second = placed.find((take) => take.startBeat === 8)!;
+        expect(second.passDepthSeconds).toBeCloseTo(0.15, 10);
+        expect(second.passSourceEndSeconds).toBeCloseTo(0.25, 10);
+        expect(second.endBeat).toBeCloseTo(8.2, 10);
+        expect(hardware.buffer!.getChannelData(0)[7200]).toBe(7200);
+        expect(hardware.buffer!.length).toBe(12000);
+        expectProjectProjection();
+    });
+
+    it.each([51.99, 52.02])(
+        'retains first PCM at %s on the native terminal seam epoch before the next tick',
+        async (firstFrame) => {
+            hardware.latencySeconds = 0;
+            hardware.now = 51;
+            hardware.deferFirstFrame = true;
+            hardware.tornFirstFrame = true;
+            hardware.nativeCursorBeat = (now) => 8 + ((2 + (now - 51) * 2) % 4);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => hardware.now,
+                readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
+            });
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 9.8 });
+            playheadPositionRef.current = 9.8;
+            playheadClockRef.beat = 9.8;
+            playheadClockRef.audioTimeSeconds = 51;
+            toggleRecording();
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+            startPlayheadScheduler();
+            await advanceUntil(() => hardware.now >= 51.9375);
+            expect(playheadClockRef.beat).toBeCloseTo(11.675, 10);
+            hardware.zeroFrame = Math.round(firstFrame * hardware.sampleRate);
+            hardware.now = 52.05;
+            await stopPlayback();
+            const clip = recordedClips()[0]!;
+            const mediaBeat = clip.startBeat - (clip.audioOffsetBeats ?? 0);
+            expect(mediaBeat).toBeCloseTo(firstFrame < 52 ? 11.98 : 8.04, 10);
+            const placed = lane().takes.filter((take) => take.passDepthSeconds !== undefined);
+            expect(placed).toHaveLength(firstFrame < 52 ? 2 : 1);
+            const incoming = placed.find((take) => take.startBeat < 9)!;
+            expect(incoming.startBeat).toBeCloseTo(firstFrame < 52 ? 8 : 8.04, 10);
+            expect(incoming.endBeat).toBeCloseTo(8.1, 10);
+            expect(incoming.passDepthSeconds).toBeCloseTo(Math.max(0, 52 - firstFrame), 10);
+            expect(incoming.passSourceEndSeconds).toBeCloseTo(52.05 - firstFrame, 10);
+            const sourceFrame = Math.round(incoming.passDepthSeconds! * hardware.sampleRate);
+            expect(hardware.buffer!.getChannelData(0)[sourceFrame]).toBe(sourceFrame);
+            expect(hardware.buffer!.length).toBe(Math.round((52.05 - firstFrame) * hardware.sampleRate));
+            expectProjectProjection();
+        }
+    );
+
+    it.each(['native', 'browser'] as const)(
+        'hands a planned audio boundary to %s without duplicating its take',
+        async (destination) => {
+            hardware.latencySeconds = 0;
+            hardware.now = 51;
+            const carrier = (now: number) => 8 + ((3.8 + (now - 51) * 2) % 4);
+            hardware.nativeCursorBeat = destination === 'browser' ? carrier : null;
+            setGestureClockSource({
+                getAudioTimeSeconds: () => hardware.now,
+                readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
+            });
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+            playheadPositionRef.current = 11.8;
+            playheadClockRef.beat = 11.8;
+            playheadClockRef.audioTimeSeconds = 51;
+            toggleRecording();
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+            startPlayheadScheduler();
+            await tick(0.01);
+            const plannedId = lane().takes.find((take) => take.sourceOffsetBeats === 0)!.id;
+            hardware.nativeCursorBeat = destination === 'native' ? carrier : null;
+            await tick(0.015);
+            await tick(0.075);
+            await tick(0.025);
+            hardware.now = 51.25;
+            await stopPlayback();
+            const placed = lane().takes.filter((take) => take.passDepthSeconds !== undefined);
+            expect(placed).toHaveLength(2);
+            expect(placed.find((take) => take.sourceOffsetBeats === 0)?.id).toBe(plannedId);
+            expect(placed.find((take) => take.id === plannedId)?.passSourceEndSeconds).toBeCloseTo(0.1, 10);
+            const incoming = placed.find((take) => take.id !== plannedId)!;
+            expect(incoming.passDepthSeconds).toBeCloseTo(0.1, 10);
+            expect(incoming.passSourceEndSeconds).toBeCloseTo(0.25, 10);
+            expect(hardware.buffer!.length).toBe(12000);
+            expect(hardware.buffer!.getChannelData(0)[4800]).toBe(4800);
+            expectProjectProjection();
+        }
+    );
+
+    it.each(['loop edit', 'follow jump'] as const)(
+        'replaces an unsounded native boundary on a %s and retains its captured entry',
+        async (change) => {
+            hardware.latencySeconds = 0;
+            hardware.now = 51;
+            hardware.nativeCursorBeat = (now) => 8 + ((3.8 + (now - 51) * 2) % 4);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => hardware.now,
+                readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
+            });
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.6 });
+            playheadPositionRef.current = 11.6;
+            playheadClockRef.beat = 11.6;
+            playheadClockRef.audioTimeSeconds = 51;
+            toggleRecording();
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+            startPlayheadScheduler();
+            const plannedId = lane().takes.find((take) => take.sourceOffsetBeats === 0)!.id;
+            if (change === 'loop edit') {
+                await executeAppAction(
+                    { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 11.9 } },
+                    { skipUndo: true }
+                );
+                hardware.nativeCursorBeat = (now) => 8 + ((3.8 + (now - 51) * 2) % 3.9);
+            } else {
+                hardware.followJump = 9;
+            }
+            await tick(0.025);
+            if (change === 'follow jump') {
+                hardware.followJump = null;
+                hardware.nativeCursorBeat = (now) => 9 + (now - 51.025) * 2;
+            }
+            await tick(0.05);
+            hardware.now = 51.15;
+            await stopPlayback();
+            const placed = lane().takes.filter((take) => take.passDepthSeconds !== undefined);
+            expect(placed).toHaveLength(2);
+            const first = placed.find((take) => take.id === plannedId)!;
+            const boundarySeconds = change === 'loop edit' ? 0.05 : 0.025;
+            expect(first.passDepthSeconds).toBeCloseTo(0, 10);
+            expect(first.passSourceEndSeconds).toBeCloseTo(boundarySeconds, 10);
+            expect(first.startBeat).toBeCloseTo(11.8, 10);
+            expect(first.endBeat).toBeCloseTo(11.8 + boundarySeconds * 2, 10);
+            const incoming = placed.find((take) => take.id !== plannedId)!;
+            expect(incoming.startBeat).toBe(change === 'loop edit' ? 8 : 9);
+            expect(incoming.passDepthSeconds).toBeCloseTo(boundarySeconds, 10);
+            expect(incoming.passSourceEndSeconds).toBeCloseTo(0.15, 10);
+            expect(hardware.buffer!.getChannelData(0)[Math.round(boundarySeconds * hardware.sampleRate)]).toBe(
+                Math.round(boundarySeconds * hardware.sampleRate)
+            );
+            expectProjectProjection();
+        }
+    );
+
+    it('keeps pending native admission on a sounded first-frame epoch before its clip opens', async () => {
+        hardware.latencySeconds = 0;
+        hardware.now = 51;
+        hardware.deferFirstFrame = true;
+        let admit!: () => void;
+        hardware.admissionGate = new Promise<void>((resolve) => {
+            admit = resolve;
+        });
+        hardware.nativeCursorBeat = (now) => 8 + ((2 + (now - 51) * 2) % 4);
+        setGestureClockSource({
+            getAudioTimeSeconds: () => hardware.now,
+            readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
+        });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 9.8 });
+        playheadPositionRef.current = 9.8;
+        playheadClockRef.beat = 9.8;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(hardware.starts).toBe(1));
+        expect(activeRecordingRef.current).toEqual([]);
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.now >= 52.0625);
+        hardware.zeroFrame = Math.round(52.02 * hardware.sampleRate);
+        admit();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        hardware.now = 52.15;
+        await stopPlayback();
+        const clip = recordedClips()[0]!;
+        expect(clip.startBeat - (clip.audioOffsetBeats ?? 0)).toBeCloseTo(8.04, 10);
+        // An ordinary, unstaged clip retains the existing one-beat editable
+        // handle. Playback still ends at its finite captured PCM availability.
+        expect(clip.endBeat).toBeCloseTo(9.04, 10);
+        expect(hardware.buffer!.length).toBe(6240);
+        expect(hardware.buffer!.getChannelData(0)[6239]).toBe(6239);
+        const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+            '../../scheduling/scheduleAudioClips'
+        );
+        hardware.sourceStarts = [];
+        scheduleAudioClips(clip.startBeat, clip.endBeat, clip.startBeat, new Set(), new Set(), [], {
+            ...transportStore.value!,
+            isLooping: false,
+        });
+        expect(hardware.sourceStarts).toHaveLength(1);
+        expect(hardware.sourceStarts[0]!.sourceSeconds).toBeCloseTo(0, 10);
+        expect(hardware.sourceStarts[0]!.durationSeconds).toBeCloseTo(0.13, 10);
         expectProjectProjection();
     });
 

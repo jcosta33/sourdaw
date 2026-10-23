@@ -4,13 +4,18 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { getTrackEligibility } from '../../stores/trackEligibility';
-import { type Clip } from '../../stores/trackStore';
+import { type Clip, type Track } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
 import { recordingPassTiming } from './recordingPassTiming';
 import { stageRecordingTake } from './stageRecordingTake';
 
 const recordClipId = 1;
+type AudioRecordingClock = { beat: number; contextSeconds: number };
+
+function trackRecordingBeat(kind: Track['kind'], recordBeat: number, audioClock?: AudioRecordingClock): number {
+    return kind === 'audio' ? (audioClock?.beat ?? recordBeat) : recordBeat;
+}
 
 /**
  * Open recording clips on every armed, recording-eligible track.
@@ -27,8 +32,14 @@ const recordClipId = 1;
  * only (start, stop, pause, seek), so during playback it holds the beat
  * playback *started* at, not the live position. Omitting it keeps the
  * stationary behaviour — anchor at the store playhead.
+ * `audioClock` retains an audible audio entry as one beat/context pair while
+ * MIDI continues to use `atBeat` on its scheduling clock.
  */
-export function startRecording(atBeat?: number, firstPassClock?: () => number | null): Clip[] {
+export function startRecording(
+    atBeat?: number,
+    firstPassClock?: () => number | null,
+    audioClock?: AudioRecordingClock
+): Clip[] {
     const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
@@ -42,6 +53,9 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
     const newClips: Clip[] = [];
 
     for (const track of armedTracks) {
+        // Native audio capture can join a different audible phase from the
+        // browser/MIDI scheduler. Retain the entry and clock as one pair.
+        const trackRecordBeat = trackRecordingBeat(track.kind, recordBeat, audioClock);
         if (track.kind === 'midi' && transportState.overdubEnabled) {
             const ph = recordBeat;
             const intersecting = track.clips.find(
@@ -69,8 +83,8 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
             id: clipId,
             trackId: track.id,
             name: `Recording ${recordClipId}`,
-            startBeat: recordBeat,
-            endBeat: recordBeat,
+            startBeat: trackRecordBeat,
+            endBeat: trackRecordBeat,
             type: track.kind === 'midi' ? 'midi' : 'audio',
             fadeInBeats: 0,
             fadeOutBeats: 0,
@@ -81,7 +95,11 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
         };
         newClips.push(clip);
         if (clip.type === 'audio') {
-            recordingPassTiming.begin(clipId, recordBeat, firstPassClock);
+            recordingPassTiming.begin(
+                clipId,
+                trackRecordBeat,
+                audioClock ? () => audioClock.contextSeconds : firstPassClock
+            );
         }
 
         // Take labels count per lane, the way the scheduler's wrap path mints
@@ -91,8 +109,8 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
             trackId: track.id,
             clipId,
             name: `Take ${takeNum}`,
-            startBeat: recordBeat,
-            endBeat: recordBeat,
+            startBeat: trackRecordBeat,
+            endBeat: trackRecordBeat,
         });
     }
 

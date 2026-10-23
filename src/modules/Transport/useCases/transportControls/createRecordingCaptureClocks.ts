@@ -17,6 +17,9 @@ type CaptureClock = {
 type CaptureClockObserver = Parameters<typeof recordingLifecycle.registerCaptureClock>[0];
 
 function observeSoundedTerminalSeam(context: Pick<AudioContext, 'currentTime'>, observe: CaptureClockObserver): void {
+    if (schedulerSession.observeNativeRecordingClock?.()) {
+        return;
+    }
     // A planned seam sounding after the last tick is an occurrence;
     // a cancelled or still-future seam never is.
     const pending = schedulerSession.pendingSeam;

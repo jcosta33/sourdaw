@@ -57,6 +57,7 @@ function capturePlayingAdmissionClock(hold: TransportHold, changes: readonly Tem
     if (source && nativeCursor !== null) {
         hold.rolledAtContextSeconds = source.getAudioTimeSeconds();
         hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, nativeCursor, tempo);
+        hold.firstPassContextSeconds = hold.rolledAtContextSeconds;
         return;
     }
     hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
@@ -108,6 +109,12 @@ function openManualRecordingClips(
     // Preserve the playback correlation that was retained before producer start.
     if (hold.rolledAtContextSeconds === null) {
         capturePlayingAdmissionClock(hold, changes, tempo);
+    }
+    if (hold.firstPassContextSeconds !== null && hold.captureStartSongSeconds !== null) {
+        return startRecording(playheadPositionRef.current, undefined, {
+            beat: samplesToBeat(changes, hold.captureStartSongSeconds, tempo, 1),
+            contextSeconds: hold.firstPassContextSeconds,
+        });
     }
     return startRecording(playheadPositionRef.current);
 }

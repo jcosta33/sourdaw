@@ -33,6 +33,7 @@ function beginRecordingPassTiming(clipId: string, recordPointBeat: number, first
     let recordPointContextSeconds: number | null = null;
     if (transport.isPlaying) {
         recordPointContextSeconds =
+            firstPassClock?.() ??
             playheadClockRef.audioTimeSeconds + recordPointSeconds - seconds(playheadClockRef.beat);
     }
     recordingPassTimings.set(clipId, {

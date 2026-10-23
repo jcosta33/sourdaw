@@ -189,6 +189,37 @@ describe('startRecording', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
+    it('keeps native audio admission on its paired beat while MIDI retains the scheduling anchor', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 'audio', armed: true, kind: 'audio', clips: [] },
+                { id: 'midi', armed: true, kind: 'midi', clips: [] },
+            ],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4, isPlaying: true, loopStart: 8 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+
+        const clips = startRecording(9.8, undefined, { beat: 10, contextSeconds: 51 });
+
+        expect(clips).toHaveLength(2);
+        expect(clips[0]).toMatchObject({ trackId: 'audio', startBeat: 10, endBeat: 10 });
+        expect(clips[1]).toMatchObject({ trackId: 'midi', startBeat: 9.8, endBeat: 9.8 });
+        expect(mocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'audio',
+            clipId: clips[0]!.id,
+            name: expect.any(String),
+            startBeat: 10,
+            endBeat: 10,
+        });
+        expect(mocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'midi',
+            clipId: clips[1]!.id,
+            name: expect.any(String),
+            startBeat: 9.8,
+            endBeat: 9.8,
+        });
+    });
+
     it('skips MIDI clip creation when overdubbing inside an active loop region', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [

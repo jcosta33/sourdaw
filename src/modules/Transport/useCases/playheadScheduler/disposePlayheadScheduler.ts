@@ -51,6 +51,7 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.lastTempoMapChanges = null;
     schedulerSession.lastLoopSignature = '';
     schedulerSession.pendingSeam = null;
+    schedulerSession.observeNativeRecordingClock = null;
     resetMetronomeBeat(0);
     // The graph the engagements were pressed on is being discarded with the
     // session, so there is nothing left to release them on.

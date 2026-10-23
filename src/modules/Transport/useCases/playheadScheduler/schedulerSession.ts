@@ -92,6 +92,8 @@ export const schedulerSession = {
     pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
+    /** Observe a terminal audio pass on the audible carrier before capture readers detach. */
+    observeNativeRecordingClock: null as (() => boolean) | null,
     // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
     // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
     // (`scheduleGrainMs`, default 10ms), the next worker message would start a
