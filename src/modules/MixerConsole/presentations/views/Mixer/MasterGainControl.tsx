@@ -18,7 +18,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { promptUser } from '#/utils/Notification/promptUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
-import { parseMasterGainEntry } from '../../../models/parseMasterGainEntry';
+import { parseMasterGainEntry } from './parseMasterGainEntry';
 
 type MasterGainControlProps = {
     value: number;
