@@ -238,6 +238,67 @@ describe('parseProjectXml — clip parsing', () => {
         expect(clip?.type).toBe('audio');
         expect(clip?.audioAssetPath).toBe('drums.wav');
         expect(clip?.startBeat).toBe(2);
+        expect(result.warnings).toEqual([]);
+    });
+
+    it('reports one schema-valid direct Audio timeline that cannot become a clip', () => {
+        const xml = project(
+            '<Structure><Track id="t0" name="Drums" contentType="audio"/></Structure>' +
+                '<Arrangement><Lanes><Audio id="a0" track="t0" duration="4" channels="2" sampleRate="48000">' +
+                '<File path="media.wav"/></Audio></Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Audio', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'audio.dawproject',
+        });
+
+        expect(parsed.tracks[0]?.clips).toEqual([]);
+        expect(mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips).toEqual([]);
+        expect(parsed.warnings).toEqual([
+            {
+                kind: 'unsupported-clip',
+                name: 'media.wav',
+                sourceType: 'Audio',
+                sourceId: 'a0',
+                context: 'Drums',
+                handling: 'dropped',
+                sourceOrder: expect.any(Number),
+            },
+        ]);
+        expect(parsed.warnings[0]?.sourceOrder).toBeGreaterThan(0);
+    });
+
+    it('keeps nested Clips and their notes through project mapping', () => {
+        const xml =
+            '<?xml version="1.0"?><Project version="1.0">' +
+            '<Application name="Fixture" version="1"/>' +
+            '<Transport><Tempo value="120" unit="bpm"/><TimeSignature numerator="4" denominator="4"/></Transport>' +
+            '<Structure><Track id="t0" name="Keys" contentType="notes"/></Structure>' +
+            '<Arrangement><Lanes><Clips track="t0">' +
+            '<Clip name="Container" time="0" duration="8"><Clips track="t0">' +
+            '<Clip name="Nested phrase" time="2" duration="2"><Notes>' +
+            '<Note time="0" duration="1" channel="0" key="67" vel="0.8"/>' +
+            '</Notes></Clip></Clips></Clip></Clips></Lanes></Arrangement></Project>';
+        const parsed = parseProjectXml(xml);
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Nested', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'nested.dawproject',
+        });
+
+        const clips = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+        expect(clips?.map((clip) => ({ name: clip.name, startBeat: clip.startBeat, endBeat: clip.endBeat }))).toEqual([
+            { name: 'Container', startBeat: 0, endBeat: 8 },
+            { name: 'Nested phrase', startBeat: 2, endBeat: 4 },
+        ]);
+        const nested = clips?.[1];
+        expect(nested?.type).toBe('midi');
+        expect(nested && mapped.midi.notesByClipId[nested.id]).toMatchObject([
+            { pitch: 67, startBeat: 0, duration: 1, velocity: 102 },
+        ]);
+        expect(parsed.warnings).toEqual([]);
     });
 
     it('resolves an audio asset from a Warps>Audio wrapper and a file= attr', () => {
