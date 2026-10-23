@@ -27,7 +27,7 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
 
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await expect(inspector.getByText('Analysis & Metering')).toBeVisible();
-        await inspector.getByRole('combobox', { name: 'Analyzer' }).selectOption('panner');
+        await inspector.getByRole('combobox', { name: 'Primary analyzer', exact: true }).selectOption('panner');
 
         const panner = page.getByRole('slider', { name: /Spatial panner:/ });
         await expect(panner).toBeVisible();
