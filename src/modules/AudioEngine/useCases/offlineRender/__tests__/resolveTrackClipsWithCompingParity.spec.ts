@@ -1,8 +1,36 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { type Clip, takeLaneStore, type TakeLaneStoreState, trackStore } from '#/modules/Arrangement/stores';
+import {
+    getArrangementHandlers,
+    resolveClipsWithComping,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import {
+    defaultTransportState,
+    readSecondsAtBeat,
+    readTempoAtBeat,
+    tempoMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
 import { renderTempoTimeline } from '../renderTempoTimeline';
@@ -73,6 +101,107 @@ const loopPasses = (anchorBeats?: number) => [
     pass('pass-1', [0, 4], 0, anchorBeats),
     pass('pass-2', [0, 4], 4, anchorBeats),
 ];
+
+describe('bounded recorded pass playback after a typed clip split across a tempo change', () => {
+    beforeEach(async () => {
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('split bounded pass playback parity');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        setArrangementEventBus(createEventBus());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' as const }),
+            clear: () => undefined,
+        });
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: dropTo60At(9) });
+        await executeAppAction(
+            { type: 'addTrack', payload: { id: 't1', kind: 'audio', name: 'Recorded pass' } },
+            { skipUndo: true }
+        );
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it.each([
+        { mode: 'off', ratio: 1, consumed: 1 },
+        { mode: 'timestretch', ratio: 2, consumed: 2 },
+        { mode: 'off', ratio: 2, consumed: 1 },
+    ] as const)('preserves both source windows with $mode ratio $ratio', async ({ mode, ratio, consumed }) => {
+        const clip = { ...recording(8, 12), stretchMode: mode, stretchRatio: ratio };
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({ ...track, clips: [clip] })),
+        });
+        const take = {
+            ...placedPass('bounded', [8, 12], 1.25 * consumed, 1.25 * consumed),
+            passSourceEndSeconds: 1.75 * consumed,
+        };
+        takeLaneStore.set(lane([take], take.id, 9.75, 10.25));
+        const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
+        const tempoAtBeat = (beat: number) => readTempoAtBeat({ beat });
+        const selected = () => {
+            const clips = trackStore.value!.tracks[0]!.clips;
+            const live = resolveClipsWithComping('t1', clips);
+            const offline = resolveTrackClipsWithComping(
+                't1',
+                clips,
+                takeLaneStore.value,
+                renderTempoTimeline(secondsAtBeat, tempoAtBeat)
+            );
+            expect(offline).toEqual(live);
+            return offline.filter((fragment) => fragment.startBeat >= 9.75 && fragment.endBeat <= 10.25);
+        };
+        expect(selected().map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([[9.75, 10.25]]);
+
+        await executeAppAction({ type: 'splitClip', payload: { clipId: 'rec', beat: 10, resolvedBeat: 10 } });
+
+        const fragments = selected();
+        expect(fragments.map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([
+            [9.75, 10],
+            [10, 10.25],
+        ]);
+        const playbacks = fragments.flatMap((fragment) =>
+            projectOfflineAudioClipPlaybacks({
+                clip: fragment,
+                bufferDurationSeconds: 8,
+                regionStartBeat: 8,
+                regionStartSec: secondsAtBeat(8),
+                durationSeconds: 4,
+                compensationDelay: 0,
+                projectBeatToSeconds: secondsAtBeat,
+                resolveTempoAtBeat: tempoAtBeat,
+            })
+        );
+        expect(playbacks).toHaveLength(2);
+        expect(playbacks.map((playback) => playback.bufferOffsetSec)).toEqual([1.25 * consumed, 1.5 * consumed]);
+        expect(playbacks.map((playback) => playback.playbackRate)).toEqual([consumed, consumed]);
+        expect(playbacks.map((playback) => playback.playDuration)).toEqual([0.25, 0.25]);
+        const ending = playbacks[1]!;
+        const sourceEnd = ending.bufferOffsetSec + ending.playDuration * ending.playbackRate;
+        expect(sourceEnd).toBe(1.75 * consumed);
+        expect(takeLaneStore.value!.lanes[0]!.takes.map((pass) => pass.passSourceEndSeconds)).toEqual([
+            1.75 * consumed,
+            1.75 * consumed,
+        ]);
+    });
+});
 
 const cases: readonly { name: string; state: TakeLaneStoreState; clip: Clip }[] = [
     { name: 'as recorded', state: lane(loopPasses(0), 'pass-2', 0, 4), clip: recording(0, 12) },

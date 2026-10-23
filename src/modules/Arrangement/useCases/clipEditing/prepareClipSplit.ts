@@ -1,10 +1,12 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
 import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
+import { clipEntrySeconds, isTempoConstantBetween } from '../../models/TempoTimeline';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
@@ -73,8 +75,24 @@ export function prepareClipSplit({
     // The consumed content is what the runtimes play: 1x unless stretch is on,
     // the bounded ratio when it is — the shared law, not the raw stored ratio
     // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
-    const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
-    const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    const sourceRate = consumedStretchFactor(clip);
+    const contentSplitDelta = timelineSplitDelta * sourceRate;
+    let contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    let rightAudioOffsetBeats = contentSplitBeats;
+    if (
+        clip.type === 'audio' &&
+        !clip.loopEnabled &&
+        !isTempoConstantBetween(liveTempoTimeline, clip.startBeat, adjustedSplitBeat)
+    ) {
+        const sourceSeconds =
+            clipEntrySeconds(liveTempoTimeline, clip.startBeat, clip.audioOffsetBeats ?? 0) +
+            (liveTempoTimeline.secondsAtBeat(adjustedSplitBeat) - liveTempoTimeline.secondsAtBeat(clip.startBeat)) *
+                sourceRate;
+        // The right reader decodes its entry at the new start's tempo; warp
+        // markers keep the original clip's source-content beat coordinates.
+        rightAudioOffsetBeats = (sourceSeconds * liveTempoTimeline.tempoAtBeat(adjustedSplitBeat)) / 60;
+        contentSplitBeats = (sourceSeconds * liveTempoTimeline.tempoAtBeat(clip.startBeat)) / 60;
+    }
 
     const satellites = prepareClipSplitSatellites({
         clipId,
@@ -96,7 +114,7 @@ export function prepareClipSplit({
         name: `${clip.name} (R)`,
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
-        audioOffsetBeats: contentSplitBeats,
+        audioOffsetBeats: rightAudioOffsetBeats,
         midiOffsetBeats: 0,
     };
     const previous: ClipSplitActionSnapshot = {
