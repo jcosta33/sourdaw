@@ -24,6 +24,7 @@ import {
 } from '../models/KokoroArtifactManifest';
 import { type RenderProvenance } from '../models/RenderProgress';
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
+import { getStorageStatus } from '../repositories/getStorageStatus';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readRenderCache } from '../repositories/readRenderCache';
 import { readVerifiedModel } from '../repositories/readVerifiedModel';
@@ -32,6 +33,7 @@ import { writeRenderCache } from '../repositories/writeRenderCache';
 import { resampleTo44100, applyFades, TARGET_SAMPLE_RATE } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
+import { setStorageUsed } from '../stores/modelRegistryStore';
 import {
     enqueueRender,
     isCurrentRenderRequest,
@@ -120,13 +122,14 @@ type RenderKokoroTtsOutput = Promise<{
 }>;
 
 export const renderKokoroTts = inject({
+    getStorageStatus,
     logger,
     readRenderCache,
     readVerifiedModel,
     supersedeBrowserRender,
     writeRenderCache,
 })(
-    ({ logger, readRenderCache, readVerifiedModel, supersedeBrowserRender, writeRenderCache }) =>
+    ({ getStorageStatus, logger, readRenderCache, readVerifiedModel, supersedeBrowserRender, writeRenderCache }) =>
         async function renderKokoroTts({
             phraseId,
             text,
@@ -267,6 +270,9 @@ export const renderKokoroTts = inject({
 
                 await writeRenderCache({ cacheKey, audio: finalAudio });
                 assertCurrentRenderRequest(phraseId, requestId);
+                const storageStatus = await getStorageStatus();
+                assertCurrentRenderRequest(phraseId, requestId);
+                setStorageUsed(storageStatus.usedBytes);
                 markRenderComplete(phraseId, requestId, cacheKey);
 
                 const provenance: RenderProvenance = {

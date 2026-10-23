@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 async function selectFirstTrack(page: import('@playwright/test').Page): Promise<void> {
     const trackList = page.getByRole('grid', { name: /Track list/i }).first();
@@ -34,39 +34,7 @@ test.describe('Inspector deep — gain, pan, notes', () => {
         await selectFirstTrack(page);
         const pan = page.getByTestId('inspector-track-pan');
         await expect(pan).toBeVisible({ timeout: 5000 });
-
-        // The RotaryKnob inside should have role=slider.
-        const slider = pan.getByRole('slider');
-        if (await slider.isVisible().catch(() => false)) {
-            const value = await slider.getAttribute('aria-valuenow');
-            expect(value).not.toBeNull();
-        }
-    });
-
-    test('inspector pan responds to keyboard', async ({ page }) => {
-        await selectFirstTrack(page);
-        const pan = page.getByTestId('inspector-track-pan');
-        const slider = pan.getByRole('slider');
-        if (await slider.isVisible().catch(() => false)) {
-            const before = await slider.getAttribute('aria-valuenow');
-            await slider.focus();
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(200);
-            const after = await slider.getAttribute('aria-valuenow');
-            // Value should have changed (or stayed at max).
-            if (Number(before) < 50) {
-                expect(Number(after)).toBeGreaterThan(Number(before));
-            }
-        }
-    });
-
-    test('inspector notes input accepts text', async ({ page }) => {
-        await selectFirstTrack(page);
-        const notes = page.getByTestId('inspector-track-notes');
-        if (await notes.isVisible().catch(() => false)) {
-            await notes.fill('Test note text');
-            await expect(notes).toHaveValue('Test note text');
-        }
+        // inspectorPanKeyboardTestId owns the ArrowRight delta; inspectorTestId owns notes after blur.
     });
 
     test('gain and pan coexist in inspector', async ({ page }) => {

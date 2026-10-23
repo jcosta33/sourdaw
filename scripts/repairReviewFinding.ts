@@ -49,7 +49,7 @@ import {
     type ReviewRepairEvidence,
     type ReviewRepairRecord,
 } from './reviewRepair.ts';
-import { logReviewRoundEscalationAtThreshold } from './reviewRoundEscalation.ts';
+import { logReviewRoundFreezeAtThreshold } from './reviewRoundEscalation.ts';
 
 export const REPAIR_USAGE =
     'usage: pnpm review:repair <pr-number> --thread <thread-node-id> --head <full-sha> --commit <full-sha> --summary <single-line> [--evidence <path-to-json>]';
@@ -78,7 +78,7 @@ export type RepairReviewFindingPort = {
     postReply: (threadId: string, body: string, clientMutationId: string) => void;
     readEvidenceFile: (path: string) => string;
     isAncestor: (commit: string, head: string) => boolean;
-    /** The pull request's public review history, for the advisory escalation flag. */
+    /** The pull request's public review history, for the advisory freeze flag. */
     reviews?: (number: number) => PublicReview[];
     reviewComments?: (number: number) => PublicReviewComment[];
     log: (message: string) => void;
@@ -373,9 +373,9 @@ export function repairReviewFinding(
         fail(`GitHub returned thread ${state.threadId} for requested thread ${input.threadId}`);
     }
     assertThreadPrecondition(state, number, input.head);
-    // The escalation flag is advisory here and never blocks a repair: unresolved threads must stay
+    // The freeze flag is advisory here and never blocks a repair: unresolved threads must stay
     // resolvable however many request-changes rounds the pull request has taken.
-    logReviewRoundEscalationAtThreshold(number, state.head, port.reviews, port.reviewComments, port.log);
+    logReviewRoundFreezeAtThreshold(number, state.head, port.reviews, port.reviewComments, port.log);
     const refusal = reviewRepairCommitRefusal({
         commit: input.commit,
         head: input.head,
