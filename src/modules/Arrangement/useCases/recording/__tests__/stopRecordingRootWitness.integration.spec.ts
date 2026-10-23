@@ -7,6 +7,9 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { activeRecordingRef, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import {
     DOC_PREFIX_ROOT,
     captureProjectRootIdentity,
@@ -34,6 +37,19 @@ import { stopRecording } from '../stopRecording';
 
 const notifyUser = vi.hoisted(() => vi.fn());
 
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
+
+/** Commit entries on the undo history: the durable observable a refused resume never mints. */
+function committedEntryCount(): number {
+    return (undoHistoryStore.value?.past ?? []).filter(
+        (entry) => entry.kind === 'action' && entry.action.type === 'commitRecording'
+    ).length;
+}
+
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
@@ -55,10 +71,26 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     };
 });
 
+// Delegates to the real commit by default (the beforeEach installs the
+// delegation); a case can arm one hold to park the dispatch across a root
+// replacement, so the resume refusal is observed against the real dispatch.
 const commitRecording = vi.hoisted(() =>
-    vi.fn<(clip: unknown, capture?: unknown, options?: unknown) => Promise<void>>()
+    vi.fn<
+        (
+            clip: unknown,
+            capture?: unknown,
+            options?: { shouldExecute?: () => boolean },
+            real?: (clip: unknown, capture?: unknown, options?: unknown) => Promise<void>
+        ) => Promise<void>
+    >()
 );
-vi.mock('../commitRecording', () => ({ commitRecording }));
+vi.mock('../commitRecording', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../commitRecording')>();
+    return {
+        commitRecording: (clip: unknown, capture?: unknown, options?: { shouldExecute?: () => boolean }) =>
+            commitRecording(clip, capture, options, actual.commitRecording),
+    };
+});
 
 const TRACK_ID = 'track-recording';
 
@@ -136,7 +168,17 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
         takeLaneStore.set({ lanes: [] });
         activeRecordingRef.current = [];
         activeRecordingRef.capturedRootIdentity = null;
-        commitRecording.mockImplementation(() => Promise.resolve());
+        // The real handler registry and undo history back the default
+        // delegation, so the durable entry is observable; the default runs the
+        // real commit with the dispatch's own arguments.
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        commitRecording.mockImplementation((clip, capture, options, real) =>
+            real ? real(clip, capture, options) : Promise.resolve()
+        );
     });
 
     afterEach(() => {
@@ -197,31 +239,45 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
         expect(commitRecording).toHaveBeenCalledWith(
             expect.objectContaining({ id: clip.id }),
             undefined,
-            expect.objectContaining({ shouldExecute: expect.any(Function) })
+            expect.objectContaining({ shouldExecute: expect.any(Function) }),
+            expect.any(Function)
         );
         expect(stagedClipEndBeat()).toBeGreaterThanOrEqual(clip.startBeat + 1);
+        expect(committedEntryCount()).toBe(1);
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('keeps the take on its owning root when the root moves while the commit is in flight', async () => {
+    it('refuses the parked commit resume when the root moves while the take is landing', async () => {
         startRecording();
-        let resolveCommit: () => void = () => undefined;
+        let landed: (() => void) | undefined;
         commitRecording.mockImplementationOnce(
-            () =>
+            (clip, _capture, options, real) =>
                 new Promise<void>((resolve) => {
-                    resolveCommit = resolve;
+                    landed = () => {
+                        if (real) {
+                            resolve(real(clip, undefined, options));
+                        } else {
+                            resolve();
+                        }
+                    };
                 })
         );
         const stopping = stopRecording();
         expect(commitRecording).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => {
+            expect(landed).toBeDefined();
+        });
 
-        // The root moves while the commit dispatch is parked; the resume
-        // refusal keeps the finalized take on its owning root and reports the
-        // branch move instead of discarding under the successor.
+        // The root moves while the dispatch is parked; landing the REAL commit
+        // through the dispatch's own arguments meets the post-wait ownership
+        // check, which refuses the resume: no entry reaches the installed
+        // root, the take stays staged on its owning branch, and the musician
+        // is told the branch moved.
         installRootReplacement();
-        resolveCommit();
+        landed?.();
         await stopping;
 
+        expect(committedEntryCount()).toBe(0);
         expect(notifyUser).toHaveBeenCalledWith(
             'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
             'warning'
