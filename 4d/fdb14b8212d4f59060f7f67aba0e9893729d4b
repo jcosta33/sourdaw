@@ -1,0 +1,215 @@
+.agents/skills/review-stances/project-integrity.md
+  s_59e31a5c6f3e31::t_8a121052d28c94 261-283
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_b2eaf61dcc46f0 9-20
+crates/daw-core/src/tuning.rs
+  s_59e31a5c6f3e31::t_49c9a20d364a1b 193-198
+crates/daw-core/src/tuning/scala.rs
+  s_59e31a5c6f3e31::t_1260dca0f8058f 14-51,53-56,59-100,102-104,106-112,114-117,123,128-129,131-135,138-142,170,178,186,194,202-278
+crates/sourdaw-native/src/commands/tuning.rs
+  s_59e31a5c6f3e31::t_fe18193513dc7e 1-4,14-29,32,36-74
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_59e31a5c6f3e31::t_40a097cbc80bf5 3522-3528
+scripts/__tests__/publishReview.spec.ts
+  s_59e31a5c6f3e31::t_db458469ff0c02 173,243-250,382-400,526-554,1056-1085,1172-1176,6051-6106
+scripts/publishReview.ts
+  s_59e31a5c6f3e31::t_ebc5b94718273c 237-238,246-253,386-404,428-431
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_59e31a5c6f3e31::t_6e0226aabf5b4f 779-813
+src/app/captureCommandBatchPreflightState.ts
+  s_59e31a5c6f3e31::t_5f1c87f6836b04 462,470-478
+src/modules/Arrangement/useCases/__tests__/importMidiFile.spec.ts
+  s_59e31a5c6f3e31::t_5c04aac3f447ef 6,8,89-90,521-653
+src/modules/Arrangement/useCases/importMidiFile.ts
+  s_59e31a5c6f3e31::t_88ee2ceae12ef0 4,130-133,135-141,143,146-147,149-160,162-171
+src/modules/AudioEngine/handlers/finalFeature/__tests__/elasticMarkerHandlers.spec.ts
+  s_59e31a5c6f3e31::t_34a5f936f599ff 1-54
+src/modules/AudioEngine/handlers/finalFeature/handleElasticRemoveMarker.ts
+  s_59e31a5c6f3e31::t_2286a7f3281061 1,7-13
+src/modules/AudioEngine/handlers/finalFeature/handleElasticToggleMarkerLock.ts
+  s_59e31a5c6f3e31::t_b16078efae6c6b 1,7-13
+src/modules/ControlSurface/AGENTS.md
+  s_59e31a5c6f3e31::t_935098077830b8 28
+src/modules/ControlSurface/presentations/views/HardwareMappingManager.tsx
+  s_59e31a5c6f3e31::t_259c065718a6be 1-210
+src/modules/ControlSurface/presentations/views/__tests__/HardwareMappingManager.spec.tsx
+  s_59e31a5c6f3e31::t_f404edbd0c3c33 1-255
+src/modules/ControlSurface/presentations/views/index.ts
+  s_59e31a5c6f3e31::t_fc78dea6046b3c 5
+src/modules/ControlSurface/repositories/downloadHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_6880e72d698e46 1-5
+src/modules/ControlSurface/repositories/readHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_760354f5a16f57 1-3
+src/modules/ControlSurface/useCases/hardware/__tests__/downloadHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_9c1a300b82a2ae 1-96
+src/modules/ControlSurface/useCases/hardware/__tests__/exportHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_9f58cde23e534f 5,40-52
+src/modules/ControlSurface/useCases/hardware/__tests__/importHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_43c70bf3c05ea8 119-173
+src/modules/ControlSurface/useCases/hardware/__tests__/importHardwareMappingsFile.spec.ts
+  s_59e31a5c6f3e31::t_f4fc742174a294 1-141
+src/modules/ControlSurface/useCases/hardware/downloadHardwareMappings.ts
+  s_59e31a5c6f3e31::t_11645e21cd3e07 1-21
+src/modules/ControlSurface/useCases/hardware/exportHardwareMappings.ts
+  s_59e31a5c6f3e31::t_937e57b9302d68 5
+src/modules/ControlSurface/useCases/hardware/importHardwareMappings.ts
+  s_59e31a5c6f3e31::t_7cb9daa999e163 34-42,46,49-53,56,59,62,65,68,81,84,93,98-103,108,116
+src/modules/ControlSurface/useCases/hardware/importHardwareMappingsFile.ts
+  s_59e31a5c6f3e31::t_aaac0bbdde09ec 1-47
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_59e31a5c6f3e31::t_10d1e49a464712 150,249,256
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_40f4ae6d15202e 1-292
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  s_59e31a5c6f3e31::t_7bf47eba3c03c4 182-234
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/removeMarker.spec.ts
+  s_59e31a5c6f3e31::t_2a39a912755bee 58,72,77-105,116
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/toggleMarkerLock.spec.ts
+  s_59e31a5c6f3e31::t_a672fa73f4b89f 58,73,75,79-107,115
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  s_59e31a5c6f3e31::t_993c03e20bfc48 65-69
+src/modules/ElasticAudio/useCases/elasticAudio/removeMarker.ts
+  s_59e31a5c6f3e31::t_6890f8f4ca4752 1,4-10,17,22,25
+src/modules/ElasticAudio/useCases/elasticAudio/toggleMarkerLock.ts
+  s_59e31a5c6f3e31::t_3b85d124c7b0c8 1,4-8,15,20,23
+src/modules/Levain/presentations/components/LevainMacroStrip.tsx
+  s_59e31a5c6f3e31::t_0f58f23757f60d 13,17-23,25-47
+src/modules/Levain/presentations/components/__tests__/LevainMacroStrip.spec.tsx
+  s_59e31a5c6f3e31::t_9d6c0cad7d3cda 21-62,64-66
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_59e31a5c6f3e31::t_62e4de69090fb3 310
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_59e31a5c6f3e31::t_48020b5df3e5df 4,6,53,64-65,378-420
+src/modules/MIDI/AGENTS.md
+  s_59e31a5c6f3e31::t_56a5d6944cd4a8 26
+src/modules/MIDI/repositories/webMidi/__tests__/admitPitchBend.spec.ts
+  s_59e31a5c6f3e31::t_e90b86f26f8848 1-27
+src/modules/MIDI/repositories/webMidi/__tests__/admitResetAllControllers.spec.ts
+  s_59e31a5c6f3e31::t_240b298220a0e2 1-20
+src/modules/MIDI/repositories/webMidi/__tests__/ingestChannelControlChange.spec.ts
+  s_59e31a5c6f3e31::t_d2aa1eba85fbab 4,236-255
+src/modules/MIDI/repositories/webMidi/admitPitchBend.ts
+  s_59e31a5c6f3e31::t_899eb4fb472cbd 1-16
+src/modules/MIDI/repositories/webMidi/admitResetAllControllers.ts
+  s_59e31a5c6f3e31::t_3347bb535366f8 1-9
+src/modules/MIDI/repositories/webMidi/captureAdmittedWheels.ts
+  s_59e31a5c6f3e31::t_3d7f28743e97cc 1-26
+src/modules/MIDI/repositories/webMidi/channelPitchBendState.ts
+  s_59e31a5c6f3e31::t_8f1481ddc1afff 1-15
+src/modules/MIDI/repositories/webMidi/ingestChannelControlChange.ts
+  s_59e31a5c6f3e31::t_f7a06eb0d90b15 177-178
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/nativeMidiPortsChanged.spec.ts
+  s_59e31a5c6f3e31::t_ed91a53720c675 74-76,174-192
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_59e31a5c6f3e31::t_72f9cb84b09c34 9,221-223
+src/modules/MIDI/repositories/webMidi/resetInputDeviceControllerState.ts
+  s_59e31a5c6f3e31::t_928da7279a7309 1,7,10-12,17
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiMessage.spec.ts
+  s_59e31a5c6f3e31::t_9ce8b333cdd5af 1,44,46-52,56-59,75,378-394,472-601
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_59e31a5c6f3e31::t_6500cab6c4c390 15,39,62,65,67-70,104-162,177-179,818-1062
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_59e31a5c6f3e31::t_a54f7b9cfd9668 357-412
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_59e31a5c6f3e31::t_d6c46865c93a25 18
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_59e31a5c6f3e31::t_cfeec3de434d44 4,6-8,174-176,179,192-194,205
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_59e31a5c6f3e31::t_e48b4f744f5d52 3,8,24,52-53,144-170,399,436,452,533-540
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_59e31a5c6f3e31::t_327e3239e203f7 105-113
+src/modules/MIDI/useCases/webMidiInput/resolveChannelBendAtNoteStart.ts
+  s_59e31a5c6f3e31::t_9fb5a170f51790 1-81
+src/modules/Preferences/presentations/views/preferences/MidiSection.tsx
+  s_59e31a5c6f3e31::t_d7cc47ebcc8604 10,69
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_59e31a5c6f3e31::t_7cae0a03239e1c 1,4-5,61-126
+src/modules/Project/AGENTS.md
+  s_59e31a5c6f3e31::t_491013cb690c50 39
+src/modules/Project/repositories/nativeTuning/__tests__/parseScl.spec.ts
+  s_59e31a5c6f3e31::t_a3ffc73827093a 24,32-66
+src/modules/Project/repositories/nativeTuning/parseScl.ts
+  s_59e31a5c6f3e31::t_3dcd8522c947a4 6-20,27-34,59-80,87-92,97
+src/modules/Project/useCases/__tests__/importSclFile.nativeWire.spec.ts
+  s_59e31a5c6f3e31::t_f89cf9c336cd74 1-196
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_59e31a5c6f3e31::t_d524f5aa17e9a9 1,6-7,9,31-32,34,37,57,74-154,156-169,182-187,218-223,238-239,248-425
+src/modules/Project/useCases/importSclFile.ts
+  s_59e31a5c6f3e31::t_fb11e032493ae3 7,10-11,16-23,30-32,34-42,45,56-58,69-71
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_59e31a5c6f3e31::t_cb607644f29007 1,3,14,16-17,19,23,32,128-168,199-201,217-230,232-236,238-242,250,263-268,281-283,288,292-310,321,344-508
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts
+  s_59e31a5c6f3e31::t_9e58ba2cd8458b 17,40,57-58,82,88,108,119-121,158,166
+src/modules/Project/useCases/projectPersistence/discardProjectChanges.ts
+  s_59e31a5c6f3e31::t_178e8ac78c1942 1,11,30-50,71-72,105-108
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_59e31a5c6f3e31::t_af794d26011be2 31-32,43-48
+src/modules/TimelineEditor/presentations/views/Inspector/MasterVisualizationsSection.tsx
+  s_59e31a5c6f3e31::t_aa19e31392455a 33-39,48-51,54-55,57-62,65-66,69-79,86-111
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/MasterVisualizationsSection.spec.tsx
+  s_59e31a5c6f3e31::t_094719efa9a2c2 8-12,31-60,108,111,115,123,135-211
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_59e31a5c6f3e31::t_b9e2e17f4ff3d3 204-214
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_59e31a5c6f3e31::t_fa8e42d948425a 42-100
+src/modules/Transport/stores/__tests__/readNextPhysicalBarBoundary.spec.ts
+  s_59e31a5c6f3e31::t_723fe6df7967c1 1-69
+src/modules/Transport/stores/index.ts
+  s_59e31a5c6f3e31::t_c85f66aa9e1a6f 25
+src/modules/Transport/stores/readNextPhysicalBarBoundary.ts
+  s_59e31a5c6f3e31::t_0467ba9f079b4c 1-66
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_29d8df116c5b92::t_59a981a28a7868 1,37,1561-1616
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_59e31a5c6f3e31::t_b08f56296cbf2c 1219-1266
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_59e31a5c6f3e31::t_dc5f56810f28a8 108-112
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalBranchWitness.integration.spec.ts
+  s_59e31a5c6f3e31::t_1b31305afc7c2a 1-431
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_59e31a5c6f3e31::t_57c47ce7fa0e65 147-151,838-844
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_59e31a5c6f3e31::t_f40c0a9a7ca92e 121-125
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingTakeFromZero.spec.ts
+  s_59e31a5c6f3e31::t_af702c2e73db6f 123-127
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_3e7dea5cde3f9e::t_c9b829d28319ca 13,227,267-282,292,295-304,407-414,448-451,490,515-523
+src/modules/WorkspaceShell/presentations/views/Transport/PlayheadDisplay.tsx
+  s_59e31a5c6f3e31::t_b096ead6d96c05 5-11,25-37,44,47-52,75,78,107,113,121
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/PlayheadDisplay.spec.tsx
+  s_59e31a5c6f3e31::t_da166c3ea1df4f 9-46,49-52,54-56,59-65,78-87,117-125,129-163,207-236,238,255,283,293-295
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  s_59e31a5c6f3e31::t_418dd056071542 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4dfdb14b8212d4f59060f7f67aba0e9893729d4b",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
