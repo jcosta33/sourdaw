@@ -482,6 +482,13 @@ function canonicalProjectionKey(value: unknown): string {
         .join(',')}}`;
 }
 
+function sameDurableValue(left: unknown, right: unknown): boolean {
+    if (isScalar(left) || isScalar(right)) {
+        return Object.is(left, right);
+    }
+    return canonicalProjectionKey(left) === canonicalProjectionKey(right);
+}
+
 /**
  * Containment of every raw item in a DISTINCT projected item, decided exactly.
  *
@@ -1650,24 +1657,40 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
     /**
      * A pending write's visible value rebased over fresh document authority,
-     * field by field: a durable scalar the write changed from its base is
-     * unflushed local intent and keeps its value until the write flushes, and
-     * every other field takes the document. Nested values take the document
-     * too, because merging rows needs the identity-aware `rebasePending` a store
-     * supplies. Runtime fields are not durable, so they are never kept here.
+     * field by field, three ways against the base the write was derived from.
+     * Per durable field: a document value equal to the base means nobody else
+     * touched it, so the write's value stands (a nested edit included); else a
+     * field the write did not change takes the document; else both changed it,
+     * and a scalar keeps the write's value while a nested value takes the
+     * document, because merging rows needs the identity-aware `rebasePending` a
+     * store supplies (issue 5521). Runtime fields are not durable, so the
+     * document owns them. Without a trusted base nothing is known about the
+     * write's own edits and the document wins whole.
+     *
+     * A hydrate and the rebase of the pending writes behind a refused write
+     * both follow this rule, and both re-anchor the write at the authority they
+     * absorbed.
      */
     const rebasePendingOverAuthority = (input: {
         toDurable: (value: TData) => Partial<TData>;
         pendingValue: TData & object;
-        baseValue: TData;
+        trustedBaseValue: TData | null;
         authorityValue: TData & object;
     }): TData => {
-        const { toDurable, pendingValue, baseValue, authorityValue } = input;
-        const durableBase = new Map(Object.entries(toDurable(baseValue)));
-        const unflushedScalars = Object.entries(toDurable(pendingValue)).filter(
-            ([field, value]) => isScalar(value) && !Object.is(value, durableBase.get(field))
-        );
-        return { ...pendingValue, ...authorityValue, ...Object.fromEntries(unflushedScalars) };
+        const { toDurable, pendingValue, trustedBaseValue, authorityValue } = input;
+        if (trustedBaseValue === null) {
+            return { ...pendingValue, ...authorityValue };
+        }
+        const durableBase = new Map(Object.entries(toDurable(trustedBaseValue)));
+        const durableAuthority = new Map(Object.entries(toDurable(authorityValue)));
+        const keptFromWrite = Object.entries(toDurable(pendingValue)).filter(([field, pendingField]) => {
+            const baseField = durableBase.get(field);
+            if (!durableAuthority.has(field) || sameDurableValue(durableAuthority.get(field), baseField)) {
+                return true;
+            }
+            return isScalar(pendingField) && !sameDurableValue(pendingField, baseField);
+        });
+        return { ...pendingValue, ...authorityValue, ...Object.fromEntries(keptFromWrite) };
     };
 
     const keepLocalRuntimeState = (
@@ -1903,6 +1926,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             }
 
             let rebasedValue = successor.value;
+            let rebasedByField = false;
             if (rebasePending && projectedValue !== null) {
                 rebasedValue = rebasePending({
                     baseValue: successor.baseValue,
@@ -1917,7 +1941,13 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 typeof projectedValue === 'object' &&
                 projectedValue !== null
             ) {
-                rebasedValue = { ...successor.value, ...projectedValue };
+                rebasedValue = rebasePendingOverAuthority({
+                    toDurable: toCrdt,
+                    pendingValue: successor.value,
+                    trustedBaseValue: successor.flushBaseUnknown ? null : successor.baseValue,
+                    authorityValue: projectedValue,
+                });
+                rebasedByField = true;
             }
             if (!isCurrentSuccessor()) {
                 continue;
@@ -1926,7 +1956,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             if (!isCurrentSuccessor()) {
                 continue;
             }
-            if (rebasePending) {
+            if (rebasePending || rebasedByField) {
                 successor.baseValue = projectedValue;
                 successor.baseDocumentPresence = captureBaseDocumentPresence();
                 successor.flushBaseUnknown = false;
@@ -2606,15 +2636,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         typeof crdtData === 'object' &&
                         crdtData !== null
                     ) {
-                        rebasedValue =
-                            trustedBaseValue === null
-                                ? { ...visiblePending.value, ...crdtData }
-                                : rebasePendingOverAuthority({
-                                      toDurable: toCrdt,
-                                      pendingValue: visiblePending.value,
-                                      baseValue: trustedBaseValue,
-                                      authorityValue: crdtData,
-                                  });
+                        rebasedValue = rebasePendingOverAuthority({
+                            toDurable: toCrdt,
+                            pendingValue: visiblePending.value,
+                            trustedBaseValue,
+                            authorityValue: crdtData,
+                        });
                         rebasedByField = true;
                     }
                     if (!isCurrentVisibleProjection()) {

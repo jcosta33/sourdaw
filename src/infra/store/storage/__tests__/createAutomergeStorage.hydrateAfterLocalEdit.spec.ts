@@ -6,6 +6,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
     resetAutomergeStorageProjections,
+    runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
 type Slot = {
@@ -47,6 +48,18 @@ const slotOptions = {
 
 function createSlotStorage() {
     return createAutomergeStorage<Slot>('root', 'slot', { ...slotOptions, hydrateMissing: slot });
+}
+
+/** The transport keeps `playing` through a re-projection of the open project. */
+function createRuntimeSlotStorage() {
+    return createAutomergeStorage<Slot>('root', 'slot', {
+        ...slotOptions,
+        hydrateMissing: slot,
+        projectCommittedLocalState: ({ authorityValue, localValue }) => ({
+            ...authorityValue,
+            playing: localValue.playing,
+        }),
+    });
 }
 
 function readSlot(storage: ReturnType<typeof createSlotStorage>): Slot {
@@ -206,6 +219,7 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
             expect(readSlot(storage)).toMatchObject({ loopEnd: null, tempo: 150 });
         });
 
+        // Both sides changed the same nested field: the document wins, a limit filed as issue 5521.
         it('takes a nested field from the document even when the write changed it', () => {
             const { doc, port } = createTestPort({ slot: slot() });
             configureAutomergeStoragePort(port);
@@ -215,6 +229,52 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
             storage.set({ ...readSlot(storage), metronome: true, rows: ['a', 'local'] });
             doc.slot = slot({ rows: ['a', 'remote'] });
             storage.hydrate?.();
+
+            expect(readSlot(storage)).toMatchObject({ metronome: true, rows: ['a', 'remote'] });
+        });
+
+        it('keeps a nested field the write changed when the document did not change it', () => {
+            const { doc, port } = createTestPort({ slot: slot() });
+            configureAutomergeStoragePort(port);
+            const storage = createRuntimeSlotStorage();
+            storage.hydrate?.({ keepLocalRuntimeState: true });
+
+            storage.set({ ...readSlot(storage), playing: true });
+            flushAutomergeStorageWrites();
+            storage.set({ ...readSlot(storage), rows: ['a', 'local'] });
+
+            storage.hydrate?.({ keepLocalRuntimeState: true });
+            expect(readSlot(storage)).toMatchObject({ playing: true, rows: ['a', 'local'] });
+
+            flushAutomergeStorageWrites();
+            expect(doc.slot?.rows).toEqual(['a', 'local']);
+            expect(readSlot(storage).rows).toEqual(['a', 'local']);
+        });
+
+        it('keeps a nested field the write changed when the document changed a different field', () => {
+            const { doc, port } = createTestPort({ slot: slot() });
+            configureAutomergeStoragePort(port);
+            const storage = createRuntimeSlotStorage();
+            storage.hydrate?.({ keepLocalRuntimeState: true });
+
+            storage.set({ ...readSlot(storage), rows: ['a', 'local'] });
+            doc.slot = slot({ tempo: 150 });
+            storage.hydrate?.({ keepLocalRuntimeState: true });
+            expect(readSlot(storage)).toMatchObject({ tempo: 150, rows: ['a', 'local'] });
+
+            flushAutomergeStorageWrites();
+            expect(doc.slot).toMatchObject({ tempo: 150, rows: ['a', 'local'] });
+        });
+
+        it('takes a nested field the write did not change from the document', () => {
+            const { doc, port } = createTestPort({ slot: slot() });
+            configureAutomergeStoragePort(port);
+            const storage = createRuntimeSlotStorage();
+            storage.hydrate?.({ keepLocalRuntimeState: true });
+
+            storage.set({ ...readSlot(storage), metronome: true });
+            doc.slot = slot({ rows: ['a', 'remote'] });
+            storage.hydrate?.({ keepLocalRuntimeState: true });
 
             expect(readSlot(storage)).toMatchObject({ metronome: true, rows: ['a', 'remote'] });
         });
@@ -262,6 +322,39 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
             flushAutomergeStorageWrites();
 
             expect(doc.slot).toMatchObject({ tempo: 200, metronome: false });
+        });
+    });
+
+    describe('rebasing the pending writes behind a refused write', () => {
+        it('keeps a later write on the rule a hydrate follows and re-anchors it at the document', () => {
+            let refuseWrites = false;
+            const { doc, port } = createTestPort({ slot: slot() }, ({ changeFn }) => {
+                if (refuseWrites) {
+                    throw new AutomergeStorageWriteConflictError('refused');
+                }
+                changeFn(doc);
+            });
+            configureAutomergeStoragePort(port);
+            const storage = createSlotStorage();
+            storage.hydrate?.();
+
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                storage.set({ ...readSlot(storage), tempo: 97 });
+            });
+            storage.set({ ...readSlot(storage), metronome: true });
+            doc.slot = slot({ tempo: 120 });
+            refuseWrites = true;
+            expect(() => transaction.commit()).toThrow('refused');
+            transaction.abort();
+            refuseWrites = false;
+            expect(readSlot(storage)).toMatchObject({ tempo: 120, metronome: true });
+
+            doc.slot = slot({ tempo: 130 });
+            expect(storage.hydrate?.()).toBe(true);
+            flushAutomergeStorageWrites();
+
+            expect(doc.slot).toMatchObject({ tempo: 130, metronome: true });
+            expect(readSlot(storage)).toMatchObject({ tempo: 130, metronome: true });
         });
     });
 });
