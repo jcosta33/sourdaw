@@ -476,6 +476,45 @@ describe('newProject injectable', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
+    it('leaves the previous project dirty when a take its stop committed was not saved and the reset then fails', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            // `loading` hides this commit from `markDirty`, as the take's own commit is.
+            expect(projectStore.value?.loading).toBe(true);
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+        takeMocks.saveProject.mockResolvedValue(false);
+        vi.mocked(resetCrdtProject).mockImplementationOnce(() => {
+            throw new Error('CRDT setup failed');
+        });
+
+        await expect(newProject('Broken Project')).resolves.toBe(false);
+
+        expect(projectStore.value).toMatchObject({
+            name: 'Existing Project',
+            loading: false,
+            dirty: true,
+        });
+    });
+
+    it('leaves the previous project clean when its save kept the take and the reset then fails', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+        takeMocks.saveProject.mockImplementation(() => {
+            unsavedClosedTakes.markSavedThrough(takeMocks.state.settled);
+            return Promise.resolve(true);
+        });
+        vi.mocked(resetCrdtProject).mockImplementationOnce(() => {
+            throw new Error('CRDT setup failed');
+        });
+
+        await expect(newProject('Broken Project')).resolves.toBe(false);
+
+        expect(projectStore.value).toMatchObject({ name: 'Existing Project', loading: false, dirty: false });
+    });
+
     // C1 — every refusal is decided before the switch, so the previous project
     // is still the live one and this is an ordinary abort.
     it('hands the previous project back when the reset is refused', async () => {

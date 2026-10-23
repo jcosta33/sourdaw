@@ -51,6 +51,7 @@ const {
     mockStopActiveAutoSave,
     mockSetAutoSaveHandle,
     batchFlushFailure,
+    settledTakes,
 } = vi.hoisted(() => ({
     mockLogger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     mockGetAudioContext: vi.fn(() => ({ sampleRate: 44_100 })),
@@ -85,6 +86,8 @@ const {
     // nevertheless models it as fallible (it carries a catch for exactly that),
     // and this is the seam that lets the guard exercise that model.
     batchFlushFailure: { error: null as Error | null },
+    // What Transport's `countSettledTakes` reads: one more per take a stop commits.
+    settledTakes: { count: 0 },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
@@ -230,7 +233,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
-    countSettledTakes: () => 0,
+    countSettledTakes: () => settledTakes.count,
     defaultTransportState: { masterGain: 75, isPlaying: false },
     restoreTimelineMapSnapshot: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
@@ -245,6 +248,7 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
+import { unsavedClosedTakes } from '../../helpers/unsavedClosedTakes';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
 import type { HydratableProjectData } from '../../helpers/isHydratableProjectData';
@@ -486,6 +490,7 @@ describe('interrupted project load dirty tracking', () => {
             initialized: false,
         });
         stopDirtyTracking = initProjectDirtyTracking();
+        unsavedClosedTakes.acknowledgeAll();
     });
 
     describe('an aborted open leaves the session it interrupted editable', () => {
@@ -596,6 +601,105 @@ describe('interrupted project load dirty tracking', () => {
             editTheArrangement();
 
             expect(projectStore.value?.dirty).toBe(true);
+        });
+    });
+
+    /**
+     * A take that a replacement's own stop commits lands while `loading` is
+     * true, so `markDirty` ignores it. Whether that leaves the project dirty
+     * depends on whether the project it was committed into stays the open one.
+     */
+    describe('a take committed inside a replacement window', () => {
+        /** The stop commits a recorded take into the outgoing project, as a real stop does. */
+        function commitTakeDuringStop(): void {
+            mockStopPlayback.mockImplementation(() => {
+                expect(projectStore.value?.loading).toBe(true);
+                editTheArrangement();
+                settledTakes.count += 1;
+                return Promise.resolve();
+            });
+        }
+
+        function replaceWithIncomingProject() {
+            return replaceProjectData({
+                context: 'applyImportedProjectData',
+                data: projectData({
+                    name: INCOMING_PROJECT_NAME,
+                    trackId: 'incoming-track',
+                    trackName: INCOMING_TRACK_NAME,
+                }),
+                transaction: loadTransaction(),
+            });
+        }
+
+        it('leaves the open project dirty when the replacement then aborts', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            commitTakeDuringStop();
+            mockResetCrdtProject.mockImplementation(() => {
+                throw new Error('authority reset failed');
+            });
+
+            const aborted = await replaceWithIncomingProject();
+
+            expect(aborted.status).toBe('aborted');
+            expect(projectStore.value?.name).toBe(OPEN_PROJECT_NAME);
+            expect(projectStore.value?.loading).toBe(false);
+            expect(projectStore.value?.dirty).toBe(true);
+        });
+
+        it('leaves the open project dirty when the teardown after the stop throws', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            commitTakeDuringStop();
+            mockUnloadLoadedExternalPlugins.mockRejectedValueOnce(new Error('plugin unload failed'));
+
+            const aborted = await replaceWithIncomingProject();
+
+            expect(aborted.status).toBe('aborted');
+            expect(projectStore.value?.dirty).toBe(true);
+        });
+
+        it('leaves a project that saved the take clean when the replacement then aborts', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            commitTakeDuringStop();
+            mockResetCrdtProject.mockImplementation(() => {
+                // The helper's save keeps the take: Save marks every settled take as saved.
+                unsavedClosedTakes.markSavedThrough(settledTakes.count);
+                throw new Error('authority reset failed');
+            });
+
+            const aborted = await replaceWithIncomingProject();
+
+            expect(aborted.status).toBe('aborted');
+            expect(projectStore.value?.dirty).toBe(false);
+        });
+
+        it('does not leave the incoming project dirty when the replacement completes', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            commitTakeDuringStop();
+
+            const committed = await replaceWithIncomingProject();
+
+            expect(committed.status).toBe('committed');
+            expect(projectStore.value?.name).toBe(INCOMING_PROJECT_NAME);
+            expect(projectStore.value?.loading).toBe(false);
+            expect(projectStore.value?.dirty).toBe(false);
+        });
+
+        it('leaves a successor load that owns the store clean', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            mockStopPlayback.mockImplementation(() => {
+                editTheArrangement();
+                settledTakes.count += 1;
+                takeOverByNewerLoad();
+                return Promise.resolve();
+            });
+
+            const aborted = await replaceWithIncomingProject();
+
+            expect(aborted.status).toBe('aborted');
+            expect(projectStore.value?.name).toBe(SUCCESSOR_PROJECT_NAME);
+            expect(projectStore.value?.loading).toBe(true);
+            expect(projectStore.value?.dirty).toBe(false);
         });
     });
 
