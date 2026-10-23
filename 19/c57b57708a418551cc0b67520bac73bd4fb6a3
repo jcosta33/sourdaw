@@ -1,0 +1,41 @@
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_441e828df58f9e::t_35fb5f5e258948 27,34,39,101,134-135,139-141,146
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_59e31a5c6f3e31::t_269b499d8891c2 204-291
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_59e31a5c6f3e31::t_fa144121500c8e 1003-1046,1737-1772
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_1c08b47ac3792f::t_b6de5611ff7083 16-18,21-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19c57b57708a418551cc0b67520bac73bd4fb6a3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_441e828df58f9e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2845244a-811e-4f69-a89a-e2b3d9dedcec",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
