@@ -493,6 +493,12 @@ type SplitEventsResult<TRow extends SplitEventRow> =
  * whose value in force at the cut was set earlier starts the right clip with
  * that value, so a held pedal or bend keeps sounding across the cut.
  *
+ * Retention first, on top of the stored-position distribution: an event inside
+ * a played window stays whole on the source clip in its own coordinates,
+ * mirroring the notes path (#5112), so a comped pass's controllers act within
+ * the windows the resolver plays. The distribution below still runs, so the
+ * right fragment keeps its rebased copy and the carried-at-origin lanes.
+ *
  * Right-clip ids derive from the target clip id and the source row's index, so
  * the same command on the same state yields the same ids without the replay
  * plan that note identities need.
@@ -514,7 +520,12 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         if (!Number.isFinite(event.beat)) {
             return { status: 'rejected' };
         }
-        if (event.beat < keptEnd) {
+        const retained = command.retainOnSourceWindows?.some(
+            (window) => event.beat >= window.start && event.beat < window.end
+        );
+        // A controller row is instantaneous, so retention keeps the whole row
+        // and the left-keep clause needs no slice companion — one exclusive push.
+        if (retained || event.beat < keptEnd) {
             left.push(event);
         }
         if (event.beat < command.splitBeat) {
