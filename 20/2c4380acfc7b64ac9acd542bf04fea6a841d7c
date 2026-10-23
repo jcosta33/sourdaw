@@ -1,0 +1,42 @@
+scripts/__tests__/pruneLane.spec.ts
+  s_d1c4d73ddcb30e::t_e519180e9d98bc 284,286-287,295-302,304-308,312-316
+  s_d1c4d73ddcb30e::t_07b502063012f9 289-294,296
+scripts/__tests__/publishReview.spec.ts
+  s_d1c4d73ddcb30e::t_ac59a33178eeb9 5078-5099,5502-5506,5529-5531,5534-5535,5549-5550,5558,5566-5594,6075-6097,6133,6170,6369,6410
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  s_d1c4d73ddcb30e::t_6fa44cd99e8ed2 531-543,627-629,648-649
+scripts/pruneLane.ts
+  s_d1c4d73ddcb30e::t_968ed3d39eb9c8 17-19,64-66,268-270
+scripts/reviewDiffSummary.ts
+  s_d1c4d73ddcb30e::t_8383ef45235a33 195-238,252-258,260-334
+scripts/reviewPublicationBinding.ts
+  s_1c08b47ac3792f::t_116a2d0d5c9588 22,39,94-115,265
+scripts/reviewRiskPolicy.ts
+  s_d1c4d73ddcb30e::t_edb492cecef0c0 109-110,239-246,331,373,385,393
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_d1c4d73ddcb30e::t_f83dcf67555451 319-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "202c4380acfc7b64ac9acd542bf04fea6a841d7c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d1c4d73ddcb30e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7be8ac89-29b4-4f74-a6af-cf644a6dc60d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
