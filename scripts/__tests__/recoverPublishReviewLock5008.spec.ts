@@ -316,9 +316,9 @@ const riskPlan: ReviewRiskPlan = {
     pr: number,
     headSha: head,
     baseSha: base,
-    riskClasses: ['small'],
-    requiredStances: ['correctness', 'test-validity'],
-    triggers: ['small:handwritten-lines<=200'],
+    riskClasses: ['docs-only'],
+    requiredStances: ['correctness'],
+    triggers: ['docs-only:all-paths-are-docs'],
 };
 
 /**

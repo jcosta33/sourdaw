@@ -19,6 +19,7 @@ import {
 } from './prepareReview.ts';
 import { reconstructReviewRounds } from './reconstructReviewRounds.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
+import { changedReviewPaths, numstatFromPatch } from './reviewDiffSummary.ts';
 import {
     REVIEW_DOSSIER_FORMAT,
     appendReviewDossierEvents,
@@ -35,7 +36,7 @@ import {
     publishedReviewId,
 } from './reviewDossierViews.ts';
 import { recordedReviewStands } from './reviewPublicationRemoteInspection.ts';
-import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
+import { parseReviewRiskPlan, planReviewRisk, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 import { assertReviewRoundsBelowFreeze, countReviewerRequestChangesRounds } from './reviewRoundEscalation.ts';
 import { assertReviewDrawFloor, assertReviewEvidenceClaimsSafe } from './reviewStructuralAdmission.ts';
 
@@ -87,6 +88,28 @@ function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: Rev
     }
     if (plan.baseSha !== manifest.baseSha) {
         fail(`review risk plan baseSha ${plan.baseSha} does not match the bundle manifest baseSha ${manifest.baseSha}`);
+    }
+}
+
+/**
+ * A fresh publication recomputes the plan from the bundle's own diff with the planner
+ * `review:prepare` used, so a hand-edited `risk-plan.json` cannot lower the floor it is held to.
+ * Replays and recovered bindings are exempt: they post nothing and answer to the record they bound.
+ */
+function assertReviewRiskPlanMatchesDiff(plan: ReviewRiskPlan, bundle: string, port: PublishReviewPort): void {
+    const derived = planReviewRisk({
+        pr: plan.pr,
+        headSha: plan.headSha,
+        baseSha: plan.baseSha,
+        paths: changedReviewPaths(
+            port.primaryRoot(),
+            numstatFromPatch(port.readBundleDiff(join(bundle, 'diff.patch')))
+        ),
+    });
+    if (derived.riskClasses.join(',') !== plan.riskClasses.join(',')) {
+        fail(
+            `review risk plan riskClasses ${plan.riskClasses.join(', ')} differ from the ${derived.riskClasses.join(', ')} the bundle diff.patch earns`
+        );
     }
 }
 
@@ -239,6 +262,7 @@ export function prepareReviewDossierPublication(input: {
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
     });
     if (publishedReviewId(publication.dossier) === undefined && input.recovered !== true) {
+        assertReviewRiskPlanMatchesDiff(plan, input.bundle, input.port);
         assertReviewDrawFloor(plan, completedStances(publication.dossier));
     }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
