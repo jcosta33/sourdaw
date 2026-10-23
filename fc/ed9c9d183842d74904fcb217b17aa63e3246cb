@@ -1,0 +1,42 @@
+src/modules/ControlSurface/presentations/views/HardwareMappingManager.tsx
+  s_59e31a5c6f3e31::t_75ecc5b0262e36 12,89-106,206-207
+  s_59e31a5c6f3e31::t_0a7a13e683b6fb 15-18,165
+  s_59e31a5c6f3e31::t_7c51f9fac54146 174-178
+  s_59e31a5c6f3e31::t_46815f743e9f6d 1,20-61,63-67,69-84,86-88,198-203,205
+  s_59e31a5c6f3e31::t_58c19cc0f16784 62,68,85,204
+  s_3e7dea5cde3f9e::t_8880c233a51744 13,19
+src/modules/ControlSurface/useCases/hardware/__tests__/importHardwareMappingsFile.spec.ts
+  s_59e31a5c6f3e31::t_7c51f9fac54146 21,125
+  s_59e31a5c6f3e31::t_f99c22bedfbb1b 19-20,22-23,26
+src/modules/ControlSurface/presentations/views/__tests__/HardwareMappingManager.spec.tsx
+  s_59e31a5c6f3e31::t_f99c22bedfbb1b 151,153,164,173,175,184
+  s_59e31a5c6f3e31::t_7c51f9fac54146 20-26,70,152,174
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_59e31a5c6f3e31::t_7c51f9fac54146 72,83-89,99-105
+src/modules/ControlSurface/useCases/hardware/__tests__/downloadHardwareMappings.spec.ts
+  s_59e31a5c6f3e31::t_7c51f9fac54146 10,12-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fced9c9d183842d74904fcb217b17aa63e3246cb",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
