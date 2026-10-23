@@ -1012,6 +1012,14 @@ function settleRetainedSessionTeardown(): Promise<void> {
 
 // -- Asset resolution --
 
+function isCurrentUncachedAssetClip(trackId: string, clipId: string, hash: string, bufferId: string): boolean {
+    const currentTrack = trackStore.value?.tracks.find((track) => track.id === trackId);
+    const currentClip = currentTrack?.clips.find((clip) => clip.id === clipId);
+    return (
+        currentClip?.assetHash === hash && currentClip.audioBufferId === bufferId && !getCachedAudioBuffer({ bufferId })
+    );
+}
+
 /**
  * When a peer sends us an audio asset, find all clips that reference its hash
  * and decode the blob into the AudioEngine buffer cache under their audioBufferId.
@@ -1036,10 +1044,14 @@ async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string):
 
     for (const track of tracks) {
         for (const clip of track.clips) {
-            if (clip.assetHash !== hash || !clip.audioBufferId) {
+            const trackId = track.id;
+            const clipId = clip.id;
+            const assetHash = clip.assetHash;
+            const bufferId = clip.audioBufferId;
+            if (assetHash !== hash || !bufferId) {
                 continue;
             }
-            if (getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
+            if (getCachedAudioBuffer({ bufferId })) {
                 continue;
             }
             try {
@@ -1047,14 +1059,20 @@ async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string):
                 if (!canSessionOwnerWrite(owner)) {
                     return;
                 }
+                if (!isCurrentUncachedAssetClip(trackId, clipId, hash, bufferId)) {
+                    continue;
+                }
                 const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
                 if (!canSessionOwnerWrite(owner)) {
                     return;
                 }
-                cacheAudioBuffer({ bufferId: clip.audioBufferId, buffer: audioBuffer });
+                if (!isCurrentUncachedAssetClip(trackId, clipId, hash, bufferId)) {
+                    continue;
+                }
+                cacheAudioBuffer({ bufferId, buffer: audioBuffer });
             } catch {
                 if (canSessionOwnerWrite(owner)) {
-                    logger.warn('[Collaboration] Failed to decode asset for clip', clip.id);
+                    logger.warn('[Collaboration] Failed to decode asset for clip', clipId);
                 }
             }
         }
