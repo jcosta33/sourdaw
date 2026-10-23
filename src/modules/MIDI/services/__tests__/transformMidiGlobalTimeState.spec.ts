@@ -30,7 +30,7 @@ describe('transformMidiGlobalTimeState', () => {
         const prepared = state({
             notesByClipId: { source: [beforeNote, shiftedNote], dormant: dormantNotes },
             ccByClipId: { source: [{ id: 'cc', controller: 1, value: 64, beat: 5, channel: 1 }] },
-            pitchBendByClipId: { source: [{ id: 'pb', value: 0.5, beat: 5, channel: 1 }] },
+            pitchBendByClipId: { source: [{ id: 'pb', value: 4096, beat: 5, channel: 1 }] },
         });
 
         const result = transformMidiGlobalTimeState({
@@ -73,7 +73,7 @@ describe('transformMidiGlobalTimeState', () => {
                 remove: [{ id: 'remove-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
             },
             ccByClipId: { remove: [{ id: 'cc', controller: 1, value: 2, beat: 0, channel: 1 }] },
-            pitchBendByClipId: { remove: [{ id: 'pb', value: 0.2, beat: 0, channel: 1 }] },
+            pitchBendByClipId: { remove: [{ id: 'pb', value: 1600, beat: 0, channel: 1 }] },
         });
         const commands = [
             { type: 'split-notes' as const, sourceClipId: 'source', targetClipId: 'right', splitBeat: 4 },
@@ -225,7 +225,7 @@ describe('transformMidiGlobalTimeState', () => {
             channel: 12,
         };
         const sourceCc = { id: 'source-cc', controller: 1, value: 2, beat: 1, channel: 1 };
-        const sourcePitchBend = { id: 'source-pb', value: 0.3, beat: 1, channel: 1 };
+        const sourcePitchBend = { id: 'source-pb', value: 2400, beat: 1, channel: 1 };
         const existingTarget = { id: 'existing', pitch: 40, startBeat: 0, duration: 1, velocity: 50 };
         const prepared = state({
             notesByClipId: { source: [sourceNote], target: [existingTarget] },
@@ -441,7 +441,7 @@ describe('transformMidiGlobalTimeState shift edge cases', () => {
         const prepared = state({
             notesByClipId: { source: [{ id: 'n1', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }] },
             ccByClipId: { source: [{ id: 'cc', controller: 1, value: 64, beat: 5, channel: 1 }] },
-            pitchBendByClipId: { source: [{ id: 'pb', value: 0.5, beat: Number.MAX_VALUE, channel: 1 }] },
+            pitchBendByClipId: { source: [{ id: 'pb', value: 4096, beat: Number.MAX_VALUE, channel: 1 }] },
         });
         const result = transformMidiGlobalTimeState({
             state: prepared,
@@ -835,6 +835,102 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
             ['straddler-right', 0, 1],
         ]);
     });
+
+    it('retains a comp-window controller event on the source beside its rebased right copy', () => {
+        const keptCc = { id: 'cc-kept', controller: 64, value: 32, beat: 1, channel: 0 };
+        const windowCc = { id: 'cc-window', controller: 64, value: 40, beat: 5, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 11, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptCc, windowCc, afterCc] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 4.5, end: 6 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        const leftEvents = result.state.ccByClipId.source ?? [];
+        // The kept-range row survives as before; the comp-window row stays whole in
+        // its own coordinates instead of living only as the rebased right copy.
+        expect(leftEvents).toEqual([keptCc, windowCc]);
+        expect(leftEvents[1]).toBe(windowCc);
+        // The right clip still receives the rebased copies, and the lane in force at
+        // the cut carries onto the origin because no moved row lands at beat 0.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...keptCc, id: 'cc-split:right:0', beat: 0 },
+            { ...windowCc, id: 'cc-split:right:1', beat: 1 },
+            { ...afterCc, id: 'cc-split:right:2', beat: 5 },
+        ]);
+    });
+
+    it('retains a comp-window pitch bend on the source and keeps an out-of-window one distributed', () => {
+        const windowBend = { id: 'pb-window', value: 0.5, beat: 4.75, channel: 1 };
+        const afterBend = { id: 'pb-after', value: -0.5, beat: 8, channel: 1 };
+        const prepared = state({ pitchBendByClipId: { source: [windowBend, afterBend] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 4.5, end: 6 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Only the in-window bend stays on the source; the one past the window keeps
+        // its stored-position distribution, with no lane carried (nothing precedes the cut).
+        expect(result.state.pitchBendByClipId.source).toEqual([windowBend]);
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...windowBend, id: 'pb-split:right:0', beat: 0.75 },
+            { ...afterBend, id: 'pb-split:right:1', beat: 4 },
+        ]);
+    });
+
+    it('pins the window bounds, the keep-zone overlap, and the carried lane of a retained in-force row', () => {
+        // The predicate is half-open [start, end) against the windows the resolver
+        // plays, and retention shares one exclusive push with the keep-zone clause:
+        // a row both retained and under keptEnd is stored once, a row exactly at a
+        // window start stays, one exactly at the end goes, and one discarded into
+        // the gap between keptEnd and a later window is not resurrected. The
+        // retained at-start row is also the lane's value in force at the cut, so
+        // the same case pins that retention does not drop the carried-at-origin
+        // lane onto the right fragment.
+        const keptOverlapCc = { id: 'cc-overlap', controller: 64, value: 32, beat: 1.5, channel: 0 };
+        const atEndCc = { id: 'cc-at-end', controller: 64, value: 36, beat: 2.25, channel: 0 };
+        const gapCc = { id: 'cc-gap', controller: 64, value: 38, beat: 2.75, channel: 0 };
+        const atStartCc = { id: 'cc-at-start', controller: 64, value: 40, beat: 3.25, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 64, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptOverlapCc, atEndCc, gapCc, atStartCc, afterCc] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [
+                {
+                    ...command,
+                    retainOnSourceWindows: [
+                        { start: 1, end: 2.25 },
+                        { start: 3.25, end: 3.5 },
+                    ],
+                },
+            ],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Exactly the rows the half-open windows cover, each stored once — the
+        // overlap row rides the single shared push, not two.
+        expect(result.state.ccByClipId.source).toEqual([keptOverlapCc, atStartCc]);
+        expect([...storedCopiesById(result.state.ccByClipId.source ?? []).values()]).toEqual([1, 1]);
+        // The retained at-start row is the value in force at the cut, so the right
+        // fragment still opens with its held value beside the rebased post-cut row;
+        // ids carry each row's source index.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...atStartCc, id: 'cc-split:right:3', beat: 0 },
+            { ...afterCc, id: 'cc-split:right:4', beat: 5 },
+        ]);
+    });
 });
 
 describe('transformMidiGlobalTimeState copy and removal edge cases', () => {
@@ -1021,10 +1117,10 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
         const prepared = state({
             pitchBendByClipId: {
                 source: [
-                    pitchBend('p0', 1, 0.2, 0),
-                    pitchBend('p1', 6, 0.8, 0),
-                    pitchBend('p2', 3, -0.5, 1),
-                    pitchBend('p3', 7, 0.1, 1),
+                    pitchBend('p0', 1, 1600, 0),
+                    pitchBend('p1', 6, 6500, 0),
+                    pitchBend('p2', 3, -4096, 1),
+                    pitchBend('p3', 7, 800, 1),
                 ],
             },
         });
@@ -1032,14 +1128,14 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
         const result = split(prepared, 4);
 
         expect(result.state.pitchBendByClipId.source).toEqual([
-            pitchBend('p0', 1, 0.2, 0),
-            pitchBend('p2', 3, -0.5, 1),
+            pitchBend('p0', 1, 1600, 0),
+            pitchBend('p2', 3, -4096, 1),
         ]);
         expect(result.state.pitchBendByClipId.right).toEqual([
-            pitchBend('pb-split:right:0', 0, 0.2, 0),
-            pitchBend('pb-split:right:2', 0, -0.5, 1),
-            pitchBend('pb-split:right:1', 2, 0.8, 0),
-            pitchBend('pb-split:right:3', 3, 0.1, 1),
+            pitchBend('pb-split:right:0', 0, 1600, 0),
+            pitchBend('pb-split:right:2', 0, -4096, 1),
+            pitchBend('pb-split:right:1', 2, 6500, 0),
+            pitchBend('pb-split:right:3', 3, 800, 1),
         ]);
     });
 
@@ -1085,7 +1181,7 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
     it('produces the same right clip event ids every time the command is applied to the same state', () => {
         const prepared = state({
             ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] },
-            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.2, 0), pitchBend('p1', 6, 0.8, 0)] },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 1600, 0), pitchBend('p1', 6, 6500, 0)] },
         });
 
         const first = split(prepared, 4);
@@ -1136,15 +1232,19 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
     it('carries the latest-beat pitch bend of each channel when the source rows are not in beat order', () => {
         const prepared = state({
             pitchBendByClipId: {
-                source: [pitchBend('late', 3, 0.6, 0), pitchBend('early', 1, 0.3, 0), pitchBend('other', 2, -0.4, 1)],
+                source: [
+                    pitchBend('late', 3, 4900, 0),
+                    pitchBend('early', 1, 2400, 0),
+                    pitchBend('other', 2, -3200, 1),
+                ],
             },
         });
 
         const result = split(prepared, 4);
 
         expect(result.state.pitchBendByClipId.right).toEqual([
-            pitchBend('pb-split:right:0', 0, 0.6, 0),
-            pitchBend('pb-split:right:2', 0, -0.4, 1),
+            pitchBend('pb-split:right:0', 0, 4900, 0),
+            pitchBend('pb-split:right:2', 0, -3200, 1),
         ]);
     });
 });
@@ -1166,7 +1266,7 @@ describe('transformMidiGlobalTimeState copy controllers and pitch bends', () => 
             ccByClipId: {
                 source: [cc('a', 1, 127, 64, 0), cc('b', 1, 0, 64, 0), cc('c', 2, 90, 64, 3), cc('d', 2, 10, 1, 0)],
             },
-            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.5, 0), pitchBend('p1', 3, -0.25, 2)] },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 4096, 0), pitchBend('p1', 3, -2048, 2)] },
         });
     }
 
@@ -1187,8 +1287,8 @@ describe('transformMidiGlobalTimeState copy controllers and pitch bends', () => 
             cc('cc-dup:target:3', 2, 10, 1, 0),
         ]);
         expect(result.state.pitchBendByClipId.target).toEqual([
-            pitchBend('pb-dup:target:0', 1, 0.5, 0),
-            pitchBend('pb-dup:target:1', 3, -0.25, 2),
+            pitchBend('pb-dup:target:0', 1, 4096, 0),
+            pitchBend('pb-dup:target:1', 3, -2048, 2),
         ]);
         expect(replay.state.ccByClipId.target).toEqual(result.state.ccByClipId.target);
         expect(replay.state.pitchBendByClipId.target).toEqual(result.state.pitchBendByClipId.target);

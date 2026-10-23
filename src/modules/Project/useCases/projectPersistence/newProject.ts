@@ -8,12 +8,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import {
-    compactProject,
-    projectActionHistoryToStore,
-    resetCrdtProject,
-    startCrdtAutoSave,
-} from '#/modules/CrdtDocument/useCases';
+import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
@@ -24,6 +19,10 @@ import { projectStore, type ProjectStoreState } from '../../stores/projectStore'
 import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
+import {
+    resetCrdtProjectWithTransportStopped,
+    type ReplacedProject,
+} from './helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import {
     projectLoadEpoch,
@@ -37,9 +36,6 @@ type ActivateNewProjectInput = {
     previousTransientState: Pick<ProjectStoreState, 'initialized' | 'loading'> | null;
     transaction: ProjectLoadTransaction;
 };
-
-/** The replacement branch of the reset contract, derived from its callable shape. */
-type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
 
 function failNewProjectActivation({
     previousTransientState,
@@ -152,9 +148,15 @@ async function switchToNewProject({
                 failNewProjectActivation({ previousTransientState, transaction });
                 return null;
             }
-            const reset = await resetCrdtProject(name, () => {
-                authorityReplaced = true;
-            });
+            // The reset refuses a transport rolling at the switch itself, and
+            // this stops it and asks again; see `resetCrdtProjectWithTransportStopped`.
+            const reset = await resetCrdtProjectWithTransportStopped(
+                name,
+                () => {
+                    authorityReplaced = true;
+                },
+                transaction.isCurrent
+            );
             if (reset.status === 'refused') {
                 // Decided before the switch, so nothing was replaced: the
                 // previous project is intact and this is an ordinary abort.

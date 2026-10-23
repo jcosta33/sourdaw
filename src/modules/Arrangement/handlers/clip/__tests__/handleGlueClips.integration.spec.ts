@@ -157,7 +157,7 @@ describe('handleGlueClips atomic integration', () => {
                 'clip-a': [{ id: 'cc-a', controller: 1, value: 0.25, beat: 3, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-b': [{ id: 'bend-b', value: 0.25, beat: 3, channel: 0 }],
+                'clip-b': [{ id: 'bend-b', value: 2048, beat: 3, channel: 0 }],
             },
             migratedAbsoluteNoteClipIds: ['clip-a', 'clip-b'],
         });
