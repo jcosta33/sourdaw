@@ -1,0 +1,30 @@
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalBranchWitness.integration.spec.ts
+  s_59e31a5c6f3e31::t_d4bba03e6a1d3c 2-8,10-12,14-19,21-22,23-30,33-58,62-72,85-86,87-139,141-143,145-147,161-224,228-237,246-251,253,255-258,260-280,282-286,290-291,298-314,393
+  s_ba8dd89de9aac7::t_5cf1802a3d38a2 13
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_59e31a5c6f3e31::t_a88f5c58d60230 13,114-120,122-206,207-208,211-212,216-221,228-236,253,257,271-275,277,282-289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eecc1c5a8457a079c0c65d023ce7f0cf840b5f0b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
