@@ -5,7 +5,7 @@
  * showing how the drive parameter clips the signal. Higher drive = more
  * aggressive S-curve. Uses 45 degree unity line as reference.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -16,7 +16,41 @@ type DistortionCurveProps = {
     width?: number;
     height?: number;
     onParamChange?: (paramId: string, value: number) => void;
+    onGestureStart?: () => number;
+    isGestureCurrent?: (token: number) => boolean;
+    onGestureCommit?: () => void;
+    onGestureCancel?: () => void;
 };
+
+type CurveGesture = {
+    pointerId: number;
+    canvas: HTMLCanvasElement;
+    token: number;
+    lastY: number;
+    drive: number;
+    change: NonNullable<DistortionCurveProps['onParamChange']>;
+    isCurrent: DistortionCurveProps['isGestureCurrent'];
+    commit: DistortionCurveProps['onGestureCommit'];
+    cancel: DistortionCurveProps['onGestureCancel'];
+};
+
+function finishGesture(gestureRef: { current: CurveGesture | null }, commit: boolean): void {
+    const gesture = gestureRef.current;
+    if (!gesture) {
+        return;
+    }
+    gestureRef.current = null;
+    const { canvas, pointerId } = gesture;
+    if (!canvas.hasPointerCapture || canvas.hasPointerCapture(pointerId)) {
+        canvas.releasePointerCapture(pointerId);
+    }
+    canvas.style.cursor = 'grab';
+    if (commit) {
+        gesture.commit?.();
+    } else {
+        gesture.cancel?.();
+    }
+}
 
 /** Attempt to match the waveshaper curve used in deviceNodeFactory */
 const waveshape = (xPos: number, drive: number): number => {
@@ -34,11 +68,21 @@ export const DistortionCurve = ({
     width = 200,
     height = 120,
     onParamChange,
+    onGestureStart,
+    isGestureCurrent,
+    onGestureCommit,
+    onGestureCancel,
 }: DistortionCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const isDragging = useRef(false);
-    const lastY = useRef(0);
+    const gestureRef = useRef<CurveGesture | null>(null);
     const isInteractive = !!onParamChange;
+
+    useLayoutEffect(() => {
+        const gesture = gestureRef.current;
+        if (gesture && (!isInteractive || (gesture.isCurrent && !gesture.isCurrent(gesture.token)))) {
+            finishGesture(gestureRef, false);
+        }
+    });
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -160,7 +204,7 @@ export const DistortionCurve = ({
         ctx.fillText('OUT', pad + gw, pad - 2);
 
         // "drag to adjust" hint
-        if (isInteractive && !isDragging.current) {
+        if (isInteractive && !gestureRef.current) {
             ctx.fillStyle = 'rgba(255,255,255,0.25)';
             ctx.font = '7px monospace';
             ctx.textAlign = 'center';
@@ -168,43 +212,77 @@ export const DistortionCurve = ({
         }
     }, [drive, mix, width, height, _tone, isInteractive]);
 
+    useLayoutEffect(() => {
+        const cancel = (): void => finishGesture(gestureRef, false);
+        const visibilityChanged = (): void => {
+            if (document.visibilityState === 'hidden') {
+                cancel();
+            }
+        };
+        window.addEventListener('blur', cancel);
+        document.addEventListener('visibilitychange', visibilityChanged);
+        return () => {
+            window.removeEventListener('blur', cancel);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            cancel();
+        };
+    }, []);
+
     const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) {
+        if (!onParamChange || gestureRef.current || event.button !== 0 || !Number.isFinite(event.clientY)) {
             return;
         }
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
         }
-        isDragging.current = true;
-        lastY.current = event.clientY;
+        const token = onGestureStart?.() ?? 0;
+        if (token < 0 || (isGestureCurrent && !isGestureCurrent(token))) {
+            return;
+        }
+        gestureRef.current = {
+            pointerId: event.pointerId,
+            canvas,
+            token,
+            lastY: event.clientY,
+            drive,
+            change: onParamChange,
+            isCurrent: isGestureCurrent,
+            commit: onGestureCommit,
+            cancel: onGestureCancel,
+        };
         canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current) {
+        const gesture = gestureRef.current;
+        if (!gesture || gesture.pointerId !== event.pointerId) {
             return;
         }
-        const deltaY = lastY.current - event.clientY; // up = positive
-        lastY.current = event.clientY;
+        if (!Number.isFinite(event.clientY) || (gesture.isCurrent && !gesture.isCurrent(gesture.token))) {
+            finishGesture(gestureRef, false);
+            return;
+        }
+        const deltaY = gesture.lastY - event.clientY; // up = positive
+        gesture.lastY = event.clientY;
         // Map vertical drag to drive change: ~0.5 drive units per pixel
         const sensitivity = 0.5;
-        const newDrive = Math.max(0, Math.min(100, drive + deltaY * sensitivity));
-        onParamChange('dist-drive', newDrive);
+        const newDrive = Math.max(0, Math.min(100, gesture.drive + deltaY * sensitivity));
+        gesture.drive = newDrive;
+        gesture.change('dist-drive', newDrive);
     };
 
     const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) {
-            return;
+        if (gestureRef.current?.pointerId === event.pointerId) {
+            finishGesture(gestureRef, true);
         }
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return;
+    };
+
+    const handlePointerCancel = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        if (gestureRef.current?.pointerId === event.pointerId) {
+            finishGesture(gestureRef, false);
         }
-        isDragging.current = false;
-        canvas.releasePointerCapture(event.pointerId);
-        canvas.style.cursor = 'grab';
     };
 
     return (
@@ -217,6 +295,8 @@ export const DistortionCurve = ({
             onPointerDown={isInteractive ? handlePointerDown : undefined}
             onPointerMove={isInteractive ? handlePointerMove : undefined}
             onPointerUp={isInteractive ? handlePointerUp : undefined}
+            onPointerCancel={isInteractive ? handlePointerCancel : undefined}
+            onLostPointerCapture={isInteractive ? handlePointerCancel : undefined}
         />
     );
 };
