@@ -516,7 +516,10 @@ function parseMasterTrackAutomation(
                         child.attr('name') ?? targetName ?? 'Automation',
                         owner
                     );
-                    continue;
+                    // A foreign Automation wrapper may contain supported Points.
+                    if (child.element.tagName === POINTS) {
+                        continue;
+                    }
                 }
             }
             walkAutomation(child, childUnit);
@@ -552,6 +555,13 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
     function walkClips(node: XmlQuery, unit: 'beats' | 'seconds'): void {
         for (const laneOrClips of node.children()) {
             const laneUnit = readTimeUnit(laneOrClips, unit);
+            if (laneOrClips.element.tagName === 'Video') {
+                const trackRef = laneOrClips.attr('track') ?? laneOrClips.attr('channel');
+                const owner = (trackRef && context.trackNames.get(trackRef)) ?? trackRef ?? 'Arrangement';
+                const name = laneOrClips.attr('name') ?? laneOrClips.child(FILE)?.attr('path') ?? 'Video';
+                warn(context, laneOrClips, 'unsupported-clip', name, owner);
+                continue;
+            }
             if (laneOrClips.element.tagName === CLIPS) {
                 const targetAttr = laneOrClips.attr('track') ?? laneOrClips.attr('channel');
                 const targetTrackId = resolveTrackId(targetAttr);

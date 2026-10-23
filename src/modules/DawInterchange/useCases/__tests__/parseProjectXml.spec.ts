@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { mapToProjectData } from '../mapToProjectData';
 import { parseProjectXml } from '../parseProjectXml';
 
 // Canonical RFC-4122 UUIDs after the `track-` / `clip-` prefixes. The previous
@@ -362,6 +363,37 @@ describe('parseProjectXml — time-unit conversion', () => {
 });
 
 describe('parseProjectXml — master-track automation', () => {
+    it('preserves supported tempo points inside an unsupported foreign automation wrapper', () => {
+        const parsedXml = parseProjectXml(
+            project(
+                '<Structure></Structure><Arrangement><Lanes>' +
+                    '<Automation name="Timing wrapper"><Points target="tempo">' +
+                    '<RealPoint time="4" value="150"/></Points></Automation>' +
+                    '</Lanes></Arrangement>'
+            )
+        );
+        const projectData = mapToProjectData({
+            parsed: {
+                ...parsedXml,
+                meta: { title: 'Timing', artist: '', comment: '' },
+                audioAssets: new Map(),
+            },
+            bufferIdsByPath: new Map(),
+            fileName: 'timing.dawproject',
+        });
+
+        expect(parsedXml.warnings).toMatchObject([
+            {
+                kind: 'unsupported-automation',
+                name: 'Timing wrapper',
+                sourceType: 'Automation',
+                context: 'Arrangement',
+                handling: 'dropped',
+            },
+        ]);
+        expect(projectData.tempoMap).toEqual({ changes: [{ beat: 4, tempo: 150, curve: 'instant' }] });
+    });
+
     it('parses tempo automation RealPoints into tempo changes', () => {
         const inner =
             '<Structure></Structure>' +

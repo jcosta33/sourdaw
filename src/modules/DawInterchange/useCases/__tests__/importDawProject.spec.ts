@@ -198,6 +198,61 @@ describe('importDawProject', () => {
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
+    it.each(['transaction', 'caller'] as const)(
+        'keeps a committed %s import result but leaves a successor free of stale notices',
+        async (revokedBy) => {
+            vi.clearAllMocks();
+            setupHappyPath();
+            let transactionCurrent = true;
+            let callerCurrent = true;
+            let activeProject = 'imported';
+            let finishApply: ((committed: boolean) => void) | undefined;
+            mocks.runProjectLoadTransaction.mockReturnValue({ canActivate: () => transactionCurrent });
+            mocks.parseDawProject.mockReturnValue({
+                meta: { title: 'Old import' },
+                audioAssets: new Map(),
+                warnings: [
+                    {
+                        kind: 'unsupported-automation',
+                        name: 'Cutoff',
+                        sourceType: 'Points',
+                        context: 'Lead',
+                        handling: 'dropped',
+                        sourceOrder: 1,
+                    },
+                ],
+            });
+            mocks.applyImportedProjectData.mockImplementationOnce(
+                () =>
+                    new Promise<boolean>((resolve) => {
+                        finishApply = resolve;
+                    })
+            );
+
+            const importing = importDawProject({
+                buffer: new ArrayBuffer(8),
+                fileName: 'old.dawproject',
+                shouldProceed: () => callerCurrent,
+            });
+            await vi.waitFor(() => expect(mocks.applyImportedProjectData).toHaveBeenCalledTimes(1));
+            expect(activeProject).toBe('imported');
+            if (revokedBy === 'transaction') {
+                transactionCurrent = false;
+            } else {
+                callerCurrent = false;
+            }
+            activeProject = 'successor';
+            if (!finishApply) {
+                throw new Error('Expected pending post-commit apply');
+            }
+            finishApply(true);
+
+            await expect(importing).resolves.toMatchObject({ ok: false, warnings: [{ name: 'Cutoff' }] });
+            expect(activeProject).toBe('successor');
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        }
+    );
+
     it('returns every named unsupported device and automation warning from real DAWproject bytes', async () => {
         vi.clearAllMocks();
         await setupRealImport();
@@ -267,6 +322,40 @@ describe('importDawProject', () => {
             [expect.stringContaining('warning 2/3: Vst3Plugin "Orbit Delay" on "Lead"'), 'warning'],
             [expect.stringContaining('warning 3/3: Points "Cutoff automation" on "Lead"'), 'warning'],
             [expect.stringContaining('Warnings fixture'), 'success'],
+        ]);
+    });
+
+    it('reports a direct schema-valid video once from real DAWproject bytes', async () => {
+        vi.clearAllMocks();
+        await setupRealImport();
+        const projectXml = `<Project version="1.0"><Application name="Fixture" version="1.0"/>
+            <Structure><Track id="t0" name="Picture" contentType="audio"/></Structure>
+            <Arrangement><Lanes timeUnit="beats"><Video track="t0" duration="8" channels="2" sampleRate="48000">
+                <File path="video.mp4"/></Video></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'picture.dawproject',
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            warnings: [
+                {
+                    kind: 'unsupported-clip',
+                    name: 'video.mp4',
+                    sourceType: 'Video',
+                    context: 'Picture',
+                    handling: 'dropped',
+                    sourceOrder: 5,
+                },
+            ],
+        });
+        expect(result.warnings).toHaveLength(1);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [expect.stringContaining('Video "video.mp4" on "Picture"'), 'warning'],
+            [expect.stringContaining('Imported picture.dawproject'), 'success'],
         ]);
     });
 

@@ -79,16 +79,19 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
             shouldProceed,
             transaction,
         });
-        if (ok) {
+        const reportOk = ok && shouldContinue();
+        if (reportOk) {
             const trackCount = projectData.arrangement.tracks.length;
             for (const [index, warning] of warnings.entries()) {
                 notifyUser(warningMessage(warning, index, warnings.length), 'warning');
             }
             notifyUser(`Imported ${parsed.meta.title || input.fileName} (${String(trackCount)} tracks)`, 'success');
         }
-        return { ok, warnings };
+        return { ok: reportOk, warnings };
     } catch (error) {
-        notifyUser('Failed to apply imported DAWproject data', 'error');
+        if (shouldContinue()) {
+            notifyUser('Failed to apply imported DAWproject data', 'error');
+        }
         logger.warn('[importDawProject] apply failure', error);
         return { ok: false, warnings };
     }
