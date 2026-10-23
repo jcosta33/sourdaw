@@ -1,0 +1,45 @@
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_1c08b47ac3792f::t_b0a327f777f9d0 192-222
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_59e31a5c6f3e31::t_b657d4aef8dda7 36
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_1c08b47ac3792f::t_88e41e3c71d1ed 7,14-18,35-36,38-42,56-58,86-87,98-102,112-113
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1c08b47ac3792f::t_68bf1bc143225d 15-20,44-45,78,186-189,356,1059-1413
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_1c08b47ac3792f::t_1c36d4952242a4 54
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_1c08b47ac3792f::t_84b822b4b0d2ba 95-96
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_59e31a5c6f3e31::t_92cb695c26c43a 191-192,202-204,263-382,406-412,435-436,438,500,502,576-584,658,702,721,913-915,926,1000,1008,1022-1024,1030,1111-1116,1158-1164,1285-1292,1294,1305,1410-1418
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  s_1c08b47ac3792f::t_f9fc90c1beeead 54
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_1c08b47ac3792f::t_3568618de1792a 20-22
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1c08b47ac3792f::t_7c1ec003f54d13 60,113-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc50caa0ebde79ca992e7fd79d09a70d6feb76c6",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
