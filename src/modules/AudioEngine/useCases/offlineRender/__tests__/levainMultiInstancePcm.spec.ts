@@ -4,10 +4,12 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
-import { captureOfflineLevain, prepareOfflineLevain } from '#/modules/Levain/useCases';
+import { captureOfflineLevain, configureLevainZoneTableBuilder, prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { type LevainZoneTableRequest } from '../../../models/LevainZoneTables';
 import { installWorkletGlobals, makeChannels } from '../../../services/__tests__/wasmViewGrowthHarness';
+import { computeLevainZoneTables } from '../../../transformers/computeLevainZoneTables';
 import { buildDeviceChain, type DeviceNodeEntry } from '../../buildDeviceChain';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
@@ -234,6 +236,7 @@ function render(processor: Processor): Float32Array[][] {
 }
 
 afterEach(() => {
+    configureLevainZoneTableBuilder(null);
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.resetModules();
@@ -242,6 +245,17 @@ afterEach(() => {
 describe('two shipped Levain processors through the offline MIDI route', () => {
     it('sounds only the track the scheduler selected, while both banks are playable', async () => {
         vi.useFakeTimers();
+        const expectedZoneRequest = {
+            zones: [{ zoneId: 0, articulationId: 0, micId: 0, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127 }],
+            numArticulations: 1,
+            numMics: 1,
+        } satisfies LevainZoneTableRequest;
+        // Compute with the shipped engine before either simulated processor owns a WASM instance.
+        const zoneTables = computeLevainZoneTables(wasmModule, expectedZoneRequest);
+        configureLevainZoneTableBuilder(async (request) => {
+            expect(request).toEqual(expectedZoneRequest);
+            return zoneTables;
+        });
         const { registry } = installWorkletGlobals<Processor>();
         await import('../../../services/levainProcessor');
         const registeredProcessor = registry.get('levain-processor');
