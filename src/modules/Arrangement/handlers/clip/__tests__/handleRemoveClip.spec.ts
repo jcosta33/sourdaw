@@ -136,24 +136,23 @@ describe('handleRemoveClip', () => {
     });
 
     describe('execute', () => {
-        it('removes clip directly if track state is missing', () => {
+        it('returns no-write when track state is missing', () => {
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
-            expect(result).toBeUndefined();
-            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
-            expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.removeClip).not.toHaveBeenCalled();
             expect(mocks.rippleDeleteClips).not.toHaveBeenCalled();
             expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 
-        it('removes clip directly if clip is not found in tracks', () => {
+        it('returns no-write when the clip is not found in tracks', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
 
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
-            expect(result).toBeUndefined();
-            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
-            expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.removeClip).not.toHaveBeenCalled();
+            expect(mocks.rippleDeleteClips).not.toHaveBeenCalled();
             expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 

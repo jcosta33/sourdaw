@@ -72,8 +72,8 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     validateSessionActionArguments: isRemoveClipSessionPayload,
     // Batch co-execution (grouped redo, atomic batches) preflights the state the
     // action assumes — the clip it names is still present — and refuses the whole
-    // batch once a target is gone. Single-action dispatch never calls validate,
-    // so the per-clip fallbacks in execute below are unchanged.
+    // batch once a target is gone. Single-action dispatch never calls validate;
+    // execute returns no-write before mutation when no track owns its target.
     validate: (action, context) =>
         (projectClipReplayPrefix(context.actions.slice(0, context.actionIndex))?.clips.some(
             (owner) => owner.clip.id === action.payload.clipId
