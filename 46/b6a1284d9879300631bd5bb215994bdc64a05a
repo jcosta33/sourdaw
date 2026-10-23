@@ -1,0 +1,23 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.hydrateAfterLocalEdit.spec.ts
+  s_3e7dea5cde3f9e::t_ccb4f5b2c91c9e 9,53-64,222,236-281,327-359
+src/infra/store/storage/createAutomergeStorage.ts
+  s_3e7dea5cde3f9e::t_67e5b4124f7b14 485-491,1660-1672,1677,1680-1693,1929,1944-1950,1959,2639-2644
+src/modules/CrdtDocument/AGENTS.md
+  s_3e7dea5cde3f9e::t_d10b1387233a86 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46b6a1284d9879300631bd5bb215994bdc64a05a",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
