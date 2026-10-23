@@ -1796,11 +1796,12 @@ describe('device write boundary closure', () => {
             throw new Error(`missing production source: ${path}`);
         }
 
-        const files = productionFiles.map((file) =>
-            file === scheduler
-                ? productionSource(path, `${scheduler.source}\nsetCrumbsParamImmediate('instance', 'gain', 1);`)
-                : file
-        );
+        const files = productionFiles.map((file) => {
+            if (file === scheduler) {
+                return productionSource(path, `${scheduler.source}\nsetCrumbsParamImmediate('instance', 'gain', 1);`);
+            }
+            return file;
+        });
         expect(() => assertProductionClosure(files)).toThrow(
             `load-compile-hydration sink census changed: ${path}: expected 12, received 13`
         );
