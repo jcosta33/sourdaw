@@ -22,6 +22,7 @@ export function effectDisclosureLevel(tier: EffectDisclosureTier): 1 | 2 | 3 | 4
         case 'lab':
             return 5;
     }
+    return 1;
 }
 
 export function isEffectDisclosureTier(value: unknown): value is EffectDisclosureTier {

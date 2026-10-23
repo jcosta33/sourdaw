@@ -1,14 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-const admission = vi.hoisted(() => ({ reason: null as string | null }));
-vi.mock('#/modules/Command/useCases/getProjectMutationAdmissionFailure', () => ({
-    getProjectMutationAdmissionFailure: () => admission.reason,
-}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 import { crustStore, getCrustState } from '../../stores/crustStore';
@@ -46,12 +43,16 @@ function projectState(deviceId: string) {
 
 describe('setCrustPanelUiLevel project path', () => {
     beforeEach(() => {
-        admission.reason = null;
+        agentProjectRepairStateStore.set(null);
         vi.mocked(notifyUser).mockClear();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         crustStore.set({});
         trackStore.set({ ...defaultTrackState, tracks: tracksWithTwoCrustDevices() });
+    });
+
+    afterEach(() => {
+        agentProjectRepairStateStore.set(null);
     });
 
     it('writes named tiers to the addressed project devices and restores after session loss', async () => {
@@ -93,11 +94,22 @@ describe('setCrustPanelUiLevel project path', () => {
     });
 
     it('leaves project and visible tier unchanged when the command admission refuses', async () => {
-        admission.reason = 'Project repair is required';
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'repair-revision',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
         await setCrustPanelUiLevel('a', 5);
 
         expect(projectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
         expect(getCrustState('a').patch.uiLevel).toBe(1);
-        expect(notifyUser).toHaveBeenCalledWith('Project repair is required', 'warning');
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Project repair is required before project actions can execute',
+            'warning'
+        );
     });
 });
