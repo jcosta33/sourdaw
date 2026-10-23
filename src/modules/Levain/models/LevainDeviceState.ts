@@ -39,13 +39,19 @@ type LevainDeviceStateChunk = {
  * silently — which is why a reopened orchestral project played violin-1 on every
  * track regardless of what was saved.
  */
+export type LevainDisclosureTier = 'basic' | 'expert';
+
 export type LevainPatchIdentity = {
     instrumentId: InstrumentId;
     currentArticulation: ArticulationType;
+    disclosureTier: LevainDisclosureTier;
 };
 
-/** Serialise a live patch's identity into the device-state chunk the document stores. */
-export function toLevainDeviceState(patch: LevainPatch): LevainDeviceStateChunk {
+/** Serialise patch identity and disclosure; omitted tiers keep legacy callers on Basic. */
+export function toLevainDeviceState(
+    patch: LevainPatch,
+    disclosureTier: LevainDisclosureTier = 'basic'
+): LevainDeviceStateChunk {
     return {
         version: LEVAIN_DEVICE_STATE_VERSION,
         // Structured, not stringified: the document merges the subtree field by
@@ -54,6 +60,7 @@ export function toLevainDeviceState(patch: LevainPatch): LevainDeviceStateChunk 
         data: {
             instrumentId: patch.instrumentId,
             currentArticulation: patch.currentArticulation,
+            disclosureTier,
         },
     };
 }
@@ -91,5 +98,6 @@ export function fromLevainDeviceState(chunk: unknown): LevainPatchIdentity | nul
     return {
         instrumentId,
         currentArticulation: articulation?.type ?? defaultPatch.currentArticulation,
+        disclosureTier: chunk.data.disclosureTier === 'expert' ? 'expert' : 'basic',
     };
 }

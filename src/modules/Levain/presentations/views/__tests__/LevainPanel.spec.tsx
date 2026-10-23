@@ -1,7 +1,10 @@
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createDefaultPatch } from '../../../models/LevainPatch';
+import { setLevainPanelUiLevel } from '../../../useCases/setLevainPanelUiLevel';
 import { sendMicParamToEngine } from '../../../useCases/levainParamBridge/sendMicParamToEngine';
+import { setMacroWithAudio } from '../../../useCases/levainParamBridge/setMacroWithAudio';
 import { LevainPanel } from '../LevainPanel';
 
 // Mutable state the mocked store returns, keyed by deviceId. Tests tweak it
@@ -48,6 +51,7 @@ function basePatchMicPositions(): unknown[] {
 }
 
 function baseState(): PanelState {
+    const defaultPatch = createDefaultPatch('violin-1');
     return {
         patch: {
             instrumentId: 'violin-1',
@@ -58,12 +62,12 @@ function baseState(): PanelState {
             legato: { enabled: false },
             humanize: { amount: 0 },
             micPositions: basePatchMicPositions(),
-            macros: [],
-            macroLabels: [],
+            macros: defaultPatch.macros,
+            macroLabels: defaultPatch.macroLabels,
             masterGain: 0.8,
             releaseTriggers: { enabled: false, dynamicScale: false },
         },
-        uiLevel: 1,
+        uiLevel: 6,
         engineReady: true,
         sampleLoadProgress: null,
         sampleLoadError: null,
@@ -85,6 +89,8 @@ vi.mock('../../../stores/levainStore', () => ({
     setCurrentArticulation: vi.fn(),
     updateMicPosition: vi.fn(),
 }));
+
+vi.mock('../../../useCases/setLevainPanelUiLevel', () => ({ setLevainPanelUiLevel: vi.fn() }));
 
 vi.mock('../../../useCases/loadPreset', () => ({
     loadInstrument: vi.fn(),
@@ -112,6 +118,8 @@ vi.mock('#/components/daw/DawPluginChip', () => ({
             data-testid="daw-plugin-chip"
             role={role}
             aria-checked={rest['aria-checked']}
+            aria-pressed={rest['aria-pressed']}
+            aria-label={rest['aria-label']}
         >
             {children}
         </button>
@@ -154,17 +162,6 @@ vi.mock('#/components/daw/DawReadoutRow', () => ({
     ),
 }));
 
-vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange }: any) => (
-        <input
-            type="range"
-            value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
-            data-testid="rotary-knob"
-        />
-    ),
-}));
-
 vi.mock('../../components/ArticulationList', () => ({
     ArticulationList: () => <div data-testid="articulation-list">Articulation List</div>,
 }));
@@ -179,10 +176,6 @@ vi.mock('../../components/HumanizePanel', () => ({
 
 vi.mock('../../components/LegatoTuning', () => ({
     LegatoTuning: () => <div data-testid="legato-tuning">Legato Tuning</div>,
-}));
-
-vi.mock('../../components/LevainMacroStrip', () => ({
-    LevainMacroStrip: () => <div data-testid="macro-strip">Macro Strip</div>,
 }));
 
 // MicBlendSlider itself is NOT mocked here: the acceptance behaviour under
@@ -387,6 +380,49 @@ describe('LevainPanel', () => {
         });
     });
 
+    describe('Space macro availability follows the loaded bank', () => {
+        it.each([
+            ['unloaded positions', undefined],
+            ['no committed bank', null],
+            ['empty bank', []],
+            ['sparse bank without Room', [null, 'close']],
+            ['reordered bank without Room', ['decca-tree', 'close']],
+        ])('marks Space unavailable for %s', (_description, loadedMicPositions) => {
+            panelState = { ...baseState(), loadedMicPositions };
+            if (loadedMicPositions === undefined) {
+                delete panelState.loadedMicPositions;
+            }
+            render(<LevainPanel deviceId="test-device" />);
+            const spaceKnob = screen.getByRole('slider', { name: 'Space' });
+
+            expect(spaceKnob).toHaveAttribute('aria-disabled', 'true');
+            expect(spaceKnob).toHaveAttribute('title', 'Space requires a loaded Room microphone position.');
+            expect(spaceKnob).toHaveClass('cursor-not-allowed', 'opacity-45');
+            expect(screen.getByText('Requires a Room mic')).toBeInTheDocument();
+
+            fireEvent.keyDown(spaceKnob, { key: 'ArrowUp' });
+            fireEvent.pointerDown(spaceKnob, { button: 0, pointerId: 1, clientY: 100 });
+            fireEvent.pointerMove(window, { pointerId: 1, clientY: 20 });
+            fireEvent.pointerUp(window, { pointerId: 1 });
+            expect(setMacroWithAudio).not.toHaveBeenCalled();
+        });
+
+        it('enables Space and sends its macro change when Room loads in any position', () => {
+            panelState = baseState();
+            const { rerender } = render(<LevainPanel deviceId="test-device" />);
+            expect(screen.getByRole('slider', { name: 'Space' })).toHaveAttribute('aria-disabled', 'true');
+
+            panelState = { ...baseState(), loadedMicPositions: ['decca-tree', 'room', 'close'] };
+            rerender(<LevainPanel deviceId="test-device" />);
+            const spaceKnob = screen.getByRole('slider', { name: 'Space' });
+
+            expect(spaceKnob).not.toHaveAttribute('aria-disabled', 'true');
+            expect(screen.queryByText('Requires a Room mic')).not.toBeInTheDocument();
+            fireEvent.keyDown(spaceKnob, { key: 'ArrowUp' });
+            expect(setMacroWithAudio).toHaveBeenCalledWith('test-device', 4, expect.any(Number));
+        });
+    });
+
     describe('overflow normalization', () => {
         it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
             const { container } = render(<LevainPanel deviceId="test-device" />);
@@ -396,4 +432,82 @@ describe('LevainPanel', () => {
             expect(faceplate?.className).not.toContain('overflow-hidden');
         });
     });
+});
+
+it('Basic keeps the browser, selection detail and macros while Expert reveals the same patch controls', () => {
+    vi.clearAllMocks();
+    const macroControls = [
+        ['Dynamics', 0.2, 0.21],
+        ['Expression', 0.8, 0.81],
+        ['Vibrato', 0.1, 0.11],
+        ['Tightness', 0.3, 0.31],
+        ['Space', 0.4, 0.41],
+        ['Tone', 0.6, 0.61],
+        ['Attack', 0.7, 0.71],
+        ['Release', 0.9, 0.91],
+    ] as const;
+    panelState = {
+        ...baseState(),
+        patch: {
+            ...createDefaultPatch('violin-1'),
+            micPositions: basePatchMicPositions(),
+            macros: macroControls.map(([, value]) => value),
+        },
+        uiLevel: 1,
+        loadedMicPositions: [null, 'room', 'close'],
+    };
+    const { rerender } = render(<LevainPanel deviceId="test-device" />);
+    const group = screen.getByRole('group', { name: 'Levain control detail' });
+    expect(within(group).getAllByRole('button')).toHaveLength(2);
+    expect(within(group).getByRole('button', { name: 'Basic' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Solo Violin/ })).toBeInTheDocument();
+    for (const [index, [name, value, nextValue]] of macroControls.entries()) {
+        const knob = screen.getByRole('slider', { name });
+        expect(knob).toHaveAttribute('aria-valuenow', String(value));
+        expect(knob).not.toHaveAttribute('aria-disabled', 'true');
+        fireEvent.keyDown(knob, { key: 'ArrowUp' });
+        expect(setMacroWithAudio).toHaveBeenNthCalledWith(index + 1, 'test-device', index, nextValue);
+    }
+    expect(setMacroWithAudio).toHaveBeenCalledTimes(8);
+    const detail = screen.getByRole('region', { name: 'Selection detail' });
+    expect(detail).toHaveTextContent('Selected patch articulation');
+    expect(detail).toHaveTextContent('Long');
+    for (const id of ['articulation-list', 'expression-panel', 'legato-tuning', 'humanize-panel', 'fader']) {
+        expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText('Desk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Quick read')).not.toBeInTheDocument();
+    fireEvent.click(within(group).getByRole('button', { name: 'Expert' }));
+    expect(setLevainPanelUiLevel).toHaveBeenCalledWith('test-device', 6);
+    // A completed callback alone must not paint an uncommitted choice.
+    expect(screen.queryByTestId('expression-panel')).not.toBeInTheDocument();
+    panelState = { ...panelState, uiLevel: 6 };
+    rerender(<LevainPanel deviceId="test-device" />);
+    expect(screen.getByTestId('expression-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('articulation-list')).toBeInTheDocument();
+    expect(screen.getByText('Desk')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Solo Violin/ })).toHaveAttribute('aria-current', 'true');
+    for (const [name, value] of macroControls) {
+        expect(screen.getByRole('slider', { name })).toHaveAttribute('aria-valuenow', String(value));
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Select Room mic' }));
+    expect(detail).toHaveTextContent('Selected micRoom');
+    fireEvent.click(screen.getByRole('button', { name: 'Select Close mic' }));
+    expect(detail).toHaveTextContent('Selected micClose');
+    expect(sendMicParamToEngine).not.toHaveBeenCalled();
+    panelState = { ...panelState, uiLevel: 1, currentArticulationDisplay: 'Tremolo' };
+    rerender(<LevainPanel deviceId="test-device" />);
+    expect(detail).toHaveTextContent('Tremolo');
+    expect(detail).toHaveTextContent('Selected micClose');
+    for (const [name, value] of macroControls) {
+        expect(screen.getByRole('slider', { name })).toHaveAttribute('aria-valuenow', String(value));
+    }
+    expect(setMacroWithAudio).toHaveBeenCalledTimes(8);
+    expect(screen.queryByTestId('fader')).not.toBeInTheDocument();
+});
+
+it('has no fictional selected microphone without a committed bank', () => {
+    panelState = { ...baseState(), uiLevel: 1, loadedMicPositions: null };
+    render(<LevainPanel deviceId="test-device" />);
+    expect(screen.getByRole('region', { name: 'Selection detail' })).toHaveTextContent('No loaded mic');
 });

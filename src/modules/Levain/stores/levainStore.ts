@@ -23,6 +23,7 @@ export type LevainUiLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type LevainState = {
     patch: LevainPatch;
+    /** Project disclosure projection: Basic is 1, Expert is 6; legacy intermediate values show Basic. */
     uiLevel: LevainUiLevel;
     engineReady: boolean;
     sampleLoadProgress: number | null;
