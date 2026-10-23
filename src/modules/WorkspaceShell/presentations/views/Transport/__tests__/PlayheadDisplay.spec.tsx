@@ -50,6 +50,9 @@ vi.mock('#/modules/Transport/stores', () => ({
     transportStore: transportState,
     timeSignatureMapStore: timeSignatureState,
     playheadPositionRef: playheadPosition,
+    readBarStartBeat: vi.fn(() => {
+        throw new Error('Unexpected named-bar lookup in a PlayheadDisplay test');
+    }),
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
