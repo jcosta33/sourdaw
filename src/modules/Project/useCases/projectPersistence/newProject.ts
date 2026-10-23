@@ -19,6 +19,7 @@ import { projectStore, type ProjectStoreState } from '../../stores/projectStore'
 import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
+import { markOutgoingProjectDirtyAfterAbort } from './helpers/markOutgoingProjectDirtyAfterAbort';
 import {
     resetCrdtProjectWithTransportStopped,
     type OutgoingProjectDisposition,
@@ -52,6 +53,9 @@ function failNewProjectActivation({
         const project = projectStore.value;
         if (project && previousTransientState) {
             projectStore.set({ ...project, ...previousTransientState });
+            // A take the replacement's stop committed while `loading` hid it
+            // from `markDirty` belongs to the project that stays open.
+            markOutgoingProjectDirtyAfterAbort();
         }
     }
 }
