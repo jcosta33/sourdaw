@@ -2,6 +2,7 @@ import { isPedalControllerLift } from '#/utils/pianoPedalController';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
+import { isRegisteredParameterController } from '../../services/registeredParameterState';
 import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
 type MidiClipWindow = {
@@ -23,6 +24,13 @@ type ProjectMidiClipWindowInput = {
     controlChanges: readonly MidiCC[];
     pitchBends: readonly MidiPitchBend[];
     window: MidiClipWindow;
+    /**
+     * Whether the RPN/NRPN and Data Entry rows before the window start are carried into it like any other
+     * lane, by their last value; true when absent. A caller that places the window's content beside other
+     * content in one clip (glue) passes false and declares the state those rows leave instead
+     * (`declareGluedRegisteredParameters`), because the last value of each of their lanes does not say it.
+     */
+    carriesRegisteredParameterLanes?: boolean;
 };
 
 type ControllerRow = { beat: number };
@@ -78,13 +86,15 @@ type ProjectedControllerRows<TRow> = {
  * The rows inside the window, rebased, in source order. Every lane whose value
  * in force at the window start was set by an earlier row begins with that value
  * at the window start, unless the lane has a row there already, so a pedal or
- * bend held into the window keeps sounding.
+ * bend held into the window keeps sounding. A row before the window that
+ * `carriesIntoWindow` refuses is left behind.
  */
 function projectVisibleControllerRows<TRow extends ControllerRow>(
     rows: readonly TRow[],
     laneKey: (row: TRow) => string,
     window: MidiClipWindow,
-    closingLineBeat: number | undefined
+    closingLineBeat: number | undefined,
+    carriesIntoWindow: (row: TRow) => boolean = () => true
 ): ProjectedControllerRows<TRow> {
     const inForceAtStart = new Map<string, TRow>();
     const lanesStartingAtWindow = new Set<string>();
@@ -96,6 +106,9 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
             continue;
         }
         if (row.beat < window.visibleStartBeat) {
+            if (!carriesIntoWindow(row)) {
+                continue;
+            }
             const current = inForceAtStart.get(laneKey(row));
             if (!current || current.beat <= row.beat) {
                 inForceAtStart.set(laneKey(row), row);
@@ -137,9 +150,16 @@ function playsOnClosingLine(row: MidiCC): boolean {
 /**
  * What a MIDI clip plays for one pass through `window`: notes clipped to it, controllers
  * carried into it, and the pedal lifts on its closing line when it has one.
- * Pitch-bend rows on the closing line are always dropped; no route plays a stored bend lane.
+ * Pitch-bend rows on the closing line are always dropped: bend is a continuous position, not
+ * a switch, so no row there ends anything (`projectClipPitchBendEvents` plays the lane).
  */
-export function projectMidiClipWindow({ notes, controlChanges, pitchBends, window }: ProjectMidiClipWindowInput): {
+export function projectMidiClipWindow({
+    notes,
+    controlChanges,
+    pitchBends,
+    window,
+    carriesRegisteredParameterLanes = true,
+}: ProjectMidiClipWindowInput): {
     notes: MidiNote[];
     controlChanges: MidiCC[];
     closingControlChanges: MidiCC[];
@@ -149,7 +169,8 @@ export function projectMidiClipWindow({ notes, controlChanges, pitchBends, windo
         controlChanges,
         (row) => `${row.channel}:${row.controller}`,
         window,
-        window.closingLineBeat
+        window.closingLineBeat,
+        (row) => carriesRegisteredParameterLanes || !isRegisteredParameterController(row.controller)
     );
     return {
         notes: notes.flatMap((note) => projectVisibleNote(note, window) ?? []),

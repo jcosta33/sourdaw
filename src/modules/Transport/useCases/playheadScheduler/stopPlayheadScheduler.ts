@@ -7,10 +7,10 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
-import { forgetHeldNoteExpression } from '../../services/heldNoteExpression';
 import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';

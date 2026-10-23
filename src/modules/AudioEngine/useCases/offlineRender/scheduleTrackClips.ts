@@ -30,6 +30,7 @@ import {
     type OfflineMidiEventProjector,
     type OfflineMidiArticulationResolver,
     type OfflineAutomationValueEvaluator,
+    type OfflineChannelBendProjector,
     type OfflineChordPitchProjector,
     type OfflineClipControllerProjector,
     type OfflineMidiProbabilitySelector,
@@ -89,6 +90,11 @@ type OfflineProjectionDependencies = {
      * Absent, no controller reaches an instrument; the composition root sets it.
      */
     projectClipControllers?: OfflineClipControllerProjector | null;
+    /**
+     * The projection live scheduling reads a track's stored channel pitch bend with. Absent, no
+     * stored bend reaches an instrument; the composition root sets it.
+     */
+    projectChannelBend?: OfflineChannelBendProjector | null;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -211,6 +217,7 @@ export async function scheduleTrackClips({
         processYeastMidi,
         resolveArticulationId,
         projectClipControllers,
+        projectChannelBend,
         resolveTempoAtBeat,
         selectMidiEventProbability,
     } = projections;
@@ -569,16 +576,52 @@ export async function scheduleTrackClips({
         });
     }
 
+    // Where the render places a beat on the timeline, before the region start clamps it: a beat before the
+    // region is negative.
+    function timelineSecondsAtBeat(beat: number, toasterPadIndex: number): number {
+        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
+        return startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec;
+    }
+
     // Where the render places a beat, exactly as a note's own start is placed.
     function secondsAtBeat(beat: number, toasterPadIndex: number): number {
-        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
-        return Math.max(0, startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec);
+        return Math.max(0, timelineSecondsAtBeat(beat, toasterPadIndex));
     }
 
     // The frame `schedulePendingSuspends` addresses an event at a given time to.
     function frameAtSeconds(seconds: number): number {
         return Math.floor(seconds * offlineCtx.sampleRate);
     }
+
+    // The track's stored channel pitch bend, on the clock a note at the same beat is placed on. Only an
+    // instrument with an expression surface takes any (the engines that bend a held voice), as live
+    // playback, and only the track's own MIDI clips that play (a muted clip does not, a clip with no note
+    // list does) bend its notes, whatever the region start: a clip that ended before the region still left
+    // the bend in force.
+    function projectTrackChannelBend(): ReturnType<OfflineChannelBendProjector> {
+        // A Yeast track's notes are the rack's, whichever instrument voices them: the stored controllers
+        // take the same exclusion, live and here.
+        const hasYeast = track.devices.some((device) => device.type === 'yeast');
+        if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
+            return [];
+        }
+        const clips = clipsToProcess.flatMap(({ clip }) => {
+            const pitchBends = midi.pitchBendByClipId[clip.id];
+            if (clip.type !== 'midi' || clip.muted || !pitchBends?.length) {
+                return [];
+            }
+            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
+        });
+        // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
+        // zero, rather than the clamp every note shares: the bend in force at the region start is then the last
+        // one on the timeline, not the last one of the last clip in the track's clip list.
+        return projectChannelBend({
+            clips,
+            frameAtBeat: (beat) => frameAtSeconds(timelineSecondsAtBeat(beat, -1)),
+        });
+    }
+
+    const channelBend = projectTrackChannelBend();
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         // A bypassed receiver plays nothing, as it does live; no note is handed
@@ -627,6 +670,7 @@ export async function scheduleTrackClips({
                     ? undefined
                     : projectNoteExpressionCurves({
                           note,
+                          channelBend,
                           startBeat: note.startBeat,
                           beatsIntoNote: note.beatsIntoNote,
                           releaseFrame: frameAtSeconds(endTime),

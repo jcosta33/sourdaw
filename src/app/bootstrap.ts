@@ -151,6 +151,7 @@ import {
     prepareMidiTimeStateRestore,
     createChordPitchProjector,
     createGrooveMidiEventProjector,
+    projectChannelBend,
     projectClipControllerEvents,
     resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
@@ -318,6 +319,7 @@ configureOfflineMidiEventProjection({
     createAutomationValueEvaluator: createOfflineAutomationEvaluator,
     resolveArticulationId: resolveMidiNoteArticulationId,
     projectClipControllers: projectClipControllerEvents,
+    projectChannelBend,
 });
 // The offline render and the native live automation producer enforce the same
 // device-parameter law the live apply path does; only the composition root sees
