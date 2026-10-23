@@ -1,0 +1,45 @@
+src/modules/MixerConsole/models/parseMasterGainEntry.ts
+  s_59e31a5c6f3e31::t_26af9467f936d7 1-18
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_59e31a5c6f3e31::t_adcb8b7318878e 38-53,141-145
+  s_59e31a5c6f3e31::t_9095f45478ac4f 201
+  s_59e31a5c6f3e31::t_10a8b18fad18ec 135-140,173-184,198-199,202,204,220-222
+  s_59e31a5c6f3e31::t_e597ec3e11d8d8 108,203
+  s_59e31a5c6f3e31::t_1d95446d025c80 1,10,14
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterGainControl.spec.tsx
+  s_59e31a5c6f3e31::t_ed15b8989ab702 5,10
+  s_59e31a5c6f3e31::t_405baac188e641 1-4,6-9,11-25,29,31-44,58-68,70-73,75-78,85,87,93-97,99-114,116-131,133-147,149-164,166-179,181-187,189-200
+  s_59e31a5c6f3e31::t_22e74c7d8ce2e0 26-28,30
+  s_59e31a5c6f3e31::t_b7f6aa6e516db9 45-57,69,79-84,86,88-92,98,115,132,148,165,188
+  s_59e31a5c6f3e31::t_96643a5606e86c 74,180
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_8c6bbf012f7962 256-279
+  s_59e31a5c6f3e31::t_efae876db413eb 195-200,221-222
+  s_59e31a5c6f3e31::t_ac99d99edd62c9 4,63-73,162,201-220
+  s_59e31a5c6f3e31::t_09c09e0a34ceb3 223-255
+src/modules/MixerConsole/presentations/views/Mixer/MasterGainControl.tsx
+  s_59e31a5c6f3e31::t_0f7203126cf711 10-15,17-20,23-25,27-28,54,56-118,120-123,131-155,159,163-166
+  s_59e31a5c6f3e31::t_cde75959da3529 1-9,21-22,119
+  s_59e31a5c6f3e31::t_009e46ecddfa23 29-53,125-130,156-158,160-162
+  s_59e31a5c6f3e31::t_10a8b18fad18ec 26,55,124
+  s_59e31a5c6f3e31::t_26af9467f936d7 16
+src/modules/MixerConsole/models/__tests__/parseMasterGainEntry.spec.ts
+  s_59e31a5c6f3e31::t_4d9768f21fe24b 22
+  s_59e31a5c6f3e31::t_d2461e1401ad5c 1-21,23-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7886a8a67dd1b408ba449557ca55af2998ab3854",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
