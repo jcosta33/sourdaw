@@ -655,7 +655,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // scheduleCompiledEventsOnParam references sit inside the apply
         // closures the post-loop pass owns; the file still writes no project
         // device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 11,
+        // Count provenance (#5329): one more compileAutomationEvents call turns
+        // the resolved modulated lane into local canonical device-unit events.
+        // The existing audioParam, curveWrite, and segments bindings own output.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 12,
         // Count provenance: new with the export scope law (#4912) — the
         // shared events-to-segments conversion compileAutomationSegments
         // also calls; one family member for its own conversion call.
@@ -1784,6 +1787,23 @@ describe('device write boundary closure', () => {
 
     it('classifies every production sink by family, path, and exact count', () => {
         expect(() => assertProductionClosure(productionFiles)).not.toThrow();
+    });
+
+    it('rejects an immediate device writer added to the classified offline scheduler', () => {
+        const path = 'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts';
+        const scheduler = productionFiles.find((file) => file.path === path);
+        if (!scheduler) {
+            throw new Error(`missing production source: ${path}`);
+        }
+
+        const files = productionFiles.map((file) =>
+            file === scheduler
+                ? productionSource(path, `${scheduler.source}\nsetCrumbsParamImmediate('instance', 'gain', 1);`)
+                : file
+        );
+        expect(() => assertProductionClosure(files)).toThrow(
+            `load-compile-hydration sink census changed: ${path}: expected 12, received 13`
+        );
     });
 
     it('skips comment stripping when raw source has no census tokens', () => {
