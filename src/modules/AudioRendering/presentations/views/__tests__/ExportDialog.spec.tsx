@@ -721,7 +721,7 @@ describe('ExportDialog', () => {
             selectPodcastEpisode();
             fireEvent.click(screen.getByRole('button', { name: '48.0k' }));
             fireEvent.click(screen.getByRole('button', { name: '320k' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Off', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: 'Off' }));
             fireEvent.change(screen.getByRole('spinbutton', { name: 'Target loudness' }), { target: { value: '-20' } });
             view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
             expect(screen.getByRole('spinbutton', { name: 'Target loudness' })).toHaveValue(-20);
