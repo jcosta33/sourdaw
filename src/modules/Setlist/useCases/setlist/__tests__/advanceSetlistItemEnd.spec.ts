@@ -27,6 +27,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     secondsBetweenBeats: (
         _changes: readonly unknown[],
         fromBeat: number,

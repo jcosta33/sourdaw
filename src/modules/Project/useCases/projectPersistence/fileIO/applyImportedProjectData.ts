@@ -9,12 +9,15 @@ type ApplyImportedProjectDataInput = {
      * formats that carry their own audio assets hand the AudioBuffers over
      * directly instead of encoding them into the project snapshot. */
     decodedAudioBuffers?: Record<string, AudioBuffer>;
+    /** The caller keeps this true only while the user still wants this replacement. */
+    shouldProceed?: () => boolean;
     transaction?: ProjectLoadTransaction;
 };
 
 export async function applyImportedProjectData({
     data,
     decodedAudioBuffers,
+    shouldProceed,
     transaction,
 }: ApplyImportedProjectDataInput): Promise<boolean> {
     const normalizedData = normalizeLegacyProjectData(data);
@@ -26,6 +29,7 @@ export async function applyImportedProjectData({
         context: 'applyImportedProjectData',
         data: normalizedData,
         decodedAudioBuffers,
+        shouldProceed,
         transaction: transaction ?? runProjectLoadTransaction(),
     });
     return result.status === 'committed';

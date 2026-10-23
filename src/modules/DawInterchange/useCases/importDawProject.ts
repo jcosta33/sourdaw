@@ -10,6 +10,8 @@ import { parseDawProject } from './parseDawProject';
 export type ImportDawProjectInput = {
     buffer: ArrayBuffer;
     fileName: string;
+    /** The caller keeps this true only while the user still wants this replacement. */
+    shouldProceed?: () => boolean;
 };
 
 export type ImportDawProjectResult = { ok: boolean; warnings: DawProjectImportWarning[] };
@@ -33,7 +35,9 @@ function warningMessage(warning: DawProjectImportWarning, index: number, total: 
 }
 
 export async function importDawProject(input: ImportDawProjectInput): ImportDawProjectOutput {
+    const { shouldProceed = () => true } = input;
     const transaction = runProjectLoadTransaction();
+    const shouldContinue = (): boolean => transaction.canActivate() && shouldProceed();
     let parsed;
     try {
         parsed = await parseDawProject(input.buffer);
@@ -48,9 +52,9 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
 
     const { audioBuffers, bufferIdsByPath, failedPaths } = await decodeDawProjectAssets({
         audioAssets: parsed.audioAssets,
-        shouldContinue: transaction.canActivate,
+        shouldContinue,
     });
-    if (!transaction.canActivate()) {
+    if (!shouldContinue()) {
         return { ok: false, warnings };
     }
     if (failedPaths.length > 0) {
@@ -72,6 +76,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         const ok = await applyImportedProjectData({
             data: projectData,
             decodedAudioBuffers: audioBuffers,
+            shouldProceed,
             transaction,
         });
         if (ok) {

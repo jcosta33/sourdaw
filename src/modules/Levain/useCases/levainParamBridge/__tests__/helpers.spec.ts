@@ -25,7 +25,6 @@ function makeDeps(
 ) {
     let resolutionStatus = initialResolutionStatus;
     return {
-        getAllTracks: vi.fn(() => []),
         persistDeviceParam: vi.fn(),
         writeNativeBuiltinParameters:
             vi.fn<(trackId: string, deviceId: string, values: Record<string, number>) => void>(),

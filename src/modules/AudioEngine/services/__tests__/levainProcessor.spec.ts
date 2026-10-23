@@ -29,6 +29,10 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 // how many floats it takes per chunk.
 const MOCK_WRITE_BASE = 8192;
 const MOCK_WRITE_WINDOW = 3;
+// Where the mock engine's zone-table window sits, past the sample window, and
+// how many words it holds.
+const MOCK_TABLE_BASE = 16_384;
+const MOCK_TABLE_WINDOW_WORDS = 8;
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let engineProcessCalls = 0;
@@ -127,9 +131,29 @@ class LevainInstanceMock {
     add_legato_transition(...args: unknown[]): void {
         calls.push({ method: 'add_legato_transition', args });
     }
-    build_zone_map(numArticulations: number, numMics: number): boolean {
-        calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
-        return zoneMapShouldBuild;
+    reserve_zone_tables(numArticulations: number, numMics: number, lutEntries: number, arenaEntries: number): boolean {
+        calls.push({ method: 'reserve_zone_tables', args: [numArticulations, numMics, lutEntries, arenaEntries] });
+        return zoneMapShouldBuild && numArticulations <= 32;
+    }
+    zone_table_write_words(): number {
+        return MOCK_TABLE_WINDOW_WORDS;
+    }
+    zone_table_write_ptr(): number {
+        return MOCK_TABLE_BASE;
+    }
+    commit_zone_lut_chunk(start: number, entries: number): boolean {
+        const words = new Uint32Array(memory.buffer, MOCK_TABLE_BASE, entries * 2);
+        calls.push({ method: 'commit_zone_lut_chunk', args: [start, Array.from(words)] });
+        return true;
+    }
+    commit_zone_arena_chunk(start: number, entries: number): boolean {
+        const ids = new Uint32Array(memory.buffer, MOCK_TABLE_BASE, entries);
+        calls.push({ method: 'commit_zone_arena_chunk', args: [start, Array.from(ids)] });
+        return true;
+    }
+    seal_zone_tables(): boolean {
+        calls.push({ method: 'seal_zone_tables', args: [] });
+        return true;
     }
     // Whether a bank is staged, which is what the real abort reports retiring.
     bankStaged = false;
@@ -220,6 +244,15 @@ function uploadSample(proc: LevainProcessorLike, loadToken: number, sampleId: nu
     });
     send(proc, { type: 'sampleChunk', loadToken, sampleId, data: new Float32Array(pcm) });
     send(proc, { type: 'sealSample', loadToken, sampleId });
+}
+
+/** A bank's zone tables as the loader stages them (one tiny chunk each), then the commit trigger. */
+function stageAndCommit(proc: LevainProcessorLike, loadToken: number, numArticulations = 1, numMics = 1): void {
+    send(proc, { type: 'reserveZoneTables', loadToken, numArticulations, numMics, lutEntries: 1, arenaEntries: 1 });
+    send(proc, { type: 'zoneTableChunk', loadToken, table: 'lut', start: 0, data: new Uint32Array([0, 1]) });
+    send(proc, { type: 'zoneTableChunk', loadToken, table: 'arena', start: 0, data: new Uint32Array([0]) });
+    send(proc, { type: 'sealZoneTables', loadToken });
+    send(proc, { type: 'commitSampleBank', loadToken });
 }
 
 function method(name: string): { method: string; args: unknown[] } | undefined {
@@ -482,7 +515,7 @@ describe('LevainProcessor message handling', () => {
 
             expect(sampleBankErrors(proc)).toEqual(['Levain DSP could not seal a sample whose PCM is incomplete']);
             expect(method('seal_sample')).toBeUndefined();
-            send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+            stageAndCommit(proc, 1);
             expect(method('commit_sample_bank')).toBeUndefined();
         });
 
@@ -518,14 +551,14 @@ describe('LevainProcessor message handling', () => {
         });
         uploadSample(owner, 1, 0, [0.1]);
         uploadSample(follower, 2, 0, [0.1]);
-        send(follower, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
-        send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+        stageAndCommit(follower, 2);
+        stageAndCommit(owner, 1);
 
         expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'commit_sample_frames')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'seal_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
-        expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(2);
+        expect(calls.filter((call) => call.method === 'seal_zone_tables')).toHaveLength(2);
         expect(calls.filter((call) => call.method === 'attach_sample_bank')).toHaveLength(2);
         expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
         expect(follower.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
@@ -536,7 +569,7 @@ describe('LevainProcessor message handling', () => {
         send(owner, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(owner, { type: 'beginSampleBank', bankKey: 'cached-bank', instrumentId: 'violin', loadToken: 1 });
         uploadSample(owner, 1, 0, [0.1]);
-        send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+        stageAndCommit(owner, 1);
 
         const cached = await loadProcessor();
         send(cached, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
@@ -548,14 +581,14 @@ describe('LevainProcessor message handling', () => {
             uploadRequired: false,
         });
         uploadSample(cached, 2, 0, [0.1]);
-        send(cached, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+        stageAndCommit(cached, 2);
 
         expect(calls.filter((call) => call.method === 'attach_sample_bank')).toHaveLength(1);
         for (const upload of ['begin_sample', 'commit_sample_frames', 'seal_sample']) {
             expect(calls.filter((call) => call.method === upload)).toHaveLength(0);
         }
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(0);
-        expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'seal_zone_tables')).toHaveLength(1);
         expect(cached.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
     });
 
@@ -573,15 +606,16 @@ describe('LevainProcessor message handling', () => {
         expect(owner.port.postMessage).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
         );
+        expect(owner.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerEnded: true }));
         expect(follower.port.postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
+            expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed', ownerEnded: true })
         );
 
         addSampleShouldThrow = false;
         calls.length = 0;
         send(follower, { type: 'beginSampleBank', bankKey: 'retry-bank', instrumentId: 'violin', loadToken: 3 });
         uploadSample(follower, 3, 0, [0.2]);
-        send(follower, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
+        stageAndCommit(follower, 3);
 
         expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
@@ -620,17 +654,34 @@ describe('LevainProcessor message handling', () => {
             sustain: 1,
             release: 0.1,
         });
-        send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+        send(proc, {
+            type: 'reserveZoneTables',
+            loadToken: 1,
+            numArticulations: 1,
+            numMics: 1,
+            lutEntries: 1,
+            arenaEntries: 1,
+        });
+        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 0, data: new Uint32Array([0, 1]) });
+        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'arena', start: 0, data: new Uint32Array([0]) });
+        stageAndCommit(proc, 1);
 
         for (const upload of ['begin_sample', 'commit_sample_frames', 'seal_sample']) {
             expect(calls.filter((call) => call.method === upload)).toHaveLength(0);
         }
         expect(calls.filter((call) => call.method === 'add_zone')).toHaveLength(0);
-        expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(0);
+        for (const zoneTableCall of [
+            'reserve_zone_tables',
+            'commit_zone_lut_chunk',
+            'commit_zone_arena_chunk',
+            'seal_zone_tables',
+        ]) {
+            expect(calls.filter((call) => call.method === zoneTableCall)).toHaveLength(0);
+        }
 
         send(proc, { type: 'beginSampleBank', bankKey: 'stale-tail-bank', instrumentId: 'violin', loadToken: 2 });
         uploadSample(proc, 2, 0, [0.3]);
-        send(proc, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+        stageAndCommit(proc, 2);
 
         expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
@@ -677,7 +728,7 @@ describe('LevainProcessor message handling', () => {
             loadToken: 3,
         });
         uploadSample(retry, 3, 0, [0.2]);
-        send(retry, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
+        stageAndCommit(retry, 3);
 
         expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
@@ -698,8 +749,10 @@ describe('LevainProcessor message handling', () => {
             expect.objectContaining({
                 type: 'sampleBankError',
                 message: 'Levain processor was disposed during sample loading',
+                ownerEnded: true,
             })
         );
+        expect(owner.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'sampleBankError' }));
         expect(owner.process([], [makeChannels(2, FRAMES)])).toBe(false);
 
         calls.length = 0;
@@ -707,7 +760,7 @@ describe('LevainProcessor message handling', () => {
         send(retry, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(retry, { type: 'beginSampleBank', bankKey: 'disposed-bank', instrumentId: 'violin', loadToken: 3 });
         uploadSample(retry, 3, 0, [0.3]);
-        send(retry, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
+        stageAndCommit(retry, 3);
 
         expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
@@ -860,15 +913,101 @@ describe('LevainProcessor message handling', () => {
         expect(registered[2]!.args).toEqual([-3, 0, 3, 7, 0]);
     });
 
-    it('forwards buildZoneMap', async () => {
+    it('stages zone tables into the engine in order and commits only after the seal, building nothing', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'beginSampleBank', bankKey: 'forward-build-bank', instrumentId: 'violin', loadToken: 1 });
         calls.length = 0;
 
-        send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 4, numMics: 3 });
+        send(proc, {
+            type: 'reserveZoneTables',
+            loadToken: 1,
+            numArticulations: 4,
+            numMics: 3,
+            lutEntries: 3,
+            arenaEntries: 2,
+        });
+        send(proc, {
+            type: 'zoneTableChunk',
+            loadToken: 1,
+            table: 'lut',
+            start: 0,
+            data: new Uint32Array([0, 1, 1, 1]),
+        });
+        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 2, data: new Uint32Array([0, 0]) });
+        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'arena', start: 0, data: new Uint32Array([7, 9]) });
+        send(proc, { type: 'sealZoneTables', loadToken: 1 });
+        send(proc, { type: 'commitSampleBank', loadToken: 1 });
 
-        expect(method('build_zone_map')!.args).toEqual([4, 3]);
+        expect(calls.map((call) => [call.method, call.args])).toEqual([
+            ['reserve_zone_tables', [4, 3, 3, 2]],
+            ['commit_zone_lut_chunk', [0, [0, 1, 1, 1]]],
+            ['commit_zone_lut_chunk', [2, [0, 0]]],
+            ['commit_zone_arena_chunk', [0, [7, 9]]],
+            ['seal_zone_tables', []],
+            ['publish_sample_bank', ['forward-build-bank']],
+            ['commit_sample_bank', []],
+        ]);
+        const answers = proc.port.postMessage.mock.calls.map(([message]) => message as { type?: string });
+        expect(answers.filter((message) => message.type === 'zoneTableChunkWritten')).toEqual([
+            { type: 'zoneTableChunkWritten', loadToken: 1 },
+            { type: 'zoneTableChunkWritten', loadToken: 1 },
+            { type: 'zoneTableChunkWritten', loadToken: 1 },
+        ]);
+    });
+
+    it('refuses a zone-table chunk longer than the engine window before writing a word', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'beginSampleBank', bankKey: 'long-chunk-bank', instrumentId: 'violin', loadToken: 1 });
+        calls.length = 0;
+        send(proc, {
+            type: 'reserveZoneTables',
+            loadToken: 1,
+            numArticulations: 1,
+            numMics: 1,
+            lutEntries: 8,
+            arenaEntries: 0,
+        });
+
+        send(proc, {
+            type: 'zoneTableChunk',
+            loadToken: 1,
+            table: 'lut',
+            start: 0,
+            data: new Uint32Array(MOCK_TABLE_WINDOW_WORDS + 2),
+        });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleBankError',
+            loadToken: 1,
+            message: 'Levain zone-table chunk does not fit the write window',
+        });
+        expect(calls.some((call) => call.method === 'commit_zone_lut_chunk')).toBe(false);
+    });
+
+    it('holds a follower commit until the owner publishes, after staging its own tables', async () => {
+        const owner = await loadProcessor();
+        const follower = await loadProcessor();
+        send(owner, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(follower, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(owner, { type: 'beginSampleBank', bankKey: 'held-bank', instrumentId: 'violin', loadToken: 1 });
+        send(follower, { type: 'beginSampleBank', bankKey: 'held-bank', instrumentId: 'violin', loadToken: 2 });
+        uploadSample(owner, 1, 0, [0.1]);
+        calls.length = 0;
+
+        stageAndCommit(follower, 2);
+        expect(calls.map((call) => call.method)).toEqual([
+            'reserve_zone_tables',
+            'commit_zone_lut_chunk',
+            'commit_zone_arena_chunk',
+            'seal_zone_tables',
+        ]);
+        expect(follower.port.postMessage).not.toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
+
+        stageAndCommit(owner, 1);
+        expect(follower.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
+        expect(calls.filter((call) => call.method === 'commit_sample_bank')).toHaveLength(2);
     });
 
     describe('freeing the bank a commit displaced', () => {
@@ -887,7 +1026,7 @@ describe('LevainProcessor message handling', () => {
                 instrumentId: 'violin',
                 loadToken,
             });
-            send(proc, { type: 'buildZoneMap', loadToken, numArticulations: 1, numMics: 1 });
+            stageAndCommit(proc, loadToken);
             return proc;
         }
 
@@ -900,7 +1039,7 @@ describe('LevainProcessor message handling', () => {
             const order = calls.map((call) => call.method);
             expect(order).toContain('commit_sample_bank');
             expect(order).not.toContain('release_retired_bank');
-            expect(order.indexOf('build_zone_map')).toBeLessThan(order.indexOf('commit_sample_bank'));
+            expect(order.indexOf('seal_zone_tables')).toBeLessThan(order.indexOf('commit_sample_bank'));
             expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
         });
 
@@ -931,7 +1070,7 @@ describe('LevainProcessor message handling', () => {
         it('ignores a release for a load whose displaced bank is gone or was replaced', async () => {
             const proc = await commitBank(1);
             send(proc, { type: 'beginSampleBank', bankKey: 'release-bank-2', instrumentId: 'violin', loadToken: 2 });
-            send(proc, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+            stageAndCommit(proc, 2);
             // Load 2 committed, so its own retired bank is the one waiting and
             // load 1's request is stale rather than merely unmatched.
             expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
@@ -990,7 +1129,7 @@ describe('LevainProcessor message handling', () => {
             const proc = await readyProcessor();
             begin(proc, 'failed-commit-bank', 1);
             zoneMapShouldBuild = false;
-            send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 33, numMics: 1 });
+            stageAndCommit(proc, 1, 33, 1);
             expect(proc.port.postMessage).toHaveBeenCalledWith(
                 expect.objectContaining({ type: 'sampleBankError', loadToken: 1 })
             );
@@ -1026,10 +1165,11 @@ describe('LevainProcessor message handling', () => {
             begin(owner, 'attach-fails-bank', 1);
             begin(follower, 'attach-fails-bank', 2);
             attachShouldFail = true;
-            send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+            stageAndCommit(owner, 1);
             expect(follower.port.postMessage).toHaveBeenCalledWith(
                 expect.objectContaining({ type: 'sampleBankError', loadToken: 2 })
             );
+            expect(follower.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerEnded: true }));
             expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
 
             send(follower, { type: 'releaseRetiredBank', loadToken: 2 });
@@ -1050,18 +1190,18 @@ describe('LevainProcessor message handling', () => {
         });
     });
 
-    it('rejects an invalid DSP zone-map build instead of reporting a hydrated instrument', async () => {
+    it('rejects zone tables the DSP refuses to reserve instead of reporting a hydrated instrument', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'beginSampleBank', bankKey: 'invalid-build-bank', instrumentId: 'violin', loadToken: 1 });
         zoneMapShouldBuild = false;
 
-        send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 33, numMics: 1 });
+        stageAndCommit(proc, 1, 33, 1);
 
         expect(proc.port.postMessage).toHaveBeenCalledWith({
             type: 'sampleBankError',
             loadToken: 1,
-            message: 'Levain DSP rejected zone-map dimensions or capacity',
+            message: 'Levain DSP refused the zone-table reservation',
         });
         expect(calls.some((call) => call.method === 'abort_sample_bank')).toBe(true);
     });

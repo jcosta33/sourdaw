@@ -1,3 +1,13 @@
+export type StorageHydrateOptions = {
+    /**
+     * Re-project the current project's document: the adapter keeps the runtime
+     * fields it declares local (`projectCommittedLocalState`) and takes the
+     * document's values for the rest. Without it a hydrate is a project load,
+     * which starts every field from the document and the store's defaults.
+     */
+    readonly keepLocalRuntimeState?: boolean;
+};
+
 export type StorageAdapter<TData> = {
     get(): TData | null;
     set(value: TData | null): void;
@@ -30,7 +40,7 @@ export type StorageAdapter<TData> = {
     trySet?(value: TData | null): boolean;
     /** Hydrate the cache from the backing store without triggering a write-back.
      *  Returns true if the cached value changed. */
-    hydrate?(): boolean;
+    hydrate?(options?: StorageHydrateOptions): boolean;
     /** Subscribe to visible-value changes that happen OUTSIDE a synchronous
      *  get/set/clear/hydrate call — e.g. a deferred CRDT write committing or
      *  aborting after an interleaved hydrate. Adapters without deferred
