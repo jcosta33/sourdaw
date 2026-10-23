@@ -1,0 +1,33 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_00949c00e34928 46
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_07e627dc4f5db3 455-471
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_1c08b47ac3792f::t_d4ac3e40889f45 1,23-43,868-869,892,926-930,938-939,942-943,945-986,992,996-998,1003-1017,1019,1024,1029-1030,1033-1124,1128-1129,1133-1134,1136-1137,1139,1142,1145-1153,1194-1236
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_6c5a1a1fe48506 1369-1374
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_0b3061944a0a00 1538-1552,1794-1855,6542,6649,6697,6732,6862-6878,6881-6903
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/findReferencedIntentPhrase.spec.ts
+  s_1c08b47ac3792f::t_70566c585abb1a 12-21
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findReferencedIntentPhrase.ts
+  s_1c08b47ac3792f::t_8ae9e3efbb53e9 20-24
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_79d591a458dd41 14,96,172-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e7cf70b98637f23e1738c2f353999ba4172b3d3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
