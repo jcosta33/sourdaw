@@ -7,6 +7,7 @@ import { stageRecordingTake } from '../stageRecordingTake';
 const fixture = vi.hoisted(() => ({
     state: { lanes: [] } as TakeLaneStoreState,
     stage: vi.fn(),
+    ownTake: vi.fn<(clipId: string, takeId: string) => void>(),
     replacementTakeId: vi.fn<() => string | undefined>(),
 }));
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -22,6 +23,7 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 vi.mock('../recordingPassTiming', () => ({
     recordingPassTiming: {
         stage: fixture.stage,
+        ownTake: fixture.ownTake,
         replacementTakeId: fixture.replacementTakeId,
         nextStartBeat: () => undefined,
     },
@@ -44,6 +46,7 @@ const finalPass = {
 describe('provisional recording take staging', () => {
     beforeEach(() => {
         fixture.stage.mockReset();
+        fixture.ownTake.mockReset();
         fixture.replacementTakeId.mockReset();
         fixture.state = { lanes: [{ id: 'lane', trackId: 'track', takes: [initialTake()], activeCompRegions: [] }] };
     });
@@ -53,6 +56,7 @@ describe('provisional recording take staging', () => {
         const expected = { ...initialTake(), startBeat: 8, endBeat: 8.1, sourceOffsetBeats: 0.2 };
         expect(fixture.state.lanes[0]!.takes).toEqual([expected]);
         expect(fixture.stage).toHaveBeenCalledWith(expected, 50.35, undefined);
+        expect(fixture.ownTake).toHaveBeenCalledExactlyOnceWith('capture', expected.id);
     });
 
     it.each(['absent', 'wrong clip', 'completed'])('rejects an explicitly requested %s provisional owner', (owner) => {
@@ -67,6 +71,7 @@ describe('provisional recording take staging', () => {
         expect(() => stageRecordingTake(finalPass)).toThrow('Recording provisional take is not available');
         expect(fixture.state).toEqual(before);
         expect(fixture.stage).not.toHaveBeenCalled();
+        expect(fixture.ownTake).not.toHaveBeenCalled();
     });
 
     it('keeps cancelled planned replacement on its original start and source identity', () => {
@@ -82,6 +87,7 @@ describe('provisional recording take staging', () => {
             sourceOffsetBeats: 4,
         });
         expect(fixture.state.lanes[0]!.takes).toEqual([{ ...planned, endBeat: 11.5 }]);
+        expect(fixture.ownTake).toHaveBeenCalledExactlyOnceWith('capture', planned.id);
     });
 
     it('stages its own capture when a cancelled planned replacement now belongs to another clip', () => {
@@ -126,6 +132,7 @@ describe('provisional recording take staging', () => {
         });
         expect(existingIds).not.toContain(captured!.id);
         expect(fixture.stage).toHaveBeenCalledExactlyOnceWith(captured, 50.35, false);
+        expect(fixture.ownTake).toHaveBeenCalledExactlyOnceWith('capture', captured!.id);
     });
 
     it('continues ordinary take staging without a replacement request', () => {
@@ -146,5 +153,6 @@ describe('provisional recording take staging', () => {
             endBeat: 12,
             sourceOffsetBeats: 0,
         });
+        expect(fixture.ownTake).toHaveBeenCalledExactlyOnceWith('midi', fixture.state.lanes[0]!.takes[1]!.id);
     });
 });
