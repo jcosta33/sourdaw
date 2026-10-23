@@ -835,6 +835,102 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
             ['straddler-right', 0, 1],
         ]);
     });
+
+    it('retains a comp-window controller event on the source beside its rebased right copy', () => {
+        const keptCc = { id: 'cc-kept', controller: 64, value: 32, beat: 1, channel: 0 };
+        const windowCc = { id: 'cc-window', controller: 64, value: 40, beat: 5, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 11, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptCc, windowCc, afterCc] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 4.5, end: 6 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        const leftEvents = result.state.ccByClipId.source ?? [];
+        // The kept-range row survives as before; the comp-window row stays whole in
+        // its own coordinates instead of living only as the rebased right copy.
+        expect(leftEvents).toEqual([keptCc, windowCc]);
+        expect(leftEvents[1]).toBe(windowCc);
+        // The right clip still receives the rebased copies, and the lane in force at
+        // the cut carries onto the origin because no moved row lands at beat 0.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...keptCc, id: 'cc-split:right:0', beat: 0 },
+            { ...windowCc, id: 'cc-split:right:1', beat: 1 },
+            { ...afterCc, id: 'cc-split:right:2', beat: 5 },
+        ]);
+    });
+
+    it('retains a comp-window pitch bend on the source and keeps an out-of-window one distributed', () => {
+        const windowBend = { id: 'pb-window', value: 0.5, beat: 4.75, channel: 1 };
+        const afterBend = { id: 'pb-after', value: -0.5, beat: 8, channel: 1 };
+        const prepared = state({ pitchBendByClipId: { source: [windowBend, afterBend] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 4.5, end: 6 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Only the in-window bend stays on the source; the one past the window keeps
+        // its stored-position distribution, with no lane carried (nothing precedes the cut).
+        expect(result.state.pitchBendByClipId.source).toEqual([windowBend]);
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...windowBend, id: 'pb-split:right:0', beat: 0.75 },
+            { ...afterBend, id: 'pb-split:right:1', beat: 4 },
+        ]);
+    });
+
+    it('pins the window bounds, the keep-zone overlap, and the carried lane of a retained in-force row', () => {
+        // The predicate is half-open [start, end) against the windows the resolver
+        // plays, and retention shares one exclusive push with the keep-zone clause:
+        // a row both retained and under keptEnd is stored once, a row exactly at a
+        // window start stays, one exactly at the end goes, and one discarded into
+        // the gap between keptEnd and a later window is not resurrected. The
+        // retained at-start row is also the lane's value in force at the cut, so
+        // the same case pins that retention does not drop the carried-at-origin
+        // lane onto the right fragment.
+        const keptOverlapCc = { id: 'cc-overlap', controller: 64, value: 32, beat: 1.5, channel: 0 };
+        const atEndCc = { id: 'cc-at-end', controller: 64, value: 36, beat: 2.25, channel: 0 };
+        const gapCc = { id: 'cc-gap', controller: 64, value: 38, beat: 2.75, channel: 0 };
+        const atStartCc = { id: 'cc-at-start', controller: 64, value: 40, beat: 3.25, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 64, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptOverlapCc, atEndCc, gapCc, atStartCc, afterCc] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [
+                {
+                    ...command,
+                    retainOnSourceWindows: [
+                        { start: 1, end: 2.25 },
+                        { start: 3.25, end: 3.5 },
+                    ],
+                },
+            ],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Exactly the rows the half-open windows cover, each stored once — the
+        // overlap row rides the single shared push, not two.
+        expect(result.state.ccByClipId.source).toEqual([keptOverlapCc, atStartCc]);
+        expect([...storedCopiesById(result.state.ccByClipId.source ?? []).values()]).toEqual([1, 1]);
+        // The retained at-start row is the value in force at the cut, so the right
+        // fragment still opens with its held value beside the rebased post-cut row;
+        // ids carry each row's source index.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...atStartCc, id: 'cc-split:right:3', beat: 0 },
+            { ...afterCc, id: 'cc-split:right:4', beat: 5 },
+        ]);
+    });
 });
 
 describe('transformMidiGlobalTimeState copy and removal edge cases', () => {

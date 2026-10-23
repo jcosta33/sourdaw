@@ -36,11 +36,21 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * The controller moves a clip plays inside the timeline window `[fromBeat, toBeat)`,
  * at their absolute beats, in beat order.
  *
- * Each loop pass is projected through `projectMidiClipWindow` over its own visible
- * span, so every pass and the clip start begin from the value in force at the
- * span's head — the carry rule glue, export and split already use — and a move is
- * placed exactly where a note at that content beat is: iteration start plus the
- * beat past `midiOffsetBeats`. No groove applies to a controller.
+ * Each loop pass is projected through `projectMidiClipWindow` over the loop
+ * region the clip was looped with, entered at the trim advance's phase — the
+ * same anchored read the audio pass and the note readers use (#4988): the pass
+ * head plays the region from its entry on, and the material before the entry
+ * wraps onto the pass tail in a second window, so a move is placed exactly
+ * where a note at that content beat is. A move past the region end sits in
+ * neither window, so a trim can no longer leave it firing at the wrapped
+ * head's phase. An unanchored clip — or a stale-anchored one with the loop
+ * off, the anchor being inert there — advances zero, which puts the region at
+ * the offset and the entry at its head: exactly the pre-anchor read, one
+ * window per pass. Every window and the clip start begin from the value in
+ * force at the span's head — the carry rule glue, export and split already
+ * use — and a move is placed exactly where a note at that content beat is:
+ * iteration start plus the beat past `midiOffsetBeats`. No groove applies to
+ * a controller.
  *
  * The window is half-open like the note scheduler's, so a move is owned by one
  * window and a scheduler stepping `[a, b)`, `[b, c)` — or wrapping at a loop seam —

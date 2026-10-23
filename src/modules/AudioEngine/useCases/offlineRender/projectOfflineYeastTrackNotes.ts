@@ -1,3 +1,5 @@
+import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
@@ -31,6 +33,8 @@ type OfflineYeastClipIteration = {
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled: boolean;
+    /** The clip's loop anchor; the membership window reads its advance against it (#5198). */
+    loopOriginBeat?: number;
     toasterPadIndex?: number;
     clipGain?: number;
 };
@@ -93,11 +97,25 @@ export function projectOfflineYeastTrackNotes({
     const sourceNotes = iterations.flatMap((iteration, index) => {
         const routeId = `offline-yeast:${trackId}:${index}`;
         iterationsByRoute.set(routeId, iteration);
-        for (const note of iteration.sourceNotes) {
+        // #5198 — the anchored loop window owns membership on the row's stored
+        // figure before the clip-groove phase offers it to the rack: a row
+        // past the trimmed region end never enters the pass. An unanchored
+        // clip admits without the window, byte-identically to the pre-anchor
+        // projector.
+        const admittedNotes = iteration.sourceNotes.filter((note) =>
+            isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: note.startBeat - iteration.midiOffsetBeats,
+                startBeat: iteration.clipStartBeat,
+                loopOriginBeat: iteration.loopOriginBeat,
+                loopLengthBeats: iteration.loopLengthBeats,
+                loopEnabled: iteration.loopEnabled,
+            })
+        );
+        for (const note of admittedNotes) {
             sourceNotesByEventId.set(`${routeId}:${note.id}:on`, note);
         }
         return projectMidiEvents({
-            events: iteration.sourceNotes,
+            events: admittedNotes,
             clipId: iteration.clipId,
             clipStartBeat: iteration.clipStartBeat,
             clipEndBeat: iteration.clipEndBeat,
@@ -127,8 +145,20 @@ export function projectOfflineYeastTrackNotes({
     for (const note of yeastNotes) {
         const iteration = iterationsByRoute.get(note.routeId);
         if (iteration) {
+            // The membership gate downstream reads the row's STORED figure,
+            // recovered through the rack's instance identity — the routed
+            // `startPpq` carries the clip groove and rack re-timing and must
+            // never decide membership (#5198 review). A note the rack did not
+            // tie back to a source row carries no figure and admits.
+            const sourceNote = sourceNotesByEventId.get(note.id);
             const projectedNotes = projectOfflineYeastClipNotes({
-                notes: [note],
+                notes: [
+                    {
+                        ...note,
+                        sourceRelativeBeat:
+                            sourceNote === undefined ? undefined : sourceNote.startBeat - iteration.midiOffsetBeats,
+                    },
+                ],
                 clipId: iteration.clipId,
                 clipStartBeat: iteration.clipStartBeat,
                 clipEndBeat: iteration.clipEndBeat,
@@ -136,6 +166,7 @@ export function projectOfflineYeastTrackNotes({
                 loopLengthBeats: iteration.loopLengthBeats,
                 midiOffsetBeats: iteration.midiOffsetBeats,
                 loopEnabled: iteration.loopEnabled,
+                loopOriginBeat: iteration.loopOriginBeat,
                 toasterPadIndex: iteration.toasterPadIndex ?? -1,
                 sampleRate,
                 defaultTempo,

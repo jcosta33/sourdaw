@@ -1,6 +1,7 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
+import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 import {
     beatToSamples,
@@ -46,6 +47,13 @@ export type LiveYeastIteration = {
     /** Loop geometry of the owning clip; a descriptor without it never wraps. */
     loopEnabled?: boolean;
     loopLengthBeats?: number;
+    /**
+     * The owning clip's start and loop anchor (#5198); the membership window
+     * reads its trim advance against both. A descriptor without them predates
+     * the anchor and admits without the window, the pre-anchor behavior.
+     */
+    clipStartBeat?: number;
+    loopOriginBeat?: number;
     sourceNotes: readonly LiveYeastNote[];
 };
 
@@ -133,6 +141,25 @@ export async function processLiveYeastTrackBlock({
 
         for (const iteration of iterations) {
             for (const sourceNote of iteration.sourceNotes) {
+                // #5198 — the anchored loop window owns membership on the row's
+                // stored figure, the same relative beat the synth path's
+                // admission reads: a row past the trimmed region end stays
+                // silent on every pass even though the wrap below would
+                // re-anchor it into the iteration. A descriptor without the
+                // clip's anchor pair predates the field and admits without the
+                // window, exactly as before the anchor existed.
+                if (
+                    iteration.clipStartBeat !== undefined &&
+                    !isBeatAdmittedByAnchoredClipLoopWindow({
+                        relativeBeat: sourceNote.startBeat - iteration.midiOffsetBeats,
+                        startBeat: iteration.clipStartBeat,
+                        loopOriginBeat: iteration.loopOriginBeat,
+                        loopLengthBeats: iteration.loopLengthBeats ?? 0,
+                        loopEnabled: iteration.loopEnabled === true,
+                    })
+                ) {
+                    continue;
+                }
                 const [groovedNote] = projectCommittedGroove({
                     events: [sourceNote],
                     consumerType: 'clip',

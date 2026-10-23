@@ -55,9 +55,11 @@ export function assertReviewerModelDiversity(input: {
     const authorModels = input.authorLabels
         .map(authorModelFromLabel)
         .filter((model): model is string => model !== undefined);
-    // Every fenced label is a model some lane publish declared as the author. Metadata edits are
-    // add-only, so republishing a lane with a different --model leaves the previous fence on the
-    // PR; a reviewer matching any declared author is the collusion this check exists to refuse.
+    // Every fenced label names a model some lane publish declared as the author. A republish
+    // reconciles the fence: the publisher's metadata edit removes every superseded authorship
+    // label (#4296), so the set the pull request wears names the model its latest publish
+    // declared. A reviewer matching any declared author is the collusion this check exists
+    // to refuse.
     const models = [reviewerModel, ...(input.document.draws ?? []).map((draw) => draw.reviewerModel)];
     for (const model of new Set(models.map((candidate) => candidate.trim()))) {
         if (authorModels.includes(model)) {

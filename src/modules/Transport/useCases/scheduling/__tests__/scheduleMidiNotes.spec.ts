@@ -991,6 +991,51 @@ describe('scheduleMidiNotes', () => {
         });
     });
 
+    it('counts a non-dyadic exact-multiple advance tolerantly through the live occurrence floor', async () => {
+        // The live mirror of the offline twin's tolerant floor (#5198): 16.5
+        // is exactly 15 × 1.1, but the correctly-rounded quotient sits one ulp
+        // below the integer, so the raw floor counts 14 and the first
+        // post-trim pass re-rolls a pass that had already sounded. The
+        // segment shape below is the producing line's own input — a comp
+        // segment whose source starts 16.5 beats before its window — read by
+        // the real scheduler, so a revert of the live floor to the raw
+        // quotient turns this red at 14.
+        expect(16.5 / 1.1).toBeLessThan(15);
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 40, loopEnabled: true, loopLength: 1.1 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                startBeat: 16.5,
+                endBeat: 19,
+                regionStartBeat: 16.5,
+                regionEndBeat: 19,
+                sourceStartBeat: 0,
+            },
+        ]);
+
+        await scheduleMidiNotes(16.5, 18, 16.5, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-alpha',
+            absoluteOccurrenceIndex: 15,
+            probabilityPercent: 50,
+        });
+    });
+
     // §6 — A Yeast generator can emit notes for a clip that has none. Those
     // notes must be fully-specified MidiNotes, not malformed {} spreads.
     it('schedules well-formed notes when Yeast generates onto an empty clip (§6)', async () => {
@@ -5411,5 +5456,185 @@ describe('scheduleMidiNotes', () => {
                 }
             );
         });
+    });
+});
+
+/**
+ * The loop anchor's pass-through into the live scheduler (#5198). The selector,
+ * the per-note admission, and the projection each read `clip.loopOriginBeat`,
+ * and all three must read the SAME anchor. What each case observes: the
+ * positive-advance clip pins the conjunction only — its past-region row is one
+ * every anchorless gate admits and only the three anchored sites together
+ * drop, so a single-site detachment there leaves it silent all the same. The
+ * negative-advance clip is the per-site oracle — its high row sits in
+ * `[loopLength, loopLength - advance)`, which the anchored window admits and
+ * every anchorless gate drops, so reverting the selector, the admission, or
+ * the projection alone to the anchorless form silences audible material. The
+ * Yeast case pins the same anchor on the rack path, whose candidates and
+ * rack-owned notes never run the three per-note gates. The synth cases run
+ * the real projection — the plain placement stand-in above never reads the
+ * anchor.
+ */
+describe('scheduleMidiNotes carries the loop anchor through selection, admission, and projection', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        forgetStoredControllerEngagements();
+        (trackStore as { value: unknown }).value = { tracks: [] };
+        (midiStore as { value: unknown }).value = null;
+        (automationStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
+        (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: clip.startBeat,
+            }))
+        );
+        // The real projection, as production dispatches it through the barrel.
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) => realMidiUseCases.projectClipMidiEvents(input));
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        engineStub.sampleRate = 48_000;
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes: engineStub.nodesFor(trackId),
+                }) as never
+        );
+        shouldPlayProbability.mockImplementation(() => true);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+    });
+
+    /**
+     * The state a born-looped clip (start 0, anchor 0, loop 4) carries after a
+     * start trim to 4: the head advanced to 4, the anchor kept at 0 (advance
+     * 4), the offset wrapped to its phase 0, and the stored rows ridden by the
+     * wrap's −4 so every relative keeps the raw advance's figure — the loop
+     * head at −4, one row of source material a beat past the region end at
+     * 0.5.
+     */
+    function anchoredTrimmedClip(): Clip {
+        return {
+            id: 'clip-1',
+            type: 'midi',
+            muted: false,
+            startBeat: 4,
+            endBeat: 12,
+            gain: 1,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 0,
+        } as Clip;
+    }
+
+    const anchoredTrimmedNotes = () => [
+        { id: 'n-loop-head', pitch: 60, startBeat: -4, duration: 1, velocity: 100 },
+        { id: 'n-past-region', pitch: 72, startBeat: 0.5, duration: 0.25, velocity: 100 },
+    ];
+
+    it('sounds the trimmed-in loop head at its pass placement and stays silent past the region', async () => {
+        // The anchored window [−4, 0) admits the head and the projection wraps
+        // it onto the pass opening at beat 4 — the accumulated position, so the
+        // note-on lands on the clock's now (0 s) and sounds a half-second beat.
+        // The row at 0.5 reads outside that window — it is the source material
+        // past the trimmed region. Every anchorless gate admits that row, so
+        // this case holds only while all three sites stay anchored: a
+        // single-site detachment leaves the row silent all the same, which is
+        // exactly the redundancy the negative-advance case below breaks apart.
+        const track = midiTrack({ clips: [anchoredTrimmedClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': anchoredTrimmedNotes() } };
+
+        await scheduleMidiNotes(4, 8, 4, new Set<string>(), [], defaultTransportState, 120);
+        expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(60);
+        // The pass opening sits on the accumulated position, so the wrapped
+        // head sounds immediately; a whole loop of silence here is the
+        // pass-through lost.
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.5);
+    });
+
+    it('sounds the row a negative advance lifts above the loop length, which every anchorless gate drops', async () => {
+        // startBeat 2 under anchor 4 is a trim across the anchor: the advance
+        // is −2 and the anchored window reads [2, 6). The row at relative 5
+        // lives in `[loopLength, loopLength − advance)` — admitted by the
+        // anchored window, dropped by the anchorless `relative < loopLength`
+        // bound the selector's index, the per-note admission, and the
+        // projection each fall back to. It must sound at its phase-1 slot in
+        // both passes (beats 3 and 7, 0.5 s and 2.5 s on the clock anchored at
+        // beat 2) beside the control row at relative 3 (beats 5 and 9), so
+        // reverting any one of the three sites alone swaps the audible
+        // material.
+        const track = midiTrack({
+            clips: [
+                {
+                    id: 'clip-1',
+                    type: 'midi',
+                    muted: false,
+                    startBeat: 2,
+                    endBeat: 10,
+                    gain: 1,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat: 4,
+                    midiOffsetBeats: 0,
+                } as Clip,
+            ],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'n-in-window', pitch: 61, startBeat: 3, duration: 0.25, velocity: 100 },
+                    { id: 'n-lifted', pitch: 72, startBeat: 5, duration: 0.25, velocity: 100 },
+                ],
+            },
+        };
+
+        await scheduleMidiNotes(2, 10, 2, new Set<string>(), [], defaultTransportState, 120);
+        const voices = vi
+            .mocked(scheduleNote)
+            .mock.calls.map((call) => ({ pitch: call[2], time: call[3] }))
+            .sort((left, right) => left.time - right.time || left.pitch - right.pitch);
+        expect(voices).toEqual([
+            { pitch: 72, time: 0.5 },
+            { pitch: 61, time: 1.5 },
+            { pitch: 72, time: 2.5 },
+            { pitch: 61, time: 3.5 },
+        ]);
+    });
+
+    it('keeps the past-region row silent on the Yeast rack path while the wrapped head sounds every pass', async () => {
+        // The same anchored trim routed to a Yeast rack. Its notes never run
+        // the three per-note gates — the selector preselects by scheduler
+        // window and a rack-owned note is admitted on its owned beat — so
+        // without the Yeast chains' own anchored membership the row at 0.5
+        // voiced a noteOn at 4.5 and 8.5 that the synth twin above never
+        // schedules. Both passes' windows sweep the clip: the wrapped head
+        // sounds once per pass on the accumulated position, the past-region
+        // row never does.
+        const track = midiTrack({
+            clips: [anchoredTrimmedClip()],
+            devices: [{ id: 'yeast-rack', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': anchoredTrimmedNotes() } };
+
+        await scheduleMidiNotes(4, 8, 4, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(8, 12, 8, new Set<string>(), [], defaultTransportState, 120);
+        const voices = vi
+            .mocked(scheduleNote)
+            .mock.calls.map((call) => ({ pitch: call[2], time: call[3], duration: call[4] }))
+            .sort((left, right) => left.time - right.time || left.pitch - right.pitch);
+        expect(voices).toEqual([
+            { pitch: 60, time: 0, duration: 0.5 },
+            { pitch: 60, time: 0, duration: 0.5 },
+        ]);
     });
 });

@@ -156,6 +156,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
+    isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 }));

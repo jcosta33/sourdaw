@@ -546,6 +546,12 @@ const REGISTERED_PARAMETER_CARRY: StateMessageCarry<MidiCC> = {
  * messages of a state machine (`stateMessages`) are carried as the state they
  * leave instead, since the last value of each of their lanes does not say it.
  *
+ * Retention first, on top of the stored-position distribution: an event inside
+ * a played window stays whole on the source clip in its own coordinates,
+ * mirroring the notes path (#5112), so a comped pass's controllers act within
+ * the windows the resolver plays. The distribution below still runs, so the
+ * right fragment keeps its rebased copy and the carried-at-origin lanes.
+ *
  * Right-clip ids derive from the target clip id and the source row's index, so
  * the same command on the same state yields the same ids without the replay
  * plan that note identities need.
@@ -569,7 +575,12 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         if (!Number.isFinite(event.beat)) {
             return { status: 'rejected' };
         }
-        if (event.beat < keptEnd) {
+        const retained = command.retainOnSourceWindows?.some(
+            (window) => event.beat >= window.start && event.beat < window.end
+        );
+        // A controller row is instantaneous, so retention keeps the whole row
+        // and the left-keep clause needs no slice companion — one exclusive push.
+        if (retained || event.beat < keptEnd) {
             left.push(event);
         }
         if (event.beat < command.splitBeat) {

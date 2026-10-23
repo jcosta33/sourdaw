@@ -110,6 +110,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: mockEnsureTrackStrips,
+    isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
@@ -294,8 +295,9 @@ describe('replaceProjectData', () => {
         expect(mockResetAudioGraph).toHaveBeenCalled();
         expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce();
         // Second argument is the point-of-no-return callback the abort path
-        // uses to tell a recoverable failure from an unrecoverable one.
-        expect(mockResetCrdtProject).toHaveBeenCalledWith('Test Project', expect.any(Function));
+        // uses to tell a recoverable failure from an unrecoverable one; the third
+        // is the transport check the reset makes at the switch.
+        expect(mockResetCrdtProject).toHaveBeenCalledWith('Test Project', expect.any(Function), expect.any(Function));
         // The loaded project owns the document from that call on, so the pedals
         // latched under the project just left are forgotten here and not at the
         // earlier graph reset, which an abort can still undo.
@@ -384,6 +386,98 @@ describe('replaceProjectData', () => {
         // The player stays in the old project, whose graph is rebuilt above, so
         // a damper still held must survive the abandoned load.
         expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    // A Play or Record pressed while the reset awaits its durable steps is
+    // rolling at the switch, and only the reset can see that; it refuses, and
+    // this caller stops the transport and asks again.
+    it('stops the transport and asks again when the reset finds it rolling', async () => {
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+
+        await expect(
+            replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(mockResetCrdtProject).toHaveBeenCalledTimes(2);
+        expect(mockStopPlayback).toHaveBeenCalledTimes(2);
+        const [firstReset, secondReset] = mockResetCrdtProject.mock.invocationCallOrder;
+        expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
+        expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(mockForgetProjectLatchedPedals).toHaveBeenCalledOnce();
+    });
+
+    it('keeps stopping and asking until the reset finds the transport idle', async () => {
+        mockResetCrdtProject
+            .mockResolvedValueOnce({ status: 'transport-active' })
+            .mockResolvedValueOnce({ status: 'transport-active' });
+
+        await expect(
+            replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(mockResetCrdtProject).toHaveBeenCalledTimes(3);
+        expect(mockStopPlayback).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not replace authority when superseded while the refused roll is being stopped', async () => {
+        const extraStop = Promise.withResolvers<void>();
+        let isCurrent = true;
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mockStopPlayback.mockResolvedValueOnce(undefined).mockReturnValueOnce(extraStop.promise);
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction({ isCurrent: () => isCurrent }),
+        });
+        await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
+        isCurrent = false;
+        extraStop.resolve();
+
+        await expect(replacement).resolves.toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProject).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('does not replace authority when the caller withdraws its consent while the refused roll is being stopped', async () => {
+        const extraStop = Promise.withResolvers<void>();
+        let allowed = true;
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mockStopPlayback.mockResolvedValueOnce(undefined).mockReturnValueOnce(extraStop.promise);
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+            shouldProceed: () => allowed,
+        });
+        await vi.waitFor(() => expect(mockStopPlayback).toHaveBeenCalledTimes(2));
+        allowed = false;
+        extraStop.resolve();
+
+        await expect(replacement).resolves.toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProject).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('hands the previous project back when the stop after a refused reset rejects', async () => {
+        mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mockStopPlayback.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('recorder flush failed'));
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProject).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
+        expect(mockFinalizeReset).not.toHaveBeenCalled();
+        expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+        expect(mockAutoSaveHandle.setAutoSaveHandle).toHaveBeenCalledOnce();
+        expect(mockProjectLoadFailureStore.set).not.toHaveBeenCalled();
     });
 
     it('cancels the stored-buffer candidate when playback shutdown fails before publication', async () => {

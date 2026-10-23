@@ -163,8 +163,8 @@ jobs:
           // 128-frame/48 kHz budget of 2.667 ms under load 2.0, while the
           // recorded reference-machine (Apple M4 Pro) table fits at 84-88% of
           // budget (issue #4076). ADR 0038 keeps that gate on the recorded
-          // table, enforced by `pnpm test:release-inventory` inside required
-          // Gate. This step keeps the machine-independent admission: identity,
+          // table, enforced by `pnpm test:release-inventory` in the nightly
+          // train and by the release proof. This step keeps the machine-independent admission: identity,
           // occupancy proofs, provenance digests, and generated-table agreement
           // of the fresh measurement.
           import { assertGrandBouleMeasurementAdmission } from './scripts/checkReleaseInventory.ts';

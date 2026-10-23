@@ -4204,7 +4204,18 @@ function validatePlanCreatedNotes(
     if (clipSpanBeats === undefined) {
         return 'Plan-created notes require a clip whose batch item declares its span';
     }
-    return validateNotesWithinClipWindow(notes, { endBeat: clipSpanBeats, startBeat: 0 }, 'Plan-created note');
+    return validateNotesWithinClipWindow(
+        notes,
+        {
+            endBeat: clipSpanBeats,
+            loopEnabled: undefined,
+            loopLength: undefined,
+            loopOriginBeat: undefined,
+            midiOffsetBeats: undefined,
+            startBeat: 0,
+        },
+        'Plan-created note'
+    );
 }
 
 function hasEmptyClipRestriction(prompt: string, clipName: string): boolean {

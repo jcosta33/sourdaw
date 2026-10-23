@@ -11,12 +11,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import {
-    compactProject,
-    projectActionHistoryToStore,
-    resetCrdtProject,
-    startCrdtAutoSave,
-} from '#/modules/CrdtDocument/useCases';
+import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -31,6 +26,7 @@ import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
 import { markProjectDurabilityPending } from './markProjectDurabilityPending';
+import { resetCrdtProjectWithTransportStopped, type ReplacedProject } from './resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './resetModuleStoresToDefault';
 import { projectLoadEpoch, type ProjectLoadTransaction } from './runProjectLoadTransaction';
 import { stopActiveAutoSave } from './stopActiveAutoSave';
@@ -60,9 +56,6 @@ type ProjectReplacementResult =
      * project never arrived and the previous one is already gone. Distinct from
      * `aborted`, which means the previous session is still there. */
     | { status: 'failed' };
-
-/** The replacement branch of the reset contract, derived from its callable shape. */
-type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
 
 function logPreparationFailure(context: ReplaceProjectDataInput['context'], error: unknown): void {
     logger.error(new Error(`[${context}] Project replacement preparation failed`, { cause: error }));
@@ -313,9 +306,15 @@ export async function replaceProjectData({
     try {
         stopActiveAutoSave();
         previousPersistenceStopped = true;
-        const reset = await resetCrdtProject(data.meta.name, () => {
-            authorityReplaced = true;
-        });
+        // The reset refuses a transport rolling at the switch itself, and this
+        // stops it and asks again; see `resetCrdtProjectWithTransportStopped`.
+        const reset = await resetCrdtProjectWithTransportStopped(
+            data.meta.name,
+            () => {
+                authorityReplaced = true;
+            },
+            () => transaction.isCurrent() && (shouldProceed === undefined || shouldProceed())
+        );
         if (reset.status === 'refused') {
             // Every refusal is decided before the switch, so the previous
             // project is still the live one and this is an ordinary abort.
