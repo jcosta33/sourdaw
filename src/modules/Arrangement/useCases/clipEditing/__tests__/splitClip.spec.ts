@@ -242,6 +242,47 @@ describe('splitClip', () => {
             fadeInBeats: 0,
             audioOffsetBeats: 2,
         });
+        for (const fragment of [left, right]) {
+            expect(Object.hasOwn(fragment!, 'overrides')).toBe(false);
+            expect(Object.hasOwn(fragment!, 'kneadState')).toBe(false);
+        }
+    });
+
+    it('clones populated override and knead payloads independently for both split fragments', () => {
+        const source = makeClip('c1', 0, 4);
+        source.overrides = { gain: true };
+        source.kneadState = {
+            blobs: [
+                {
+                    id: 'blob-a',
+                    startTime: 0,
+                    endTime: 1,
+                    pitchCenterCents: 12,
+                    originalPitchCenterCents: 10,
+                    pitchCurveCents: [0, 3],
+                    voicedConfidence: 0.9,
+                },
+            ],
+            retuneSpeedMs: 50,
+            humanizePercent: 10,
+            formantPreserve: true,
+        };
+        mocks.getTrackState.mockReturnValue(makeState([source]));
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+        const [left, right] = newTrackState().tracks[0]!.clips;
+        expect(left?.overrides).toEqual({ gain: true });
+        expect(right?.overrides).toEqual({ gain: true });
+        expect(left?.kneadState).toEqual(source.kneadState);
+        expect(right?.kneadState).toEqual(source.kneadState);
+        expect(left?.kneadState?.blobs[0]?.pitchCurveCents).not.toBe(source.kneadState.blobs[0]?.pitchCurveCents);
+        expect(right?.kneadState?.blobs[0]?.pitchCurveCents).not.toBe(source.kneadState.blobs[0]?.pitchCurveCents);
+        left!.overrides!.gain = false;
+        left!.kneadState!.blobs[0]!.pitchCurveCents[0] = 99;
+        expect(source.overrides).toEqual({ gain: true });
+        expect(source.kneadState.blobs[0]?.pitchCurveCents).toEqual([0, 3]);
+        expect(right?.overrides).toEqual({ gain: true });
+        expect(right?.kneadState?.blobs[0]?.pitchCurveCents).toEqual([0, 3]);
     });
 
     it('uses snapToZeroCrossing to adjust the split point of audio clips', () => {

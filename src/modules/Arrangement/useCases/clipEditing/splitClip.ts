@@ -23,7 +23,23 @@ type SplitClipOptions = {
 };
 
 function cloneClipStateSnapshot(snapshot: ClipStateSnapshot): Clip {
-    return structuredClone(snapshot);
+    const { overrides, kneadState, ...snapshotClip } = structuredClone(snapshot);
+    const clip: Clip = snapshotClip;
+    if (Object.hasOwn(snapshot, 'overrides')) {
+        clip.overrides = overrides ? { ...overrides } : undefined;
+    }
+    if (Object.hasOwn(snapshot, 'kneadState')) {
+        clip.kneadState = kneadState
+            ? {
+                  ...kneadState,
+                  blobs: kneadState.blobs.map((blob) => ({
+                      ...blob,
+                      pitchCurveCents: [...blob.pitchCurveCents],
+                  })),
+              }
+            : undefined;
+    }
+    return clip;
 }
 
 /**
