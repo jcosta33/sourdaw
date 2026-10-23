@@ -1,0 +1,26 @@
+src/modules/Project/useCases/__tests__/importSclFile.nativeWire.spec.ts
+  s_59e31a5c6f3e31::t_d9b14e71d00a7a 6-7,18-22,42-48,55-57,59-61,111-128,130-142
+  s_59e31a5c6f3e31::t_4bf61dcc708fe6 26-41,51,58,84-110,129,143-191
+  s_59e31a5c6f3e31::t_ad4e5423601372 192-195
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_59e31a5c6f3e31::t_59ec6ca1209178 1,6-7,34,37,57,74-154,156-169,238-239,273,276-295,297-334,336-425
+  s_59e31a5c6f3e31::t_b9cab8245b735f 31-32,274-275,296,335
+src/modules/Project/useCases/importSclFile.ts
+  s_59e31a5c6f3e31::t_04f939b802b065 7,10-11,16-23,30-32,35-37,45,56-58,69-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abcf397c3cf0ca9b8aa5a750f361c8de99b059ba",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
