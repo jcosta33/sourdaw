@@ -5898,8 +5898,10 @@ const schemaDefinitions = [
             clipId: 0,
             ccIds: 20,
             pitchBendIds: 20,
+            ccListExisted: 42,
+            pitchBendListExisted: 42,
         },
-        required: ['clipId', 'ccIds', 'pitchBendIds'],
+        required: ['clipId', 'ccIds', 'pitchBendIds', 'ccListExisted', 'pitchBendListExisted'],
         additionalProperties: false,
     },
     {

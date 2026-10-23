@@ -23,6 +23,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     productionBriefAdmissionPort,
     redo,
     resetActionReplayAuthority,
@@ -49,6 +50,7 @@ import {
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { countSettledTakes, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
@@ -389,6 +391,116 @@ describe('overdubbed controller rows and undo', () => {
                 [6, 12],
                 [7, 2],
             ]);
+        });
+    });
+
+    describe('a clip whose controller lists exist but are empty', () => {
+        const hasList = (clipId: string): { cc: boolean; pitchBend: boolean } => ({
+            cc: Object.hasOwn(midiStore.value?.ccByClipId ?? {}, clipId),
+            pitchBend: Object.hasOwn(midiStore.value?.pitchBendByClipId ?? {}, clipId),
+        });
+
+        it('keeps the empty lists when the pass is undone, so the split before it can still be undone', async () => {
+            const clipId = await startLiveTake();
+            sendLive(10, 0xb0, 1, 55);
+            sendLive(10, 0xe0, 104, 71);
+            await stopRecording(12);
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+            flushAutomergeStorageWrites();
+            const takeRows = readRows(clipId);
+
+            // The rows sit right of the cut, so the left half keeps its lists, emptied.
+            await executeAppAction({ type: 'splitClip', payload: { clipId, beat: 8 } });
+            flushAutomergeStorageWrites();
+            expect(readRows(clipId)).toEqual({ cc: [], pitchBend: [] });
+            expect(hasList(clipId)).toEqual({ cc: true, pitchBend: true });
+            expect(undoHistoryStore.value?.past ?? []).toHaveLength(2);
+
+            beginOverdub(5);
+            sendLive(6, 0xb0, 1, 90);
+            await endOverdub(7, 3);
+            expect(readRows(clipId).cc).toHaveLength(1);
+
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(readRows(clipId)).toEqual({ cc: [], pitchBend: [] });
+            expect(hasList(clipId)).toEqual({ cc: true, pitchBend: true });
+
+            await undo();
+            flushAutomergeStorageWrites();
+            const clips = trackStore.value!.tracks.flatMap((track) => track.clips);
+            expect(clips.map((clip) => clip.id)).toEqual([clipId]);
+            expect(readRows(clipId)).toEqual(takeRows);
+        });
+
+        it('still drops a list the pass created when the pass is undone', async () => {
+            const clipId = await startLiveTake();
+            await stopRecording(12);
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+            flushAutomergeStorageWrites();
+            expect(hasList(clipId)).toEqual({ cc: false, pitchBend: false });
+
+            beginOverdub(6);
+            sendLive(6.5, 0xb0, 1, 90);
+            await endOverdub(8, 2);
+            expect(hasList(clipId)).toEqual({ cc: true, pitchBend: false });
+
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(hasList(clipId)).toEqual({ cc: false, pitchBend: false });
+        });
+    });
+
+    describe('stopping the transport while the pass is still landing', () => {
+        it('does not settle the stop before the pass has landed, so Undo undoes the pass and not the take', async () => {
+            const clipId = await recordFirstTake();
+            const takeRows = readRows(clipId);
+            const held = await holdSnapshotTransaction();
+            playOverdubPass();
+
+            let stopped = false;
+            const stopping = stopPlayback().then(() => {
+                stopped = true;
+            });
+            // The stop's own work is main-thread microtasks; a macrotask later it has run all it can.
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            const settledEarly = stopped;
+            const idleEarly = isTransportIdle();
+            held.release();
+
+            expect(settledEarly).toBe(false);
+            expect(idleEarly).toBe(false);
+            await held.settled;
+            await stopping;
+            flushAutomergeStorageWrites();
+            expect(isTransportIdle()).toBe(true);
+            expect(undoHistoryStore.value?.past ?? []).toHaveLength(2);
+
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(readRows(clipId)).toEqual(takeRows);
+            expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
+        });
+
+        it('counts the landed pass as a settled take, as the commit of a take is', async () => {
+            await recordFirstTake();
+            const settledBefore = countSettledTakes();
+            playOverdubPass();
+
+            await stopPlayback();
+
+            expect(countSettledTakes()).toBe(settledBefore + 1);
+        });
+
+        it('settles an overdub that recorded no rows without counting a take', async () => {
+            await recordFirstTake();
+            const settledBefore = countSettledTakes();
+            beginOverdub(6);
+
+            await stopPlayback();
+
+            expect(countSettledTakes()).toBe(settledBefore);
+            expect(isTransportIdle()).toBe(true);
         });
     });
 

@@ -37,6 +37,7 @@ type RemoveAction = Extract<AppAction, { type: 'removeOverdubControllers' }>;
 const CLIP = 'clip-a';
 const OTHER_CLIP = 'clip-b';
 const validationContext = { actions: [], actionIndex: 0 };
+const listsExisted = { ccListExisted: true, pitchBendListExisted: true };
 
 const cc = (id: string, beat: number, controller = 1) => ({ id, controller, value: 64, beat, channel: 0 });
 const bend = (id: string, beat: number) => ({ id, value: 1000, beat, channel: 0 });
@@ -46,9 +47,15 @@ const append = (...clips: AppendAction['payload']['clips'][number][]): AppendAct
     payload: { clips },
 });
 
-const remove = (...clips: RemoveAction['payload']['clips'][number][]): RemoveAction => ({
+type RowIds = RemoveAction['payload']['clips'][number];
+
+/** Ids to remove, from clips whose lists existed before the pass unless a case says otherwise. */
+const remove = (
+    ...clips: (Pick<RowIds, 'clipId' | 'ccIds' | 'pitchBendIds'> &
+        Partial<Pick<RowIds, 'ccListExisted' | 'pitchBendListExisted'>>)[]
+): RemoveAction => ({
     type: 'removeOverdubControllers',
-    payload: { clips },
+    payload: { clips: clips.map((clip) => ({ ccListExisted: true, pitchBendListExisted: true, ...clip })) },
 });
 
 describe('overdub controller handlers', () => {
@@ -116,7 +123,44 @@ describe('overdub controller handlers', () => {
 
             expect(described.inverseAction).toEqual({
                 type: 'removeOverdubControllers',
-                payload: { clips: [{ clipId: CLIP, ccIds: ['new-cc'], pitchBendIds: ['new-bend'] }] },
+                payload: {
+                    clips: [
+                        {
+                            clipId: CLIP,
+                            ccIds: ['new-cc'],
+                            pitchBendIds: ['new-bend'],
+                            ccListExisted: true,
+                            pitchBendListExisted: true,
+                        },
+                    ],
+                },
+            });
+        });
+
+        it('records which of the clip lists existed before the pass, so the inverse drops only one the pass created', () => {
+            mocks.midi.value = {
+                notesByClipId: {},
+                ccByClipId: { [CLIP]: [] },
+                pitchBendByClipId: {},
+            };
+
+            const described = handleAppendOverdubControllers.describe(
+                append({ clipId: CLIP, cc: [cc('new-cc', 2)], pitchBend: [bend('new-bend', 2)] })
+            );
+
+            expect(described.inverseAction).toEqual({
+                type: 'removeOverdubControllers',
+                payload: {
+                    clips: [
+                        {
+                            clipId: CLIP,
+                            ccIds: ['new-cc'],
+                            pitchBendIds: ['new-bend'],
+                            ccListExisted: true,
+                            pitchBendListExisted: false,
+                        },
+                    ],
+                },
             });
         });
 
@@ -185,16 +229,67 @@ describe('overdub controller handlers', () => {
             expect(mocks.midi.value?.pitchBendByClipId[CLIP]).toEqual([bend('earlier-bend', 0)]);
         });
 
-        it('drops a list the pass emptied, the state a clip the pass filled first had before it', () => {
+        it('drops a list the pass created once the pass empties it, the state the clip had before', () => {
             mocks.midi.value = {
                 notesByClipId: {},
                 ccByClipId: { [OTHER_CLIP]: [cc('only', 1)] },
-                pitchBendByClipId: {},
+                pitchBendByClipId: { [OTHER_CLIP]: [bend('only-bend', 1)] },
             };
 
-            handleRemoveOverdubControllers.execute(remove({ clipId: OTHER_CLIP, ccIds: ['only'], pitchBendIds: [] }));
+            handleRemoveOverdubControllers.execute(
+                remove({
+                    clipId: OTHER_CLIP,
+                    ccIds: ['only'],
+                    pitchBendIds: ['only-bend'],
+                    ccListExisted: false,
+                    pitchBendListExisted: false,
+                })
+            );
 
             expect(mocks.midi.value?.ccByClipId[OTHER_CLIP]).toBeUndefined();
+            expect(mocks.midi.value?.pitchBendByClipId[OTHER_CLIP]).toBeUndefined();
+        });
+
+        it('leaves an empty list where the list existed empty before the pass', () => {
+            mocks.midi.value = {
+                notesByClipId: {},
+                ccByClipId: { [OTHER_CLIP]: [cc('only', 1)] },
+                pitchBendByClipId: { [OTHER_CLIP]: [bend('only-bend', 1)] },
+            };
+
+            handleRemoveOverdubControllers.execute(
+                remove({
+                    clipId: OTHER_CLIP,
+                    ccIds: ['only'],
+                    pitchBendIds: ['only-bend'],
+                    ccListExisted: true,
+                    pitchBendListExisted: true,
+                })
+            );
+
+            expect(mocks.midi.value?.ccByClipId[OTHER_CLIP]).toEqual([]);
+            expect(mocks.midi.value?.pitchBendByClipId[OTHER_CLIP]).toEqual([]);
+        });
+
+        it('keeps each list by its own history: a list that existed stays while one the pass created goes', () => {
+            mocks.midi.value = {
+                notesByClipId: {},
+                ccByClipId: { [OTHER_CLIP]: [cc('only', 1)] },
+                pitchBendByClipId: { [OTHER_CLIP]: [bend('only-bend', 1)] },
+            };
+
+            handleRemoveOverdubControllers.execute(
+                remove({
+                    clipId: OTHER_CLIP,
+                    ccIds: ['only'],
+                    pitchBendIds: ['only-bend'],
+                    ccListExisted: true,
+                    pitchBendListExisted: false,
+                })
+            );
+
+            expect(mocks.midi.value?.ccByClipId[OTHER_CLIP]).toEqual([]);
+            expect(mocks.midi.value?.pitchBendByClipId[OTHER_CLIP]).toBeUndefined();
         });
 
         it('reports no write when none of the named rows is left', () => {
@@ -213,16 +308,23 @@ describe('overdub controller handlers', () => {
                 pitchBendByClipId: {},
             };
 
-            handleRemoveOverdubControllers.execute(remove({ clipId: CLIP, ccIds: ['shared'], pitchBendIds: [] }));
+            handleRemoveOverdubControllers.execute(
+                remove({ clipId: CLIP, ccIds: ['shared'], pitchBendIds: [], ccListExisted: false })
+            );
 
             expect(mocks.midi.value?.ccByClipId[CLIP]).toBeUndefined();
             expect(mocks.midi.value?.ccByClipId[OTHER_CLIP]).toEqual([cc('shared', 1)]);
         });
 
         it.each([
-            ['a row id that is not a string', { clipId: CLIP, ccIds: [4], pitchBendIds: [] }],
-            ['a clip without its pitch-bend ids', { clipId: CLIP, ccIds: [] }],
-            ['a clip id that is not a string', { clipId: null, ccIds: [], pitchBendIds: [] }],
+            ['a row id that is not a string', { ...listsExisted, clipId: CLIP, ccIds: [4], pitchBendIds: [] }],
+            ['a clip without its pitch-bend ids', { ...listsExisted, clipId: CLIP, ccIds: [] }],
+            ['a clip id that is not a string', { ...listsExisted, clipId: null, ccIds: [], pitchBendIds: [] }],
+            ['no record of whether its lists existed', { clipId: CLIP, ccIds: [], pitchBendIds: [] }],
+            [
+                'a list-existed flag that is not a boolean',
+                { clipId: CLIP, ccIds: [], pitchBendIds: [], ccListExisted: 'yes', pitchBendListExisted: true },
+            ],
         ])('refuses ids with %s', (_name, clip) => {
             const action = { type: 'removeOverdubControllers', payload: { clips: [clip] } } as unknown as RemoveAction;
 

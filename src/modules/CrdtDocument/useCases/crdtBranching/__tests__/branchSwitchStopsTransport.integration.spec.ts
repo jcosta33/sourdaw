@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
+import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
 import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../../repositories/automergeRepository';
@@ -20,6 +21,7 @@ import { switchBranch } from '../switchBranch';
 type TakeDocument = { take?: string };
 
 const TAKE_MARKER = 'take-recorded-on-outgoing-branch';
+const PASS_MARKER = 'overdub-pass-landed-on-outgoing-branch';
 const PLAYHEAD_BEAT = 12;
 
 const mocks = vi.hoisted(() => ({
@@ -150,6 +152,42 @@ describe('branch switch stops the transport', () => {
             playheadPosition: 0,
         });
         expect(readTake(outgoingDocId)).toBe(TAKE_MARKER);
+        expect(readTake(DOC_PREFIX_ROOT)).toBeUndefined();
+    });
+
+    it('waits for an overdub pass still landing and keeps its write on the outgoing branch', async () => {
+        await forkProjectBranch('feature');
+        const outgoingDocId = activeBranchBackingDocId();
+        // The pass's rows land after the falling edge, behind the snapshot transaction queue, onto
+        // whichever document is root when they do.
+        const passLanding = Promise.withResolvers<void>();
+        pendingTakeLandings.track(
+            passLanding.promise.then(() => {
+                mutateCrdtDoc<TakeDocument>({
+                    id: DOC_PREFIX_ROOT,
+                    changeFn: (draft) => {
+                        draft.take = PASS_MARKER;
+                    },
+                });
+            })
+        );
+        const originalReplace = automergeRepository.replaceDoc.bind(automergeRepository);
+        const rootReplaces: string[] = [];
+        vi.spyOn(automergeRepository, 'replaceDoc').mockImplementation((id, doc, tx) => {
+            if (id === DOC_PREFIX_ROOT) {
+                rootReplaces.push(id);
+            }
+            originalReplace(id, doc, tx);
+        });
+
+        const switching = switchBranch('main');
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        const replacedEarly = rootReplaces.length;
+        passLanding.resolve();
+        await switching;
+
+        expect(replacedEarly).toBe(0);
+        expect(readTake(outgoingDocId)).toBe(PASS_MARKER);
         expect(readTake(DOC_PREFIX_ROOT)).toBeUndefined();
     });
 

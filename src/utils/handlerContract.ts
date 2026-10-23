@@ -350,11 +350,17 @@ export type OverdubControllerRowsSnapshot = {
         readonly channel: number;
     }[];
 };
-/** The ids of the rows one overdub pass added to one clip. */
+/**
+ * The ids of the rows one overdub pass added to one clip, and whether each of the clip's
+ * lists existed before the pass: the inverse drops only a list the pass created, so an empty
+ * list stays empty and "no list" stays absent.
+ */
 export type OverdubControllerRowIds = {
     readonly clipId: string;
     readonly ccIds: readonly string[];
     readonly pitchBendIds: readonly string[];
+    readonly ccListExisted: boolean;
+    readonly pitchBendListExisted: boolean;
 };
 /**
  * A global time operation's restore plan, as produced by `executeGlobalTimeOperation`.

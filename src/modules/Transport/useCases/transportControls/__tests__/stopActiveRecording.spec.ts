@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { stopRecording } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
+import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { recordingLifecycle } from '../recordingLifecycle';
@@ -145,6 +146,39 @@ describe('stopActiveRecording', () => {
 
             punchOutCommit.resolve();
             await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        it('does not resolve before an overdub pass the falling edge started has landed', async () => {
+            const passLanding = Promise.withResolvers<void>();
+            // The falling edge the stop writes is what starts the pass landing.
+            vi.mocked(updateTransportState).mockImplementationOnce(() => {
+                pendingTakeLandings.track(passLanding.promise);
+            });
+            let stopped = false;
+
+            const stopping = stopActiveRecording().then(() => {
+                stopped = true;
+            });
+            await vi.advanceTimersByTimeAsync(10);
+            expect(stopped).toBe(false);
+            expect(recordingLifecycle.isClosingRecording()).toBe(true);
+
+            passLanding.resolve();
+            await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        it('resolves when the overdub pass the stop waited on was refused', async () => {
+            const passLanding = Promise.withResolvers<void>();
+            vi.mocked(updateTransportState).mockImplementationOnce(() => {
+                pendingTakeLandings.track(passLanding.promise);
+            });
+
+            const stopping = stopActiveRecording();
+            passLanding.reject(new Error('refused'));
+
+            await expect(stopping).resolves.toBeUndefined();
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
         });
 

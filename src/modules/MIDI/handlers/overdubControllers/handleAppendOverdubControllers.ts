@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 
 import { isOverdubControllerRowsPayload } from '../../transformers/isOverdubControllerRowsPayload';
 import { appendRecordedMidiControllers } from '../../useCases/recordedControllerTake/appendRecordedMidiControllers';
+import { readControllerListPresence } from '../../useCases/recordedControllerTake/readControllerListPresence';
 import { readOverdubRowsToAppend } from '../../useCases/recordedControllerTake/readOverdubRowsToAppend';
 
 /**
@@ -30,11 +31,16 @@ export const handleAppendOverdubControllers = createHandler<'appendOverdubContro
             inverseAction: {
                 type: 'removeOverdubControllers',
                 payload: {
-                    clips: toAppend.map((clip) => ({
-                        clipId: clip.clipId,
-                        ccIds: clip.cc.map((row) => row.id),
-                        pitchBendIds: clip.pitchBend.map((row) => row.id),
-                    })),
+                    clips: toAppend.map((clip) => {
+                        const present = readControllerListPresence(clip.clipId);
+                        return {
+                            clipId: clip.clipId,
+                            ccIds: clip.cc.map((row) => row.id),
+                            pitchBendIds: clip.pitchBend.map((row) => row.id),
+                            ccListExisted: present.cc,
+                            pitchBendListExisted: present.pitchBend,
+                        };
+                    }),
                 },
             },
         };

@@ -22,6 +22,7 @@ import {
     togglePlayback,
     toggleRecording,
 } from '#/modules/Transport/useCases';
+import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
 import { pickAndImportProjectFile } from '../../fileIO/pickAndImportProjectFile';
 import { saveProjectBeforeReplacement } from '../../saveProject/saveProjectBeforeReplacement';
@@ -477,6 +478,25 @@ describe('replacing a project while a take is recording or closing (issue #5500)
 
         expect(committedEntryCount()).toBe(1);
         expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
+    });
+
+    // An overdub pass's rows land after the falling edge, behind the snapshot transaction queue: the
+    // transport reads stopped and no commit is in flight, but the project is about to gain the pass.
+    it('does not switch authority while an overdub pass is still landing, then saves it', async () => {
+        seedTrack('midi');
+        const landing = Promise.withResolvers<void>();
+        pendingTakeLandings.track(landing.promise);
+
+        const replacing = replace();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(mocks.events).not.toContain('switch');
+        expect(mocks.events.filter((event) => event.startsWith('save:'))).toEqual([]);
+
+        landing.resolve();
+        await expect(replacing).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(mocks.events.filter((event) => event.startsWith('save:'))).toHaveLength(1);
+        expect(mocks.events.at(-1)).toBe('switch');
     });
 
     it('resets the audio graph and unloads the plugins again before the switch when a Play lands during the plugin unload', async () => {

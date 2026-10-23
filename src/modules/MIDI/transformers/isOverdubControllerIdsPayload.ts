@@ -11,11 +11,16 @@ function isClipRowIds(value: unknown): boolean {
         isRecord(value) &&
         typeof value.clipId === 'string' &&
         isStringArray(value.ccIds) &&
-        isStringArray(value.pitchBendIds)
+        isStringArray(value.pitchBendIds) &&
+        typeof value.ccListExisted === 'boolean' &&
+        typeof value.pitchBendListExisted === 'boolean'
     );
 }
 
-/** Whether a `removeOverdubControllers` payload names each clip by id with string row ids. */
+/**
+ * Whether a `removeOverdubControllers` payload names each clip by id with string row ids and
+ * says whether each of its lists existed before the pass.
+ */
 export function isOverdubControllerIdsPayload(payload: unknown): boolean {
     return isRecord(payload) && Array.isArray(payload.clips) && payload.clips.every(isClipRowIds);
 }

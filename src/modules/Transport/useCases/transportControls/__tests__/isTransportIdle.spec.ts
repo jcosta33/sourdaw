@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
+
 import { defaultTransportState } from '../../../models/TransportState';
 import { transportStore } from '../../../stores/transportStore';
 import { isTransportIdle } from '../isTransportIdle';
@@ -104,6 +106,23 @@ describe('isTransportIdle', () => {
 
         commit.resolve();
         await recordingLifecycle.waitForCommits();
+        expect(isTransportIdle()).toBe(true);
+    });
+
+    // An overdub pass writes its rows after the falling edge, behind the snapshot transaction queue.
+    it('is not idle while an overdub pass is still landing, and is idle once it has landed or been refused', async () => {
+        const landed = Promise.withResolvers<void>();
+        pendingTakeLandings.track(landed.promise);
+        expect(isTransportIdle()).toBe(false);
+        landed.resolve();
+        await pendingTakeLandings.waitForSettled();
+        expect(isTransportIdle()).toBe(true);
+
+        const refused = Promise.withResolvers<void>();
+        pendingTakeLandings.track(refused.promise);
+        expect(isTransportIdle()).toBe(false);
+        refused.reject(new Error('refused'));
+        await pendingTakeLandings.waitForSettled();
         expect(isTransportIdle()).toBe(true);
     });
 

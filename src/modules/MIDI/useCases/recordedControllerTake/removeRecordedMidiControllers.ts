@@ -4,18 +4,26 @@ import { midiStore } from '../../stores/midiStore';
 
 type RowsByClipId<TRow> = Record<string, TRow[]>;
 
+/** What to take out of one clip's list, and whether the list existed before the pass that added the rows. */
+type ListRemoval = {
+    ids: Set<string>;
+    listExisted: boolean;
+};
+
 /**
- * The per-clip lists without the rows named for each clip. A list left empty is
- * dropped, the state a clip the overdub filled first had before it; a list with
+ * The per-clip lists without the rows named for each clip. A list the pass created is dropped
+ * once it is empty, the state a clip without one had before it; a list that existed stays,
+ * empty if need be, because "no list" and "an empty list" are different states to the
+ * operations that compare them (a split's undo guard reads list presence). A list with
  * nothing to remove is untouched. `removed` counts the rows taken out.
  */
 function withoutRows<TRow extends { id: string }>(
     rowsByClipId: RowsByClipId<TRow>,
-    idsByClipId: ReadonlyMap<string, ReadonlySet<string>>
+    removals: ReadonlyMap<string, ListRemoval>
 ): { rowsByClipId: RowsByClipId<TRow>; removed: number } {
     let next = rowsByClipId;
     let removed = 0;
-    for (const [clipId, ids] of idsByClipId) {
+    for (const [clipId, { ids, listExisted }] of removals) {
         const existing = rowsByClipId[clipId];
         if (!existing) {
             continue;
@@ -26,24 +34,26 @@ function withoutRows<TRow extends { id: string }>(
         }
         removed += existing.length - kept.length;
         const { [clipId]: _dropped, ...others } = next;
-        next = kept.length === 0 ? others : { ...next, [clipId]: kept };
+        next = kept.length === 0 && !listExisted ? others : { ...next, [clipId]: kept };
     }
     return { rowsByClipId: next, removed };
 }
 
-function collectIds(
+function collectRemovals(
     clips: readonly OverdubControllerRowIds[],
-    pickIds: (clip: OverdubControllerRowIds) => readonly string[]
-): Map<string, Set<string>> {
-    const idsByClipId = new Map<string, Set<string>>();
+    pick: (clip: OverdubControllerRowIds) => { ids: readonly string[]; listExisted: boolean }
+): Map<string, ListRemoval> {
+    const removals = new Map<string, ListRemoval>();
     for (const clip of clips) {
-        const ids = idsByClipId.get(clip.clipId) ?? new Set<string>();
-        for (const id of pickIds(clip)) {
-            ids.add(id);
+        const { ids, listExisted } = pick(clip);
+        const removal = removals.get(clip.clipId) ?? { ids: new Set<string>(), listExisted };
+        for (const id of ids) {
+            removal.ids.add(id);
         }
-        idsByClipId.set(clip.clipId, ids);
+        removal.listExisted = removal.listExisted || listExisted;
+        removals.set(clip.clipId, removal);
     }
-    return idsByClipId;
+    return removals;
 }
 
 /**
@@ -59,11 +69,11 @@ export function removeRecordedMidiControllers(clips: readonly OverdubControllerR
     }
     const cc = withoutRows(
         midiState.ccByClipId,
-        collectIds(clips, (clip) => clip.ccIds)
+        collectRemovals(clips, (clip) => ({ ids: clip.ccIds, listExisted: clip.ccListExisted }))
     );
     const pitchBend = withoutRows(
         midiState.pitchBendByClipId,
-        collectIds(clips, (clip) => clip.pitchBendIds)
+        collectRemovals(clips, (clip) => ({ ids: clip.pitchBendIds, listExisted: clip.pitchBendListExisted }))
     );
     if (cc.removed + pitchBend.removed === 0) {
         return false;
