@@ -1,20 +1,17 @@
-import { type KeyboardEvent, type MouseEvent, type ReactElement, useRef, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
-import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
-import { DawMenuButton } from '#/components/daw/DawMenuParts';
-import { Fader } from '#/components/daw/Fader';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
-import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { formatGainDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 import { cn } from '#/utils/Styles/cn';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
+import { MasterGainControl } from './MasterGainControl';
 import { MixerLevelReadout } from './MixerLevelReadout';
 
 type MasterChannelStripProps = {
@@ -38,85 +35,22 @@ async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?
     }
 }
 
-type MasterGainControlProps = {
-    value: number;
-    onChange: (value: number, isTransient?: boolean) => void;
-};
-
-const MasterGainControl = ({ value, onChange }: MasterGainControlProps): ReactElement => {
-    const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
-    const masterGainControlRef = useRef<HTMLDivElement>(null);
-    const masterGainMenuRef = useRef<HTMLDivElement>(null);
-    const closeMasterGainMenu = (): void => setMasterGainMenu(null);
-    useContextMenuDismiss(masterGainMenuRef, closeMasterGainMenu);
-
-    const openMasterGainMenu = (x: number, y: number): void => {
-        masterGainControlRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
-        setMasterGainMenu({ x, y });
-    };
-
-    const handleMasterGainContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
-        event.preventDefault();
-        event.stopPropagation();
-        openMasterGainMenu(event.clientX, event.clientY);
-    };
-
-    const handleMasterGainMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-        if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) {
-            return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        const bounds = masterGainControlRef.current?.querySelector('[role="slider"]')?.getBoundingClientRect();
-        openMasterGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
-    };
-
-    return (
-        <>
-            <div
-                ref={masterGainControlRef}
-                className="shrink-0"
-                data-testid="master-gain"
-                role="presentation"
-                onContextMenu={handleMasterGainContextMenu}
-                onKeyDown={handleMasterGainMenuKeyDown}
-            >
-                <Fader
-                    value={value}
-                    onChange={onChange}
-                    min={0}
-                    max={FADER_MAX_GAIN}
-                    step={0.01}
-                    fineStep={0.001}
-                    defaultValue={defaultTransportState.masterGain / 100}
-                    height={100}
-                    aria-label="Master gain"
-                />
-            </div>
-            {masterGainMenu ? (
-                <DawContextMenuSurface
-                    ref={masterGainMenuRef}
-                    role="menu"
-                    aria-label="Master gain actions"
-                    x={masterGainMenu.x}
-                    y={masterGainMenu.y}
-                    onClose={closeMasterGainMenu}
-                >
-                    <DawMenuButton
-                        role="menuitem"
-                        onClick={() => {
-                            onChange(defaultTransportState.masterGain / 100, false);
-                            closeMasterGainMenu();
-                        }}
-                    >
-                        Reset to Default
-                    </DawMenuButton>
-                </DawContextMenuSurface>
-            ) : null}
-        </>
-    );
-};
+function consumeRecordedGrooveWindow(
+    stamp: { current: number | null },
+    wasGestureSettle: boolean,
+    allowPriorCoalesce: boolean
+): boolean {
+    if (!allowPriorCoalesce) {
+        stamp.current = null;
+        return false;
+    }
+    const recordedAt = stamp.current;
+    if (wasGestureSettle || recordedAt === null || performance.now() - recordedAt > 500) {
+        return false;
+    }
+    stamp.current = null;
+    return true;
+}
 
 export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
@@ -171,7 +105,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     // the unchanged gain records nothing, so the reset must be its own undo
     // step rather than join the stack top (#4616). A discrete commit never
     // re-arms it — see `commitMasterGain`.
-    const lastGrooveSettleTime = useRef(0);
+    const lastGrooveSettleTime = useRef<number | null>(null);
 
     /**
      * Put the engine back on project truth after a settle that never moved
@@ -198,12 +132,17 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
-    const commitMasterGain = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
-        let coalesceWithPrevious = false;
-        if (!wasGestureSettle && performance.now() - lastGrooveSettleTime.current <= 500) {
-            coalesceWithPrevious = true;
-            lastGrooveSettleTime.current = 0;
-        }
+    const commitMasterGain = async (
+        value: number,
+        token: number,
+        wasGestureSettle: boolean,
+        allowPriorCoalesce: boolean
+    ): Promise<void> => {
+        const coalesceWithPrevious = consumeRecordedGrooveWindow(
+            lastGrooveSettleTime,
+            wasGestureSettle,
+            allowPriorCoalesce
+        );
         try {
             const expectedPercent = transportStore.value?.masterGain;
             if (expectedPercent === undefined) {
@@ -231,6 +170,18 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
+    const settleMasterGain = (value: number, wasGestureSettle: boolean, allowPriorCoalesce: boolean): void => {
+        gestureToken.current += 1;
+        const token = gestureToken.current;
+        displayedValue.current = value;
+        setGestureGain(value);
+        setMasterGain(value * 100, true);
+
+        pendingCommit.current = pendingCommit.current.then(() =>
+            commitMasterGain(value, token, wasGestureSettle, allowPriorCoalesce)
+        );
+    };
+
     const handleFaderChange = (value: number, isTransient?: boolean): void => {
         if (isTransient === true) {
             if (!gestureOpen.current) {
@@ -244,13 +195,13 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
         const wasOpen = gestureOpen.current;
         gestureOpen.current = false;
-        gestureToken.current += 1;
-        const token = gestureToken.current;
-        displayedValue.current = value;
-        setGestureGain(value);
-        setMasterGain(value * 100, true);
+        settleMasterGain(value, wasOpen, true);
+    };
 
-        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token, wasOpen));
+    const enterGain = (value: number): void => {
+        gestureOpen.current = false;
+        lastGrooveSettleTime.current = null;
+        settleMasterGain(value, false, false);
     };
 
     const displayGain = gestureGain ?? masterGain / 100;
@@ -266,7 +217,9 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <MixerLevelReadout
                 trackId={null}
                 clusterClassName="mt-1"
-                control={<MasterGainControl value={displayGain} onChange={handleFaderChange} />}
+                control={
+                    <MasterGainControl value={displayGain} onChange={handleFaderChange} onEnterValue={enterGain} />
+                }
                 value={`${formatGainDb(displayGain)} dB`}
             />
         </DawChannelStripShell>
