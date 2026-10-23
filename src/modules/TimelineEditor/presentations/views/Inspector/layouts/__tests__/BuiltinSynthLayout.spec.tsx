@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import type { DeviceParameterView } from '../../../../../models/PluginDescriptorViewTypes';
 import type { Device } from '../../../../../models/TrackViewTypes';
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
@@ -18,7 +20,8 @@ vi.mock('../../deviceLayoutRegistry', async (importOriginal) => {
 });
 
 const mockSetDeviceParameter = vi.fn();
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
 }));
 
@@ -69,19 +72,13 @@ const PARAM_IDS = [
     'vibratoDelay',
 ];
 
-const makeParam = (id: string): DeviceParameterView => ({
-    id,
-    deviceId: 'device-1',
-    name: id,
-    type: 'float',
-    value: 0,
-    defaultValue: 0,
-    minValue: 0,
-    maxValue: 1,
-    unit: '',
-    automatable: true,
-    hasAutomation: false,
-});
+const makeParam = (id: string): DeviceParameterView => {
+    const parameter = getPluginById('builtin-synth')?.parameters.find((candidate) => candidate.id === id);
+    if (!parameter) {
+        throw new Error(`Missing real Synth/${id} descriptor`);
+    }
+    return parameter;
+};
 
 const makeDevice = (overrides: Partial<Device> = {}): Device => ({
     id: 'device-1',
@@ -153,7 +150,7 @@ describe('BuiltinSynthLayout', () => {
         );
     });
 
-    it('forwards FilterResponse and ADSREnvelope param changes to setDeviceParameter scoped to the device', () => {
+    it('preserves the direct FilterResponse callback scoped to the device', () => {
         const device = makeDevice({ id: 'device-9' });
         render(<Layout device={device} trackId="track-1" parameters={PARAMETERS} />);
 
@@ -162,12 +159,37 @@ describe('BuiltinSynthLayout', () => {
         };
         filterChange('filterCutoff', 1200);
         expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-9', 'filterCutoff', 1200);
+    });
 
-        const { onParamChange: envChange } = mockADSREnvelope.mock.calls.at(-1)![0] as {
-            onParamChange: (id: string, value: number) => void;
-        };
-        envChange('attack', 0.5);
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-9', 'attack', 0.5);
+    it.each([
+        { type: 'builtin-synth', attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3 },
+        { type: 'builtin-synth-mellotron', attack: 0.1, decay: 0.4, sustain: 0.7, release: 0.3 },
+        { type: 'builtin-synth-strings', attack: 0.3, decay: 0.2, sustain: 0.7, release: 1.2 },
+        { type: 'builtin-synth-808bass', attack: 0.01, decay: 1.2, sustain: 0, release: 0.3 },
+        { type: 'builtin-synth-brass', attack: 0.05, decay: 0.2, sustain: 0.7, release: 0.3 },
+    ])('uses the actual $type envelope defaults and supplies its owned gesture lifecycle', ({ type, ...expected }) => {
+        const descriptor = getPluginById(type);
+        if (!descriptor) {
+            throw new Error(`Missing actual ${type} descriptor`);
+        }
+        render(<Layout device={makeDevice({ type })} trackId="track-1" parameters={descriptor.parameters} />);
+        expect(mockADSREnvelope).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                ...expected,
+                onParamChange: expect.any(Function),
+                onGestureStart: expect.any(Function),
+                onGestureCommit: expect.any(Function),
+                onGestureCancel: expect.any(Function),
+            })
+        );
+        for (const id of ['attack', 'decay', 'release']) {
+            const parameter = descriptor.parameters.find((candidate) => candidate.id === id);
+            expect(parameter).toMatchObject({ unit: 's', minValue: 0.001, maxValue: id === 'release' ? 5 : 2 });
+        }
+        expect(descriptor.parameters.find((candidate) => candidate.id === 'sustain')).toMatchObject({
+            minValue: 0,
+            maxValue: 1,
+        });
     });
 
     it('expands the Oscillator 2 collapsible on click, revealing its params, and collapses again on a second click', () => {

@@ -216,3 +216,133 @@ describe('ADSREnvelope', () => {
         }).not.toThrow();
     });
 });
+
+describe('ADSREnvelope opt-in gesture lifecycle', () => {
+    function setup() {
+        const onParamChange = vi.fn();
+        const onGestureStart = vi.fn(() => true);
+        const onGestureCommit = vi.fn();
+        const onGestureCancel = vi.fn();
+        const callbacks = { onParamChange, onGestureStart, onGestureCommit, onGestureCancel };
+        const view = render(<ADSREnvelope {...defaultProps} {...callbacks} />);
+        return { ...view, canvas: getCanvas(view.container), ...callbacks };
+    }
+
+    it.each([
+        { stage: 'attack', x: ATTACK_X, y: ATTACK_Y, nextX: 100, nextY: 8, value: 0.95 },
+        { stage: 'decay', x: DECAY_X, y: DECAY_Y, nextX: 85.16, nextY: 42, value: 0.3 },
+        { stage: 'sustain', x: SUSTAIN_X, y: SUSTAIN_Y, nextX: 144.53, nextY: 24.5, value: 0.75 },
+        { stage: 'release', x: RELEASE_X, y: RELEASE_Y, nextX: 164.32, nextY: 74, value: 0.2 },
+    ])(
+        'captures the hit-tested $stage and commits its last physical sample once',
+        ({ stage, x, y, nextX, nextY, value }) => {
+            const { canvas, onParamChange, onGestureStart, onGestureCommit, onGestureCancel } = setup();
+            fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: x, clientY: y });
+            fireEvent.pointerDown(canvas, { button: 0, pointerId: 8, clientX: ATTACK_X, clientY: ATTACK_Y });
+            fireEvent.pointerMove(canvas, { pointerId: 8, clientX: 0, clientY: 0 });
+            fireEvent.pointerUp(canvas, { pointerId: 8 });
+            fireEvent.pointerMove(canvas, { pointerId: 7, clientX: nextX, clientY: nextY });
+            expect(onGestureStart).toHaveBeenCalledExactlyOnceWith(stage);
+            expect(onParamChange).toHaveBeenCalledExactlyOnceWith(stage, expect.closeTo(value, 2));
+            Object.defineProperty(canvas, 'releasePointerCapture', {
+                configurable: true,
+                value: vi.fn(() => fireEvent.lostPointerCapture(canvas, { pointerId: 7 })),
+            });
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+            expect(onGestureCommit).toHaveBeenCalledExactlyOnceWith(stage, expect.closeTo(value, 2));
+            expect(onParamChange).toHaveBeenCalledTimes(1);
+            expect(onGestureCancel).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['pointerCancel', 'lostPointerCapture', 'windowBlur', 'hidden', 'unmount', 'nonfinite'])(
+        'cancels %s exactly once without another physical sample or final',
+        (finish) => {
+            const { canvas, unmount, onParamChange, onGestureCommit, onGestureCancel } = setup();
+            fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: ATTACK_X, clientY: ATTACK_Y });
+            fireEvent.pointerMove(canvas, { pointerId: 7, clientX: 100, clientY: ATTACK_Y });
+            if (finish === 'pointerCancel') {
+                fireEvent.pointerCancel(canvas, { pointerId: 7 });
+            } else if (finish === 'lostPointerCapture') {
+                fireEvent.lostPointerCapture(canvas, { pointerId: 7 });
+            } else if (finish === 'windowBlur') {
+                fireEvent.blur(window);
+            } else if (finish === 'hidden') {
+                vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+                fireEvent(document, new Event('visibilitychange'));
+                vi.restoreAllMocks();
+            } else if (finish === 'unmount') {
+                unmount();
+            } else {
+                const malformed = new Event('pointermove', { bubbles: true });
+                Object.defineProperties(malformed, {
+                    pointerId: { value: 7 },
+                    clientX: { value: Number.NaN },
+                    clientY: { value: ATTACK_Y },
+                });
+                fireEvent(canvas, malformed);
+            }
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+            expect(onParamChange).toHaveBeenCalledExactlyOnceWith('attack', expect.closeTo(0.95, 12));
+            expect(onGestureCancel).toHaveBeenCalledExactlyOnceWith('attack');
+            expect(onGestureCommit).not.toHaveBeenCalled();
+        }
+    );
+
+    it('admits neither missed hits nor secondary buttons nor a refused stage', () => {
+        const { canvas, onParamChange, onGestureStart, onGestureCommit } = setup();
+        fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: 0, clientY: 0 });
+        fireEvent.pointerDown(canvas, { button: 2, pointerId: 7, clientX: ATTACK_X, clientY: ATTACK_Y });
+        expect(onGestureStart).not.toHaveBeenCalled();
+        onGestureStart.mockReturnValue(false);
+        fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: ATTACK_X, clientY: ATTACK_Y });
+        fireEvent.pointerMove(canvas, { pointerId: 7, clientX: 100, clientY: ATTACK_Y });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+        expect(onGestureStart).toHaveBeenCalledExactlyOnceWith('attack');
+        expect(onParamChange).not.toHaveBeenCalled();
+        expect(onGestureCommit).not.toHaveBeenCalled();
+    });
+
+    it('does not create a sample or final from an orphan release or a click', () => {
+        const { canvas, onParamChange, onGestureCommit, onGestureCancel } = setup();
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+        fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: ATTACK_X, clientY: ATTACK_Y });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+        expect(onParamChange).not.toHaveBeenCalled();
+        expect(onGestureCommit).not.toHaveBeenCalled();
+        expect(onGestureCancel).toHaveBeenCalledExactlyOnceWith('attack');
+    });
+
+    it('keeps captured callbacks while using the current rendered coordinate law', () => {
+        const { canvas, rerender, onParamChange, onGestureCommit } = setup();
+        fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: ATTACK_X, clientY: ATTACK_Y });
+        const replacementChange = vi.fn();
+        const replacementCommit = vi.fn();
+        rerender(
+            <ADSREnvelope
+                {...defaultProps}
+                attack={0.8}
+                onParamChange={replacementChange}
+                onGestureCommit={replacementCommit}
+            />
+        );
+        fireEvent.pointerMove(canvas, { pointerId: 7, clientX: 100, clientY: 8 });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+        expect(onParamChange).toHaveBeenCalledExactlyOnceWith('attack', expect.closeTo(1.1, 12));
+        expect(onGestureCommit).toHaveBeenCalledExactlyOnceWith('attack', expect.closeTo(1.1, 12));
+        expect(replacementChange).not.toHaveBeenCalled();
+        expect(replacementCommit).not.toHaveBeenCalled();
+    });
+
+    it('keeps lifecycle-only callers read-only', () => {
+        const onGestureStart = vi.fn(() => true);
+        const view = render(<ADSREnvelope {...defaultProps} onGestureStart={onGestureStart} />);
+        const canvas = getCanvas(view.container);
+        fireEvent.pointerDown(canvas, { button: 0, pointerId: 7, clientX: ATTACK_X, clientY: ATTACK_Y });
+        fireEvent.pointerMove(canvas, { pointerId: 7, clientX: 100, clientY: ATTACK_Y });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+        expect(onGestureStart).not.toHaveBeenCalled();
+        expect(canvas.style.cursor).toBe('');
+    });
+});

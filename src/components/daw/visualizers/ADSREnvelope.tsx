@@ -5,7 +5,7 @@
  * breakpoints and a filled gradient area. Updates in real-time
  * as knob values change.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -19,9 +19,41 @@ type ADSREnvelopeProps = {
     width?: number;
     height?: number;
     onParamChange?: (paramId: string, value: number) => void;
+    onGestureStart?: (paramId: BreakpointId) => boolean;
+    onGestureCommit?: (paramId: BreakpointId, value: number) => void;
+    onGestureCancel?: (paramId: BreakpointId) => void;
 };
 
 type BreakpointId = 'attack' | 'decay' | 'sustain' | 'release';
+
+type EnvelopeGesture = {
+    pointerId: number;
+    canvas: HTMLCanvasElement;
+    breakpoint: BreakpointId;
+    lastValue?: number;
+    change: NonNullable<ADSREnvelopeProps['onParamChange']>;
+    commit: ADSREnvelopeProps['onGestureCommit'];
+    cancel: ADSREnvelopeProps['onGestureCancel'];
+};
+
+function finishGesture(gestureRef: { current: EnvelopeGesture | null }, commit: boolean): void {
+    const gesture = gestureRef.current;
+    if (!gesture) {
+        return;
+    }
+    // Releasing capture can synchronously report its loss. Retire first.
+    gestureRef.current = null;
+    const { canvas, pointerId, breakpoint } = gesture;
+    if (!canvas.hasPointerCapture || canvas.hasPointerCapture(pointerId)) {
+        canvas.releasePointerCapture(pointerId);
+    }
+    canvas.style.cursor = 'grab';
+    if (commit && gesture.lastValue !== undefined && gesture.commit) {
+        gesture.commit(breakpoint, gesture.lastValue);
+    } else {
+        gesture.cancel?.(breakpoint);
+    }
+}
 
 export const ADSREnvelope = ({
     attack,
@@ -32,10 +64,12 @@ export const ADSREnvelope = ({
     width = 200,
     height = 80,
     onParamChange,
+    onGestureStart,
+    onGestureCommit,
+    onGestureCancel,
 }: ADSREnvelopeProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const isDragging = useRef(false);
-    const activeBreakpoint = useRef<BreakpointId | null>(null);
+    const gestureRef = useRef<EnvelopeGesture | null>(null);
     const isInteractive = !!onParamChange;
 
     // Store computed breakpoint positions for hit testing
@@ -175,7 +209,7 @@ export const ADSREnvelope = ({
         ctx.fillText(`${(sustain * 100).toFixed(0)}%`, width - pad, sustainY - 4);
 
         // "drag to adjust" hint
-        if (isInteractive && !isDragging.current) {
+        if (isInteractive && !gestureRef.current) {
             ctx.fillStyle = 'rgba(255,255,255,0.25)';
             ctx.font = '7px monospace';
             ctx.textAlign = 'center';
@@ -183,8 +217,24 @@ export const ADSREnvelope = ({
         }
     }, [attack, decay, sustain, release, color, width, height, isInteractive]);
 
+    useLayoutEffect(() => {
+        const cancel = (): void => finishGesture(gestureRef, false);
+        const visibilityChanged = (): void => {
+            if (document.visibilityState === 'hidden') {
+                cancel();
+            }
+        };
+        window.addEventListener('blur', cancel);
+        document.addEventListener('visibilitychange', visibilityChanged);
+        return () => {
+            window.removeEventListener('blur', cancel);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            cancel();
+        };
+    }, []);
+
     const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) {
+        if (!onParamChange || gestureRef.current || event.button !== 0) {
             return;
         }
         const canvas = canvasRef.current;
@@ -212,15 +262,24 @@ export const ADSREnvelope = ({
         if (!closest) {
             return;
         }
-
-        isDragging.current = true;
-        activeBreakpoint.current = closest;
+        if (onGestureStart && !onGestureStart(closest)) {
+            return;
+        }
+        gestureRef.current = {
+            pointerId: event.pointerId,
+            canvas,
+            breakpoint: closest,
+            change: onParamChange,
+            commit: onGestureCommit,
+            cancel: onGestureCancel,
+        };
         canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current || !activeBreakpoint.current) {
+        const gesture = gestureRef.current;
+        if (!gesture || gesture.pointerId !== event.pointerId) {
             return;
         }
         const canvas = canvasRef.current;
@@ -233,8 +292,15 @@ export const ADSREnvelope = ({
         const plotH = height - pad * 2;
         const mx = event.clientX - rect.left;
         const my = event.clientY - rect.top;
-
-        const bp = activeBreakpoint.current;
+        if (!Number.isFinite(mx) || !Number.isFinite(my) || plotW <= 0 || plotH <= 2) {
+            finishGesture(gestureRef, false);
+            return;
+        }
+        const change = (id: BreakpointId, value: number): void => {
+            gesture.lastValue = value;
+            gesture.change(id, value);
+        };
+        const bp = gesture.breakpoint;
 
         if (bp === 'sustain') {
             // Vertical drag only -> sustain level (0-1)
@@ -242,7 +308,7 @@ export const ADSREnvelope = ({
             const topY = pad + 2;
             const ratio = 1 - (my - topY) / (bottomY - topY);
             const clamped = Math.max(0, Math.min(1, ratio));
-            onParamChange('sustain', clamped);
+            change('sustain', clamped);
         } else {
             // Horizontal drag -> time parameter
             const xRatio = Math.max(0, Math.min(1, (mx - pad) / plotW));
@@ -251,30 +317,29 @@ export const ADSREnvelope = ({
 
             if (bp === 'attack') {
                 const val = Math.max(0.001, Math.min(2, mappedTime));
-                onParamChange('attack', val);
+                change('attack', val);
             } else if (bp === 'decay') {
                 const val = Math.max(0.001, Math.min(2, mappedTime - attack));
-                onParamChange('decay', Math.max(0.001, val));
+                change('decay', Math.max(0.001, val));
             } else if (bp === 'release') {
                 const sustainEnd = attack + decay + 0.4;
                 const val = Math.max(0.001, Math.min(5, mappedTime - sustainEnd));
-                onParamChange('release', Math.max(0.001, val));
+                change('release', Math.max(0.001, val));
             }
         }
     };
 
     const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) {
+        if (gestureRef.current?.pointerId !== event.pointerId) {
             return;
         }
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return;
+        finishGesture(gestureRef, true);
+    };
+
+    const handlePointerCancel = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        if (gestureRef.current?.pointerId === event.pointerId) {
+            finishGesture(gestureRef, false);
         }
-        isDragging.current = false;
-        activeBreakpoint.current = null;
-        canvas.releasePointerCapture(event.pointerId);
-        canvas.style.cursor = 'grab';
     };
 
     return (
@@ -287,6 +352,8 @@ export const ADSREnvelope = ({
             onPointerDown={isInteractive ? handlePointerDown : undefined}
             onPointerMove={isInteractive ? handlePointerMove : undefined}
             onPointerUp={isInteractive ? handlePointerUp : undefined}
+            onPointerCancel={isInteractive ? handlePointerCancel : undefined}
+            onLostPointerCapture={isInteractive ? handlePointerCancel : undefined}
         />
     );
 };
