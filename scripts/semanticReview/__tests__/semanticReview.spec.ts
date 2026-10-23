@@ -73,6 +73,7 @@ import {
     readUsage,
     TYPESAFE_MODEL,
     type SemanticProviderPort,
+    type SemanticProviderQuestions,
 } from '../provider.ts';
 import { renderSummary, validateReport, type SemanticVerifyReport } from '../report.ts';
 import { unitReservationBytes } from '../requestPayload.ts';
@@ -105,6 +106,7 @@ import {
     unitStatePlusQuestionBytes,
     type SemanticUnitPlan,
 } from '../run.ts';
+import { DRY_RUN_REASON } from '../scopeAccounting.ts';
 import { sensitiveContentReason } from '../sensitive.ts';
 import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.ts';
 
@@ -2793,6 +2795,287 @@ describe('contract-carrying admission', () => {
         expect(set.excluded.some((entry) => entry.path === 'src/modules/Project/undo.ts')).toBe(false);
     });
 
+    it('supplies the real ledger and root contract under the local profile, truncated when they exceed it', () => {
+        // The decision ledger outgrew the local profile's 16 KiB region budget, and the root contract
+        // was already past it, so every local scan lost both contract documents whole (#5235): the
+        // charge ranked them at zero bytes and admission withheld them. A context document over the
+        // ceiling is now admitted as its leading whole lines with a visible marker, bounded to the
+        // lines it kept and recorded as truncated. Reading the real files keeps this case honest about
+        // whichever side of the ceiling each document sits on today.
+        const ledger = readFileSync(join(repositoryRoot, '.agents/decisions/README.md'), 'utf8');
+        const contract = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
+        const readerPath = 'src/modules/Project/undo.ts';
+        const local = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:AGENTS.md`]: contract,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: ledger,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: local.maxStatePlusQuestionBytes,
+                maxTotalBytes: local.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        // At least one default document is over the local ceiling today, so the truncation path this
+        // case pins is exercised, not merely permitted.
+        expect(set.truncated.some((entry) => entry.reason === 'context-region-truncated-to-budget')).toBe(true);
+        for (const [path, text] of [
+            ['.agents/decisions/README.md', ledger],
+            ['AGENTS.md', contract],
+        ] as const) {
+            const totalLines = text.split('\n').length;
+            const fits = regionFitsRequest({ path, side: 'context', content: text }, local.maxStatePlusQuestionBytes);
+            const reference = set.references.find(
+                (candidate) => candidate.path === path && candidate.side === 'context'
+            );
+            expect(reference).toBeDefined();
+            if (!reference) {
+                continue;
+            }
+            const admitted = set.contents.get(reference.evidenceId) ?? '';
+            if (fits) {
+                expect(admitted).toBe(text);
+                expect(set.truncated.some((entry) => entry.path === path)).toBe(false);
+            } else {
+                expect(reference.startLine).toBe(1);
+                expect(reference.endLine).toBeLessThan(totalLines);
+                expect(admitted.endsWith(`first ${String(reference.endLine)} of ${String(totalLines)} lines]`)).toBe(
+                    true
+                );
+                expect(admitted.startsWith(text.split('\n')[0] ?? '')).toBe(true);
+                expect(
+                    set.truncated.some(
+                        (entry) => entry.path === path && entry.reason === 'context-region-truncated-to-budget'
+                    )
+                ).toBe(true);
+                expect(
+                    set.limitations.some((entry) => entry.startsWith(`contract ${path} was supplied truncated`))
+                ).toBe(true);
+            }
+        }
+    });
+
+    it('truncates an over-budget context document on whole lines and keeps a fitting one whole', () => {
+        // The truncation keeps only whole leading lines, names what it kept in a closing marker line,
+        // and records the loss; a context document under the ceiling in the same change is admitted
+        // byte-for-byte with no marker and no truncation record.
+        const readerPath = 'src/modules/Project/undo.ts';
+        const overBudget = Array.from(
+            { length: 60 },
+            (_, row) =>
+                `| [00${String(row).padStart(2, '0')}] | a decision row that pads the table wide enough to bind |`
+        ).join('\n');
+        const fitting = '# Short contract\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:zzz-wide-ledger.md`]: overBudget,
+                    [`${MERGE_BASE}:aaa-short-contract.md`]: fitting,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 2_400, maxTotalBytes: 1_000_000 },
+            contractPaths: ['zzz-wide-ledger.md', 'aaa-short-contract.md'],
+        });
+        const truncated = set.references.find(
+            (reference) => reference.path === 'zzz-wide-ledger.md' && reference.side === 'context'
+        );
+        expect(truncated).toBeDefined();
+        if (truncated) {
+            expect(truncated.startLine).toBe(1);
+            expect(truncated.endLine).toBeGreaterThan(0);
+            expect(truncated.endLine).toBeLessThan(60);
+            const admitted = set.contents.get(truncated.evidenceId) ?? '';
+            expect(admitted.startsWith('| [0000] |')).toBe(true);
+            expect(
+                admitted.endsWith(
+                    `[semantic review: context truncated to a bounded share of the request budget: first ${String(
+                        truncated.endLine
+                    )} of 60 lines]`
+                )
+            ).toBe(true);
+            // Maximality: one more line than was kept would not fit the share the region is sized
+            // against, so an over-truncating regression cannot pass as a fitting prefix.
+            const markerFor = (kept: number) =>
+                `[semantic review: context truncated to a bounded share of the request budget: first ${String(kept)} of 60 lines]`;
+            const nextLineCandidate = `${overBudget
+                .split('\n')
+                .slice(0, truncated.endLine + 1)
+                .join('\n')}\n${markerFor(truncated.endLine + 1)}`;
+            expect(
+                regionFitsRequest(
+                    { path: 'zzz-wide-ledger.md', side: 'context', content: nextLineCandidate },
+                    Math.floor(2_400 / 4)
+                )
+            ).toBe(false);
+            expect(set.truncated).toContainEqual({
+                path: 'zzz-wide-ledger.md',
+                reason: 'context-region-truncated-to-budget',
+            });
+            expect(
+                set.limitations.some((entry) => entry.startsWith('contract zzz-wide-ledger.md was supplied truncated'))
+            ).toBe(true);
+        }
+        const whole = set.references.find(
+            (reference) => reference.path === 'aaa-short-contract.md' && reference.side === 'context'
+        );
+        expect(whole).toBeDefined();
+        if (whole) {
+            expect(set.contents.get(whole.evidenceId)).toBe(fitting);
+            expect(set.truncated.some((entry) => entry.path === 'aaa-short-contract.md')).toBe(false);
+        }
+    });
+
+    it('withholds an over-budget credential-bearing context document whole instead of truncating past the screen', () => {
+        // The pre-screen is the module's first-documented constraint: a credential anywhere in the
+        // document keeps the region withheld whole, because the truncated prefix would egress text
+        // the screen never fully examined. The credential sits in the document's tail, past every
+        // line a truncation would keep.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const rows = Array.from(
+            { length: 60 },
+            (_, row) =>
+                `| [00${String(row).padStart(2, '0')}] | a decision row that pads the table wide enough to bind |`
+        );
+        const document = `${rows.join('\n')}\nexport const key = '${awsShaped}';\n`;
+        const readerPath = 'src/modules/Project/undo.ts';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:zzz-credentialed-ledger.md`]: document,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 2_400, maxTotalBytes: 1_000_000 },
+            contractPaths: ['zzz-credentialed-ledger.md'],
+        });
+        expect(
+            set.references.some(
+                (reference) => reference.path === 'zzz-credentialed-ledger.md' && reference.side === 'context'
+            )
+        ).toBe(false);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'zzz-credentialed-ledger.md' &&
+                    entry.reason.startsWith('evidence-withheld-credential-shaped')
+            )
+        ).toBe(true);
+        expect(
+            set.limitations.some((entry) =>
+                entry.startsWith('contract zzz-credentialed-ledger.md was supplied truncated')
+            )
+        ).toBe(false);
+    });
+
+    it('records no truncation disclosure when the total budget withholds the truncated region', () => {
+        // The disclosure must follow admission: when the collector's total gate omits the truncated
+        // document, the withhold path already records the omission, and a supply claim beside it
+        // would state both outcomes for one region.
+        const readerPath = 'src/modules/Project/undo.ts';
+        const overBudget = `${'a decision row that pads the document wide enough to bind the share\n'.repeat(60)}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:zzz-wide-ledger.md`]: overBudget,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 2_400, maxTotalBytes: 100 },
+            contractPaths: ['zzz-wide-ledger.md'],
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'zzz-wide-ledger.md' && reference.side === 'context')
+        ).toBe(false);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'zzz-wide-ledger.md' && entry.reason.startsWith('total-evidence-budget-exhausted')
+            )
+        ).toBe(true);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === 'zzz-wide-ledger.md' && entry.reason === 'context-region-truncated-to-budget'
+            )
+        ).toBe(false);
+        expect(
+            set.limitations.some((entry) => entry.startsWith('contract zzz-wide-ledger.md was supplied truncated'))
+        ).toBe(false);
+    });
+
+    it('carries both truncated default documents inside a local-profile unit the planner admits', () => {
+        // The acceptance that matters is the request, not the collector: the truncated regions must
+        // fit a unit's evidence budget beside its own sides after the reservation, which is why the
+        // prefix is sized against a bounded share of the ceiling rather than the ceiling itself.
+        const ledger = readFileSync(join(repositoryRoot, '.agents/decisions/README.md'), 'utf8');
+        const contract = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
+        const readerPath = 'src/modules/Project/undo.ts';
+        const files = [changedFile(readerPath)];
+        const local = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:AGENTS.md`]: contract,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: ledger,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: local.maxStatePlusQuestionBytes,
+                maxTotalBytes: local.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        const { units, excluded } = planUnits(files, set, local.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path === readerPath);
+        expect(unit).toBeDefined();
+        expect(excluded).not.toContainEqual({ path: readerPath, reason: 'no-evidence-region-within-budget' });
+        // The acceptance is one request, not the pass-union: `evidence.context`
+        // merges every pass, so it stays green when the region set splits across
+        // two requests — a wider truncated share would double every local
+        // contract unit's requests while this case kept passing. The quarter
+        // share exists precisely so both default documents fit beside the own
+        // sides of the unit's single pass.
+        const passes = unit?.evidence.passes ?? [];
+        expect(passes).toHaveLength(1);
+        const carried = passes[0]?.context.map((reference) => reference.path) ?? [];
+        expect(carried).toContain('.agents/decisions/README.md');
+        expect(carried).toContain('AGENTS.md');
+        for (const reference of passes[0]?.context ?? []) {
+            const text = reference.path === 'AGENTS.md' ? contract : ledger;
+            expect(reference.endLine).toBeLessThan(text.split('\n').length);
+        }
+    });
+
     it('excludes a path whose before side is credential-shaped and charges no contract context', () => {
         // The before-side arm: a rotation replaces the credential, so the after side is clean and a screen
         // reading only it would keep the path and charge context for it. The before hunk is what admission
@@ -3826,6 +4109,7 @@ describe('contract classification follows each side on both routes', () => {
                 },
             ],
             runId: 'verify-withheld',
+            dryRun: false,
         });
         return result.report.scope.truncated[0]?.reason;
     }
@@ -3961,6 +4245,7 @@ describe('contract classification follows each side on both routes', () => {
                 },
             ],
             runId: 'verify-context-class',
+            dryRun: false,
         });
         expect(beyond.report.scope.truncated).toEqual([
             { path: contextPath, reason: 'hunk-beyond-file (context, contract)' },
@@ -6025,6 +6310,7 @@ describe('complete transport admission', () => {
                 profile: SEMANTIC_BUDGET_PROFILES.local,
                 findings: [finding],
                 runId: 'complete-verify-screen',
+                dryRun: false,
             });
             expect(result.report.failureCode).toBe('sensitive_content_excluded');
             expect(result.report.findingAssessments).toEqual([]);
@@ -8312,6 +8598,7 @@ describe('verify incomplete attribution', () => {
                 },
             ],
             runId: 'verify-incomplete',
+            dryRun: false,
         });
         const assessment = result.report.findingAssessments[0];
         expect(assessment?.disposition).toBe('needs_more_evidence');
@@ -8398,6 +8685,7 @@ describe('verify summary wording', () => {
                 },
             ],
             runId: 'verify-summary',
+            dryRun: false,
         });
         const assessment = result.report.findingAssessments[0];
         expect(assessment?.disposition).toBe('needs_more_evidence');
@@ -9056,6 +9344,7 @@ describe('verify-path screening and identity', () => {
                 },
             ],
             runId: 'verify-test',
+            dryRun: false,
         });
         return { result, providerCalls };
     }
@@ -9207,14 +9496,19 @@ describe('verify-path screening and identity', () => {
             profile: SEMANTIC_BUDGET_PROFILES.local,
             findings,
             runId: 'verify-identity',
+            dryRun: false,
         });
         expect(result.report.rulesDigest).toBe(computeVerifyQuestionsDigest(findings));
         expect(result.report.rulesDigest).not.toBe(computeRulesDigest());
 
         // Different questions must not share one identity, or the second run overwrites the first's
-        // sidecar while claiming the same question set.
+        // sidecar while claiming the same question set. The digest reads past the claim: the impact
+        // category reaches the state and drives escalation, so two runs differing only in it are two
+        // identities, and dropping it from the digest must fail here rather than share a sidecar.
         const otherFindings: CandidateFinding[] = [{ ...findings[0]!, claim: 'a different claim' }];
         expect(computeVerifyQuestionsDigest(otherFindings)).not.toBe(computeVerifyQuestionsDigest(findings));
+        const recategorized: CandidateFinding[] = [{ ...findings[0]!, claimedImpactCategory: 'realtime' }];
+        expect(computeVerifyQuestionsDigest(recategorized)).not.toBe(computeVerifyQuestionsDigest(findings));
     });
 
     it('covers the interpretation policy, not only the rule thresholds', () => {
@@ -9265,8 +9559,195 @@ describe('verify mode', () => {
                 profile: SEMANTIC_BUDGET_PROFILES.local,
                 findings: [{ ...finding, headSha: 'f'.repeat(40) }],
                 runId: 'verify-test',
+                dryRun: false,
             })
         ).rejects.toMatchObject({ code: 'stale_context' });
+    });
+});
+
+describe('verify dry run', () => {
+    const dryRunFindings: CandidateFinding[] = [
+        {
+            findingId: 'f1',
+            headSha: HEAD,
+            claim: 'the first claim',
+            expectedBehavior: 'the first expected behavior',
+            evidenceReferences: [{ path: 'src/modules/Project/a.ts', side: 'after', startLine: 1, endLine: 1 }],
+        },
+        {
+            findingId: 'f2',
+            headSha: HEAD,
+            claim: 'the second claim',
+            expectedBehavior: 'the second expected behavior',
+            evidenceReferences: [{ path: 'src/modules/Project/b.ts', side: 'after', startLine: 2, endLine: 2 }],
+        },
+    ];
+    const dryRunBlobs = {
+        [`${HEAD}:src/modules/Project/a.ts`]: 'first line\n',
+        [`${HEAD}:src/modules/Project/b.ts`]: 'other line\nsecond line\n',
+    };
+
+    function dryRunPorts(provider: SemanticProviderPort) {
+        return {
+            ports: {
+                source: fakeSource({ files: [], blobs: dryRunBlobs }),
+                provider,
+                cache: new MapCache(),
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: () => undefined,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            findings: dryRunFindings,
+            runId: 'verify-dry-run',
+        };
+    }
+
+    /** The answers the live path needs: the selection question offers the supplied region ids plus `none`. */
+    function cannedAnswers(questions: SemanticProviderQuestions): Record<string, unknown> {
+        const distributions: Record<string, Record<string, number>> = {
+            support: { supported: 0.95, contradicted: 0.02, insufficient_context: 0.03 },
+            attribution: { introduced_by_change: 0.95, pre_existing: 0.02, undetermined: 0.03 },
+            kind: { behavioral_or_contract_issue: 0.95, style_preference: 0.02, undetermined: 0.03 },
+            strongestEvidence: { none: 1 },
+        };
+        const answers: Record<string, unknown> = {};
+        for (const key of Object.keys(questions)) {
+            const probabilities = distributions[key] ?? distributions.support!;
+            answers[key] = {
+                type: 'choice',
+                probabilities,
+                confidence: 0.95,
+                choice: Object.keys(probabilities)[0],
+            };
+        }
+        return answers;
+    }
+
+    it('builds every request without a single provider call and skips every finding', async () => {
+        // The usage text promises zero TypeSafe calls under --dry-run. The stub answers a call with a
+        // defect refusal, so one provider call fails the run loudly instead of passing quietly.
+        const { runVerify } = await import('../verify.ts');
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('dry-run made a provider call; this is a defect');
+            },
+        };
+        const result = await runVerify({ ...dryRunPorts(provider), dryRun: true });
+        expect(providerCalls).toBe(0);
+        expect(result.report.execution).toBe('skipped');
+        expect(result.report.findingAssessments).toEqual([]);
+        // Every finding is named under the dry-run reason, not counted into a bucket.
+        expect(result.report.scope.unassessed).toEqual([
+            { path: 'f1', reason: DRY_RUN_REASON },
+            { path: 'f2', reason: DRY_RUN_REASON },
+        ]);
+        expect(() => validateReport(result.report)).not.toThrow();
+    });
+
+    it('reports the request each finding would send, measured as the live request is charged', async () => {
+        const { runVerify } = await import('../verify.ts');
+        const seen: { state: unknown; questions: unknown }[] = [];
+        const liveProvider: SemanticProviderPort = {
+            systemOne: async ({ state, questions }) => {
+                seen.push({ state, questions });
+                return {
+                    model: TYPESAFE_MODEL,
+                    answers: cannedAnswers(questions),
+                    usage: { input_tokens: 5, output_tokens: 0 },
+                };
+            },
+        };
+        const live = await runVerify({ ...dryRunPorts(liveProvider), dryRun: false });
+        expect(live.report.execution).toBe('completed');
+        expect(live.report.findingAssessments).toHaveLength(2);
+        expect(seen).toHaveLength(2);
+
+        // The dry run must reach the provider exactly zero times, so its provider refuses on a call.
+        let dryRunProviderCalls = 0;
+        const dryRunProvider: SemanticProviderPort = {
+            systemOne: async () => {
+                dryRunProviderCalls += 1;
+                throw new Error('dry-run made a provider call; this is a defect');
+            },
+        };
+        const dry = await runVerify({ ...dryRunPorts(dryRunProvider), dryRun: true });
+        expect(dryRunProviderCalls).toBe(0);
+        expect(dry.previews.map((preview) => preview.findingId)).toEqual(['f1', 'f2']);
+        // The export cannot disagree with what a live run submits: each preview is the exact state and
+        // question set the provider received for its finding.
+        expect(dry.previews[0]?.state).toEqual(seen[0]?.state);
+        expect(dry.previews[0]?.questions).toEqual(seen[0]?.questions);
+        expect(dry.previews[1]?.state).toEqual(seen[1]?.state);
+        expect(dry.previews[1]?.questions).toEqual(seen[1]?.questions);
+
+        const first = dry.previews[0];
+        const firstState = first?.state as {
+            finding: { claim: string; expectedBehavior: string };
+            evidence: Record<string, { path: string; side: string; startLine: number; content: string }>;
+        };
+        expect(firstState.finding.claim).toBe('the first claim');
+        expect(firstState.finding.expectedBehavior).toBe('the first expected behavior');
+        const regions = Object.entries(firstState.evidence);
+        expect(regions).toHaveLength(1);
+        const [evidenceId, region] = regions[0]!;
+        expect(evidenceId).toBe('a1');
+        expect(region.path).toBe('src/modules/Project/a.ts');
+        expect(region.side).toBe('after');
+        expect(region.startLine).toBe(1);
+        expect(region.content).toBe('first line');
+
+        const firstQuestions = first?.questions as Record<string, { instructions: string; criteria: unknown }>;
+        expect(Object.keys(firstQuestions)).toEqual(['support', 'attribution', 'kind', 'strongestEvidence']);
+        expect(firstQuestions.support?.instructions).toContain('the first claim');
+        expect(firstQuestions.strongestEvidence?.criteria).toEqual({
+            none: 'No supplied region is the strongest evidence.',
+            a1: 'Region a1 is the strongest evidence for this finding.',
+        });
+
+        // The bytes are what the live request submits and the budget charges: state, questions, and
+        // the model as one body, exactly what `assessUnit` prepares for the provider.
+        expect(first?.bodyBytes).toBe(
+            Buffer.byteLength(
+                JSON.stringify({ state: seen[0]?.state, questions: seen[0]?.questions, model: TYPESAFE_MODEL }),
+                'utf8'
+            )
+        );
+        expect(first?.estimatedInputTokens).toBe(Math.ceil((first?.bodyBytes ?? 0) / 4));
+    });
+
+    it('marks a fully withheld finding as a preview no run would send', async () => {
+        // A finding whose every named region was withheld (here: the sensitive-path screen) sends zero
+        // requests in a live run, so its export entry carries the omission cause and the sendable
+        // entries carry none — the summary counts on exactly that difference.
+        const { runVerify } = await import('../verify.ts');
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('dry-run made a provider call; this is a defect');
+            },
+        };
+        const result = await runVerify({
+            ...dryRunPorts(provider),
+            findings: [
+                dryRunFindings[0]!,
+                {
+                    ...dryRunFindings[1]!,
+                    evidenceReferences: [{ path: '.env', side: 'after', startLine: 1, endLine: 1 }],
+                },
+            ],
+            dryRun: true,
+        });
+        expect(providerCalls).toBe(0);
+        expect(result.previews).toHaveLength(2);
+        expect(result.previews[0]?.findingId).toBe('f1');
+        expect(result.previews[0]).not.toHaveProperty('omissionReason');
+        expect(result.previews[1]?.findingId).toBe('f2');
+        expect(result.previews[1]?.omissionReason).toBe('no-admissible-evidence');
     });
 });
 
@@ -9413,6 +9894,7 @@ describe('execution state and required evidence resolution', () => {
                 },
             ],
             runId: 'verify-range',
+            dryRun: false,
         });
         const serialized = JSON.stringify(seen);
         expect(serialized).toContain('second line');
@@ -10240,6 +10722,7 @@ async function verifyWith(input: {
             },
         ],
         runId: input.runId ?? 'verify-test',
+        dryRun: false,
     });
 }
 
@@ -11595,6 +12078,7 @@ describe('opaque bearer source and caller admission', () => {
             profile: SEMANTIC_BUDGET_PROFILES.local,
             findings: [candidate],
             runId: 'opaque-bearer-verify',
+            dryRun: false,
         });
     }
 

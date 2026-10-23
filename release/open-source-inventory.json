@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:ace2c25e8368a28fdf535938f4a7858c9b8e30e1e460ca83fc94cc03bbe5752e:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:22d6c8bdce602ce07ca04f402d985ae92ef9a274126955cec4aa44f3b075486a:release/dependency-license-proofs.json"
+                "sha256:6b54ed079a44f89c35b4fd9dc4b68f2c0ba9300194e32f4b43510874760784a7:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:3b5b5ee39eb4dde600bc079b3f6791b36dc028a0ee7811610fa384d20ca635f9:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -277,7 +277,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:06ebdb9b81a5072b9e043c013e16f9d53f7db90c76c21b736dc0f167f9b2df50",
+                "sha256:07cffebaa5cfe9f04acde83557ef7ec6a5dce9c8f3a598657789ec7d5f5c74b2",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -812,7 +812,7 @@
                 "sha256:f59b8857e8986c66e485394a293eddb66b422589f181ee990fac15cdd3bad45f:src/modules/BrowserAi/useCases/initBrowserAi.ts",
                 "sha256:a320fa6f542de69d260c1fab0ec6c6de78493f724461a148c12c3678efef8019:src/modules/BrowserAi/useCases/removeDdspInstrument.ts",
                 "sha256:e255c65348b8fd18a1bdc230c2688ee5667cba4ec56d3355a942d6fdc033fd17:src/modules/BrowserAi/useCases/removeModel.ts",
-                "sha256:01cae7e7832a5209b0246a3e68007ec210986026a5444c144bfda19ceff6bf2f:src/modules/BrowserAi/useCases/renderDdspInstrument.ts",
+                "sha256:1a9c568d5ac54f907cf8fe54fb703577473a01df9ca783144fa8f9bbb4291ddc:src/modules/BrowserAi/useCases/renderDdspInstrument.ts",
                 "sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json",
                 "sha256:e2df331d82cf56ed58c202c7af545b305f6794c655897dfc45535620a0d2fc12:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/group1-shard1of1.bin",
                 "sha256:9cfae64cf6e36007192a479f6f74e26356ed0e6d4521d242498bcb4e04723269:bytes:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/settings.json",
@@ -1208,8 +1208,8 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d90916200a6151f9245d134989a9920bf616a7309fe3a8154347fdd2c3dbe522:grand-boule-factory-admission",
-                "tracked-set-sha256:fa2861f1b463acb0bdb4f0152d9f4dfa31524fac72ce01b2f6608a47445504a9:grand-boule-live-runtime",
-                "tracked-set-sha256:c2e4ed32e0bc4aa195117db438404e52d778e24a5fc8a004b5f2cca01a2cd359:grand-boule-project-state",
+                "tracked-set-sha256:6169b6b82751be7dbeba32a7cd1ca5b54ad7abc0827b7bd6db50facf650c64e5:grand-boule-live-runtime",
+                "tracked-set-sha256:b354a4b2ea565ebf42f7fcb21597d6a55fd196a8638dfad42666e6a3b44cb33b:grand-boule-project-state",
                 "tracked-set-sha256:08e286707f9218a437a98b4e2cc06d09af5c07e3a25e564b06df826418a1d5c6:grand-boule-offline-composition",
                 "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
             ],
@@ -1342,13 +1342,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:bb40b6cbc383e65aa9a7b634db017c97f8f10d56cdcd977421d5394ab7d81c62",
+                "daw-dsp sha256:ff907bfb93d42299ba99a5d3977f5c7538d478c622f5b5083dfac17dea13aaca",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:1c3a4e4ed1ac200437a1f99ac185f1ccaf465c903afc864fa204968ff6e866b2",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:d5a66dbdfdbb8f02a013d043b93e1eba6cfa3d951d41970415c27e90d8c40364:public/wasm/manifest.json"
+                "sha256:b552491574abf7cbf03162d47fd02a443d0cc3b01ca756fa63e57e3393f88238:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1740,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "9668930c62197bf8a6555865edc5411436dee1395d20f055bd730f7558378f2a"
+            "sha256": "89b699a6f606b94e0953addbc3740312c2acf21f20d76654481a446584142078"
         },
         {
             "path": "server/package.json",
@@ -1752,7 +1752,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "06ebdb9b81a5072b9e043c013e16f9d53f7db90c76c21b736dc0f167f9b2df50"
+            "sha256": "07cffebaa5cfe9f04acde83557ef7ec6a5dce9c8f3a598657789ec7d5f5c74b2"
         },
         {
             "path": "Cargo.toml",
@@ -1768,7 +1768,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "d5a66dbdfdbb8f02a013d043b93e1eba6cfa3d951d41970415c27e90d8c40364"
+            "sha256": "b552491574abf7cbf03162d47fd02a443d0cc3b01ca756fa63e57e3393f88238"
         }
     ],
     "externalReferences": [
@@ -2127,6 +2127,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/aptWithoutMicrosoftFeed.sh",
+            "value": "https://packages.microsoft.com/ubuntu/"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/assert-deployment-isolation.sh",
             "value": "https://$alias/"
         },
@@ -2170,11 +2175,6 @@
             "surface": "project-source",
             "file": "scripts/checkReleaseInventory.ts",
             "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkStancesRecord.ts",
-            "value": "https://api.typesafe.ai/v1/systemone"
         },
         {
             "surface": "project-source",
