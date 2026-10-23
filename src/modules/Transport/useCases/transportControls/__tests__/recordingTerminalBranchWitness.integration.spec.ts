@@ -1,3 +1,4 @@
+import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,8 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
-import { takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { sanitizeTrackSnapshot } from '#/modules/Arrangement/stores/trackStore';
+import { sanitizeTrackSnapshot, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
@@ -17,10 +17,9 @@ import {
     getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { forkProjectBranch } from '#/modules/CrdtDocument/useCases/crdtBranching/forkProjectBranch';
-import { switchBranch } from '#/modules/CrdtDocument/useCases/crdtBranching/switchBranch';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { toggleRecording } from '../toggleRecording';
@@ -85,8 +84,13 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
-vi.mock('#/modules/CrdtDocument/useCases/compactProject', () => ({ compactProject: vi.fn(() => Promise.resolve()) }));
-vi.mock('#/modules/CrdtDocument/useCases/runCrdtPersistenceOperation', () => ({
+// The persistence legs a branch switch kicks off are the one CrdtDocument
+// surface this spec stands in for: the no-op keeps the storage port's real
+// backends out of the jsdom run, while the document functions the cases drive
+// (the root replacement seam, the witness) stay real through the spread.
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    compactProject: vi.fn(() => Promise.resolve()),
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
 }));
 
@@ -148,6 +152,19 @@ function documentClipIds(): string[] {
     }
     const tracks = sanitizeTrackSnapshot(document.tracks).tracks;
     return tracks.flatMap((track) => (track.id === TRACK_ID ? (track.clips ?? []).map((clip) => clip.id) : []));
+}
+
+/**
+ * Model the identity-moving project replacement the guards police — a branch
+ * fork or switch installing a different document in the root slot — through
+ * the barrel's seam for exactly that (see replaceCrdtDoc). The clone carries
+ * whatever the snapshot moment's root held, mirroring a fork's fast copy.
+ */
+function installRootReplacement(snapshot = getCrdtDoc(DOC_PREFIX_ROOT)): void {
+    if (!snapshot) {
+        throw new Error('expected the root document to be installed');
+    }
+    replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(snapshot) });
 }
 
 function committedEntryCount(): number {
@@ -241,15 +258,14 @@ describe('recording terminal publishes only under its captured root (issue #5289
     });
 
     it('refuses the outgoing terminal after a branch switch, leaving the successor untouched', async () => {
-        // The successor is forked before the take opens, so its snapshot holds
+        // The successor snapshot is taken before the take opens, so it holds
         // the track and no recorded clips — the branch that must stay clean.
-        const featureBranchId = await forkProjectBranch('feature');
-        await switchBranch('main');
+        const successorSnapshot = getCrdtDoc(DOC_PREFIX_ROOT);
         await startAudioRecordingGesture();
 
         // Stop's flush is held captive; the project moves to the successor
         // while the outgoing terminal is still pending.
-        await switchBranch(featureBranchId);
+        installRootReplacement(successorSnapshot);
         // The successor forked before the take opened, so its snapshot holds no
         // recorded clips — the branch that must stay clean through the release.
         const successorClipIdsBeforeRelease = documentClipIds();
@@ -271,7 +287,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         // provisional clip: the old owner's failure cleanup must not delete it
         // out of the successor document.
         await startAudioRecordingGesture();
-        await forkProjectBranch('feature');
+        installRootReplacement();
         const successorClipsWithProvisional = documentClipIds();
         expect(successorClipsWithProvisional).toHaveLength(1);
 
@@ -325,7 +341,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         await vi.waitFor(() => {
             expect(mocks.commitRecording).toHaveBeenCalled();
         });
-        await forkProjectBranch('feature');
+        installRootReplacement();
         const successorClipsWithProvisional = documentClipIds();
         expect(successorClipsWithProvisional).toHaveLength(1);
 
@@ -371,7 +387,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         );
         toggleRecording();
 
-        await forkProjectBranch('feature');
+        installRootReplacement();
 
         resolveAdmission?.(true);
         await vi.waitFor(() => {
