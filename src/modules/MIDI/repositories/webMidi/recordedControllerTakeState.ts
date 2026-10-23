@@ -47,6 +47,14 @@ type RecordedControllerTakeState = {
      * take opened on the input's track, as rows at the clip's beat 0.
      */
     heldPedalSeeds: Map<string, readonly MidiCC[]>;
+    /**
+     * The RPN 0 declarations of the pitch-bend range the live input held per
+     * channel when a take began, owed to the clip that take opened on the input's
+     * track, as rows at the clip's beat 0. Kept apart from the pedals because the
+     * rows are one ordered message sequence: a take's own row at beat 0 never
+     * stands in for part of it.
+     */
+    bendRangeSeeds: Map<string, readonly MidiCC[]>;
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
@@ -55,4 +63,5 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     committedClipIds: new Set(),
     carriedOverClipIds: new Set(),
     heldPedalSeeds: new Map(),
+    bendRangeSeeds: new Map(),
 };

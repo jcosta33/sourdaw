@@ -3,6 +3,7 @@ import { activeRecordingRef, trackStore } from '#/modules/Arrangement/stores';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { recordedControllerTakeState } from '../../repositories/webMidi/recordedControllerTakeState';
 
+import { readBendRangeSeedRows } from './readBendRangeSeedRows';
 import { readHeldPedalRows } from './readHeldPedalRows';
 import { readLiveClipIds } from './readLiveClipIds';
 
@@ -38,12 +39,14 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  *
  * The pedals held on the live input are read now, before the take's own
  * messages move them, because a pedal pressed before the take is still down when
- * it begins and no message will say so. The clips the recorder just opened are
+ * it begins and no message will say so. So is the pitch-bend range the input
+ * declared, which the clip's own rows could not otherwise tell stored playback;
+ * both are seeded whether or not the take records anything else. The clips the recorder just opened are
  * the ones whose commit flushes their rows; `startRecording` opens them before
  * the transport reports recording.
  */
 export function beginRecordedControllerTake(): void {
-    const { buffers, openedClipIds, committedClipIds, carriedOverClipIds, heldPedalSeeds } =
+    const { buffers, openedClipIds, committedClipIds, carriedOverClipIds, heldPedalSeeds, bendRangeSeeds } =
         recordedControllerTakeState;
     const awaitingCommit = readClipsAwaitingCommit();
     for (const clipId of [...buffers.keys()]) {
@@ -51,9 +54,11 @@ export function beginRecordedControllerTake(): void {
             buffers.delete(clipId);
         }
     }
-    for (const clipId of [...heldPedalSeeds.keys()]) {
-        if (!awaitingCommit.has(clipId)) {
-            heldPedalSeeds.delete(clipId);
+    for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
+        for (const clipId of [...seeds.keys()]) {
+            if (!awaitingCommit.has(clipId)) {
+                seeds.delete(clipId);
+            }
         }
     }
     committedClipIds.clear();
@@ -72,5 +77,11 @@ export function beginRecordedControllerTake(): void {
     const pedalRows = readHeldPedalRows();
     if (seededClipId !== undefined && pedalRows.length > 0) {
         heldPedalSeeds.set(seededClipId, pedalRows);
+    }
+    // A clip carried over from an earlier take already holds its own declaration,
+    // with the ids its redo snapshot names; a second one would replace them.
+    const bendRangeRows = readBendRangeSeedRows();
+    if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClipIds.has(seededClipId)) {
+        bendRangeSeeds.set(seededClipId, bendRangeRows);
     }
 }

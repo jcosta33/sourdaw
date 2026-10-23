@@ -16,7 +16,7 @@ import { writeRecordedControllerRows } from './writeRecordedControllerRows';
  * clip's closing line.
  */
 export function endRecordedControllerTake(): void {
-    const { buffers, openedClipIds, heldPedalSeeds } = recordedControllerTakeState;
+    const { buffers, openedClipIds, heldPedalSeeds, bendRangeSeeds } = recordedControllerTakeState;
     const liveClipIds = readLiveClipIds();
 
     for (const clipId of [...buffers.keys()]) {
@@ -33,9 +33,11 @@ export function endRecordedControllerTake(): void {
             writeRecordedControllerRows({ clipId, cc: rows.cc, pitchBend: rows.pitchBend });
         }
     }
-    for (const clipId of [...heldPedalSeeds.keys()]) {
-        if (!liveClipIds.has(clipId)) {
-            heldPedalSeeds.delete(clipId);
+    for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
+        for (const clipId of [...seeds.keys()]) {
+            if (!liveClipIds.has(clipId)) {
+                seeds.delete(clipId);
+            }
         }
     }
 }

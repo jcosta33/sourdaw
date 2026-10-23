@@ -80,7 +80,7 @@ function sameBytes(left: DataEntryBytes, right: DataEntryBytes): boolean {
  * entry has just written is already what the declaration leaves, so it is not selected again (selecting
  * resets the bytes).
  */
-function declareState(state: MidiChannelControllerState): RegisteredParameterMessage[] {
+export function declareChannelState(state: MidiChannelControllerState): RegisteredParameterMessage[] {
     const messages: RegisteredParameterMessage[] = [];
     const range = state.bendRangeSemitones;
     const rangeBytes = range === undefined ? undefined : encodeBendRange(range);
@@ -169,10 +169,10 @@ export function reconcileRegisteredParameterMessages({
         const currentState = currentByChannel.get(channel) ?? createMidiChannelControllerState();
         const targetState = targetByChannel.get(channel) ?? createMidiChannelControllerState();
         const reached = stateToReach(currentState, targetState);
-        if (JSON.stringify(declareState(currentState)) === JSON.stringify(declareState(reached))) {
+        if (JSON.stringify(declareChannelState(currentState)) === JSON.stringify(declareChannelState(reached))) {
             continue;
         }
-        reconciled.push(...declareState(reached).map((message) => ({ ...message, channel })));
+        reconciled.push(...declareChannelState(reached).map((message) => ({ ...message, channel })));
     }
     return reconciled;
 }
