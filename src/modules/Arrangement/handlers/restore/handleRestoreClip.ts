@@ -34,9 +34,43 @@ function clipMidiBucketsAreAbsent(clipId: string): boolean {
     );
 }
 
+function midiIdentityIdsAfterPrefix(priorActions: readonly AppAction[], completedPrefix: boolean): string[] {
+    // The committed root can lag earlier writes in this open transaction.
+    // The MIDI owner's read includes those writes, as well as peer rows.
+    const midi = getMidiStoreState();
+    if (!midi) {
+        return [];
+    }
+    const retiredByPrefix = new Set<string>();
+    if (!completedPrefix) {
+        for (const prior of priorActions) {
+            if (prior.type === 'discardDuplicatedClip' || prior.type === 'removeClip') {
+                retiredByPrefix.add(prior.payload.clipId);
+            }
+            if (prior.type === 'restoreClipSplitState' && !prior.payload.replacement.rightClip) {
+                retiredByPrefix.add(prior.payload.rightClipId);
+            }
+        }
+    }
+    if (retiredByPrefix.size === 0) {
+        return collectClipSplitIdentityIds(midi);
+    }
+    return collectClipSplitIdentityIds({
+        ...midi,
+        notesByClipId: Object.fromEntries(
+            Object.entries(midi.notesByClipId).filter(([id]) => !retiredByPrefix.has(id))
+        ),
+        ccByClipId: Object.fromEntries(Object.entries(midi.ccByClipId).filter(([id]) => !retiredByPrefix.has(id))),
+        pitchBendByClipId: Object.fromEntries(
+            Object.entries(midi.pitchBendByClipId).filter(([id]) => !retiredByPrefix.has(id))
+        ),
+    });
+}
+
 function capturedMidiIdentitiesAreAvailable(
     action: RestoreClipAction,
-    priorActions: readonly AppAction[] = []
+    priorActions: readonly AppAction[] = [],
+    completedPrefix = false
 ): boolean {
     const capturedIds = collectClipSplitIdentityIds([
         action.payload.midiNotesSnapshot,
@@ -46,17 +80,16 @@ function capturedMidiIdentitiesAreAvailable(
     if (capturedIds.length === 0) {
         return true;
     }
-    const prefix = projectClipReplayPrefix(priorActions);
+    const prefix = projectClipReplayPrefix(completedPrefix ? [] : priorActions);
     if (!prefix) {
         return false;
     }
     const occupied = readClipSplitIdentityIds(
         prefix.lanes,
-        prefix.clips.map((owner) => owner.clip)
+        prefix.clips.map((owner) => owner.clip),
+        priorActions
     );
-    // The committed root can lag earlier writes in this open transaction.
-    // The MIDI owner's read includes those writes, as well as peer rows.
-    for (const id of collectClipSplitIdentityIds(getMidiStoreState())) {
+    for (const id of midiIdentityIdsAfterPrefix(priorActions, completedPrefix)) {
         occupied.add(id);
     }
     for (const prior of priorActions) {
@@ -78,22 +111,27 @@ function capturedMidiIdentitiesAreAvailable(
     return capturedIds.every((id) => !occupied.has(id));
 }
 
-function restoreStateMatches(action: RestoreClipAction, context?: HandlerValidationContext): boolean {
+function restoreStateMatches(
+    action: RestoreClipAction,
+    context?: HandlerValidationContext,
+    completedPrefix = false
+): boolean {
     // The restore inserts `clipSnapshot` as-is, so it assumes the owning track
     // is present and the removed clip is absent from every track. A peer may
     // recreate the same identity under another owner after removal.
     const tracks = getTrackStoreState()?.tracks ?? [];
     const priorActions = context?.actions.slice(0, context.actionIndex);
+    const projectedPriorActions = completedPrefix ? [] : priorActions;
     if (
         !tracks.some((track) => track.id === action.payload.trackId) ||
         tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId)) ||
-        !capturedMidiIdentitiesAreAvailable(action, priorActions) ||
-        !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) ||
+        !capturedMidiIdentitiesAreAvailable(action, priorActions, completedPrefix) ||
+        !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], projectedPriorActions) ||
         !rippleDeleteShiftStateMatchesStore(
             action.payload.trackId,
             action.payload.ripplePlan?.shiftedClips ?? [],
             action.payload.ripplePlan?.clipAutomationLanes ?? [],
-            priorActions
+            projectedPriorActions
         )
     ) {
         return false;
@@ -146,8 +184,8 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
         isRestoreClipSessionPayload(action.payload) &&
         restoreStateMatches(action, context) &&
         batchMembersAreIndependent(action, context),
-    execute: (alpha) => {
-        if (!isRestoreClipSessionPayload(alpha.payload) || !restoreStateMatches(alpha)) {
+    execute: (alpha, context) => {
+        if (!isRestoreClipSessionPayload(alpha.payload) || !restoreStateMatches(alpha, context, true)) {
             return { status: 'conflict' };
         }
         const {

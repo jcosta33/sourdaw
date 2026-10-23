@@ -12,6 +12,40 @@ type ShiftedOwnerState = {
     lanes: readonly ClipAutomationLaneSnapshot[];
 };
 
+function projectDiscard(state: ShiftedOwnerState, clipId: string): ShiftedOwnerState | null {
+    if (!state.clips.some((owner) => owner.clip.id === clipId)) {
+        return null;
+    }
+    return {
+        clips: state.clips.filter((owner) => owner.clip.id !== clipId),
+        lanes: state.lanes.filter((lane) => lane.clipId !== clipId),
+    };
+}
+
+function projectSplitRestore(
+    state: ShiftedOwnerState,
+    payload: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload']
+): ShiftedOwnerState {
+    const { clipId, rightClipId, replacement } = payload;
+    const trackClips = state.clips
+        .filter((owner) => owner.owningTrackId === replacement.trackId && owner.clip.id !== rightClipId)
+        .map((owner) => (owner.clip.id === clipId ? { ...owner, clip: replacement.leftClip } : owner));
+    if (replacement.rightClip) {
+        trackClips.splice(replacement.rightClipIndex, 0, {
+            owningTrackId: replacement.trackId,
+            clip: replacement.rightClip,
+        });
+    }
+    const firstIndex = state.clips.findIndex((owner) => owner.owningTrackId === replacement.trackId);
+    const otherClips = state.clips.filter((owner) => owner.owningTrackId !== replacement.trackId);
+    otherClips.splice(Math.max(0, firstIndex), 0, ...trackClips);
+    let lanes = state.lanes;
+    if (replacement.clipAutomationLanes !== undefined) {
+        lanes = [...state.lanes.filter((lane) => lane.clipId !== rightClipId), ...replacement.clipAutomationLanes];
+    }
+    return { clips: otherClips, lanes };
+}
+
 function projectRemoval(state: ShiftedOwnerState, clipId: string, ripple?: boolean): ShiftedOwnerState | null {
     const target = state.clips.find((owner) => owner.clip.id === clipId);
     if (!target) {
@@ -95,6 +129,14 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
         lanes: getAutomationLanes(),
     };
     for (const action of priorActions) {
+        if (action.type === 'discardDuplicatedClip') {
+            const discard = projectDiscard(state, action.payload.clipId);
+            if (!discard) {
+                return null;
+            }
+            state = discard;
+            continue;
+        }
         if (action.type === 'removeClip') {
             const removal = projectRemoval(state, action.payload.clipId, action.payload.ripple);
             if (!removal) {
@@ -104,27 +146,7 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
             continue;
         }
         if (action.type === 'restoreClipSplitState') {
-            const { clipId, rightClipId, replacement } = action.payload;
-            const trackClips = state.clips
-                .filter((owner) => owner.owningTrackId === replacement.trackId && owner.clip.id !== rightClipId)
-                .map((owner) => (owner.clip.id === clipId ? { ...owner, clip: replacement.leftClip } : owner));
-            if (replacement.rightClip) {
-                trackClips.splice(replacement.rightClipIndex, 0, {
-                    owningTrackId: replacement.trackId,
-                    clip: replacement.rightClip,
-                });
-            }
-            const firstIndex = state.clips.findIndex((owner) => owner.owningTrackId === replacement.trackId);
-            const otherClips = state.clips.filter((owner) => owner.owningTrackId !== replacement.trackId);
-            otherClips.splice(Math.max(0, firstIndex), 0, ...trackClips);
-            let lanes = state.lanes;
-            if (replacement.clipAutomationLanes !== undefined) {
-                lanes = [
-                    ...state.lanes.filter((lane) => lane.clipId !== rightClipId),
-                    ...replacement.clipAutomationLanes,
-                ];
-            }
-            state = { clips: otherClips, lanes };
+            state = projectSplitRestore(state, action.payload);
             continue;
         }
         if (action.type !== 'restoreClip') {

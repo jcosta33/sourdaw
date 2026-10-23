@@ -167,6 +167,7 @@ function isClipSnapshot(value: unknown, clipId: string, trackId: string): value 
         typeof value.name === 'string' &&
         typeof value.startBeat === 'number' &&
         Number.isFinite(value.startBeat) &&
+        value.startBeat >= 0 &&
         typeof value.endBeat === 'number' &&
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&

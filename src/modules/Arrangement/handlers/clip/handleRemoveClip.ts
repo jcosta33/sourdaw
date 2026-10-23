@@ -137,6 +137,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             (owner) => owner.clip.id === action.payload.clipId
         ) ??
             false) &&
+        !hasForeignPendingProjectWrites() &&
         admittedRedoTarget(action, context) &&
         batchMembersAreIndependent(action, context),
     execute: (alpha, context) => {
@@ -147,10 +148,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return { status: 'no-write' };
         }
         const paired = pairedInverseForRedo(alpha);
-        if (
-            (paired?.type === 'restoreClip' && hasForeignPendingProjectWrites()) ||
-            !redoTargetMatchesAtExecution(alpha, context, paired)
-        ) {
+        if (hasForeignPendingProjectWrites() || !redoTargetMatchesAtExecution(alpha, context, paired)) {
             preflightRedoTargets.delete(alpha);
             pendingInverseCaptures.delete(alpha);
             pendingRedoCaptures.delete(alpha);

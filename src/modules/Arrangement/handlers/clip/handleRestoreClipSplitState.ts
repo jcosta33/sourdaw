@@ -2,6 +2,7 @@ import {
     captureDurableDocumentWitness,
     captureProjectMutationAuthorization,
     getCrdtDoc,
+    hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
@@ -78,6 +79,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
             clips: projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip),
         })) ?? [];
     return (
+        !hasForeignPendingProjectWrites() &&
         clipSplitCaptureOwnersMatch(action.payload) &&
         retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) &&
         reKeyedTakeLaneOwnersMatchStore(
@@ -145,7 +147,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
     canReapplyAfterDivergence: () => true,
     validate: clipSplitStateMatches,
     execute: (action) => {
-        if (!clipSplitStateMatches(action)) {
+        if (hasForeignPendingProjectWrites() || !clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
