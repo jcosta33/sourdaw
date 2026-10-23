@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_1c08b47ac3792f::t_969eea28c77e5a 1209-1230
+  s_1c08b47ac3792f::t_7f569b120f3390 581-588,596,600-604
+  s_1c08b47ac3792f::t_7fd1cb54be0291 589-595,597-599
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_d1ce9257756dad 429
+  s_1c08b47ac3792f::t_e02d7b54b8c832 399,427-428,493-500
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_cd42a9987ad14f 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77518edb8049c01f03e2c6d34c24e19678412b77",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
