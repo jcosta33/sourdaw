@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { dbToGain, FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
@@ -58,6 +58,21 @@ const commandMocks = vi.hoisted(() => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: commandMocks.executeUserAppAction,
+}));
+
+const promptMocks = vi.hoisted(() => ({
+    promptUser: vi.fn<() => Promise<string | null>>(() => Promise.resolve(null)),
+    projectEpoch: 0,
+}));
+
+vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: promptMocks.promptUser }));
+
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureProjectTransitionAuthority: () => {
+        const epoch = promptMocks.projectEpoch;
+        return { isCurrent: () => promptMocks.projectEpoch === epoch };
+    },
 }));
 
 const undoStoreMocks = vi.hoisted(() => ({
@@ -148,6 +163,8 @@ describe('MasterChannelStrip', () => {
         storeMocks.useStore.mockReturnValue({ masterGain: 80 });
         storeMocks.transportStoreValue = { masterGain: 80 };
         commandMocks.executeUserAppAction.mockResolvedValue(undefined);
+        promptMocks.promptUser.mockResolvedValue(null);
+        promptMocks.projectEpoch = 0;
         undoStoreMocks.stackTop = undefined;
     });
 
@@ -178,6 +195,122 @@ describe('MasterChannelStrip', () => {
             type: 'setMasterGain',
             payload: { gain: 0.8, expectedPercent: 60 },
         });
+    });
+
+    it('offers Enter Value from the master gain context menu', () => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+
+        expect(screen.getByRole('menuitem', { name: 'Enter Value' })).toBeInTheDocument();
+    });
+
+    it.each([
+        { input: '0 dB', gain: 1 },
+        { input: '-6 dB', gain: dbToGain(-6) },
+    ])('commits $input through the same settled typed action as the fader', async ({ input, gain }) => {
+        promptMocks.promptUser.mockResolvedValueOnce(input);
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain, expectedPercent: 80 },
+        });
+        expect(promptMocks.promptUser).toHaveBeenCalledWith(
+            expect.objectContaining({ initialValue: `${formatGainDb(0.8)} dB` })
+        );
+    });
+
+    it('keeps typed entries separate from a just-recorded drag and from each other', async () => {
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
+            return Promise.resolve();
+        });
+        promptMocks.promptUser.mockResolvedValueOnce('0 dB').mockResolvedValueOnce('-6 dB');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        fireEvent.change(fader, { target: { value: '0.6' } });
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByTestId('level-value')).toHaveTextContent('-1.9 dB'));
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2));
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'setMasterGain',
+            payload: { gain: 1, expectedPercent: 80 },
+        });
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(3));
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(3, {
+            type: 'setMasterGain',
+            payload: { gain: dbToGain(-6), expectedPercent: 80 },
+        });
+    });
+
+    it('does not let a typed entry arm coalescing for a later keyboard nudge near startup', async () => {
+        const clock = vi.spyOn(performance, 'now').mockReturnValue(250);
+        try {
+            promptMocks.promptUser.mockResolvedValueOnce('0 dB');
+            render(<MasterChannelStrip widthClass="w-36" />);
+            const fader = screen.getByRole('slider', { name: 'Master gain' });
+            const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+            fireEvent.contextMenu(fader);
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+            await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+            await waitFor(() => expect(setMasterGain).toHaveBeenCalledTimes(2));
+
+            fireEvent.keyDown(fader, { key: 'ArrowUp' });
+            await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2));
+            expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
+                type: 'setMasterGain',
+                payload: { gain: 0.81, expectedPercent: 80 },
+            });
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
+    it('drops an entered value queued behind a prior commit when the project changes before dispatch', async () => {
+        let releaseFirstCommit: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseFirstCommit = resolve;
+                })
+        );
+        promptMocks.promptUser.mockResolvedValueOnce('0 dB');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        fireEvent.change(fader, { target: { value: '0.62' } });
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(setMasterGain).toHaveBeenCalledWith(100, true));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        promptMocks.projectEpoch += 1;
+        storeMocks.transportStoreValue = { masterGain: 40 };
+        await act(async () => {
+            releaseFirstCommit?.();
+        });
+
+        await waitFor(() => expect(setMasterGain).toHaveBeenLastCalledWith(40, true));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
     it.each([
