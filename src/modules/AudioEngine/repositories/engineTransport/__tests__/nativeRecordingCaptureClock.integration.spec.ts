@@ -2,11 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { desktopInvoke } from '#/utils/desktopBridge';
 
-import { nativeEnginePlayheadFeed, pollNativeEnginePlayheadOnce } from '../nativeEnginePlayheadFeedState';
-import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
-import { createNativeRecordingCaptureClock, nativeRecordingCaptureClockState } from '../nativeRecordingCaptureClock';
-import { startNativeEnginePlayheadFeed } from '../startNativeEnginePlayheadFeed';
-import { stopNativeEnginePlayheadFeed } from '../stopNativeEnginePlayheadFeed';
+import {
+    nativeEnginePlayheadFeed,
+    pollNativeEnginePlayheadOnce,
+} from '../../../useCases/livePlayback/nativeEnginePlayheadFeedState';
+import { nativeLiveGraphSession } from '../../../useCases/livePlayback/nativeLiveGraphSessionState';
+import {
+    createNativeRecordingCaptureClock,
+    nativeRecordingCaptureClockState,
+} from '../../../useCases/livePlayback/nativeRecordingCaptureClock';
+import { startNativeEnginePlayheadFeed } from '../../../useCases/livePlayback/startNativeEnginePlayheadFeed';
+import { stopNativeEnginePlayheadFeed } from '../../../useCases/livePlayback/stopNativeEnginePlayheadFeed';
 
 vi.mock('#/utils/desktopBridge', () => ({ isDesktopRuntime: () => true, desktopInvoke: vi.fn() }));
 vi.mock('#/utils/DOM/AnimationScheduler', () => ({ animationScheduler: { register: vi.fn(), unregister: vi.fn() } }));

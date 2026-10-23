@@ -39,11 +39,12 @@
  */
 
 import { type EngineLoopRegion, type EngineTransportMaps } from '../../models/EngineTransportPosition';
+import { type NativeRecordingGeometry } from '../../models/NativeRecordingCapture';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
-import { nativeRecordingCaptureClockState, type NativeRecordingGeometry } from './nativeRecordingCaptureClock';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 

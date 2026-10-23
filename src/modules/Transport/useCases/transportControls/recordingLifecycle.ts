@@ -1,6 +1,5 @@
-import { type createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
-
-import { type NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
+import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
+import type { NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
 
 type NativeCaptureReader = () => ReturnType<ReturnType<typeof createNativeRecordingCaptureClock>['read']>;
 

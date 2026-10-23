@@ -15,8 +15,7 @@
 
 import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
 import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
-
-import { type NativeRecordingAdmission } from './nativeRecordingCaptureClock';
+import { type NativeRecordingAdmission } from '../../models/NativeRecordingCapture';
 
 export type NativeLiveGraphSession = {
     /** Issued capture geometry stays behind its actual audio-thread fence. */

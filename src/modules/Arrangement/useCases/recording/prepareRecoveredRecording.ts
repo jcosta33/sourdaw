@@ -1,5 +1,5 @@
-import { takeLaneStore, trackStore } from '../../stores';
-import { type Clip } from '../../stores/trackStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { trackStore, type Clip } from '../../stores/trackStore';
 
 import { recordingPassTiming } from './recordingPassTiming';
 
