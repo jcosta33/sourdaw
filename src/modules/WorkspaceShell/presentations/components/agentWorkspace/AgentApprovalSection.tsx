@@ -34,6 +34,14 @@ type MeasuredPreviewTarget = {
     }[];
 };
 
+type ProposalChange =
+    | { kind: 'added' | 'removed'; label: string }
+    | {
+          kind: 'changed';
+          label: string;
+          fields: readonly { field: string; previous: string | null; next: string | null }[];
+      };
+
 /** The approval-projection fields this section renders, as a leaf-owned structural shape. */
 type AgentApprovalView = {
     confirmationId: string;
@@ -42,6 +50,8 @@ type AgentApprovalView = {
     prompt: string;
     /** Which of the run's successive batches this is, or `null` when the request fits one batch. */
     batchPosition: { index: number; total: number } | null;
+    /** What this proposal changes against the one it replaced, or `null` when it replaced none. */
+    previousProposalDiff: { changes: readonly ProposalChange[]; unchangedCount: number } | null;
     actionLabels: readonly string[];
     scope: {
         targetIds: readonly string[];
@@ -189,6 +199,39 @@ function renderRecipes(recipes: AgentApprovalView['recipes']): ReactElement | nu
                 </li>
             ))}
         </ul>
+    );
+}
+
+function formatProposalChange(change: ProposalChange): string {
+    if (change.kind !== 'changed') {
+        return `${change.kind === 'added' ? 'Added' : 'Removed'}: ${change.label}`;
+    }
+    const fields = change.fields
+        .map((field) => `${field.field} ${field.previous ?? 'unset'} → ${field.next ?? 'unset'}`)
+        .join(', ');
+    return `Changed: ${change.label} (${fields})`;
+}
+
+/** What this proposal changes against the one it replaced; the commands left as they were are only counted. */
+function renderPreviousProposalDiff(diff: AgentApprovalView['previousProposalDiff']): ReactElement | null {
+    if (diff === null) {
+        return null;
+    }
+    const unchanged = `${String(diff.unchangedCount)} unchanged command${diff.unchangedCount === 1 ? '' : 's'}`;
+    return (
+        <Stack as="section" gap={0.5} aria-label="Changes from the previous proposal">
+            <p className="text-foreground">Changes from the previous proposal</p>
+            {diff.changes.length === 0 ? (
+                <p className="text-muted-foreground">No command changed</p>
+            ) : (
+                <ul className="flex flex-col gap-0.5 text-foreground">
+                    {diff.changes.map((change, index) => (
+                        <li key={`${change.kind}-${String(index)}`}>{formatProposalChange(change)}</li>
+                    ))}
+                </ul>
+            )}
+            {diff.unchangedCount === 0 ? null : <p className="text-muted-foreground">{unchanged}</p>}
+        </Stack>
     );
 }
 
@@ -351,6 +394,7 @@ const ApprovalCard = ({
                     {`Batch ${String(view.batchPosition.index)} of ${String(view.batchPosition.total)}`}
                 </p>
             )}
+            {renderPreviousProposalDiff(view.previousProposalDiff)}
             <ul aria-label="Proposed actions" className="list-inside list-disc text-foreground">
                 {view.actionLabels.map((label) => (
                     <li key={label}>{label}</li>

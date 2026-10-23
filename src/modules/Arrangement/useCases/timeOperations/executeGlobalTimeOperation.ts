@@ -1,4 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -857,6 +858,12 @@ function insertClipGeometry(clip: Clip, operation: InsertGlobalTimeOperation): C
             ...clip,
             startBeat: clip.startBeat + operation.durationBeats,
             endBeat: clip.endBeat + operation.durationBeats,
+            // The whole clip relocates past the insert without touching its
+            // content offset; the loop anchor rides the same delta so the
+            // shift cannot re-roll which passes sound (#4988). Unanchored
+            // clips keep the key absent — the inverse plan's snapshot is
+            // compared structurally against the normalized live state.
+            ...shiftLoopOriginEntry(clip, operation.durationBeats),
         };
     }
     return {
@@ -948,6 +955,12 @@ function prepareDeletedTracks(
                     ...clip,
                     startBeat: clip.startBeat - duration,
                     endBeat: clip.endBeat - duration,
+                    // The whole clip relocates ahead of the deleted range
+                    // without touching its content offset; the loop anchor
+                    // rides the same delta (#4988). Unanchored clips keep the
+                    // key absent — the inverse plan's snapshot is compared
+                    // structurally against the normalized live state.
+                    ...shiftLoopOriginEntry(clip, -duration),
                 });
                 continue;
             }
@@ -959,6 +972,26 @@ function prepareDeletedTracks(
             if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
                 trackChanged = true;
                 const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+                // The fragment anchor follows the basis it creates (#4988).
+                // The MIDI fragment re-bases its notes by −splitBeat under
+                // midiOffsetBeats 0 — a fresh coordinate basis the source
+                // anchor has no meaning in, whose carried advance would open
+                // the window behind the head and silence the survivors — so
+                // it re-stamps to its own start, key absent for an unanchored
+                // source. The audio fragment keeps source-coordinate offsets
+                // advanced by the consumed span, and its head also rides the
+                // compressing relocation by −duration, so its anchor rides
+                // that relocation: composed, the consumed advance cancels the
+                // offset advance, the region
+                // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
+                // source's own, and the entry lands at the cut phase.
+                // Unanchored sources keep the key absent — the inverse plan's
+                // snapshot is compared structurally against the normalized
+                // live state.
+                const rightLoopOriginEntry =
+                    clip.type === 'midi'
+                        ? restampLoopOriginEntry(clip, operation.startBeat)
+                        : shiftLoopOriginEntry(clip, -duration);
                 clips.push(
                     { ...clip, endBeat: operation.startBeat, name: `${clip.name} (L)` },
                     {
@@ -969,6 +1002,7 @@ function prepareDeletedTracks(
                         name: `${clip.name} (R)`,
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                         midiOffsetBeats: 0,
+                        ...rightLoopOriginEntry,
                     }
                 );
                 if (clip.type === 'midi') {
@@ -1013,6 +1047,20 @@ function prepareDeletedTracks(
 
             trackChanged = true;
             const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+            // Same per-basis law as the spanning fragment above (#4988): the
+            // MIDI notes re-base under midiOffsetBeats 0, so the source
+            // anchor would derive a spurious (here negative) advance whose
+            // window drops the surviving head material and it re-stamps to
+            // its own start. The audio offset stays in source coordinates
+            // advanced by the consumed span while the head rides the
+            // compressing relocation by −duration, so the audio anchor rides
+            // that relocation — the region stays the source's own, entering
+            // at the cut phase. Unanchored sources keep the key absent
+            // (#5198).
+            const rightLoopOriginEntry =
+                clip.type === 'midi'
+                    ? restampLoopOriginEntry(clip, operation.startBeat)
+                    : shiftLoopOriginEntry(clip, -duration);
             clips.push({
                 ...clip,
                 id: identity.targetClipId,
@@ -1020,6 +1068,7 @@ function prepareDeletedTracks(
                 endBeat: clip.endBeat - duration,
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
+                ...rightLoopOriginEntry,
             });
             if (clip.type === 'midi') {
                 const mediaSplit = operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
@@ -1096,6 +1145,13 @@ function prepareDuplicatedTracks(
                 id: identity.targetClipId,
                 startBeat: clip.startBeat + duration,
                 endBeat: clip.endBeat + duration,
+                // The copy carries the source's loop anchor shifted to its own
+                // placement: a copy is the same looped clip elsewhere, so its
+                // window and pass count must read identically (#4988).
+                // Unanchored clips keep the key absent — the inverse plan's
+                // snapshot is compared structurally against the normalized
+                // live state.
+                ...shiftLoopOriginEntry(clip, duration),
             });
             if (clip.type === 'midi') {
                 copies.push({ sourceClipId: clip.id, newClipId: identity.targetClipId });

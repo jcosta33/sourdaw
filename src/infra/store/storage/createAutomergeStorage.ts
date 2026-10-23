@@ -3,7 +3,7 @@ import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 import { logger } from '#/infra/logger/appLogger';
 
 import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
-import { type StorageAdapter } from './types';
+import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
 type AutomergeStorageDocId = string;
 
@@ -459,6 +459,10 @@ function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean 
     );
 }
 
+function isScalar(value: unknown): boolean {
+    return typeof value !== 'object' || value === null;
+}
+
 /**
  * Deterministic identity for the exact-content pre-pass: a recursively
  * key-sorted serialization, so equal content lands in one bucket regardless
@@ -476,6 +480,13 @@ function canonicalProjectionKey(value: unknown): string {
         .toSorted()
         .map((key) => `${JSON.stringify(key)}:${canonicalProjectionKey(record[key])}`)
         .join(',')}}`;
+}
+
+function sameDurableValue(left: unknown, right: unknown): boolean {
+    if (isScalar(left) || isScalar(right)) {
+        return Object.is(left, right);
+    }
+    return canonicalProjectionKey(left) === canonicalProjectionKey(right);
 }
 
 /**
@@ -1415,6 +1426,19 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
      */
     let lastHydratedHeads: string | null = null;
     /**
+     * Both compares above answer "is the document what the store last
+     * projected?", which holds only while the committed value is still that
+     * projection. A local commit or a settled conflict replaces it with a
+     * fresher read of the document, and a deferred write replaces it with a
+     * value the document never held, so each forgets the last hydrate: the
+     * document handed back later (a branch switched back to) can match the
+     * remembered one while the store holds something else.
+     */
+    const forgetLastHydratedDocument = (): void => {
+        lastHydratedJson = null;
+        lastHydratedHeads = null;
+    };
+    /**
      * Listeners for visible-value changes that happen outside a synchronous
      * get/set/clear/hydrate call — a deferred rAF commit or abort landing
      * after an interleaved hydrate changed what get() returns, so the owning
@@ -1624,6 +1648,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         return decodeClonedValues(JSON.parse(JSON.stringify(incomingValues)) as unknown[]);
     };
 
+    type FieldRebaseSides = {
+        toDurable: (value: TData) => Partial<TData>;
+        pendingValue: TData & object;
+        authorityValue: TData & object;
+    };
+
     const mergePartialAuthority = (localValue: TData | null, authorityValue: TData): TData => {
         if (toCrdt && localValue !== null && typeof localValue === 'object' && typeof authorityValue === 'object') {
             return { ...localValue, ...authorityValue };
@@ -1631,11 +1661,79 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         return authorityValue;
     };
 
+    /**
+     * A pending write's visible value rebased over fresh document authority,
+     * field by field, three ways against the base the write was derived from.
+     * Per durable field: a document value equal to the base means nobody else
+     * touched it, so the write's value stands (a nested edit included); else a
+     * field the write did not change takes the document; else both changed it,
+     * and a scalar keeps the write's value while a nested value takes the
+     * document, because merging rows needs the identity-aware `rebasePending` a
+     * store supplies (issue 5521). Runtime fields are not durable, so the
+     * document owns them. Without a trusted base nothing is known about the
+     * write's own edits and the document wins whole.
+     *
+     * A hydrate and the rebase of the pending writes behind a refused write
+     * both follow this rule, and both re-anchor the write at the authority they
+     * absorbed.
+     *
+     * The merge is per field, so two edits that are each valid alone can merge
+     * into a combination a store's inbound sanitizer rejects (a loop whose start
+     * one side moved past the end the other side moved). The sanitizer then
+     * rebuilds the fields from defaults, and the re-anchored write would flush
+     * those defaults over the document. `guardFieldRebase` therefore drops the
+     * field merge for the document whole whenever the guard changes a durable
+     * field, so a rebase never authors a value the sanitizer produced.
+     */
+    const rebasePendingOverAuthority = (input: FieldRebaseSides & { trustedBaseValue: TData | null }): TData => {
+        const { toDurable, pendingValue, trustedBaseValue, authorityValue } = input;
+        if (trustedBaseValue === null) {
+            return { ...pendingValue, ...authorityValue };
+        }
+        const durableBase = new Map(Object.entries(toDurable(trustedBaseValue)));
+        const durableAuthority = new Map(Object.entries(toDurable(authorityValue)));
+        const keptFromWrite = Object.entries(toDurable(pendingValue)).filter(([field, pendingField]) => {
+            const baseField = durableBase.get(field);
+            if (!durableAuthority.has(field) || sameDurableValue(durableAuthority.get(field), baseField)) {
+                return true;
+            }
+            return isScalar(pendingField) && !sameDurableValue(pendingField, baseField);
+        });
+        return { ...pendingValue, ...authorityValue, ...Object.fromEntries(keptFromWrite) };
+    };
+
+    const keepLocalRuntimeState = (
+        authorityValue: TData | null,
+        localValue: TData | null,
+        options: StorageHydrateOptions | undefined
+    ): TData | null => {
+        if (!options?.keepLocalRuntimeState || !projectCommittedLocalState) {
+            return authorityValue;
+        }
+        if (authorityValue === null || localValue === null) {
+            return authorityValue;
+        }
+        return projectCommittedLocalState({ authorityValue, localValue });
+    };
+
     const guardInboundValue = (value: TData | null, purpose: 'baseline' | 'visible'): TData | null => {
         if (!inboundProjector) {
             return value;
         }
         return inboundProjector({ value, purpose });
+    };
+
+    const guardFieldRebase = (sides: FieldRebaseSides, rebasedValue: TData | null): TData | null => {
+        const { toDurable, pendingValue, authorityValue } = sides;
+        const guardedValue = guardInboundValue(rebasedValue, 'visible');
+        if (
+            rebasedValue !== null &&
+            guardedValue !== null &&
+            sameDurableValue(toDurable(guardedValue), toDurable(rebasedValue))
+        ) {
+            return guardedValue;
+        }
+        return guardInboundValue({ ...pendingValue, ...authorityValue }, 'visible');
     };
 
     const getSemanticMessage = (): string | undefined => {
@@ -1787,6 +1885,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         committedCacheValue = pending.value;
         committedCacheIsDeferred = true;
         committedCacheRevision = pending.revision;
+        forgetLastHydratedDocument();
     };
 
     const deferPendingWrite = (pending: AdapterPendingWrite): void => {
@@ -1849,6 +1948,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             }
 
             let rebasedValue = successor.value;
+            let fieldRebase: FieldRebaseSides | null = null;
             if (rebasePending && projectedValue !== null) {
                 rebasedValue = rebasePending({
                     baseValue: successor.baseValue,
@@ -1863,16 +1963,22 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 typeof projectedValue === 'object' &&
                 projectedValue !== null
             ) {
-                rebasedValue = { ...successor.value, ...projectedValue };
+                fieldRebase = { toDurable: toCrdt, pendingValue: successor.value, authorityValue: projectedValue };
+                rebasedValue = rebasePendingOverAuthority({
+                    ...fieldRebase,
+                    trustedBaseValue: successor.flushBaseUnknown ? null : successor.baseValue,
+                });
             }
             if (!isCurrentSuccessor()) {
                 continue;
             }
-            const acceptedValue = guardInboundValue(rebasedValue, 'visible');
+            const acceptedValue = fieldRebase
+                ? guardFieldRebase(fieldRebase, rebasedValue)
+                : guardInboundValue(rebasedValue, 'visible');
             if (!isCurrentSuccessor()) {
                 continue;
             }
-            if (rebasePending) {
+            if (rebasePending || fieldRebase) {
                 successor.baseValue = projectedValue;
                 successor.baseDocumentPresence = captureBaseDocumentPresence();
                 successor.flushBaseUnknown = false;
@@ -1914,6 +2020,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
         committedCacheIsDeferred = false;
+        forgetLastHydratedDocument();
         // The claim was refused, so it advances the visible authority baseline
         // only through the value it had captured. It did not publish a local
         // set and therefore cannot supersede owners authored after that set.
@@ -1989,6 +2096,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
         committedCacheIsDeferred = false;
+        forgetLastHydratedDocument();
         committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
         committedSetRevision = Math.max(committedSetRevision, claimRevision);
         if (decoded !== undefined) {
@@ -2460,7 +2568,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             };
         },
 
-        hydrate(): boolean {
+        hydrate(options?: StorageHydrateOptions): boolean {
             if (activeAutomergeStoragePreview) {
                 return false;
             }
@@ -2510,7 +2618,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 );
                 const localSeed = cachedValue;
                 if (visiblePending) {
-                    const acceptedBaseline = guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'baseline');
+                    const acceptedBaseline = keepLocalRuntimeState(
+                        guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'baseline'),
+                        localSeed,
+                        options
+                    );
                     if (
                         !isCurrentProjection() ||
                         pendingWritesByOwner.get(visiblePending.write.commitOwner) !== visiblePending ||
@@ -2530,6 +2642,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     const isCurrentVisibleProjection = (): boolean =>
                         projectionGeneration === generation && acceptedAuthorityEpoch === visibleProjectionEpoch;
                     let rebasedValue = visiblePending.value;
+                    const trustedBaseValue = visiblePending.flushBaseUnknown ? null : visiblePending.baseValue;
+                    let fieldRebase: FieldRebaseSides | null = null;
                     if (rebasePending) {
                         rebasedValue = rebasePending({
                             baseValue: visiblePending.baseValue,
@@ -2544,7 +2658,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         typeof crdtData === 'object' &&
                         crdtData !== null
                     ) {
-                        rebasedValue = { ...visiblePending.value, ...crdtData };
+                        fieldRebase = {
+                            toDurable: toCrdt,
+                            pendingValue: visiblePending.value,
+                            authorityValue: crdtData,
+                        };
+                        rebasedValue = rebasePendingOverAuthority({ ...fieldRebase, trustedBaseValue });
                     }
                     if (!isCurrentVisibleProjection()) {
                         return false;
@@ -2558,7 +2677,13 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         lastHydratedHeads = headsKey;
                         return true;
                     }
-                    const acceptedVisible = guardInboundValue(rebasedValue, 'visible');
+                    const acceptedVisible = keepLocalRuntimeState(
+                        fieldRebase
+                            ? guardFieldRebase(fieldRebase, rebasedValue)
+                            : guardInboundValue(rebasedValue, 'visible'),
+                        visiblePending.value,
+                        options
+                    );
                     if (!isCurrentVisibleProjection()) {
                         return false;
                     }
@@ -2571,13 +2696,16 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         lastHydratedHeads = headsKey;
                         return true;
                     }
-                    if (rebasePending) {
+                    if (rebasePending || fieldRebase) {
                         // Three-way base-advance (issue #3183): only the same
                         // visible pending that survived both projector guards
                         // may absorb the hydrated truth this rebase consumed.
                         // Re-anchoring at the hydrated value keeps the next
                         // pending delta purely local without granting a stale
-                        // callback authority over a replacement pending.
+                        // callback authority over a replacement pending. The
+                        // field rebase needs it too: against the old base the
+                        // flush would restate every field the document changed
+                        // as if this writer had.
                         visiblePending.baseValue = crdtData;
                         visiblePending.baseDocumentPresence = captureBaseDocumentPresence();
                         visiblePending.flushBaseUnknown = false;
@@ -2587,7 +2715,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     visiblePending.value = acceptedVisible;
                     visiblePending.revision = cachedRevision;
                 } else {
-                    const acceptedValue = guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'visible');
+                    const acceptedValue = keepLocalRuntimeState(
+                        guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'visible'),
+                        localSeed,
+                        options
+                    );
                     if (!isCurrentProjection()) {
                         return false;
                     }
@@ -2613,7 +2745,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             // projection bridge, and bled the previous project's cache into a
             // fresh document.
             if (cachedValue !== null && hydrateMissing) {
-                const missingValue = guardInboundValue(toDocSafe(hydrateMissing()), 'visible');
+                const missingValue = keepLocalRuntimeState(
+                    guardInboundValue(toDocSafe(hydrateMissing()), 'visible'),
+                    cachedValue,
+                    options
+                );
                 if (!isCurrentProjection()) {
                     return false;
                 }

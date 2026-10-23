@@ -59,13 +59,27 @@ function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
     );
 }
 
+function preservesNativeButtonActivation(event: KeyboardEvent): boolean {
+    if (
+        (event.key !== 'Enter' && event.key !== ' ') ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey
+    ) {
+        return false;
+    }
+    const target = event.target;
+    return target instanceof HTMLButtonElement && target.ownerDocument.activeElement === target;
+}
+
 /**
  * View-layer keyboard shortcut contract exposed to other modules.
  */
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            if (preservesNativeTabTraversal(event)) {
+            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event)) {
                 return;
             }
             // A load that replaced the CRDT authority and then failed leaves the

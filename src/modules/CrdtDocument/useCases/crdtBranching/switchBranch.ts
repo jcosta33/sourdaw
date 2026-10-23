@@ -1,14 +1,16 @@
-import { clone as cloneDoc } from '@automerge/automerge';
+import { clone as cloneDoc, getHeads } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { captureUndoHistory, clearUndoHistory, restoreUndoHistory } from '#/modules/Command/useCases';
+import { isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { branchStore } from '../../stores/branchStore';
+import { branchStore, type BranchRecord, type BranchStoreState } from '../../stores/branchStore';
 import { captureActiveBranchReference } from '../captureActiveBranchReference';
 
 import { runBranchLineageTransition } from './runBranchLineageTransition';
@@ -41,28 +43,48 @@ function restoreUndoHistoryForRecoveredBranch(
     clearUndoHistoryAfterFailedTransition();
 }
 
+function readRootHeads(): string[] {
+    const root = automergeRepository.getDoc(DOC_PREFIX_ROOT);
+    return root ? getHeads(root).map(String) : [];
+}
+
 /**
- * Switch to a different branch.
- *
- * Slot model: `DOC_PREFIX_ROOT` always mirrors the *active* branch's working
- * document (all edits, persistence and projection target it), while each branch
- * keeps its own snapshot under `branch.rootDocId`. Switching therefore has two
- * halves:
- *   1. Flush the outgoing branch's live edits from the root slot back into its
- *      own snapshot, so they are not left aliased/stale behind the new active
- *      branch.
- *   2. Load the target branch's snapshot into the root slot.
- * Legacy root-backed main records are migrated to a distinct backing document
- * the first time main becomes inactive.
+ * A failed switch rolls the root back from the incoming branch to the outgoing
+ * one, so the transport stops while the incoming document is still the root.
+ * A take committed by that stop lands on the incoming root, which the restore
+ * then replaces: it is not kept on either branch, and the user is told so.
  */
-export async function switchBranch(branchId: string): Promise<void> {
+async function stopTransportBeforeSwitchRollback(): Promise<void> {
+    const headsBeforeStop = readRootHeads();
+    await stopPlayback();
+    if (!valuesEqual(headsBeforeStop, readRootHeads())) {
+        logger.warn(
+            '[switchBranch] The branch switch failed while a recording was running; ' +
+                'the take committed during the rollback is discarded with the incoming branch root.'
+        );
+        notifyUser(
+            'The branch switch failed, so the recording made while it was switching was discarded. ' +
+                'The project is back on the previous branch.',
+            'warning'
+        );
+    }
+}
+
+type BranchSwitchPlan = {
+    state: BranchStoreState;
+    branch: BranchRecord;
+    activeBranch: BranchRecord;
+};
+
+/** `null` when there is nothing to switch: no branch state, or the target is already active. */
+function planBranchSwitch(branchId: string): BranchSwitchPlan | null {
     const state = branchStore.value;
     if (!state) {
-        return;
+        return null;
     }
 
     if (branchId === state.activeBranchId) {
-        return;
+        return null;
     }
     const branch = state.branches.find((b) => b.branchId === branchId);
     if (!branch) {
@@ -76,6 +98,45 @@ export async function switchBranch(branchId: string): Promise<void> {
     if (!activeBranch) {
         throw createBranchError(`Active branch not found: ${state.activeBranchId}`);
     }
+    return { state, branch, activeBranch };
+}
+
+/**
+ * Switch to a different branch.
+ *
+ * The transport stops first, and a recording in flight commits its take, while
+ * the outgoing branch's document is still the root: a take left running would
+ * record into the incoming branch, and the replace below clears undo mid-take.
+ * A failed stop aborts the switch. A failed switch stops the transport again
+ * before its rollback restores the outgoing root, because the rollback crosses
+ * lineages too. Fork, merge and their rollbacks stay on one lineage and keep
+ * the runtime state.
+ *
+ * Slot model: `DOC_PREFIX_ROOT` always mirrors the *active* branch's working
+ * document (all edits, persistence and projection target it), while each branch
+ * keeps its own snapshot under `branch.rootDocId`. Switching therefore has two
+ * halves:
+ *   1. Flush the outgoing branch's live edits from the root slot back into its
+ *      own snapshot, so they are not left aliased/stale behind the new active
+ *      branch.
+ *   2. Load the target branch's snapshot into the root slot.
+ * Legacy root-backed main records are migrated to a distinct backing document
+ * the first time main becomes inactive.
+ */
+export async function switchBranch(branchId: string): Promise<void> {
+    if (!planBranchSwitch(branchId)) {
+        return;
+    }
+
+    await stopPlayback();
+
+    // The stop awaits a recording commit, so another switch, fork or delete may
+    // have moved the branch state since the first plan.
+    const plan = planBranchSwitch(branchId);
+    if (!plan) {
+        return;
+    }
+    const { state, branch, activeBranch } = plan;
 
     flushAutomergeStorageWrites();
     const liveDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
@@ -96,11 +157,21 @@ export async function switchBranch(branchId: string): Promise<void> {
     // callers with narrower affected-document sets are not changed.
     const capturedReference = captureActiveBranchReference();
     const undoSnapshot = captureUndoHistory();
+    // The stop published an idle transport at once and then awaited the
+    // recording commit, so Record or Play pressed in that window is already
+    // rolling. Nothing below awaits before `apply()` replaces the root, so this
+    // check holds at the replace; a take or playback started now would run on
+    // into the incoming branch. Refuse rather than stop again: the user's
+    // newer gesture stands and the switch can be repeated.
+    if (!isTransportIdle()) {
+        throw createBranchError('The transport started while switching branches. Stop it and switch again.');
+    }
     try {
         await runBranchLineageTransition({
             affectedDocIds: [DOC_PREFIX_ROOT, outgoingDocId],
             from: state.activeBranchId,
             previousState: state,
+            stopTransportBeforeRollback: stopTransportBeforeSwitchRollback,
             to: branchId,
             apply: () => {
                 const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });
