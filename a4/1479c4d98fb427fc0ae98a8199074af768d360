@@ -1,0 +1,21 @@
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_59e31a5c6f3e31::t_b89c45e84e97d0 17,165,180
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_59e31a5c6f3e31::t_b57cd04518ef0d 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a41479c4d98fb427fc0ae98a8199074af768d360",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
