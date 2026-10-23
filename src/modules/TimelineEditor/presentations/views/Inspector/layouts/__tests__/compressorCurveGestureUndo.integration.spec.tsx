@@ -52,6 +52,15 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { resolveDeviceLayout } from '../../deviceLayoutRegistry';
 import '../CompressorLayout';
 
+const RegisteredCompressorLayout = resolveDeviceLayout('builtin-compressor');
+if (!RegisteredCompressorLayout) {
+    throw new Error('Missing registered Compressor layout');
+}
+const RegisteredSidechainCompressorLayout = resolveDeviceLayout('builtin-sidechain-compressor');
+if (!RegisteredSidechainCompressorLayout) {
+    throw new Error('Missing registered Sidechain Compressor layout');
+}
+
 // Canvas, controls, dispatch, Arrangement, CRDT and history remain real.
 // Only the Web Audio/native engine boundary is controlled and logged.
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
@@ -78,15 +87,18 @@ function prefix(type: CompressorType): string {
     return type === 'builtin-sidechain-compressor' ? 'sc-comp' : 'comp';
 }
 function makeDevice(type: CompressorType, absent = false): Device {
+    const parameterValues: Device['parameterValues'] = {
+        [`${prefix(type)}-ratio`]: 4,
+    };
+    if (!absent) {
+        parameterValues[`${prefix(type)}-threshold`] = -20;
+    }
     return {
         id: DEVICE_ID,
         name: type === 'builtin-compressor' ? 'Compressor' : 'Sidechain Compressor',
         type,
         bypassed: false,
-        parameterValues: {
-            [`${prefix(type)}-ratio`]: 4,
-            ...(absent ? {} : { [`${prefix(type)}-threshold`]: -20 }),
-        },
+        parameterValues,
     };
 }
 function targetTrack(device: Device): Track {
@@ -142,12 +154,19 @@ function Layout({ displayed }: { displayed?: Device }) {
     if (!device) {
         throw new Error('Required Compressor layout was not mounted');
     }
-    const RegisteredLayout = resolveDeviceLayout(device.type);
     const descriptor = getPluginById(device.type);
-    if (!RegisteredLayout || !descriptor) {
-        throw new Error(`Missing actual registered layout or descriptor for ${device.type}`);
+    if (!descriptor) {
+        throw new Error(`Missing actual registered descriptor for ${device.type}`);
     }
-    return <RegisteredLayout device={device} parameters={descriptor.parameters} trackId="track-1" />;
+    if (device.type === 'builtin-compressor') {
+        return <RegisteredCompressorLayout device={device} parameters={descriptor.parameters} trackId="track-1" />;
+    }
+    if (device.type === 'builtin-sidechain-compressor') {
+        return (
+            <RegisteredSidechainCompressorLayout device={device} parameters={descriptor.parameters} trackId="track-1" />
+        );
+    }
+    throw new Error(`Unsupported actual Compressor layout type ${device.type}`);
 }
 function curve(): HTMLCanvasElement {
     const element = screen.getByRole('img', { name: 'Compressor transfer curve' });
@@ -634,10 +653,12 @@ describe('actual registered Compressor curve through real project and history', 
             expect(writes().map(({ paramId, value }) => [paramId, value])).toEqual(
                 samples.map((value) => ['sc-comp-threshold', value])
             );
-            const expected =
-                mode === 'read'
-                    ? []
-                    : samples.map((sample, index) => ['track-1', `${DEVICE_ID}:sc-comp-threshold`, sample, index + 1]);
+            const expected: [string, string, number, number][] = [];
+            if (mode !== 'read') {
+                for (const [index, sample] of samples.entries()) {
+                    expected.push(['track-1', `${DEVICE_ID}:sc-comp-threshold`, sample, index + 1]);
+                }
+            }
             expect(recording.mock.calls).toEqual(expected);
             const entered = Promise.withResolvers<void>();
             const release = Promise.withResolvers<void>();
@@ -662,14 +683,12 @@ describe('actual registered Compressor curve through real project and history', 
                 await act(() => redo());
                 expect(recording.mock.calls).toEqual(expected);
                 stopAutomationRecording(3);
+                const expectedPoints: [number, number][] = [];
+                if (mode !== 'read') {
+                    expectedPoints.push([1, -15], [2, -35], [3, -45]);
+                }
                 expect(automationStore.value?.lanes[0]?.points.map(({ beat: at, value }) => [at, value])).toEqual(
-                    mode === 'read'
-                        ? []
-                        : [
-                              [1, -15],
-                              [2, -35],
-                              [3, -45],
-                          ]
+                    expectedPoints
                 );
             } finally {
                 await act(async () => {
