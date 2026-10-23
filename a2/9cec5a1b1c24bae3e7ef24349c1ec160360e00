@@ -1,0 +1,14 @@
+src/modules/Arrangement/useCases/clipEditing/readClipSplitIdentityIds.ts
+  h_beb54bf43b47b7 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a29cec5a1b1c24bae3e7ef24349c1ec160360e00",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
