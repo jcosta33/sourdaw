@@ -138,6 +138,7 @@ export function prepareMidiClipGlueState({
             sourceControlChanges: controlChanges,
             visibleStartBeat: source.visibleStartBeat,
             glueBeat,
+            glueEndBeat: source.visibleEndBeat + source.beatOffset,
             carriedBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat < source.visibleStartBeat),
             windowBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat >= source.visibleStartBeat),
             windowControlChanges: projected.controlChanges,

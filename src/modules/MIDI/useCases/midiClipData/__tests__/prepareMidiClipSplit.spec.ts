@@ -256,6 +256,30 @@ describe('prepareMidiClipSplit bend range', () => {
             ]);
         });
 
+        it.each([
+            { name: 'no row of its own after the origin', controlChanges: recordedUnderTwelve },
+            {
+                name: 'its first row of its own after the added bend',
+                controlChanges: [...recordedUnderTwelve, controller('volume-after', 3.5, 7, 100)],
+            },
+        ])(
+            'plays a bend added after the carried one at the range in force at the cut, with $name',
+            ({ controlChanges }) => {
+                const plan = splitAtTwo(controlChanges, [carried]);
+                const added: Bend = { id: 'added', value: 4096, beat: 1, channel: 0 };
+
+                expect(
+                    rangesPlayed({ startBeat: 2, endBeat: 4 }, plan.nextRight.controlChanges.value, [
+                        ...plan.nextRight.pitchBends.value,
+                        added,
+                    ])
+                ).toEqual([
+                    { beat: 2, rangeSemitones: 12 },
+                    { beat: 3, rangeSemitones: 2 },
+                ]);
+            }
+        );
+
         it('returns to the state at the cut ahead of a Data Entry of its own on the beat the return takes', () => {
             const controlChanges = [...recordedUnderTwelve, controller('data-entry-first', 2.5, 6, 5)];
             const bends = [carried, { id: 'after-data-entry', value: 4096, beat: 3, channel: 0 }];

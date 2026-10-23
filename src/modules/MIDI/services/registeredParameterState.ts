@@ -16,6 +16,7 @@ import {
     type MidiChannelControllerState,
 } from '../models/MidiControllerState';
 import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
+import { SEQUENCER_TICK_BEATS } from '../models/SequencerTick';
 
 import { applyRegisteredParameterChange } from './applyRegisteredParameterChange';
 
@@ -186,7 +187,7 @@ type BeatRegisteredParameterMessage = ChannelRegisteredParameterMessage & { beat
 type CarriedBendRangeMessages = {
     /** On the head, after the messages that open it: they bring each channel to the state its carried row was recorded under. */
     onHead: ChannelRegisteredParameterMessage[];
-    /** Before the first row the clip plays after its head: they return each channel to the state at the cut. */
+    /** Just after the head (`carriedBendReturnBeat`): they return each channel to the state at the cut. */
     afterHead: ChannelRegisteredParameterMessage[];
 };
 
@@ -265,16 +266,14 @@ export function reconcileCarriedBendRanges({
 }
 
 /**
- * Where the messages that follow a carried bend go: the first beat after the head the clip plays a row of its own
- * at, controller or bend, so every such row reads the state at the cut. None when the clip plays nothing after its
- * head, because then no row reads the state they return to.
+ * Where the messages that follow a carried bend go: one tick after the head, so a bend placed anywhere after the
+ * carried one, now or by a later edit, reads the state at the cut; earlier still when a row of the clip's own plays
+ * within that tick, so that row reads it too. Not on the head itself, because the range reader reads every message
+ * on the head before the carried bend.
  */
-export function firstBeatAfterHead(head: EditedClipHead): number | undefined {
-    let first: number | undefined;
-    for (const { beat } of [...head.bends, ...head.controlChanges]) {
-        if (beat > head.beat + SAME_BEAT_TOLERANCE && (first === undefined || beat < first)) {
-            first = beat;
-        }
-    }
-    return first;
+export function carriedBendReturnBeat(head: EditedClipHead): number {
+    return [...head.bends, ...head.controlChanges].reduce(
+        (returnBeat, { beat }) => (beat > head.beat + SAME_BEAT_TOLERANCE ? Math.min(returnBeat, beat) : returnBeat),
+        head.beat + SEQUENCER_TICK_BEATS
+    );
 }

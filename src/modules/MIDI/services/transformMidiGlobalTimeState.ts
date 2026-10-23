@@ -1,7 +1,7 @@
 import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
 import {
-    firstBeatAfterHead,
+    carriedBendReturnBeat,
     isRegisteredParameterController,
     reconcileCarriedBendRanges,
     reconcileRegisteredParameterMessages,
@@ -557,8 +557,8 @@ function placeDeclaration(
  *
  * A bend carried onto the origin was read, in the source, under the state it was recorded in; on the right clip
  * it is an ordinary row at the origin. Its channel is therefore brought to that state on the origin, after the
- * declaration, and back to the state at the cut before the right clip's next own row
- * (`reconcileCarriedBendRanges`), unless a row of the right clip's own addresses the channel on its origin.
+ * declaration, and back to the state at the cut just after the origin (`reconcileCarriedBendRanges`,
+ * `carriedBendReturnBeat`), unless a row of the right clip's own addresses the channel on its origin.
  */
 function declareRegisteredParameterRows(
     { before, existingRightEvents, moved, createId }: Parameters<StateMessageCarry<MidiCC>['declare']>[0],
@@ -578,20 +578,15 @@ function declareRegisteredParameterRows(
         carried: bends.carried.filter(({ channel }) => !owned.has(channel)),
         head,
     });
-    const rows: DeclaredStateRows<MidiCC> = {
+    return {
         origin: [
             ...placeDeclaration(declaration, 0, (index) => createId(`rpn-${index}`)),
             ...placeDeclaration(carried.onHead, 0, (index) => createId(`rpn-carried-${index}`)),
         ],
-        beforeMoved: [],
-    };
-    const afterOriginBeat = firstBeatAfterHead(head);
-    if (afterOriginBeat !== undefined) {
-        rows.beforeMoved = placeDeclaration(carried.afterHead, afterOriginBeat, (index) =>
+        beforeMoved: placeDeclaration(carried.afterHead, carriedBendReturnBeat(head), (index) =>
             createId(`rpn-after-carried-${index}`)
-        );
-    }
-    return rows;
+        ),
+    };
 }
 
 function registeredParameterCarry(bends: RightClipBends): StateMessageCarry<MidiCC> {

@@ -1,6 +1,6 @@
 import { type MidiCC } from '../../models/MidiNote';
 import {
-    firstBeatAfterHead,
+    carriedBendReturnBeat,
     reconcileCarriedBendRanges,
     reconcileRegisteredParameterMessages,
     type CarriedBendRecording,
@@ -17,6 +17,8 @@ type DeclareGluedRegisteredParametersInput = {
     visibleStartBeat: number;
     /** Where the window starts in the glued clip. */
     glueBeat: number;
+    /** Where the window ends in the glued clip. */
+    glueEndBeat: number;
     /** The bends the window carries onto its start, each with the beat its row was recorded at on the source. */
     carriedBends: readonly CarriedBendRecording[];
     /** The window's own bends, its carries excluded, where they play in the glued clip. */
@@ -54,15 +56,16 @@ function placeMessages(
  *
  * A bend the window carries onto its start was read, in the source, under the state it was recorded in; in the
  * glued clip it is an ordinary row at the window start. Its channel is therefore brought to that state on the
- * window start, after the opening declaration, and back to the opening state before the window's next own row
- * (`reconcileCarriedBendRanges`), unless a row of the window's own addresses the channel on its start. In the
- * order returned, which the caller keeps among rows on one beat.
+ * window start, after the opening declaration, and back to the opening state just after it
+ * (`reconcileCarriedBendRanges`, `carriedBendReturnBeat`), unless a row of the window's own addresses the channel
+ * on its start. In the order returned, which the caller keeps among rows on one beat.
  */
 export function declareGluedRegisteredParameters({
     gluedSoFar,
     sourceControlChanges,
     visibleStartBeat,
     glueBeat,
+    glueEndBeat,
     carriedBends,
     windowBends,
     windowControlChanges,
@@ -78,15 +81,11 @@ export function declareGluedRegisteredParameters({
         carried: carriedBends,
         head,
     });
-    const rows = [
+    // Never past the window's end, where the next source's own state begins.
+    const returnBeat = Math.min(carriedBendReturnBeat(head), glueEndBeat);
+    return [
         ...placeMessages(opening, glueBeat, (index) => createId(`rpn-${index}`)),
         ...placeMessages(carried.onHead, glueBeat, (index) => createId(`rpn-carried-${index}`)),
+        ...placeMessages(carried.afterHead, returnBeat, (index) => createId(`rpn-after-carried-${index}`)),
     ];
-    const afterHeadBeat = firstBeatAfterHead(head);
-    if (afterHeadBeat !== undefined) {
-        rows.push(
-            ...placeMessages(carried.afterHead, afterHeadBeat, (index) => createId(`rpn-after-carried-${index}`))
-        );
-    }
-    return rows;
 }
