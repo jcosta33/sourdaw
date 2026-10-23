@@ -44,6 +44,12 @@ import {
     validateArbitraryCommandListEvidence,
 } from '../validateArbitraryCommandListEvidence';
 
+import {
+    admitsCompiledTargets,
+    type CompiledSelectorTerms,
+    type CompiledTargetAuthority,
+    type CompiledTargetAuthorityInput,
+} from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
@@ -164,8 +170,14 @@ type GroundToolCallInput = {
     /** Whether the batch as a whole may take the plan-created object evidence route. */
     admitsPlanCreatedObjects: boolean;
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    /** The text values every call of the batch writes, which never pick a compiled target. */
+    batchWrittenValueTexts: readonly string[];
     call: ToolCallResult;
     catalog: GroundingCatalog;
+    /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
+    compilerExcludedIds: ReadonlySet<string>;
+    /** The selector this call's compiled targets came from, when the compiler resolved one. */
+    compiledSelectorTerms?: CompiledSelectorTerms;
     context: ProjectContext;
     /** What the admitted creative authority says about this call, when the run has one. */
     creativeAdmission?: CreativeCallAdmission;
@@ -1505,7 +1517,11 @@ function resolveActionPromptScope({
     sameActionCallCount,
     workflowCapabilityId,
 }: ResolveActionPromptScopeInput):
-    (ActionPromptScope & { compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[] }) | null {
+    | (ActionPromptScope &
+          Partial<Pick<PromptClauseScope, 'start'>> & {
+              compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[];
+          })
+    | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const hasActionCancellation = isActionCancelledByPrompt({
         actionName,
@@ -4010,6 +4026,63 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
+function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argument: string): string | null {
+    if (authority.status === 'admitted') {
+        return null;
+    }
+    return `Compiled target ${argument} is not authorized by the user request`;
+}
+
+/**
+ * The selector each compiled call's targets came from, keyed by call index across the whole batch:
+ * a `match` selector's compiled fields, a set slice's replay fields, or a `where`-only selector's own.
+ */
+function getCompiledSelectorTermsByCallIndex(
+    evidence: ArbitraryCommandListEvidence | undefined,
+    callIndexOffset: number
+): ReadonlyMap<number, CompiledSelectorTerms> {
+    const termsByCallIndex = new Map<number, CompiledSelectorTerms>();
+    for (const item of evidence?.items ?? []) {
+        const selector = evidence?.selectors.find((candidate) => candidate.itemId === item.itemId);
+        if (selector === undefined) {
+            continue;
+        }
+        const replay = selector.slice?.selector;
+        const terms: CompiledSelectorTerms = {
+            targetArgument: item.targetArgument,
+            where: selector.where ?? selector.predicate?.where ?? replay?.where,
+            match: selector.predicate?.match ?? replay?.match,
+        };
+        const ownIndexes = Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset);
+        for (const commandIndex of new Set([...ownIndexes, ...item.representativeCommandIndexes])) {
+            termsByCallIndex.set(commandIndex + callIndexOffset, terms);
+        }
+    }
+    return termsByCallIndex;
+}
+
+/**
+ * The text values a call writes: its string arguments that are not target references, and not the
+ * batch-local binding a creation names its result by, which nothing writes.
+ */
+function getWrittenValueTexts(call: ToolCallResult): string[] {
+    const targetArguments = new Set(
+        getExecutableAppActionGroundingRules(call.name)?.targetRules.map((rule) => rule.argument) ?? []
+    );
+    return Object.entries(stripBatchLocalBinding(call).arguments).flatMap(([argument, value]) =>
+        typeof value === 'string' && !targetArguments.has(argument) ? [value] : []
+    );
+}
+
+/**
+ * Every text value any call of the batch writes, whatever its action, so neither "Rename Keys to
+ * Pads and Vocals to Piano Lead" nor "rename Kick to Snare 2 and set Vocals volume to 75%" reads a
+ * written name as a target.
+ */
+function getBatchWrittenValueTexts(calls: readonly ToolCallResult[]): string[] {
+    return [...new Set(calls.flatMap(getWrittenValueTexts))];
+}
+
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
     if (actionName === 'renameClip') {
         return false;
@@ -4131,7 +4204,18 @@ function validatePlanCreatedNotes(
     if (clipSpanBeats === undefined) {
         return 'Plan-created notes require a clip whose batch item declares its span';
     }
-    return validateNotesWithinClipWindow(notes, { endBeat: clipSpanBeats, startBeat: 0 }, 'Plan-created note');
+    return validateNotesWithinClipWindow(
+        notes,
+        {
+            endBeat: clipSpanBeats,
+            loopEnabled: undefined,
+            loopLength: undefined,
+            loopOriginBeat: undefined,
+            midiOffsetBeats: undefined,
+            startBeat: 0,
+        },
+        'Plan-created note'
+    );
 }
 
 function hasEmptyClipRestriction(prompt: string, clipName: string): boolean {
@@ -4309,8 +4393,11 @@ function groundToolCall({
     actionOrdinal,
     admitsPlanCreatedObjects,
     batchLocalCreationBindings,
+    batchWrittenValueTexts,
     call,
     catalog,
+    compiledSelectorTerms,
+    compilerExcludedIds,
     context,
     creativeAdmission,
     creativeAuthorityMode,
@@ -4603,6 +4690,24 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
+            const setRefusal = compiledTargetRefusalReason(
+                admitsCompiledTargets({
+                    argument: targetRule.argument,
+                    capability: targetRule.capability,
+                    catalog,
+                    compilerExcludedIds,
+                    context,
+                    prompt,
+                    referenceResolved: false,
+                    selectorTerms: compiledSelectorTerms,
+                    valueTexts: batchWrittenValueTexts,
+                    targetIds: compilerTargetOverride.stableIds,
+                }),
+                targetRule.argument
+            );
+            if (setRefusal !== null) {
+                return rejection(index, call.name, setRefusal);
+            }
             groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
             continue;
         }
@@ -4718,7 +4823,24 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
+        const compiledTargetAuthority: CompiledTargetAuthorityInput | null =
+            compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
+                ? {
+                      argument: targetRule.argument,
+                      capability: targetRule.capability,
+                      catalog,
+                      compilerExcludedIds,
+                      context,
+                      dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
+                      prompt,
+                      referenceResolved: false,
+                      selectorTerms: compiledSelectorTerms,
+                      targetIds: compilerTargetOverride.stableIds,
+                      valueTexts: batchWrittenValueTexts,
+                  }
+                : null;
         if (
+            compiledTargetAuthority !== null &&
             compilerTargetOverride !== undefined &&
             'stableIds' in compilerTargetOverride &&
             admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt)
@@ -4734,6 +4856,13 @@ function groundToolCall({
                     call.name,
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
+            }
+            const compiledRefusal = compiledTargetRefusalReason(
+                admitsCompiledTargets(compiledTargetAuthority),
+                targetRule.argument
+            );
+            if (compiledRefusal !== null) {
+                return rejection(index, call.name, compiledRefusal);
             }
             groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
             continue;
@@ -4780,6 +4909,18 @@ function groundToolCall({
                 );
             }
             return rejection(index, call.name, `Target ${targetRule.argument} is not grounded in the user request`);
+        }
+        // An action that resolves compiled targets against the request like a direct call has its
+        // naming evidence from that resolution, and still answers to the request's protections.
+        const resolvedRefusal =
+            compiledTargetAuthority === null
+                ? null
+                : compiledTargetRefusalReason(
+                      admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true }),
+                      targetRule.argument
+                  );
+        if (resolvedRefusal !== null) {
+            return rejection(index, call.name, resolvedRefusal);
         }
 
         groundedArguments[targetRule.argument] = result.id;
@@ -5807,6 +5948,14 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
+    const compiledSelectorTermsByCallIndex = getCompiledSelectorTermsByCallIndex(
+        compilerEvidence,
+        transformCalls.length
+    );
+    const compilerExcludedIds: ReadonlySet<string> = new Set(
+        compilerEvidence?.selectors.flatMap((selector) => [...selector.excludedIds, ...selector.protectedExclusions]) ??
+            []
+    );
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
     let compilerActionCommandGraph: ActionCommandGraph | undefined;
     if (compilerEvidence !== undefined) {
@@ -6518,6 +6667,7 @@ export function bridgeGroundedLlmToolCalls({
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalCreationBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
+    const batchWrittenValueTexts = getBatchWrittenValueTexts(effectiveCalls);
     let prospectiveContext = context;
     for (const [index, providerCall] of effectiveCalls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -6588,8 +6738,11 @@ export function bridgeGroundedLlmToolCalls({
                         createdObjectRequestIndexes.has(index) ||
                         createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
+                batchWrittenValueTexts,
                 call,
                 catalog,
+                compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
+                compilerExcludedIds,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),

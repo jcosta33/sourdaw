@@ -10,6 +10,7 @@ import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import {
     AUTHOR_BOT_NODE_ID,
+    CI_APPROVAL_LABEL,
     ORCHESTRATOR_USER_NODE_ID,
     REVIEWER_BOT_NODE_ID,
     type GhSession,
@@ -76,14 +77,10 @@ import {
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
 import { planReviewRisk } from '../reviewRiskPolicy.ts';
-import {
-    REASSESSMENT_FILE_NAME,
-    REVIEW_ROUND_ESCALATION_THRESHOLD,
-    REVIEW_ROUND_WARNING_THRESHOLD,
-} from '../reviewRoundEscalation.ts';
-import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
+import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
+import type { ReviewDraw } from '../reviewDocumentParser.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const validComment = {
@@ -178,6 +175,8 @@ function fakePort(
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
+    // Label writes stay out of `calls`, whose exact read-then-post sequence many cases pin.
+    const labelWrites: string[] = [];
     const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
     let head = input.head ?? 'headsha';
     let state = input.state ?? 'OPEN';
@@ -249,9 +248,11 @@ function fakePort(
             latestReviewerReviewDatabaseId: null,
             unresolvedThreads: input.unresolvedThreads ?? 0,
         }),
+        applyApprovalLabel: (number) => labelWrites.push(`apply:${number}`),
+        removeApprovalLabel: (number) => labelWrites.push(`remove:${number}`),
         log: (message) => logs.push(message),
     };
-    return { port, calls, logs, posted };
+    return { port, calls, logs, posted, labelWrites };
 }
 
 function createJournaledRecoveryFixture(
@@ -1132,6 +1133,8 @@ describe('review publish', () => {
                         markRemoteMutationAttempt();
                         throw new Error('create review failed: HTTP 422');
                     },
+                    applyApprovalLabel: () => expect.fail('no label without a standing review'),
+                    removeApprovalLabel: () => expect.fail('no label without a standing review'),
                     log: () => undefined,
                 }),
                 publish: publishPreparedReview,
@@ -1285,6 +1288,14 @@ describe('review publish', () => {
         expect(calls[0]).toBe('read:/repo/.agents/review-bundles/42-headsha/review.json');
         expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
         expect(logs.at(-1)).toBe('99');
+    });
+
+    it('leaves the CI approval label to the coordinator, outside the publication lock', () => {
+        const { port, labelWrites } = fakePort();
+
+        publishReview(42, port);
+
+        expect(labelWrites).toEqual([]);
     });
 
     it('posts REQUEST_CHANGES body and comments when valid', () => {
@@ -2187,6 +2198,90 @@ describe('review publish', () => {
  * `openLane.spec.ts` documents why `vi.mock('node:child_process')` does not intercept a module
  * under `scripts/` and why a prior spec that trusted it filed a live issue on the public tracker.
  */
+describe('shellPort CI approval label', () => {
+    const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
+    const labelPath = `repos/jcosta33/sourdaw/labels/${encodeURIComponent(CI_APPROVAL_LABEL)}`;
+    const issueLabelPath = `repos/jcosta33/sourdaw/issues/42/labels/${encodeURIComponent(CI_APPROVAL_LABEL)}`;
+
+    function recordingCapture(answers: Record<string, () => string>) {
+        const requests: string[] = [];
+        const capture = (command: string, args: string[], options?: { input?: string }): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            const method = args.includes('--method') ? args[args.indexOf('--method') + 1] : 'GET';
+            const path = args.find((arg) => arg.startsWith('repos/')) ?? '';
+            const request = `${method ?? ''} ${path}${options?.input === undefined ? '' : ` ${options.input}`}`;
+            requests.push(request);
+            const answer = answers[`${method ?? ''} ${path}`];
+            return answer === undefined ? '{}' : answer();
+        };
+        return { requests, capture };
+    }
+
+    function notFound(): never {
+        throw new Error('gh: Not Found (HTTP 404)');
+    }
+
+    it('takes a stale label off before adding it, so every approval emits a fresh labeled event', () => {
+        const { requests, capture } = recordingCapture({});
+        shellPort(session, process.cwd(), capture).applyApprovalLabel(42);
+        expect(requests).toEqual([
+            `GET ${labelPath}`,
+            `DELETE ${issueLabelPath}`,
+            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`,
+        ]);
+    });
+
+    it('creates the label when the repository lacks it and tolerates its absence from the pull request', () => {
+        const { requests, capture } = recordingCapture({
+            [`GET ${labelPath}`]: notFound,
+            [`DELETE ${issueLabelPath}`]: notFound,
+        });
+        shellPort(session, process.cwd(), capture).applyApprovalLabel(42);
+        expect(requests[1]).toMatch(/^POST repos\/jcosta33\/sourdaw\/labels \{"name":"ci:approved",/u);
+        expect(requests.at(-1)).toBe(
+            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`
+        );
+    });
+
+    it('treats a label another publication created first as present, and fails on any other refusal', () => {
+        const raced = recordingCapture({
+            [`GET ${labelPath}`]: notFound,
+            'POST repos/jcosta33/sourdaw/labels': () => {
+                throw new Error(
+                    'gh: Validation Failed (HTTP 422)\n{"errors":[{"resource":"Label","code":"already_exists","field":"name"}]}'
+                );
+            },
+        });
+        shellPort(session, process.cwd(), raced.capture).applyApprovalLabel(42);
+        expect(raced.requests.at(-1)).toBe(
+            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`
+        );
+
+        const invalid = recordingCapture({
+            [`GET ${labelPath}`]: notFound,
+            'POST repos/jcosta33/sourdaw/labels': () => {
+                throw new Error('gh: Validation Failed (HTTP 422)\n{"errors":[{"code":"invalid","field":"color"}]}');
+            },
+        });
+        expect(() => shellPort(session, process.cwd(), invalid.capture).applyApprovalLabel(42)).toThrow('HTTP 422');
+    });
+
+    it('removes the label, succeeding when it is absent and failing on any other error', () => {
+        const absent = recordingCapture({ [`DELETE ${issueLabelPath}`]: notFound });
+        shellPort(session, process.cwd(), absent.capture).removeApprovalLabel(42);
+        expect(absent.requests).toEqual([`DELETE ${issueLabelPath}`]);
+
+        const denied = recordingCapture({
+            [`DELETE ${issueLabelPath}`]: () => {
+                throw new Error('gh: Resource not accessible by integration (HTTP 403)');
+            },
+        });
+        expect(() => shellPort(session, process.cwd(), denied.capture).removeApprovalLabel(42)).toThrow('HTTP 403');
+    });
+});
+
 describe('shellPort postReview state verification', () => {
     const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
 
@@ -4885,6 +4980,8 @@ describe('orchestrator acceptance', () => {
         expect(fixture.journal).toHaveBeenCalledWith(
             expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
         );
+        // Gate admission accepts only the reviewer App's approval, so the legacy acceptance never labels.
+        expect(fixture.labelWrites).toEqual([]);
     });
 
     it.each([
@@ -5034,135 +5131,34 @@ describe('fresh reviewer dossier publication', () => {
         };
     }
 
-    function dossierInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-        return {
-            format: 'dossier-input-v1',
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            stances: [
-                { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-            ],
-            evidence: [
-                {
-                    observable: 'the canonical dossier is persisted beside review.json',
-                    verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
-                    observed: 'one canonical dossier.json on disk',
-                },
-            ],
-            limitations: [],
-            assessmentImpact: 'none',
-            ...overrides,
-        };
-    }
-
-    /** The canonical persisted record publication itself writes for the given caller input. */
-    function persistedDossier(stances: Record<string, unknown>[]): unknown {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput({ stances }),
-            discarded: [],
-            comments: [],
-            recommendation: 'approve',
+    /** A tooling change under `scripts/`: small by size, but reviewed with the module-boundaries stance. */
+    function toolingRiskPlan(): ReviewRiskPlan {
+        return riskPlan({
+            riskClasses: ['small-tooling'],
+            requiredStances: ['correctness', 'module-boundaries', 'test-validity'],
+            triggers: ['small-tooling:handwritten-lines<=200:outside-src'],
         });
-        const record: unknown = JSON.parse(canonical);
-        return record;
     }
 
-    function stanceAdmission(dossier: unknown, recorded?: unknown): unknown {
-        if (typeof recorded === 'object' && recorded !== null && 'format' in recorded) {
-            return recorded;
-        }
-        const source = dossier as {
-            format: string;
-            stances?: { stance: string; reviewerModel: string; exhaustion?: string }[];
-        };
-        const draws =
-            source.format === 'dossier-v1' ? completedStances(parseReviewDossier(dossier)) : (source.stances ?? []);
-        const rows = (
-            recorded as { stances: { stance: string; admittedBy?: string; admission?: string }[] } | undefined
-        )?.stances;
-        const names = rows?.map((row) => row.stance) ?? [...new Set(draws.map((draw) => draw.stance))];
-        return {
-            format: 'stances-admission-v1',
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            stances: names.map((stance) => ({
-                stance,
-                admittedBy:
-                    rows?.find((row) => row.stance === stance)?.admittedBy ??
-                    rows?.find((row) => row.stance === stance)?.admission ??
-                    `the ${stance} failure can escape review`,
-                draws: draws
-                    .filter((draw) => draw.stance === stance)
-                    .map((draw) => ({
-                        reviewerModel: draw.reviewerModel,
-                        ...(draw.exhaustion === undefined ? {} : { exhaustion: draw.exhaustion }),
-                        baselineProbe: {
-                            spec: 'scripts/__tests__/publishReview.spec.ts',
-                            mutation: `revert the ${stance} guard`,
-                            observed: 'the named spec failed on the mutation',
-                            result: 'mutation-detected',
-                        },
-                    })),
-            })),
-        };
+    /** A patch adding `added` lines to one file, the shape `git diff` writes into a bundle's diff.patch. */
+    function patchAdding(path: string, added: number): string {
+        return [
+            `diff --git a/${path} b/${path}`,
+            'index 1111111..2222222 100644',
+            `--- a/${path}`,
+            `+++ b/${path}`,
+            `@@ -1,0 +1,${added} @@`,
+            ...Array.from({ length: added }, (_, index) => `+line ${index}`),
+            '',
+        ].join('\n');
     }
 
-    type AdmissionRecord = {
-        format: string;
-        pr: number;
-        headSha: string;
-        baseSha: string;
-        stances: {
-            stance: string;
-            admittedBy: string;
-            draws: {
-                reviewerModel: string;
-                exhaustion?: string;
-                baselineProbe: { spec: string; mutation: string; observed: string; result: string };
-            }[];
-        }[];
-    };
-
-    function validAdmission(dossier: unknown = dossierInput()): AdmissionRecord {
-        return stanceAdmission(dossier) as AdmissionRecord;
-    }
-
-    function expectStructuralRefusal(input: {
-        record: unknown;
-        dossier?: unknown;
-        plan?: ReviewRiskPlan;
-        reason: RegExp;
-    }): void {
-        const fixture = dossierFixture({
-            plan: input.plan ?? riskPlan(),
-            stances: input.record,
-            dossier: input.dossier ?? dossierInput(),
-        });
-        const journal = vi.fn();
-        try {
-            const message = refusalMessage(() =>
-                publishReview(number, fixture.port, {
-                    ownerOid: 'f'.repeat(40),
-                    journalReviewPublication: journal,
-                    markRemoteMutationAttempt: () => undefined,
-                    markDefinitiveNoMutationHttpStatus: () => undefined,
-                    registerSuccessfulCompletion: () => undefined,
-                })
-            );
-            expect(message).toMatch(input.reason);
-            expect(fixture.writes).toEqual([]);
-            expect(journal).not.toHaveBeenCalled();
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    }
+    /** The round's default draws: three distinct stances, one of them strongest. */
+    const defaultDraws: ReviewDraw[] = [
+        { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
+        { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+        { stance: 'stale binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+    ];
 
     const reviewDocument: ReviewDocument = {
         format: 'compact-v1',
@@ -5173,44 +5169,74 @@ describe('fresh reviewer dossier publication', () => {
         reviewerModel: 'glm-5.3-flash',
     };
 
-    /** A delivered `semantic-ci.json` record whose scope withheld two entries and left one unresolved. */
-    function deliveredSemanticCi(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    /** The canonical record publication itself derives for the given round. */
+    function derivedRecord(
+        input: {
+            draws?: ReviewDraw[];
+            comments?: { path: string; line: number; side: 'LEFT' | 'RIGHT' }[];
+            recommendation?: 'approve' | 'request-changes';
+            evidence?: { observable: string; verification: string; observed: string }[];
+        } = {}
+    ): ReturnType<typeof buildReviewDossier> {
+        return buildReviewDossier({
+            plan: riskPlan(),
+            persisted: undefined,
+            draws: input.draws ?? defaultDraws,
+            evidence: input.evidence ?? approvalEvidence(head).claims,
+            comments: input.comments ?? [],
+            recommendation: input.recommendation ?? 'approve',
+        });
+    }
+
+    const targetDiff = [
+        'diff --git a/scripts/target.ts b/scripts/target.ts',
+        'index 1111111..2222222 100644',
+        '--- a/scripts/target.ts',
+        '+++ b/scripts/target.ts',
+        '@@ -2,3 +2,4 @@',
+        ' context2',
+        ' context3',
+        ' context4',
+        '+added',
+        '',
+    ].join('\n');
+
+    /** A REQUEST_CHANGES document whose one finding sits on an added line of `targetDiff`. */
+    function changesDocument(): Record<string, unknown> {
         return {
-            format: SEMANTIC_CI_FORMAT,
-            pr: number,
-            headSha: head,
-            state: 'assessed',
-            assessedHeadSha: head,
-            execution: 'partial',
-            scope: {
-                discovered: 3,
-                eligible: 2,
-                assessed: 1,
-                excluded: [{ path: 'scripts/a.ts', reason: 'binary' }],
-                unassessed: [{ path: 'scripts/b.ts', reason: 'evidence-withheld' }],
-                truncated: [],
-            },
-            unresolvedQuestions: 1,
-            artifact: {
-                id: 1,
-                name: `semantic-review-${number}-1`,
-                expiresAt: '2030-01-01T00:00:00Z',
-                digest: 'f'.repeat(64),
-            },
-            ...overrides,
+            event: 'REQUEST_CHANGES',
+            body: 'One blocking finding.',
+            comments: [
+                {
+                    path: 'scripts/target.ts',
+                    line: 5,
+                    side: 'RIGHT',
+                    defect: 'the gate reads the wrong base',
+                    consequence: 'a foreign commit slips the authorship gate',
+                    done: 'read the comparison base',
+                },
+            ],
+            reviewerModel: 'glm-5.3-flash',
         };
     }
 
-    /** A `no-assessment` `semantic-ci.json` record: CI ran red and delivered nothing for the head. */
-    function noAssessmentSemanticCi(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-        return {
-            format: SEMANTIC_CI_FORMAT,
-            pr: number,
-            headSha: head,
-            state: 'no-assessment',
-            reason: 'red-check',
-            ...overrides,
-        };
+    /** `count` reviewer request-changes rounds in the public history. */
+    function requestChangesRounds(count: number): PublicReview[] {
+        return Array.from({ length: count }, (_, index) => ({
+            id: index + 1,
+            state: 'CHANGES_REQUESTED',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            body: 'round',
+        }));
+    }
+
+    function expectedFreezeRefusal(observed: number): string {
+        return (
+            `review round freeze: PR #${number} has taken ${observed} reviewer request-changes rounds, at or above the freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}; ` +
+            'no further reviewer publication is admitted. Respin the change as one consolidated fresh pull request, ' +
+            `then close this one with pnpm pr:supersede ${number} once the replacement merges`
+        );
     }
 
     function readJsonFile(path: string): unknown {
@@ -5227,33 +5253,34 @@ describe('fresh reviewer dossier publication', () => {
         throw new Error('expected the publication to refuse');
     }
 
-    /**
-     * The escalation refusal is the operator's diagnostic wherever it is reached, and the same text
-     * serves every state that reaches it, so the cases that reach it pin its exact contract text: any
-     * rewording that changes what it blames fails them. Phrase-level negatives could not hold that
-     * claim, because a synonym for the same field walked past them. The publication takes the
-     * round-cap decision before its approval context, documents and files, so the refusal is reached
-     * by a fresh approval publication exactly as by a request-changes one (#4754).
-     */
-    function expectedEscalationRefusal(bundle: string, observedCount: number): string {
-        return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
-    }
-
-    /**
-     * The escalation refusal the round-cap decision itself raises for a bundle that carries no
-     * reassessment, before any manifest, document or approval context is read. A plan-less bundle
-     * reaches the manifest-repair text above instead, and its own cases pin that.
-     */
-    function expectedMissingReassessmentRefusal(bundle: string, observedCount: number): string {
-        return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}; the orchestrator must record a reassessment at ${join(bundle, 'reassessment.json')} for head ${head} with roundsObserved ${observedCount} and one action from split, respec, continue`;
+    /** Runs a publication that must refuse before every side effect, returning its message. */
+    function refusedBeforeSideEffects(fixture: ReturnType<typeof dossierFixture>): string {
+        const journal = vi.fn();
+        const message = refusalMessage(() =>
+            publishReview(number, fixture.port, {
+                ownerOid: 'f'.repeat(40),
+                journalReviewPublication: journal,
+                markRemoteMutationAttempt: () => undefined,
+                markDefinitiveNoMutationHttpStatus: () => undefined,
+                registerSuccessfulCompletion: () => undefined,
+            })
+        );
+        expect(fixture.writes).toEqual([]);
+        expect(journal).not.toHaveBeenCalled();
+        expect(fixture.calls).not.toContain('post');
+        expect(fixture.posted.review).toBeUndefined();
+        return message;
     }
 
     function dossierFixture(
         input: {
             plan?: unknown;
-            stances?: unknown;
+            /** The draws review.json carries; null writes none, and an explicit document keeps its own. */
+            draws?: unknown;
+            /** A raw dossier.json: a persisted record or any retired caller input. */
             dossier?: unknown;
-            discarded?: unknown;
+            /** Extra raw bundle files, such as retired caller documents or semantic-ci.json. */
+            files?: Record<string, unknown>;
             document?: unknown;
             documentName?: string;
             manifest?: Record<string, unknown>;
@@ -5264,7 +5291,6 @@ describe('fresh reviewer dossier publication', () => {
             publicReviews?: PublicReview[];
             publicReviewComments?: PublicReviewComment[];
             diff?: string;
-            semanticCi?: unknown;
             /** Makes the approval context read the bundle manifest, as the production port does. */
             approvalContextReadsManifest?: boolean;
         } = {}
@@ -5277,33 +5303,25 @@ describe('fresh reviewer dossier publication', () => {
             JSON.stringify(input.manifest ?? { pr: number, baseRefName: 'main', baseSha: base, headSha: head })
         );
         writeFileSync(join(bundle, 'diff.patch'), input.diff ?? '');
-        writeFileSync(
-            join(bundle, input.documentName ?? 'review.json'),
-            JSON.stringify(input.document ?? reviewDocument)
-        );
+        const documentName = input.documentName ?? 'review.json';
+        const document = { ...((input.document ?? reviewDocument) as Record<string, unknown>) };
+        if (documentName === 'review.json' && !('draws' in document) && input.draws !== null) {
+            document.draws = input.draws ?? defaultDraws;
+        }
+        writeFileSync(join(bundle, documentName), JSON.stringify(document));
         if (input.plan !== undefined) {
             writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(input.plan));
-        }
-        const freshInput = (input.dossier as { format?: string } | undefined)?.format === 'dossier-input-v1';
-        if (input.stances !== null && (input.stances !== undefined || (input.plan !== undefined && freshInput))) {
-            let admission = stanceAdmission(input.dossier);
-            if (input.stances !== undefined) {
-                admission = stanceAdmission(input.dossier, input.stances);
-            }
-            writeFileSync(join(bundle, 'stances.json'), JSON.stringify(admission));
         }
         if (input.dossier !== undefined) {
             writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(input.dossier));
         }
-        if (input.discarded !== undefined) {
-            writeFileSync(join(bundle, 'discarded.json'), JSON.stringify(input.discarded));
-        }
-        if (input.semanticCi !== undefined) {
-            writeFileSync(join(bundle, 'semantic-ci.json'), JSON.stringify(input.semanticCi));
+        for (const [name, value] of Object.entries(input.files ?? {})) {
+            writeFileSync(join(bundle, name), typeof value === 'string' ? value : JSON.stringify(value));
         }
         const calls: string[] = [];
         const logs: string[] = [];
         const writes: { path: string; contents: string }[] = [];
+        const labelWrites: string[] = [];
         const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
         const port: PublishReviewPort = {
             primaryRoot: () => root,
@@ -5344,6 +5362,8 @@ describe('fresh reviewer dossier publication', () => {
             },
             publicReviews: () => input.publicReviews ?? [],
             publicReviewComments: () => input.publicReviewComments ?? [],
+            applyApprovalLabel: (labeledNumber) => labelWrites.push(`apply:${labeledNumber}`),
+            removeApprovalLabel: (labeledNumber) => labelWrites.push(`remove:${labeledNumber}`),
             log: (message) => logs.push(message),
         };
         if (input.writable !== false) {
@@ -5360,6 +5380,7 @@ describe('fresh reviewer dossier publication', () => {
             logs,
             writes,
             posted,
+            labelWrites,
             readDossier: () => readJsonFile(join(bundle, 'dossier.json')),
         };
     }
@@ -5453,269 +5474,14 @@ describe('fresh reviewer dossier publication', () => {
         },
     ];
 
-    it('refuses a fresh plan-carrying review without the caller stance admission before any side effect', () => {
+    it('publishes a matching plan, deriving the canonical record from review.json and writing it beside it', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
-            stances: null,
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'lost review', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'weak probe', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'stale replay', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-        });
-        const journal = vi.fn();
-        try {
-            expect(() =>
-                publishReview(number, fixture.port, {
-                    ownerOid: 'f'.repeat(40),
-                    journalReviewPublication: journal,
-                    markRemoteMutationAttempt: () => undefined,
-                    markDefinitiveNoMutationHttpStatus: () => undefined,
-                    registerSuccessfulCompletion: () => undefined,
-                })
-            ).toThrow(/stances\.json/u);
-            expect(fixture.writes).toEqual([]);
-            expect(journal).not.toHaveBeenCalled();
-            expect(fixture.calls).not.toContain('post');
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it.each([
-        ['zero', 0],
-        ['two', 2],
-    ] as const)('refuses %s unique stances before all publication side effects', (_label, count) => {
-        const entries = (dossierInput().stances as Record<string, unknown>[]).slice(0, count);
-        const dossier = dossierInput({ stances: entries });
-        expectStructuralRefusal({
-            record: validAdmission(dossier),
-            dossier,
-            reason: new RegExp(`at least three unique task risk stances; found ${count}`, 'u'),
-        });
-    });
-
-    it('refuses duplicate stance rows even when the row count is three', () => {
-        const entries = (dossierInput().stances as Record<string, unknown>[]).slice(0, 2);
-        const dossier = dossierInput({ stances: entries });
-        const record = validAdmission(dossier);
-        record.stances.push(structuredClone(record.stances[0]!));
-        expectStructuralRefusal({ record, dossier, reason: /duplicates stance "correctness"/u });
-    });
-
-    it.each([
-        [
-            'pr',
-            (record: AdmissionRecord) => {
-                record.pr = 43;
+            document: {
+                ...reviewDocument,
+                draws: defaultDraws,
+                discarded: [{ finding: 'blind-1', reason: 'not reproducible on this head' }],
             },
-            /review stances admission pr mismatch/u,
-        ],
-        [
-            'head',
-            (record: AdmissionRecord) => {
-                record.headSha = 'e'.repeat(40);
-            },
-            /review stances admission headSha mismatch/u,
-        ],
-        [
-            'base',
-            (record: AdmissionRecord) => {
-                record.baseSha = 'e'.repeat(40);
-            },
-            /review stances admission baseSha mismatch/u,
-        ],
-        [
-            'format',
-            (record: AdmissionRecord) => {
-                record.format = 'older';
-            },
-            /review stances admission format mismatch/u,
-        ],
-        [
-            'missing probe',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws = [];
-            },
-            /missing baseline probe for stance "correctness"/u,
-        ],
-        [
-            'duplicate probe',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws.push(structuredClone(record.stances[0]!.draws[0]!));
-            },
-            /duplicates baseline probe for stance "correctness"/u,
-        ],
-        [
-            'extra probe',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws.push({
-                    ...structuredClone(record.stances[0]!.draws[0]!),
-                    reviewerModel: 'unrecorded-model',
-                });
-            },
-            /extra baseline probe/u,
-        ],
-        [
-            'missing spec',
-            (record: AdmissionRecord) => {
-                Reflect.deleteProperty(record.stances[0]!.draws[0]!.baselineProbe, 'spec');
-            },
-            /baselineProbe\.spec must be a non-blank string/u,
-        ],
-        [
-            'missing mutation',
-            (record: AdmissionRecord) => {
-                Reflect.deleteProperty(record.stances[0]!.draws[0]!.baselineProbe, 'mutation');
-            },
-            /baselineProbe\.mutation must be a non-blank string/u,
-        ],
-        [
-            'missing observed',
-            (record: AdmissionRecord) => {
-                Reflect.deleteProperty(record.stances[0]!.draws[0]!.baselineProbe, 'observed');
-            },
-            /baselineProbe\.observed must be a non-blank string/u,
-        ],
-        [
-            'unsafe spec',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.spec = `ghp_${'A'.repeat(24)}`;
-            },
-            /baselineProbe\.spec.*GitHub token/u,
-        ],
-        [
-            'malformed mutation',
-            (record: AdmissionRecord) => {
-                Reflect.set(record.stances[0]!.draws[0]!.baselineProbe, 'mutation', 42);
-            },
-            /baselineProbe\.mutation must be a non-blank string/u,
-        ],
-        [
-            'unsafe mutation',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.mutation = `ghp_${'B'.repeat(24)}`;
-            },
-            /baselineProbe\.mutation.*GitHub token/u,
-        ],
-        [
-            'malformed observed',
-            (record: AdmissionRecord) => {
-                Reflect.set(record.stances[0]!.draws[0]!.baselineProbe, 'observed', 42);
-            },
-            /baselineProbe\.observed must be a non-blank string/u,
-        ],
-        [
-            'unsafe observed',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.observed = `ghp_${'C'.repeat(24)}`;
-            },
-            /baselineProbe\.observed.*GitHub token/u,
-        ],
-        [
-            'multiline mutation',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.mutation = 'revert guard\nthen run';
-            },
-            /baselineProbe\.mutation.*line separator/u,
-        ],
-        [
-            'unknown result',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.result = 'passed';
-            },
-            /baselineProbe\.result must be mutation-detected, still-green or not-run/u,
-        ],
-        [
-            'still green',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.result = 'still-green';
-            },
-            /baseline probe.*reported still-green/u,
-        ],
-        [
-            'not run',
-            (record: AdmissionRecord) => {
-                record.stances[0]!.draws[0]!.baselineProbe.result = 'not-run';
-            },
-            /baseline probe.*reported not-run/u,
-        ],
-    ] as const)('refuses a %s sidecar before all publication side effects', (_label, change, reason) => {
-        const record = validAdmission();
-        change(record);
-        expectStructuralRefusal({ record, reason });
-    });
-
-    it.each([
-        ['native-security', ['correctness', 'security-platform', 'test-validity']],
-        ['realtime-audio', ['correctness', 'realtime-audio', 'test-validity']],
-        ['undo', ['correctness', 'project-integrity-undo', 'test-validity']],
-    ] as const)('requires one strongest completed draw for %s', (riskClass, requiredStances) => {
-        let plan = riskPlan({ riskClasses: [riskClass], requiredStances: [...requiredStances] });
-        if (riskClass === 'native-security') {
-            plan = planReviewRisk({
-                pr: number,
-                headSha: head,
-                baseSha: base,
-                paths: [
-                    {
-                        path: 'scripts/reviewStructuralAdmission.ts',
-                        group: 'handwritten',
-                        added: 1,
-                        deleted: 0,
-                        binary: false,
-                    },
-                ],
-            });
-        }
-        expect(plan.riskClasses).toContain(riskClass);
-        const standardDraws = (dossierInput().stances as Record<string, unknown>[]).map((draw) => ({
-            ...draw,
-            modelTier: 'standard',
-        }));
-        const dossier = dossierInput({ stances: standardDraws });
-        expectStructuralRefusal({
-            plan,
-            dossier,
-            record: validAdmission(dossier),
-            reason: /requires a completed strongest draw for specialist risk/u,
-        });
-
-        const strongest = dossierInput({
-            stances: [{ ...standardDraws[0], modelTier: 'strongest' }, ...standardDraws.slice(1)],
-        });
-        const fixture = dossierFixture({ plan, dossier: strongest, stances: validAdmission(strongest) });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('admits three completed standard draws for a nonspecial plan', () => {
-        const dossier = dossierInput({
-            stances: (dossierInput().stances as Record<string, unknown>[]).map((draw) => ({
-                ...draw,
-                modelTier: 'standard',
-            })),
-        });
-        const fixture = dossierFixture({ plan: riskPlan(), dossier, stances: validAdmission(dossier) });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('publishes a matching plan and dossier, writing the canonical record beside review.json', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            discarded: [{ finding: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' }],
         });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
@@ -5724,15 +5490,7 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.writes).toHaveLength(2);
             expect(fixture.writes[0]?.path).toBe(join(fixture.bundle, 'dossier.json'));
             expect(fixture.writes[1]?.path).toBe(join(fixture.bundle, 'dossier.json'));
-            expect(fixture.writes[0]?.contents).toBe(
-                buildReviewDossier({
-                    plan: riskPlan(),
-                    raw: dossierInput(),
-                    discarded: [{ finding: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' }],
-                    comments: [],
-                    recommendation: 'approve',
-                }).canonical
-            );
+            expect(fixture.writes[0]?.contents).toBe(derivedRecord().canonical);
             expect(fixture.posted.review).toEqual({
                 number,
                 commitId: head,
@@ -5758,9 +5516,15 @@ describe('fresh reviewer dossier publication', () => {
                 intent: 'deliver',
                 evidenceManifestDigest: authorizedEvidenceDigest(persisted),
             });
-            expect(discardedDispositions(persisted)).toEqual([
-                { findingId: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' },
+            // Discards stay in review.json: they are shape-checked, never posted, and never recorded.
+            expect(discardedDispositions(persisted)).toEqual([]);
+            expect(completedStances(persisted).map((draw) => [draw.stance, draw.modelTier, draw.outcome])).toEqual([
+                ['correctness', 'strongest', 'clean'],
+                ['test-validity', 'standard', 'clean'],
+                ['stale binding', 'standard', 'clean'],
             ]);
+            expect(persisted.evidence).toEqual(approvalEvidence(head).claims);
+            expect(fixture.readDossier()).not.toHaveProperty('assessmentImpact');
             expect(fixture.writes[1]?.contents).toBe(serializeReviewDossier(persisted));
             // The pre-POST write is the same record without its post-publication events: the landed
             // review binding and the delivery authorization it carries.
@@ -5772,11 +5536,308 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    describe('proportional draw floor (ADR 0054)', () => {
+        const docsOnlyPlan = riskPlan({
+            riskClasses: ['docs-only'],
+            requiredStances: ['correctness'],
+            triggers: ['docs-only:all-paths-are-docs'],
+        });
+        const ordinaryPlan = riskPlan({
+            riskClasses: ['ordinary'],
+            requiredStances: ['code-craft', 'correctness', 'module-boundaries', 'test-validity'],
+            triggers: ['ordinary:handwritten-lines>200'],
+        });
+        const governancePlan = planReviewRisk({
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            paths: [{ path: 'scripts/publishReview.ts', group: 'handwritten', added: 1, deleted: 0, binary: false }],
+        });
+
+        it('publishes a docs-only bundle with one draw', () => {
+            const fixture = dossierFixture({
+                plan: docsOnlyPlan,
+                draws: [defaultDraws[1]],
+                diff: patchAdding('docs/06-testing.md', 3),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                expect(completedStances(parseReviewDossier(fixture.readDossier())).map((draw) => draw.stance)).toEqual([
+                    'test-validity',
+                ]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a plan-carrying review.json without draws before any side effect', () => {
+            const fixture = dossierFixture({ plan: riskPlan(), draws: null });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    `review.json must carry draws for head ${head}: one { stance, reviewerModel, tier, outcome } entry per completed blind draw`
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it.each([
+            ['docs-only', 0, 1, docsOnlyPlan, patchAdding('docs/06-testing.md', 3)],
+            ['small', 1, 2, riskPlan(), patchAdding('src/modules/Tuner/x.ts', 3)],
+            ['ordinary', 2, 3, ordinaryPlan, patchAdding('src/modules/Tuner/x.ts', 250)],
+        ] as const)(
+            'refuses a %s round with %i distinct stances, below its floor of %i',
+            (label, count, floor, plan, diff) => {
+                const fixture = dossierFixture({ plan, draws: defaultDraws.slice(0, count), diff });
+                try {
+                    expect(refusedBeforeSideEffects(fixture)).toBe(
+                        `review.json draws cover ${count} distinct stances; the ${label} risk plan requires at least ${floor}`
+                    );
+                } finally {
+                    removeTemporaryDirectory(fixture.root);
+                }
+            }
+        );
+
+        it('refuses a specialist round with no strongest draw, and publishes it with one', () => {
+            expect(governancePlan.riskClasses).toEqual(['native-security']);
+            const standard = defaultDraws.map((draw): ReviewDraw => ({ ...draw, tier: 'standard' }));
+            const governanceDiff = patchAdding('scripts/publishReview.ts', 1);
+            const refused = dossierFixture({ plan: governancePlan, draws: standard, diff: governanceDiff });
+            try {
+                expect(refusedBeforeSideEffects(refused)).toBe(
+                    'review.json draws need at least one strongest-tier draw for the native-security risk plan'
+                );
+            } finally {
+                removeTemporaryDirectory(refused.root);
+            }
+            const admitted = dossierFixture({ plan: governancePlan, diff: governanceDiff });
+            try {
+                expect(publishReview(number, admitted.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(admitted.root);
+            }
+        });
+
+        it('refuses a hand-edited risk plan that lowers the floor below what the bundle diff earns', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                draws: defaultDraws.slice(0, 2),
+                diff: patchAdding('src/modules/Tuner/x.ts', 250),
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    'review risk plan riskClasses small differ from the ordinary the bundle diff.patch earns'
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a risk plan that drops a specialist class the bundle diff earns', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                diff: patchAdding('.github/CODEOWNERS', 1),
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    'review risk plan riskClasses small differ from the native-security the bundle diff.patch earns'
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses an unknown draw tier before any side effect', () => {
+            const fixture = dossierFixture({ plan: riskPlan(), draws: [{ ...defaultDraws[0], tier: 'heroic' }] });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    'review.json draws[0].tier must be one of economy, standard, strongest, found "heroic"'
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it.each([
+            ['draws[0].stance', { draws: [{ ...defaultDraws[0], stance: `ghp_${'A'.repeat(24)}` }] }],
+            ['draws[0].reviewerModel', { draws: [{ ...defaultDraws[0], reviewerModel: `ghp_${'B'.repeat(24)}` }] }],
+            ['discarded[0].finding', { discarded: [{ finding: `ghp_${'C'.repeat(24)}`, reason: 'not reproducible' }] }],
+            ['discarded[0].reason', { discarded: [{ finding: 'blind-1', reason: `ghp_${'D'.repeat(24)}` }] }],
+        ])('refuses a credential-shaped %s before any side effect', (field, fields) => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                document: { ...reviewDocument, draws: defaultDraws, ...fields },
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    `review.json ${field} value at index 0 contains a GitHub token`
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses an APPROVE carrying inline comments on a plan-carrying bundle', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                document: { ...reviewDocument, comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }] },
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    'APPROVE must carry no comments; an inline comment opens a thread that blocks the merge'
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses to post when the pull-request head moved after the record was derived', () => {
+            const fixture = dossierFixture({ plan: riskPlan() });
+            let reads = 0;
+            fixture.port.pullRequest = () => {
+                reads += 1;
+                return { state: 'OPEN', head: reads === 1 ? head : 'e'.repeat(40) };
+            };
+            try {
+                expect(refusalMessage(() => publishReview(number, fixture.port))).toBe(
+                    'pull-request head moved; refusing to post a stale review'
+                );
+                expect(fixture.calls).not.toContain('post');
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('ignores retired caller documents, logging one line, and replaces a caller dossier input', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: { format: 'dossier-input-v1', stances: [] },
+                files: {
+                    'stances.json': '{ not even json',
+                    'discarded.json': [],
+                    'reassessment.json': {},
+                    'semantic-ci.json': { format: 'semantic-ci-v1', state: 'no-assessment', reason: 'red-check' },
+                },
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                expect(fixture.logs.filter((line) => line.startsWith('review:publish ignores'))).toEqual([
+                    `review:publish ignores stances.json, discarded.json, reassessment.json, dossier.json (caller input) in ${fixture.bundle}: review.json is the only caller document`,
+                ]);
+                expect(fixture.calls.some((call) => call.endsWith('semantic-ci.json'))).toBe(false);
+                expect(parseReviewDossier(fixture.readDossier()).format).toBe('dossier-v1');
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+    });
+
+    describe('review round freeze (ADR 0054)', () => {
+        it('publishes a fresh review below the freeze', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                publicReviews: requestChangesRounds(REVIEW_ROUND_FREEZE_THRESHOLD - 1),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it.each([
+            ['an APPROVE', reviewDocument],
+            ['a REQUEST_CHANGES', changesDocument()],
+        ])('refuses %s at the freeze before approval context or any write', (_label, document) => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                document,
+                diff: targetDiff,
+                // An unusable manifest proves the freeze is decided before the approval context reads it.
+                manifest: { pr: number, baseRefName: 'main', headSha: head },
+                approvalContextReadsManifest: true,
+                publicReviews: requestChangesRounds(REVIEW_ROUND_FREEZE_THRESHOLD),
+            });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(expectedFreezeRefusal(REVIEW_ROUND_FREEZE_THRESHOLD));
+                expect(fixture.calls).not.toContain('approvalContext');
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('freezes a plan-less legacy bundle too, naming the observed count', () => {
+            const fixture = dossierFixture({ publicReviews: requestChangesRounds(REVIEW_ROUND_FREEZE_THRESHOLD + 2) });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toBe(
+                    expectedFreezeRefusal(REVIEW_ROUND_FREEZE_THRESHOLD + 2)
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('counts only reviewer request-changes rounds toward the freeze', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                publicReviews: [
+                    ...requestChangesRounds(REVIEW_ROUND_FREEZE_THRESHOLD - 1),
+                    { id: 90, state: 'APPROVED', commitId: head, actorNodeId: REVIEWER_BOT_NODE_ID, body: 'approval' },
+                    {
+                        id: 91,
+                        state: 'APPROVED',
+                        commitId: head,
+                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                        body: 'accept',
+                    },
+                    {
+                        id: 92,
+                        state: 'CHANGES_REQUESTED',
+                        commitId: head,
+                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                        body: 'rejection',
+                    },
+                ],
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('replays a recorded publication at the freeze without posting again', () => {
+            const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
+            const fixture = dossierFixture({ plan: riskPlan(), remoteReviews });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                const review = fixture.posted.review;
+                if (review === undefined) {
+                    throw new Error('expected the APPROVE to have posted');
+                }
+                remoteReviews[99] = {
+                    id: 99,
+                    state: 'APPROVED',
+                    body: review.body,
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    comments: [],
+                };
+                fixture.port.publicReviews = () => requestChangesRounds(REVIEW_ROUND_FREEZE_THRESHOLD);
+                expect(publishReview(number, fixture.port)).toBe(99);
+                expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+    });
+
     it.each([
         { label: 'missing reviewer', reviewerState: null, reviewerId: null, reviewerHead: null },
         { label: 'approval without an id', reviewerState: 'APPROVED', reviewerId: null, reviewerHead: head },
     ])('refuses a fresh APPROVE with $label identity before terminal binding', (input) => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        const fixture = dossierFixture({ plan: riskPlan() });
         fixture.port.reviewState = () => ({
             latestReviewerStateOnHead: input.reviewerState,
             latestReviewerReviewDatabaseId: input.reviewerId,
@@ -5796,414 +5857,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    describe('delivered semantic assessment acknowledgement', () => {
-        it('refuses a delivered assessment with withheld entries, a none impact and no reason, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput(),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toHaveLength(0);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes the same dossier with the assessmentIgnoredReason present, binding it into the record', () => {
-            const REASON = 'the withheld audio module is outside this change’s blast radius';
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({ assessmentIgnoredReason: REASON }),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-                const persisted = parseReviewDossier(fixture.readDossier());
-                expect(persisted.assessmentIgnoredReason).toBe(REASON);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a reason beside a non-none impact, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'stance-changed',
-                    assessmentIgnoredReason: 'the assessment surfaced nothing actionable',
-                }),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /assessmentIgnoredReason requires assessmentImpact none, found stance-changed/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a bundle with no semantic-ci.json without the field', () => {
-            const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-                expect(parseReviewDossier(fixture.readDossier()).assessmentIgnoredReason).toBeUndefined();
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a limitation-only round whose limitation names the assessment', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
-                }),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a limitation-only round whose limitation never names the assessment, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: ['the native audio path is not exercised on this head'],
-                }),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /review dossier assessmentImpact limitation-only does not cite the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved: name its artifact or a withheld path in a limitation/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a semantic-ci record bound to another head, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({ assessmentIgnoredReason: 'the withheld paths are outside scope' }),
-                semanticCi: deliveredSemanticCi({ headSha: 'f'.repeat(40) }),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /semantic-ci record pr 42 headSha f{40} does not match the publication pr 42 headSha c{40}/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a persisted canonical record with no publication event that never acknowledges the assessment', () => {
-            const historical = persistedDossier([
-                { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-            ]);
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: historical,
-                stances: stanceAdmission(historical),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-    });
-
-    describe('fired semantic signal disposal', () => {
-        /** The repository's own measured standing escape (#4441), as a fired scan signal projects it. */
-        const FIRED_SIGNAL = {
-            ruleId: 'admission_branch_completes_without_asserting',
-            path: 'src/modules/audio/take.test.ts',
-            probability: 0.82,
-        };
-        const FIRED_TOKEN = `semantic-signal ${FIRED_SIGNAL.ruleId} ${FIRED_SIGNAL.path}`;
-        /** The same signal as the record carries it when the publication screen refused its path. */
-        const MARKER_SIGNAL = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
-        const MARKER_TOKEN = `semantic-signal ${MARKER_SIGNAL.ruleId} ${UNRECOGNIZED_SIGNAL_VALUE}`;
-
-        it('refuses a fresh publication with an undisposed marker-valued fired signal, naming the marker', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({ assessmentIgnoredReason: 'the assessment surfaced nothing actionable' }),
-                semanticCi: deliveredSemanticCi({ firedSignals: [MARKER_SIGNAL] }),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    `does not dispose of 1 of the delivered assessment's 1 fired signal(s) (${MARKER_SIGNAL.ruleId} at ${UNRECOGNIZED_SIGNAL_VALUE})`
-                );
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toHaveLength(0);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a limitation naming a marker-valued fired signal by the token its record carries', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: [
-                        'the assessment run semantic-review-42-1 withheld the audio module',
-                        `${MARKER_TOKEN}: the flagged path was screened out of the record, and the deliberate #4441 escape is pinned by its own spec`,
-                    ],
-                }),
-                semanticCi: deliveredSemanticCi({ firedSignals: [MARKER_SIGNAL] }),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a fresh publication with an undisposed fired signal before any write, naming rule and path', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({ assessmentIgnoredReason: 'the assessment surfaced nothing actionable' }),
-                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /does not dispose of 1 of the delivered assessment's 1 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.test\.ts\)/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toHaveLength(0);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a limitation naming the fired signal token', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: [
-                        'the assessment run semantic-review-42-1 withheld the audio module',
-                        `${FIRED_TOKEN}: the conditional admission is the deliberate #4441 escape`,
-                    ],
-                }),
-                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a discarded finding naming the fired signal token', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is disposed below' }),
-                discarded: [
-                    {
-                        finding: FIRED_TOKEN,
-                        stance: 'correctness',
-                        reason: 'the conditional admission is deliberate and pinned by its own spec',
-                    },
-                ],
-                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-                const persisted = parseReviewDossier(fixture.readDossier());
-                expect(discardedDispositions(persisted).map((entry) => entry.findingId)).toEqual([FIRED_TOKEN]);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a stance admittedBy line naming the fired signal token', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                stances: {
-                    stances: [
-                        {
-                            stance: 'correctness',
-                            admittedBy: `${FIRED_TOKEN}: a reordered take insert drops a buffered frame`,
-                        },
-                        { stance: 'test-validity' },
-                        { stance: 'stale binding' },
-                    ],
-                },
-                dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is the stance this round attacked' }),
-                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses an undisposed fired signal even when the withheld scope was cited, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
-                }),
-                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(
-                    /does not dispose of 1 of the delivered assessment's 1 fired signal/u
-                );
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toHaveLength(0);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a legacy record without the firedSignals field unchanged', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({ assessmentIgnoredReason: 'the withheld paths are outside scope' }),
-                semanticCi: deliveredSemanticCi(),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-    });
-
-    describe('no-assessment semantic-ci acknowledgement', () => {
-        it('refuses a no-assessment record with an unrelated limitation, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: ['the native audio path is not exercised on this head'],
-                }),
-                semanticCi: noAssessmentSemanticCi(),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(/semantic-ci red-check/u);
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toHaveLength(0);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a no-assessment record whose limitation cites the wrong reason, never posting', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
-                }),
-                semanticCi: noAssessmentSemanticCi({ reason: 'absent' }),
-            });
-            try {
-                expect(() => publishReview(number, fixture.port)).toThrow(/semantic-ci absent/u);
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toHaveLength(0);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a no-assessment record whose limitation cites it', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput({
-                    assessmentImpact: 'limitation-only',
-                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
-                }),
-                semanticCi: noAssessmentSemanticCi(),
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('refuses a manifest that records generating the semantic-ci record while the file is absent', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput(),
-                manifest: {
-                    pr: number,
-                    baseRefName: 'main',
-                    baseSha: base,
-                    headSha: head,
-                    generated: ['diff.patch', 'manifest.json', 'risk-plan.json', 'dossier.json', 'semantic-ci.json'],
-                },
-            });
-            try {
-                const message = refusalMessage(() => publishReview(number, fixture.port));
-                expect(message).toMatch(/missing semantic-ci record at .*semantic-ci\.json/u);
-                expect(fixture.calls).not.toContain('post');
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toEqual([]);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes when the manifest generated list omits the semantic-ci record and the file is absent', () => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput(),
-                manifest: {
-                    pr: number,
-                    baseRefName: 'main',
-                    baseSha: base,
-                    headSha: head,
-                    generated: ['diff.patch', 'manifest.json', 'risk-plan.json', 'dossier.json'],
-                },
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-    });
-
-    it('publishes below the escalation threshold without recording a review-reassessed event', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    describe('repair actor admission below the escalation threshold', () => {
+    describe('repair actor admission below the freeze threshold', () => {
         function malformedRepairFixture(actorNodeId: string | null) {
             const root: PublicReviewComment = {
                 id: 100,
@@ -6216,7 +5870,6 @@ describe('fresh reviewer dossier publication', () => {
             };
             return dossierFixture({
                 plan: riskPlan(),
-                dossier: dossierInput(),
                 publicReviews: [
                     {
                         id: 1,
@@ -6265,652 +5918,8 @@ describe('fresh reviewer dossier publication', () => {
         );
     });
 
-    it('refuses at or above the escalation threshold without a reassessment, before any POST or write', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('publishes with a valid reassessment and records exactly one review-reassessed event', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            writeFileSync(
-                join(fixture.bundle, REASSESSMENT_FILE_NAME),
-                JSON.stringify({
-                    format: 'reassessment-v1',
-                    pr: number,
-                    headSha: head,
-                    baseSha: base,
-                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
-                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-                    action: 'continue',
-                    reason: 're-scoped the change and re-dispatched the remaining stances',
-                })
-            );
-            expect(publishReview(number, fixture.port)).toBe(99);
-            const persisted = parseReviewDossier(fixture.readDossier());
-            const reassessments = persisted.events.filter((event) => event.kind === 'review-reassessed');
-            expect(reassessments).toHaveLength(1);
-            expect(reassessments[0]).toMatchObject({
-                kind: 'review-reassessed',
-                roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
-                threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-                action: 'continue',
-                reason: 're-scoped the change and re-dispatched the remaining stances',
-            });
-            // The delivery authorization binds the digest of the record minus its post-publication
-            // events (delivery-authorized and review-reassessed), so the writer's recorded digest
-            // equals the recomputed authorized digest — and the production deliver reader recomputes
-            // the same value from the live record.
-            const authorization = deliveryAuthorization(persisted);
-            if (authorization === undefined) {
-                throw new Error('expected a recorded delivery authorization');
-            }
-            expect(authorization.evidenceManifestDigest).toBe(authorizedEvidenceDigest(persisted));
-            const deliverPort = deliverShellPort(
-                'jcosta33/sourdaw',
-                {
-                    capture: () => {
-                        throw new Error('the dossier reader must not use the shell');
-                    },
-                    run: () => {
-                        throw new Error('the dossier reader must not use the shell');
-                    },
-                },
-                { primaryRoot: fixture.root }
-            );
-            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
-            if (binding.kind !== 'required') {
-                throw new Error('unreachable');
-            }
-            expect(binding.dossierDigest).toBe(authorizedEvidenceDigest(persisted));
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the escalation threshold without a reassessment', () => {
-        const fixture = dossierFixture({
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest lacks baseSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold with a missing manifest', () => {
-        const fixture = dossierFixture({
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            rmSync(join(fixture.bundle, 'manifest.json'));
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(message).not.toMatch(/ENOENT/);
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in a field other than baseSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseSha: base, headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in pr', () => {
-        const fixture = dossierFixture({
-            manifest: { baseRefName: 'main', baseSha: base, headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in headSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', baseSha: base },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid field', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: '', baseSha: base, headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid pr', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number + 0.5, baseRefName: 'main', baseSha: base, headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid baseSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', baseSha: 42, headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid headSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', baseSha: base, headSha: 42 },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid baseRefName', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 42, baseSha: base, headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest cannot be parsed', () => {
-        const fixture = dossierFixture({
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            writeFileSync(join(fixture.bundle, 'manifest.json'), '{ not json');
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a request-changes publication at or above the threshold when the manifest supplies no usable context', () => {
-        const comment = {
-            path: 'scripts/target.ts',
-            line: 5,
-            side: 'RIGHT' as const,
-            defect: 'the gate reads the wrong base',
-            consequence: 'a foreign commit slips the authorship gate',
-            done: 'read the comparison base',
-        };
-        const diff = [
-            'diff --git a/scripts/target.ts b/scripts/target.ts',
-            'index 1111111..2222222 100644',
-            '--- a/scripts/target.ts',
-            '+++ b/scripts/target.ts',
-            '@@ -2,3 +2,4 @@',
-            ' context2',
-            ' context3',
-            ' context4',
-            '+added',
-            '',
-        ].join('\n');
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', headSha: head },
-            document: {
-                event: 'REQUEST_CHANGES',
-                body: 'One blocking finding.',
-                comments: [comment],
-                reviewerModel: 'glm-5.3-flash',
-            },
-            diff,
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries a blank baseSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', baseSha: '', headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-less bundle at or above the threshold whose manifest carries a blank headSha', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', baseSha: base, headSha: '' },
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('still refuses a head at the warning threshold without a reassessment before reading approval context', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            manifest: { pr: number, baseRefName: 'main', headSha: head },
-            approvalContextReadsManifest: true,
-            publicReviews: Array.from({ length: REVIEW_ROUND_WARNING_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
-            expect(fixture.calls).not.toContain('approvalContext');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it.each([REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
-        'publishes at %s rounds with a warning and a valid reassessment',
-        (rounds) => {
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                dossier: dossierInput(),
-                publicReviews: Array.from({ length: rounds }, (_, index) => ({
-                    id: index + 1,
-                    state: 'CHANGES_REQUESTED',
-                    commitId: head,
-                    actorNodeId: REVIEWER_BOT_NODE_ID,
-                    body: 'round',
-                })),
-            });
-            try {
-                writeFileSync(
-                    join(fixture.bundle, REASSESSMENT_FILE_NAME),
-                    JSON.stringify({
-                        format: 'reassessment-v1',
-                        pr: number,
-                        headSha: head,
-                        baseSha: base,
-                        roundsObserved: rounds,
-                        threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-                        action: 'continue',
-                        reason: 'Reviewed the churn and scoped the remaining finding',
-                    })
-                );
-                expect(publishReview(number, fixture.port)).toBe(99);
-                expect(fixture.calls).toContain('post');
-                expect(fixture.logs).toContainEqual(
-                    expect.stringContaining(
-                        `review-round-warning:${number}:request-changes=${rounds}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}`
-                    )
-                );
-                const persisted = parseReviewDossier(fixture.readDossier());
-                expect(persisted.events).toContainEqual(
-                    expect.objectContaining({
-                        kind: 'review-reassessed',
-                        roundsObserved: rounds,
-                    })
-                );
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        }
-    );
-
-    it('refuses an escalated approval publication whose manifest cannot supply the base it needs', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            manifest: { pr: number, baseRefName: 'main', headSha: head },
-            approvalContextReadsManifest: true,
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            // This approval context reads the manifest the case leaves unusable, as the production
-            // port does, so the refusal below is the round-cap decision running ahead of it: without
-            // the early decision this run raises the reader's own manifest error (#4754).
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedMissingReassessmentRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.calls).not.toContain('approvalContext');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('names the round count it observed when the head has taken more rounds than the threshold', () => {
-        const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 1;
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', headSha: head },
-            publicReviews: Array.from({ length: observed }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, observed));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('names only the reviewer request-changes rounds when the history carries others', () => {
-        const fixture = dossierFixture({
-            manifest: { pr: number, baseRefName: 'main', headSha: head },
-            publicReviews: [
-                ...Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
-                    id: index + 1,
-                    state: 'CHANGES_REQUESTED',
-                    commitId: head,
-                    actorNodeId: REVIEWER_BOT_NODE_ID,
-                    body: 'round',
-                })),
-                {
-                    id: 90,
-                    state: 'APPROVED',
-                    commitId: head,
-                    actorNodeId: REVIEWER_BOT_NODE_ID,
-                    body: 'approval',
-                },
-                {
-                    id: 91,
-                    state: 'APPROVED',
-                    commitId: head,
-                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
-                    body: 'acceptance',
-                },
-                {
-                    id: 92,
-                    state: 'CHANGES_REQUESTED',
-                    commitId: head,
-                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
-                    body: 'rejection',
-                },
-            ],
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('replays a recorded publication at the warning threshold without another reassessment', () => {
-        const landedReview = {
-            id: 99,
-            state: 'APPROVED',
-            body: 'Attacked the dossier gate; it held.',
-            commitId: head,
-            actorNodeId: REVIEWER_BOT_NODE_ID,
-            comments: [],
-        };
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            publicReviews: Array.from({ length: REVIEW_ROUND_WARNING_THRESHOLD }, (_, index) => ({
-                id: index + 1,
-                state: 'CHANGES_REQUESTED',
-                commitId: head,
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            })),
-            remoteReviews: { 99: landedReview },
-        });
-        try {
-            writeFileSync(
-                join(fixture.bundle, REASSESSMENT_FILE_NAME),
-                JSON.stringify({
-                    format: 'reassessment-v1',
-                    pr: number,
-                    headSha: head,
-                    baseSha: base,
-                    roundsObserved: REVIEW_ROUND_WARNING_THRESHOLD,
-                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-                    action: 'continue',
-                    reason: 're-scoped the change and re-dispatched the remaining stances',
-                })
-            );
-            // First publication consumes the reassessment and records the publication.
-            expect(publishReview(number, fixture.port)).toBe(99);
-            // The reassessment is gone: a fresh gate would now refuse for the missing file. The
-            // recorded publication instead replays, so the gate never runs.
-            rmSync(join(fixture.bundle, REASSESSMENT_FILE_NAME));
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
-            expect(fixture.logs.filter((line) => line.includes('review-round-warning'))).toHaveLength(1);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
     it('binds the deliver reader to the authorized dossier digest the writer recorded', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        const fixture = dossierFixture({ plan: riskPlan() });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             const persisted = parseReviewDossier(fixture.readDossier());
@@ -6975,7 +5984,6 @@ describe('fresh reviewer dossier publication', () => {
         };
         const fixture = dossierFixture({
             plan: riskPlan(),
-            dossier: dossierInput(),
             remoteReviews: { 99: landedReview },
         });
         try {
@@ -7005,7 +6013,7 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('refuses to re-post when the recorded publication no longer stands live and exact', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        const fixture = dossierFixture({ plan: riskPlan() });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
 
@@ -7078,9 +6086,9 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('publishes a bundle holding an unpublished pre-field record with no impact', () => {
+    it('publishes a pre-ADR bundle whose unpublished record stands in for the draws its review.json lacks', () => {
         const historical = canonicalPersistedDossier();
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: historical, stances: stanceAdmission(historical) });
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: historical, draws: null });
         try {
             writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(parseReviewDossier(historical)));
             const before = readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8');
@@ -7115,6 +6123,29 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.calls).not.toContain('post');
             expect(fixture.writes).toHaveLength(0);
             expect(fixture.readDossier()).toEqual(before);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays a recorded publication without re-deriving its risk plan from the diff', () => {
+        const landedReview: RemotePublishedReview = {
+            id: 5272945685,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            diff: patchAdding('src/modules/Tuner/x.ts', 250),
+            dossier: canonicalPersistedDossier(5272945685),
+            remoteReviews: { 5272945685: landedReview },
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(5272945685);
+            expect(fixture.calls).not.toContain('post');
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -7155,8 +6186,7 @@ describe('fresh reviewer dossier publication', () => {
             body: 'rendered',
         };
         const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
+            plan: toolingRiskPlan(),
             document: changesDocument,
             diff,
             reviewComments: [postedComment],
@@ -7177,6 +6207,194 @@ describe('fresh reviewer dossier publication', () => {
             ]);
             // REQUEST_CHANGES records no delivery authorization: only the reviewer APPROVE does.
             expect(deliveryAuthorization(persisted)).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    /** A REQUEST_CHANGES bundle whose one finding binds to the comment the fake POST lands. */
+    function changesRequestedFixture(remoteReviews: Record<number, RemotePublishedReview | undefined>) {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        return dossierFixture({
+            plan: toolingRiskPlan(),
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff: [
+                'diff --git a/scripts/target.ts b/scripts/target.ts',
+                'index 1111111..2222222 100644',
+                '--- a/scripts/target.ts',
+                '+++ b/scripts/target.ts',
+                '@@ -2,3 +2,4 @@',
+                ' context2',
+                ' context3',
+                ' context4',
+                '+added',
+                '',
+            ].join('\n'),
+            reviewComments: [{ id: 2329000042, path: comment.path, line: comment.line, side: 'RIGHT', body: 'r' }],
+            remoteReviews,
+        });
+    }
+
+    /** The review GitHub holds after the fake POST, so a re-run can replay it live and exact. */
+    function landedReview(review: Parameters<PublishReviewPort['postReview']>[0]): RemotePublishedReview {
+        return {
+            id: 99,
+            state: review.event === 'APPROVE' ? 'APPROVED' : 'CHANGES_REQUESTED',
+            body: review.body,
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: review.comments.map((comment) => ({
+                path: comment.path,
+                line: comment.line,
+                side: comment.side,
+                body: composeReviewCommentBody(comment),
+            })),
+        };
+    }
+
+    /**
+     * Drives the real coordinator over the real publication lock. The fake POST marks the remote
+     * mutation exactly as production does, so any failure inside the lock after it strands the owner.
+     */
+    async function publishUnderLock(
+        fixture: ReturnType<typeof dossierFixture>,
+        label: { apply: (labeled: number) => void; remove: (labeled: number) => void }
+    ): Promise<void> {
+        const executable = join(fixture.root, 'ps');
+        writeFileSync(
+            executable,
+            '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
+        );
+        chmodSync(executable, 0o700);
+        const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+        process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+        try {
+            await coordinatePublishReview(number, {
+                primaryRoot: () => fixture.root,
+                serializeMutation: withPullRequestReviewPublicationMutationLock,
+                authenticateReviewer: async () => ({
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+                }),
+                repositoryName: () => 'jcosta33/sourdaw',
+                reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
+                    ...fixture.port,
+                    postReview: (review) => {
+                        markRemoteMutationAttempt();
+                        return fixture.port.postReview(review);
+                    },
+                    applyApprovalLabel: label.apply,
+                    removeApprovalLabel: label.remove,
+                }),
+                publish: publishPreparedReview,
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+            }
+        }
+    }
+
+    const forbidden = (labeled: number): never => {
+        throw new Error(`unexpected label write on ${labeled}`);
+    };
+    const labelDenied = (): never => {
+        throw new Error('gh: Resource not accessible by integration (HTTP 403)');
+    };
+    const labelFailure =
+        `review 99 stands on PR #${number}, but the ci:approved label write failed ` +
+        `(gh: Resource not accessible by integration (HTTP 403)); ` +
+        `re-run pnpm review:publish ${number} to replay the review and retry the label`;
+
+    it('labels an approved head only after its dossier binding stands and the lock is released', async () => {
+        const fixture = dossierFixture({ plan: riskPlan() });
+        const observed: string[] = [];
+        try {
+            runGit(fixture.root, ['init']);
+            await publishUnderLock(fixture, {
+                apply: (labeled) => {
+                    const persisted = parseReviewDossier(fixture.readDossier());
+                    observed.push(
+                        `apply:${labeled}:${String(publishedReviewId(persisted))}:` +
+                            `${String(deliveryAuthorization(persisted)?.reviewId)}:` +
+                            `${String(readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(labeled), labeled))}`
+                    );
+                },
+                remove: forbidden,
+            });
+            expect(observed).toEqual([`apply:${number}:99:99:undefined`]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('releases the lock when the approval label fails, and a plain re-run replays and labels', async () => {
+        const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
+        const fixture = dossierFixture({ plan: riskPlan(), remoteReviews });
+        try {
+            runGit(fixture.root, ['init']);
+            await expect(publishUnderLock(fixture, { apply: labelDenied, remove: forbidden })).rejects.toThrow(
+                labelFailure
+            );
+            expect(readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(number), number)).toBe(
+                undefined
+            );
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(publishedReviewId(persisted)).toBe(99);
+            expect(deliveryAuthorization(persisted)?.reviewId).toBe(99);
+
+            const review = fixture.posted.review;
+            if (review === undefined) {
+                throw new Error('expected the APPROVE to have posted');
+            }
+            remoteReviews[99] = landedReview(review);
+            const applied: number[] = [];
+            await publishUnderLock(fixture, { apply: (labeled) => applied.push(labeled), remove: forbidden });
+            expect(applied).toEqual([number]);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('releases the lock when label removal fails after REQUEST_CHANGES, and a plain re-run replays and removes', async () => {
+        const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
+        const fixture = changesRequestedFixture(remoteReviews);
+        try {
+            runGit(fixture.root, ['init']);
+            await expect(publishUnderLock(fixture, { apply: forbidden, remove: labelDenied })).rejects.toThrow(
+                labelFailure
+            );
+            expect(readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(number), number)).toBe(
+                undefined
+            );
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(publishedReviewId(persisted)).toBe(99);
+            expect(deliveryAuthorization(persisted)).toBeUndefined();
+
+            const review = fixture.posted.review;
+            if (review === undefined) {
+                throw new Error('expected the REQUEST_CHANGES to have posted');
+            }
+            remoteReviews[99] = landedReview(review);
+            const removed: number[] = [];
+            await publishUnderLock(fixture, { apply: forbidden, remove: (labeled) => removed.push(labeled) });
+            expect(removed).toEqual([number]);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -7204,8 +6422,7 @@ describe('fresh reviewer dossier publication', () => {
             '',
         ].join('\n');
         const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
+            plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
                 body: 'One blocking finding.',
@@ -7246,8 +6463,7 @@ describe('fresh reviewer dossier publication', () => {
             '',
         ].join('\n');
         const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
+            plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
                 body: 'One blocking finding.',
@@ -7270,7 +6486,7 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses to replay when the landed review drifts from the recorded publication', () => {
         const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput(), remoteReviews });
+        const fixture = dossierFixture({ plan: riskPlan(), remoteReviews });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
 
@@ -7311,12 +6527,10 @@ describe('fresh reviewer dossier publication', () => {
             '+added',
             '',
         ].join('\n');
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
+        const { canonical } = derivedRecord({
             comments: [{ path: comment.path, line: comment.line, side: comment.side }],
             recommendation: 'request-changes',
+            evidence: [],
         });
         // A chain recording the review but not its finding: exactly one review-published, no finding-published.
         const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
@@ -7360,13 +6574,7 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('refuses to bind a dossier that already records a publication', () => {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
-            comments: [],
-            recommendation: 'approve',
-        });
+        const { canonical } = derivedRecord({ comments: [], recommendation: 'approve' });
         const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
             { kind: 'review-published', reviewId: 98 },
         ]);
@@ -7386,12 +6594,10 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('refuses a recorded publication whose dossier chain was tampered with', () => {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
+        const { canonical } = derivedRecord({
             comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
             recommendation: 'request-changes',
+            evidence: [],
         });
         const tampered = JSON.parse(canonical) as { events: Record<string, unknown>[] };
         tampered.events.push({
@@ -7411,156 +6617,15 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a matching plan with no dossier beside review.json and never posts', () => {
-        const fixture = dossierFixture({ plan: riskPlan() });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/missing review dossier at .*dossier\.json/u);
-            expect(message).toContain(`for head ${head}`);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a dossier that omits a recorded stance and never posts', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
-                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
-                ],
-            },
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                ],
-            }),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/stances do not match stances\.json: missing \[test-validity\], extra \[\]/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a dossier naming a stance the pre-dispatch record does not carry and never posts', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
-                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
-                ],
-            },
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'code-craft', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/stances do not match stances\.json: missing \[\], extra \[code-craft\]/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('publishes a dossier matching the pre-dispatch stance record one-to-one', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    {
-                        stance: 'correctness',
-                        admission: 'a reordered queue drops a buffered frame',
-                        baselineProbe: { spec: 'queue.spec.ts', mutation: 'revert the ordering guard' },
-                    },
-                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
-                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
-                ],
-            },
-            dossier: dossierInput(),
-        });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(fixture.writes).toHaveLength(2);
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual(['correctness', 'stale binding', 'test-validity']);
-            expect(publishedReviewId(persisted)).toBe(99);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('publishes a dossier whose free-form stances match a free-form stances.json one-to-one', () => {
-        const gateStance = 'gate-correspondence correctness — a dossier entry the record does not carry must refuse';
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    {
-                        stance: gateStance,
-                        admission: 'a dossier entry the pre-dispatch record does not carry publishes',
-                        baselineProbe: {
-                            spec: 'publishReview.spec.ts',
-                            mutation: 'answer the correspondence gate to the plan instead of the record',
-                        },
-                    },
-                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
-                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
-                ],
-                note: 'failure-mode admissions and probe results are caller evidence the gate never reads',
-            },
-            dossier: dossierInput({
-                stances: [
-                    { stance: gateStance, reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-        });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(fixture.writes).toHaveLength(2);
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual([gateStance, 'stale binding', 'test-validity']);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
     it('publishes two draws on one stance and persists both completed entries', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                    {
-                        stance: 'correctness',
-                        reviewerModel: 'review-model-2',
-                        modelTier: 'strongest',
-                        outcome: 'blocker-found',
-                    },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
+            draws: [
+                { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
+                { stance: 'correctness', reviewerModel: 'review-model-2', tier: 'strongest', outcome: 'findings' },
+                { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+                { stance: 'stale binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+            ],
         });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
@@ -7577,106 +6642,6 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('does not let a second draw of one stance trip the stances.json gate', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
-                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
-                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
-                ],
-            },
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                    {
-                        stance: 'correctness',
-                        reviewerModel: 'review-model-2',
-                        modelTier: 'strongest',
-                        outcome: 'clean',
-                    },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-        });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(parseReviewDossier(fixture.readDossier()).requiredStances).toEqual([
-                'correctness',
-                'stale binding',
-                'test-validity',
-            ]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a draw on an authoring model without its own exhaustion, naming the stance, and never posts', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'glm-5.3-flash', modelTier: 'strongest', outcome: 'clean' },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            // The document-level refusal never names a stance, so this message proves the
-            // per-draw records reached the diversity gate.
-            expect(message).toMatch(/review stance "correctness" drew reviewer model "glm-5\.3-flash"/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('publishes the mixed round when the fallen-back draw carries its own exhaustion', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-            document: {
-                ...reviewDocument,
-                body: 'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.',
-            },
-            dossier: dossierInput({
-                stances: [
-                    {
-                        stance: 'correctness',
-                        reviewerModel: 'glm-5.3-flash',
-                        modelTier: 'strongest',
-                        outcome: 'clean',
-                        exhaustion: 'every other harness on this machine was committed to another lane',
-                    },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-        });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.posted.review?.event).toBe('APPROVE');
-            // The per-draw exhaustion round-trips into the persisted record.
-            const persisted = parseReviewDossier(fixture.readDossier());
-            const correctness = persisted.events.find(
-                (event) => event.kind === 'stance-completed' && event.stance === 'correctness'
-            );
-            if (correctness?.kind !== 'stance-completed') {
-                throw new Error('fixture must carry a correctness draw');
-            }
-            expect(correctness.exhaustion).toBe('every other harness on this machine was committed to another lane');
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
     it('keeps the whole-round fallback working when the dossier draws carry no authoring-model draw', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
@@ -7686,7 +6651,6 @@ describe('fresh reviewer dossier publication', () => {
                 body: 'Whole-round fallback: reviewed on glm-5.3-flash after every other harness was unavailable.',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
-            dossier: dossierInput(),
         });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
@@ -7696,31 +6660,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a persisted-shaped dossier whose fenced-model draw carries no exhaustion anywhere and never posts', () => {
-        // The canonical record is the only dossier file this publication sees and the document
-        // model differs from every author, so the stance-naming refusal proves the per-draw gate
-        // read its draws from the persisted record's events, not only from caller input.
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-            document: { ...reviewDocument, reviewerModel: 'claude-opus-4.5' },
-            dossier: persistedDossier([
-                { stance: 'correctness', reviewerModel: 'glm-5.3-flash', modelTier: 'strongest', outcome: 'clean' },
-                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-            ]),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/review stance "correctness" drew reviewer model "glm-5\.3-flash"/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('replays the mixed round from the persisted record without rewriting it', () => {
+    it('replays a published pre-ADR mixed-round record unchanged, without the draws its review.json never had', () => {
         const mixedBody =
             'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.';
         const landedReview: RemotePublishedReview = {
@@ -7731,138 +6671,86 @@ describe('fresh reviewer dossier publication', () => {
             actorNodeId: REVIEWER_BOT_NODE_ID,
             comments: [],
         };
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-            document: {
-                ...reviewDocument,
-                body: mixedBody,
-            },
-            dossier: dossierInput({
-                stances: [
+        // A record the retired contract persisted: a per-draw exhaustion, a recorded impact, a
+        // reassessment event, and a delivery authorization bound to the publication.
+        const published = appendReviewDossierEvents(
+            buildDossier({
+                pr: number,
+                headSha: head,
+                baseSha: base,
+                riskClasses: ['small'],
+                requiredStances: ['correctness', 'test-validity'],
+                events: [
                     {
+                        kind: 'stance-completed',
                         stance: 'correctness',
                         reviewerModel: 'glm-5.3-flash',
                         modelTier: 'strongest',
                         outcome: 'clean',
                         exhaustion: 'every other harness on this machine was committed to another lane',
                     },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ],
-            }),
-            remoteReviews: { 99: landedReview },
-        });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            const first = fixture.readDossier();
-            // Two writes: the canonical record before the POST, then the publication binding after it.
-            expect(fixture.writes).toHaveLength(2);
-
-            // The replay derives the draws from the persisted record's events, so the mixed round
-            // publishes again unchanged instead of refusing on draws it can no longer see, and the
-            // recorded publication id stands live so no duplicate is posted.
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.writes).toHaveLength(2);
-            expect(fixture.readDossier()).toEqual(first);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('publishes a dossier whose recorded stances differ from the plan menu, answering to the record', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
-                    { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
-                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
-                ],
-            },
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
                     {
-                        stance: 'security-platform',
+                        kind: 'stance-completed',
+                        stance: 'test-validity',
                         reviewerModel: 'review-model',
                         modelTier: 'standard',
                         outcome: 'clean',
                     },
-                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { kind: 'review-published', reviewId: 99 },
                 ],
+                evidence: [],
+                limitations: ['semantic-ci red-check'],
+                recommendation: 'approve',
+                assessmentImpact: 'limitation-only',
             }),
-        });
-        try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.posted.review?.event).toBe('APPROVE');
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual(['correctness', 'security-platform', 'stale binding']);
-            expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a plan-conforming dossier the differing pre-dispatch record does not carry and never posts', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            stances: {
-                stances: [
-                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
-                    { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
-                ],
+            [{ kind: 'review-reassessed', roundsObserved: 3, threshold: 3, action: 'continue', reason: 'rescoped' }]
+        );
+        const authorized = appendReviewDossierEvents(published, [
+            {
+                kind: 'delivery-authorized',
+                reviewId: 99,
+                approvalReviewId: 99,
+                evidenceManifestDigest: authorizedEvidenceDigest(published),
+                unresolvedThreads: 0,
+                intent: 'deliver',
             },
-            dossier: dossierInput(),
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            // The refusal names the record's hypothesis — missing security-platform, extra
-            // test-validity — which differs from the plan's, so a gate answering to the plan's
-            // requiredStances instead of the record would publish this dossier and turn this red.
-            expect(message).toMatch(
-                /stances do not match stances\.json: missing \[security-platform\], extra \[test-validity, stale binding\]/u
-            );
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a stances.json file that exists but does not parse and never posts', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
-        writeFileSync(join(fixture.bundle, 'stances.json'), '{ not a stance record');
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/stances\.json/u);
-            expect(message).toMatch(/does not parse/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('refuses a fresh dossier without stances.json even when its names differ from the plan menu', () => {
+        ]);
         const fixture = dossierFixture({
             plan: riskPlan(),
-            stances: null,
-            dossier: dossierInput({
-                stances: [
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                ],
-            }),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: { ...reviewDocument, body: mixedBody },
+            draws: null,
+            dossier: JSON.parse(serializeReviewDossier(authorized)),
+            remoteReviews: { 99: landedReview },
+            publicReviews: requestChangesRounds(REVIEW_ROUND_FREEZE_THRESHOLD),
         });
         try {
-            expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(
-                /missing review stances admission/u
-            );
-            expect(fixture.calls).not.toContain('post');
+            const before = readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8');
+            // The replay posts nothing, so neither the freeze nor the diversity rule that admitted
+            // the original post re-runs against it.
+            expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.writes).toEqual([]);
+            expect(readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8')).toBe(before);
+            expect(fixture.calls).not.toContain('post');
+
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(binding.authorization?.reviewId).toBe(99);
+            expect(binding.dossierDigest).toBe(authorizedEvidenceDigest(published));
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -7879,7 +6767,6 @@ describe('fresh reviewer dossier publication', () => {
             };
             const fixture = dossierFixture({
                 plan: riskPlan(),
-                dossier: dossierInput(),
                 document: {
                     ...reviewDocument,
                     evidence: { headSha: head, claims: [claim] },
@@ -7902,49 +6789,11 @@ describe('fresh reviewer dossier publication', () => {
     it.each(PLAN_DISAGREEMENTS)(
         'refuses a plan whose $label disagrees and never posts',
         ({ plan, manifest, message }) => {
-            const bundleInput: { plan: unknown; dossier: unknown; manifest?: Record<string, unknown> } = {
-                plan,
-                dossier: dossierInput(),
-            };
+            const bundleInput: { plan: unknown; manifest?: Record<string, unknown> } = { plan };
             if (manifest !== undefined) {
                 bundleInput.manifest = manifest;
             }
             const fixture = dossierFixture(bundleInput);
-            try {
-                expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(message);
-                expect(fixture.calls).not.toContain('post');
-                expect(fixture.posted.review).toBeUndefined();
-                expect(fixture.writes).toEqual([]);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        }
-    );
-
-    type DossierInputDisagreement = { label: string; dossier: Record<string, unknown>; message: RegExp };
-
-    const DOSSIER_INPUT_DISAGREEMENTS: readonly DossierInputDisagreement[] = [
-        {
-            label: 'pr against the plan',
-            dossier: dossierInput({ pr: number + 1 }),
-            message: /review dossier input pr mismatch: record has 43, expected 42/u,
-        },
-        {
-            label: 'headSha against the plan',
-            dossier: dossierInput({ headSha: 'e'.repeat(40) }),
-            message: /review dossier input headSha mismatch: record has "e{40}", expected "c{40}"/u,
-        },
-        {
-            label: 'baseSha against the plan',
-            dossier: dossierInput({ baseSha: 'a'.repeat(40) }),
-            message: /review dossier input baseSha mismatch: record has "a{40}", expected "d{40}"/u,
-        },
-    ];
-
-    it.each(DOSSIER_INPUT_DISAGREEMENTS)(
-        'refuses a fresh dossier whose $label disagrees and never posts',
-        ({ dossier, message }) => {
-            const fixture = dossierFixture({ plan: riskPlan(), dossier });
             try {
                 expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(message);
                 expect(fixture.calls).not.toContain('post');
@@ -8025,7 +6874,7 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('refuses a fresh dossier it cannot persist rather than skipping the durable record', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput(), writable: false });
+        const fixture = dossierFixture({ plan: riskPlan(), writable: false });
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
             expect(message).toMatch(/cannot write .*dossier\.json: the port has no bundle writer/u);
@@ -8052,13 +6901,7 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('refuses orchestrator acceptance when the dossier records no publication', async () => {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
-            comments: [],
-            recommendation: 'approve',
-        });
+        const { canonical } = derivedRecord({ comments: [], recommendation: 'approve' });
         const fixture = dossierFixture({
             plan: riskPlan(),
             dossier: JSON.parse(canonical),
@@ -8075,12 +6918,10 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('refuses orchestrator acceptance when an accepted finding lacks its public binding', async () => {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
+        const { canonical } = derivedRecord({
             comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
             recommendation: 'request-changes',
+            evidence: [],
         });
         const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
             { kind: 'review-published', reviewId: 99 },
@@ -8101,13 +6942,7 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('posts orchestrator acceptance when the dossier accounting is complete', async () => {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
-            comments: [],
-            recommendation: 'approve',
-        });
+        const { canonical } = derivedRecord({ comments: [], recommendation: 'approve' });
         const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
             { kind: 'review-published', reviewId: 99 },
         ]);
@@ -8147,13 +6982,7 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     function acceptanceWithAuthorization() {
-        const { canonical } = buildReviewDossier({
-            plan: riskPlan(),
-            raw: dossierInput(),
-            discarded: [],
-            comments: [],
-            recommendation: 'approve',
-        });
+        const { canonical } = derivedRecord({ comments: [], recommendation: 'approve' });
         const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
             { kind: 'review-published', reviewId: 99 },
         ]);
@@ -8284,5 +7113,56 @@ describe('fresh reviewer dossier publication', () => {
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
+    });
+});
+
+describe('review.json round record', () => {
+    const base = {
+        event: 'REQUEST_CHANGES',
+        body: 'One blocking finding.',
+        comments: [validComment],
+        reviewerModel: 'glm-5.3-flash',
+    };
+    const draw = { stance: 'stale replay binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' };
+
+    it('parses draws and discards, and omits both keys when absent', () => {
+        expect(
+            parseReviewDocument({ ...base, draws: [draw], discarded: [{ finding: 'f', reason: 'r' }] })
+        ).toMatchObject({ draws: [draw], discarded: [{ finding: 'f', reason: 'r' }] });
+        const bare = parseReviewDocument(base);
+        expect(bare).not.toHaveProperty('draws');
+        expect(bare).not.toHaveProperty('discarded');
+    });
+
+    it.each([
+        ['a non-array draws', { draws: {} }, 'review.json draws must be an array'],
+        [
+            'an extra draw field',
+            { draws: [{ ...draw, exhaustion: 'x' }] },
+            'review.json draws[0] fields must be outcome,reviewerModel,stance,tier, found exhaustion,outcome,reviewerModel,stance,tier',
+        ],
+        [
+            'an unknown outcome',
+            { draws: [{ ...draw, outcome: 'blocker-found' }] },
+            'review.json draws[0].outcome must be one of clean, findings, found "blocker-found"',
+        ],
+        [
+            'a blank stance',
+            { draws: [{ ...draw, stance: '' }] },
+            'review.json draws[0].stance value at index 0 is blank',
+        ],
+        [
+            'a repeated stance and model',
+            { draws: [draw, draw] },
+            'review.json draws[1] repeats stance stale replay binding on review-model',
+        ],
+        ['a non-array discarded', { discarded: 'x' }, 'review.json discarded must be an array'],
+        [
+            'a discard with a stance',
+            { discarded: [{ finding: 'f', reason: 'r', stance: 's' }] },
+            'review.json discarded[0] fields must be finding,reason, found finding,reason,stance',
+        ],
+    ])('refuses %s', (_label, fields, message) => {
+        expect(() => parseReviewDocument({ ...base, ...fields })).toThrow(message);
     });
 });

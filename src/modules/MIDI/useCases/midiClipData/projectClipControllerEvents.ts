@@ -1,3 +1,4 @@
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type MidiCC } from '../../models/MidiNote';
@@ -11,6 +12,12 @@ type ControllerProjectionClip = {
     midiOffsetBeats?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    /**
+     * The clip's loop anchor (#4988). The pass window stays anchored to the
+     * source across start trims; absent, it reads from the offset exactly as
+     * before the anchor existed.
+     */
+    loopOriginBeat?: number;
 };
 
 type ProjectClipControllerEventsInput = {
@@ -91,11 +98,21 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * The controller moves a clip plays inside the timeline window `[fromBeat, toBeat)`,
  * at their absolute beats, in beat order.
  *
- * Each loop pass is projected through `projectMidiClipWindow` over its own visible
- * span, so every pass and the clip start begin from the value in force at the
- * span's head — the carry rule glue, export and split already use — and a move is
- * placed exactly where a note at that content beat is: iteration start plus the
- * beat past `midiOffsetBeats`. No groove applies to a controller.
+ * Each loop pass is projected through `projectMidiClipWindow` over the loop
+ * region the clip was looped with, entered at the trim advance's phase — the
+ * same anchored read the audio pass and the note readers use (#4988): the pass
+ * head plays the region from its entry on, and the material before the entry
+ * wraps onto the pass tail in a second window, so a move is placed exactly
+ * where a note at that content beat is. A move past the region end sits in
+ * neither window, so a trim can no longer leave it firing at the wrapped
+ * head's phase. An unanchored clip — or a stale-anchored one with the loop
+ * off, the anchor being inert there — advances zero, which puts the region at
+ * the offset and the entry at its head: exactly the pre-anchor read, one
+ * window per pass. Every window and the clip start begin from the value in
+ * force at the span's head — the carry rule glue, export and split already
+ * use — and a move is placed exactly where a note at that content beat is:
+ * iteration start plus the beat past `midiOffsetBeats`. No groove applies to
+ * a controller.
  *
  * The window is half-open like the note scheduler's, so a move is owned by one
  * window and a scheduler stepping `[a, b)`, `[b, c)` — or wrapping at a loop seam —
@@ -138,29 +155,70 @@ export function projectClipControllerEvents({
     const { startIndex, endIndex } = resolveIterationRange(clip, expansion, { fromBeat, toBeat });
     const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
     const lastPassIndex = countPasses(clip, expansion) - 1;
+    // #4988 — the pass reads the loop region the clip was looped with,
+    // cyclically, entering at the trim advance's phase: the content offset
+    // names where the head enters, and a start trim advances only that entry,
+    // so subtracting the advance from it recovers the region. An entry past
+    // the pass head splits the pass into two contiguous windows — the region
+    // from the entry on, then its wrapped head — each placed so a move lands
+    // where a note at its content beat does. An unanchored clip advances
+    // zero, which puts the region at the offset and the entry at its head:
+    // exactly the pre-anchor read, one window per pass.
+    const loopAdvanceBeats = resolveClipLoopOriginAdvance({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const regionStartBeat = midiOffsetBeats - loopAdvanceBeats;
+    const regionEntryBeats =
+        ((loopAdvanceBeats % expansion.loopLengthBeats) + expansion.loopLengthBeats) % expansion.loopLengthBeats;
     const events: ProjectedClipControllerMove[] = [];
 
     for (let iteration = startIndex; iteration < endIndex; iteration++) {
         const iterationStartBeat = clip.startBeat + iteration * expansion.loopLengthBeats;
         const iterationEndBeat = Math.min(iterationStartBeat + expansion.loopLengthBeats, clip.endBeat);
-        const projected = projectMidiClipWindow({
-            notes: [],
-            controlChanges,
-            pitchBends: [],
-            window: {
-                beatOffset: iterationStartBeat - midiOffsetBeats,
-                visibleStartBeat: midiOffsetBeats,
-                visibleEndBeat: midiOffsetBeats + (iterationEndBeat - iterationStartBeat),
-                closingLineBeat: iteration === lastPassIndex ? clip.endBeat : undefined,
+        const passSpanBeats = iterationEndBeat - iterationStartBeat;
+        const headSegmentEndBeats = Math.min(passSpanBeats, expansion.loopLengthBeats - regionEntryBeats);
+        const isClosingPass = iteration === lastPassIndex;
+        // The closing line belongs to the pass's last segment: the wrapped
+        // head window when the pass reaches it, the entry window otherwise.
+        const hasWrappedSegment = regionEntryBeats > 0 && passSpanBeats > headSegmentEndBeats;
+        const windows: {
+            beatOffset: number;
+            visibleStartBeat: number;
+            visibleEndBeat: number;
+            closingLineBeat?: number;
+        }[] = [
+            {
+                beatOffset: iterationStartBeat - (regionStartBeat + regionEntryBeats),
+                visibleStartBeat: regionStartBeat + regionEntryBeats,
+                visibleEndBeat: regionStartBeat + regionEntryBeats + headSegmentEndBeats,
+                closingLineBeat: isClosingPass && !hasWrappedSegment ? clip.endBeat : undefined,
             },
-        });
-        const moves = [
-            ...projected.controlChanges.map((event) => ({ ...event, closesClip: false })),
-            ...projected.closingControlChanges.map((event) => ({ ...event, closesClip: true })),
         ];
-        for (const move of moves) {
-            if (ownsMove(move, fromBeat, toBeat)) {
-                events.push(move);
+        if (hasWrappedSegment) {
+            windows.push({
+                beatOffset: iterationStartBeat + headSegmentEndBeats - regionStartBeat,
+                visibleStartBeat: regionStartBeat,
+                visibleEndBeat: regionStartBeat + (passSpanBeats - headSegmentEndBeats),
+                closingLineBeat: isClosingPass ? clip.endBeat : undefined,
+            });
+        }
+        for (const window of windows) {
+            const projected = projectMidiClipWindow({
+                notes: [],
+                controlChanges,
+                pitchBends: [],
+                window,
+            });
+            const moves = [
+                ...projected.controlChanges.map((event) => ({ ...event, closesClip: false })),
+                ...projected.closingControlChanges.map((event) => ({ ...event, closesClip: true })),
+            ];
+            for (const move of moves) {
+                if (ownsMove(move, fromBeat, toBeat)) {
+                    events.push(move);
+                }
             }
         }
     }

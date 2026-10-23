@@ -8,6 +8,7 @@ import {
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
+    projectNoteExpressionCurves,
     registerScheduledSource,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
@@ -24,6 +25,11 @@ import {
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatAdmittedByAnchoredClipLoopWindow,
+    isBeatInClipLoopWindow,
+} from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -32,6 +38,12 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
+import {
+    forgetHeldNoteExpression,
+    holdNoteExpression,
+    keepHeldNoteExpressionOnReceiver,
+    takeHeldNoteExpression,
+} from '../../services/heldNoteExpression';
 import {
     forgetStoredControllersClipMuteWithheld,
     forgetStoredControllersTrackMuteWithheld,
@@ -53,7 +65,7 @@ import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers } from './restoreStoredControllers';
-import { createSameFramePostQueue } from './sameFramePostQueue';
+import { createSameFramePostQueue, type SameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
@@ -319,6 +331,9 @@ type SelectYeastNotesForSchedulerWindowInput = {
     midiOffsetBeats: number;
     loopEnabled: boolean;
     loopLengthBeats: number;
+    /** The owning clip's start — not the iteration's; the anchor's trim advance reads against it. */
+    clipStartBeat: number;
+    loopOriginBeat: number | undefined;
     fromBeat: number;
     toBeat: number;
 };
@@ -328,7 +343,10 @@ type YeastLoopPhaseEntry = {
     phaseBeat: number;
 };
 type YeastLoopPhaseIndex = {
+    clipStartBeat: number;
+    loopEnabled: boolean;
     loopLengthBeats: number;
+    loopOriginBeat: number | undefined;
     midiOffsetBeats: number;
     orderByNote: ReadonlyMap<ScheduledMidiNote, number>;
     sortedEnds: readonly YeastLoopPhaseEntry[];
@@ -493,12 +511,21 @@ function getYeastLoopPhaseIndex({
     notes,
     loopLengthBeats,
     midiOffsetBeats,
+    clipStartBeat,
+    loopOriginBeat,
+    loopEnabled,
 }: Pick<
     SelectYeastNotesForSchedulerWindowInput,
-    'notes' | 'loopLengthBeats' | 'midiOffsetBeats'
+    'notes' | 'loopLengthBeats' | 'midiOffsetBeats' | 'clipStartBeat' | 'loopOriginBeat' | 'loopEnabled'
 >): YeastLoopPhaseIndex {
     const cached = yeastLoopPhaseIndexes.get(notes);
-    if (cached?.loopLengthBeats === loopLengthBeats && cached.midiOffsetBeats === midiOffsetBeats) {
+    if (
+        cached?.loopLengthBeats === loopLengthBeats &&
+        cached.midiOffsetBeats === midiOffsetBeats &&
+        cached.clipStartBeat === clipStartBeat &&
+        cached.loopOriginBeat === loopOriginBeat &&
+        cached.loopEnabled === loopEnabled
+    ) {
         return cached;
     }
 
@@ -515,6 +542,21 @@ function getYeastLoopPhaseIndex({
         // then re-anchors the displaced start to the iteration's late phase, so
         // the note must be a phase-index candidate for that window.
         if (relativeStartBeat >= MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+            continue;
+        }
+        // #5198 — the anchored loop window is the index's membership too: a row
+        // past the trimmed region end never sounds on any pass, so it must not
+        // enter the index the looped windows read. An unanchored clip keeps the
+        // pre-anchor index — the admission helper admits without a test there.
+        if (
+            !isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: relativeStartBeat,
+                startBeat: clipStartBeat,
+                loopOriginBeat,
+                loopLengthBeats,
+                loopEnabled,
+            })
+        ) {
             continue;
         }
         const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
@@ -541,7 +583,10 @@ function getYeastLoopPhaseIndex({
         (left, right) => left.phaseBeat - right.phaseBeat || orderByNote.get(left.note)! - orderByNote.get(right.note)!
     );
     const created = {
+        clipStartBeat,
+        loopEnabled,
         loopLengthBeats,
+        loopOriginBeat,
         midiOffsetBeats,
         orderByNote,
         sortedEnds: sortedEnds.sort((left, right) => left.endPhaseBeat - right.endPhaseBeat),
@@ -557,6 +602,8 @@ function selectYeastNotesForSchedulerWindow({
     midiOffsetBeats,
     loopEnabled,
     loopLengthBeats,
+    clipStartBeat,
+    loopOriginBeat,
     fromBeat,
     toBeat,
 }: SelectYeastNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
@@ -599,7 +646,14 @@ function selectYeastNotesForSchedulerWindow({
         // into loop phase and may itself straddle the seam; the release query
         // stays unnormalized because a wrapped release rings past the iteration
         // end.
-        const loopIndex = getYeastLoopPhaseIndex({ notes, loopLengthBeats, midiOffsetBeats });
+        const loopIndex = getYeastLoopPhaseIndex({
+            notes,
+            loopLengthBeats,
+            midiOffsetBeats,
+            clipStartBeat,
+            loopOriginBeat,
+            loopEnabled,
+        });
         const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
         const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
         const phaseWidthBeats = phaseEndBeat - phaseStartBeat;
@@ -635,7 +689,23 @@ function selectYeastNotesForSchedulerWindow({
             candidates.add(loopIndex.sortedEnds[index]!.note);
         }
     }
-    return [...candidates].sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
+    // #5198 — the anchored loop window owns admission on the row's stored
+    // figure, the same relative beat the synth path's selector and per-note
+    // test read: a row past the trimmed region end is a content-window
+    // candidate here (its audible beat sits inside the scheduler window) and
+    // must never reach the rack's ownership. An unanchored clip admits
+    // without the test, byte-identically to the pre-anchor selector.
+    return Array.from(candidates)
+        .filter((note) =>
+            isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: note.startBeat - midiOffsetBeats,
+                startBeat: clipStartBeat,
+                loopOriginBeat,
+                loopLengthBeats,
+                loopEnabled,
+            })
+        )
+        .sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
 }
 
 function getScheduledIterationRange({
@@ -742,6 +812,44 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     return params;
 }
 
+type PostNoteExpressionInput = {
+    posts: SameFramePostQueue;
+    trackId: string;
+    pitch: number;
+    channel: number;
+    sampleFrame: number;
+    expression: ScheduledMpeParams | undefined;
+};
+
+/**
+ * Queue one expression update for a held note, in the window's same-frame order
+ * (after the note-on at its frame). It carries the bend range the bend was
+ * recorded under, and only when there is a bend, as the start event always has.
+ */
+function postNoteExpression({
+    posts,
+    trackId,
+    pitch,
+    channel,
+    sampleFrame,
+    expression,
+}: PostNoteExpressionInput): void {
+    posts.add('expression', sampleFrame, () =>
+        applyNoteExpression({
+            trackId,
+            note: pitch,
+            channel,
+            expression: {
+                pressure: expression?.pressure,
+                slide: expression?.slide,
+                pitchBend: expression?.pitchBend,
+            },
+            sampleFrame,
+            bendRangeSemitones: expression?.pitchBendRangeSemitones,
+        })
+    );
+}
+
 type PlaceSamplesOnClockInput = {
     startSamples: number;
     accumulatedSamples: number;
@@ -779,7 +887,15 @@ function getSourceOccurrenceOffset({
         return 0;
     }
 
-    return Math.floor(beatsFromSourceStart / loopLength);
+    // Mirrors the offline module's tolerant floor (#5198): an advance within the
+    // beat tolerance of an exact multiple of the loop length is that many loops
+    // — the raw quotient mis-floors by one ulp at non-dyadic loop lengths.
+    const quotient = beatsFromSourceStart / loopLength;
+    const nearestMultiple = loopLength * Math.round(quotient);
+    if (Math.abs(beatsFromSourceStart - nearestMultiple) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
+        return Math.round(quotient);
+    }
+    return Math.floor(quotient);
 }
 
 /**
@@ -811,6 +927,11 @@ export async function scheduleMidiNotes(
     opensAtRelocation = false
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
+    // A relocation is not a continuation: a note sounding at the old position has no changes in the new one,
+    // and a loop pass's notes must not bend the notes the next pass starts at their pitch.
+    if (opensAtRelocation) {
+        forgetHeldNoteExpression();
+    }
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -885,7 +1006,6 @@ export async function scheduleMidiNotes(
             clips: resolveStoredControllerClips({
                 trackId: track.id,
                 clips: track.clips,
-                notesByClipId: midiState.notesByClipId,
                 ccByClipId: midiState.ccByClipId,
             }),
             atBeat: fromBeat,
@@ -956,6 +1076,12 @@ export async function scheduleMidiNotes(
         if (track.kind !== 'midi') {
             continue;
         }
+        // A bypass or a swap panics the notes the instrument was voicing outside the transport teardown, so
+        // what a muted or gapped window left parked for them must not post to the voice that is gone, or to
+        // the next note the instrument starts on that pitch.
+        const playbackReceiver = resolvePlaybackNoteReceiver(track.devices);
+        const playbackReceiverId = isBypassedNoteReceiver(playbackReceiver) ? undefined : playbackReceiver?.device.id;
+        keepHeldNoteExpressionOnReceiver(track.id, playbackReceiverId);
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             noteStoredControllersTrackMuteWithheld(track.id);
             continue;
@@ -1014,10 +1140,7 @@ export async function scheduleMidiNotes(
 
         if (yeastDevice) {
             for (const clip of activeMidiClips) {
-                const sourceNotes = midiState.notesByClipId[clip.id];
-                if (!sourceNotes) {
-                    continue;
-                }
+                const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
 
                 const clipVisualLength = clip.endBeat - clip.startBeat;
                 const loopProjection = projectClipLoopExpansion({
@@ -1069,6 +1192,8 @@ export async function scheduleMidiNotes(
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         loopEnabled: clip.loopEnabled ?? false,
                         loopLengthBeats: loopLength,
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
                         fromBeat,
                         toBeat,
                     });
@@ -1085,6 +1210,8 @@ export async function scheduleMidiNotes(
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         loopEnabled: clip.loopEnabled ?? false,
                         loopLengthBeats: loopLength,
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
                         sourceNotes,
                     } satisfies LiveYeastIteration;
                     cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);
@@ -1165,12 +1292,29 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
+        // The changes of notes an earlier window started that fall in this window, and the expression in
+        // force at its start for a note this track's earlier windows did not run for (a mute). Taken before
+        // the clips schedule, so a note starting now holds only the changes of windows after this one.
+        const heldDue = takeHeldNoteExpression({
+            trackId: track.id,
+            fromBeat,
+            toBeat,
+            fromFrame: sampleFrameAtBeatOnTrack(track.id)(fromBeat),
+        });
+        for (const { pitch, channel, change } of heldDue) {
+            postNoteExpression({
+                posts,
+                trackId: track.id,
+                pitch,
+                channel,
+                sampleFrame: change.frame,
+                expression: change.expression,
+            });
+        }
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
-            const notes = midiState.notesByClipId[clip.id];
-            if (!notes) {
-                continue;
-            }
+            // A clip with no note list plays no notes; its stored controllers still play.
+            const notes = midiState.notesByClipId[clip.id] ?? [];
 
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
             const synthParams =
@@ -1297,7 +1441,7 @@ export async function scheduleMidiNotes(
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                let iterNotes: readonly LiveYeastNote[];
+                let iterNotes: readonly (LiveYeastNote & Pick<ScheduledMidiNote, 'expression'>)[];
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
                 } else if (clip.loopEnabled) {
@@ -1312,6 +1456,16 @@ export async function scheduleMidiNotes(
                         // selector keeps the two separate for its own callers.
                         lastScheduledBeat: fromBeat,
                         grooveLookaroundBeats: MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
+                        // The same anchored window the per-note admission below
+                        // tests: a leftward trim lifts the window ceiling above
+                        // the loop length, and the generator must still offer
+                        // that material (#5198).
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
+                        loopEnabled: true,
+                        // The admission reads the clip's committed groove, the
+                        // same figure the projection windows on (#5198 review).
+                        clipId: clip.id,
                     });
                 } else {
                     iterNotes = selectMidiNotesForSchedulerWindow({
@@ -1329,8 +1483,32 @@ export async function scheduleMidiNotes(
                         return;
                     }
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
-                    if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
-                        continue;
+                    // #5198 — the per-note admission reads the same grooved
+                    // figure the projection below windows on: the committed
+                    // clip groove displaces the stored start BEFORE the loop
+                    // window is tested (`getGrooveProjection`'s order), so a
+                    // groove carrying a note across a bound flips it on the
+                    // live and offline twins together. The row handed on
+                    // stays the stored note — the projection applies the
+                    // groove itself; this test never displaces it.
+                    if (!notesAreAbsolute) {
+                        const [groovedNote] = projectCommittedGroove({
+                            events: [note],
+                            consumerType: 'clip',
+                            consumerId: clip.id,
+                        });
+                        if (
+                            !groovedNote ||
+                            !isBeatInClipLoopWindow({
+                                relativeBeat: groovedNote.startBeat - clipMidiOffset,
+                                startBeat: clip.startBeat,
+                                loopOriginBeat: clip.loopOriginBeat,
+                                loopLengthBeats: loopLen,
+                                loopEnabled: clip.loopEnabled ?? false,
+                            })
+                        ) {
+                            continue;
+                        }
                     }
                     // #4910 — a live Yeast source note is owned once, by
                     // processLiveYeastTrackBlock's block windows, at its audible
@@ -1350,7 +1528,7 @@ export async function scheduleMidiNotes(
                     }
 
                     const iterationStart = clip.startBeat + iterOffset;
-                    let projectedNotes: readonly LiveYeastNote[];
+                    let projectedNotes: readonly (LiveYeastNote & { beatsIntoNote?: number })[];
                     if (isTrackScopedYeastNote) {
                         projectedNotes = [note];
                     } else {
@@ -1363,6 +1541,7 @@ export async function scheduleMidiNotes(
                             loopLengthBeats: loopLen,
                             midiOffsetBeats: clipMidiOffset,
                             loopEnabled: clip.loopEnabled ?? false,
+                            loopOriginBeat: clip.loopOriginBeat,
                             clipGrooveAlreadyApplied: notesAreAbsolute,
                             eventsAreAbsolute: notesAreAbsolute,
                         });
@@ -1525,25 +1704,61 @@ export async function scheduleMidiNotes(
                             // member default — the range they were actually
                             // performed under (audit MD-8).
                             const mpe = resolveScheduledMpeParams(note);
-                            const noteBendRange = mpe?.pitchBendRangeSemitones;
+                            // The recorded curves are placed through the
+                            // clock the note's own start and release used,
+                            // from the note's uncut start, so a curve keeps
+                            // its place in a moved or cut note. This window
+                            // posts the changes that fall in it; the rest
+                            // wait for the windows that contain them.
+                            const curves = note.expression
+                                ? projectNoteExpressionCurves({
+                                      note,
+                                      startBeat: noteStartBeat,
+                                      beatsIntoNote: projectedNote.beatsIntoNote,
+                                      releaseFrame: endSampleFrame,
+                                      frameAtBeat: (beat) =>
+                                          placeSamplesOnClock({
+                                              startSamples: beatToSamples(changes, beat, transport.tempo, sr),
+                                              accumulatedSamples,
+                                              sampleRate: sr,
+                                              compensation,
+                                          }).sampleFrame,
+                                  })
+                                : undefined;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
                             // to the voice this noteOn just started.
-                            posts.add('expression', sampleFrame, () =>
-                                applyNoteExpression({
+                            postNoteExpression({
+                                posts,
+                                trackId: track.id,
+                                pitch,
+                                channel: noteChannel,
+                                sampleFrame,
+                                expression: curves?.atStart ?? mpe,
+                            });
+                            const curveChanges = curves?.changes ?? [];
+                            for (const change of curveChanges) {
+                                if (change.beat >= toBeat) {
+                                    break;
+                                }
+                                postNoteExpression({
+                                    posts,
                                     trackId: track.id,
-                                    note: pitch,
+                                    pitch,
                                     channel: noteChannel,
-                                    expression: {
-                                        pressure: mpe?.pressure,
-                                        slide: mpe?.slide,
-                                        pitchBend: mpe?.pitchBend,
-                                    },
-                                    sampleFrame,
-                                    bendRangeSemitones: noteBendRange,
-                                })
-                            );
+                                    sampleFrame: change.frame,
+                                    expression: change.expression,
+                                });
+                            }
+                            holdNoteExpression({
+                                trackId: track.id,
+                                pitch,
+                                channel: noteChannel,
+                                receiverId: playbackReceiverId,
+                                releaseBeat: noteEndBeat,
+                                changes: curveChanges.filter((change) => change.beat >= toBeat),
+                            });
                             // Grand Boule is the one worklet synth whose
                             // `noteOff` reads a release velocity in slot 3 and
                             // its member channel in slot 4; Fermenter, Levain
