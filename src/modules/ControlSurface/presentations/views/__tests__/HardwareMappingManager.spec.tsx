@@ -101,7 +101,7 @@ describe('HardwareMappingManager', () => {
         const changedJson = originalJson.replace('"controlIndex": 85', '"controlIndex": 86');
         fireEvent.change(fileInput(), { target: { files: [mappingFile(changedJson)] } });
         await waitFor(() => expect(screen.getByText('button 86')).toBeInTheDocument());
-        expect(screen.getByRole('status')).toHaveTextContent('Mappings imported.');
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Mappings imported.'));
         expect(hardwareControllerStore.value?.profiles[1]).toBe(original.profiles[1]);
         expect(hardwareControllerStore.value?.connectedDevices).toBe(original.connectedDevices);
 

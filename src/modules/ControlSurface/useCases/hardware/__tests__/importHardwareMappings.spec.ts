@@ -133,6 +133,28 @@ describe('importHardwareMappings', () => {
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
     });
 
+    it.each([null, { type: 'unknown' }, { type: 'transport', target: 42 }])(
+        'rejects malformed actions without replacing the profile: %j',
+        (action) => {
+            const before = hardwareControllerStore.value;
+            expect(importHardwareMappings('p1', JSON.stringify([{ ...baseMapping, action }]))).toBe(false);
+            expect(hardwareControllerStore.value).toBe(before);
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('accepts MIDI range endpoints and an action without an optional target', () => {
+        const before = hardwareControllerStore.value!;
+        const mappings = [
+            { ...baseMapping, id: 'first', controlIndex: 0, channel: 1, action: { type: 'transport' } },
+            { ...baseMapping, id: 'last', controlIndex: 127, channel: 16, action: { type: 'workflow' } },
+        ];
+        expect(importHardwareMappings('p1', JSON.stringify(mappings))).toBe(true);
+        expect(hardwareControllerStore.value?.profiles[0]?.mappings).toEqual(mappings);
+        expect(hardwareControllerStore.value?.profiles[1]).toBe(before.profiles[1]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
     it('rejects a numeric overflow and duplicate mapping IDs without replacing any profile', () => {
         const before = hardwareControllerStore.value;
         const overflow = JSON.stringify([baseMapping]).replace('"channel":1', '"channel":1e400');

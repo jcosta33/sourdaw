@@ -31,43 +31,41 @@ function isValidActionType(value: unknown): value is ControllerMapping['action']
     return VALID_ACTION_TYPES.has(value);
 }
 
+function isValidId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.trim() === value;
+}
+
+function isMidiValue(value: unknown, minimum: number, maximum: number): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum;
+}
+
+function isValidAction(value: unknown): value is ControllerMapping['action'] {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    if (!('type' in value) || !isValidActionType(value.type)) {
+        return false;
+    }
+    return !('target' in value) || value.target === undefined || typeof value.target === 'string';
+}
+
 function isControllerMapping(value: unknown): value is ControllerMapping {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    if (!('id' in value) || typeof value.id !== 'string' || value.id.length === 0 || value.id.trim() !== value.id) {
+    if (!('id' in value) || !isValidId(value.id)) {
         return false;
     }
     if (!('controlType' in value) || !isValidControlType(value.controlType)) {
         return false;
     }
-    if (
-        !('controlIndex' in value) ||
-        typeof value.controlIndex !== 'number' ||
-        !Number.isInteger(value.controlIndex) ||
-        value.controlIndex < 0 ||
-        value.controlIndex > 127
-    ) {
+    if (!('controlIndex' in value) || !isMidiValue(value.controlIndex, 0, 127)) {
         return false;
     }
-    if (
-        !('channel' in value) ||
-        typeof value.channel !== 'number' ||
-        !Number.isInteger(value.channel) ||
-        value.channel < 1 ||
-        value.channel > 16
-    ) {
+    if (!('channel' in value) || !isMidiValue(value.channel, 1, 16)) {
         return false;
     }
-    if (!('action' in value) || typeof value.action !== 'object' || value.action === null) {
-        return false;
-    }
-
-    const action = value.action;
-    if (!('type' in action) || !isValidActionType(action.type)) {
-        return false;
-    }
-    if ('target' in action && action.target !== undefined && typeof action.target !== 'string') {
+    if (!('action' in value) || !isValidAction(value.action)) {
         return false;
     }
     return true;
