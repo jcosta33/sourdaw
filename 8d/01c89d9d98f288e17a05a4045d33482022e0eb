@@ -1,0 +1,33 @@
+tests/e2e/crustOversamplingTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 30-34
+tests/e2e/crustAttackTimeTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 36-40
+tests/e2e/crustUnityDeltaTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 29-33
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  s_59e31a5c6f3e31::t_f11864c48ea54a 25-28,30,33,57,70,86,118,126,150
+  s_59e31a5c6f3e31::t_208e964ee54015 13-22,53-54,71,87,127,151
+tests/e2e/crustReleaseLookaheadTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 42-46
+  s_59e31a5c6f3e31::t_96efeb02a48b1d 77
+tests/e2e/crustChannelLinkTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 32-36
+tests/e2e/crustLevelChipsTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 13-15,32-33,36-42,44,46-48,50-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d01c89d9d98f288e17a05a4045d33482022e0eb",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
