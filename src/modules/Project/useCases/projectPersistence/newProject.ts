@@ -10,7 +10,7 @@ import {
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
-import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback, watchClosedTakes } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
@@ -125,6 +125,8 @@ async function switchToNewProject({
     // Hoisted out of the try: a throw past the switch has to be able to settle
     // the reset this activation began.
     let replaced: ReplacedProject | null = null;
+    // Before the first stop below, so a take that stop commits is kept too.
+    const closedTakes = watchClosedTakes();
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
             failNewProjectActivation({ previousTransientState, transaction });
@@ -155,7 +157,8 @@ async function switchToNewProject({
                 () => {
                     authorityReplaced = true;
                 },
-                transaction.isCurrent
+                transaction.isCurrent,
+                closedTakes
             );
             if (reset.status === 'refused') {
                 // Decided before the switch, so nothing was replaced: the

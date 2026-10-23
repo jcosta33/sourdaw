@@ -159,7 +159,10 @@ vi.mock('#/modules/Transport/useCases', () => ({
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
+    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
 }));
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 vi.mock('../helpers/hydrateModuleStoresFromProjectData', () => ({ hydrateModuleStoresFromProjectData: vi.fn() }));

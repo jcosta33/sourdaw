@@ -32,11 +32,15 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
     writeProjectJson: vi.fn(),
 }));
 
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../../projectPersistence/saveProject/saveProject', () => ({ saveProject: vi.fn() }));
+
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
+    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),

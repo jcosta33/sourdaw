@@ -6,7 +6,7 @@ import { forgetProjectLatchedPedals, resetAudioGraph } from '#/modules/AudioEngi
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
-import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback, watchClosedTakes } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
@@ -94,6 +94,8 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
     // sidechain routes, device stores), and undo-history clear — otherwise the
     // previous project's state leaks into every template (audit #568 F1).
     const transaction = runProjectLoadTransaction();
+    // Before the first stop below, so a take that stop commits is kept too.
+    const closedTakes = watchClosedTakes();
     let graphWasReset = false;
     let persistenceStopped = false;
     let authorityReplaced = false;
@@ -137,7 +139,8 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             () => {
                 authorityReplaced = true;
             },
-            transaction.isCurrent
+            transaction.isCurrent,
+            closedTakes
         );
         if (reset.status === 'refused') {
             // Decided before the switch, so the previous project is intact and

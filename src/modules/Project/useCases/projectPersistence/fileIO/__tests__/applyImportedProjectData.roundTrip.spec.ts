@@ -188,6 +188,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser }));
 // not what this round-trip asserts (it checks the hydrated track/transport/midi/
 // arrangement values), so stub it out to avoid pulling in every device store.
 vi.mock('../../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: vi.fn() }));
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 

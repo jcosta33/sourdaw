@@ -95,6 +95,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     ensureTrackStrips: vi.fn(),
+    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
