@@ -124,12 +124,13 @@ export function prepareMidiClipGlueState({
         ) {
             return null;
         }
+        const closingLineBeat = closingLineBeatOf(sources, sourceIndex);
         const projected = projectMidiClipWindow({
             notes: sourceNotes,
             controlChanges,
             // The carry moves a row to the window start, so each row takes the beat it was recorded at along.
             pitchBends: pitchBends.map((bend) => ({ ...bend, recordedBeat: bend.beat })),
-            window: { ...source, closingLineBeat: closingLineBeatOf(sources, sourceIndex) },
+            window: { ...source, closingLineBeat },
             carriesRegisteredParameterLanes: false,
         });
         const glueBeat = source.visibleStartBeat + source.beatOffset;
@@ -138,7 +139,7 @@ export function prepareMidiClipGlueState({
             sourceControlChanges: controlChanges,
             visibleStartBeat: source.visibleStartBeat,
             glueBeat,
-            glueEndBeat: source.visibleEndBeat + source.beatOffset,
+            closingLineBeat,
             carriedBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat < source.visibleStartBeat),
             windowBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat >= source.visibleStartBeat),
             windowControlChanges: projected.controlChanges,
