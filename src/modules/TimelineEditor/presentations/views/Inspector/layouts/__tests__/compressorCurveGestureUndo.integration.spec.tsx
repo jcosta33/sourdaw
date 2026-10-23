@@ -52,14 +52,21 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { resolveDeviceLayout } from '../../deviceLayoutRegistry';
 import '../CompressorLayout';
 
-const RegisteredCompressorLayout = resolveDeviceLayout('builtin-compressor');
-if (!RegisteredCompressorLayout) {
-    throw new Error('Missing registered Compressor layout');
+function requireRegisteredLayout(type: string, missingMessage: string) {
+    const layout = resolveDeviceLayout(type);
+    if (!layout) {
+        throw new Error(missingMessage);
+    }
+    return layout;
 }
-const RegisteredSidechainCompressorLayout = resolveDeviceLayout('builtin-sidechain-compressor');
-if (!RegisteredSidechainCompressorLayout) {
-    throw new Error('Missing registered Sidechain Compressor layout');
-}
+const RegisteredCompressorLayout = requireRegisteredLayout(
+    'builtin-compressor',
+    'Missing registered Compressor layout'
+);
+const RegisteredSidechainCompressorLayout = requireRegisteredLayout(
+    'builtin-sidechain-compressor',
+    'Missing registered Sidechain Compressor layout'
+);
 
 // Canvas, controls, dispatch, Arrangement, CRDT and history remain real.
 // Only the Web Audio/native engine boundary is controlled and logged.
