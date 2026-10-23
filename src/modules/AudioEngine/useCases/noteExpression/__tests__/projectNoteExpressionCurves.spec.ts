@@ -324,8 +324,14 @@ describe('projectNoteExpressionCurves', () => {
         const move = (beat: number, value: number, rangeSemitones = 2) => ({
             beat,
             frame: frameAtBeat(beat),
+            recordedBeat: beat,
             value,
             rangeSemitones,
+        });
+        /** A move a pass head plays at `beat`, carried from the row recorded at `recordedBeat` before it. */
+        const carried = (beat: number, recordedBeat: number, value: number) => ({
+            ...move(beat, value),
+            recordedBeat,
         });
         const plainNote = { pressure: 10, slide: 64 };
 
@@ -521,10 +527,12 @@ describe('projectNoteExpressionCurves', () => {
             expect(atStart?.pitchBend).toBe(8_191);
         });
 
+        // A trimmed clip head carries its rows onto the head the cut note starts on (beat 2), each still saying
+        // where it was recorded, as `projectChannelBend` lists them.
         it('starts a cut note on a channel move recorded after its scalar bend, before the cut', () => {
             const { atStart, changes } = projectNoteExpressionCurves({
                 note: { pitchBend: 0, pitchBendRangeSemitones: 48 },
-                channelBend: [move(1, 4_096)],
+                channelBend: [carried(2, 1, 4_096)],
                 startBeat: 2,
                 beatsIntoNote: 2,
                 releaseFrame: frameAtBeat(4),
@@ -543,7 +551,7 @@ describe('projectNoteExpressionCurves', () => {
                     pitchBendRangeSemitones: 48,
                     expression: { pitchBend: [{ offsetBeats: 1.5, value: 1_000 }] },
                 },
-                channelBend: [move(1, 4_096)],
+                channelBend: [carried(2, 1, 4_096)],
                 startBeat: 2,
                 beatsIntoNote: 2,
                 releaseFrame: frameAtBeat(4),
@@ -565,7 +573,7 @@ describe('projectNoteExpressionCurves', () => {
                     pitchBendRangeSemitones: 48,
                     expression: { pitchBend: [{ offsetBeats: 0.5, value: 1_000 }] },
                 },
-                channelBend: [move(1, 4_096)],
+                channelBend: [carried(2, 1, 4_096)],
                 startBeat: 2,
                 beatsIntoNote: 2,
                 releaseFrame: frameAtBeat(4),
@@ -576,14 +584,14 @@ describe('projectNoteExpressionCurves', () => {
             expect(atStart?.pitchBendRangeSemitones).toBe(2);
         });
 
-        it('leaves a cut note with its own bend when a move shares the frame of its bend point or its uncut start', () => {
+        it('leaves a cut note with its own bend when a move was recorded on the frame of its bend point or its uncut start', () => {
             const onThePoint = projectNoteExpressionCurves({
                 note: {
                     pitchBend: 0,
                     pitchBendRangeSemitones: 48,
                     expression: { pitchBend: [{ offsetBeats: 1, value: 1_000 }] },
                 },
-                channelBend: [move(1, 4_096)],
+                channelBend: [carried(2, 1, 4_096)],
                 startBeat: 2,
                 beatsIntoNote: 2,
                 releaseFrame: frameAtBeat(4),
@@ -591,7 +599,7 @@ describe('projectNoteExpressionCurves', () => {
             });
             const onTheUncutStart = projectNoteExpressionCurves({
                 note: { pitchBend: 0, pitchBendRangeSemitones: 48 },
-                channelBend: [move(1, 4_096)],
+                channelBend: [carried(2, 1, 4_096)],
                 startBeat: 2,
                 beatsIntoNote: 1,
                 releaseFrame: frameAtBeat(4),
@@ -602,10 +610,10 @@ describe('projectNoteExpressionCurves', () => {
             expect(onTheUncutStart.atStart).toBeUndefined();
         });
 
-        it('keeps a cut note on its scalar bend when the channel move came before the uncut start', () => {
+        it('keeps a cut note on its scalar bend when the channel move was recorded before the uncut start', () => {
             const { atStart } = projectNoteExpressionCurves({
                 note: { pitchBend: 0, pitchBendRangeSemitones: 48 },
-                channelBend: [move(0.5, 4_096)],
+                channelBend: [carried(2, 0.5, 4_096)],
                 startBeat: 2,
                 beatsIntoNote: 1,
                 releaseFrame: frameAtBeat(4),

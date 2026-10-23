@@ -50,8 +50,9 @@ type StartNoteExpressionInput = {
     frameAtBeat: (beat: number) => number;
     /**
      * The clock `channelBend` frames are on, when it differs from `frameAtBeat` by not clamping a beat before
-     * the render region's start. The note's own bend and the channel move are compared on it, because the
-     * clamp would put a note's earlier bend on the same frame as a later move. Defaults to `frameAtBeat`.
+     * the render region's start. The note's own bend and the channel move are compared on it, by where each
+     * was recorded, because the clamp would put a note's earlier bend on the same frame as a later move.
+     * Defaults to `frameAtBeat`.
      */
     channelBendFrameAtBeat?: (beat: number) => number;
 };
@@ -134,7 +135,7 @@ type FindOwnBendFrameInput = {
     passedMoments: readonly OwnExpressionMoment[];
     /** Where the note began before any cut, where its scalar bend took hold. */
     noteStartBeat: number;
-    /** The clock the channel bend's frames are on. */
+    /** The clock the note's own bend is compared with the channel move on. */
     frameAtBeat: (beat: number) => number;
 };
 
@@ -165,7 +166,9 @@ function findOwnBendFrame({
  * At the start the later of the note's own last bend and the channel move in force there holds the bend,
  * by frame: the note's last bend point at or before the start, else its scalar counted at the uncut note
  * start (a performer's note-on carries its own bend, so an earlier channel move leaves it alone, while a
- * move recorded after it, before a cut head, is in force). A tie on one frame stays with the note. A note
+ * move recorded after it, before a cut head, is in force). The move counts where it was recorded
+ * (`recordedBeat`), not where it plays: a trimmed clip head carries its rows onto the head the cut note
+ * starts on, though they may precede the note's own bend. A tie on one frame stays with the note. A note
  * with no bend sounds under the channel bend in force, the last move at or before the start frame. From
  * then on the later event wins (`advanceNoteExpression`).
  */
@@ -196,7 +199,10 @@ export function startNoteExpression({
         noteStartBeat: startBeat - beatsIntoNote,
         frameAtBeat: channelBendFrameAtBeat,
     });
-    const bendOwner = inForce && (ownBendFrame === undefined || inForce.frame > ownBendFrame) ? 'channel' : 'note';
+    const channelBentLast =
+        inForce !== undefined &&
+        (ownBendFrame === undefined || channelBendFrameAtBeat(inForce.recordedBeat) > ownBendFrame);
+    const bendOwner = channelBentLast ? 'channel' : 'note';
     const timeline: NoteExpressionTimeline = {
         startFrame,
         releaseFrame,

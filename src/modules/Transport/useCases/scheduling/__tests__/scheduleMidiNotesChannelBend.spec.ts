@@ -546,6 +546,27 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         ]);
     });
 
+    // The export's case: scheduleTrackClips.spec.ts, "keeps a note a trimmed clip head cut on its own bend when the
+    // move carried onto the head was recorded before it": both routes share startNoteExpression.
+    it('keeps a note a trimmed clip head cut on its own bend when the move carried onto the head was recorded before it', async () => {
+        stripFor(FERMENTER);
+        // The clip sits at 2 and plays from content beat 2, so content beat c lands on c. The note began at
+        // content beat 1, a beat before the head, with a centred bend of its own; the move at content beat 0.5
+        // came before it, though the trim carries it onto the head the cut note starts on.
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip({ startBeat: 2, endBeat: 10, midiOffsetBeats: 2 })]),
+            notes: { 'clip-1': [{ ...note('n0', 1, 4), pitchBend: 0, pitchBendRangeSemitones: 48 }] },
+            bends: { 'clip-1': [bend('stale', 0.5, 4096)] },
+        });
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+            input.events.map((event) => ({ ...event, startBeat: 2, duration: 3, beatsIntoNote: 1 }))
+        );
+
+        await play(0, 10);
+
+        expect(appliedBend()[0]).toEqual({ sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 0, bendRangeSemitones: 48 });
+    });
+
     describe('when the clips change while a note sounds', () => {
         const bendClip = (muted: boolean) => [midiClip({ id: 'notes' }), midiClip({ id: 'bends', muted })];
         const longNote = { notes: [note('n0', 0, 7)] };
@@ -1024,20 +1045,20 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                  * Clip B plays [0, 1.6) with a centre at 0 and a bend out at 1.5, clip A plays [2, 8) and holds the
                  * long note: the bend out falls in the muted span and the window after the mute has no clip.
                  */
-                const twoClipSong = (overrides: { trackMuted?: boolean; clipBMuted?: boolean } = {}) => ({
+                const twoClipSong = ({
+                    trackMuted = false,
+                    clipBMuted = false,
+                    gapClips = [],
+                }: { trackMuted?: boolean; clipBMuted?: boolean; gapClips?: Clip[] } = {}) => ({
                     track: midiTrack(
                         FERMENTER,
                         [
-                            midiClip({
-                                id: 'clip-b',
-                                startBeat: 0,
-                                endBeat: 1.6,
-                                muted: overrides.clipBMuted ?? false,
-                            }),
+                            midiClip({ id: 'clip-b', startBeat: 0, endBeat: 1.6, muted: clipBMuted }),
+                            ...gapClips,
                             midiClip({ id: 'clip-a', startBeat: 2, endBeat: 8 }),
                         ],
                         undefined,
-                        { muted: overrides.trackMuted ?? false }
+                        { muted: trackMuted }
                     ),
                     // The note sits at the head of clip A, so it sounds on [2, 6) of the timeline.
                     notes: { 'clip-a': [note('long', 0, 4, LONG_NOTE_PITCH)] },
@@ -1057,6 +1078,37 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                     await playOnPass(SEAM_SECONDS, 1.9, 2);
 
                     // The bend out at 1.5 fell in the muted span, and clip B has ended by the window after it.
+                    expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                        { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                        { sampleFrame: SEAM_FRAME + 1.75 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+                    ]);
+                });
+
+                it('gives a note carried across the seam while the track was muted the bend in force when the only clip of the window is comped away', async () => {
+                    vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+                        clips
+                            .filter((clip) => clip.id !== 'clip-c')
+                            .map((clip) => ({
+                                ...clip,
+                                regionStartBeat: clip.startBeat,
+                                regionEndBeat: clip.endBeat,
+                                sourceStartBeat: clip.startBeat,
+                            }))
+                    );
+                    // A clip with no note list in the gap, which the comp resolution replaces.
+                    const gapClips = [midiClip({ id: 'clip-c', startBeat: 1.6, endBeat: 2 })];
+                    setProject(twoClipSong({ gapClips }));
+                    await playOnPass(0, 2, 4);
+                    vi.mocked(applyNoteExpression).mockClear();
+                    setProject(twoClipSong({ gapClips, trackMuted: true }));
+
+                    await playOnPass(SEAM_SECONDS, 0, 1, true);
+                    await playOnPass(SEAM_SECONDS, 1, 1.5);
+                    setProject(twoClipSong({ gapClips }));
+                    // Clip C overlaps the window the mute ends in, and plays nothing of it.
+                    await playOnPass(SEAM_SECONDS, 1.75, 1.9);
+                    await playOnPass(SEAM_SECONDS, 1.9, 2);
+
                     expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
                         { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
                         { sampleFrame: SEAM_FRAME + 1.75 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },

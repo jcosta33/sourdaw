@@ -2073,6 +2073,22 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             expect(bends(arrivals)).toEqual([{ sampleFrame: 0, bendSemitones: 1 }]);
         });
 
+        it('keeps a note a trimmed clip head cut on its own bend when the move carried onto the head was recorded before it', async () => {
+            // The note began one beat before the clip's head with a centred bend of its own; the move at content
+            // beat 0.5 came before it, though the trim carries it onto the head the cut note starts on.
+            const arrivals = await dispatchOneNote(
+                { startBeat: 1, duration: 4, pitchBend: 0, pitchBendRangeSemitones: 48 },
+                {
+                    productionProjection: true,
+                    clip: { startBeat: 0, endBeat: 8, midiOffsetBeats: 2 },
+                    lanes: { bends: [bendRow('stale', 0.5, 4_096)] },
+                }
+            );
+
+            expect(arrivals.noteOn[0]?.sampleFrame).toBe(0);
+            expect(bends(arrivals)).toEqual([{ sampleFrame: 0, bendSemitones: 0 }]);
+        });
+
         it('lets a clip that is not a MIDI clip bend nothing', async () => {
             const arrivals = await dispatchOneNote(
                 { startBeat: 1, duration: 1 },
