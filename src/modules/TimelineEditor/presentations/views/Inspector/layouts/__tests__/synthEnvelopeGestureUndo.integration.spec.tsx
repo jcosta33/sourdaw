@@ -52,26 +52,24 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { resolveDeviceLayout } from '../../deviceLayoutRegistry';
 import '../BuiltinSynthLayout';
 
-const RegisteredSynthLayout = resolveDeviceLayout('builtin-synth');
-if (!RegisteredSynthLayout) {
-    throw new Error('Missing registered Synth layout');
+function requireRegisteredLayout(type: string, missingMessage: string) {
+    const layout = resolveDeviceLayout(type);
+    if (!layout) {
+        throw new Error(missingMessage);
+    }
+    return layout;
 }
-const RegisteredMellotronLayout = resolveDeviceLayout('builtin-synth-mellotron');
-if (!RegisteredMellotronLayout) {
-    throw new Error('Missing registered Mellotron layout');
-}
-const RegisteredStringsLayout = resolveDeviceLayout('builtin-synth-strings');
-if (!RegisteredStringsLayout) {
-    throw new Error('Missing registered Analog Strings layout');
-}
-const Registered808BassLayout = resolveDeviceLayout('builtin-synth-808bass');
-if (!Registered808BassLayout) {
-    throw new Error('Missing registered 808 Bass layout');
-}
-const RegisteredBrassLayout = resolveDeviceLayout('builtin-synth-brass');
-if (!RegisteredBrassLayout) {
-    throw new Error('Missing registered Classic Brass layout');
-}
+const RegisteredSynthLayout = requireRegisteredLayout('builtin-synth', 'Missing registered Synth layout');
+const RegisteredMellotronLayout = requireRegisteredLayout(
+    'builtin-synth-mellotron',
+    'Missing registered Mellotron layout'
+);
+const RegisteredStringsLayout = requireRegisteredLayout(
+    'builtin-synth-strings',
+    'Missing registered Analog Strings layout'
+);
+const Registered808BassLayout = requireRegisteredLayout('builtin-synth-808bass', 'Missing registered 808 Bass layout');
+const RegisteredBrassLayout = requireRegisteredLayout('builtin-synth-brass', 'Missing registered Classic Brass layout');
 
 // The registered layout, canvas, controls, commands and CRDT/history are real.
 // Only the engine I/O boundary is controlled so every physical sample is visible.
