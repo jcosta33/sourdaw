@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectStore, type ProjectStoreState } from '../../../../stores/projectStore';
+import { unsavedClosedTakes } from '../../../projectPersistence/helpers/unsavedClosedTakes';
 import { createFromTemplate } from '../createFromTemplate';
 
 type MonitoredTrack = { id: string; inputMonitoring: 'on' | 'off' | 'auto'; inputId: string | null };
@@ -36,6 +37,9 @@ const mocks = vi.hoisted(() => ({
     transactionIsCurrent: vi.fn(),
     transactionPrepare: vi.fn(),
     runProjectLoadTransaction: vi.fn(),
+    saveProject: vi.fn(),
+    /** How many take commits have settled, as the Transport counts them. */
+    takesSettled: { value: 0 },
 }));
 
 // ../helpers is mocked so this spec does not load the template catalog / Nebula Drift demo.
@@ -120,6 +124,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
     isTransportIdle: () => true,
     stopPlayback: mocks.stopPlayback,
+    countSettledTakes: () => mocks.takesSettled.value,
     addTempoChange: vi.fn(),
     addTimeSignatureChange: vi.fn(),
     defaultTransportState: {},
@@ -153,6 +158,11 @@ vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
     stopActiveAutoSave: mocks.stopActiveAutoSave,
 }));
 
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../../../projectPersistence/saveProject/saveProject', () => ({
+    saveProject: mocks.saveProject,
+}));
+
 // Writes through, unlike a fixed getter: the durability barrier this file
 // pins is the LAST write to the store, and a double that forgets every write
 // cannot tell a raised barrier from a missing one.
@@ -177,6 +187,9 @@ describe('createFromTemplate', () => {
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
         mocks.stopPlayback.mockResolvedValue(undefined);
+        mocks.saveProject.mockResolvedValue(true);
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.finalize.mockResolvedValue('finalized');
@@ -497,6 +510,33 @@ describe('createFromTemplate', () => {
         expect(mocks.forgetProjectLatchedPedals).toHaveBeenCalledOnce();
     });
 
+    it('saves a take that its own first stop commits before the switch', async () => {
+        mocks.stopPlayback.mockImplementationOnce(() => {
+            mocks.takesSettled.value++;
+            return Promise.resolve();
+        });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.saveProject.mock.invocationCallOrder[0]!).toBeLessThan(
+            mocks.resetCrdtProject.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('resets the audio graph and unloads the plugins again before asking again after a refused reset', async () => {
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
+        const [firstReset, secondReset] = mocks.resetCrdtProject.mock.invocationCallOrder;
+        expect(mocks.resetAudioGraph.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
+        expect(mocks.resetAudioGraph.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(mocks.unloadPlugin.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+    });
+
     it('keeps stopping and asking until the reset finds the transport idle', async () => {
         mocks.resetCrdtProject
             .mockResolvedValueOnce({ status: 'transport-active' })
@@ -542,7 +582,13 @@ describe('createFromTemplate', () => {
         const releaseRuntimeTransition = vi.fn();
         mocks.acquireRuntimeTransition.mockResolvedValueOnce(releaseRuntimeTransition);
         mocks.executeAppAction.mockReturnValueOnce(action.promise);
-        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
+        // Asked after the stop, after the teardown, by the reset helper before its
+        // first attempt, and last once the action has settled.
+        mocks.transactionIsCurrent
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(false);
         const creation = createFromTemplate('pop-song');
         await vi.waitFor(() => expect(mocks.executeAppAction).toHaveBeenCalledOnce());
         expect(releaseRuntimeTransition).not.toHaveBeenCalled();
