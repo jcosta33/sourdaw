@@ -1000,6 +1000,50 @@ describe('punch audio capture loop placement', () => {
         expectProjectProjection();
     });
 
+    it('keeps the captured tail when Stop precedes a planned seam between scheduler ticks', async () => {
+        hardware.latencySeconds = 0;
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+        playheadPositionRef.current = 11.8;
+        playheadClockRef.beat = 11.8;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await tick();
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
+        const plannedId = lane().takes.find((take) => take.sourceOffsetBeats === 0)!.id;
+        hardware.now = 51.09;
+        await stopPlayback();
+
+        expect(hardware.buffer!.length).toBe(4320);
+        expect(hardware.buffer!.duration).toBeCloseTo(0.09, 10);
+        const clip = recordedClips()[0]!;
+        expect(clip.endBeat).toBeCloseTo(11.98, 10);
+        const takes = lane().takes.filter((take) => take.passDepthSeconds !== undefined);
+        expect(takes).toHaveLength(1);
+        expect(takes[0]!.id).toBe(plannedId);
+        expect(takes[0]!.endBeat).toBeCloseTo(11.98, 10);
+        expect(takes[0]!.passDepthSeconds).toBe(0);
+        expect(takes[0]!.passSourceEndSeconds).toBeCloseTo(0.09, 10);
+
+        const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+            '../../scheduling/scheduleAudioClips'
+        );
+        hardware.sourceStarts = [];
+        scheduleAudioClips(11.8, 12, 11.8, new Set(), new Set(), [], {
+            ...transportStore.value!,
+            isLooping: false,
+        });
+        expect(hardware.sourceStarts).toHaveLength(1);
+        expect(hardware.sourceStarts[0]!.sourceSeconds).toBeCloseTo(0, 10);
+        expect(hardware.sourceStarts[0]!.durationSeconds).toBeCloseTo(0.09, 10);
+        const lastFrame = Math.round(hardware.sourceStarts[0]!.durationSeconds * hardware.sampleRate) - 1;
+        expect(lastFrame).toBe(4319);
+        expect(hardware.buffer!.getChannelData(0)[lastFrame]).toBe(4319);
+        expectProjectProjection();
+    });
+
     it('joins native playback on its audible clock without moving the producer first frame', async () => {
         hardware.now = 51;
         transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 9.8 });
@@ -1689,6 +1733,42 @@ describe('punch audio capture loop placement', () => {
             expectProjectProjection();
         }
     );
+
+    it('finalizes a manual MIDI Stop on its between-tick receipt and keeps one undoable entry', async () => {
+        const midiId = 'manual-midi';
+        await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } }, { skipUndo: true });
+        await executeAppAction(
+            { type: 'addTrack', payload: { id: midiId, kind: 'midi', name: 'Manual MIDI' } },
+            { skipUndo: true }
+        );
+        await executeAppAction({ type: 'armTrack', payload: { trackId: midiId, armed: true } }, { skipUndo: true });
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, isLooping: false, playheadPosition: 10 });
+        playheadPositionRef.current = 10;
+        playheadClockRef.beat = 10;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.now >= 51.9375);
+        expect(playheadPositionRef.current).toBeCloseTo(11.875, 10);
+        hardware.now = 51.9625;
+        await stopPlayback();
+
+        const clips = trackStore.value!.tracks.find((track) => track.id === midiId)!.clips;
+        expect(clips).toHaveLength(1);
+        expect(clips[0]!.startBeat).toBe(10);
+        expect(clips[0]!.endBeat).toBeCloseTo(11.925, 10);
+        expect(hardware.starts).toBe(0);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(undoHistoryStore.value?.past[0]).toMatchObject({ kind: 'action', action: { type: 'commitRecording' } });
+        expectProjectProjection();
+        await undo();
+        expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual([]);
+        await redo();
+        expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual(clips);
+        expectProjectProjection();
+    });
 
     it('finalizes a MIDI punch without an audio capture and keeps one undoable entry', async () => {
         const midiId = 'punch-midi';

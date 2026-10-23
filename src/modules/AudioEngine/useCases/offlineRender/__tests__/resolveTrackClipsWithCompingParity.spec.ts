@@ -201,6 +201,94 @@ describe('bounded recorded pass playback after a typed clip split across a tempo
             1.75 * consumed,
         ]);
     });
+    it.each([
+        { mode: 'off', ratio: 1, consumed: 1, anchored: false, rightOrigin: undefined },
+        { mode: 'off', ratio: 1, consumed: 1, anchored: true, rightOrigin: 8.5 },
+        { mode: 'timestretch', ratio: 2, consumed: 2, anchored: true, rightOrigin: 7 },
+        { mode: 'timestretch', ratio: 0.5, consumed: 0.5, anchored: true, rightOrigin: 9.25 },
+        { mode: 'off', ratio: 2, consumed: 1, anchored: true, rightOrigin: 8.5 },
+    ] as const)(
+        'preserves source and loop geometry with $mode ratio $ratio, anchored=$anchored',
+        async ({ mode, ratio, consumed, anchored, rightOrigin }) => {
+            const clip: Clip = {
+                ...recording(8, 12),
+                loopEnabled: true,
+                loopLength: 4,
+                stretchMode: mode,
+                stretchRatio: ratio,
+            };
+            if (anchored) {
+                clip.loopOriginBeat = 8;
+            }
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({ ...track, clips: [clip] })),
+            });
+            const take = {
+                ...placedPass('bounded', [8, 12], 1.25 * consumed, 1.25 * consumed),
+                passSourceEndSeconds: 1.75 * consumed,
+            };
+            takeLaneStore.set(lane([take], take.id, 9.75, 10.25));
+            const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
+            const tempoAtBeat = (beat: number) => readTempoAtBeat({ beat });
+            const selected = () => {
+                const clips = trackStore.value!.tracks[0]!.clips;
+                const live = resolveClipsWithComping('t1', clips);
+                const offline = resolveTrackClipsWithComping(
+                    't1',
+                    clips,
+                    takeLaneStore.value,
+                    renderTempoTimeline(secondsAtBeat, tempoAtBeat)
+                );
+                expect(offline).toEqual(live);
+                return live.filter((fragment) => fragment.startBeat >= 9.75 && fragment.endBeat <= 10.25);
+            };
+            expect(selected().map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([[9.75, 10.25]]);
+
+            await executeAppAction({ type: 'splitClip', payload: { clipId: 'rec', beat: 10, resolvedBeat: 10 } });
+
+            const right = trackStore.value!.tracks[0]!.clips.find((part) => part.id !== 'rec')!;
+            expect(right.loopEnabled).toBe(true);
+            expect(right.loopLength).toBe(4);
+            expect(right.loopOriginBeat).toBe(rightOrigin);
+            expect(Object.hasOwn(right, 'loopOriginBeat')).toBe(anchored);
+            expect(((right.audioOffsetBeats ?? 0) * 60) / tempoAtBeat(right.startBeat)).toBe(1.5 * consumed);
+            if (anchored) {
+                const advance = right.startBeat - right.loopOriginBeat!;
+                expect((right.audioOffsetBeats ?? 0) - advance).toBe(0);
+            }
+            expect(takeLaneStore.value!.lanes[0]!.takes).toHaveLength(2);
+            expect(takeLaneStore.value!.lanes[0]!.takes.some((part) => part.clipId === right.id)).toBe(true);
+            const fragments = selected();
+            expect(fragments.map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([
+                [9.75, 10],
+                [10, 10.25],
+            ]);
+            const playbacks = fragments.flatMap((fragment) =>
+                projectOfflineAudioClipPlaybacks({
+                    clip: fragment,
+                    bufferDurationSeconds: 8,
+                    regionStartBeat: 8,
+                    regionStartSec: secondsAtBeat(8),
+                    durationSeconds: 4,
+                    compensationDelay: 0,
+                    projectBeatToSeconds: secondsAtBeat,
+                    resolveTempoAtBeat: tempoAtBeat,
+                })
+            );
+            expect(playbacks).toHaveLength(2);
+            expect(playbacks.map((playback) => playback.bufferOffsetSec)).toEqual([1.25 * consumed, 1.5 * consumed]);
+            expect(playbacks.map((playback) => playback.playDuration)).toEqual([0.25, 0.25]);
+            expect(playbacks.map((playback) => playback.playbackRate)).toEqual([consumed, consumed]);
+            expect(playbacks[1]!.bufferOffsetSec + playbacks[1]!.playDuration * playbacks[1]!.playbackRate).toBe(
+                1.75 * consumed
+            );
+            expect(takeLaneStore.value!.lanes[0]!.takes.map((part) => part.passSourceEndSeconds)).toEqual([
+                1.75 * consumed,
+                1.75 * consumed,
+            ]);
+        }
+    );
 });
 
 const cases: readonly { name: string; state: TakeLaneStoreState; clip: Clip }[] = [
