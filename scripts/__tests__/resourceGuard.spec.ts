@@ -3005,6 +3005,80 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             }
         });
 
+        it('preserves a newer receipt recorded during an adopted recovery replay instead of clearing it', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-adopt-newer');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const claimPath = `${fixture.receiptPath}.claim-c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f`;
+            renameSync(fixture.receiptPath, claimPath);
+            const newerReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['test:run', 'newer.spec.ts'],
+                failedAt: '2026-10-01T14:00:00.000Z',
+            };
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        // A concurrent writer records a newer receipt at the canonical path during
+                        // the replay window; the adopted receipt is no longer what is on disk.
+                        writeGuardFailureReceipt(fixture.repoRoot, newerReceipt);
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(errors).toContain(
+                    `guard: recovery succeeded but the guard-failure receipt changed for lane ${fixture.laneName}; preserving the current receipt`
+                );
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(newerReceipt);
+                // Only the preserved canonical receipt remains; no claim files are left behind.
+                expect(readdirSync(fixture.receiptsDir)).toEqual([`${fixture.laneName}.json`]);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('leaves an orphaned claim recoverable when the adoption restore link fails', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-link-fails');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a`;
+            const claimBytes = `${JSON.stringify(fixture.receipt, null, 2)}\n`;
+            writeFileSync(claimPath, claimBytes);
+            const errors: string[] = [];
+            const failingLink: typeof linkSync = () => {
+                throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
+            };
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    recoverReadPorts: { linkSync: failingLink },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('could not restore the orphaned guard-failure receipt claim');
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('EPERM: operation not permitted, link');
+                // The claim's bytes survive so a later recovery can adopt the stranded obligation.
+                expect(readFileSync(claimPath, 'utf8')).toBe(claimBytes);
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it('replays every recorded lint target after an explicit missing-file replacement', async () => {
             const repoRoot = fixtureRoot('recover-renamed-lint-target');
             const laneName = 'agent-105-renamed-lint-target';
