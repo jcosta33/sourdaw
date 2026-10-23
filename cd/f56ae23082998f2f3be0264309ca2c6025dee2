@@ -21,6 +21,14 @@ scripts/__tests__/e2eLaunchOverlayBound.spec.ts
     }
   },
   "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_ba8dd89de9aac7": {
       "agent_id": {
         "tool": "claude",
