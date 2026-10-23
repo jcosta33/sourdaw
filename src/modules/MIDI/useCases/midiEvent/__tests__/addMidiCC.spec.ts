@@ -71,24 +71,51 @@ describe('addMidiCC', () => {
             expect(idsAfter()).toEqual([cc.id]);
         });
 
-        it('replaces a glue return on the beat of the window start it lands on, whichever registered controller sets it', () => {
+        it('replaces a glue return on the beat of the window start it lands on, and only that one', () => {
             seed([splitReturn, glueReturn]);
 
-            const cc = addMidiCC('c1', 101, 0, 4, 0);
+            const cc = addMidiCC('c1', 6, 7, 4, 0);
 
             expect(idsAfter()).toEqual([splitReturn.id, cc.id]);
+        });
+
+        it.each([
+            { name: 'Data Increment', controller: 96 },
+            { name: 'Data Decrement', controller: 97 },
+        ])('replaces the return for a $name, which steps the range', ({ controller }) => {
+            seed([splitReturn]);
+
+            const cc = addMidiCC('c1', controller, 0, 0, 0);
+
+            expect(idsAfter()).toEqual([cc.id]);
         });
 
         it('replaces a return an earlier row of the clip pulled ahead of the tick', () => {
             seed([{ ...splitReturn, beat: tick / 2 }]);
 
-            const cc = addMidiCC('c1', 38, 0, 0, 0);
+            const cc = addMidiCC('c1', 6, 7, 0, 0);
 
             expect(idsAfter()).toEqual([cc.id]);
         });
 
         it.each([
+            { name: 'an RPN MSB select', controller: 101, value: 127 },
+            { name: 'an RPN LSB select', controller: 100, value: 0 },
+            { name: 'an NRPN MSB select', controller: 99, value: 1 },
+            { name: 'an NRPN LSB select', controller: 98, value: 1 },
+            { name: 'a Null RPN half', controller: 100, value: 127 },
+            { name: 'a Data Entry LSB', controller: 38, value: 0 },
+        ])('keeps the return for $name, which sets no range', ({ controller, value }) => {
+            seed([splitReturn]);
+
+            const cc = addMidiCC('c1', controller, value, 0, 0);
+
+            expect(idsAfter()).toEqual([splitReturn.id, cc.id]);
+        });
+
+        it.each([
             { name: 'on another channel', row: { ...splitReturn, channel: 1 } },
+            { name: 'two ticks after the beat it lands on', row: { ...splitReturn, beat: 2 * tick } },
             { name: 'a beat after the beat it lands on', row: { ...splitReturn, beat: 1 } },
             { name: 'before the beat it lands on', row: { ...splitReturn, beat: -tick } },
             { name: 'that is an ordinary row, not a return', row: { ...splitReturn, id: 'cc-split:right:5' } },

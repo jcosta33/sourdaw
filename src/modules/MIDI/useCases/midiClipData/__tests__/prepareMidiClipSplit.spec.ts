@@ -20,6 +20,8 @@ vi.mock('../../../stores/midiStore', () => ({
 }));
 
 const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
+const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
 const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipSplit } = await import('../prepareMidiClipSplit');
 const { projectChannelBend } = await import('../projectChannelBend');
@@ -304,8 +306,8 @@ describe('prepareMidiClipSplit bend range', () => {
 
         describe('a range set by hand on the right half’s origin', () => {
             /** The right half of the cut, as the store holds it before the hand edit. */
-            function storeRightHalf() {
-                const plan = splitAtTwo(recordedUnderTwelve, [carried]);
+            function storeRightHalf(controlChanges: readonly Controller[] = recordedUnderTwelve) {
+                const plan = splitAtTwo(controlChanges, [carried]);
                 mocks.state.value = {
                     probabilitySeed: 7,
                     notesByClipId: {},
@@ -333,6 +335,42 @@ describe('prepareMidiClipSplit bend range', () => {
                 addMidiCC('right', 6, 7, 0, 1);
 
                 expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+            });
+
+            it.each([
+                { name: 'an RPN MSB select', controller: 101, value: 127 },
+                { name: 'an RPN LSB select', controller: 100, value: 0 },
+                { name: 'an NRPN MSB select', controller: 99, value: 1 },
+                { name: 'an NRPN LSB select', controller: 98, value: 1 },
+                { name: 'a Null RPN half', controller: 100, value: 127 },
+                { name: 'a Data Entry LSB', controller: 38, value: 0 },
+            ])(
+                'leaves the state at the cut for a bend drawn after $name on the origin, which sets no range',
+                ({ controller: cc, value }) => {
+                    storeRightHalf();
+
+                    addMidiCC('right', cc, value, 0, 0);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                }
+            );
+
+            it('reads the range before the hand edit again after undo, with a return pulled ahead of the clip’s own first row', () => {
+                const ownFirstRow = controller('data-entry-first', 2 + SEQUENCER_TICK_BEATS / 2, 6, 5);
+                storeRightHalf([...recordedUnderTwelve, ownFirstRow]);
+                const before = [...storedRows()];
+                const rangeBefore = createStoredBendRangeReader(before)(0, 1);
+
+                const edit = addMidiCC('right', 6, 7, 0, 0);
+                const remaining = new Set(storedRows().map(({ id }) => id));
+                const displaced = before.filter(({ id }) => !remaining.has(id));
+                removeMidiCC('right', edit.id);
+                restoreMidiCCPoints('right', displaced, before);
+
+                expect(rangeBefore).toBe(5);
+                expect(displaced.some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(rangeBefore);
+                expect(storedRows().map(({ id }) => id)).toEqual(before.map(({ id }) => id));
             });
 
             it('leaves the state at the cut for a bend drawn after a hand edit that sets no registered parameter', () => {

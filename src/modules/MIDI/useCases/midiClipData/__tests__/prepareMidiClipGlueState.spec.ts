@@ -657,6 +657,24 @@ describe('prepareMidiClipGlueState', () => {
                     expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
                 });
 
+                it.each([
+                    { name: 'an RPN MSB select', controller: 101, value: 127 },
+                    { name: 'an RPN LSB select', controller: 100, value: 0 },
+                    { name: 'an NRPN MSB select', controller: 99, value: 1 },
+                    { name: 'an NRPN LSB select', controller: 98, value: 1 },
+                    { name: 'a Null RPN half', controller: 100, value: 127 },
+                    { name: 'a Data Entry LSB', controller: 38, value: 0 },
+                ])(
+                    'leaves the state at the window start for a bend drawn after $name on it, which sets no range',
+                    ({ controller, value }) => {
+                        storeGluedClip();
+
+                        addMidiCC('target', controller, value, 0, 0);
+
+                        expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                    }
+                );
+
                 it('leaves the state at the window start for a bend drawn after a hand edit on another channel', () => {
                     storeGluedClip();
 

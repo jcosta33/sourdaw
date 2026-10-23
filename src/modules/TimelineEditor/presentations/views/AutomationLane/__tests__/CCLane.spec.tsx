@@ -338,6 +338,9 @@ describe('CCLane', () => {
 
             undoFn!();
 
+            // The lane hands the use case the pre-click list, so the return goes back to its own position
+            // (the use case's spec pins the placement; this mock only appends).
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [returnRow], [returnRow, unrelated]);
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
         });
 

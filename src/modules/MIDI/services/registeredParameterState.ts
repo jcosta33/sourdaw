@@ -1,6 +1,8 @@
 import {
+    CC_DATA_DECREMENT,
     CC_DATA_ENTRY_LSB,
     CC_DATA_ENTRY_MSB,
+    CC_DATA_INCREMENT,
     CC_NRPN_LSB,
     CC_NRPN_MSB,
     CC_RPN_LSB,
@@ -295,16 +297,26 @@ export function carriedBendReturnIdKey(index: number): string {
 }
 
 /**
- * Whether `row` is a return a split or a glue wrote for a carried bend, and `edit`, a registered-parameter row
- * set by hand, lands on the head it returns from: on the head itself or up to one return tick after it. The
- * return re-sends the state at the cut, so it would override what the edit set for every later bend; the edit
- * governs them instead, and the return, which the hand edit has made obsolete, goes with it.
+ * Whether a controller sets the bend range of the RPN 0 the carried rows left selected: Data Entry MSB (whole
+ * semitones), Data Increment and Decrement. A select, the Null RPN and Data Entry LSB (cents) set no range of
+ * their own, so a hand edit of one leaves later bends at the state at the cut.
+ */
+function setsBendRange(controller: number): boolean {
+    return controller === CC_DATA_ENTRY_MSB || controller === CC_DATA_INCREMENT || controller === CC_DATA_DECREMENT;
+}
+
+/**
+ * Whether `row` is a return a split or a glue wrote for a carried bend, and `edit`, a point set by hand that
+ * sets the bend range (`setsBendRange`), lands on the head it returns from: on the head itself or up to one
+ * return tick after it. The return re-sends the state at the cut, so it would override the range the edit set for
+ * every later bend; the edit governs them instead, and the return, which the hand edit has made obsolete, goes
+ * with it.
  */
 export function isCarriedBendReturnSupersededByEdit(
     row: { id: string; channel: number; beat: number },
-    edit: { channel: number; beat: number }
+    edit: { channel: number; beat: number; controller: number }
 ): boolean {
-    if (row.channel !== edit.channel || !CARRIED_BEND_RETURN_ID.test(row.id)) {
+    if (!setsBendRange(edit.controller) || row.channel !== edit.channel || !CARRIED_BEND_RETURN_ID.test(row.id)) {
         return false;
     }
     const afterEdit = row.beat - edit.beat;
