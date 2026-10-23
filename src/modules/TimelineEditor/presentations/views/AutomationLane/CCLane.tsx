@@ -65,17 +65,22 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const channel = 0;
         // addMidiCC dedupes EVERY point sitting at the clicked (beat, channel,
         // controller) key — including rows the gesture did not mean to replace —
-        // so undo removes the gesture's written point, then re-inserts the
-        // captured pre-click rows by id (#4840). The capture is key-scoped, not
-        // the whole clip: undo restores only the gesture's own displaced rows,
-        // so a row deleted elsewhere between the gesture and the undo stays
-        // deleted. It must sit before the add — the add is what removes these
-        // rows.
-        const preClickPoints = allCc.filter(
-            (context: MidiCC) =>
-                context.beat === beat && context.channel === channel && context.controller === controller
-        );
+        // and a point that sets the bend range also replaces the returns a split or
+        // glue wrote after the same head with rewritten ones, so undo removes every
+        // row the add created, then re-inserts the rows the add displaced by id
+        // (#4840), each at its pre-click position in the list: same-beat rows are
+        // read in list order. The capture is the add's own change, not the whole
+        // clip: undo restores only the gesture's displaced rows, so a row deleted
+        // elsewhere between the gesture and the undo stays deleted.
         const cc = addMidiCC(clipId, controller, value, beat, channel);
+        const afterClick = midiStore.value?.ccByClipId[clipId] ?? [];
+        const afterIds = new Set(afterClick.map((context) => context.id));
+        const preClickIds = new Set(allCc.map((context: MidiCC) => context.id));
+        const preClickPoints = allCc.filter((context: MidiCC) => !afterIds.has(context.id));
+        const createdIds = new Set([
+            cc.id,
+            ...afterClick.filter((context) => !preClickIds.has(context.id)).map((context) => context.id),
+        ]);
         // Redo must re-create the clicked point under the SAME id: a fresh id would
         // leave the undo side removing an id the store no longer holds.
         const redo = (): void => {
@@ -84,8 +89,10 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         pushUndoEntry(
             'Add CC point',
             () => {
-                removeMidiCC(clipId, cc.id);
-                restoreMidiCCPoints(clipId, preClickPoints);
+                for (const createdId of createdIds) {
+                    removeMidiCC(clipId, createdId);
+                }
+                restoreMidiCCPoints(clipId, preClickPoints, allCc);
             },
             redo
         );

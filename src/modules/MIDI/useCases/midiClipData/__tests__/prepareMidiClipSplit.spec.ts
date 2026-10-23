@@ -19,6 +19,10 @@ vi.mock('../../../stores/midiStore', () => ({
     },
 }));
 
+const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
+const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
+const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipSplit } = await import('../prepareMidiClipSplit');
 const { projectChannelBend } = await import('../projectChannelBend');
 const { restoreMidiClipSplitState } = await import('../restoreMidiClipSplitState');
@@ -280,6 +284,221 @@ describe('prepareMidiClipSplit bend range', () => {
                 ]);
             }
         );
+
+        it.each([
+            { name: 'two ticks after the origin', addedBeat: 2 * SEQUENCER_TICK_BEATS },
+            { name: 'half a beat after the origin', addedBeat: 0.5 },
+            { name: 'just under a beat after the origin', addedBeat: 1 - SEQUENCER_TICK_BEATS },
+        ])('reads the state at the cut for a bend drawn $name', ({ addedBeat }) => {
+            const plan = splitAtTwo(recordedUnderTwelve, [carried]);
+            const added: Bend = { id: 'added', value: 4096, beat: addedBeat, channel: 0 };
+
+            expect(
+                rangesPlayed({ startBeat: 2, endBeat: 4 }, plan.nextRight.controlChanges.value, [
+                    ...plan.nextRight.pitchBends.value,
+                    added,
+                ])
+            ).toEqual([
+                { beat: 2, rangeSemitones: 12 },
+                { beat: 2 + addedBeat, rangeSemitones: 2 },
+            ]);
+        });
+
+        describe('a range set by hand on the right half’s origin', () => {
+            /** The right half of the cut, as the store holds it before the hand edit. */
+            function storeRightHalf(controlChanges: readonly Controller[] = recordedUnderTwelve) {
+                const plan = splitAtTwo(controlChanges, [carried]);
+                mocks.state.value = {
+                    probabilitySeed: 7,
+                    notesByClipId: {},
+                    ccByClipId: { right: [...plan.nextRight.controlChanges.value] },
+                    pitchBendByClipId: { right: [...plan.nextRight.pitchBends.value] },
+                };
+            }
+
+            function storedRows() {
+                return mocks.state.value?.ccByClipId.right ?? [];
+            }
+
+            /**
+             * What the CC lane's undo does for one click: removes the rows the add created, puts back the rows it
+             * displaced where they stood in `before`. Returns the rows it displaced.
+             */
+            function undoAdd(before: readonly Controller[]) {
+                const afterIds = new Set(storedRows().map(({ id }) => id));
+                const beforeIds = new Set(before.map(({ id }) => id));
+                for (const { id } of storedRows()) {
+                    if (!beforeIds.has(id)) {
+                        removeMidiCC('right', id);
+                    }
+                }
+                const displaced = before.filter(({ id }) => !afterIds.has(id));
+                restoreMidiCCPoints('right', displaced, before);
+                return displaced;
+            }
+
+            it('governs a bend drawn after it, in place of the state at the cut', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 6, 7, 0, 0);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
+                expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
+            });
+
+            it.each([
+                {
+                    name: 'a Null RPN, as a keyboard leaves it after a data entry',
+                    selected: (beat: number) => [
+                        controller(`null-msb-${beat}`, beat, 101, 127),
+                        controller(`null-lsb-${beat}`, beat, 100, 127),
+                    ],
+                },
+                {
+                    name: 'an NRPN',
+                    selected: (beat: number) => [
+                        controller(`nrpn-msb-${beat}`, beat, 99, 1),
+                        controller(`nrpn-lsb-${beat}`, beat, 98, 1),
+                    ],
+                },
+            ])(
+                'keeps the state at the cut for a Data Entry on the origin that the state machine ignores, with $name selected there',
+                ({ selected }) => {
+                    storeRightHalf([
+                        ...rangeAt('twelve', 0.1, 12),
+                        ...selected(0.1),
+                        ...rangeAt('two', 1.3, 2),
+                        ...selected(1.3),
+                    ]);
+                    const returns = storedRows().filter(({ id }) => id.includes('rpn-after-carried'));
+
+                    addMidiCC('right', 6, 7, 0, 0);
+
+                    expect(returns.length).toBeGreaterThan(0);
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                    expect(storedRows().filter(({ id }) => id.includes('rpn-after-carried'))).toEqual(returns);
+                }
+            );
+
+            it('leaves the state at the cut for a bend drawn after a hand edit on another channel', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 6, 7, 0, 1);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+            });
+
+            it.each([
+                { name: 'an RPN MSB select', controller: 101, value: 127 },
+                { name: 'an RPN LSB select', controller: 100, value: 0 },
+                { name: 'an NRPN MSB select', controller: 99, value: 1 },
+                { name: 'an NRPN LSB select', controller: 98, value: 1 },
+                { name: 'a Null RPN half', controller: 100, value: 127 },
+                { name: 'a Data Entry LSB', controller: 38, value: 0 },
+            ])(
+                'leaves the state at the cut for a bend drawn after $name on the origin, which sets no range',
+                ({ controller: cc, value }) => {
+                    storeRightHalf();
+
+                    addMidiCC('right', cc, value, 0, 0);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                }
+            );
+
+            it('reads the range before the hand edit again after undo, with a return pulled ahead of the clip’s own first row', () => {
+                const ownFirstRow = controller('data-entry-first', 2 + SEQUENCER_TICK_BEATS / 2, 6, 5);
+                storeRightHalf([...recordedUnderTwelve, ownFirstRow]);
+                const before = [...storedRows()];
+                const rangeBefore = createStoredBendRangeReader(before)(0, 1);
+
+                addMidiCC('right', 6, 7, 0, 0);
+                const displaced = undoAdd(before);
+
+                expect(rangeBefore).toBe(5);
+                expect(displaced.some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(rangeBefore);
+                expect(storedRows().map(({ id }) => id)).toEqual(before.map(({ id }) => id));
+            });
+
+            /** The source's selection after the second range: the NRPN or the Null RPN a keyboard leaves. */
+            const SELECTIONS_AT_THE_CUT = [
+                {
+                    name: 'an NRPN',
+                    selected: [controller('cut-nrpn-msb', 1.3, 99, 1), controller('cut-nrpn-lsb', 1.3, 98, 1)],
+                },
+                {
+                    name: 'the Null RPN',
+                    selected: [controller('cut-null-msb', 1.3, 101, 127), controller('cut-null-lsb', 1.3, 100, 127)],
+                },
+            ];
+
+            /** The depth the right half's bends play under, the clip's own Data Entry at content beat 1 included. */
+            function readRanges(beats: readonly number[]) {
+                const read = createStoredBendRangeReader(storedRows());
+                return beats.map((beat) => read(0, beat));
+            }
+
+            it.each(SELECTIONS_AT_THE_CUT)(
+                'keeps $name the cut left selected, so the clip’s own later Data Entry stays ignored under the hand-set range',
+                ({ selected }) => {
+                    const ownDataEntry = controller('own-data-entry', 3, 6, 40);
+                    storeRightHalf([
+                        ...rangeAt('twelve', 0.1, 12),
+                        ...rangeAt('two', 1.3, 2),
+                        ...selected,
+                        ownDataEntry,
+                    ]);
+                    expect(readRanges([0.5, 1.5])).toEqual([2, 2]);
+
+                    addMidiCC('right', 6, 7, 0, 0);
+
+                    expect(readRanges([0.5, 1.5])).toEqual([7, 7]);
+                    expect(storedRows().some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
+                }
+            );
+
+            it.each(SELECTIONS_AT_THE_CUT)(
+                'puts back $name and the range it replaced when the hand edit is undone',
+                ({ selected }) => {
+                    storeRightHalf([
+                        ...rangeAt('twelve', 0.1, 12),
+                        ...rangeAt('two', 1.3, 2),
+                        ...selected,
+                        controller('own-data-entry', 3, 6, 40),
+                    ]);
+                    const before = [...storedRows()];
+
+                    const edit = addMidiCC('right', 6, 7, 0, 0);
+                    const afterEdit = [...storedRows()];
+                    undoAdd(before);
+
+                    expect(storedRows()).toEqual(before);
+                    expect(readRanges([0.5, 1.5])).toEqual([2, 2]);
+
+                    addMidiCC('right', 6, 7, 0, 0, edit.id);
+
+                    expect(storedRows()).toEqual(afterEdit);
+                }
+            );
+
+            it('leaves the state at the cut for a bend drawn after a hand edit that sets no registered parameter', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 7, 100, 0, 0);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+            });
+
+            it('leaves the state at the cut for a bend drawn after a hand edit a beat past the origin', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 6, 7, 1, 0);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 0.5)).toBe(2);
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
+            });
+        });
 
         it('returns to the state at the cut ahead of a Data Entry of its own on the beat the return takes', () => {
             const controlChanges = [
