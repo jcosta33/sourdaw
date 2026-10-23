@@ -1,0 +1,50 @@
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_1c08b47ac3792f::t_da2b7122fad1eb 598-660,899,901-905,908
+  s_1c08b47ac3792f::t_05fc3f5b11cc29 481-504,912
+  s_1c08b47ac3792f::t_551e5cd15955dc 470
+  s_1c08b47ac3792f::t_a5df258af74199 898
+  s_1c08b47ac3792f::t_58c5a151e8d153 29-30,32,37,39-40,42-43,46,332,597,900,906-907,909-911,913-916,930-1210
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_1c08b47ac3792f::t_ec59290189a313 1,3,5-23,26-29,41-45
+  s_1c08b47ac3792f::t_72696212365b93 46-50
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_e21180adb327c3 46
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_1c08b47ac3792f::t_28e403f76644cd 543-546
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_c3e354444ec604 456,458
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_1c08b47ac3792f::t_93fcf5a100252a 364-372
+src/modules/Command/AGENTS.md
+  s_1c08b47ac3792f::t_1ff39e1edff206 9
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_1c08b47ac3792f::t_7668450345f496 6,19,35-38,267-365
+src/modules/Command/useCases/commitRevertedEntries.ts
+  s_1c08b47ac3792f::t_f5bfb50cbb0036 1-20
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_1c08b47ac3792f::t_af075a7a72a89a 1-84
+src/modules/Command/useCases/index.ts
+  s_1c08b47ac3792f::t_2feee314b41832 107
+src/modules/Command/useCases/revertActionGroup.ts
+  s_1c08b47ac3792f::t_3b8b18d5174106 4
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_1c08b47ac3792f::t_595fcbe054a42e 1-59
+src/modules/Command/useCases/undo.ts
+  s_1c08b47ac3792f::t_03a80f8fffd1be 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "128c091b09cc02a2710753d05ea242da073db3cf",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
