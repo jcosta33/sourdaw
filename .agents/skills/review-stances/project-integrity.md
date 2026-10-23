@@ -249,3 +249,19 @@ discard at their actual continuation routes. Replace the root between awaited ef
 a synchronous teardown callback: entry-only fencing cannot authorize the remaining effects.
 A missing captured root also retires cleanup; same-root genuine removal still completes, and
 refusal preserves its graph. The direct observer's replacement test alone misses these routes.
+
+## Lesson from the PR #3141 escape (Don't Save refused to discard, #5573)
+
+PR #3141 (`9db43f786`) added `discardProjectChanges` with a guard built on the project-load epoch:
+it captured `transitionAuthority.isCurrent()` and handed `transitionAuthority.isCurrent()` to
+`loadRecentProject` as `shouldProceed`. The discard's own load transaction claims the newest
+epoch in `prepare()`, before `shouldProceed` is asked, so after any earlier load, New, template or
+import had activated, the guard read the discard's own transaction as a newer transition and the
+discard aborted itself: edits stayed, an error toast showed and the window close was denied. Its
+specs mocked the authority, or ran the real path with epoch 0, where the guard is bypassed.
+
+A guard built on a transition epoch must be probed against the guarded action's own transaction
+moving that epoch. A real-path spec for any epoch-guarded action must run after one real
+`runProjectLoadTransaction()` prepare and activate, never at epoch 0, and must keep a case where a
+genuinely newer transition starts during the action and still wins. Mutation probe: make the
+action's own `shouldProceed` read the captured epoch again; the activated-epoch case must fail.

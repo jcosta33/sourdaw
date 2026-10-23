@@ -27,7 +27,7 @@ export async function discardProjectChanges(): Promise<boolean> {
     const transitionAuthority = captureProjectTransitionAuthority();
     const transitionWasCurrent = transitionAuthority.isCurrent();
     const projectRevision = captureProjectRevision();
-    const stillOwnsDiscard = (): boolean => {
+    const stillOwnsProject = (): boolean => {
         const current = projectStore.value;
         return (
             // replaceProjectData claims `loading` before it validates the
@@ -35,10 +35,15 @@ export async function discardProjectChanges(): Promise<boolean> {
             // transition, not to a user project switch, so it must retain the
             // captured created-at/revision authority through the commit gate.
             (current === project || (current?.createdAt === project.createdAt && current.loading === true)) &&
-            (!transitionWasCurrent || transitionAuthority.isCurrent()) &&
             captureProjectRevision() === projectRevision
         );
     };
+    // Checked only before this discard allocates its own load transaction. Once
+    // the transaction exists its prepare() claims the newest epoch, so the
+    // captured one reads as superseded by the discard itself; from then on the
+    // transaction's own supersession is what detects a newer transition.
+    const stillOwnsDiscard = (): boolean =>
+        stillOwnsProject() && (!transitionWasCurrent || transitionAuthority.isCurrent());
     let snapshot: string | null;
     try {
         snapshot = await readNamedProjectJson(snapshotKey);
@@ -59,7 +64,7 @@ export async function discardProjectChanges(): Promise<boolean> {
             (await loadRecentProject(snapshotKey, {
                 outgoingProject: 'discard',
                 requireDurable: true,
-                shouldProceed: stillOwnsDiscard,
+                shouldProceed: stillOwnsProject,
             })) === 'committed';
         if (restored && projectStore.value?.dirty === false) {
             return true;

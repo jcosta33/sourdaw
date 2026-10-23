@@ -24,6 +24,7 @@ import { readNamedProjectJson } from '../../../repositories/project/readNamedPro
 import { writeProjectJson } from '../../../repositories/project/writeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { discardProjectChanges } from '../discardProjectChanges';
+import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 import { saveProject } from '../saveProject/saveProject';
@@ -280,5 +281,91 @@ describe('discardProjectChanges real load path', () => {
         expect(writeProjectJson).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
         expect(projectStore.value?.projectId).not.toBe('original-project');
+    });
+
+    describe('with a project-load epoch already activated', () => {
+        /** Any earlier load, New, template or import leaves its transition active. */
+        async function activateAnEarlierTransition(): Promise<void> {
+            const earlier = runProjectLoadTransaction();
+            await expect(earlier.prepare()).resolves.toBe(true);
+            expect(earlier.activate()).toBe(true);
+        }
+
+        function letTheLoadCommit(): void {
+            vi.mocked(prepareCachedAudioBuffersFromIdb).mockResolvedValue({ cancel: vi.fn(), publish: () => 0 });
+            vi.mocked(resetCrdtProject).mockImplementation((_name, onAuthorityReplaced) => {
+                onAuthorityReplaced?.();
+                return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+            });
+        }
+
+        beforeEach(async () => {
+            letTheLoadCommit();
+            await activateAnEarlierTransition();
+        });
+
+        it('restores the saved copy and leaves the project clean', async () => {
+            vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
+
+            await expect(discardProjectChanges()).resolves.toBe(true);
+
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(projectStore.value?.name).toBe('Saved song');
+            expect(projectStore.value?.dirty).toBe(false);
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('replaces a never-saved project with a fresh clean one', async () => {
+            vi.mocked(readNamedProjectJson).mockResolvedValue(null);
+
+            await expect(discardProjectChanges()).resolves.toBe(true);
+
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(projectStore.value?.projectId).not.toBe('original-project');
+            expect(projectStore.value?.dirty).toBe(false);
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('yields to a transition that starts and activates while the snapshot is read', async () => {
+            let releaseRead: ((raw: string) => void) | undefined;
+            vi.mocked(readNamedProjectJson).mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        releaseRead = resolve;
+                    })
+            );
+
+            const discard = discardProjectChanges();
+            await vi.waitFor(() => expect(releaseRead).toBeDefined());
+            await activateAnEarlierTransition();
+            releaseRead?.(savedProject);
+
+            await expect(discard).resolves.toBe(false);
+            expect(projectStore.value?.projectId).toBe('original-project');
+            expect(projectStore.value?.dirty).toBe(true);
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+        });
+
+        it('yields to a transition that prepares after the discard load has begun', async () => {
+            let releasePreparation: (() => void) | undefined;
+            vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
+            vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        releasePreparation = () => resolve({ cancel: vi.fn(), publish: () => 0 });
+                    })
+            );
+
+            const discard = discardProjectChanges();
+            await vi.waitFor(() => expect(projectStore.value?.loading).toBe(true));
+            const newer = runProjectLoadTransaction();
+            await expect(newer.prepare()).resolves.toBe(true);
+            releasePreparation?.();
+
+            await expect(discard).resolves.toBe(false);
+            expect(projectStore.value?.name).not.toBe('Saved song');
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+            expect(newer.activate()).toBe(true);
+        });
     });
 });
