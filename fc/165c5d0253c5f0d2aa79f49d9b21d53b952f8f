@@ -1,0 +1,43 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_ba3dbf0318c36b 46
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_1c08b47ac3792f::t_263333e3b78cc2 43,84,90-92,98,100,102,669-734,1374-1548
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_c2bfc20b636a09 12-17,435-438,455-464,477-484
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_59e31a5c6f3e31::t_01725ff1f5d212 30,32-35,45
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_1c08b47ac3792f::t_a514a59fffca6a 60-62,256-263,266-268,298
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_1c08b47ac3792f::t_ff7015d7305b0b 370-381
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_59e31a5c6f3e31::t_9b7d5610f7866b 3-4,164-180
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_1c08b47ac3792f::t_25b399aad30455 1-2,50-53,69
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_1c08b47ac3792f::t_155575798006b0 1-2,21-26,43,68-69,71-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc165c5d0253c5f0d2aa79f49d9b21d53b952f8f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
