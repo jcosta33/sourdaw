@@ -2,6 +2,7 @@ import { recordedControllerTakeState } from '../../repositories/webMidi/recorded
 import { midiStore } from '../../stores/midiStore';
 
 import { interleaveRegisteredStateDeclarations } from './interleaveRegisteredStateDeclarations';
+import { readPendingOverdubRows } from './readPendingOverdubRows';
 
 /**
  * Give the take that just ended, where it recorded into a clip an earlier take already holds rows in,
@@ -26,9 +27,10 @@ export function declareOverdubRegisteredState(clipId: string): void {
     const seedRows = carriedOver ? (bendRangeSeeds.get(clipId) ?? []) : [];
     const storedCc = midiStore.value?.ccByClipId[clipId] ?? [];
     const storedPitchBend = midiStore.value?.pitchBendByClipId[clipId] ?? [];
+    const pending = readPendingOverdubRows(clipId, storedCc, storedPitchBend);
     const earlier = {
-        cc: [...storedCc, ...seedRows, ...buffer.cc.slice(0, takeStart.cc)],
-        pitchBend: [...storedPitchBend, ...buffer.pitchBend.slice(0, takeStart.pitchBend)],
+        cc: [...storedCc, ...pending.cc, ...seedRows, ...buffer.cc.slice(0, takeStart.cc)],
+        pitchBend: [...storedPitchBend, ...pending.pitchBend, ...buffer.pitchBend.slice(0, takeStart.pitchBend)],
     };
     const overdub = { cc: buffer.cc.slice(takeStart.cc), pitchBend: buffer.pitchBend.slice(takeStart.pitchBend) };
     buffer.cc = [

@@ -784,6 +784,7 @@ describe('recorded controller take', () => {
             await expect(endRecordedControllerTake()).resolves.toBeUndefined();
 
             expect(warn).toHaveBeenCalledWith('[MIDI] Recording the overdub controllers failed:', expect.any(Error));
+            expect(recordedControllerTakeState.pendingOverdubPasses.size).toBe(0);
             warn.mockRestore();
         });
 

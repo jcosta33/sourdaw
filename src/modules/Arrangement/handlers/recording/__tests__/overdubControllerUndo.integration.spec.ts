@@ -39,6 +39,7 @@ import {
     destroyWebMidi,
     getWebMidiInputHandlers,
     initWebMidi,
+    projectChannelBend,
     resetMidiState,
     setMidiInputTrack,
     setWebMidiRuntimeEventBus,
@@ -265,26 +266,76 @@ describe('overdubbed controller rows and undo', () => {
         expect(remaining.map((row) => row.id)).toEqual([firstRow!.id, 'peer-cc']);
     });
 
+    /** Hold the project's snapshot transaction, as a collaboration persist does, until `release` is called. */
+    async function holdSnapshotTransaction(): Promise<{ release: () => void; settled: Promise<unknown> }> {
+        let release!: () => void;
+        const released = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let markStarted!: () => void;
+        const started = new Promise<void>((resolve) => {
+            markStarted = resolve;
+        });
+        const settled = transactSnapshot(async () => {
+            markStarted();
+            await released;
+        });
+        await started;
+        return { release, settled };
+    }
+
+    describe('a pass that ends while an earlier pass into the same clip is still landing', () => {
+        it('reads the earlier pass bend at the range it was recorded under, as when the earlier pass lands first', async () => {
+            const clipId = await recordFirstTake();
+            const held = await holdSnapshotTransaction();
+
+            // Pass 1 bends at the default range of two semitones; its rows wait behind the snapshot.
+            beginOverdub(6);
+            sendLive(7, 0xe0, 0, 96);
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+
+            // The keyboard raises its bend range to twelve, then pass 2 bends earlier in the clip.
+            sendLive(7.5, 0xb0, 101, 0);
+            sendLive(7.5, 0xb0, 100, 0);
+            sendLive(7.5, 0xb0, 6, 12);
+            beginOverdub(5.5);
+            sendLive(6, 0xe0, 0, 96);
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+
+            held.release();
+            await held.settled;
+            await vi.waitFor(() => {
+                expect(midiStore.value?.pitchBendByClipId[clipId]).toHaveLength(3);
+            });
+            flushAutomergeStorageWrites();
+
+            const clip = trackStore.value!.tracks.flatMap((track) => track.clips).find(({ id }) => id === clipId)!;
+            const ranges = projectChannelBend({
+                clips: [
+                    {
+                        clip,
+                        controlChanges: midiStore.value!.ccByClipId[clipId] ?? [],
+                        pitchBends: midiStore.value!.pitchBendByClipId[clipId] ?? [],
+                    },
+                ],
+                frameAtBeat: (beat) => Math.round(beat * 1000),
+            }).map(({ beat, rangeSemitones }) => [beat, rangeSemitones]);
+
+            // Each bend plays under the range live when it was recorded: the first take's and pass 1's
+            // under two semitones, pass 2's under twelve.
+            expect(ranges).toEqual([
+                [5, 2],
+                [6, 12],
+                [7, 2],
+            ]);
+        });
+    });
+
     describe('a take into a clip whose commit has not run', () => {
         it('commits with its clip and adds no undo step of its own', async () => {
             const clipId = await startLiveTake();
             sendLive(4.5, 0xb0, 1, 55);
-            const held = await (async () => {
-                let release!: () => void;
-                const released = new Promise<void>((resolve) => {
-                    release = resolve;
-                });
-                let markStarted!: () => void;
-                const started = new Promise<void>((resolve) => {
-                    markStarted = resolve;
-                });
-                const settled = transactSnapshot(async () => {
-                    markStarted();
-                    await released;
-                });
-                await started;
-                return { release, settled };
-            })();
+            const held = await holdSnapshotTransaction();
             transportStore.set({ ...transportStore.value!, isRecording: false });
             const stoppingFirst = stopRecording(8);
 
