@@ -9,10 +9,16 @@
 //! [`daw_engine::plugin_slot::NativePlugin::runs_while_detached`].
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
-use crate::host::native_bridge::{CrumbsPluginSlot, PendingRecordingCommit, RecordBufferPair};
+use crate::events::{EventSink, EventSinkExt};
+use crate::host::native_bridge::{
+    CrumbsCommandSender, CrumbsPluginSlot, CrumbsSlotLifetime, NativeCrumbsCommand,
+    NativePreparedTake, NativeTakeReadout, NativeTakeSession, PendingRecordingCommit,
+    RecordBufferPair, TAKE_CANCELLED, TAKE_COMPLETED, TAKE_FAILED, TAKE_FINISHING, TAKE_RECORDING,
+    TAKE_WAITING,
+};
 use crate::state::AppState;
 use daw_dsp::crumbs::analysis::bpm::estimate_bpm;
 use daw_dsp::crumbs::analysis::loop_points::{detect_loop_points, LoopPointConfig};
@@ -26,7 +32,7 @@ use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, SampleId};
 use daw_engine::midi::note_store::MidiNoteStore;
 use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
-use daw_engine::{EngineHandle, GraphBatchError};
+use daw_engine::{CaptureCompletionService, CaptureServiceProgress, EngineHandle, GraphBatchError};
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -42,8 +48,8 @@ use super::graph::GraphRegistry;
 /// rather than refused: it parks the panel's writes command-side and takes
 /// its rings on the engine [`attach_dormant_crumbs`] finds.
 pub enum CrumbsEngineSlot {
-    /// Registered detached on the engine, and on its capture bus, under this
-    /// plugin id, and holding the command side of the rings that reach it.
+    /// Registered detached under this plugin id. Only accepted takes acquire
+    /// the input bus; this payload owns the slot's control and handback rings.
     ///
     /// Detached is where the instance waits until a strip chain borrows it:
     /// `commands::graph` splices a `builtin-crumbs` device onto this very
@@ -78,26 +84,32 @@ pub struct DormantCrumbsWrites {
     /// `Hash`, so the table is a vector searched in place; it is bounded by
     /// the parameter count.
     params: Vec<(CrumbsParam, f32)>,
-    mode: Option<CrumbsMode>,
+    recording: CrumbsRecordingState,
     active_sample: Option<SampleId>,
 }
 
 /// The command-side ends of one instance's rings.
 pub struct CrumbsInstanceEnds {
-    command_tx: Producer<CrumbsCommand>,
+    command_tx: CrumbsCommandSender,
     /// Receives committed takes from the audio thread (O(1) engine handoff,
     /// ledger #568); drained by drain_pending_recording_commits off-thread.
     commit_rx: rtrb::Consumer<PendingRecordingCommit>,
     /// Returns emptied record-buffer pairs to the audio thread for reuse.
     recycle_tx: Producer<RecordBufferPair>,
+    retired_take_rx: rtrb::Consumer<Arc<NativeTakeSession>>,
+    lifetime: Arc<CrumbsSlotLifetime>,
+    recording: CrumbsRecordingState,
+    pending_recycle: Option<RecordBufferPair>,
 }
 
 /// The slot-side ends of the same rings, handed to the audio thread with the
 /// slot they belong to.
 pub struct CrumbsSlotEnds {
-    command_rx: rtrb::Consumer<CrumbsCommand>,
+    command_rx: rtrb::Consumer<NativeCrumbsCommand>,
     commit_tx: rtrb::Producer<PendingRecordingCommit>,
     recycle_rx: rtrb::Consumer<RecordBufferPair>,
+    retired_take_tx: Producer<Arc<NativeTakeSession>>,
+    lifetime: Arc<CrumbsSlotLifetime>,
 }
 
 /// One instance's rings: the command feed the slot drains, and the
@@ -108,16 +120,24 @@ fn new_crumbs_rings() -> (CrumbsInstanceEnds, CrumbsSlotEnds) {
     let (command_tx, command_rx) = rtrb::RingBuffer::new(128);
     let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
     let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
+    let (retired_take_tx, retired_take_rx) = rtrb::RingBuffer::new(2);
+    let lifetime = Arc::new(CrumbsSlotLifetime::default());
     (
         CrumbsInstanceEnds {
-            command_tx,
+            command_tx: CrumbsCommandSender(command_tx),
             commit_rx,
             recycle_tx,
+            retired_take_rx,
+            lifetime: Arc::clone(&lifetime),
+            recording: CrumbsRecordingState::default(),
+            pending_recycle: None,
         },
         CrumbsSlotEnds {
             command_rx,
             commit_tx,
             recycle_rx,
+            retired_take_tx,
+            lifetime,
         },
     )
 }
@@ -135,20 +155,57 @@ pub struct CrumbsInstanceData {
     pub pending_mirror: Vec<(SampleId, Arc<SampleData>)>,
 }
 
+struct CrumbsRecordingState {
+    incarnation: u64,
+    revisions: Arc<AtomicU64>,
+    mode: Option<CrumbsMode>,
+    take: Option<Arc<NativeTakeSession>>,
+}
+impl Default for CrumbsRecordingState {
+    fn default() -> Self {
+        Self {
+            incarnation: next_incarnation(),
+            revisions: Arc::new(AtomicU64::new(0)),
+            mode: None,
+            take: None,
+        }
+    }
+}
+
 impl CrumbsInstanceData {
+    fn recording(&self) -> &CrumbsRecordingState {
+        match &self.engine_slot {
+            CrumbsEngineSlot::Attached { ends, .. } => &ends.recording,
+            CrumbsEngineSlot::Dormant(writes) => &writes.recording,
+        }
+    }
+    fn recording_mut(&mut self) -> &mut CrumbsRecordingState {
+        match &mut self.engine_slot {
+            CrumbsEngineSlot::Attached { ends, .. } => &mut ends.recording,
+            CrumbsEngineSlot::Dormant(writes) => &mut writes.recording,
+        }
+    }
     /// The one route from a command handler to the engine.
     ///
     /// Attached, that is the command ring. Dormant, it is the parked-write
     /// table: the engine reads this state on the slot's first pass, so a
     /// write made before play lands exactly as one made after it.
     fn send(&mut self, command: CrumbsCommand) -> Result<(), String> {
+        let mode = match &command {
+            CrumbsCommand::SetMode(mode) => Some(*mode),
+            _ => None,
+        };
         match &mut self.engine_slot {
             CrumbsEngineSlot::Attached { ends, .. } => ends
                 .command_tx
                 .push(command)
-                .map_err(|_| "Command queue full".to_string()),
-            CrumbsEngineSlot::Dormant(writes) => writes.record(command),
+                .map_err(|_| "Command queue full".to_string())?,
+            CrumbsEngineSlot::Dormant(writes) => writes.record(command)?,
         }
+        if let Some(mode) = mode {
+            self.recording_mut().mode = Some(mode);
+        }
+        Ok(())
     }
 }
 
@@ -170,7 +227,7 @@ impl DormantCrumbsWrites {
                 Ok(())
             }
             CrumbsCommand::SetMode(mode) => {
-                self.mode = Some(mode);
+                self.recording.mode = Some(mode);
                 Ok(())
             }
             CrumbsCommand::SetActiveSample(id) => {
@@ -197,6 +254,14 @@ impl DormantCrumbsWrites {
 /// A dormant instance has no slot handing takes back and no ring to mirror
 /// through, so there is nothing here to do until it attaches.
 pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
+    if instance
+        .recording()
+        .take
+        .as_ref()
+        .is_some_and(|take| !take.complete.load(Ordering::Acquire))
+    {
+        return;
+    }
     let CrumbsInstanceData {
         samples,
         engine_slot,
@@ -402,45 +467,11 @@ fn ensure_crumbs_capture_headroom(
     Ok(())
 }
 
-/// Build the audio-thread slot from ring ends the command side already holds
-/// and publish it detached, returning the engine plugin id both commands name.
-///
-/// Detached, never `AddPlugin`: a slot homed on the master insert chain renders
-/// the whole mix and sounds outside the track's own fader, pan, mute, inserts
-/// and sends. The instance is published where a chain can borrow it instead,
-/// and `commands::graph` splices the `builtin-crumbs` device carrying this
-/// instance's id onto this plugin id — exactly as it splices a hosted plugin
-/// the engine already owns.
-///
-/// An instance no chain holds is carried by no chain's output, but it is not
-/// left unrun — and this is where it parts company with a hosted plugin taken
-/// off a strip. [`CrumbsPluginSlot::process_block_internal`] is the only drain
-/// of the command ring whose sending end this registration hands back, and the
-/// only reader of a finished take, so the slot answers
-/// [`daw_engine::plugin_slot::NativePlugin::runs_while_detached`] and the
-/// scheduler renders it every callback into scratch it discards. That is what
-/// arms the recorder and sounds the pads of a panel opened before the first
-/// play, or of one whose strip never leaves the Web Audio path, instead of
-/// banking every note, parameter and sample load in the ring until it is full.
-///
-/// The slot and its record feed cross as one fenced batch. Admission checks
-/// the effect table and the capture ledger for the whole batch and provisions
-/// the ring to fit before the first push, so a refusal leaves nothing queued
-/// and nothing to unwind. Registering the two separately could strand a slot
-/// on the graph — audible, unrecordable, and owned by no instance — whenever
-/// the second command was refused.
-///
-/// A refused batch is dropped whole by the engine, `slot_ends` with it, so
-/// the ends are allocated for this call and adopted command-side only once it
-/// returns.
-///
-/// Numbers the fence it just published on `registry` before returning the id:
-/// the engine numbers every fence it drains, whichever command sent it, so a
-/// crumbs registration left uncounted here would leave every later graph
-/// batch's `PendingStamp::admitted_batch` one below the horizon it is
-/// actually held against. The count happens only after `send_graph_batch`
-/// returns `Ok` — the same rule `map_batch` follows on its own committed
-/// clone — because a batch the ring refused published nothing to number.
+/// Publish one persistent detached sampler, without acquiring input.
+/// A strip borrows this slot; detached callbacks still drain its controls.
+/// Each accepted take separately registers capture after native preparation.
+/// The accepted fenced batch is numbered on the graph registry, as every
+/// graph batch must be, so later apply receipts observe the same horizon.
 fn register_crumbs_slot(
     registry: &mut GraphRegistry,
     engine_handle: &mut EngineHandle,
@@ -458,14 +489,18 @@ fn register_crumbs_slot(
         command_rx,
         commit_tx,
         recycle_rx,
+        retired_take_tx,
+        lifetime,
     } = slot_ends;
-    let slot = CrumbsPluginSlot {
+    let slot = CrumbsPluginSlot::new(
         engine,
         command_rx,
         commit_tx,
         recycle_rx,
-        metering: Arc::clone(metering),
-    };
+        retired_take_tx,
+        lifetime,
+        Arc::clone(metering),
+    );
 
     engine_handle
         .send_graph_batch(vec![
@@ -475,13 +510,6 @@ fn register_crumbs_slot(
             // one. `AddHostedPlugin` carries that store unconditionally, which
             // is the same registration every engine-owned device takes.
             GraphCommand::AddHostedPlugin(id, Box::new(slot), MidiNoteStore::new()),
-            // Independent of where the instance sits in the graph: the engine
-            // delivers capture by effect id through its own consumer ledger
-            // (`AudioScheduler::deliver_capture`,
-            // `crates/daw-engine/src/scheduler.rs:7061-7072`), which looks the
-            // id up in the effect index and never reads its chain placement.
-            // So a detached slot records exactly as a master-homed one did.
-            GraphCommand::RegisterCaptureConsumer(id),
         ])
         .map_err(|error| match error {
             GraphBatchError::Refused(reason) => reason,
@@ -513,7 +541,7 @@ fn replay_parked_writes(instance: &mut CrumbsInstanceData, parked: DormantCrumbs
     for (param, value) in parked.params {
         let _ = instance.send(CrumbsCommand::SetParam { param, value });
     }
-    if let Some(mode) = parked.mode {
+    if let Some(mode) = instance.recording().mode {
         let _ = instance.send(CrumbsCommand::SetMode(mode));
     }
 
@@ -596,7 +624,7 @@ pub fn attach_dormant_crumbs(
 
         // The engine drops a refused batch whole, ring ends included, so the
         // ends are allocated here and adopted only once the batch is admitted.
-        let (ends, slot_ends) = new_crumbs_rings();
+        let (mut ends, slot_ends) = new_crumbs_rings();
         let plugin_id =
             match register_crumbs_slot(registry, engine_handle, &instance.metering, slot_ends) {
                 Ok(plugin_id) => plugin_id,
@@ -608,7 +636,8 @@ pub fn attach_dormant_crumbs(
                 }
             };
 
-        let parked = std::mem::take(parked);
+        let mut parked = std::mem::take(parked);
+        std::mem::swap(&mut ends.recording, &mut parked.recording);
         instance.engine_slot = CrumbsEngineSlot::Attached { plugin_id, ends };
         replay_parked_writes(instance, parked);
         report.attached.push(instance_id.clone());
@@ -699,18 +728,137 @@ pub fn attached_crumbs_instances(state: &CrumbsState) -> HashMap<String, usize> 
 /// Takes the instances lock beneath the registry guard the retire's drain
 /// holds, which is the registry -> instances order `apply_graph_commands` and
 /// [`create_crumbs`] already establish.
-pub(crate) fn detach_from_retired_engine(state: &CrumbsState) {
-    let mut instances = crate::state::locked_or_poisoned(&state.instances);
+/// Guarded phase: move ownership only. Materialization follows outside the registry.
+pub(crate) struct DrainedCrumbsWork {
+    instance_id: String,
+    incarnation: u64,
+    ends: CrumbsInstanceEnds,
+    take: Option<Arc<NativeTakeSession>>,
+    _mirrors: Vec<(SampleId, Arc<SampleData>)>,
+    _recycle: Option<RecordBufferPair>,
+}
 
-    for instance in instances.values_mut() {
-        if !matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }) {
+pub(crate) fn detach_from_retired_engine(state: &CrumbsState) -> Vec<DrainedCrumbsWork> {
+    let mut instances = crate::state::locked_or_poisoned(&state.instances);
+    let mut work = Vec::new();
+    for (instance_id, instance) in instances.iter_mut() {
+        if matches!(instance.engine_slot, CrumbsEngineSlot::Dormant(_)) {
             continue;
         }
-        drain_pending_recording_commits(instance);
-        instance.pending_mirror.clear();
-        instance.engine_slot = CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default());
+        let old = std::mem::replace(
+            &mut instance.engine_slot,
+            CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default()),
+        );
+        if let CrumbsEngineSlot::Attached { mut ends, .. } = old {
+            let mut parked = DormantCrumbsWrites::default();
+            std::mem::swap(&mut ends.recording, &mut parked.recording);
+            if let Some(take) = &parked.recording.take {
+                take.invalidate();
+                take.complete.store(true, Ordering::Release);
+            }
+            work.push(DrainedCrumbsWork {
+                instance_id: instance_id.clone(),
+                incarnation: parked.recording.incarnation,
+                take: parked.recording.take.clone(),
+                _mirrors: std::mem::take(&mut instance.pending_mirror),
+                _recycle: ends.pending_recycle.take(),
+                ends,
+            });
+            instance.engine_slot = CrumbsEngineSlot::Dormant(parked);
+        }
     }
+    work
 }
+
+pub(crate) fn finish_detached_crumbs(
+    mut work: Vec<DrainedCrumbsWork>,
+    state: &CrumbsState,
+) -> Vec<DrainedCrumbsWork> {
+    for work in &mut work {
+        let claimed = work.take.as_ref().and_then(|take| {
+            take.original_commit
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        });
+        let mut commits = Vec::new();
+        if let Some(commit) = claimed {
+            commits.push(commit);
+        }
+        while let Ok(commit) = work.ends.commit_rx.pop() {
+            commits.push(Arc::new(commit));
+        }
+        for commit in commits {
+            let id = {
+                let mut instances = crate::state::locked_or_poisoned(&state.instances);
+                let Some(instance) = instances
+                    .get_mut(&work.instance_id)
+                    .filter(|i| i.recording().incarnation == work.incarnation)
+                else {
+                    continue;
+                };
+                if work
+                    .take
+                    .as_ref()
+                    .is_some_and(|take| take.sample_safe.load(Ordering::Acquire))
+                {
+                    continue;
+                }
+                let reserved = work
+                    .take
+                    .as_ref()
+                    .map_or(0, |take| take.sample_id.load(Ordering::Acquire));
+                if reserved != 0 {
+                    reserved
+                } else {
+                    let id = instance.next_sample_id;
+                    instance.next_sample_id += 1;
+                    if let Some(take) = &work.take {
+                        take.sample_id.store(id, Ordering::Release);
+                    }
+                    id
+                }
+            };
+            #[cfg(test)]
+            BEFORE_RETIRED_PCM.with(|observer| {
+                if let Some(observer) = observer.borrow().as_ref() {
+                    observer();
+                }
+            });
+            let mut sample = Some(Arc::new(SampleData::from_stereo(
+                commit.left.clone(),
+                commit.right.clone(),
+                commit.sample_rate,
+            )));
+            {
+                let mut instances = crate::state::locked_or_poisoned(&state.instances);
+                if let Some(instance) = instances
+                    .get_mut(&work.instance_id)
+                    .filter(|i| i.recording().incarnation == work.incarnation)
+                {
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        instance.samples.entry(id)
+                    {
+                        if let Some(sample) = sample.take() {
+                            entry.insert(sample);
+                        }
+                    }
+                    if let Some(take) = &work.take {
+                        take.sample_safe.store(true, Ordering::Release);
+                    }
+                }
+            }
+            drop(sample);
+        }
+        if let Some(take) = &work.take {
+            emit_take(take);
+        }
+    }
+    work
+}
+
+#[cfg(test)]
+thread_local! { static BEFORE_RETIRED_PCM: std::cell::RefCell<Option<Box<dyn Fn()>>> = const { std::cell::RefCell::new(None) }; }
 
 /// Whether `instance_id` holds a slot on the live engine. For tests outside
 /// this module that drive an attach or a detach.
@@ -890,6 +1038,9 @@ pub async fn destroy_crumbs(
 
     // Once queued, scheduler retirement is inevitable. No fallible work may
     // follow before command-side ownership is erased.
+    if let Some(take) = &instance.recording().take {
+        take.invalidate();
+    }
     instances.remove(&instance_id);
     Ok(())
 }
@@ -1314,47 +1465,530 @@ pub async fn detect_smart_loop_points(
     }))
 }
 
-/// Arm the recorder for threshold-triggered capture.
+static NEXT_INCARNATION: AtomicU64 = AtomicU64::new(1);
+static NEXT_TAKE: AtomicU64 = AtomicU64::new(1);
+fn next_incarnation() -> u64 {
+    NEXT_INCARNATION.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct ArmRecordingResult {
+    pub take_id: String,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct CrumbsFirstInput {
+    pub position_frames: String,
+    pub frames: usize,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct CrumbsRecordingSnapshot {
+    pub instance_id: String,
+    pub instance_incarnation: String,
+    pub take_id: String,
+    pub revision: String,
+    pub phase: &'static str,
+    pub first_input: Option<CrumbsFirstInput>,
+    pub failure: Option<&'static str>,
+}
+fn phase_name(phase: u8) -> &'static str {
+    match phase {
+        TAKE_WAITING => "waiting",
+        TAKE_RECORDING => "recording",
+        TAKE_FINISHING => "finishing",
+        TAKE_COMPLETED => "completed",
+        TAKE_CANCELLED => "cancelled",
+        TAKE_FAILED => "failed",
+        _ => "preparing",
+    }
+}
+fn take_snapshot(take: &NativeTakeSession) -> CrumbsRecordingSnapshot {
+    snapshot_from_readout(take, take.readout())
+}
+fn snapshot_from_readout(
+    take: &NativeTakeSession,
+    state: NativeTakeReadout,
+) -> CrumbsRecordingSnapshot {
+    CrumbsRecordingSnapshot {
+        instance_id: take.instance_id.clone(),
+        instance_incarnation: take.incarnation.to_string(),
+        take_id: take.take_id.to_string(),
+        revision: state.revision.to_string(),
+        phase: phase_name(state.phase),
+        first_input: state.first_input.map(|first| CrumbsFirstInput {
+            position_frames: first.position_frames.to_string(),
+            frames: first.frames,
+        }),
+        failure: match state.failure {
+            1 => Some("The native recorder refused to arm"),
+            2 => Some("Native input is unavailable"),
+            3 => Some("Native take admission failed"),
+            _ => None,
+        },
+    }
+}
+fn emit_take(take: &NativeTakeSession) {
+    if let Some(events) = take.events.upgrade() {
+        events.emit("crumbs-recording-state", take_snapshot(take));
+    }
+}
+
+pub async fn get_crumbs_recording_state(
+    instance_id: String,
+    state: &CrumbsState,
+) -> Result<CrumbsRecordingSnapshot, String> {
+    let (take, incarnation, revision) = {
+        let instances = state
+            .instances
+            .lock()
+            .map_err(|e| format!("Failed to lock crumbs state: {e}"))?;
+        let instance = instances
+            .get(&instance_id)
+            .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
+        (
+            instance.recording().take.clone(),
+            instance.recording().incarnation,
+            instance.recording().revisions.load(Ordering::Acquire),
+        )
+    };
+    Ok(match take {
+        Some(take) => take_snapshot(&take),
+        None => CrumbsRecordingSnapshot {
+            instance_id,
+            instance_incarnation: incarnation.to_string(),
+            take_id: "0".into(),
+            revision: revision.to_string(),
+            phase: "idle",
+            first_input: None,
+            failure: None,
+        },
+    })
+}
+
+/// Accept intent only. The slot consumes its first served block before readiness.
 pub async fn arm_recording(
     instance_id: String,
     threshold: f32,
     target_pad: u8,
     max_duration_secs: f32,
     state: &CrumbsState,
-) -> Result<(), String> {
+    app_state: &AppState,
+    events: Arc<dyn EventSink>,
+) -> Result<ArmRecordingResult, String> {
+    if !threshold.is_finite()
+        || !(0.0..=1.0).contains(&threshold)
+        || target_pad >= 16
+        || !max_duration_secs.is_finite()
+        || max_duration_secs <= 0.0
+        || max_duration_secs > 60.0
+    {
+        return Err("Invalid native recording parameters".into());
+    }
     let mut instances = state
         .instances
         .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+        .map_err(|e| format!("Failed to lock crumbs state: {e}"))?;
     let instance = instances
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
-
-    // Complete any in-flight commit first: this clones the take off-RT,
-    // mirrors it into the engine, and recycles the record buffers so this
-    // arm finds capacity.
-    drain_pending_recording_commits(instance);
-    instance.send(CrumbsCommand::ArmRecording {
-        threshold,
-        target_pad,
-        max_duration_secs,
-    })?;
-    Ok(())
+    if instance.recording().mode.unwrap_or_default() != CrumbsMode::Record {
+        return Err("Crumbs must be in Record mode".into());
+    }
+    if instance
+        .recording()
+        .take
+        .as_ref()
+        .is_some_and(|take| !take.complete.load(Ordering::Acquire))
+    {
+        return Err("The previous native take is still finishing".into());
+    }
+    let incarnation = instance.recording().incarnation;
+    let revisions = Arc::clone(&instance.recording().revisions);
+    let CrumbsEngineSlot::Attached { plugin_id, ends } = &mut instance.engine_slot else {
+        return Err("Crumbs is not attached to a native engine".into());
+    };
+    let plugin_id = *plugin_id;
+    let take = Arc::new(NativeTakeSession::new(
+        instance_id.clone(),
+        incarnation,
+        NEXT_TAKE.fetch_add(1, Ordering::Relaxed),
+        revisions,
+        Arc::clone(&ends.lifetime),
+        Arc::downgrade(&events),
+    ));
+    let mut engine_guard = app_state
+        .engine
+        .lock()
+        .map_err(|e| format!("Failed to lock engine: {e}"))?;
+    let engine = engine_guard
+        .as_mut()
+        .ok_or_else(|| "Native engine is not running".to_string())?;
+    engine.adopt_capture_completion_service(Box::new(NativeTakeCompletion {
+        instances: Arc::downgrade(&state.instances),
+        engine: Arc::downgrade(&app_state.engine),
+        plugin_id,
+        take: Arc::clone(&take),
+        retired_reference: None,
+        prepared: None,
+        recycle: None,
+        last_emitted: 0,
+    }))?;
+    ends.recording.take = Some(Arc::clone(&take));
+    let preparation = match engine.prepare_capture_consumer_registration(plugin_id) {
+        Ok(preparation) => preparation,
+        Err(error) => {
+            take.valid.store(false, Ordering::Release);
+            take.failure.store(3, Ordering::Release);
+            return Err(error);
+        }
+    };
+    let _ = take.period.set(preparation.period().clone());
+    if ends
+        .command_tx
+        .push_native(NativeCrumbsCommand::PrepareTake(NativePreparedTake {
+            session: Arc::clone(&take),
+            threshold,
+            target_pad,
+            max_duration_secs,
+        }))
+        .is_err()
+    {
+        take.valid.store(false, Ordering::Release);
+        take.failure.store(3, Ordering::Release);
+        return Err("Command queue full".into());
+    }
+    take.slot_enqueued.store(true, Ordering::Release);
+    if let Err(error) = preparation.commit() {
+        take.valid.store(false, Ordering::Release);
+        take.cancel_requested.store(true, Ordering::Release);
+        take.failure.store(3, Ordering::Release);
+        return Err(error);
+    }
+    take.admitted.store(true, Ordering::Release);
+    Ok(ArmRecordingResult {
+        take_id: take.take_id.to_string(),
+    })
 }
 
-/// Stop recording and commit the buffer.
-pub async fn stop_recording(instance_id: String, state: &CrumbsState) -> Result<(), String> {
+/// Stop enqueue is token-bound. Refusal changes neither actual DSP nor its holder.
+pub async fn stop_recording(
+    instance_id: String,
+    take_id: String,
+    state: &CrumbsState,
+) -> Result<(), String> {
+    let take_id = take_id
+        .parse::<u64>()
+        .map_err(|_| "Invalid native take id".to_string())?;
     let mut instances = state
         .instances
         .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+        .map_err(|e| format!("Failed to lock crumbs state: {e}"))?;
     let instance = instances
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
+    let take = instance
+        .recording()
+        .take
+        .as_ref()
+        .filter(|take| take.take_id == take_id)
+        .ok_or_else(|| "Stale native take id".to_string())?;
+    if take.complete.load(Ordering::Acquire) || take.cancel_revision.load(Ordering::Acquire) != 0 {
+        return Ok(());
+    }
+    let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+        return Err("Crumbs is not attached to a native engine".into());
+    };
+    ends.command_tx
+        .push_native(NativeCrumbsCommand::StopTake { take_id })
+        .map_err(|_| "Command queue full".to_string())
+}
 
-    drain_pending_recording_commits(instance);
-    instance.send(CrumbsCommand::StopRecording)?;
-    Ok(())
+struct NativeTakeCompletion {
+    instances: Weak<Mutex<HashMap<String, CrumbsInstanceData>>>,
+    engine: Weak<Mutex<Option<EngineHandle>>>,
+    plugin_id: usize,
+    take: Arc<NativeTakeSession>,
+    retired_reference: Option<Arc<NativeTakeSession>>,
+    prepared: Option<Arc<SampleData>>,
+    recycle: Option<RecordBufferPair>,
+    last_emitted: u64,
+}
+
+fn retry_one_mirror(instance: &mut CrumbsInstanceData) {
+    let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+        return;
+    };
+    if let Some((id, sample)) = instance.pending_mirror.first() {
+        if ends
+            .command_tx
+            .push(CrumbsCommand::AddSample {
+                id: *id,
+                data: Arc::clone(sample),
+            })
+            .is_ok()
+            && ends
+                .command_tx
+                .push(CrumbsCommand::SetActiveSample(*id))
+                .is_ok()
+        {
+            instance.pending_mirror.remove(0);
+        }
+    }
+    if let Some(pair) = ends.pending_recycle.take() {
+        if let Err(rtrb::PushError::Full(pair)) = ends.recycle_tx.push(pair) {
+            ends.pending_recycle = Some(pair);
+        }
+    }
+}
+
+impl CaptureCompletionService for NativeTakeCompletion {
+    fn service(&mut self) -> CaptureServiceProgress {
+        let Some(instances) = self.instances.upgrade() else {
+            return self.abandoned();
+        };
+        if self.take.cancel_revision.load(Ordering::Acquire) != 0 {
+            return CaptureServiceProgress::Complete;
+        }
+        if let Some(period) = self.take.period.get() {
+            if period.snapshot().failure.is_some() {
+                self.take.failure.store(2, Ordering::Release);
+                self.take.cancel_requested.store(true, Ordering::Release);
+            }
+        }
+        let mut stale_retirement = None;
+        let original = {
+            let Ok(mut instances) = instances.try_lock() else {
+                return CaptureServiceProgress::Pending;
+            };
+            let Some(instance) = instances
+                .get_mut(&self.take.instance_id)
+                .filter(|instance| {
+                    instance.recording().incarnation == self.take.incarnation
+                        && instance
+                            .recording()
+                            .take
+                            .as_ref()
+                            .is_some_and(|take| Arc::ptr_eq(take, &self.take))
+                })
+            else {
+                return self.abandoned();
+            };
+            let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+                return CaptureServiceProgress::Complete;
+            };
+            if self.retired_reference.is_none() {
+                if let Ok(retired) = ends.retired_take_rx.pop() {
+                    if Arc::ptr_eq(&retired, &self.take) {
+                        self.retired_reference = Some(retired);
+                    } else {
+                        stale_retirement = Some(retired);
+                    }
+                }
+            }
+            let Ok(mut original) = self.take.original_commit.try_lock() else {
+                return CaptureServiceProgress::Pending;
+            };
+            if original.is_none() && !self.take.sample_safe.load(Ordering::Acquire) {
+                if let Ok(commit) = ends.commit_rx.pop() {
+                    let id = instance.next_sample_id;
+                    instance.next_sample_id += 1;
+                    self.take.sample_id.store(id, Ordering::Release);
+                    *original = Some(Arc::new(commit));
+                }
+            }
+            original.clone()
+        };
+        drop(stale_retirement);
+        // Materialize outside every shared lock. Original ownership survives retirement.
+        if self.prepared.is_none() && !self.take.sample_safe.load(Ordering::Acquire) {
+            if let Some(commit) = &original {
+                #[cfg(test)]
+                {
+                    let observer = self.take.before_materialize.lock().unwrap().take();
+                    if let Some(observer) = observer {
+                        observer();
+                    }
+                }
+                self.prepared = Some(Arc::new(SampleData::from_stereo(
+                    commit.left.clone(),
+                    commit.right.clone(),
+                    commit.sample_rate,
+                )));
+            }
+        }
+        drop(original);
+        {
+            let Ok(mut instances) = instances.try_lock() else {
+                return CaptureServiceProgress::Pending;
+            };
+            let Some(instance) = instances
+                .get_mut(&self.take.instance_id)
+                .filter(|instance| {
+                    instance.recording().incarnation == self.take.incarnation
+                        && instance
+                            .recording()
+                            .take
+                            .as_ref()
+                            .is_some_and(|take| Arc::ptr_eq(take, &self.take))
+                })
+            else {
+                return self.abandoned();
+            };
+            if self.take.cancel_revision.load(Ordering::Acquire) != 0 {
+                return CaptureServiceProgress::Complete;
+            }
+            if let Some(sample) = self.prepared.take() {
+                let id = self.take.sample_id.load(Ordering::Acquire);
+                instance.samples.insert(id, Arc::clone(&sample));
+                instance.pending_mirror.push((id, sample));
+                self.take.sample_safe.store(true, Ordering::Release);
+            }
+            retry_one_mirror(instance);
+        }
+        // Take original ownership off RT. No PCM is freed if another control reader holds it.
+        if self.recycle.is_none() && self.take.sample_safe.load(Ordering::Acquire) {
+            let original = {
+                let Ok(mut stored) = self.take.original_commit.try_lock() else {
+                    return CaptureServiceProgress::Pending;
+                };
+                stored.take()
+            };
+            if let Some(original) = original {
+                match Arc::try_unwrap(original) {
+                    Ok(mut commit) => {
+                        commit.left.clear();
+                        commit.right.clear();
+                        self.recycle = Some((commit.left, commit.right));
+                    }
+                    Err(original) => {
+                        let Ok(mut stored) = self.take.original_commit.try_lock() else {
+                            // Only retirement can share this original. It owns its cloned Arc.
+                            return CaptureServiceProgress::Pending;
+                        };
+                        *stored = Some(original);
+                    }
+                }
+            }
+        }
+        if self.recycle.is_some() {
+            let Ok(mut guard) = instances.try_lock() else {
+                return CaptureServiceProgress::Pending;
+            };
+            if let Some(instance) = guard
+                .get_mut(&self.take.instance_id)
+                .filter(|i| i.recording().incarnation == self.take.incarnation)
+            {
+                let CrumbsEngineSlot::Attached { ends, .. } = &mut instance.engine_slot else {
+                    return CaptureServiceProgress::Complete;
+                };
+                if ends.pending_recycle.is_none() {
+                    ends.pending_recycle = self.recycle.take();
+                }
+                retry_one_mirror(instance);
+            }
+        }
+        let terminal =
+            self.retired_reference.is_some() || !self.take.slot_enqueued.load(Ordering::Acquire);
+        let safe = !self.take.has_commit.load(Ordering::Acquire)
+            || self.take.sample_safe.load(Ordering::Acquire);
+        if terminal && safe && !self.take.released.load(Ordering::Acquire) {
+            if self.take.admitted.load(Ordering::Acquire) {
+                let Some(engine) = self.engine.upgrade() else {
+                    return self.abandoned();
+                };
+                let Ok(guard) = instances.try_lock() else {
+                    return CaptureServiceProgress::Pending;
+                };
+                if !guard.get(&self.take.instance_id).is_some_and(|i| {
+                    i.recording().incarnation == self.take.incarnation
+                        && i.recording()
+                            .take
+                            .as_ref()
+                            .is_some_and(|take| Arc::ptr_eq(take, &self.take))
+                }) {
+                    return self.abandoned();
+                }
+                let Ok(mut engine_guard) = engine.try_lock() else {
+                    return CaptureServiceProgress::Pending;
+                };
+                let Some(engine) = engine_guard.as_mut() else {
+                    return self.abandoned();
+                };
+                if !self
+                    .take
+                    .period
+                    .get()
+                    .is_some_and(|period| engine.is_current_capture_period(period))
+                {
+                    return self.abandoned();
+                }
+                let refused = engine.unregister_capture_consumer(self.plugin_id).is_err();
+                drop(engine_guard);
+                drop(guard);
+                if refused {
+                    self.publish(TAKE_FINISHING);
+                    return CaptureServiceProgress::Pending;
+                }
+            }
+            self.take.released.store(true, Ordering::Release);
+        }
+        let clean = {
+            let Ok(guard) = instances.try_lock() else {
+                return CaptureServiceProgress::Pending;
+            };
+            guard.get(&self.take.instance_id).is_some_and(|i| i.pending_mirror.is_empty() && matches!(&i.engine_slot, CrumbsEngineSlot::Attached { ends, .. } if ends.pending_recycle.is_none()))
+        };
+        if terminal
+            && safe
+            && self.take.released.load(Ordering::Acquire)
+            && clean
+            && self.recycle.is_none()
+        {
+            let phase = if self.take.failure.load(Ordering::Acquire) != 0 {
+                TAKE_FAILED
+            } else if self.take.has_commit.load(Ordering::Acquire) {
+                TAKE_COMPLETED
+            } else {
+                TAKE_CANCELLED
+            };
+            if self.publish(phase) {
+                self.take.complete.store(true, Ordering::Release);
+                return CaptureServiceProgress::Complete;
+            }
+            return CaptureServiceProgress::Pending;
+        }
+        self.publish(self.take.rt_phase.load(Ordering::Acquire));
+        CaptureServiceProgress::Pending
+    }
+    fn engine_stopped(&mut self) {
+        self.take.invalidate();
+    }
+}
+impl NativeTakeCompletion {
+    fn publish(&mut self, phase: u8) -> bool {
+        let Some(readout) = self.take.publish(phase) else {
+            return false;
+        };
+        if readout.revision != self.last_emitted {
+            self.last_emitted = readout.revision;
+            if let Some(events) = self.take.events.upgrade() {
+                events.emit(
+                    "crumbs-recording-state",
+                    snapshot_from_readout(&self.take, readout),
+                );
+            }
+        }
+        true
+    }
+    fn abandoned(&mut self) -> CaptureServiceProgress {
+        self.take.valid.store(false, Ordering::Release);
+        self.take.cancel_requested.store(true, Ordering::Release);
+        if self.take.lifetime.stopped.load(Ordering::Acquire) || self.retired_reference.is_some() {
+            self.take.invalidate();
+            CaptureServiceProgress::Complete
+        } else {
+            CaptureServiceProgress::Pending
+        }
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -1388,8 +2022,780 @@ fn classify_sample(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    use std::sync::Condvar;
+    use std::time::{Duration, Instant};
+
+    #[derive(Default)]
+    struct LifecycleEvents {
+        values: Mutex<Vec<serde_json::Value>>,
+        changed: Condvar,
+        reenter: Mutex<Option<(Weak<CrumbsState>, Weak<AppState>)>>,
+    }
+    impl EventSink for LifecycleEvents {
+        fn emit_json(&self, event: &str, value: serde_json::Value) {
+            if event != "crumbs-recording-state" {
+                return;
+            }
+            if let Some((state, app)) = self.reenter.lock().unwrap().as_ref() {
+                let state = state.upgrade().unwrap();
+                let app = app.upgrade().unwrap();
+                assert!(
+                    state.instances.try_lock().is_ok(),
+                    "events must release instances"
+                );
+                assert!(app.engine.try_lock().is_ok(), "events must release engine");
+                assert!(app.graph.try_lock().is_ok(), "events must release graph");
+                let id = value["instance_id"].as_str().unwrap().to_string();
+                assert!(crate::block_on_test(get_crumbs_recording_state(id, &state)).is_ok());
+            }
+            self.values.lock().unwrap().push(value);
+            self.changed.notify_all();
+        }
+    }
+    impl LifecycleEvents {
+        fn wait(&self, token: &str, phase: &str) {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut values = self.values.lock().unwrap();
+            loop {
+                if values
+                    .iter()
+                    .any(|value| value["take_id"] == token && value["phase"] == phase)
+                {
+                    return;
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(
+                    !remaining.is_zero(),
+                    "missing {phase} for {token}; observed {values:?}"
+                );
+                values = self.changed.wait_timeout(values, remaining).unwrap().0;
+            }
+        }
+    }
+    struct NativeFixture {
+        state: Arc<CrumbsState>,
+        app: Arc<AppState>,
+        driver: daw_engine::CaptureLifecycleDriver,
+        events: Arc<LifecycleEvents>,
+    }
+    impl NativeFixture {
+        fn new(refuse: bool) -> Self {
+            let (engine, driver) = daw_engine::capture_lifecycle_fixture(64, refuse).unwrap();
+            let app = Arc::new(AppState::default());
+            *app.engine.lock().unwrap() = Some(engine);
+            let mut fixture = Self {
+                state: Arc::new(CrumbsState::default()),
+                app,
+                driver,
+                events: Arc::new(LifecycleEvents::default()),
+            };
+            fixture.create("sampler");
+            fixture
+        }
+        fn create(&mut self, id: &str) {
+            crate::block_on_test(create_crumbs(id.into(), &self.state, &self.app)).unwrap();
+            crate::block_on_test(set_crumbs_mode(id.into(), "record".into(), &self.state)).unwrap();
+            self.driver.render(128).unwrap();
+        }
+        fn arm(&self, id: &str, threshold: f32, duration: f32) -> String {
+            crate::block_on_test(arm_recording(
+                id.into(),
+                threshold,
+                0,
+                duration,
+                &self.state,
+                &self.app,
+                self.events.clone(),
+            ))
+            .unwrap()
+            .take_id
+        }
+        fn snapshot(&self, id: &str) -> CrumbsRecordingSnapshot {
+            crate::block_on_test(get_crumbs_recording_state(id.into(), &self.state)).unwrap()
+        }
+        fn period(&self, id: &str) -> daw_engine::CapturePeriodObservation {
+            self.state
+                .instances
+                .lock()
+                .unwrap()
+                .get(id)
+                .unwrap()
+                .recording()
+                .take
+                .as_ref()
+                .unwrap()
+                .period
+                .get()
+                .unwrap()
+                .clone()
+        }
+        fn feed(&mut self, value: f32) {
+            self.driver.service_owner_commands();
+            let mut input = [0.0f32; 1024];
+            for frame in input.chunks_exact_mut(2) {
+                frame[0] = value;
+                frame[1] = value / 2.0;
+            }
+            for _ in 0..4 {
+                self.driver.deliver_input(&input, 2).unwrap();
+            }
+            self.driver.render(128).unwrap();
+        }
+        fn stop(&mut self, id: &str, token: &str) {
+            crate::block_on_test(stop_recording(id.into(), token.into(), &self.state)).unwrap();
+            self.driver.render(128).unwrap();
+        }
+    }
+
+    pub(crate) fn first_served_native_take_probe() {
+        let mut f = NativeFixture::new(false);
+        let token = f.arm("sampler", 0.1, 1.0);
+        // No render-side command drain follows Arm before this actual capture delivery.
+        f.driver.service_owner_commands();
+        let mut transient = [0.0f32; 1024];
+        transient[0] = 0.75;
+        transient[1] = 0.375;
+        f.driver.deliver_input(&transient, 2).unwrap();
+        for _ in 0..3 {
+            f.driver.deliver_input(&[0.0; 1024], 2).unwrap();
+        }
+        f.driver.render(128).unwrap();
+        f.events.wait(&token, "recording");
+        let snapshot = f.snapshot("sampler");
+        assert!(snapshot.first_input.is_some());
+        f.stop("sampler", &token);
+        f.events.wait(&token, "completed");
+        let instances = f.state.instances.lock().unwrap();
+        let sample = instances["sampler"].samples.get(&1).unwrap();
+        assert_eq!(sample.left[0], 0.75);
+        assert_eq!(sample.right[0], 0.375);
+        assert!(sample.left.len() >= 128);
+    }
+
+    pub(crate) fn replacement_native_take_probe(
+        state: Arc<CrumbsState>,
+        app: Arc<AppState>,
+        driver: daw_engine::CaptureLifecycleDriver,
+        instance_id: &str,
+    ) {
+        let mut f = NativeFixture {
+            state,
+            app,
+            driver,
+            events: Arc::new(LifecycleEvents::default()),
+        };
+        f.driver.render(128).unwrap();
+        f.driver.service_owner_commands();
+        assert_eq!(
+            f.driver.deliver_input(&[0.0; 1024], 2),
+            Err("Fixture input is not open".to_string()),
+            "reattaching an idle sampler must not acquire input"
+        );
+
+        crate::block_on_test(set_crumbs_mode(instance_id.into(), "record".into(), &f.state))
+            .unwrap();
+        let token = f.arm(instance_id, 0.1, 1.0);
+        f.driver.service_owner_commands();
+        let mut transient = [0.0f32; 1024];
+        transient[0] = 0.75;
+        transient[1] = 0.375;
+        f.driver.deliver_input(&transient, 2).unwrap();
+        for _ in 0..3 {
+            f.driver.deliver_input(&[0.0; 1024], 2).unwrap();
+        }
+        f.driver.render(128).unwrap();
+        f.events.wait(&token, "recording");
+        let snapshot = f.snapshot(instance_id);
+        assert_eq!(snapshot.take_id, token);
+        assert!(snapshot.first_input.is_some());
+
+        f.stop(instance_id, &token);
+        f.events.wait(&token, "completed");
+        // Terminal publication follows release admission, not the owner's close.
+        f.driver.service_owner_commands();
+        assert!(f.period(instance_id).snapshot().closed);
+        assert_eq!(
+            f.driver.deliver_input(&[0.0; 1024], 2),
+            Err("Fixture input is not open".to_string()),
+            "the replacement must close input after its last take holder"
+        );
+        assert!(instance_is_attached(&f.state, instance_id));
+        f.driver.render(128).unwrap();
+        let instances = f.state.instances.lock().unwrap();
+        let sample = instances[instance_id].samples.get(&1).unwrap();
+        assert_eq!(sample.left[0], 0.75);
+        assert_eq!(sample.right[0], 0.375);
+        assert!(sample.left.len() >= 128);
+    }
+
+    pub(crate) fn joining_native_take_probe() {
+        let mut f = NativeFixture::new(false);
+        f.app
+            .engine
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .arm_retrospective_capture(7, 2);
+        let first = f.arm("sampler", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&first, "recording");
+        f.stop("sampler", &first);
+        f.events.wait(&first, "completed");
+        for _ in 0..24 {
+            f.driver.render(128).unwrap();
+        }
+        let token = f.arm("sampler", 0.0, 1.0);
+        let period = f.period("sampler");
+        assert!(period.snapshot().first_served.is_some());
+        f.driver.render(128).unwrap();
+        assert!(f.state.instances.lock().unwrap()["sampler"]
+            .recording()
+            .take
+            .as_ref()
+            .unwrap()
+            .first_input()
+            .is_none());
+        assert_eq!(f.snapshot("sampler").phase, "preparing");
+        f.feed(0.25);
+        f.events.wait(&token, "recording");
+        f.stop("sampler", &token);
+        f.events.wait(&token, "completed");
+        let instances = f.state.instances.lock().unwrap();
+        let sample = instances["sampler"].samples.get(&2).unwrap();
+        assert_eq!(
+            sample.left[0], 0.25,
+            "refill silence cannot trigger a new threshold-zero take"
+        );
+    }
+
+    #[test]
+    fn native_take_admission_failures_never_strand_capture() {
+        let mut f = NativeFixture::new(false);
+        assert!(crate::block_on_test(arm_recording(
+            "sampler".into(),
+            f32::NAN,
+            0,
+            1.0,
+            &f.state,
+            &f.app,
+            f.events.clone()
+        ))
+        .is_err());
+        {
+            let mut instances = f.state.instances.lock().unwrap();
+            fill_command_ring(instances.get_mut("sampler").unwrap());
+        }
+        assert_eq!(
+            crate::block_on_test(arm_recording(
+                "sampler".into(),
+                0.1,
+                0,
+                1.0,
+                &f.state,
+                &f.app,
+                f.events.clone()
+            ))
+            .unwrap_err(),
+            "Command queue full"
+        );
+        let token = f.snapshot("sampler").take_id;
+        f.events.wait(&token, "failed");
+        f.driver.service_owner_commands();
+        assert!(f.driver.deliver_input(&[0.0; 1024], 2).is_err());
+        f.driver.render(128).unwrap();
+        {
+            let mut engine = f.app.engine.lock().unwrap();
+            let engine = engine.as_mut().unwrap();
+            while engine.set_track_mute(1, true).is_ok() {}
+        }
+        assert!(crate::block_on_test(arm_recording(
+            "sampler".into(),
+            0.1,
+            0,
+            1.0,
+            &f.state,
+            &f.app,
+            f.events.clone()
+        ))
+        .is_err());
+        let token = f.snapshot("sampler").take_id;
+        f.events.wait(&token, "failed");
+        f.driver.service_owner_commands();
+        assert!(f.driver.deliver_input(&[0.0; 1024], 2).is_err());
+        let mut refused = NativeFixture::new(true);
+        let token = refused.arm("sampler", 0.1, 1.0);
+        refused.driver.service_owner_commands();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !refused.state.instances.lock().unwrap()["sampler"]
+            .recording()
+            .take
+            .as_ref()
+            .unwrap()
+            .cancel_requested
+            .load(Ordering::Acquire)
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        refused.driver.render(128).unwrap();
+        refused.events.wait(&token, "failed");
+        assert!(refused.state.instances.lock().unwrap()["sampler"]
+            .samples
+            .is_empty());
+        let metering = Arc::new(CrumbsMetering::default());
+        let mut dsp = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
+        dsp.enable_commit_handoff();
+        dsp.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+        dsp.handle_command(CrumbsCommand::ArmRecording {
+            threshold: 0.1,
+            target_pad: 0,
+            max_duration_secs: 1.0,
+        });
+        dsp.process_record_input(&[0.5; 8], &[0.25; 8]);
+        dsp.handle_command(CrumbsCommand::StopRecording);
+        drop(dsp.take_pending_commit().unwrap());
+        let (mut ends, slot_ends) = new_crumbs_rings();
+        let take = Arc::new(NativeTakeSession::new(
+            "refused".into(),
+            1,
+            1,
+            Arc::new(AtomicU64::new(0)),
+            Arc::clone(&ends.lifetime),
+            Arc::downgrade(&(f.events.clone() as Arc<dyn EventSink>)),
+        ));
+        ends.command_tx
+            .push_native(NativeCrumbsCommand::PrepareTake(NativePreparedTake {
+                session: Arc::clone(&take),
+                threshold: 0.1,
+                target_pad: 0,
+                max_duration_secs: 1.0,
+            }))
+            .unwrap();
+        let mut slot = CrumbsPluginSlot::new(
+            dsp,
+            slot_ends.command_rx,
+            slot_ends.commit_tx,
+            slot_ends.recycle_rx,
+            slot_ends.retired_take_tx,
+            slot_ends.lifetime,
+            metering,
+        );
+        use daw_engine::plugin_slot::NativePlugin;
+        slot.process_audio(&mut [0.0; 8], &mut [0.0; 8], 8);
+        assert_eq!(
+            take.failure.load(Ordering::Acquire),
+            1,
+            "actual DSP refusal cannot masquerade as readiness"
+        );
+        assert!(take.first_input().is_none());
+        assert!(ends.retired_take_rx.pop().is_ok());
+        assert!(ends.commit_rx.pop().is_err());
+    }
+
+    #[test]
+    fn refused_stop_keeps_take_and_holder_until_actual_terminal() {
+        let mut f = NativeFixture::new(false);
+        let token = f.arm("sampler", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&token, "recording");
+        {
+            let mut instances = f.state.instances.lock().unwrap();
+            fill_command_ring(instances.get_mut("sampler").unwrap());
+        }
+        assert_eq!(
+            crate::block_on_test(stop_recording("sampler".into(), token.clone(), &f.state))
+                .unwrap_err(),
+            "Command queue full"
+        );
+        assert_eq!(f.snapshot("sampler").phase, "recording");
+        assert!(!f.period("sampler").snapshot().closed);
+        f.driver.render(128).unwrap();
+        f.stop("sampler", &token);
+        f.events.wait(&token, "completed");
+        f.driver.service_owner_commands();
+        assert!(f.period("sampler").snapshot().closed);
+    }
+
+    #[test]
+    fn automatic_and_empty_terminals_release_without_panel_polls() {
+        let mut f = NativeFixture::new(false);
+        let token = f.arm("sampler", 0.1, 4.0 / 48_000.0);
+        f.feed(0.5);
+        f.events.wait(&token, "completed");
+        f.driver.service_owner_commands();
+        assert!(f.period("sampler").snapshot().closed);
+        assert_eq!(
+            f.state.instances.lock().unwrap()["sampler"].samples.len(),
+            1
+        );
+        for waiting in [false, true] {
+            let mut empty = NativeFixture::new(false);
+            let token = empty.arm("sampler", if waiting { 0.1 } else { 0.0 }, 1.0);
+            if waiting {
+                empty.feed(0.0);
+                empty.events.wait(&token, "waiting");
+            } else {
+                empty.driver.render(128).unwrap();
+                assert_eq!(empty.snapshot("sampler").phase, "preparing");
+            }
+            empty.stop("sampler", &token);
+            empty.events.wait(&token, "cancelled");
+            empty.driver.service_owner_commands();
+            assert!(empty.period("sampler").snapshot().closed);
+            assert!(empty.state.instances.lock().unwrap()["sampler"]
+                .samples
+                .is_empty());
+        }
+    }
+
+    #[test]
+    fn committed_take_survives_mirror_and_release_backpressure() {
+        let mut f = NativeFixture::new(false);
+        let token = f.arm("sampler", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&token, "recording");
+        crate::block_on_test(stop_recording("sampler".into(), token.clone(), &f.state)).unwrap();
+        {
+            let mut instances = f.state.instances.lock().unwrap();
+            f.driver.render(128).unwrap();
+            fill_command_ring(instances.get_mut("sampler").unwrap());
+            let mut engine = f.app.engine.lock().unwrap();
+            let engine = engine.as_mut().unwrap();
+            while engine.set_track_mute(1, true).is_ok() {}
+        }
+        f.events.wait(&token, "finishing");
+        assert!(!f.period("sampler").snapshot().closed);
+        {
+            let mut instances = f.state.instances.lock().unwrap();
+            f.driver.render(128).unwrap();
+            fill_command_ring(instances.get_mut("sampler").unwrap());
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !f.state.instances.lock().unwrap()["sampler"]
+            .recording()
+            .take
+            .as_ref()
+            .unwrap()
+            .released
+            .load(Ordering::Acquire)
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        f.driver.service_owner_commands();
+        assert!(
+            f.period("sampler").snapshot().closed,
+            "mirror congestion cannot hold input"
+        );
+        assert_eq!(
+            f.state.instances.lock().unwrap()["sampler"].samples.len(),
+            1
+        );
+        f.driver.render(128).unwrap();
+        f.events.wait(&token, "completed");
+        assert_eq!(
+            f.state.instances.lock().unwrap()["sampler"].samples.len(),
+            1
+        );
+    }
+
+    #[test]
+    fn take_completion_respects_other_slots_and_retrospective_arm() {
+        let mut f = NativeFixture::new(false);
+        f.create("second");
+        let a = f.arm("sampler", 0.1, 1.0);
+        let b = f.arm("second", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&a, "recording");
+        f.events.wait(&b, "recording");
+        let period = f.period("sampler");
+        f.stop("sampler", &a);
+        f.events.wait(&a, "completed");
+        f.driver.service_owner_commands();
+        assert!(!period.snapshot().closed);
+        f.app
+            .engine
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .arm_retrospective_capture(7, 2);
+        f.stop("second", &b);
+        f.events.wait(&b, "completed");
+        f.driver.service_owner_commands();
+        assert!(!period.snapshot().closed);
+        let c = f.arm("sampler", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&c, "recording");
+        f.app
+            .engine
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .disarm_retrospective_capture();
+        f.driver.service_owner_commands();
+        assert!(!period.snapshot().closed);
+        f.stop("sampler", &c);
+        f.events.wait(&c, "completed");
+        f.driver.service_owner_commands();
+        assert!(period.snapshot().closed);
+    }
+
+    #[test]
+    fn cancelled_take_cannot_reach_a_recreated_instance_or_engine() {
+        let mut f = NativeFixture::new(false);
+        let old = f.arm("sampler", 0.0, 1.0);
+        let old_inc = f.snapshot("sampler").instance_incarnation;
+        crate::block_on_test(destroy_crumbs("sampler".into(), &f.state, &f.app)).unwrap();
+        f.create("sampler");
+        let new = f.arm("sampler", 0.1, 1.0);
+        assert_ne!(old_inc, f.snapshot("sampler").instance_incarnation);
+        assert!(crate::block_on_test(stop_recording("sampler".into(), old, &f.state)).is_err());
+        f.feed(0.5);
+        f.events.wait(&new, "recording");
+        f.stop("sampler", &new);
+        f.events.wait(&new, "completed");
+        f.app
+            .engine
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .mark_render_stalled(None);
+        let reply = crate::block_on_test(super::super::engine_lifecycle::retire_native_engine(
+            &f.app,
+            &f.state,
+            &crate::host::plugin_window::NoWindowHost,
+        ));
+        assert_eq!(
+            reply.outcome,
+            super::super::engine_lifecycle::RetireOutcome::Retired
+        );
+        f.driver.service_owner_commands();
+    }
+
+    #[test]
+    fn capture_completion_releases_locks_before_pcm_and_events() {
+        let mut f = NativeFixture::new(false);
+        *f.events.reenter.lock().unwrap() =
+            Some((Arc::downgrade(&f.state), Arc::downgrade(&f.app)));
+        let token = f.arm("sampler", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&token, "recording");
+        let witnessed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        {
+            let instances = f.state.instances.lock().unwrap();
+            let take = instances["sampler"].recording().take.as_ref().unwrap();
+            let state = Arc::clone(&f.state);
+            let app = Arc::clone(&f.app);
+            let observed = Arc::clone(&witnessed);
+            *take.before_materialize.lock().unwrap() = Some(Box::new(move || {
+                assert!(state.instances.try_lock().is_ok());
+                assert!(app.engine.try_lock().is_ok());
+                assert!(app.graph.try_lock().is_ok());
+                observed.store(true, Ordering::Release);
+            }));
+        }
+        f.stop("sampler", &token);
+        f.events.wait(&token, "completed");
+        assert!(witnessed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn mode_exit_commits_recording_and_cancels_empty_wait() {
+        for recording in [false, true] {
+            let mut f = NativeFixture::new(false);
+            let token = f.arm("sampler", 0.1, 1.0);
+            if recording {
+                f.feed(0.5);
+                f.events.wait(&token, "recording");
+            } else {
+                f.feed(0.0);
+                f.events.wait(&token, "waiting");
+            }
+            crate::block_on_test(set_crumbs_mode("sampler".into(), "quick".into(), &f.state))
+                .unwrap();
+            f.driver.render(128).unwrap();
+            f.events
+                .wait(&token, if recording { "completed" } else { "cancelled" });
+            f.driver.service_owner_commands();
+            assert!(f.period("sampler").snapshot().closed);
+            assert_eq!(
+                f.state.instances.lock().unwrap()["sampler"].samples.len(),
+                usize::from(recording)
+            );
+        }
+    }
+
+    #[test]
+    fn terminal_publication_contention_retries_before_completing_take() {
+        let mut f = NativeFixture::new(false);
+        let token = f.arm("sampler", 0.1, 1.0);
+        f.feed(0.5);
+        f.events.wait(&token, "recording");
+        let take = f.state.instances.lock().unwrap()["sampler"]
+            .recording()
+            .take
+            .clone()
+            .unwrap();
+        let published = take.published.lock().unwrap();
+        let attempts = take.publication_attempts.load(Ordering::Acquire);
+        f.stop("sampler", &token);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !take.released.load(Ordering::Acquire)
+            || take.publication_attempts.load(Ordering::Acquire) <= attempts
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(
+            !take.complete.load(Ordering::Acquire),
+            "contended terminal publication must remain pending"
+        );
+        drop(published);
+        f.events.wait(&token, "completed");
+    }
+
+    #[test]
+    fn retirement_materializes_handed_off_take_outside_all_guards() {
+        let state = CrumbsState::default();
+        let app = Arc::new(AppState::default());
+        let (instance, mut commit, _, _) = instance_with_rings();
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .insert("retired".into(), instance);
+        commit
+            .push(PendingRecordingCommit {
+                left: vec![0.75; 8],
+                right: vec![0.25; 8],
+                sample_rate: 48_000,
+            })
+            .unwrap();
+        let graph = app.graph.lock().unwrap();
+        let engine = app.engine.lock().unwrap();
+        let work = detach_from_retired_engine(&state);
+        let observer = Arc::clone(&app);
+        BEFORE_RETIRED_PCM.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                assert!(observer.graph.try_lock().is_ok());
+                assert!(observer.engine.try_lock().is_ok());
+            }))
+        });
+        drop(engine);
+        drop(graph);
+        let _retained = finish_detached_crumbs(work, &state);
+        BEFORE_RETIRED_PCM.with(|hook| *hook.borrow_mut() = None);
+        assert_eq!(
+            state.instances.lock().unwrap()["retired"].samples[&1].left,
+            vec![0.75; 8]
+        );
+    }
+
+    #[test]
+    fn retirement_never_mirrors_a_take_into_replacement_instance_or_engine() {
+        let state = CrumbsState::default();
+        let (instance, mut commit, _, _) = instance_with_rings();
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .insert("same".into(), instance);
+        commit
+            .push(PendingRecordingCommit {
+                left: vec![0.5; 8],
+                right: vec![0.25; 8],
+                sample_rate: 48_000,
+            })
+            .unwrap();
+        let work = detach_from_retired_engine(&state);
+        let (replacement, _, _, mut commands) = instance_with_rings();
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .insert("same".into(), replacement);
+        let _retained = finish_detached_crumbs(work, &state);
+        assert!(state.instances.lock().unwrap()["same"].samples.is_empty());
+        assert!(commands.pop().is_err());
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn callback_lifecycle_probe() {
+        let mut f = NativeFixture::new(false);
+        for _ in 0..2 {
+            let token = f.arm("sampler", 0.1, 1.0);
+            f.driver.service_owner_commands();
+            let input = [0.5f32; 1024];
+            assert_no_alloc::assert_no_alloc(|| {
+                for _ in 0..4 {
+                    f.driver.deliver_input(&input, 2).unwrap();
+                }
+                f.driver.render(128).unwrap();
+            });
+            f.events.wait(&token, "recording");
+            crate::block_on_test(stop_recording("sampler".into(), token.clone(), &f.state))
+                .unwrap();
+            assert_no_alloc::assert_no_alloc(|| f.driver.render(128).unwrap());
+            f.events.wait(&token, "completed");
+            f.driver.service_owner_commands();
+            assert_no_alloc::assert_no_alloc(|| f.driver.render(128).unwrap());
+        }
+        for (threshold, duration, mode_exit) in [
+            (0.1, 4.0 / 48_000.0, false),
+            (0.9, 1.0, true),
+            (0.1, 1.0, true),
+        ] {
+            let mut f = NativeFixture::new(false);
+            let token = f.arm("sampler", threshold, duration);
+            f.driver.service_owner_commands();
+            let input = [0.5f32; 1024];
+            assert_no_alloc::assert_no_alloc(|| {
+                f.driver.render(128).unwrap();
+                for _ in 0..4 {
+                    f.driver.deliver_input(&input, 2).unwrap();
+                }
+                f.driver.render(128).unwrap();
+            });
+            if mode_exit {
+                f.events.wait(
+                    &token,
+                    if threshold > 0.5 {
+                        "waiting"
+                    } else {
+                        "recording"
+                    },
+                );
+                crate::block_on_test(set_crumbs_mode("sampler".into(), "quick".into(), &f.state))
+                    .unwrap();
+                assert_no_alloc::assert_no_alloc(|| f.driver.render(128).unwrap());
+            }
+            f.events.wait(
+                &token,
+                if threshold > 0.5 {
+                    "cancelled"
+                } else {
+                    "completed"
+                },
+            );
+        }
+    }
+
+    struct EngineCommands(rtrb::Consumer<NativeCrumbsCommand>);
+    impl EngineCommands {
+        fn pop(&mut self) -> Result<CrumbsCommand, ()> {
+            match self.0.pop() {
+                Ok(NativeCrumbsCommand::Engine(command)) => Ok(command),
+                _ => Err(()),
+            }
+        }
+    }
 
     /// Build the command-side instance pieces exactly as create_crumbs
     /// wires them, plus the slot-side ring endpoints so a test can simulate
@@ -1398,26 +2804,31 @@ mod tests {
         CrumbsInstanceData,
         Producer<PendingRecordingCommit>,
         rtrb::Consumer<RecordBufferPair>,
-        rtrb::Consumer<CrumbsCommand>,
+        EngineCommands,
     ) {
         let (command_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
+        let (_retired_tx, retired_take_rx) = rtrb::RingBuffer::new(2);
         let instance = CrumbsInstanceData {
             samples: HashMap::new(),
             metering: Arc::new(CrumbsMetering::default()),
             engine_slot: CrumbsEngineSlot::Attached {
                 plugin_id: 0,
                 ends: CrumbsInstanceEnds {
-                    command_tx,
+                    command_tx: CrumbsCommandSender(command_tx),
                     commit_rx,
                     recycle_tx,
+                    retired_take_rx,
+                    lifetime: Arc::new(CrumbsSlotLifetime::default()),
+                    recording: CrumbsRecordingState::default(),
+                    pending_recycle: None,
                 },
             },
             next_sample_id: 1,
             pending_mirror: Vec::new(),
         };
-        (instance, commit_tx, recycle_rx, cmd_rx)
+        (instance, commit_tx, recycle_rx, EngineCommands(cmd_rx))
     }
 
     /// Saturate an attached instance's command ring, as a test that needs a
@@ -1568,7 +2979,7 @@ mod tests {
     /// ceiling message; with the call unwired, this same state has no engine
     /// and the create would succeed as a dormant instance, so the refusal
     /// itself pins the call site. The ceiling counts dormant instances too:
-    /// each one takes a seat on the capture bus the moment it attaches.
+    /// each one may independently request a take after it attaches.
     #[test]
     fn create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine() {
         let state = CrumbsState::default();
@@ -1608,34 +3019,17 @@ mod tests {
         assert!(!instances.contains_key("instance-overflow"));
     }
 
-    /// Pop the fenced batch one successful create queues — the two-command
-    /// fence, the detached slot, then its registration on the engine's input
-    /// bus — and return the engine plugin id both commands name.
+    /// Pop the fence and persistent detached slot one successful create queues,
+    /// returning the engine plugin id. Input belongs to a later accepted take.
     fn pop_create_commands(command_rx: &mut rtrb::Consumer<GraphCommand>) -> usize {
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::BeginBatch { commands: 1 })
+        ));
         match command_rx.pop() {
-            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
-                commands, 2,
-                "the create's fence must announce the slot and its capture registration"
-            ),
-            Ok(_) => panic!("a create must publish its registration behind a batch fence"),
-            Err(_) => panic!("a create must queue its batch fence"),
-        }
-        let id = match command_rx.pop() {
             Ok(GraphCommand::AddHostedPlugin(id, _, _)) => id,
-            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
-            Err(_) => panic!("a create must queue the slot registration"),
-        };
-        match command_rx.pop() {
-            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => {
-                assert_eq!(
-                    registered, id,
-                    "the capture registration must name the slot it feeds"
-                );
-            }
-            Ok(_) => panic!("the batch's second command must register the capture consumer"),
-            Err(_) => panic!("a create must queue the capture registration"),
+            _ => panic!("create publishes one persistent detached sampler"),
         }
-        id
     }
 
     /// A second create for the same UI/runtime id is refused while the
@@ -1815,9 +3209,8 @@ mod tests {
 
         let state = CrumbsState::default();
         let app_state = AppState::default();
-        // Exactly the create's batch — fence plus two commands — so the ring is
-        // full when destroy asks for its removal, and admission finds the room
-        // it needs without reallocating the channel out from under this test.
+        // Idle create publishes a fence and slot. An explicit sentinel below
+        // fills the remaining position without reallocating the channel.
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(3);
         *app_state
@@ -1829,6 +3222,20 @@ mod tests {
             .expect("create should fill the scheduler ring");
 
         let original_engine_plugin_id = attached_plugin_id(&state, INSTANCE_ID);
+
+        {
+            let mut engine = app_state.engine.lock().unwrap();
+            let engine = engine.as_mut().unwrap();
+            engine
+                .set_bypass(original_engine_plugin_id, false)
+                .expect("the sentinel must fill the final scheduler position");
+            assert_eq!(
+                engine.set_bypass(original_engine_plugin_id, false),
+                Err("Audio command queue full".to_string()),
+                "a second sentinel independently proves admission is full"
+            );
+        }
+        assert_eq!(command_rx.slots(), command_rx.buffer().capacity());
 
         let refusal =
             crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
@@ -1842,6 +3249,10 @@ mod tests {
 
         let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
         assert_eq!(registered_engine_plugin_id, original_engine_plugin_id);
+        match command_rx.pop() {
+            Ok(GraphCommand::SetBypass(id, false)) => assert_eq!(id, original_engine_plugin_id),
+            _ => panic!("the saturation sentinel must follow the persistent slot"),
+        }
         assert!(
             command_rx.pop().is_err(),
             "failed destroy must not queue a removal command"
@@ -2090,7 +3501,8 @@ mod tests {
             })
             .expect("the commit ring takes the handoff");
 
-        detach_from_retired_engine(&state);
+        let work = detach_from_retired_engine(&state);
+        let _retained = finish_detached_crumbs(work, &state);
 
         let instances = state
             .instances
@@ -2139,7 +3551,8 @@ mod tests {
             .expect("crumbs state lock should be available")
             .insert("instance-1".to_string(), instance);
 
-        detach_from_retired_engine(&state);
+        let work = detach_from_retired_engine(&state);
+        let _retained = finish_detached_crumbs(work, &state);
 
         let instances = state
             .instances
@@ -2245,115 +3658,11 @@ mod tests {
     /// input.
     #[test]
     fn the_capture_tap_fills_the_armed_take_across_the_command_surface() {
-        use daw_engine::plugin_slot::{CaptureInputBlock, NativePlugin, TransportState};
-
-        let state = CrumbsState::default();
-
-        // The seam create_crumbs wires in production: a scheduler slot on the
-        // master chain, its command and handoff rings held command-side.
-        let (command_tx, command_rx) = rtrb::RingBuffer::new(8);
-        let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
-        let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
-        let metering = Arc::new(CrumbsMetering::default());
-        let mut engine = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
-        engine.enable_commit_handoff();
-        let mut slot = CrumbsPluginSlot {
-            engine,
-            command_rx,
-            commit_tx,
-            recycle_rx,
-            metering: Arc::clone(&metering),
-        };
-        let instance = CrumbsInstanceData {
-            samples: HashMap::new(),
-            metering,
-            engine_slot: CrumbsEngineSlot::Attached {
-                plugin_id: 1000,
-                ends: CrumbsInstanceEnds {
-                    command_tx,
-                    commit_rx,
-                    recycle_tx,
-                },
-            },
-            next_sample_id: 1,
-            pending_mirror: Vec::new(),
-        };
-        state
-            .instances
-            .lock()
-            .unwrap()
-            .insert("sampler".to_string(), instance);
-
-        // The napi command surface: mode, arm, stop.
-        crate::block_on_test(set_crumbs_mode(
-            "sampler".to_string(),
-            "record".to_string(),
-            &state,
-        ))
-        .unwrap();
-        crate::block_on_test(arm_recording("sampler".to_string(), 0.01, 0, 10.0, &state)).unwrap();
-
-        const PERIOD_FRAMES: usize = 512;
-        const CAPTURE_FRAMES: usize = 128;
-        let render_period = |slot: &mut CrumbsPluginSlot| {
-            let mut left = vec![0.0f32; PERIOD_FRAMES];
-            let mut right = vec![0.0f32; PERIOD_FRAMES];
-            slot.process_with_events(
-                &mut left,
-                &mut right,
-                PERIOD_FRAMES,
-                &[],
-                &TransportState::default(),
-            );
-        };
-
-        // The queued commands reach the engine on the next master-chain pass.
-        render_period(&mut slot);
-
-        // Four chunks of captured input (L=0.5, R=0.25 — distinct, so a
-        // swapped feed cannot pass), each delivered ahead of the block it was
-        // captured for, exactly as the render callback delivers it.
-        let left = vec![0.5f32; CAPTURE_FRAMES];
-        let right = vec![0.25f32; CAPTURE_FRAMES];
-        let mut position_frames = 0u64;
-        for _ in 0..4 {
-            slot.process_capture_input(CaptureInputBlock {
-                left: &left,
-                right: &right,
-                frames: CAPTURE_FRAMES,
-                served: true,
-                latency_frames: 0,
-                position_frames,
-            });
-            position_frames += CAPTURE_FRAMES as u64;
-            render_period(&mut slot);
-        }
-
-        crate::block_on_test(stop_recording("sampler".to_string(), &state)).unwrap();
-        // One more period so the pass consumes the stop and the engine hands
-        // the commit to the ring.
-        render_period(&mut slot);
-
-        let mut instances = state.instances.lock().unwrap();
-        let instance = instances.get_mut("sampler").unwrap();
-        drain_pending_recording_commits(instance);
-        let sample = instance.samples.get(&1).expect("armed take registered");
-        assert_eq!(sample.meta.frame_count as usize, 4 * CAPTURE_FRAMES);
-        assert!(
-            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
-            "the take must hold the captured input, not silence"
-        );
-        assert!(
-            sample.right.iter().all(|&s| (s - 0.25).abs() < 1.0e-6),
-            "the take must hold the captured input on the right channel too"
-        );
+        first_served_native_take_probe();
     }
 
-    /// A create publishes the sampler twice: once as a detached hosted slot,
-    /// once on the engine's input tap. Both name the same reserved id, and the
-    /// slot goes first — a registration for an id the graph has not been told
-    /// about is admitted, but the pair is what makes the sampler both
-    /// spliceable and able to record.
+    /// Creating a sampler publishes only its persistent detached slot.
+    /// Input belongs to a later admitted take.
     ///
     /// `AddHostedPlugin` and not `AddPlugin`: the first homes the instance
     /// detached, where the strip chain that carries the `builtin-crumbs`
@@ -2361,122 +3670,101 @@ mod tests {
     /// outside the track's fader, pan, mute, inserts and sends, and over the
     /// whole mix.
     #[test]
-    fn create_crumbs_registers_the_slot_and_its_capture_feed() {
+    fn idle_crumbs_slot_acquires_capture_only_for_an_accepted_take() {
         let state = CrumbsState::default();
         let app_state = AppState::default();
-        let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
-        *app_state
-            .engine
-            .lock()
-            .expect("engine lock should be available") = Some(engine);
-
-        // The engine handle's own rate is the one the slot is built at: a
-        // take is stamped, and `record_max_samples` clamped, against that
-        // number and no other.
-        crate::block_on_test(create_crumbs("tap-sampler".to_string(), &state, &app_state))
-            .expect("a create with capture headroom should register its runtime");
-
-        match command_rx.pop() {
-            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(commands, 2),
-            Ok(_) => panic!("a create must publish its registration behind a batch fence"),
-            Err(_) => panic!("a create must queue its batch fence"),
+        let (engine, mut commands, _adoptions) = daw_engine::engine_handle_for_command_capture(8);
+        *app_state.engine.lock().unwrap() = Some(engine);
+        crate::block_on_test(create_crumbs("idle".into(), &state, &app_state)).unwrap();
+        while let Ok(command) = commands.pop() {
+            assert!(
+                !matches!(command, GraphCommand::RegisterCaptureConsumer(_)),
+                "an idle persistent sampler must not acquire native input"
+            );
         }
-        let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(GraphCommand::AddHostedPlugin(id, plugin, _)) => {
-                let slot = plugin
-                    .as_any()
-                    .downcast_ref::<CrumbsPluginSlot>()
-                    .expect("the registered plugin must be the crumbs slot");
-                assert_eq!(
-                    slot.engine.sample_rate(),
-                    48_000.0,
-                    "the slot must be built at the engine handle's rate, not the caller's"
-                );
-                id
-            }
-            Ok(GraphCommand::AddPlugin(..)) => {
-                panic!("the slot must be homed detached, never on the master insert chain")
-            }
-            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
-            Err(_) => panic!("a create must queue the slot registration"),
-        };
-        match command_rx.pop() {
-            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => {
-                assert_eq!(
-                    registered, registered_engine_plugin_id,
-                    "the capture registration must name the slot it feeds"
-                );
-            }
-            Ok(_) => panic!("the batch's second command must register the capture consumer"),
-            Err(_) => panic!("a create must queue the capture registration"),
+        assert!(state.instances.lock().unwrap().contains_key("idle"));
+        let mut f = NativeFixture::new(false);
+        f.driver.service_owner_commands();
+        assert!(f.driver.deliver_input(&[0.0; 1024], 2).is_err());
+        {
+            let mut instances = f.state.instances.lock().unwrap();
+            let instance = instances.get_mut("sampler").unwrap();
+            let loaded = Arc::new(SampleData::from_mono(vec![0.25; 48_000], 48_000));
+            instance.samples.insert(1, Arc::clone(&loaded));
+            instance.next_sample_id = 2;
+            instance
+                .send(CrumbsCommand::AddSample {
+                    id: 1,
+                    data: loaded,
+                })
+                .unwrap();
+            instance.send(CrumbsCommand::SetActiveSample(1)).unwrap();
         }
-        assert!(
-            command_rx.pop().is_err(),
-            "a create must queue its fence, the slot and its capture registration, nothing else"
-        );
+        crate::block_on_test(crumbs_note_on("sampler".into(), 60, 100, &f.state)).unwrap();
+        f.driver.render(128).unwrap();
+        let token = f.arm("sampler", 0.0, 1.0);
+        f.driver.service_owner_commands();
+        f.driver.render(128).unwrap();
+        assert!(f.state.instances.lock().unwrap()["sampler"]
+            .recording()
+            .take
+            .as_ref()
+            .unwrap()
+            .first_input()
+            .is_none());
         assert_eq!(
-            attached_plugin_id(&state, "tap-sampler"),
-            registered_engine_plugin_id,
-            "the create must publish its ownership entry"
+            f.snapshot("sampler").phase,
+            "preparing",
+            "initial unserved zero cannot trigger threshold zero"
+        );
+        f.feed(0.75);
+        f.events.wait(&token, "recording");
+        f.stop("sampler", &token);
+        f.events.wait(&token, "completed");
+        f.driver.service_owner_commands();
+        assert!(f.period("sampler").snapshot().closed);
+        f.driver.render(128).unwrap();
+        let instances = f.state.instances.lock().unwrap();
+        let instance = &instances["sampler"];
+        assert_eq!(instance.samples.len(), 2);
+        assert_eq!(instance.samples[&1].left[0], 0.25);
+        assert!(
+            instance.metering.active_voice_count.load(Ordering::Relaxed) > 0,
+            "take end preserves sounding voices"
         );
     }
 
-    /// The capture ledger is the authority on the input bus, and it refuses
-    /// independently of the instance ceiling. A sampler that cannot record is
-    /// not a sampler, so the batch is refused whole: nothing reaches the ring,
-    /// there is no slot to unwind, and no instance the panel would show as
-    /// live. Two separate pushes would leave the `AddPlugin` on the ring.
     #[test]
-    fn create_crumbs_pushes_nothing_when_the_capture_bus_refuses_it() {
+    fn create_crumbs_registers_only_the_persistent_slot() {
         let state = CrumbsState::default();
-        let app_state = AppState::default();
-        let (mut engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
-        // Fill the input bus's reserve through the ledger the handle owns, so
-        // the create's own registration is the one that overruns it.
-        for offset in 0..CRUMBS_CAPTURE_RESERVE {
-            engine
-                .register_capture_consumer(900 + offset)
-                .expect("the reserve must admit its own consumers");
-        }
-        *app_state
-            .engine
-            .lock()
-            .expect("engine lock should be available") = Some(engine);
+        let app = AppState::default();
+        let (engine, mut commands, _retired) = daw_engine::engine_handle_for_command_capture(8);
+        *app.engine.lock().unwrap() = Some(engine);
+        crate::block_on_test(create_crumbs("idle".into(), &state, &app)).unwrap();
+        let id = pop_create_commands(&mut commands);
+        assert_eq!(attached_plugin_id(&state, "idle"), id);
+        assert!(
+            commands.pop().is_err(),
+            "idle creation must not publish a capture consumer"
+        );
+    }
 
-        let refusal = crate::block_on_test(create_crumbs(
-            "refused-sampler".to_string(),
-            &state,
-            &app_state,
-        ))
-        .expect_err("a create whose capture registration is refused must fail");
-        assert!(
-            refusal.starts_with("capture-bus-full:"),
-            "the refusal must be the capture ledger's own: {refusal}"
-        );
-
-        for _ in 0..CRUMBS_CAPTURE_RESERVE {
-            assert!(
-                matches!(
-                    command_rx.pop(),
-                    Ok(GraphCommand::RegisterCaptureConsumer(_))
-                ),
-                "the reserve's own registrations must be all the ring holds"
-            );
+    /// A full capture bus can refuse a take, but cannot refuse an idle
+    /// persistent sampler whose pads and loaded samples remain playable.
+    #[test]
+    fn idle_crumbs_creation_does_not_consume_capture_capacity() {
+        let state = CrumbsState::default();
+        let app = AppState::default();
+        let (mut engine, mut commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16);
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine.register_capture_consumer(id).unwrap();
         }
-        assert!(
-            command_rx.pop().is_err(),
-            "a refused batch must leave nothing at all on the ring — no fence, no slot"
-        );
-        assert!(
-            state
-                .instances
-                .lock()
-                .expect("crumbs state lock should be available")
-                .is_empty(),
-            "a refused create must leave no instance behind"
-        );
+        while commands.pop().is_ok() {}
+        *app.engine.lock().unwrap() = Some(engine);
+        crate::block_on_test(create_crumbs("idle".into(), &state, &app)).unwrap();
+        pop_create_commands(&mut commands);
+        assert!(commands.pop().is_err());
     }
 
     /// Issue #2265 (live defect): the engine starts lazily on the first graph
@@ -2521,9 +3809,11 @@ mod tests {
                 0.01,
                 0,
                 10.0,
-                &state
+                &state,
+                &app_state,
+                Arc::new(crate::events::NoopEventSink)
             )),
-            Err("Native engine not running".to_string()),
+            Err("Crumbs must be in Record mode".to_string()),
             "an arm with no slot rendering it would capture silence and say nothing"
         );
         assert_eq!(
@@ -2583,7 +3873,7 @@ mod tests {
 
         match command_rx.pop() {
             Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
-                commands, 2,
+                commands, 1,
                 "the attach's fence must announce the slot and its capture registration"
             ),
             Ok(_) => panic!("an attach must publish its registration behind a batch fence"),
@@ -2601,7 +3891,10 @@ mod tests {
                     "the slot must be built at the rate of the engine it attaches to"
                 );
                 assert!(
-                    matches!(slot.command_rx.pop(), Ok(CrumbsCommand::SetParam { .. })),
+                    matches!(
+                        slot.command_rx.pop(),
+                        Ok(NativeCrumbsCommand::Engine(CrumbsCommand::SetParam { .. }))
+                    ),
                     "what the panel set while dormant must reach the ring the slot drains"
                 );
                 id
@@ -2609,14 +3902,7 @@ mod tests {
             Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("an attach must queue the slot registration"),
         };
-        match command_rx.pop() {
-            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => assert_eq!(
-                registered, registered_engine_plugin_id,
-                "the capture registration must name the slot it feeds"
-            ),
-            Ok(_) => panic!("the batch's second command must register the capture consumer"),
-            Err(_) => panic!("an attach must queue the capture registration"),
-        }
+
         assert!(
             command_rx.pop().is_err(),
             "an attach must queue its fence, the slot and its capture registration, nothing else"
@@ -2629,73 +3915,63 @@ mod tests {
         );
     }
 
-    /// An engine that refuses the attach leaves the instance exactly as it
-    /// was: still dormant, still holding what the panel set, and attachable on
-    /// the next batch. Attaching against an already-full capture bus is what a
-    /// session that re-points its panel meets.
+    /// Idle attachment is independent of capture capacity and preserves the
+    /// same incarnation and parked parameter writes.
     #[test]
-    fn a_refused_attach_stays_dormant() {
-        const INSTANCE_ID: &str = "before-first-play";
-
+    fn an_idle_dormant_instance_attaches_with_a_full_capture_bus() {
         let state = CrumbsState::default();
-        let app_state = AppState::default();
-        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
-            .expect("a create before the engine runs must degrade, not refuse");
+        let app = AppState::default();
+        crate::block_on_test(create_crumbs("dormant".into(), &state, &app)).unwrap();
         crate::block_on_test(set_crumbs_param(
-            INSTANCE_ID.to_string(),
-            "filterCutoff".to_string(),
+            "dormant".into(),
+            "filterCutoff".into(),
             0.25,
             &state,
         ))
-        .expect("state the slot reads on its first pass parks while dormant");
-
-        let (mut engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
-        // Fill the input bus's reserve through the ledger the handle owns, so
-        // the attach's own registration is the one that overruns it.
-        for offset in 0..CRUMBS_CAPTURE_RESERVE {
-            engine
-                .register_capture_consumer(900 + offset)
-                .expect("the reserve must admit its own consumers");
+        .unwrap();
+        let incarnation = state.instances.lock().unwrap()["dormant"]
+            .recording()
+            .incarnation;
+        let (mut engine, mut commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16);
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine.register_capture_consumer(id).unwrap();
         }
-        *app_state
-            .engine
-            .lock()
-            .expect("engine lock should be available") = Some(engine);
-        for _ in 0..CRUMBS_CAPTURE_RESERVE {
-            assert!(
-                matches!(
-                    command_rx.pop(),
-                    Ok(GraphCommand::RegisterCaptureConsumer(_))
-                ),
-                "the reserve's own registrations are all the ring holds going in"
-            );
-        }
-
-        let refusals =
-            attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app_state.engine)
-                .expect("both locks are free, so the attach reports refusals rather than an error")
-                .refusals;
-        assert_eq!(refusals.len(), 1, "one dormant instance, one refusal");
-        let (refused_instance_id, reason) = &refusals[0];
-        assert_eq!(refused_instance_id, INSTANCE_ID);
-        assert!(
-            reason.starts_with("capture-bus-full:"),
-            "the reason must be the capture ledger's own: {reason}"
-        );
-
-        assert!(
-            slot_is_dormant(&state, INSTANCE_ID),
-            "a refused attach must leave the instance where the next batch can retry it"
-        );
+        while commands.pop().is_ok() {}
+        *app.engine.lock().unwrap() = Some(engine);
+        let report =
+            attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app.engine).unwrap();
+        assert!(report.refusals.is_empty());
+        assert_eq!(report.attached, vec!["dormant"]);
         assert_eq!(
-            parked_writes(&state, INSTANCE_ID, |writes| writes.params.clone()),
-            vec![(CrumbsParam::FilterCutoff, 0.25)],
-            "a refused attach must leave the parked writes for the next one to replay"
+            state.instances.lock().unwrap()["dormant"]
+                .recording()
+                .incarnation,
+            incarnation
         );
+        assert!(matches!(
+            commands.pop(),
+            Ok(GraphCommand::BeginBatch { commands: 1 })
+        ));
+        match commands.pop().unwrap() {
+            GraphCommand::AddHostedPlugin(_, mut plugin, _) => {
+                let slot = plugin
+                    .as_any_mut()
+                    .downcast_mut::<CrumbsPluginSlot>()
+                    .unwrap();
+                assert!(matches!(
+                    slot.command_rx.pop(),
+                    Ok(NativeCrumbsCommand::Engine(CrumbsCommand::SetParam {
+                        value: 0.25,
+                        ..
+                    }))
+                ));
+            }
+            _ => panic!("attach publishes the persistent slot"),
+        }
         assert!(
-            command_rx.pop().is_err(),
-            "a refused batch must leave nothing at all on the ring — no fence, no slot"
+            commands.pop().is_err(),
+            "idle attach does not register input"
         );
     }
 
@@ -2790,10 +4066,16 @@ mod tests {
         let mut last_selection = None;
         while let Ok(command) = slot.command_rx.pop() {
             match command {
-                CrumbsCommand::SetParam { param, value } => params.push((param, value)),
-                CrumbsCommand::SetMode(_) => modes += 1,
-                CrumbsCommand::AddSample { id, .. } => added_samples.push(id),
-                CrumbsCommand::SetActiveSample(id) => last_selection = Some(id),
+                NativeCrumbsCommand::Engine(CrumbsCommand::SetParam { param, value }) => {
+                    params.push((param, value))
+                }
+                NativeCrumbsCommand::Engine(CrumbsCommand::SetMode(_)) => modes += 1,
+                NativeCrumbsCommand::Engine(CrumbsCommand::AddSample { id, .. }) => {
+                    added_samples.push(id)
+                }
+                NativeCrumbsCommand::Engine(CrumbsCommand::SetActiveSample(id)) => {
+                    last_selection = Some(id)
+                }
                 _ => panic!("the replay must queue nothing else"),
             }
         }
@@ -2882,7 +4164,7 @@ mod tests {
         );
         match command_rx.pop() {
             Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
-                commands, 2,
+                commands, 1,
                 "the attach's fence must announce the slot and its capture registration"
             ),
             Ok(_) => panic!("an attach must publish its registration behind a batch fence"),
@@ -2952,58 +4234,32 @@ mod tests {
         );
     }
 
-    /// Issue #3807: the capture-ledger refusal fixture from
-    /// `a_refused_attach_stays_dormant`, reused to pin the numbering side of
-    /// the same contract — a batch the engine refused is not a fence, so the
-    /// registry given to a refused attach must be left exactly as it was.
+    /// An accepted idle attach numbers its slot fence even while every input
+    /// consumer position is held by another owner.
     #[test]
-    fn a_refused_attach_numbers_nothing() {
-        const INSTANCE_ID: &str = "before-first-play-refused-numbering";
-
+    fn an_idle_attach_with_full_capture_bus_numbers_its_fence() {
         let state = CrumbsState::default();
-        let app_state = AppState::default();
-        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
-            .expect("a create before the engine runs must degrade, not refuse");
-
-        let (mut engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
-        // Fill the input bus's reserve through the ledger the handle owns, so
-        // the attach's own registration is the one that overruns it.
-        for offset in 0..CRUMBS_CAPTURE_RESERVE {
-            engine
-                .register_capture_consumer(900 + offset)
-                .expect("the reserve must admit its own consumers");
+        let app = AppState::default();
+        crate::block_on_test(create_crumbs("dormant".into(), &state, &app)).unwrap();
+        let (mut engine, mut commands, _retired) =
+            daw_engine::engine_handle_for_command_capture(16);
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine.register_capture_consumer(id).unwrap();
         }
-        *app_state
-            .engine
-            .lock()
-            .expect("engine lock should be available") = Some(engine);
-        for _ in 0..CRUMBS_CAPTURE_RESERVE {
-            assert!(
-                matches!(
-                    command_rx.pop(),
-                    Ok(GraphCommand::RegisterCaptureConsumer(_))
-                ),
-                "the reserve's own registrations are all the ring holds going in"
-            );
-        }
-
+        while commands.pop().is_ok() {}
+        *app.engine.lock().unwrap() = Some(engine);
         let mut registry = GraphRegistry::default();
-        let refusals = attach_dormant_crumbs(&state, &mut registry, &app_state.engine)
-            .expect("both locks are free, so the attach reports refusals rather than an error")
-            .refusals;
-        assert_eq!(refusals.len(), 1, "one dormant instance, one refusal");
-        assert!(
-            refusals[0].1.starts_with("capture-bus-full:"),
-            "the reason must be the capture ledger's own: {}",
-            refusals[0].1
-        );
-
+        assert!(attach_dormant_crumbs(&state, &mut registry, &app.engine)
+            .unwrap()
+            .refusals
+            .is_empty());
         assert_eq!(
             registry.fenced_batches(),
-            0,
-            "a refused attach must number nothing"
+            1,
+            "the accepted persistent-slot batch owns exactly one fence"
         );
+        pop_create_commands(&mut commands);
+        assert!(commands.pop().is_err());
     }
 
     /// An instance no strip ever splices still drains its command ring.
@@ -3067,8 +4323,18 @@ mod tests {
                 .expect("the command ring has room");
             Arc::clone(&instance.metering)
         };
-        crate::block_on_test(arm_recording(instance_id.to_string(), 0.5, 0, 1.0, &state))
-            .expect("the arm should reach the ring");
+        state
+            .instances
+            .lock()
+            .unwrap()
+            .get_mut(instance_id)
+            .unwrap()
+            .send(CrumbsCommand::ArmRecording {
+                threshold: 0.5,
+                target_pad: 0,
+                max_duration_secs: 1.0,
+            })
+            .expect("the DSP arm should reach the ring");
         crate::block_on_test(crumbs_note_on(instance_id.to_string(), 60, 100, &state))
             .expect("the note should reach the ring");
 
@@ -3085,7 +4351,7 @@ mod tests {
             let CrumbsEngineSlot::Attached { ends, .. } = &instance.engine_slot else {
                 panic!("the create attaches its instance to the running engine");
             };
-            ends.command_tx.buffer().capacity() - ends.command_tx.slots()
+            ends.command_tx.capacity() - ends.command_tx.slots()
         };
         assert_eq!(
             queued, 0,

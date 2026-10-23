@@ -4,7 +4,7 @@
  * into the full crumbs interface.
  */
 
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { Circle, Cpu, Volume2 } from 'lucide-react';
 
@@ -21,6 +21,7 @@ import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { midiNoteToName } from '../../models/CrumbsTypes';
 import { crumbsEngineAttachmentStore } from '../../stores/crumbsEngineAttachmentStore';
 import { crumbsNativeLifecycleStore } from '../../stores/crumbsNativeLifecycleStore';
+import { crumbsRecordingStore } from '../../stores/crumbsRecordingStore';
 import { defaultCrumbsState, crumbsStore } from '../../stores/crumbsStore';
 import { defaultPadState, padStore, ensurePadInstance, reorderPad, selectPad } from '../../stores/padStore';
 import { defaultSliceState, sliceStore, ensureSliceInstance, setActiveSlice } from '../../stores/sliceStore';
@@ -30,6 +31,7 @@ import { handleCrumbsFileDrop } from '../../useCases/handleFileDrop';
 import { hydrateCrumbsParametersFromProject } from '../../useCases/hydrateCrumbsParametersFromProject';
 import { subscribeToPosition } from '../../useCases/positionTracking';
 import { armCrumbsRecording } from '../../useCases/recording/armCrumbsRecording';
+import { syncCrumbsRecordingState } from '../../useCases/recording/syncCrumbsRecordingState';
 import { stopCrumbsRecording } from '../../useCases/recording/stopCrumbsRecording';
 import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
 import { setCrumbsParamWithAudio } from '../../useCases/setCrumbsParamWithAudio';
@@ -89,11 +91,19 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const nativeLifecycle = useStore(crumbsNativeLifecycleStore)[deviceId];
 
     const [isDragOver, setIsDragOver] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
-    // Monotonic id for the latest recorder request: an arm that resolves
-    // after the user already pressed Stop is stale and must not write the
-    // readout — the LED would flip back to "Recording..." over a closed take.
-    const recorderRequestRef = useRef(0);
+    const recording = useStoreSelector(crumbsRecordingStore, (instances) => instances?.[deviceId]);
+    const recordingPhase = recording?.phase ?? 'idle';
+    const recordingActive = ['preparing', 'waiting', 'recording', 'finishing'].includes(recordingPhase);
+    const recordingLabels = {
+        idle: 'Idle',
+        preparing: 'Preparing...',
+        waiting: 'Waiting...',
+        recording: 'Recording...',
+        finishing: 'Finishing...',
+        completed: 'Completed',
+        cancelled: 'Cancelled',
+        failed: 'Failed',
+    };
     // The native instance is not this panel's to own (#4204): it follows the
     // device's presence on the project, created and destroyed by
     // `syncCrumbsNativeInstances`, so the sampler sounds whether or not anyone
@@ -106,6 +116,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         ensureCrumbsInstanceFromProject(deviceId);
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
+        void syncCrumbsRecordingState(deviceId, 'reconcile');
     }, [deviceId]);
 
     useEffect(() => {
@@ -236,10 +247,10 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <Stack gap={2}>
                                 <Row gap={2}>
                                     <Circle
-                                        className={`size-3 ${isRecording ? 'fill-red-500 text-red-500' : 'fill-none text-foreground/40'}`}
+                                        className={`size-3 ${recordingPhase === 'recording' ? 'fill-red-500 text-red-500' : 'fill-none text-foreground/40'}`}
                                     />
                                     <span className="text-[10px] text-foreground/70">
-                                        {isRecording ? 'Recording...' : 'Idle'}
+                                        {recordingLabels[recordingPhase]}
                                     </span>
                                 </Row>
                                 <Row align="stretch" gap={2}>
@@ -248,27 +259,13 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         size="bare"
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
+                                        disabled={recordingActive}
                                         onClick={() => {
-                                            // The readout follows the arm's
-                                            // outcome, never the click: a
-                                            // refused arm must not read
-                                            // "Recording..." over a take that
-                                            // was never opened.
-                                            recorderRequestRef.current += 1;
-                                            const requestId = recorderRequestRef.current;
-                                            armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60)
-                                                .then((armed) => {
-                                                    if (recorderRequestRef.current === requestId) {
-                                                        setIsRecording(armed);
-                                                    }
-                                                    return undefined;
-                                                })
-                                                .catch((error: unknown) => {
+                                            armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60).catch(
+                                                (error: unknown) => {
                                                     logger.warn('Failed to arm crumbs recording:', error);
-                                                    if (recorderRequestRef.current === requestId) {
-                                                        setIsRecording(false);
-                                                    }
-                                                });
+                                                }
+                                            );
                                         }}
                                     >
                                         Arm
@@ -278,15 +275,8 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         size="bare"
                                         type="button"
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
+                                        disabled={!recordingActive}
                                         onClick={() => {
-                                            // Stop reads Idle at once — the
-                                            // user asked for it — but a
-                                            // refusal is reported rather than
-                                            // swallowed by a bare `void`.
-                                            // Bumping the request id makes any
-                                            // in-flight arm resolution stale.
-                                            recorderRequestRef.current += 1;
-                                            setIsRecording(false);
                                             stopCrumbsRecording(deviceId).catch((error: unknown) => {
                                                 logger.warn('Failed to stop crumbs recording:', error);
                                             });
@@ -295,6 +285,11 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         Stop
                                     </Button>
                                 </Row>
+                                {recording?.failure ? (
+                                    <span role="alert" className="text-[10px] text-red-500">
+                                        {recording.failure}
+                                    </span>
+                                ) : null}
                             </Stack>
                         </SectionCard>
                     ) : null}
