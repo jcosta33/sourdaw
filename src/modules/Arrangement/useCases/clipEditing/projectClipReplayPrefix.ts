@@ -2,10 +2,11 @@ import { getAutomationLanes, isExactAutomationLaneSnapshots } from '#/modules/Au
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSnapshot } from '#/utils/handlerContract';
 
+import { type Clip } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { planRippleDelete } from '../rippleDelete/planRippleDelete';
 
-type LocatedClip = { owningTrackId: string; clip: ClipSnapshot };
+type LocatedClip = { owningTrackId: string; clip: ClipSnapshot & Pick<Clip, 'loopOriginBeat'> };
 type ShiftedOwnerState = {
     clips: readonly LocatedClip[];
     lanes: readonly ClipAutomationLaneSnapshot[];
