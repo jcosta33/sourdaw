@@ -152,6 +152,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     startFaustNote: vi.fn(),
+    advanceNoteExpression: vi.fn(),
+    getNoteExpressionDimensions: vi.fn(),
+    startNoteExpression: vi.fn(),
+    relocateNoteExpression: vi.fn(),
+    projectNoteExpressionCurves: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     getAudioContext: () => audioContextStub,
