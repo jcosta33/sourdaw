@@ -303,6 +303,59 @@ describe('loadRecentProject', () => {
         expect(saveProject).not.toHaveBeenCalled();
     });
 
+    /**
+     * A user's Stop turns the transport idle at once and lands the take's commit
+     * afterwards, so a commit can settle while this load is still reading the
+     * project it will open. The watch follows the Transport contract: it reports
+     * a take once the settled-commit count differs from the count when the watch
+     * was created, so only a watch created before the read sees this take. The
+     * lifecycle itself is exercised by the real-recording integration spec.
+     */
+    function countTakeCommitsLikeTheTransport(): { settleATakeCommit: () => void } {
+        let settledCommits = 0;
+        vi.mocked(watchClosedTakes).mockImplementation(() => {
+            let acknowledged = settledCommits;
+            return {
+                acknowledge: () => {
+                    acknowledged = settledCommits;
+                },
+                hasClosedTake: () => settledCommits !== acknowledged,
+            };
+        });
+        vi.mocked(saveProject).mockResolvedValue(true);
+        return {
+            settleATakeCommit: () => {
+                settledCommits++;
+            },
+        };
+    }
+
+    it('saves the outgoing project when a take commit settles while the project is being read', async () => {
+        const { settleATakeCommit } = countTakeCommitsLikeTheTransport();
+        vi.mocked(readNamedProjectJson).mockImplementation(() => {
+            settleATakeCommit();
+            return Promise.resolve(validProject);
+        });
+
+        await expect(loadRecentProject('stop-during-read')).resolves.toBe('committed');
+
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
+
+    it('does not save the outgoing project when a take settles during the read of a discard load', async () => {
+        const { settleATakeCommit } = countTakeCommitsLikeTheTransport();
+        vi.mocked(readNamedProjectJson).mockImplementation(() => {
+            settleATakeCommit();
+            return Promise.resolve(validProject);
+        });
+
+        await expect(loadRecentProject('discard-during-read', { outgoingProject: 'discard' })).resolves.toBe(
+            'committed'
+        );
+
+        expect(saveProject).not.toHaveBeenCalled();
+    });
+
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         const persistEmbedded = vi.fn().mockResolvedValue(false);

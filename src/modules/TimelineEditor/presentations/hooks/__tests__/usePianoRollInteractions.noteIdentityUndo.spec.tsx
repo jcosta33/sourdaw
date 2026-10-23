@@ -54,6 +54,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     restoreTimelineMapSnapshot: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
     stopPlayback: vi.fn(),
+    waitForClosedTakes: vi.fn(),
     watchClosedTakes: vi.fn(),
 }));
 

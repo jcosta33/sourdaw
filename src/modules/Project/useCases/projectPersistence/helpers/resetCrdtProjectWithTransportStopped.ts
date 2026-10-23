@@ -92,7 +92,10 @@ async function settleClosedTakes(
  * save failed to. A `discard` replacement never saves and never warns.
  *
  * `closedTakes` is created by the caller before its first stop, so a take that
- * stop commits is kept too.
+ * stop commits is kept too. The guarantee that no take is lost silently starts
+ * where the watch does: a caller that awaits first (a project read) creates the
+ * watch before that await, and a route with a pre-save waits for the takes
+ * closing then (`saveProjectBeforeReplacement`).
  */
 export async function resetCrdtProjectWithTransportStopped(
     name: string,

@@ -51,6 +51,7 @@ export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
 export { isTransportIdle } from './transportControls/isTransportIdle';
 export { watchClosedTakes } from './transportControls/watchClosedTakes';
+export { waitForClosedTakes } from './transportControls/waitForClosedTakes';
 export { rearmNativeSessionAfterEngineRetire } from './transportControls/rearmNativeSessionAfterEngineRetire';
 export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
 export { toggleCountIn } from './transportControls/toggleCountIn';

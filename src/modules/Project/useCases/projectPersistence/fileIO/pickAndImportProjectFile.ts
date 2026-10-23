@@ -2,10 +2,9 @@ import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
-import { projectStore } from '../../../stores/projectStore';
 import { pickFiles } from '../../fileDialog';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
-import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
+import { saveEditedProjectBeforeReplacement } from '../saveProject/saveEditedProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
 
@@ -23,11 +22,11 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
     // unsaved edits since the last save are silently lost (audit #568 F3). The
     // guard refuses a failed save and a save that resolved with the project
     // still dirty (a plugin capture rejected before commit; both surfaces
-    // already notified), so the current project stays open.
-    if (projectStore.value?.dirty) {
-        if (!(await saveProjectBeforeReplacement())) {
-            return false;
-        }
+    // already notified), so the current project stays open. A take a Stop is
+    // still committing dirties the project only once it lands, so the check
+    // follows the wait for it.
+    if (!(await saveEditedProjectBeforeReplacement())) {
+        return false;
     }
 
     const transaction = runProjectLoadTransaction();
@@ -39,6 +38,11 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         }
         const content = await file.text();
         const data: unknown = JSON.parse(content);
+        // A Stop pressed while the file was read lands its take in the project
+        // the import is about to replace, after the pre-save above ran.
+        if (!(await saveEditedProjectBeforeReplacement())) {
+            return false;
+        }
 
         const imported = await applyImportedProjectData({ data, transaction });
         if (!imported) {
