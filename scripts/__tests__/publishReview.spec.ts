@@ -6048,6 +6048,62 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('replays a recorded approval over reopened threads and retries the label', async () => {
+        // The replay exemption is load-bearing: a label write that failed after a successful
+        // approval promises that a re-run replays the review and retries the label, and a thread
+        // reopened in between must not turn that re-run into a refusal (#5436 gates fresh
+        // approvals only). Driven through the coordinator, whose label sync is the retry.
+        const landedReview: RemotePublishedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({ plan: riskPlan(), remoteReviews: { 99: landedReview } });
+        const reopenedThreadsPort: PublishReviewPort = {
+            ...fixture.port,
+            reviewState: () => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: 99,
+                latestReviewerCommitOid: head,
+                unresolvedThreads: 1,
+            }),
+        };
+        const dependencies = (port: PublishReviewPort): PublishReviewCoordinatorDependencies => ({
+            primaryRoot: () => fixture.root,
+            serializeMutation: (_primaryRoot, _number, operation) =>
+                operation({
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: () => undefined,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            publish: publishPreparedReview,
+        });
+        try {
+            await coordinatePublishReview(number, dependencies(fixture.port));
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+
+            // The thread reopened after the approval posted; the re-run replays the
+            // recorded publication, posts nothing new, and retries the label.
+            fixture.labelWrites.length = 0;
+            await coordinatePublishReview(number, dependencies(reopenedThreadsPort));
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            expect(fixture.labelWrites).toEqual([`apply:${number}`]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('refuses to re-post when the recorded publication no longer stands live and exact', () => {
         const fixture = dossierFixture({ plan: riskPlan() });
         try {
