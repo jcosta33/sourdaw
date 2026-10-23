@@ -1,0 +1,21 @@
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_59e31a5c6f3e31::t_25d16e8ef394ac 4,629,633
+  s_59e31a5c6f3e31::t_b033a227d0fdb1 579-582,584-595,597-628,630-632,634-677,679-691,700-719,723-724,746-747,754,763,765,785,795-797
+  s_59e31a5c6f3e31::t_255f950d6a6bf3 748-753,755-762,764,766-784,786-794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "509f5fc32e9fb6077b194acf95a690680de85789",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
