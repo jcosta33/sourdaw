@@ -1,0 +1,25 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1c08b47ac3792f::t_9da9efafa9dbc8 5572-5704
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_1c08b47ac3792f::t_757b0af073077f 12,37,43-94,136,138,145-150
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_1c08b47ac3792f::t_2bedfaf65b7b46 89
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_1c08b47ac3792f::t_05d9642eaf1a85 27,640-660,663,667
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7e10219e72379fde1fc38b87da59bde19611006d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
