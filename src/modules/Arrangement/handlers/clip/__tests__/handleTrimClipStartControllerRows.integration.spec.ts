@@ -22,8 +22,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '#/modules/MIDI/models/MidiNote';
-import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { defaultMidiStoreState, type MidiNote, type MidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { projectChannelBend, projectMidiClipPlayback } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -37,6 +36,9 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
  * all take the one re-base or the pedal and the bend play against different
  * notes than before the trim.
  */
+
+type MidiCC = NonNullable<MidiStoreState>['ccByClipId'][string][number];
+type MidiPitchBend = NonNullable<MidiStoreState>['pitchBendByClipId'][string][number];
 
 const CLIP_ID = 'clip-keys';
 const LOOP_BEATS = 8;
