@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SEQUENCER_TICK_BEATS } from '../../../models/SequencerTick';
 import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => ({
@@ -626,7 +627,10 @@ describe('prepareMidiClipGlueState', () => {
             });
 
             it('returns to the state at the window start ahead of a Data Entry of its own on the beat the return takes', () => {
-                const controlChanges = [...recordedUnderTwelve, row('data-entry-first', 2.5, 6, 5)];
+                const controlChanges = [
+                    ...recordedUnderTwelve,
+                    row('data-entry-first', 1.35 + SEQUENCER_TICK_BEATS / 2, 6, 5),
+                ];
                 const pitchBends = [carried, { id: 'after-data-entry', value: 4096, beat: 3, channel: 0 }];
                 mocks.state.value = {
                     notesByClipId: {},
