@@ -39,6 +39,65 @@ describe('getTimeSignatureAtBeat', () => {
 });
 
 describe('getBarBeatAtPosition', () => {
+    it.each([
+        {
+            numerator: 3,
+            denominator: 4,
+            origin: 6 + 10 / 3,
+            position: 13 + 10 / 3,
+            expected: { bar: 6, beat: 2, tick: 0 },
+        },
+        {
+            numerator: 5,
+            denominator: 8,
+            origin: 8.5 + 1 / 3,
+            position: 16 + 1 / 3,
+            expected: { bar: 6, beat: 1, tick: 0 },
+        },
+    ])(
+        'reads shifted on-grid material in $numerator/$denominator',
+        ({ numerator, denominator, origin, position, expected }) => {
+            const changes = [
+                { id: 'base', beat: 0, numerator: 3, denominator: 4 },
+                { id: 'shifted', beat: origin, numerator, denominator },
+            ];
+            expect(getBarBeatAtPosition(changes, position, 4, 4)).toEqual(expected);
+        }
+    );
+
+    it.each([1 - 5e-10, 1 + 5e-10, 4 - 5e-10, 4 + 5e-10])('recognizes metrical grid roundoff at %s', (position) => {
+        const nearestBeat = Math.round(position);
+        expect(getBarBeatAtPosition([], position, 4, 4)).toEqual({
+            bar: Math.floor(nearestBeat / 4) + 1,
+            beat: (nearestBeat % 4) + 1,
+            tick: 0,
+        });
+    });
+
+    it.each([
+        { position: 1 - 2e-9, expected: { bar: 1, beat: 1, tick: 479 } },
+        { position: 1 + 2e-9, expected: { bar: 1, beat: 2, tick: 0 } },
+        { position: 4.25, expected: { bar: 2, beat: 1, tick: 120 } },
+        { position: 4.5, expected: { bar: 2, beat: 1, tick: 240 } },
+    ])('preserves genuine fractional ticks at $position', ({ position, expected }) => {
+        expect(getBarBeatAtPosition([], position, 4, 4)).toEqual(expected);
+    });
+
+    it.each([
+        { numerator: 1, denominator: 3, position: 7 * (4 / 3), expected: { bar: 8, beat: 1, tick: 0 } },
+        { numerator: 3, denominator: 5, position: 4 * (4 / 5), expected: { bar: 2, beat: 2, tick: 0 } },
+        { numerator: 5, denominator: 16, position: 1.25, expected: { bar: 2, beat: 1, tick: 0 } },
+    ])('counts exact metrical beats in $numerator/$denominator', ({ numerator, denominator, position, expected }) => {
+        expect(getBarBeatAtPosition([], position, numerator, denominator)).toEqual(expected);
+    });
+
+    it('keeps exact change admission and prior whole-bar counts separate from active-grid tolerance', () => {
+        const change = { id: 'mid-bar', beat: 3 - 5e-10, numerator: 5, denominator: 8 };
+        expect(getBarBeatAtPosition([change], change.beat, 3, 4)).toEqual({ bar: 1, beat: 1, tick: 0 });
+        expect(getBarBeatAtPosition([change], change.beat - 2e-9, 3, 4)).toEqual({ bar: 1, beat: 3, tick: 479 });
+        expect(getBarBeatAtPosition([change], change.beat + 0.25, 3, 4)).toEqual({ bar: 1, beat: 1, tick: 240 });
+    });
+
     it('should map beat zero in 4/4 with no changes to bar 1 beat 1', () => {
         const pos = getBarBeatAtPosition([], 0, 4, 4);
         expect(pos.bar).toBe(1);

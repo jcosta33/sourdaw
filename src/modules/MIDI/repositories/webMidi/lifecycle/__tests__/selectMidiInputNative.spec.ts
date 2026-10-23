@@ -24,6 +24,8 @@ vi.mock('../../setNativeEventUnlisten', () => ({
 }));
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
+import { heldPedalState } from '../../heldPedalState';
+import { ingestChannelControlChange } from '../../ingestChannelControlChange';
 import { memberExpressionState, setMemberExpression } from '../../memberExpressionState';
 import { selectMidiInputNative } from '../selectMidiInputNative';
 
@@ -32,6 +34,7 @@ describe('selectMidiInputNative', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        heldPedalState.clear();
         getNativeEventUnlistenMock.mockReturnValue(null);
         desktopInvokeMock.mockResolvedValue(undefined);
         desktopListenMock.mockResolvedValue(newUnlisten);
@@ -51,6 +54,15 @@ describe('selectMidiInputNative', () => {
         expect(desktopListenMock).toHaveBeenCalledWith('midi-message', expect.any(Function));
         expect(setNativeEventUnlistenMock).toHaveBeenNthCalledWith(2, newUnlisten);
         expect(memberExpressionState.get(1)).toBeUndefined();
+    });
+
+    it('drops a held pedal when a native port is selected, so the next take is not seeded with it', async () => {
+        ingestChannelControlChange({ channel: 0, cc: 64, value: 127 });
+        expect(heldPedalState.get(0)?.get(64)).toBe(127);
+
+        await selectMidiInputNative({ portIndex: 2, onMidiMessage: vi.fn() });
+
+        expect(heldPedalState.get(0)?.get(64)).toBeUndefined();
     });
 
     it('should forward valid native MIDI message bytes to the MIDI handler', async () => {

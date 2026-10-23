@@ -12,6 +12,8 @@ import {
     discardProjectChanges,
     getRecentProjects,
     getProjectSnapshotKey,
+    isOpenProjectKey,
+    pendingProjectReplacements,
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
@@ -76,6 +78,27 @@ const reportCloseResult = async (
     });
 };
 
+/** Choosing the open project withdraws a pending replacement; any other project opens after a clean save. */
+const openRecentProject = async (recentKey: string): Promise<void> => {
+    // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
+    if (isOpenProjectKey(recentKey)) {
+        pendingProjectReplacements.withdraw();
+        return;
+    }
+    const isStillChosen = pendingProjectReplacements.capture();
+    if ((await saveProjectIfClean()) && isStillChosen()) {
+        await loadRecentProject(recentKey, { shouldProceed: isStillChosen });
+    }
+};
+
+/** A new project starts after a clean save unless the open project is chosen meanwhile. */
+const createNewProject = async (): Promise<void> => {
+    const isStillChosen = pendingProjectReplacements.capture();
+    if ((await saveProjectIfClean()) && isStillChosen()) {
+        await newProject(undefined, { shouldProceed: isStillChosen });
+    }
+};
+
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
     if (isCanvasEditorCommand(action)) {
@@ -95,9 +118,7 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     }
     switch (action) {
         case 'project:new':
-            if (await saveProjectIfClean()) {
-                await newProject();
-            }
+            await createNewProject();
             return;
         case 'project:import-project':
             await pickAndImportProjectFile();
@@ -144,8 +165,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             return;
         }
         case 'project:open-recent':
-            if (intent.recentKey !== undefined && (await saveProjectIfClean())) {
-                await loadRecentProject(intent.recentKey);
+            if (intent.recentKey !== undefined) {
+                await openRecentProject(intent.recentKey);
             }
             return;
         case 'project:import-audio':
