@@ -176,6 +176,7 @@ export function startNoteExpression({
         own,
         channel,
         bendOwner,
+        advancedBeat: Number.NEGATIVE_INFINITY,
         pending: moments.slice(passedCount),
     };
     return {

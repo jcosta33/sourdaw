@@ -30,6 +30,7 @@ function followOwnMoment(timeline: NoteExpressionTimeline, moment: OwnExpression
         ...timeline,
         own: moment.expression,
         bendOwner: moment.claimsBend ? 'note' : timeline.bendOwner,
+        advancedBeat: Math.max(timeline.advancedBeat, moment.beat),
     };
 }
 
@@ -38,9 +39,11 @@ function followChannelMove(timeline: NoteExpressionTimeline, move: ChannelBendPo
         ...timeline,
         channel: { value: move.value, rangeSemitones: move.rangeSemitones },
         bendOwner: 'channel',
+        advancedBeat: Math.max(timeline.advancedBeat, move.beat),
     };
 }
 
+/** The channel moves that fall between the note's start and release and before the window closes. */
 function listChannelEvents(
     timeline: NoteExpressionTimeline,
     channelMoves: readonly ChannelBendPoint[],
@@ -71,6 +74,9 @@ function listChannelEvents(
  * Events before `fromBeat` fell in windows that did not run for the note, so they are never posted at
  * their own, passed, frame; the instrument was told nothing of them, so the last is posted once at
  * `fromFrame`, ahead of the window's own changes. The caller does not ask for a note already released.
+ * A window that lists the moves again may hand over ones the timeline already took (`advancedBeat`); those
+ * are not followed a second time, but a move listed from before `fromBeat` still makes the window post the
+ * expression in force at `fromFrame`.
  *
  * Channel moves come with the window, not the note: a move the clips hold now reaches every note that
  * sounds on the track at its frame, on the note's own clock.
@@ -86,15 +92,23 @@ export function advanceNoteExpression({
     const taken = dueCount === -1 ? timeline.pending.length : dueCount;
     // The sort is stable and the channel moves are listed first, so at one frame the note's own point has the
     // last word, as it has at the note's start.
+    const channelEvents = listChannelEvents(timeline, channelMoves, toBeat);
     const events: ExpressionEvent[] = [
-        ...listChannelEvents(timeline, channelMoves, toBeat),
+        // A move at or before `advancedBeat` is one the note already followed, or one its own point since
+        // overtook; listing it again must not take the bend back from that point.
+        ...channelEvents.filter((event) => event.beat > timeline.advancedBeat),
         ...timeline.pending
             .slice(0, taken)
             .map((moment): ExpressionEvent => ({ kind: 'own', beat: moment.beat, frame: moment.frame, moment })),
     ].sort((left, right) => left.frame - right.frame);
 
     let advanced: NoteExpressionTimeline = { ...timeline, pending: timeline.pending.slice(taken) };
+    // A window handed a move from before it opens resumes the track after a mute: the instrument is given the
+    // expression in force at the frame it opens on, whether or not the note took that move already.
     let chase: ProjectedNoteExpressionChange | undefined;
+    if (channelEvents.some((event) => event.beat < fromBeat)) {
+        chase = { beat: fromBeat, frame: fromFrame, expression: readNoteExpression(timeline) };
+    }
     const changes: ProjectedNoteExpressionChange[] = [];
     for (const event of events) {
         advanced =

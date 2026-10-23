@@ -374,6 +374,35 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined]);
     });
 
+    it('bends nothing for the part of a clip lane a comp region replaces', async () => {
+        stripFor(FERMENTER);
+        // The comp resolution cuts the bend clip at 4, so its move at 5 lies in the replaced part.
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => {
+                const endBeat = clip.id === 'bends' ? 4 : clip.endBeat;
+                return {
+                    ...clip,
+                    endBeat,
+                    regionStartBeat: clip.startBeat,
+                    regionEndBeat: endBeat,
+                    sourceStartBeat: 0,
+                };
+            })
+        );
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip({ id: 'notes' }), midiClip({ id: 'bends' })]),
+            notes: { notes: [note('n0', 0, 7)] },
+            bends: { bends: [bend('kept', 2, 4096), bend('replaced', 5, 8191)] },
+        });
+
+        await play(0, 8);
+
+        expect(appliedBend()).toEqual([
+            { sampleFrame: 0, pitchBend: undefined, bendRangeSemitones: undefined },
+            { sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+        ]);
+    });
+
     it('bends nothing on a Yeast track, whose notes are the rack', async () => {
         stripFor(FERMENTER);
         setProject({

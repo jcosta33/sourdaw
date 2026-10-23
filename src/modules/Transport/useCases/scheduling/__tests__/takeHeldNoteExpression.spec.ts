@@ -305,6 +305,91 @@ describe('heldNoteExpression', () => {
             ]);
         });
 
+        /** A following note whose only bend points are its own, at ±48, placed on the given clock. */
+        function holdFollowingNote(pitchBend: { offsetBeats: number; value: number }[], clock = frameAtBeat) {
+            holdNoteExpression({
+                trackId: 'track-1',
+                pitch: 64,
+                channel: 2,
+                receiverId: 'device-1',
+                releaseBeat: 10,
+                followsChannelBend: true,
+                timeline: startNoteExpression({
+                    note: { pitchBendRangeSemitones: 48, expression: { pitchBend } },
+                    startBeat: 0,
+                    releaseFrame: 10_000,
+                    frameAtBeat: clock,
+                }).timeline,
+            });
+        }
+
+        const bends = (due: ReturnType<typeof take>) =>
+            due.map(({ change: { beat, expression } }) => [
+                beat,
+                expression.pitchBend,
+                expression.pitchBendRangeSemitones,
+            ]);
+
+        it('does not replay a move on the beat of the note’s own bend point over that point when a window resumes', () => {
+            holdFollowingNote([{ offsetBeats: 1, value: 4_000 }]);
+
+            // The move and the point share beat 1, and the point has the last word there.
+            expect(bends(take(0, 1.5, 'track-1', [move(1, 8_191)]))).toEqual([[1, 4_000, 48]]);
+            expect(bends(take(1.5, 3, 'track-1', [move(1, 8_191)]))).toEqual([[1.5, 4_000, 48]]);
+        });
+
+        it('does not replay a move that shares a frame with the note’s own bend point and sits a rounding step after it', () => {
+            // Both land on frame 1000 of a clock that rounds to whole frames; the move is the later beat, but the
+            // note’s own point has the last word at the frame.
+            const wholeFrames = (beat: number) => Math.round(beat * 1000);
+            holdFollowingNote([{ offsetBeats: 1.0001, value: 4_000 }], wholeFrames);
+            const roundingStepLater = { beat: 1.0004, frame: 1000, value: 8_191, rangeSemitones: 2 };
+
+            expect(bends(take(0, 1.5, 'track-1', [roundingStepLater]))).toEqual([[1.0001, 4_000, 48]]);
+            expect(bends(take(2, 3, 'track-1', [roundingStepLater]))).toEqual([[2, 4_000, 48]]);
+        });
+
+        it('keeps the bend of the last move a note took when a resuming window lists only an older one', () => {
+            hold({ points: [], followsChannelBend: true });
+
+            expect(take(0, 3, 'track-1', [move(1, 8_191), move(2, 4_096)])).toHaveLength(2);
+            // The lane was edited while the track was muted, and no longer holds the move at 2.
+            expect(bends(take(5, 8, 'track-1', [move(1, 8_191)]))).toEqual([[5, 4_096, 2]]);
+        });
+
+        it('does not replay moves that share a frame once the note took the last of them', () => {
+            // Both land on frame 1000 of a clock that rounds to whole frames, and the clips list the later beat
+            // first: the move the note ends on is the one with the earlier beat.
+            const wholeFrames = (beat: number) => Math.round(beat * 1000);
+            holdFollowingNote([], wholeFrames);
+            const listedFirst = { beat: 1.0004, frame: 1000, value: 8_191, rangeSemitones: 2 };
+            const listedLast = { beat: 1.0001, frame: 1000, value: 4_096, rangeSemitones: 2 };
+
+            expect(bends(take(0, 1.5, 'track-1', [listedFirst, listedLast]))).toEqual([[1.0001, 4_096, 2]]);
+            expect(bends(take(2, 3, 'track-1', [listedFirst, listedLast]))).toEqual([[2, 4_096, 2]]);
+        });
+
+        it('lets a note’s own bend point overtake a move the note never took, which a window lists later', () => {
+            holdFollowingNote([{ offsetBeats: 2, value: 4_000 }]);
+
+            expect(bends(take(0, 3, 'track-1', []))).toEqual([[2, 4_000, 48]]);
+            // The lane was unmuted after the point: its move at 1 is older than the point, which keeps the bend.
+            expect(bends(take(5, 8, 'track-1', [move(1, 8_191)]))).toEqual([[5, 4_000, 48]]);
+        });
+
+        it('does not replay a move a note already took when a window resumes after a mute', () => {
+            holdFollowingNote([{ offsetBeats: 2, value: 4_000 }]);
+
+            expect(bends(take(0, 1.5, 'track-1', [move(1, 8_191)]))).toEqual([[1, 8_191, 2]]);
+            expect(bends(take(1.5, 3, 'track-1', []))).toEqual([[2, 4_000, 48]]);
+            // [3, 5) was muted: the window that resumes lists the moves from the start, and the move the note
+            // took at 1 is older than its own point at 2, which still holds the bend.
+            const resumed = take(5, 8, 'track-1', [move(1, 8_191)]);
+            expect(bends(resumed)).toEqual([[5, 4_000, 48]]);
+            // It is posted at the frame the resuming window opens on.
+            expect(resumed.map(({ change }) => change.frame)).toEqual([5_007]);
+        });
+
         it('keeps the bend a move set when a later pressure point of the note arrives', () => {
             hold({ points: [[3, 80]], followsChannelBend: true });
 

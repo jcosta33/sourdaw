@@ -1697,6 +1697,7 @@ describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => 
 describe('scheduleTrackClips — per-note MPE for offline worklet instruments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
         mocks.getCompensationDelay.mockReturnValue(0);
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
@@ -2088,6 +2089,48 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             );
 
             expect(arrivals.order).toEqual(['noteOn', 'noteOff']);
+        });
+
+        it('lets the part of a clip a comp region replaces bend nothing', async () => {
+            // The comp region takes beats 4 to 8 from the take clip, which holds the note struck at 5.5. The bend
+            // lane belongs to clip-1, whose move at 5 lies in the part the region replaces: the note starts on
+            // the move at 2 that clip-1 still plays, never on the replaced one.
+            mocks.takeLaneValue.value = {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-inst',
+                        takes: [
+                            {
+                                id: 'take-1',
+                                clipId: 'take-clip',
+                                name: 'Take 1',
+                                startBeat: 4,
+                                endBeat: 8,
+                                selected: true,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 4, endBeat: 8, takeId: 'take-1' }],
+                    },
+                ],
+            };
+
+            const arrivals = await dispatchOneNote(
+                { startBeat: 0.5, duration: 0.25 },
+                {
+                    productionProjection: true,
+                    clip: { startBeat: 0, endBeat: 8 },
+                    lanes: { bends: [bendRow('kept', 2, 4_096), bendRow('replaced', 5, 8_191)] },
+                    otherClips: [
+                        {
+                            clip: { id: 'take-clip', startBeat: 4, endBeat: 8 },
+                            notes: [{ id: 'note-2', pitch: 62, startBeat: 1.5, duration: 1, velocity: 100 }],
+                        },
+                    ],
+                }
+            );
+
+            expect(bends(arrivals)).toEqual([{ sampleFrame: 132_000, bendSemitones: 1 }]);
         });
 
         it('sends no bend for a Yeast track, whose notes are the rack', async () => {

@@ -553,6 +553,7 @@ describe('startPlayheadScheduler', () => {
                 own: { pressure: 10 },
                 channel: undefined,
                 bendOwner: 'note',
+                advancedBeat: Number.NEGATIVE_INFINITY,
                 pending: [{ beat: 2, frame: 96_000, expression: { pressure: 80 }, claimsBend: false }],
             },
         });

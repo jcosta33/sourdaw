@@ -56,6 +56,12 @@ export type NoteExpressionTimeline = {
     channel: ChannelBendInForce | undefined;
     /** Whoever moved the bend last wins it: the note's own point or a channel move. */
     bendOwner: 'note' | 'channel';
+    /**
+     * The beat of the latest event, own or channel, the timeline has taken. A channel move at or before it
+     * is one the note has already followed (or one an own point after it has overtaken), so a window that
+     * lists the moves again, as the one resuming after a mute does, never replays it.
+     */
+    advancedBeat: number;
     /** The note's own moments not yet taken, in time order. */
     pending: readonly OwnExpressionMoment[];
 };
