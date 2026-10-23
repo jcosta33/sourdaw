@@ -296,9 +296,9 @@ async function browserPlayback(page: Page, pitch: number): Promise<unknown> {
         evidence.captureSink = false;
         return evidence.sink;
     });
-    const pitches = [...new Set(notes.map((note) => Math.round(69 + 12 * Math.log2(note.frequency / 440))))].filter(
-        (candidate) => PITCHES.includes(candidate)
-    );
+    const pitches = Array.from(
+        new Set(notes.map((note) => Math.round(69 + 12 * Math.log2(note.frequency / 440))))
+    ).filter((candidate) => PITCHES.includes(candidate));
     expect(pitches).toEqual([pitch]);
     return notes;
 }
