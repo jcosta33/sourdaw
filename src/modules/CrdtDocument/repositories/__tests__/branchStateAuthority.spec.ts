@@ -938,6 +938,88 @@ describe('branchStateAuthority', () => {
             expect(readStoredEnvelope()?.reset).toBeNull();
             expect(readStoredEnvelope()?.current).toEqual(intended);
         });
+
+        // The outgoing project is still the live one when a reset is withdrawn.
+        it('withdraws a recorded reset, keeping the outgoing list and releasing the lock', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            const begun = await beginReset(instance, branchList());
+
+            await expect(instance.authority.abortReset(begun)).resolves.toBe('aborted');
+
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current,
+                session: null,
+                reset: null,
+            });
+            expect(instance.store.value).toEqual(current);
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(true);
+        });
+
+        it('lets an ordinary branch write through again once the reset is withdrawn', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            await instance.authority.abortReset(begun);
+
+            const committed = await instance.authority.commit({
+                expectedRevision: instance.authority.captureRevision(),
+                next: branchList(hotfix),
+            });
+
+            expect(committed.status).toBe('committed');
+        });
+
+        it('lets a second reset begin after the first was withdrawn, without settling a stale marker', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const intended = branchList();
+            const first = await beginReset(instance, intended);
+            await instance.authority.abortReset(first);
+
+            const second = await beginReset(instance, intended);
+
+            expect(second.owner).not.toBe(first.owner);
+            expect(readStoredEnvelope()?.reset?.owner).toBe(second.owner);
+            expect(readStoredEnvelope()?.reset?.previous).toEqual(branchList(feature));
+        });
+
+        it('reports a handle another reset has superseded without writing', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const first = await beginReset(instance, branchList());
+            await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+
+            await expect(instance.authority.abortReset(first)).resolves.toBe('superseded');
+
+            expect(readStoredEnvelope()).toEqual(before);
+        });
+
+        it('keeps the reset recorded when the withdrawal cannot be written, and finishes on retry', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+            const restoreWrites = blockEveryDurableWrite();
+
+            await expect(instance.authority.abortReset(begun)).resolves.toBe('write-failed');
+
+            restoreWrites();
+            expect(readStoredEnvelope()).toEqual(before);
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+
+            // The switch never ran, so the replacement's list must not reach the live project.
+            const refused = await instance.authority.commit({
+                expectedRevision: instance.authority.captureRevision(),
+                next: branchList(hotfix),
+            });
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-pending' });
+            expect(instance.store.value).toEqual(branchList(feature));
+
+            await expect(instance.authority.abortReset(begun)).resolves.toBe('aborted');
+
+            expect(readStoredEnvelope()?.reset).toBeNull();
+        });
     });
 
     describe('boot classification of an abandoned reset', () => {

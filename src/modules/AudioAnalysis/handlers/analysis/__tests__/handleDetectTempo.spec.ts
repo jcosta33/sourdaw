@@ -21,6 +21,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     detectProjectTempo: mocks.detectProjectTempo,
 }));
 

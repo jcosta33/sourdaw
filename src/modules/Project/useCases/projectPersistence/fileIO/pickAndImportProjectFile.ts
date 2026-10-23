@@ -5,6 +5,7 @@ import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore
 import { projectStore } from '../../../stores/projectStore';
 import { pickFiles } from '../../fileDialog';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { pendingProjectReplacements } from '../pendingProjectReplacements';
 import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
@@ -19,6 +20,10 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         return false;
     }
 
+    // Choosing the open project's Recent entry from here on withdraws the
+    // import, whose transaction it cannot supersede.
+    const isStillChosen = pendingProjectReplacements.capture();
+
     // Pre-save the open project before the import replaces it — otherwise
     // unsaved edits since the last save are silently lost (audit #568 F3). The
     // guard refuses a failed save and a save that resolved with the project
@@ -29,6 +34,9 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
     }
+    if (!isStillChosen()) {
+        return false;
+    }
 
     const transaction = runProjectLoadTransaction();
 
@@ -38,10 +46,17 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
         const content = await file.text();
+        if (!isStillChosen()) {
+            return false;
+        }
         const data: unknown = JSON.parse(content);
 
-        const imported = await applyImportedProjectData({ data, transaction });
+        const imported = await applyImportedProjectData({ data, shouldProceed: isStillChosen, transaction });
         if (!imported) {
+            // A withdrawn import kept the open project, which is what the user chose.
+            if (!isStillChosen()) {
+                return false;
+            }
             // `applyImportedProjectData` returns false for "the file was not
             // usable", for "a newer load superseded this one", and for "the
             // open destroyed the previous session and then failed". Only the

@@ -1,9 +1,40 @@
 name: Hosted WASM artifacts
 
+# The paths are exactly the plan's selection inputs (hostedWasmTriggerPaths in
+# scripts/hostedWasmWorkflowContract.ts): a pull request touching none of them
+# plans no build, so it never starts this workflow.
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
+    paths:
+      - .cargo/config.toml
+      - .github/workflows/wasm-artifacts.yml
+      - Cargo.lock
+      - Cargo.toml
+      - crates/daw-dsp/**
+      - crates/daw-io/**
+      - crates/daw-wasm-decoder/**
+      - crates/proof-chamber/**
+      - crates/scoring/**
+      - package.json
+      - pnpm-lock.yaml
+      - public/wasm/manifest.json
+      - rust-toolchain.toml
+      - scripts/gen-daw-dsp-worklet.ts
+      - scripts/gen-proof-chamber-worklet.ts
+      - scripts/gen-scoring-worklet.ts
+      - scripts/gen-wasm-manifest.ts
+      - scripts/hostedWasmArtifacts.ts
+      - scripts/hostedWasmSourceContext.ts
+      - scripts/hostedWasmZip.ts
+      - scripts/markWasmPackageInternal.ts
+      - scripts/strictJson.ts
+      - scripts/verify-wasm-artifacts.ts
+      - scripts/wasm-artifacts.ts
+      - scripts/wasmToolchainPins.ts
+      - scripts/workletPolyfills.ts
+      - scripts/workspaceManifestFingerprint.ts
 
 permissions:
   contents: read

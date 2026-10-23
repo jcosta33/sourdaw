@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
@@ -11,6 +15,14 @@ import { projectEngineTransportMaps } from '../projectEngineTransportMaps';
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
+
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
+
+/** The projected repro of #5214, installed by the native conversion from the same file. */
+const SUB_FRAME_TEMPO_STEP_FIXTURE = join(
+    REPO_ROOT,
+    'crates/sourdaw-native/tests/fixtures/sub_frame_tempo_step_maps.json'
+);
 
 const tempoChange = (beat: number, tempo: number, curve: 'instant' | 'linear' = 'instant') => ({
     id: `tempo-${beat}`,
@@ -278,6 +290,40 @@ describe('projectEngineTransportMaps', () => {
         expect(tempo[1]?.beatsPerMinute).toBeCloseTo(140, 9);
     });
 
+    it.each([
+        [0, 2e-7, 4e-7],
+        [2e-7, 4e-7, 6e-7],
+    ])('keeps the governing instant tempo when the opening cluster %j moves to zero', (...beats) => {
+        tempoMapStore.set({ changes: beats.map((beat, index) => tempoChange(beat, [90, 120, 160][index]!)) });
+
+        expect(projectEngineTransportMaps().tempo).toEqual([{ startSeconds: 0, beatsPerMinute: 160 }]);
+    });
+
+    it('preserves the ramp mean and terminal tempo after relocating a near-zero governing change', () => {
+        const changes = [
+            tempoChange(2e-7, 90),
+            tempoChange(4e-7, 120),
+            tempoChange(6e-7, 160, 'linear'),
+            tempoChange(4, 240),
+        ];
+        tempoMapStore.set({ changes });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        expect(tempo[0]?.startSeconds).toBe(0);
+        expect(tempo[0]!.beatsPerMinute).toBeGreaterThan(160);
+        expect(tempo.at(-1)?.beatsPerMinute).toBe(240);
+        expect(tempo.at(-1)?.startSeconds).toBeCloseTo(secondsBetweenBeats(changes, 0, 4, 120), 12);
+        let engineBeats = 0;
+        for (let index = 0; index + 1 < tempo.length; index += 1) {
+            const segment = tempo[index]!;
+            const next = tempo[index + 1]!;
+            engineBeats += ((next.startSeconds - segment.startSeconds) * segment.beatsPerMinute) / 60;
+            expect(engineBeats).toBeCloseTo(Math.min(4, 6e-7 + (index + 1) * 0.25), 12);
+        }
+        expect(engineBeats).toBeCloseTo(4, 12);
+    });
+
     it('opens one segment where two changes sit a float step apart', () => {
         tempoMapStore.set({
             changes: [
@@ -311,6 +357,20 @@ describe('projectEngineTransportMaps', () => {
             [4, 4],
             [7, 8],
         ]);
+    });
+
+    it('sends two changes under one frame apart as two segments, the native install keeping the last (#5214)', () => {
+        // Beat 4.00002 is past BEAT_EPSILON, so the projection keeps both changes,
+        // but at 120 BPM it is 0.48 of a 48 kHz frame after beat 4: only the native
+        // install knows the rate, so that is where the pair becomes one segment. The
+        // native side installs this exact payload from the same file
+        // (`engine_transport.rs`, `the_sub_frame_tempo_step_repro_installs_the_later_tempo`).
+        tempoMapStore.set({ changes: [tempoChange(4, 120), tempoChange(4.000_02, 90)] });
+
+        const maps = projectEngineTransportMaps();
+
+        expect(maps).toEqual(JSON.parse(readFileSync(SUB_FRAME_TEMPO_STEP_FIXTURE, 'utf8')));
+        expect(maps.tempo.at(-1)?.beatsPerMinute).toBe(90);
     });
 
     it('integrates the meter map through the same tempo map as the tempo map itself', () => {
