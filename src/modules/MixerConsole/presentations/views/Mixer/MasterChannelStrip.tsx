@@ -5,6 +5,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
 import { formatGainDb } from '#/utils/audioLevelLaw';
@@ -17,6 +18,8 @@ import { MixerLevelReadout } from './MixerLevelReadout';
 type MasterChannelStripProps = {
     widthClass: string;
 };
+
+type ProjectTransitionAuthority = ReturnType<typeof captureProjectTransitionAuthority>;
 
 function restoreEngineFromProjectTruth(): void {
     const storeMasterGain = transportStore.value?.masterGain;
@@ -33,6 +36,23 @@ async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?
     } else {
         await executeUserAppAction(action);
     }
+}
+
+async function dispatchCurrentMasterGainAction(
+    value: number,
+    coalesceWithPrevious: boolean,
+    entryAuthority?: ProjectTransitionAuthority
+): Promise<AppAction | null> {
+    if (entryAuthority && !entryAuthority.isCurrent()) {
+        return null;
+    }
+    const expectedPercent = transportStore.value?.masterGain;
+    if (expectedPercent === undefined) {
+        return null;
+    }
+    const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
+    await dispatchMasterGainAction(action, coalesceWithPrevious);
+    return action;
 }
 
 function consumeRecordedGrooveWindow(
@@ -136,7 +156,8 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         value: number,
         token: number,
         wasGestureSettle: boolean,
-        allowPriorCoalesce: boolean
+        allowPriorCoalesce: boolean,
+        entryAuthority?: ProjectTransitionAuthority
     ): Promise<void> => {
         const coalesceWithPrevious = consumeRecordedGrooveWindow(
             lastGrooveSettleTime,
@@ -144,12 +165,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             allowPriorCoalesce
         );
         try {
-            const expectedPercent = transportStore.value?.masterGain;
-            if (expectedPercent === undefined) {
-                return;
-            }
-            const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
-            await dispatchMasterGainAction(action, coalesceWithPrevious);
+            const action = await dispatchCurrentMasterGainAction(value, coalesceWithPrevious, entryAuthority);
             // Only a gesture settle's own recording arms the window; a
             // discrete commit never re-arms. A keyboard nudge records too,
             // but letting it re-arm would chain the next burst of nudges into
@@ -160,7 +176,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             // held-open await (the persistence barrier can hold it for real
             // time) must not arm the reset.
             const stackTop = undoHistoryStore.value?.past.at(-1);
-            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
+            if (action && wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
                 lastGrooveSettleTime.current = performance.now();
             }
         } catch (error) {
@@ -170,7 +186,12 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
-    const settleMasterGain = (value: number, wasGestureSettle: boolean, allowPriorCoalesce: boolean): void => {
+    const settleMasterGain = (
+        value: number,
+        wasGestureSettle: boolean,
+        allowPriorCoalesce: boolean,
+        entryAuthority?: ProjectTransitionAuthority
+    ): void => {
         gestureToken.current += 1;
         const token = gestureToken.current;
         displayedValue.current = value;
@@ -178,7 +199,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         setMasterGain(value * 100, true);
 
         pendingCommit.current = pendingCommit.current.then(() =>
-            commitMasterGain(value, token, wasGestureSettle, allowPriorCoalesce)
+            commitMasterGain(value, token, wasGestureSettle, allowPriorCoalesce, entryAuthority)
         );
     };
 
@@ -199,9 +220,10 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     };
 
     const enterGain = (value: number): void => {
+        const authority = captureProjectTransitionAuthority();
         gestureOpen.current = false;
         lastGrooveSettleTime.current = null;
-        settleMasterGain(value, false, false);
+        settleMasterGain(value, false, false, authority);
     };
 
     const displayGain = gestureGain ?? masterGain / 100;

@@ -62,13 +62,17 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 
 const promptMocks = vi.hoisted(() => ({
     promptUser: vi.fn<() => Promise<string | null>>(() => Promise.resolve(null)),
+    projectEpoch: 0,
 }));
 
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: promptMocks.promptUser }));
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
-    captureProjectTransitionAuthority: () => ({ isCurrent: () => true }),
+    captureProjectTransitionAuthority: () => {
+        const epoch = promptMocks.projectEpoch;
+        return { isCurrent: () => promptMocks.projectEpoch === epoch };
+    },
 }));
 
 const undoStoreMocks = vi.hoisted(() => ({
@@ -160,6 +164,7 @@ describe('MasterChannelStrip', () => {
         storeMocks.transportStoreValue = { masterGain: 80 };
         commandMocks.executeUserAppAction.mockResolvedValue(undefined);
         promptMocks.promptUser.mockResolvedValue(null);
+        promptMocks.projectEpoch = 0;
         undoStoreMocks.stackTop = undefined;
     });
 
@@ -275,6 +280,37 @@ describe('MasterChannelStrip', () => {
         } finally {
             clock.mockRestore();
         }
+    });
+
+    it('drops an entered value queued behind a prior commit when the project changes before dispatch', async () => {
+        let releaseFirstCommit: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseFirstCommit = resolve;
+                })
+        );
+        promptMocks.promptUser.mockResolvedValueOnce('0 dB');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        fireEvent.change(fader, { target: { value: '0.62' } });
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(setMasterGain).toHaveBeenCalledWith(100, true));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        promptMocks.projectEpoch += 1;
+        storeMocks.transportStoreValue = { masterGain: 40 };
+        await act(async () => {
+            releaseFirstCommit?.();
+        });
+
+        await waitFor(() => expect(setMasterGain).toHaveBeenLastCalledWith(40, true));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
     it.each([
