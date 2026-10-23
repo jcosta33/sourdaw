@@ -1,5 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { type MidiCC } from '../../models/MidiNote';
+
 import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { type midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { type RecordingPlacementDependencies } from './recordingPlacementDependencies';
@@ -8,7 +10,14 @@ import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInp
 import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 
 export type RecordableChannelEvent =
-    { kind: 'controlChange'; controller: number; value: number } | { kind: 'pitchBend'; value: number };
+    | {
+          kind: 'controlChange';
+          controller: number;
+          value: number;
+          /** The input's registered-parameter state before this message moved it, when the message is one. */
+          registeredStateBefore?: readonly MidiCC[];
+      }
+    | { kind: 'pitchBend'; value: number };
 
 type RecordChannelEventInput = {
     /** Track the live input is routed to; `null` when none is selected. */
@@ -55,6 +64,7 @@ export function recordChannelEvent(
             deps.bufferRecordedMidiCC({
                 clipId: placement.clipId,
                 row: { controller: event.controller, value: event.value, beat: placement.clipBeat, channel },
+                registeredStateBefore: event.registeredStateBefore,
             });
             return;
         }

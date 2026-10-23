@@ -4,6 +4,7 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
+import { SharedBankOwnerEndedError } from './sharedBankOwnerEnded';
 
 import type { DecodedBank, DecodedBankLease } from './createDecodedBankResource';
 
@@ -74,6 +75,13 @@ function isProcessorEnd(message: Record<string, unknown>): boolean {
 function processorEndedError(message: Record<string, unknown>): Error {
     const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
     return new Error(`Levain processor ended during sample-bank loading${detail}`);
+}
+
+/** The worklet's refusal of a load; `ownerEnded` marks a follower failed only because the load it waited on ended. */
+function sampleBankFailure(message: Record<string, unknown>): Error {
+    const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+    const text = `Levain sample-bank load failed${detail}`;
+    return message.ownerEnded === true ? new SharedBankOwnerEndedError(text) : new Error(text);
 }
 
 function createSampleBankHandshake(
@@ -172,8 +180,7 @@ function createSampleBankHandshake(
                 reject(resolveAbortReason());
                 return;
             }
-            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
-            reject(new Error(`Levain sample-bank load failed${detail}`));
+            reject(sampleBankFailure(message));
         }
     }
     // False once an `abortSampleBank` post found the port closed.
@@ -446,8 +453,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
             return;
         }
         if (message.type === 'sampleBankError') {
-            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
-            fail(new Error(`Levain sample-bank load failed${detail}`));
+            fail(sampleBankFailure(message));
             passedAllChunks();
             return;
         }

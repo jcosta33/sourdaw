@@ -169,6 +169,17 @@ describe('ingestChannelControlChange', () => {
             expect(getChannelBendRangeSemitones(CHANNEL)).toBe(11);
         });
 
+        it('steps a channel that never declared a range from the MIDI 1.0 default of two semitones', () => {
+            ingest(101, 0);
+            ingest(100, 0);
+            ingest(96, 0);
+            expect(getChannelBendRangeSemitones(CHANNEL)).toBe(3);
+
+            ingest(97, 0);
+            ingest(97, 0);
+            expect(getChannelBendRangeSemitones(CHANNEL)).toBe(1);
+        });
+
         it('does not let a Data Increment drive the range below zero', () => {
             declareBendRange(0, 0);
             ingest(97, 0);

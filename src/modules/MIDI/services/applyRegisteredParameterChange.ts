@@ -8,6 +8,7 @@ import {
     CC_RPN_LSB,
     CC_RPN_MSB,
     MAX_BEND_RANGE_SEMITONES,
+    STANDARD_BEND_RANGE_SEMITONES,
     getSelectedParameterNumber,
     isDataEntryCc,
     isParameterSelectCc,
@@ -60,7 +61,8 @@ function applyParameterSelect(state: MidiChannelControllerState, cc: number, val
 }
 
 function stepBendRange(state: MidiChannelControllerState, step: number): void {
-    const current = state.bendRangeSemitones ?? toBendRangeSemitones(state.dataEntryMsb, state.dataEntryLsb);
+    // A channel that never declared a range is at the MIDI 1.0 power-on default, and steps from it.
+    const current = state.bendRangeSemitones ?? STANDARD_BEND_RANGE_SEMITONES;
     const next = Math.max(0, Math.min(MAX_BEND_RANGE_SEMITONES, current + step));
     const semitones = Math.trunc(next);
     state.bendRangeSemitones = next;
