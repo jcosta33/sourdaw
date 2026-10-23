@@ -1,0 +1,31 @@
+scripts/__tests__/semanticReview.spec.ts
+  s_1c08b47ac3792f::t_d7113c2be21623 184-192,214,216,218-222,228-230
+scripts/semanticReview.ts
+  s_59e31a5c6f3e31::t_6ad48e83bc13d7 423-425,427-434
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_59e31a5c6f3e31::t_afd57f05adedef 9224-9226,9229-9230,9440-9470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa59547f7adda2d4216e8a2e7f0883623a6f37f2",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
