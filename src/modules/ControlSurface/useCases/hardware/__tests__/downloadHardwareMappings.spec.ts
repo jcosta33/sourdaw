@@ -7,9 +7,15 @@ const mocks = vi.hoisted(() => ({ notify: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notify }));
 
 function readBlob(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
+        reader.onload = () => {
+            if (typeof reader.result !== 'string') {
+                reject(new Error('Expected text from FileReader'));
+                return;
+            }
+            resolve(reader.result);
+        };
         reader.onerror = () => reject(reader.error);
         reader.readAsText(blob);
     });

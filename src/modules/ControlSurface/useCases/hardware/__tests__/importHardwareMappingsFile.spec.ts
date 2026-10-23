@@ -16,14 +16,14 @@ const mappings = [{ id: 'play', controlType: 'button', controlIndex: 85, channel
 const json = JSON.stringify(mappings);
 
 function pendingRead() {
-    let resolve!: (value: string) => void;
-    let reject!: (reason: Error) => void;
-    const promise = new Promise<string>((resolveRead, rejectRead) => {
-        resolve = resolveRead;
-        reject = rejectRead;
+    let resolveRead!: (value: string) => void;
+    let rejectRead!: (reason: Error) => void;
+    const promise = new Promise<string>((resolve, reject) => {
+        resolveRead = resolve;
+        rejectRead = reject;
     });
     mocks.read.mockReturnValueOnce(promise);
-    return { resolve, reject };
+    return { resolve: resolveRead, reject: rejectRead };
 }
 
 describe('importHardwareMappingsFile', () => {
@@ -122,7 +122,7 @@ describe('importHardwareMappingsFile', () => {
         const read = pendingRead();
         const result = importHardwareMappingsFile('p1', new File([], 'old.json'), () => true);
         const state = hardwareControllerStore.value!;
-        hardwareControllerStore.set({ ...state, profiles: state.profiles.map((profile) => ({ ...profile })) });
+        hardwareControllerStore.set({ ...state, profiles: state.profiles.map((profile) => structuredClone(profile)) });
         const successor = hardwareControllerStore.value;
         read.resolve(json);
         expect(await result).toBe('cancelled');

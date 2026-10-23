@@ -17,7 +17,13 @@ function fileFromBlob(blob: Blob): File {
         value: () =>
             new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(String(reader.result));
+                reader.onload = () => {
+                    if (typeof reader.result !== 'string') {
+                        reject(new Error('Expected text from FileReader'));
+                        return;
+                    }
+                    resolve(reader.result);
+                };
                 reader.onerror = () => reject(reader.error);
                 reader.readAsText(file);
             }),
@@ -61,7 +67,7 @@ describe('HardwareMappingManager', () => {
         hardwareControllerStore.set({
             connectedDevices: [{ id: 'input', name: 'Input', profileId: 'push-2' }],
             profiles: [
-                { ...PUSH_2_PROFILE, mappings: PUSH_2_PROFILE.mappings.map((mapping) => ({ ...mapping })) },
+                structuredClone(PUSH_2_PROFILE),
                 { id: 'other', name: 'Other profile', manufacturer: 'Other', productId: ['other'], mappings: [] },
             ],
         });
@@ -142,9 +148,9 @@ describe('HardwareMappingManager', () => {
 
     it('keeps an older read cancelled after selecting another profile and returning', async () => {
         render(<HardwareMappingManager />);
-        let resolve!: (value: string) => void;
-        const read = new Promise<string>((resolveRead) => {
-            resolve = resolveRead;
+        let resolveRead!: (value: string) => void;
+        const read = new Promise<string>((resolve) => {
+            resolveRead = resolve;
         });
         const file = new File([], 'pending.json');
         Object.defineProperty(file, 'text', { value: () => read });
@@ -155,7 +161,7 @@ describe('HardwareMappingManager', () => {
         expect(screen.getByText('This profile has no mappings.')).toBeInTheDocument();
         fireEvent.change(screen.getByRole('combobox', { name: 'Hardware profile' }), { target: { value: 'push-2' } });
         await act(async () => {
-            resolve('[]');
+            resolveRead('[]');
             await read;
         });
         expect(hardwareControllerStore.value).toBe(before);
@@ -164,9 +170,9 @@ describe('HardwareMappingManager', () => {
     });
 
     it('does not publish a late read after closing the view', async () => {
-        let resolve!: (value: string) => void;
-        const read = new Promise<string>((resolveRead) => {
-            resolve = resolveRead;
+        let resolveRead!: (value: string) => void;
+        const read = new Promise<string>((resolve) => {
+            resolveRead = resolve;
         });
         const file = new File([], 'pending.json');
         Object.defineProperty(file, 'text', { value: () => read });
@@ -175,7 +181,7 @@ describe('HardwareMappingManager', () => {
         fireEvent.change(fileInput(), { target: { files: [file] } });
         view.unmount();
         await act(async () => {
-            resolve('[]');
+            resolveRead('[]');
             await read;
         });
         expect(hardwareControllerStore.value).toBe(before);

@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactElement, useLayoutEffect, useRef, useState } from 'react';
+import { type ChangeEvent, type ReactElement, type RefObject, useLayoutEffect, useRef, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row } from '#/components/layout';
@@ -9,7 +9,101 @@ import { hardwareControllerStore } from '../../stores/hardwareControllerStore';
 import { downloadHardwareMappings } from '../../useCases/hardware/downloadHardwareMappings';
 import { importHardwareMappingsFile } from '../../useCases/hardware/importHardwareMappingsFile';
 
+import type { ControllerProfile } from '../../models/ControllerProfile';
+
 const EMPTY_STATE = { connectedDevices: [], profiles: [] };
+const IMPORT_FEEDBACK: Record<'imported' | 'rejected', { error: boolean; message: string }> = {
+    imported: { error: false, message: 'Mappings imported.' },
+    rejected: { error: true, message: 'Mapping file was not imported. Existing mappings were kept.' },
+};
+
+const HardwareMappingContent = ({ profile }: { profile: ControllerProfile | undefined }): ReactElement => {
+    if (!profile) {
+        return <p className="text-xs text-muted-foreground">No hardware profiles are available.</p>;
+    }
+    if (profile.mappings.length === 0) {
+        return <p className="text-xs text-muted-foreground">This profile has no mappings.</p>;
+    }
+    return (
+        <div className="max-h-48 overflow-auto">
+            <table className="w-full text-left text-xs">
+                <caption className="sr-only">{profile.name} mappings</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Control</th>
+                        <th scope="col">Channel</th>
+                        <th scope="col">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {profile.mappings.map((mapping) => (
+                        <tr key={mapping.id}>
+                            <td>
+                                {mapping.controlType} {mapping.controlIndex}
+                            </td>
+                            <td>{mapping.channel}</td>
+                            <td>
+                                {mapping.action.type}
+                                {mapping.action.target ? `: ${mapping.action.target}` : ''}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+const HardwareMappingActions = ({
+    disabled,
+    input,
+    onExport,
+    onImport,
+    onFileChange,
+}: {
+    disabled: boolean;
+    input: RefObject<HTMLInputElement | null>;
+    onExport: () => void;
+    onImport: () => void;
+    onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}): ReactElement => (
+    <Row gap={2}>
+        <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onExport}>
+            Export mappings
+        </Button>
+        <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onImport}>
+            Import mappings
+        </Button>
+        <input
+            ref={input}
+            type="file"
+            accept=".json,application/json"
+            aria-label="Mapping JSON file"
+            className="sr-only"
+            tabIndex={-1}
+            disabled={disabled}
+            onChange={onFileChange}
+        />
+    </Row>
+);
+
+const HardwareMappingPending = ({ pending }: { pending: boolean }): ReactElement | null =>
+    pending ? (
+        <p role="status" className="text-xs text-muted-foreground">
+            Reading mapping file…
+        </p>
+    ) : null;
+
+const HardwareMappingFeedback = ({
+    feedback,
+}: {
+    feedback: { error: boolean; message: string } | null;
+}): ReactElement | null =>
+    feedback ? (
+        <p role={feedback.error ? 'alert' : 'status'} className="text-xs text-muted-foreground">
+            {feedback.message}
+        </p>
+    ) : null;
 
 export const HardwareMappingManager = (): ReactElement => {
     const state = useStore(hardwareControllerStore, EMPTY_STATE);
@@ -68,11 +162,7 @@ export const HardwareMappingManager = (): ReactElement => {
             if (result === 'cancelled') {
                 return;
             }
-            setFeedback(
-                result === 'imported'
-                    ? { error: false, message: 'Mappings imported.' }
-                    : { error: true, message: 'Mapping file was not imported. Existing mappings were kept.' }
-            );
+            setFeedback(IMPORT_FEEDBACK[result]);
         });
     };
 
@@ -81,11 +171,11 @@ export const HardwareMappingManager = (): ReactElement => {
             return;
         }
         const downloaded = downloadHardwareMappings(profile.id);
-        setFeedback(
-            downloaded
-                ? { error: false, message: 'Mapping download started.' }
-                : { error: true, message: 'Mapping file could not be exported.' }
-        );
+        if (downloaded) {
+            setFeedback({ error: false, message: 'Mapping download started.' });
+        } else {
+            setFeedback({ error: true, message: 'Mapping file could not be exported.' });
+        }
     };
 
     return (
@@ -105,74 +195,16 @@ export const HardwareMappingManager = (): ReactElement => {
                     </option>
                 ))}
             </DawCompactSelect>
-            {profile ? (
-                profile.mappings.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">This profile has no mappings.</p>
-                ) : (
-                    <div className="max-h-48 overflow-auto">
-                        <table className="w-full text-left text-xs">
-                            <caption className="sr-only">{profile.name} mappings</caption>
-                            <thead>
-                                <tr>
-                                    <th scope="col">Control</th>
-                                    <th scope="col">Channel</th>
-                                    <th scope="col">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {profile.mappings.map((mapping) => (
-                                    <tr key={mapping.id}>
-                                        <td>
-                                            {mapping.controlType} {mapping.controlIndex}
-                                        </td>
-                                        <td>{mapping.channel}</td>
-                                        <td>
-                                            {mapping.action.type}
-                                            {mapping.action.target ? `: ${mapping.action.target}` : ''}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )
-            ) : (
-                <p className="text-xs text-muted-foreground">No hardware profiles are available.</p>
-            )}
-            <Row gap={2}>
-                <Button type="button" variant="outline" size="sm" disabled={!profile} onClick={exportFile}>
-                    Export mappings
-                </Button>
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!profile}
-                    onClick={() => input.current?.click()}
-                >
-                    Import mappings
-                </Button>
-                <input
-                    ref={input}
-                    type="file"
-                    accept=".json,application/json"
-                    aria-label="Mapping JSON file"
-                    className="sr-only"
-                    tabIndex={-1}
-                    disabled={!profile}
-                    onChange={importFile}
-                />
-            </Row>
-            {pending ? (
-                <p role="status" className="text-xs text-muted-foreground">
-                    Reading mapping file…
-                </p>
-            ) : null}
-            {feedback ? (
-                <p role={feedback.error ? 'alert' : 'status'} className="text-xs text-muted-foreground">
-                    {feedback.message}
-                </p>
-            ) : null}
+            <HardwareMappingContent profile={profile} />
+            <HardwareMappingActions
+                disabled={!profile}
+                input={input}
+                onExport={exportFile}
+                onImport={() => input.current?.click()}
+                onFileChange={importFile}
+            />
+            <HardwareMappingPending pending={pending} />
+            <HardwareMappingFeedback feedback={feedback} />
         </section>
     );
 };

@@ -69,7 +69,7 @@ describe('MidiSection', () => {
         );
         vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
         try {
-            render(<MidiSection prefs={{ ...defaultPreferences }} update={vi.fn()} />);
+            render(<MidiSection prefs={structuredClone(defaultPreferences)} update={vi.fn()} />);
             expect(screen.getByRole('combobox', { name: 'Hardware profile' })).toHaveValue('push-2');
             expect(screen.getByRole('table', { name: 'Push 2 mappings' })).toBeInTheDocument();
             expect(screen.getByText('button 85')).toBeInTheDocument();
@@ -80,7 +80,13 @@ describe('MidiSection', () => {
             }
             const original = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(String(reader.result));
+                reader.onload = () => {
+                    if (typeof reader.result !== 'string') {
+                        reject(new Error('Expected text from FileReader'));
+                        return;
+                    }
+                    resolve(reader.result);
+                };
                 reader.onerror = () => reject(reader.error);
                 reader.readAsText(blob);
             });
@@ -90,7 +96,13 @@ describe('MidiSection', () => {
                 value: () =>
                     new Promise<string>((resolve, reject) => {
                         const reader = new FileReader();
-                        reader.onload = () => resolve(String(reader.result));
+                        reader.onload = () => {
+                            if (typeof reader.result !== 'string') {
+                                reject(new Error('Expected text from FileReader'));
+                                return;
+                            }
+                            resolve(reader.result);
+                        };
                         reader.onerror = () => reject(reader.error);
                         reader.readAsText(file);
                     }),
