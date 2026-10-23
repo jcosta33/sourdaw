@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { getWarpState } from '#/modules/Arrangement/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
@@ -18,6 +17,7 @@ import { type ActionHandler } from '#/utils/handlerContract';
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
+import { getWarpState } from '../../../stores/warpStates';
 import { selectClipWithFocus } from '../../../useCases/clipSelection/selectClipWithFocus';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TimelineClipNavigator } from '../TimelineClipNavigator';
