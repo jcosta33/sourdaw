@@ -2079,6 +2079,89 @@ describe('ExportDialog', () => {
         expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
     });
 
+    it('retires a pending native destination when Cancel closes the dialog', async () => {
+        const destination = createDeferred<string | null>();
+        mocks.selectNativeAudioExportFile.mockReturnValueOnce(destination.promise);
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open={true} onClose={onClose} />);
+        selectPodcastEpisode();
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(onClose).toHaveBeenCalledTimes(1);
+        view.rerender(<ExportDialog open={false} onClose={onClose} />);
+        await act(async () => destination.resolve('/tmp/retired-podcast.mp3'));
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(audioBufferToMp3).not.toHaveBeenCalled();
+        expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not let an older native destination start an export in a reopened dialog', async () => {
+        const destination = createDeferred<string | null>();
+        const currentDestination = createDeferred<string | null>();
+        mocks.selectNativeAudioExportFile
+            .mockReturnValueOnce(destination.promise)
+            .mockReturnValueOnce(currentDestination.promise);
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open={true} onClose={onClose} />);
+        selectPodcastEpisode();
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        view.rerender(<ExportDialog open={false} onClose={onClose} />);
+        view.rerender(<ExportDialog open={true} onClose={onClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(2);
+        await act(async () => destination.resolve('/tmp/older-podcast.mp3'));
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(audioBufferToMp3).not.toHaveBeenCalled();
+        expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        await act(async () => currentDestination.resolve('/tmp/current-podcast.mp3'));
+        await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
+        expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledWith(
+            expect.objectContaining({ selectedFilePath: '/tmp/current-podcast.mp3' })
+        );
+        expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalledWith(
+            expect.objectContaining({ selectedFilePath: '/tmp/older-podcast.mp3' })
+        );
+    });
+
+    it('does not show an older native picker error in a reopened dialog', async () => {
+        const destination = createDeferred<string | null>();
+        const currentDestination = createDeferred<string | null>();
+        mocks.selectNativeAudioExportFile
+            .mockReturnValueOnce(destination.promise)
+            .mockReturnValueOnce(currentDestination.promise);
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open={true} onClose={onClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        view.rerender(<ExportDialog open={false} onClose={onClose} />);
+        view.rerender(<ExportDialog open={true} onClose={onClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(2);
+        await act(async () => destination.reject(new Error('Older picker failure')));
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByText('Older picker failure')).not.toBeInTheDocument();
+        await act(async () => currentDestination.resolve('/tmp/current-after-error.wav'));
+        await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
+        expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledWith(
+            expect.objectContaining({ selectedFilePath: '/tmp/current-after-error.wav' })
+        );
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith('Older picker failure', 'error');
+    });
+
     it('falls through to the download link when the browser save picker fails', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
         const pickerError = new Error('Save picker failed');
@@ -2113,6 +2196,34 @@ describe('ExportDialog', () => {
             clickDownload.mockRestore();
             createObjectURL.mockRestore();
             revokeObjectURL.mockRestore();
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
+    it('retires a pending browser destination when the dialog closes and reopens', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const destination = createDeferred<FileSystemFileHandle>();
+        const showSaveFilePicker = vi.fn().mockReturnValue(destination.promise);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        try {
+            const onClose = vi.fn();
+            const view = render(<ExportDialog open={true} onClose={onClose} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            view.rerender(<ExportDialog open={false} onClose={onClose} />);
+            view.rerender(<ExportDialog open={true} onClose={onClose} />);
+            const createWritable = vi.fn();
+            await act(async () => destination.resolve({ createWritable } as unknown as FileSystemFileHandle));
+
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+            expect(audioBufferToMp3).not.toHaveBeenCalled();
+            expect(createWritable).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        } finally {
             vi.unstubAllGlobals();
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
         }

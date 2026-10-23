@@ -416,6 +416,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setStatusText('Cooling down...');
     };
 
+    const handleClose = () => {
+        cancelledRef.current = true;
+        onClose();
+    };
+
     // Helper: Trigger browser fallback download if Native API fails or is missing
     const triggerFallbackBlobDownload = (data: Uint8Array | ArrayBuffer, ext: string, blobName: string) => {
         const mimeMap: Record<string, string> = {
@@ -457,6 +462,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
         const session = openSessionRef.current;
+        const destinationBelongsToSession = () =>
+            !cancelledRef.current && openSessionRef.current === session && openRef.current;
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
 
@@ -501,6 +508,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     }
                 }
             } catch (error) {
+                if (!destinationBelongsToSession()) {
+                    return;
+                }
                 if (error instanceof Error && error.name === 'AbortError') {
                     return;
                 }
@@ -515,6 +525,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
                 // A browser save-picker failure still falls through to the download link.
             }
+        }
+
+        if (!destinationBelongsToSession()) {
+            return;
         }
 
         // ── 2. PREPARATIONS COMPLETE. START INTENSIVE BAKING ──
@@ -1017,7 +1031,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 <Button
                     variant="outline"
                     size="sm"
-                    onClick={onClose}
+                    onClick={handleClose}
                     className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
                 >
                     <CheckCircle2 className="mr-1 size-3.5" />
@@ -1030,7 +1044,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={onClose}
+                    onClick={handleClose}
                     data-testid="export-cancel"
                     className="text-muted-foreground hover:text-foreground"
                 >
@@ -1055,7 +1069,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             open={open}
             onOpenChange={(isOpen) => {
                 if (!isOpen && !exporting) {
-                    onClose();
+                    handleClose();
                 }
             }}
         >
