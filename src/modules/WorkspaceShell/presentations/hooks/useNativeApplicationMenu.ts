@@ -13,7 +13,7 @@ import {
     getRecentProjects,
     getProjectSnapshotKey,
     isOpenProjectKey,
-    pendingRecentLoads,
+    pendingProjectReplacements,
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
@@ -82,12 +82,20 @@ const reportCloseResult = async (
 const openRecentProject = async (recentKey: string): Promise<void> => {
     // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
     if (isOpenProjectKey(recentKey)) {
-        pendingRecentLoads.withdraw();
+        pendingProjectReplacements.withdraw();
         return;
     }
-    const isStillChosen = pendingRecentLoads.capture();
+    const isStillChosen = pendingProjectReplacements.capture();
     if ((await saveProjectIfClean()) && isStillChosen()) {
         await loadRecentProject(recentKey, { shouldProceed: isStillChosen });
+    }
+};
+
+/** A new project starts after a clean save unless the open project is chosen meanwhile. */
+const createNewProject = async (): Promise<void> => {
+    const isStillChosen = pendingProjectReplacements.capture();
+    if ((await saveProjectIfClean()) && isStillChosen()) {
+        await newProject(undefined, { shouldProceed: isStillChosen });
     }
 };
 
@@ -110,9 +118,7 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     }
     switch (action) {
         case 'project:new':
-            if (await saveProjectIfClean()) {
-                await newProject();
-            }
+            await createNewProject();
             return;
         case 'project:import-project':
             await pickAndImportProjectFile();

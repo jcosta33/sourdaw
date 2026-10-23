@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     newProject,
+    pendingProjectReplacements,
     pickAndImportProjectFile,
     saveProject,
     saveProjectBeforeReplacement,
@@ -10,7 +11,21 @@ import { openExportDialog, toggleBranchManager } from '#/modules/WorkspaceShell/
 
 import { projectCommands } from '../ProjectCommands';
 
+const withdrawals = vi.hoisted(() => ({ count: 0 }));
+
+// The registry's contract, kept behind plain functions: a withdrawal turns
+// false every check captured before it. Importing the real module would cross
+// the Project barrel, which loads half the app.
 vi.mock('#/modules/Project/useCases', () => ({
+    pendingProjectReplacements: {
+        capture: () => {
+            const captured = withdrawals.count;
+            return () => withdrawals.count === captured;
+        },
+        withdraw: () => {
+            withdrawals.count += 1;
+        },
+    },
     newProject: vi.fn().mockResolvedValue(true),
     pickAndImportProjectFile: vi.fn().mockResolvedValue(true),
     saveProject: vi.fn(),
@@ -79,6 +94,31 @@ describe('projectCommands', () => {
 
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
         await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+    });
+
+    // Choosing the open project's Recent entry while New is pending withdraws
+    // it, so the session stays in the project the user chose last.
+    it('new-project does not start once a pre-save that the open project choice outlasted finishes', async () => {
+        const save = Promise.withResolvers<boolean>();
+        vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(save.promise);
+
+        runAction('new-project');
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        pendingProjectReplacements.withdraw();
+        save.resolve(true);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(newProject).not.toHaveBeenCalled();
+    });
+
+    it('new-project hands the replacement a check that the open project choice turns false', async () => {
+        runAction('new-project');
+        await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+
+        const shouldProceed = vi.mocked(newProject).mock.calls[0]?.[1]?.shouldProceed;
+        expect(shouldProceed?.()).toBe(true);
+        pendingProjectReplacements.withdraw();
+        expect(shouldProceed?.()).toBe(false);
     });
 
     // Issue 3694: the palette replaces the open project, so it must refuse

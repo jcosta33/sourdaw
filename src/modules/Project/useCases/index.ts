@@ -7,6 +7,7 @@ export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectS
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { saveProjectBeforeReplacement } from './projectPersistence/saveProject/saveProjectBeforeReplacement';
+export { pendingProjectReplacements } from './projectPersistence/pendingProjectReplacements';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
 export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProject/initGrooveTemplateDirtyTracking';
 export { initProjectDirtyTracking } from './projectPersistence/saveProject/initProjectDirtyTracking';
@@ -60,7 +61,6 @@ export { verifyAudioBufferReferences } from './projectPersistence/helpers/verify
 export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
 export { isOpenProjectKey } from './recentProjects/isOpenProjectKey';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
-export { pendingRecentLoads } from './recentProjects/pendingRecentLoads';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)

@@ -25,12 +25,12 @@ import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
 import { pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO/pickAndImportProjectFile';
 import { newProject } from '../../useCases/projectPersistence/newProject';
+import { pendingProjectReplacements } from '../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
 import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
 import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
 import { isOpenProjectKey } from '../../useCases/recentProjects/isOpenProjectKey';
 import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
-import { pendingRecentLoads } from '../../useCases/recentProjects/pendingRecentLoads';
 import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
 
 import { TemplateChooser } from './TemplateChooser';
@@ -71,15 +71,17 @@ export const RecentProjectsMenu = (): ReactElement => {
     }, [open]);
 
     const handleNewProject = () => {
+        const isStillChosen = pendingProjectReplacements.capture();
         void (async () => {
             // Abort on a failed save or on a save that resolved with the
             // project still dirty — a plugin capture rejected before commit
             // keeps that edit uncaptured, and a new project would destroy it.
             // Both refusal surfaces already notified; the project stays open.
-            if (!(await saveProjectBeforeReplacement())) {
+            // Choosing the open project meanwhile withdraws the new project.
+            if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
                 return;
             }
-            void newProject();
+            void newProject(undefined, { shouldProceed: isStillChosen });
         })();
         setOpen(false);
     };
@@ -123,11 +125,11 @@ export const RecentProjectsMenu = (): ReactElement => {
         // pending from an earlier choice is withdrawn, because the store keeps
         // this project until that replacement activates.
         if (isOpenProjectKey(entry.key)) {
-            pendingRecentLoads.withdraw();
+            pendingProjectReplacements.withdraw();
             setOpen(false);
             return;
         }
-        const isStillChosen = pendingRecentLoads.capture();
+        const isStillChosen = pendingProjectReplacements.capture();
         void (async () => {
             // Await the pre-switch save (audit #568 F2) and abort on its
             // failure or on a save that resolved with the project still dirty
