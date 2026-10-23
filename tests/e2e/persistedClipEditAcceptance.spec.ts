@@ -24,6 +24,7 @@ type Clip = {
     startBeat: number;
     endBeat: number;
     audioBufferId?: string;
+    loopOriginBeat?: number;
 };
 type Track = { id: string; name: string; clips: Clip[] };
 type MirroredEntry = {
@@ -636,14 +637,34 @@ test('persisted clip edits replay exact owners and source material through real 
     });
 
     await test.step('Remove one selected MIDI clip with Backspace', async () => {
+        const seed = await readSnapshot(page);
+        const midiClips = seed.tracks.flatMap((track) => track.clips).filter((clip) => clip.type === 'midi');
+        const target = midiClips.sort((a, b) => a.startBeat - b.startBeat)[0];
+        if (!target) {
+            throw new Error('MIDI removal target is absent');
+        }
+        // Establish the real loop anchor through the registered command before
+        // replayTwice captures the material that Backspace must restore.
+        await page.evaluate(async (clipId) => {
+            const path = '/src/modules/Command/useCases/index.ts';
+            const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(path);
+            await executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: true } }, { source: 'manual' });
+        }, target.id);
+        await expect
+            .poll(
+                async () =>
+                    (await readSnapshot(page)).tracks
+                        .flatMap((track) => track.clips)
+                        .find((clip) => clip.id === target.id)?.loopOriginBeat
+            )
+            .toBe(target.startBeat);
         await replayTwice(page, info, 'remove', MIDI_NAME, ['removeClip'], capabilities, async (before) => {
             await expect(page.getByTestId('tool-ripple')).not.toHaveAttribute('aria-pressed', 'true');
-            const allClips = before.tracks.flatMap((track) => track.clips);
-            const midiClips = allClips.filter((entry) => entry.type === 'midi');
-            const clip = midiClips.sort((a, b) => a.startBeat - b.startBeat)[0];
+            const clip = before.tracks.flatMap((track) => track.clips).find((entry) => entry.id === target.id);
             if (!clip) {
                 throw new Error('MIDI removal target is absent');
             }
+            expect(clip.loopOriginBeat).toBe(target.startBeat);
             const point = await clipPoint(page, clip);
             await page.mouse.click(point.x, point.y);
             await page.keyboard.press('Backspace');

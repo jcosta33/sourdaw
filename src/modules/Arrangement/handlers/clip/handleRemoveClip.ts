@@ -9,6 +9,7 @@ import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
@@ -33,9 +34,62 @@ type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
 // then fill it from the actual prefix when this member enters its transaction.
 const pendingInverseCaptures = new WeakMap<object, RestoreClipAction>();
 const pendingRedoCaptures = new WeakMap<object, RemoveClipAction>();
+const preflightRedoTargets = new WeakMap<object, { owningTrackId: string; clip: unknown }>();
 
 function findOwningTrackId(clipId: string): string | undefined {
     return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
+}
+
+function replayTargetMatches(clipId: string, expected: { owningTrackId: string; clip: unknown }): boolean {
+    const owner = getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId));
+    const clip = owner?.clips.find((candidate) => candidate.id === clipId);
+    return owner?.id === expected.owningTrackId && clip !== undefined && valuesEqual(clip, expected.clip);
+}
+
+/** A saved Redo may remove only the material its own inverse restored. */
+function admittedRedoTarget(action: RemoveClipAction, context?: HandlerValidationContext): boolean {
+    const paired = pairedInverseForRedo(action);
+    if (paired?.type !== 'restoreClip') {
+        preflightRedoTargets.delete(action);
+        return true;
+    }
+    const captured = { owningTrackId: paired.payload.trackId, clip: paired.payload.clipSnapshot };
+    if (!replayTargetMatches(action.payload.clipId, captured)) {
+        preflightRedoTargets.delete(action);
+        return false;
+    }
+    if (context) {
+        const projected = projectClipReplayPrefix(context.actions.slice(0, context.actionIndex));
+        const target = projected?.clips.find((owner) => owner.clip.id === action.payload.clipId);
+        if (!target) {
+            preflightRedoTargets.delete(action);
+            return false;
+        }
+        preflightRedoTargets.set(action, target);
+    }
+    return true;
+}
+
+function redoTargetMatchesAtExecution(
+    action: RemoveClipAction,
+    context: HandlerValidationContext | undefined,
+    paired: ReturnType<typeof pairedInverseForRedo>
+): boolean {
+    const preflightTarget = preflightRedoTargets.get(action);
+    preflightRedoTargets.delete(action);
+    if (paired?.type !== 'restoreClip') {
+        return true;
+    }
+    if (!preflightTarget && context?.actions.length !== 1) {
+        return false;
+    }
+    return replayTargetMatches(
+        action.payload.clipId,
+        preflightTarget ?? {
+            owningTrackId: paired.payload.trackId,
+            clip: paired.payload.clipSnapshot,
+        }
+    );
 }
 
 /**
@@ -79,13 +133,20 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             (owner) => owner.clip.id === action.payload.clipId
         ) ??
             false) &&
+        admittedRedoTarget(action, context) &&
         batchMembersAreIndependent(action, context),
-    execute: (alpha) => {
+    execute: (alpha, context) => {
         const trackId = findOwningTrackId(alpha.payload.clipId);
         if (!trackId) {
             pendingInverseCaptures.delete(alpha);
             pendingRedoCaptures.delete(alpha);
             return { status: 'no-write' };
+        }
+        const paired = pairedInverseForRedo(alpha);
+        if (!redoTargetMatchesAtExecution(alpha, context, paired)) {
+            pendingInverseCaptures.delete(alpha);
+            pendingRedoCaptures.delete(alpha);
+            return { status: 'conflict' };
         }
         const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
         const pendingRedo = pendingRedoCaptures.get(alpha);
@@ -101,7 +162,6 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         // Redo runs with skipUndo. Retain its actual producer capture so the
         // following Undo authenticates the shifted owners this replay wrote,
         // and restores exactly the material this replay retired.
-        const paired = pairedInverseForRedo(alpha);
         const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
         pendingRedoCaptures.delete(alpha);
         const documentBeforeReplay = fresh || pendingRedo ? captureDurableDocumentWitness() : null;

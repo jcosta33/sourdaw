@@ -86,6 +86,7 @@ const optionalClipFields: Record<string, (value: unknown) => boolean> = {
     stretchRatio: isFiniteNumber,
     loopEnabled: (value) => typeof value === 'boolean',
     loopLength: isFiniteNumber,
+    loopOriginBeat: isFiniteNumber,
     followAction: (value) =>
         value === 'stop' ||
         value === 'play_next' ||
