@@ -1,0 +1,35 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_3e7dea5cde3f9e::t_fd0f59e280bbb2 1191-1198
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_3e7dea5cde3f9e::t_56553fe0868d79 10,1550-1627,3160-3229,5854-5960
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_3e7dea5cde3f9e::t_a4b905381a3814 7,57-60,150-154
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_3e7dea5cde3f9e::t_120970b657a630 2,151-159
+src/modules/Arrangement/useCases/timeOperations/__tests__/clipSatelliteStateCodec.spec.ts
+  s_3e7dea5cde3f9e::t_6767036fff1770 1-38
+src/modules/Arrangement/useCases/timeOperations/clipSatelliteStateCodec.ts
+  s_3e7dea5cde3f9e::t_775fc8641eaaf2 70,77-78,82,143,172,175,198,206
+src/modules/CrdtDocument/useCases/__tests__/hasForeignPendingProjectWrites.spec.ts
+  s_3e7dea5cde3f9e::t_0085bf1c3a25aa 1-62
+src/modules/CrdtDocument/useCases/hasForeignPendingProjectWrites.ts
+  s_3e7dea5cde3f9e::t_984f72f7d292c3 1-8
+src/modules/CrdtDocument/useCases/index.ts
+  s_3e7dea5cde3f9e::t_a1f0c262242717 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1e93a4a6058d05c0c647de07c07fee4a9e7b085",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
