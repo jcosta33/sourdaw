@@ -16,6 +16,14 @@ src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
   "base_commit_sha": "465565571f93735b0954f7da72fad3103eb79fc2",
   "prompts": {},
   "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_2bfd55a4393d7c": {
       "agent_id": {
         "tool": "claude",
