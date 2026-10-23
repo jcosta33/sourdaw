@@ -1,5 +1,4 @@
-import { captureProjectRevision, compactProject } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import { captureProjectIdentity, compactProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
@@ -18,20 +17,6 @@ const notifyDiscardFailure = (message: string): false => {
 
 /** Restore the active project's last explicit save, without persisting its current edits. */
 export async function discardProjectChanges(): Promise<boolean> {
-    if (!projectStore.value) {
-        return false;
-    }
-
-    // A recording stop commits its take into the project through the CRDT, which
-    // moves the revision. Landing it before the revision is captured makes the
-    // take part of what this discard drops, instead of an edit that supersedes
-    // the discard when the replacement's own stop lands it later.
-    try {
-        await stopPlayback();
-    } catch {
-        return notifyDiscardFailure('Could not stop playback. Your changes were not discarded.');
-    }
-
     const project = projectStore.value;
     if (!project) {
         return false;
@@ -41,18 +26,15 @@ export async function discardProjectChanges(): Promise<boolean> {
     const hasRecentEntry = getRecentProjects().some((entry) => entry.key === snapshotKey);
     const transitionAuthority = captureProjectTransitionAuthority();
     const transitionWasCurrent = transitionAuthority.isCurrent();
-    const projectRevision = captureProjectRevision();
-    const stillOwnsProject = (): boolean => {
-        const current = projectStore.value;
-        return (
-            // replaceProjectData claims `loading` before it validates the
-            // caller's predicate. That publication belongs to this exact
-            // transition, not to a user project switch, so it must retain the
-            // captured created-at/revision authority through the commit gate.
-            (current === project || (current?.createdAt === project.createdAt && current.loading === true)) &&
-            captureProjectRevision() === projectRevision
-        );
-    };
+    const projectIdentity = captureProjectIdentity();
+    // Identity, not revision: Don't Save already discards every edit, and the
+    // native close request is only honoured while the document is unchanged from
+    // the dialog. The discard's own writes (the stop's transport halt, the
+    // replacement's `loading` publication, a closing take's commit) move the
+    // revision and the store object, and must never refuse it; only another
+    // project, which moves the document identity, does.
+    const stillOwnsProject = (): boolean =>
+        projectStore.value?.createdAt === project.createdAt && captureProjectIdentity() === projectIdentity;
     // Checked only before this discard allocates its own load transaction. Once
     // the transaction exists its prepare() claims the newest epoch, so the
     // captured one reads as superseded by the discard itself; from then on the

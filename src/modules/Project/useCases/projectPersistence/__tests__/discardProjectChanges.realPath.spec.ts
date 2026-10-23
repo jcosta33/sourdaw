@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
     cancelPendingAudioBufferImport,
     getAudioContext,
@@ -9,13 +10,17 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
-    captureProjectRevision,
     compactProject,
+    createCrdtDoc,
     projectActionHistoryToStore,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
     resetCrdtProject,
+    resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -120,37 +125,47 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
-    captureProjectRevision: vi.fn(),
-    compactProject: vi.fn(),
-    createCrdtDoc: vi.fn(),
-    DOC_BRANCHES: '__branches__',
-    DOC_PREFIX_ROOT: 'root',
-    getCrdtDoc: vi.fn(),
-    getCrdtDocIds: vi.fn(),
-    hasCrdtDoc: vi.fn(),
-    mutateCrdtDoc: vi.fn(),
-    persistCrdtProject: vi.fn(),
-    beginBranchSession: vi.fn(),
-    projectActionHistoryToStore: vi.fn(),
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
-    removeCrdtDoc: vi.fn(),
-    projectBranchSession: vi.fn(),
-    replaceCrdtDoc: vi.fn(),
-    replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
-        onAuthorityReplaced?.();
-        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
-    }),
-    endBranchSession: vi.fn(),
-    runCrdtPersistenceBarrier: vi.fn(),
-    sanitizeIncomingCrdtDocument: vi.fn(),
-    setupProjectionBridge: vi.fn(),
-    startCrdtAutoSave: vi.fn(() => vi.fn()),
-    subscribeToCrdtChanges: vi.fn(),
-    waitForCrdtDocumentTransition: vi.fn(),
-}));
+// The document, its revision and its identity are real: the discard's own writes (transport
+// halt, loading flags) move the revision, and only a real root document shows that.
+vi.mock('#/modules/CrdtDocument/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
+        '#/modules/CrdtDocument/useCases'
+    );
+    return {
+        captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+        captureProjectRevision: actual.captureProjectRevision,
+        captureProjectIdentity: actual.captureProjectIdentity,
+        registerCrdtStorageRuntime: actual.registerCrdtStorageRuntime,
+        resetCrdtProjectAuthority: actual.resetCrdtProjectAuthority,
+        compactProject: vi.fn(),
+        createCrdtDoc: actual.createCrdtDoc,
+        DOC_BRANCHES: '__branches__',
+        DOC_PREFIX_ROOT: 'root',
+        getCrdtDoc: vi.fn(),
+        getCrdtDocIds: vi.fn(),
+        hasCrdtDoc: vi.fn(),
+        mutateCrdtDoc: vi.fn(),
+        persistCrdtProject: vi.fn(),
+        beginBranchSession: vi.fn(),
+        projectActionHistoryToStore: vi.fn(),
+        projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+        removeCrdtDoc: actual.removeCrdtDoc,
+        projectBranchSession: vi.fn(),
+        replaceCrdtDoc: vi.fn(),
+        replaceCrdtDocInLineage: vi.fn(),
+        resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+        }),
+        endBranchSession: vi.fn(),
+        runCrdtPersistenceBarrier: vi.fn(),
+        sanitizeIncomingCrdtDocument: vi.fn(),
+        setupProjectionBridge: vi.fn(),
+        startCrdtAutoSave: vi.fn(() => vi.fn()),
+        subscribeToCrdtChanges: vi.fn(),
+        waitForCrdtDocumentTransition: vi.fn(),
+    };
+});
 vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: vi.fn(() => false),
     registerFaustDSP: vi.fn(),
@@ -181,6 +196,9 @@ vi.mock('../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDef
 vi.mock('../helpers/verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: vi.fn() }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
+/** A valid project id: the project slot of the real document drops anything else when it flushes. */
+const originalProjectId = 'bbbbbbbb-bbbb-8bbb-8bbb-bbbbbbbbbbbb';
+
 const savedProject = JSON.stringify({
     version: CURRENT_PROJECT_VERSION,
     meta: {
@@ -196,8 +214,32 @@ const savedProject = JSON.stringify({
     audioBuffers: {},
 });
 
+/** Long enough that every pending frame-flushed document write lands before the value resolves. */
+const afterAFrame = <T>(value: T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(value), 60));
+
+/** What a real stop publishes: it always writes the transport slot of the root document. */
+function haltTransport(): void {
+    transportStore.set({
+        ...defaultTransportState,
+        ...transportStore.value,
+        isPlaying: false,
+        isRecording: false,
+        playheadPosition: 0,
+    });
+}
+
 describe('discardProjectChanges real load path', () => {
+    afterEach(() => {
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
     beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('discard real path test');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
         // Each case opens with a project that owes nothing for the takes before it.
         unsavedClosedTakes.acknowledgeAll();
         vi.mocked(saveProject).mockReset();
@@ -205,7 +247,7 @@ describe('discardProjectChanges real load path', () => {
         vi.mocked(notifyUser).mockReset();
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
-            projectId: 'original-project',
+            projectId: originalProjectId,
             name: 'Unsaved song',
             createdAt: 10,
             dirty: true,
@@ -214,12 +256,16 @@ describe('discardProjectChanges real load path', () => {
         });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         vi.mocked(readNamedProjectJson).mockReset();
-        vi.mocked(captureProjectRevision).mockReset().mockReturnValue('revision-1');
         vi.mocked(importCachedAudioBuffers)
             .mockReset()
             .mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 });
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockReset();
-        vi.mocked(stopPlayback).mockReset().mockResolvedValue(undefined);
+        vi.mocked(stopPlayback)
+            .mockReset()
+            .mockImplementation(() => {
+                haltTransport();
+                return Promise.resolve();
+            });
         vi.mocked(unloadPlugin).mockReset().mockResolvedValue(undefined);
         vi.mocked(compactProject).mockReset().mockResolvedValue(undefined);
         vi.mocked(resetAudioGraph).mockReset();
@@ -232,24 +278,38 @@ describe('discardProjectChanges real load path', () => {
         vi.mocked(getAudioContext).mockClear();
     });
 
-    it('does not let replaceProjectData claim loading state mask a later project-store update', async () => {
-        let releasePreparation: (() => void) | undefined;
+    /** Holds the saved copy's load at its buffer preparation, where the project is published as loading. */
+    async function holdTheSavedCopyLoad(): Promise<{ discard: Promise<boolean>; release: () => void }> {
+        let release: (() => void) | undefined;
         vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
         vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementation(
             () =>
                 new Promise((resolve) => {
-                    releasePreparation = () => resolve({ cancel: vi.fn(), publish: () => 0 });
+                    release = () => resolve({ cancel: vi.fn(), publish: () => 0 });
                 })
         );
-
         const discard = discardProjectChanges();
-        await vi.waitFor(() => expect(projectStore.value?.loading).toBe(true));
-        projectStore.set({ ...projectStore.value!, updatedAt: 12, dirty: true });
-        vi.mocked(captureProjectRevision).mockReturnValue('revision-2');
-        releasePreparation?.();
+        await vi.waitFor(() => expect(release).toBeDefined());
+        return { discard, release: () => release?.() };
+    }
+
+    it('refuses when another project is published while the saved copy loads', async () => {
+        const { discard, release } = await holdTheSavedCopyLoad();
+        projectStore.set({ ...projectStore.value!, createdAt: 99, dirty: true });
+        release();
 
         await expect(discard).resolves.toBe(false);
-        expect(projectStore.value?.projectId).toBe('original-project');
+        expect(projectStore.value?.projectId).toBe(originalProjectId);
+        expect(projectStore.value?.dirty).toBe(true);
+        expect(resetCrdtProject).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the document identity moves while the saved copy loads', async () => {
+        const { discard, release } = await holdTheSavedCopyLoad();
+        createCrdtDoc('replacement-document');
+        release();
+
+        await expect(discard).resolves.toBe(false);
         expect(projectStore.value?.dirty).toBe(true);
         expect(resetCrdtProject).not.toHaveBeenCalled();
     });
@@ -258,6 +318,7 @@ describe('discardProjectChanges real load path', () => {
     function closeATakeDuringTheStop(): void {
         vi.mocked(stopPlayback).mockImplementation(() => {
             takes.settled++;
+            haltTransport();
             return Promise.resolve();
         });
         vi.mocked(saveProject).mockResolvedValue(false);
@@ -280,7 +341,7 @@ describe('discardProjectChanges real load path', () => {
         expect(saveProject).not.toHaveBeenCalled();
         expect(writeProjectJson).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
-        expect(projectStore.value?.projectId).not.toBe('original-project');
+        expect(projectStore.value?.projectId).not.toBe(originalProjectId);
     });
 
     describe('with a project-load epoch already activated', () => {
@@ -321,23 +382,13 @@ describe('discardProjectChanges real load path', () => {
             await expect(discardProjectChanges()).resolves.toBe(true);
 
             expect(resetCrdtProject).toHaveBeenCalledOnce();
-            expect(projectStore.value?.projectId).not.toBe('original-project');
+            expect(projectStore.value?.projectId).not.toBe(originalProjectId);
             expect(projectStore.value?.dirty).toBe(false);
             expect(notifyUser).not.toHaveBeenCalled();
         });
 
-        /** The stop commits the take through the CRDT, which moves the project revision. */
-        function closeATakeThatMovesTheRevision(): void {
-            closeATakeDuringTheStop();
-            const stopThatSettlesATake = vi.mocked(stopPlayback).getMockImplementation();
-            vi.mocked(stopPlayback).mockImplementation(async () => {
-                await stopThatSettlesATake?.();
-                vi.mocked(captureProjectRevision).mockReturnValue('revision-after-take');
-            });
-        }
-
         it('restores the saved copy when a take closes during the stop', async () => {
-            closeATakeThatMovesTheRevision();
+            closeATakeDuringTheStop();
             vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
 
             await expect(discardProjectChanges()).resolves.toBe(true);
@@ -350,24 +401,44 @@ describe('discardProjectChanges real load path', () => {
             expect(projectStore.value?.dirty).toBe(false);
         });
 
-        it('refuses a user edit that lands while the saved copy loads', async () => {
-            let releasePreparation: (() => void) | undefined;
-            vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
-            vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementation(
-                () =>
-                    new Promise((resolve) => {
-                        releasePreparation = () => resolve({ cancel: vi.fn(), publish: () => 0 });
-                    })
+        /** Every wait the discard crosses spans frames, so the document's pending writes flush meanwhile. */
+        function spanFramesEverywhere(): void {
+            vi.mocked(stopPlayback).mockImplementation(async () => {
+                await afterAFrame(undefined);
+                haltTransport();
+            });
+            vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementation(() =>
+                afterAFrame({ cancel: vi.fn(), publish: () => 0 })
             );
+            vi.mocked(resetCrdtProject).mockImplementation(async (_name, onAuthorityReplaced) => {
+                await afterAFrame(undefined);
+                onAuthorityReplaced?.();
+                return { status: 'replaced', finalize: () => Promise.resolve('finalized') };
+            });
+        }
 
-            const discard = discardProjectChanges();
-            await vi.waitFor(() => expect(projectStore.value?.loading).toBe(true));
-            vi.mocked(captureProjectRevision).mockReturnValue('revision-after-edit');
-            releasePreparation?.();
+        it('restores the saved copy when the stop, the load and the reset each span a frame', async () => {
+            spanFramesEverywhere();
+            vi.mocked(readNamedProjectJson).mockImplementation(() => afterAFrame(savedProject));
 
-            await expect(discard).resolves.toBe(false);
-            expect(projectStore.value?.name).toBe('Unsaved song');
-            expect(resetCrdtProject).not.toHaveBeenCalled();
+            await expect(discardProjectChanges()).resolves.toBe(true);
+
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(projectStore.value?.name).toBe('Saved song');
+            expect(projectStore.value?.dirty).toBe(false);
+        });
+
+        it('replaces a never-saved project when the snapshot read and the reset each span a frame', async () => {
+            spanFramesEverywhere();
+            vi.mocked(readNamedProjectJson).mockImplementation(() => afterAFrame(null));
+
+            await expect(discardProjectChanges()).resolves.toBe(true);
+
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(projectStore.value?.projectId).not.toBe(originalProjectId);
+            expect(projectStore.value?.dirty).toBe(false);
         });
 
         it('yields to a transition that starts and activates while the snapshot is read', async () => {
@@ -385,7 +456,7 @@ describe('discardProjectChanges real load path', () => {
             releaseRead?.(savedProject);
 
             await expect(discard).resolves.toBe(false);
-            expect(projectStore.value?.projectId).toBe('original-project');
+            expect(projectStore.value?.projectId).toBe(originalProjectId);
             expect(projectStore.value?.dirty).toBe(true);
             expect(resetCrdtProject).not.toHaveBeenCalled();
         });

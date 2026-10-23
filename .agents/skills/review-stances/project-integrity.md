@@ -265,3 +265,10 @@ moving that epoch. A real-path spec for any epoch-guarded action must run after 
 `runProjectLoadTransaction()` prepare and activate, never at epoch 0, and must keep a case where a
 genuinely newer transition starts during the action and still wins. Mutation probe: make the
 action's own `shouldProceed` read the captured epoch again; the activated-epoch case must fail.
+
+The same guard also compared the CRDT revision, which the action's own stop and `loading`
+publication move once a frame flushes, and a spec that mocks `captureProjectRevision` to a
+constant and the stop to a no-op cannot see it. A guard on the revision or the project store
+object needs a real root document, the real capture, and waits that span a frame; a close or
+discard that already drops every edit guards on project identity (`captureProjectIdentity`)
+instead. Mutation probe: restore the revision comparison; the frame-spanning cases must fail.

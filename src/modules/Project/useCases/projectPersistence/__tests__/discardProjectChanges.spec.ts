@@ -14,8 +14,7 @@ const recent = vi.hoisted(() => ({ getRecentProjects: vi.fn() }));
 const snapshot = vi.hoisted(() => ({ readNamedProjectJson: vi.fn() }));
 const load = vi.hoisted(() => ({ loadRecentProject: vi.fn() }));
 const create = vi.hoisted(() => ({ newProject: vi.fn() }));
-const crdt = vi.hoisted(() => ({ compactProject: vi.fn(), captureProjectRevision: vi.fn(() => 'revision-1') }));
-const transport = vi.hoisted(() => ({ stopPlayback: vi.fn() }));
+const crdt = vi.hoisted(() => ({ compactProject: vi.fn(), captureProjectIdentity: vi.fn(() => 'identity-1') }));
 const notifications = vi.hoisted(() => ({ notifyUser: vi.fn() }));
 const transitionAuthority = vi.hoisted(() => ({ current: true }));
 
@@ -38,9 +37,8 @@ vi.mock('../captureProjectTransitionAuthority', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: crdt.compactProject,
-    captureProjectRevision: crdt.captureProjectRevision,
+    captureProjectIdentity: crdt.captureProjectIdentity,
 }));
-vi.mock('#/modules/Transport/useCases', () => transport);
 vi.mock('#/utils/Notification/notifyUser', () => notifications);
 
 describe('discardProjectChanges', () => {
@@ -56,24 +54,10 @@ describe('discardProjectChanges', () => {
         load.loadRecentProject.mockReset();
         create.newProject.mockReset();
         crdt.compactProject.mockReset();
-        crdt.captureProjectRevision.mockReset();
-        crdt.captureProjectRevision.mockReturnValue('revision-1');
+        crdt.captureProjectIdentity.mockReset();
+        crdt.captureProjectIdentity.mockReturnValue('identity-1');
         notifications.notifyUser.mockClear();
-        transport.stopPlayback.mockReset().mockResolvedValue(undefined);
         transitionAuthority.current = true;
-    });
-
-    it('keeps the edits and denies close when playback cannot be stopped', async () => {
-        transport.stopPlayback.mockRejectedValue(new Error('stop failed'));
-
-        await expect(discardProjectChanges()).resolves.toBe(false);
-
-        expect(notifications.notifyUser).toHaveBeenCalledWith(
-            'Could not stop playback. Your changes were not discarded.',
-            'error'
-        );
-        expect(snapshot.readNamedProjectJson).not.toHaveBeenCalled();
-        expect(state.project?.dirty).toBe(true);
     });
 
     it('restores an orphaned named snapshot without consulting the recent-project index as authority', async () => {
@@ -100,7 +84,7 @@ describe('discardProjectChanges', () => {
         expect(state.project?.dirty).toBe(false);
     });
 
-    it('fails closed when a newer project edit takes ownership while the snapshot read is pending', async () => {
+    it('fails closed when a newer transition takes ownership while the snapshot read is pending', async () => {
         let resolveSnapshot: ((value: string | null) => void) | undefined;
         recent.getRecentProjects.mockReturnValue([]);
         snapshot.readNamedProjectJson.mockImplementation(
@@ -111,15 +95,6 @@ describe('discardProjectChanges', () => {
         );
 
         const discard = discardProjectChanges();
-        await vi.waitFor(() => expect(resolveSnapshot).toBeDefined());
-        state.project = {
-            // The same identity is not enough: the later edit is a new store
-            // publication and must not be discarded by the stale request.
-            projectId: 'original-project',
-            createdAt: 10,
-            dirty: true,
-            identityPersistencePending: false,
-        };
         transitionAuthority.current = false;
         resolveSnapshot?.('{"version":2}');
 
@@ -129,7 +104,7 @@ describe('discardProjectChanges', () => {
         expect(state.project?.dirty).toBe(true);
     });
 
-    it('fails closed when CRDT truth changes without republishing an already-dirty project', async () => {
+    it('fails closed when the document identity moves without republishing the project', async () => {
         let resolveSnapshot: ((value: string | null) => void) | undefined;
         recent.getRecentProjects.mockReturnValue([]);
         snapshot.readNamedProjectJson.mockImplementation(
@@ -140,10 +115,9 @@ describe('discardProjectChanges', () => {
         );
 
         const discard = discardProjectChanges();
-        await vi.waitFor(() => expect(resolveSnapshot).toBeDefined());
-        // `markDirty` short-circuits for an already-dirty project, so its
-        // metadata object and load authority legitimately remain unchanged.
-        crdt.captureProjectRevision.mockReturnValue('revision-after-edit');
+        // A project switch replaces the document set without touching the
+        // open project's store object, so only the document identity shows it.
+        crdt.captureProjectIdentity.mockReturnValue('identity-after-switch');
         resolveSnapshot?.('{"version":2}');
 
         await expect(discard).resolves.toBe(false);
@@ -180,7 +154,7 @@ describe('discardProjectChanges', () => {
 
         const discard = discardProjectChanges();
         await vi.waitFor(() => expect(load.loadRecentProject).toHaveBeenCalledTimes(1));
-        crdt.captureProjectRevision.mockReturnValue('revision-after-edit');
+        crdt.captureProjectIdentity.mockReturnValue('identity-after-switch');
         resolveSecondRead?.();
 
         await expect(discard).resolves.toBe(false);
