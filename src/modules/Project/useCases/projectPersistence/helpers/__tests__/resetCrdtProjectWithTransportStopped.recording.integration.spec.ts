@@ -320,6 +320,31 @@ describe('replacing a project while a take is recording or closing (issue #5500)
         expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
     });
 
+    // No audio capture is open here, so the commit this stop started is the only
+    // thing that says a take is still landing: the transport already reads
+    // stopped, and no commit has settled for the take watch to count.
+    it('does not switch authority while a MIDI take the user paused is still committing, then saves it', async () => {
+        seedTrack('midi');
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        startRecording(4);
+        transportStore.set({ ...transportStore.value!, isRecording: true });
+        flushAutomergeStorageWrites();
+        const release = gateNextCommit();
+        togglePlayback();
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(transportStore.value?.isRecording).toBe(false);
+
+        const replacing = replace();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(mocks.events).not.toContain('switch');
+
+        release();
+        await expect(replacing).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(committedEntryCount()).toBe(1);
+        expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
+    });
+
     it('resets the audio graph and unloads the plugins again before the switch when a Play lands during the plugin unload', async () => {
         seedTrack('midi');
         // The caller's own teardown, with a Play landing while the plugins unload.
