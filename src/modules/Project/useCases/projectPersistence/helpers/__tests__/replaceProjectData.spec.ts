@@ -31,6 +31,8 @@ const {
     mockResetModuleStores,
     mockVerifyAudioBufferReferences,
     mockRearmInputMonitoring,
+    mockSaveProject,
+    mockTakesSettled,
     mockTrackStoreValue,
 } = vi.hoisted(() => ({
     mockLogger: { error: vi.fn(), warn: vi.fn() },
@@ -69,6 +71,9 @@ const {
     mockResetModuleStores: vi.fn(),
     mockVerifyAudioBufferReferences: vi.fn(),
     mockRearmInputMonitoring: vi.fn(),
+    mockSaveProject: vi.fn(),
+    /** How many take commits have settled, as the Transport counts them. */
+    mockTakesSettled: { value: 0 },
     mockTrackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
 }));
 
@@ -112,7 +117,10 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
+    countSettledTakes: () => mockTakesSettled.value,
 }));
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../../saveProject/saveProject', () => ({ saveProject: mockSaveProject }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../../../stores/projectStore', () => ({ projectStore: mockProjectStore }));
 vi.mock('../../../../stores/projectLoadFailureStore', () => ({ projectLoadFailureStore: mockProjectLoadFailureStore }));
@@ -129,6 +137,7 @@ vi.mock('../verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: 
 
 import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
 import { replaceProjectData } from '../replaceProjectData';
+import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
 import type { ProjectLoadTransaction } from '../runProjectLoadTransaction';
@@ -195,6 +204,9 @@ describe('replaceProjectData', () => {
             publish: vi.fn(),
         });
         mockStopPlayback.mockResolvedValue(undefined);
+        mockSaveProject.mockResolvedValue(true);
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
         mockFinalizeReset.mockResolvedValue('finalized');
@@ -404,6 +416,37 @@ describe('replaceProjectData', () => {
         expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
         expect(mockStopPlayback.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
         expect(mockForgetProjectLatchedPedals).toHaveBeenCalledOnce();
+    });
+
+    it('saves a take that its own first stop commits before the switch', async () => {
+        mockStopPlayback.mockImplementationOnce(() => {
+            mockTakesSettled.value++;
+            return Promise.resolve();
+        });
+
+        await expect(
+            replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(mockSaveProject).toHaveBeenCalledOnce();
+        expect(mockSaveProject.mock.invocationCallOrder[0]!).toBeLessThan(
+            mockResetCrdtProject.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('resets the audio graph and unloads the plugins again before asking again after a refused reset', async () => {
+        mockResetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+
+        await expect(
+            replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(mockResetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledTimes(2);
+        const [firstReset, secondReset] = mockResetCrdtProject.mock.invocationCallOrder;
+        expect(mockResetAudioGraph.mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
+        expect(mockResetAudioGraph.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(mockUnloadLoadedExternalPlugins.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
     });
 
     it('keeps stopping and asking until the reset finds the transport idle', async () => {

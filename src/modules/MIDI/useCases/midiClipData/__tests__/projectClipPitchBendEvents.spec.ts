@@ -63,7 +63,13 @@ describe('projectClipPitchBendEvents', () => {
             [6, 5],
             [6.5, 6.5],
         ]);
-        expect(events.every((event) => !('recordedContentBeat' in event))).toBe(true);
+        // The row's own content beat travels with the move, so a caller can read state where it was recorded.
+        expect(events.map((event) => [event.contentBeat, event.recordedContentBeat])).toEqual([
+            [1, 0],
+            [1.5, 1.5],
+            [1, 0],
+            [1.5, 1.5],
+        ]);
     });
 
     it('carries the bend of each channel on its own', () => {

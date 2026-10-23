@@ -29,6 +29,12 @@ export type ThreadCommand = {
     argumentsOmitted?: true;
 };
 
+/**
+ * The longest value `command.batch.propose` accepts for `refines`. A confirmation id is the
+ * application's own `prompt-confirmation-<uuid>`, well inside it.
+ */
+export const PROPOSAL_REFINES_MAX_LENGTH = 128;
+
 /** One `preview − baseline` figure a measured preview of the committed batch reported. */
 export type ThreadMeasuredDelta = {
     targetId: string;
@@ -55,7 +61,17 @@ export type ThreadCommitStanding = (typeof THREAD_COMMIT_STANDINGS)[number];
  */
 export type ThreadContext = {
     requests: string[];
-    pendingProposal: { runId: string; commands: ThreadCommand[] } | null;
+    pendingProposal: {
+        runId: string;
+        /**
+         * The pending card's own confirmation id, which a refining proposal names in `refines`. The
+         * run id cannot stand in for it: a re-preview keeps its run, and a schedule's batches share one.
+         */
+        confirmationId: string;
+        /** Where the card sits in a multi-batch schedule, which no refinement may replace; `null` for a single batch. */
+        batchPosition: { index: number; total: number } | null;
+        commands: ThreadCommand[];
+    } | null;
     lastCommit: {
         runId: string;
         receiptIds: string[];

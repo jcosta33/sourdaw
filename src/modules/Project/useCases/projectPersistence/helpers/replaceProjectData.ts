@@ -26,7 +26,11 @@ import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
 import { markProjectDurabilityPending } from './markProjectDurabilityPending';
-import { resetCrdtProjectWithTransportStopped, type ReplacedProject } from './resetCrdtProjectWithTransportStopped';
+import {
+    resetCrdtProjectWithTransportStopped,
+    type OutgoingProjectDisposition,
+    type ReplacedProject,
+} from './resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './resetModuleStoresToDefault';
 import { projectLoadEpoch, type ProjectLoadTransaction } from './runProjectLoadTransaction';
 import { stopActiveAutoSave } from './stopActiveAutoSave';
@@ -44,6 +48,8 @@ type ReplaceProjectDataInput = {
     /** Buffers an importer already decoded, keyed by buffer id — staged and
      * persisted through the same candidate as the embedded ones. */
     decodedAudioBuffers?: Record<string, AudioBuffer>;
+    /** `discard` when the replacement exists to drop the outgoing project's unsaved state. */
+    outgoingProject?: OutgoingProjectDisposition;
     /** External authority that must remain current until this load switches project truth. */
     shouldProceed?: () => boolean;
     transaction: ProjectLoadTransaction;
@@ -81,6 +87,7 @@ export async function replaceProjectData({
     context,
     data,
     decodedAudioBuffers,
+    outgoingProject,
     shouldProceed,
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
@@ -313,7 +320,8 @@ export async function replaceProjectData({
             () => {
                 authorityReplaced = true;
             },
-            () => transaction.isCurrent() && (shouldProceed === undefined || shouldProceed())
+            () => transaction.isCurrent() && (shouldProceed === undefined || shouldProceed()),
+            outgoingProject
         );
         if (reset.status === 'refused') {
             // Every refusal is decided before the switch, so the previous

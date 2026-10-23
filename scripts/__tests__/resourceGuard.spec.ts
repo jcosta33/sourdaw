@@ -754,7 +754,12 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                     RUST_TEST_THREADS: rust,
                 },
             });
-            const reported = JSON.parse(result.output) as { options: string; cargo: string; rust: string };
+            // The guard appends its own storage evidence after the child's one-line report.
+            const reported = JSON.parse(result.output.split('\n')[0] ?? '') as {
+                options: string;
+                cargo: string;
+                rust: string;
+            };
 
             expect(reported.options).toContain(`--max-old-space-size=${expectedHeap}`);
             expect(reported.cargo).toBe(expectedCargo);

@@ -115,8 +115,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         punchClock.start.push(ctxTime.now);
         return [] as { trackId: string; id: string }[];
     }),
+    // The real `stopRecording` is async: its promise is the take's commit, which
+    // the recording lifecycle tracks.
     stopRecording: vi.fn(() => {
         punchClock.stop.push(ctxTime.now);
+        return Promise.resolve();
     }),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
