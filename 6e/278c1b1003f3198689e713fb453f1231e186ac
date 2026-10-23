@@ -1,0 +1,26 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStartControllerRows.integration.spec.ts
+  s_3e7dea5cde3f9e::t_9e0abd20ea3aad 134,140-149,152-153,155-156,158-159
+  s_3e7dea5cde3f9e::t_e3a162e856b630 110,112-120,123-125,129-131
+  s_3e7dea5cde3f9e::t_e9f73cb2cdfcb2 1-24,27-39,43-109,111,121-122,128,132-133,135-139,151,154,157,160-191,197-201,208-256
+  s_3e7dea5cde3f9e::t_3bece5b4bf6b2b 192-196,202-207
+  s_3e7dea5cde3f9e::t_23ed4910c73463 150
+  s_3e7dea5cde3f9e::t_0e7b22025074b6 26,126-127
+  s_3e7dea5cde3f9e::t_cdeb79eccf173b 25
+  s_3e7dea5cde3f9e::t_3dcbe24215e27f 40-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e278c1b1003f3198689e713fb453f1231e186ac",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
