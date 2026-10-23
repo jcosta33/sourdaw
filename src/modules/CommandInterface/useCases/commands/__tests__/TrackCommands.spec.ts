@@ -10,7 +10,15 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({ duplicateTrack: vi.fn(), removeTrack: vi.fn() }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: { tracks: [] } } }));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { value: { tracks: [] } },
+    resolveEligibleClipWriteTarget: vi.fn(),
+}));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(),
+}));
+vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedTrackId', () => ({ getSelectedTrackId: () => null }));
 

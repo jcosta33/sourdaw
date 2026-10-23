@@ -10,10 +10,22 @@ const { mockDuplicateTrack, mockRemoveTrack } = vi.hoisted(() => ({
 const { mockTrackStore, mockGetSelectedTrackId } = vi.hoisted(() => ({
     mockTrackStore: {
         value: {
-            tracks: [{ id: 't1', name: 'Track 1', groupId: 'grp-1' }],
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'Track 1',
+                    groupId: 'grp-1',
+                    frozen: true,
+                    freezeState: { status: 'frozen', frozenBufferId: 'buffer-1', freezeId: 'take-1', renderedAt: 123 },
+                },
+            ],
         },
     },
     mockGetSelectedTrackId: vi.fn<() => string | null>(() => 't1'),
+}));
+const { mockConfirmUser, mockNotifyUser } = vi.hoisted(() => ({
+    mockConfirmUser: vi.fn<() => Promise<boolean>>(),
+    mockNotifyUser: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -23,7 +35,15 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: mockDuplicateTrack,
     removeTrack: mockRemoveTrack,
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: mockTrackStore,
+    resolveEligibleClipWriteTarget: vi.fn(() => ({ status: 'eligible', trackId: 't1' })),
+}));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
+}));
+vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: mockConfirmUser }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedTrackId', () => ({
     getSelectedTrackId: () => mockGetSelectedTrackId(),
@@ -48,6 +68,8 @@ describe('trackCommands — guarded action commands', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetSelectedTrackId.mockReturnValue('t1');
+        mockConfirmUser.mockReset().mockResolvedValue(false);
+        executeUserAppAction.mockReset().mockResolvedValue(undefined);
     });
 
     it('duplicate-track calls duplicateTrack with the selected trackId', () => {
@@ -85,13 +107,64 @@ describe('trackCommands — guarded action commands', () => {
         });
     });
 
-    it('flatten-track dispatches flattenTrack action', async () => {
+    it('flatten-track waits for the named destructive confirmation and dispatches nothing on cancellation', async () => {
+        const decision = Promise.withResolvers<boolean>();
+        mockConfirmUser.mockReturnValue(decision.promise);
         runAction('flatten-track');
-        await flush();
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'flattenTrack',
-            payload: { trackId: 't1' },
+
+        expect(mockConfirmUser).toHaveBeenCalledExactlyOnceWith({
+            title: 'Flatten "Track 1"?',
+            message:
+                'Flatten replaces the editable clips and devices with one rendered audio clip. Undo before leaving this project if you want the originals back.',
+            confirmLabel: 'Flatten',
+            cancelLabel: 'Cancel',
+            variant: 'danger',
         });
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        decision.resolve(false);
+        await decision.promise;
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(mockNotifyUser).not.toHaveBeenCalled();
+    });
+
+    it('flatten-track dispatches the captured original target only after acceptance', async () => {
+        const decision = Promise.withResolvers<boolean>();
+        mockConfirmUser.mockReturnValue(decision.promise);
+        runAction('flatten-track');
+        mockGetSelectedTrackId.mockReturnValue('t2');
+        decision.resolve(true);
+        await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'flattenTrack', payload: { trackId: 't1' } },
+            { shouldExecute: expect.any(Function) }
+        );
+    });
+
+    it('flatten-track contains dispatcher rejection and reports the failure visibly', async () => {
+        mockConfirmUser.mockResolvedValue(true);
+        executeUserAppAction.mockRejectedValue(new Error('Flatten commit refused'));
+        runAction('flatten-track');
+        await vi.waitFor(() =>
+            expect(mockNotifyUser).toHaveBeenCalledExactlyOnceWith(
+                'Flatten could not finish. Check the track before trying again.',
+                'error'
+            )
+        );
+    });
+
+    it('flatten-track is still listed with the same metadata and does nothing without selection', () => {
+        const command = trackCommands.find((candidate) => candidate.id === 'flatten-track');
+        expect(command).toMatchObject({
+            label: 'Flatten Track',
+            description: 'Commit a frozen track to audio',
+            category: 'Track',
+        });
+        expect(command?.isAvailable).toBeUndefined();
+        expect(command?.shortcut).toBeUndefined();
+        mockGetSelectedTrackId.mockReturnValue(null);
+        runAction('flatten-track');
+        expect(mockConfirmUser).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('bounce-to-new-track dispatches bounceToNewTrack action', async () => {

@@ -18,6 +18,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     renameClip: vi.fn(),
     splitClip: vi.fn(),
 }));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         value: {

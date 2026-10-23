@@ -1,6 +1,9 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
+import { confirmUser } from '#/utils/Notification/confirmUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { promptUser } from '#/utils/Notification/promptUser';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -119,10 +122,61 @@ export const trackCommands: CallableCommandEntry[] = [
         description: 'Commit a frozen track to audio',
         category: 'Track',
         action: () => {
-            const id = getSelectedTrackId();
-            if (id) {
-                void executeUserAppAction({ type: 'flattenTrack', payload: { trackId: id } });
+            const trackId = getSelectedTrackId();
+            if (!trackId) {
+                return;
             }
+            const projectAuthority = captureProjectTransitionAuthority();
+            const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+            const { frozenBufferId, freezeId, renderedAt } = track?.freezeState ?? {};
+            if (!track || !frozenBufferId) {
+                notifyUser('This frozen take is unavailable. Freeze the track again before flattening.', 'warning');
+                return;
+            }
+
+            void (async () => {
+                const confirmed = await confirmUser({
+                    title: `Flatten "${track.name}"?`,
+                    message:
+                        'Flatten replaces the editable clips and devices with one rendered audio clip. Undo before leaving this project if you want the originals back.',
+                    confirmLabel: 'Flatten',
+                    cancelLabel: 'Cancel',
+                    variant: 'danger',
+                });
+                if (!confirmed) {
+                    return;
+                }
+
+                const admission = { declined: false };
+                await executeUserAppAction(
+                    { type: 'flattenTrack', payload: { trackId } },
+                    {
+                        shouldExecute: () => {
+                            const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+                            const allowed =
+                                projectAuthority.isCurrent() &&
+                                current?.frozen === true &&
+                                current.freezeState.status === 'frozen' &&
+                                current.freezeState.frozenBufferId === frozenBufferId &&
+                                current.freezeState.freezeId === freezeId &&
+                                current.freezeState.renderedAt === renderedAt &&
+                                resolveEligibleClipWriteTarget({ trackId }).status === 'eligible';
+                            if (!allowed) {
+                                admission.declined = true;
+                            }
+                            return allowed;
+                        },
+                    }
+                );
+                if (admission.declined) {
+                    notifyUser(
+                        'The frozen track changed. Flatten was cancelled; check the track and try again.',
+                        'warning'
+                    );
+                }
+            })().catch(() => {
+                notifyUser('Flatten could not finish. Check the track before trying again.', 'error');
+            });
         },
     },
     {
