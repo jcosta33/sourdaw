@@ -1,0 +1,30 @@
+src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts
+  s_59e31a5c6f3e31::t_ef07f108ef310d 241
+  s_59e31a5c6f3e31::t_c472411470d15a 226-240,242-255
+crates/daw-dsp/src/grinder/nam/lstm.rs
+  s_59e31a5c6f3e31::t_4e4881b140f365 163,165,167-168
+  s_59e31a5c6f3e31::t_49a7a400c0ebc4 164,166
+crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs
+  s_59e31a5c6f3e31::t_49a7a400c0ebc4 25,32,39-40,42-43
+  s_59e31a5c6f3e31::t_c0862a98b2d74e 63-66
+  s_59e31a5c6f3e31::t_f84aeabfe73e3d 1-24,26-31,33-38,41,44-62,67
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  s_59e31a5c6f3e31::t_49a7a400c0ebc4 411
+  s_59e31a5c6f3e31::t_4e4881b140f365 410,412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75b201363255824046d51e71fd6d1c4befba3f21",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
