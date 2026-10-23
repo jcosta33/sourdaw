@@ -363,6 +363,7 @@ describe('parseProjectXml — clip parsing', () => {
             '</Clips></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         expect(result.tracks[0]?.clips[0]?.audioAssetPath).toBe('vocal.wav');
+        expect(result.warnings).toEqual([]);
     });
 
     it('emits an empty midi clip for a midi track whose clip has no notes/asset', () => {

@@ -552,11 +552,11 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
 
     const containerUnit = readTimeUnit(lanesRoot, context.defaultTimeUnit);
 
-    function walkClips(node: XmlQuery, unit: 'beats' | 'seconds', insideClip = false): void {
+    function walkClips(node: XmlQuery, unit: 'beats' | 'seconds', clipMediaHandled = false): void {
         for (const laneOrClips of node.children()) {
             const laneUnit = readTimeUnit(laneOrClips, unit);
             if (laneOrClips.element.tagName === AUDIO || laneOrClips.element.tagName === 'Video') {
-                if (!insideClip) {
+                if (!clipMediaHandled) {
                     const trackRef = laneOrClips.attr('track') ?? laneOrClips.attr('channel');
                     const owner = (trackRef && context.trackNames.get(trackRef)) ?? trackRef ?? 'Arrangement';
                     const name =
@@ -589,7 +589,10 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
                     }
                 }
             }
-            walkClips(laneOrClips, laneUnit, insideClip || laneOrClips.element.tagName === CLIP);
+            const childMediaHandled =
+                laneOrClips.element.tagName === CLIP ||
+                (node.element.tagName === CLIP && laneOrClips.element.tagName === 'Warps');
+            walkClips(laneOrClips, laneUnit, childMediaHandled);
         }
     }
 
