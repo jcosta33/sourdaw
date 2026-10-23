@@ -37,18 +37,7 @@ test.describe('Project name & preferences — test-id targeted', () => {
         await expect(prefs).toBeVisible({ timeout: 10_000 });
     });
 
-    test('clicking preferences opens the dialog', async ({ page }) => {
-        const prefs = page.getByTestId('toggle-preferences');
-        await prefs.click();
-        await page.waitForTimeout(500);
-
-        // A preferences dialog should appear.
-        const dialog = page.getByRole('dialog');
-        const hasDialog = await dialog.isVisible().catch(() => false);
-        if (hasDialog) {
-            expect(await dialog.innerText()).toBeTruthy();
-        }
-    });
+    // preferencesDialogDeepTestId owns unconditional dialog opening and navigation.
 
     test('project name and preferences are in the transport bar simultaneously', async ({ page }) => {
         await expect(page.getByTestId('project-name')).toBeVisible({ timeout: 10_000 });

@@ -82,10 +82,33 @@ function writeCargoInventoryFixture(root: string): void {
     for (const { path } of manifest.cargoRuntimeInventory?.sourceInputs ?? []) {
         write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
     }
+    restampCargoInventoryFixtureDigests(root, manifest);
+}
+
+function sha256File(root: string, path: string): string {
+    return createHash('sha256')
+        .update(readFileSync(join(root, path)))
+        .digest('hex');
+}
+
+// The fixture pins the digests of its own copies, so an unrelated edit to the
+// live package.json, Cargo.lock or build inputs cannot fail these cases; the
+// drift each case injects afterwards still moves a digest off the fixture's pin.
+function restampCargoInventoryFixtureDigests(root: string, manifest: CargoInventoryFixtureManifest): void {
+    const inventory = manifest.cargoRuntimeInventory;
+    if (inventory === undefined) {
+        throw new Error('the fixture manifest must carry a Cargo runtime inventory');
+    }
+    inventory.cargoLockSha256 = sha256File(root, 'Cargo.lock');
+    for (const input of inventory.sourceInputs) {
+        input.sha256 = sha256File(root, input.path);
+    }
+    writeCargoInventoryFixtureManifest(root, manifest);
 }
 
 type CargoInventoryFixtureManifest = {
     cargoRuntimeInventory?: {
+        cargoLockSha256: string;
         sourceInputs: Array<{
             path: string;
             sha256: string;
@@ -198,11 +221,12 @@ describe('project license', () => {
         process.env.PATH = `${unavailableCargoPath}:${originalPath ?? ''}`;
         process.env.CARGO_SENTINEL_PATH = sentinelPath;
         try {
-            const records = collectCargoDependencyLicenses(process.cwd());
+            writeCargoInventoryFixture(root);
+            const records = collectCargoDependencyLicenses(root);
             expect(records).not.toHaveLength(0);
-            expect(buildDependencyLicenseArtifacts(process.cwd()).report).toBe(
-                readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8')
-            );
+            expect(
+                buildDependencyLicenseArtifacts(process.cwd(), { collectCargoDependencies: () => records }).report
+            ).toBe(readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8'));
             expect(existsSync(sentinelPath)).toBe(false);
         } finally {
             if (originalPath === undefined) {
