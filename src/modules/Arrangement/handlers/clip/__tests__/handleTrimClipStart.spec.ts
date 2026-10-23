@@ -27,7 +27,7 @@ describe('handleTrimClipStart', () => {
             payload: { clipId: 'c1', newStartBeat: 2 },
         });
 
-        expect(mocks.trimClipStart).toHaveBeenCalledWith('c1', 2);
+        expect(mocks.trimClipStart).toHaveBeenCalledWith('c1', 2, undefined);
     });
 
     it('provides a description', () => {
@@ -51,7 +51,7 @@ describe('handleTrimClipStart', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'trimClipStart',
-            payload: { clipId: 'c1', newStartBeat: 1 },
+            payload: { clipId: 'c1', newStartBeat: 1, loopOriginBeat: null },
         });
     });
 

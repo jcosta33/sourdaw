@@ -39,6 +39,7 @@ import {
     type RetainedCompilation,
 } from '../models/RetainedCompilation';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
+import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import {
     AUTO_TOOL_CHOICE,
@@ -1419,6 +1420,18 @@ function recordSearchedIntents(
     }
 }
 
+/**
+ * The arguments `command.batch.propose` may carry. Whether `refines` names this thread's pending
+ * proposal is the planner's to check against the thread; the loop holds only its shape.
+ */
+const COMMAND_BATCH_PROPOSAL_KEYS: ReadonlySet<string> = new Set([
+    'commands',
+    'list',
+    'plan',
+    'compiledCallIds',
+    'refines',
+]);
+
 function validateCommandBatchProposal(
     call: ToolCallResult,
     disclosedCommandSchemas: ReadonlyMap<string, string>,
@@ -1445,10 +1458,12 @@ function validateCommandBatchProposal(
     const selectedCount = Array.isArray(references)
         ? references.reduce((count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0), 0)
         : 0;
+    const refines = call.arguments.refines;
     if (
-        Object.keys(call.arguments).some(
-            (key) => key !== 'commands' && key !== 'list' && key !== 'plan' && key !== 'compiledCallIds'
-        ) ||
+        Object.keys(call.arguments).some((key) => !COMMAND_BATCH_PROPOSAL_KEYS.has(key)) ||
+        (refines !== undefined &&
+            refines !== null &&
+            (typeof refines !== 'string' || refines.length === 0 || refines.length > PROPOSAL_REFINES_MAX_LENGTH)) ||
         hasPrimitiveCommands === hasStructuredList ||
         (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
     ) {
@@ -1621,16 +1636,20 @@ function validateCatalogTerminalCalls(
     return { status: 'accepted', decline: declineValidation.decline, answer: answerValidation.answer };
 }
 
+/**
+ * A strict reply states every optional property, as `null` when it means none. The proposal drops
+ * those nulls here, so nothing downstream reads a `refines: null` as naming a card: a refinement
+ * is absent in every form, and so are the list and plan beside a primitive command list.
+ */
 function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
-    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || !Array.isArray(call.arguments.commands)) {
+    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
         return call;
     }
+    const nullableKeys = Array.isArray(call.arguments.commands) ? ['list', 'plan', 'refines'] : ['refines'];
     return {
         ...call,
         arguments: Object.fromEntries(
-            Object.entries(call.arguments).filter(
-                ([key, value]) => (key !== 'list' && key !== 'plan') || value !== null
-            )
+            Object.entries(call.arguments).filter(([key, value]) => !nullableKeys.includes(key) || value !== null)
         ),
     };
 }

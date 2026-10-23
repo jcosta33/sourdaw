@@ -135,13 +135,18 @@ function identifyRows(rows: readonly unknown[], identify: CrdtEntityIdentity): r
     return identities;
 }
 
-function indexOfIdentity(rows: readonly unknown[], identify: CrdtEntityIdentity, identity: string): number {
-    for (const [index, row] of rows.entries()) {
-        if (isUnknownRecord(row) && identify(row) === identity) {
-            return index;
+/**
+ * Position of each identity in `order`. Identities are unique within a
+ * collection that reaches placement, so no identity is overwritten.
+ */
+function positionsOf(order: readonly (string | null)[]): Map<string, number> {
+    const positionByIdentity = new Map<string, number>();
+    for (const [position, identity] of order.entries()) {
+        if (identity !== null) {
+            positionByIdentity.set(identity, position);
         }
     }
-    return -1;
+    return positionByIdentity;
 }
 
 function identityAt(rows: readonly unknown[], identify: CrdtEntityIdentity, index: number): string | null {
@@ -629,23 +634,33 @@ function placeRows(input: PlaceRowsInput): void {
     // their element, and with it any concurrent edit a peer is making to them.
     // A row the writer never had in hand is not its to relocate, so it stays
     // exactly where it is.
+    const keptInReverse: (string | null)[] = [];
     for (let index = current.length - 1; index >= 0; index -= 1) {
         const identity = identityAt(current, identify, index);
-        if (identity === null || pinned.has(identity)) {
-            continue;
-        }
-        if (!desiredIdentitySet.has(identity)) {
+        if (identity === null || pinned.has(identity) || !desiredIdentitySet.has(identity)) {
+            keptInReverse.push(identity);
             continue;
         }
         current.splice(index, 1);
     }
+
+    // The identity order of `current`, kept as plain data. Reading it back
+    // from the live list costs a proxy allocation and WASM reads per element,
+    // so the walk below consults this mirror and applies every insert to both.
+    const order = keptInReverse.reverse();
+    let positionByIdentity = positionsOf(order);
+    let positionsStale = false;
 
     // Walk the writer's order, placing anything not already positioned right
     // after the previously placed row.
     let previousIndex = -1;
     for (const [desiredIndex, identity] of desiredIdentities.entries()) {
         if (pinned.has(identity)) {
-            previousIndex = indexOfIdentity(current, identify, identity);
+            if (positionsStale) {
+                positionByIdentity = positionsOf(order);
+                positionsStale = false;
+            }
+            previousIndex = positionByIdentity.get(identity) ?? -1;
             continue;
         }
         if (
@@ -661,8 +676,10 @@ function placeRows(input: PlaceRowsInput): void {
         ) {
             continue;
         }
-        const insertAt = Math.min(previousIndex + 1, current.length);
+        const insertAt = Math.min(previousIndex + 1, order.length);
         current.splice(insertAt, 0, desired[desiredIndex]);
+        order.splice(insertAt, 0, identity);
+        positionsStale = true;
         previousIndex = insertAt;
     }
 }

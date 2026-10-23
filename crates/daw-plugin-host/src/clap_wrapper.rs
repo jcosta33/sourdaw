@@ -6537,6 +6537,11 @@ mod tests {
         let _guard = TAIL_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // `mark_tail_dirty` raises the process-wide tail hint, which the
+        // host-callback tests read back as read-and-clear.
+        let _hint_guard = crate::clap_host::TAIL_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         STUB_TAIL.store(1_000, Ordering::Relaxed);
         let mut wrapper = stub_wrapper(tail_plugin_ptr());
 
