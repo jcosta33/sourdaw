@@ -204,12 +204,15 @@ function commitResolvedCapture(input: {
         Promise.resolve().then(() =>
             commitRecording(recordedClip, capture).catch((error: unknown) => {
                 logger.error(new Error('Recording commit failed', { cause: error }));
-                notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
                 // The failure cleanup re-checks the root: the catch
                 // runs after the commit's awaits, by which time a
-                // branch switch may have replaced the document.
+                // branch switch may have replaced the document — and
+                // the notice states only what actually ran.
                 if (stillOwnsCaptureRoot()) {
                     discardRecording(recordedClip.id);
+                    notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                } else {
+                    notifyUser('Recording failed — the take was not kept on this branch.', 'error');
                 }
             })
         )
@@ -247,16 +250,19 @@ async function beginActualRecording(
                     // A capture that dies mid-take (ring overrun, worker crash, a
                     // WAV that never decoded) must not strand an empty provisional
                     // clip on the arrangement or stay silent about it (#4265).
-                    notifyUser(
-                        'Recording failed — the partial take was discarded. Check your audio input and try again.',
-                        'error'
-                    );
                     // The cleanup belongs to the root the take was opened on: a
-                    // successor that forked the provisional clip keeps its own copy.
+                    // successor that forked the provisional clip keeps its own
+                    // copy, and the notice states only what actually ran.
                     const failedClip = clips.find((context) => context.trackId === track.id);
                     if (failedClip && stillOwnsCaptureRoot()) {
                         discardRecording(failedClip.id);
                     }
+                    notifyUser(
+                        stillOwnsCaptureRoot()
+                            ? 'Recording failed — the partial take was discarded. Check your audio input and try again.'
+                            : 'Recording failed — the partial take was not kept on this branch.',
+                        'error'
+                    );
                     return;
                 }
                 const { buffer } = result;
@@ -296,6 +302,17 @@ async function beginActualRecording(
             recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
             notifyUser('Unable to start recording. Check the selected audio input.', 'error');
+            return false;
+        }
+        // The admission await parks on real input hardware, and a fork in that
+        // window installs a successor the staging below would write the
+        // provisional clip onto — a ghost no later terminal claims, because the
+        // terminal guards refuse to clean up a root they do not own (#5289).
+        // The open refuses a replaced root instead of staging across roots.
+        if (!stillOwnsCaptureRoot()) {
+            recordingLifecycle.completePendingRecordingStart(startToken);
+            await stopAudioRecording();
+            notifyUser('Recording was not started — the project moved to another branch. Try again.', 'error');
             return false;
         }
     }

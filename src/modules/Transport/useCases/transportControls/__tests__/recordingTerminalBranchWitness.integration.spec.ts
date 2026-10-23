@@ -214,6 +214,9 @@ describe('recording terminal publishes only under its captured root (issue #5289
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: false, playheadPosition: 8 });
         mocks.notifyUser.mockClear();
         mocks.cacheAudioBuffer.mockClear();
+        // vitest keeps mock call history between cases (clearMocks is off), so
+        // the held-commit case's wait must observe its own commit entry.
+        mocks.commitRecording.mockClear();
         mocks.audioClock.currentTime = 0;
     });
 
@@ -279,6 +282,12 @@ describe('recording terminal publishes only under its captured root (issue #5289
         expect(storeClipIds()).toEqual(successorClipsWithProvisional);
         expect(documentClipIds()).toEqual(successorClipsWithProvisional);
         expect(committedEntryCount()).toBe(0);
+        // The notice states what actually ran: no discard happened, so it must
+        // not claim one.
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the partial take was not kept on this branch.',
+            'error'
+        );
     });
 
     it('commits the take on the same root the terminal was opened on', async () => {
@@ -326,9 +335,52 @@ describe('recording terminal publishes only under its captured root (issue #5289
         });
 
         // The catch's guarded discard never ran: the successor keeps its clip in
-        // the live store and the durable document, and no entry was recorded.
+        // the live store and the durable document, no entry was recorded, and
+        // the notice does not claim a discard that was skipped.
         expect(storeClipIds()).toEqual(successorClipsWithProvisional);
         expect(documentClipIds()).toEqual(successorClipsWithProvisional);
         expect(committedEntryCount()).toBe(0);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the take was not kept on this branch.',
+            'error'
+        );
+    });
+
+    it('refuses to stage the take when the project forks while admission is pending', async () => {
+        // The open's own window: the admission await parks on input hardware,
+        // and a fork in that window must not receive the provisional clip the
+        // staging would write (#5289) — no ghost on the successor, a notice
+        // that names the branch move, and no recording engaged.
+        trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        transportStore.set({
+            ...transportStore.value!,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            playheadPosition: 4,
+        });
+        flushAutomergeStorageWrites();
+        let resolveAdmission: ((didStart: boolean) => void) | undefined;
+        mocks.startAudioRecording.mockImplementationOnce(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    resolveAdmission = resolve;
+                })
+        );
+        toggleRecording();
+
+        await forkProjectBranch('feature');
+
+        resolveAdmission?.(true);
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalled();
+        });
+
+        expect(storeClipIds()).toEqual([]);
+        expect(documentClipIds()).toEqual([]);
+        expect(committedEntryCount()).toBe(0);
+        expect(transportStore.value?.isRecording).toBe(false);
     });
 });
