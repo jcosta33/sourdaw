@@ -19,6 +19,8 @@ vi.mock('../../../stores/midiStore', () => ({
 }));
 
 const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
+const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
 const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipGlueState } = await import('../prepareMidiClipGlueState');
 const { projectChannelBend } = await import('../projectChannelBend');
@@ -656,6 +658,60 @@ describe('prepareMidiClipGlueState', () => {
                     expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
                     expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
                 });
+
+                it.each([
+                    {
+                        name: 'an NRPN',
+                        selected: [row('cut-nrpn-msb', 1.3, 99, 1), row('cut-nrpn-lsb', 1.3, 98, 1)],
+                    },
+                    {
+                        name: 'the Null RPN',
+                        selected: [row('cut-null-msb', 1.3, 101, 127), row('cut-null-lsb', 1.3, 100, 127)],
+                    },
+                ])(
+                    'keeps $name the cut left selected, so the window’s own later Data Entry stays ignored under the hand-set range',
+                    ({ selected }) => {
+                        storeGluedClip([
+                            ...rangeAt('twelve', 0.1, 12),
+                            ...rangeAt('two', 1.3, 2),
+                            ...selected,
+                            row('own-data-entry', 3, 6, 40),
+                        ]);
+                        const before = Array.from(storedRows());
+                        const read = () => {
+                            const reader = createStoredBendRangeReader(storedRows());
+                            return [0.5, 1.7].map((beat) => reader(0, beat));
+                        };
+                        expect(read()).toEqual([2, 2]);
+
+                        const edit = addMidiCC('target', 6, 7, 0, 0);
+                        const afterEdit = Array.from(storedRows());
+
+                        expect(read()).toEqual([7, 7]);
+                        expect(storedRows().some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
+
+                        // The CC lane's undo: remove what the add created, put back what it displaced in place.
+                        const afterIds = new Set(afterEdit.map(({ id }) => id));
+                        const beforeIds = new Set(before.map(({ id }) => id));
+                        for (const { id } of afterEdit) {
+                            if (!beforeIds.has(id)) {
+                                removeMidiCC('target', id);
+                            }
+                        }
+                        restoreMidiCCPoints(
+                            'target',
+                            before.filter(({ id }) => !afterIds.has(id)),
+                            before
+                        );
+
+                        expect(storedRows()).toEqual(before);
+                        expect(read()).toEqual([2, 2]);
+
+                        addMidiCC('target', 6, 7, 0, 0, edit.id);
+
+                        expect(storedRows()).toEqual(afterEdit);
+                    }
+                );
 
                 it.each([
                     { name: 'an RPN MSB select', controller: 101, value: 127 },

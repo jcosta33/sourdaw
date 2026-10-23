@@ -320,6 +320,23 @@ describe('prepareMidiClipSplit bend range', () => {
                 return mocks.state.value?.ccByClipId.right ?? [];
             }
 
+            /**
+             * What the CC lane's undo does for one click: removes the rows the add created, puts back the rows it
+             * displaced where they stood in `before`. Returns the rows it displaced.
+             */
+            function undoAdd(before: readonly Controller[]) {
+                const afterIds = new Set(storedRows().map(({ id }) => id));
+                const beforeIds = new Set(before.map(({ id }) => id));
+                for (const { id } of storedRows()) {
+                    if (!beforeIds.has(id)) {
+                        removeMidiCC('right', id);
+                    }
+                }
+                const displaced = before.filter(({ id }) => !afterIds.has(id));
+                restoreMidiCCPoints('right', displaced, before);
+                return displaced;
+            }
+
             it('governs a bend drawn after it, in place of the state at the cut', () => {
                 storeRightHalf();
 
@@ -395,17 +412,75 @@ describe('prepareMidiClipSplit bend range', () => {
                 const before = [...storedRows()];
                 const rangeBefore = createStoredBendRangeReader(before)(0, 1);
 
-                const edit = addMidiCC('right', 6, 7, 0, 0);
-                const remaining = new Set(storedRows().map(({ id }) => id));
-                const displaced = before.filter(({ id }) => !remaining.has(id));
-                removeMidiCC('right', edit.id);
-                restoreMidiCCPoints('right', displaced, before);
+                addMidiCC('right', 6, 7, 0, 0);
+                const displaced = undoAdd(before);
 
                 expect(rangeBefore).toBe(5);
                 expect(displaced.some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
                 expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(rangeBefore);
                 expect(storedRows().map(({ id }) => id)).toEqual(before.map(({ id }) => id));
             });
+
+            /** The source's selection after the second range: the NRPN or the Null RPN a keyboard leaves. */
+            const SELECTIONS_AT_THE_CUT = [
+                {
+                    name: 'an NRPN',
+                    selected: [controller('cut-nrpn-msb', 1.3, 99, 1), controller('cut-nrpn-lsb', 1.3, 98, 1)],
+                },
+                {
+                    name: 'the Null RPN',
+                    selected: [controller('cut-null-msb', 1.3, 101, 127), controller('cut-null-lsb', 1.3, 100, 127)],
+                },
+            ];
+
+            /** The depth the right half's bends play under, the clip's own Data Entry at content beat 1 included. */
+            function readRanges(beats: readonly number[]) {
+                const read = createStoredBendRangeReader(storedRows());
+                return beats.map((beat) => read(0, beat));
+            }
+
+            it.each(SELECTIONS_AT_THE_CUT)(
+                'keeps $name the cut left selected, so the clip’s own later Data Entry stays ignored under the hand-set range',
+                ({ selected }) => {
+                    const ownDataEntry = controller('own-data-entry', 3, 6, 40);
+                    storeRightHalf([
+                        ...rangeAt('twelve', 0.1, 12),
+                        ...rangeAt('two', 1.3, 2),
+                        ...selected,
+                        ownDataEntry,
+                    ]);
+                    expect(readRanges([0.5, 1.5])).toEqual([2, 2]);
+
+                    addMidiCC('right', 6, 7, 0, 0);
+
+                    expect(readRanges([0.5, 1.5])).toEqual([7, 7]);
+                    expect(storedRows().some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
+                }
+            );
+
+            it.each(SELECTIONS_AT_THE_CUT)(
+                'puts back $name and the range it replaced when the hand edit is undone',
+                ({ selected }) => {
+                    storeRightHalf([
+                        ...rangeAt('twelve', 0.1, 12),
+                        ...rangeAt('two', 1.3, 2),
+                        ...selected,
+                        controller('own-data-entry', 3, 6, 40),
+                    ]);
+                    const before = [...storedRows()];
+
+                    const edit = addMidiCC('right', 6, 7, 0, 0);
+                    const afterEdit = [...storedRows()];
+                    undoAdd(before);
+
+                    expect(storedRows()).toEqual(before);
+                    expect(readRanges([0.5, 1.5])).toEqual([2, 2]);
+
+                    addMidiCC('right', 6, 7, 0, 0, edit.id);
+
+                    expect(storedRows()).toEqual(afterEdit);
+                }
+            );
 
             it('leaves the state at the cut for a bend drawn after a hand edit that sets no registered parameter', () => {
                 storeRightHalf();

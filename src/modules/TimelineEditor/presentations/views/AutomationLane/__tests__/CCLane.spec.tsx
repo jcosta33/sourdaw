@@ -344,6 +344,36 @@ describe('CCLane', () => {
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
         });
 
+        it('removes every row the add created, such as a rewritten return, and restores the one it replaced, on undo', () => {
+            const returnRow = {
+                id: 'cc-split:right:rpn-after-carried-0',
+                controller: 6,
+                value: 2,
+                beat: 0.001,
+                channel: 0,
+            };
+            const unrelated = { id: 'cc-peer', controller: 11, value: 50, beat: 2, channel: 0 };
+            const rewrittenReturn = { ...returnRow, id: 'cc-split:right:rpn-after-carried-1', value: 7 };
+            laneMocks.midiState.ccByClipId['clip-1'] = [returnRow, unrelated];
+            vi.mocked(addMidiCC).mockImplementationOnce((clipId, controller, value, beat, channel = 0): MidiCC => {
+                const cc: MidiCC = { id: 'clicked', controller, value, beat, channel };
+                laneMocks.midiState.ccByClipId[clipId] = [rewrittenReturn, unrelated, cc];
+                return cc;
+            });
+            render(<CCLane {...defaultProps} controller={6} />);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: 40 });
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            undoFn!();
+
+            expect(vi.mocked(removeMidiCC).mock.calls.map(([, id]) => id)).toEqual(
+                expect.arrayContaining(['clicked', rewrittenReturn.id])
+            );
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [returnRow], [returnRow, unrelated]);
+            expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+        });
+
         it('leaves a row deleted between the gesture and the undo deleted when undoing an add', () => {
             // The seeded row sits on another key AND another controller, so the
             // gesture never displaced it. A collaborator's merged delete removes

@@ -109,6 +109,68 @@ describe('addMidiCC', () => {
             expect(idsAfter()).toEqual([cc.id]);
         });
 
+        it('applies when RPN 0 is selected in beat order though a Null RPN of an earlier beat is stored after it', () => {
+            midiStore.set({
+                notesByClipId: {},
+                ccByClipId: {
+                    c1: [
+                        ...selection([
+                            [101, 0],
+                            [100, 0],
+                        ]).map((row) => ({ ...row, beat: 4 })),
+                        glueReturn,
+                        ...selection([
+                            [101, 127],
+                            [100, 127],
+                        ]).map((row, index) => ({ ...row, id: `select-null-${index}`, beat: 1 })),
+                    ],
+                },
+                pitchBendByClipId: {},
+            });
+
+            const cc = addMidiCC('c1', 6, 7, 4, 0);
+
+            expect(idsAfter()).toEqual([cc.id]);
+        });
+
+        it('rewrites the returns to restore the selection the cut left under the hand-set range', () => {
+            const restoreCutState = (
+                [
+                    [101, 0],
+                    [100, 0],
+                    [6, 2],
+                    [38, 0],
+                    [99, 1],
+                    [98, 1],
+                ] as const
+            ).map(([controller, value], index) => ({
+                id: `cc-split:right:rpn-after-carried-${index}`,
+                controller,
+                value,
+                beat: tick,
+                channel: 0,
+            }));
+            const otherChannelReturn = { ...splitReturn, id: 'cc-split:right:rpn-after-carried-9', channel: 1 };
+            seed([...restoreCutState, otherChannelReturn]);
+
+            const cc = addMidiCC('c1', 6, 7, 0, 0);
+
+            const stored = midiStore.value?.ccByClipId.c1 ?? [];
+            const rewritten = stored.filter(({ id, channel }) => id.includes('rpn-after-carried') && channel === 0);
+            expect(rewritten.map(({ controller, value }) => [controller, value])).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, 7],
+                [38, 0],
+                [99, 1],
+                [98, 1],
+            ]);
+            expect(rewritten.every(({ id, beat }) => id.startsWith('cc-split:right:') && beat === tick)).toBe(true);
+            expect(stored).toContainEqual(otherChannelReturn);
+            expect(new Set(stored.map(({ id }) => id)).size).toBe(stored.length);
+            expect(stored.at(-1)).toEqual(cc);
+        });
+
         it('replaces a return an earlier row of the clip pulled ahead of the tick', () => {
             seed([{ ...splitReturn, beat: tick / 2 }]);
 

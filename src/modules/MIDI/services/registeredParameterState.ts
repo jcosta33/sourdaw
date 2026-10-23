@@ -17,6 +17,7 @@ import {
     isPitchBendSensitivitySelected,
     type MidiChannelControllerState,
 } from '../models/MidiControllerState';
+import { type MidiCC } from '../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import { SEQUENCER_TICK_BEATS } from '../models/SequencerTick';
 
@@ -290,6 +291,7 @@ export function carriedBendReturnBeat(head: EditedClipHead): number {
 /** The id key of the rows that return a channel to the state at the cut, which the cut itself derives (`carriedBendReturnBeat`). */
 const CARRIED_BEND_RETURN_ID_KEY = 'rpn-after-carried';
 const CARRIED_BEND_RETURN_ID = new RegExp(`:${CARRIED_BEND_RETURN_ID_KEY}-\\d+$`);
+const CARRIED_BEND_RETURN_ID_INDEX = new RegExp(`:${CARRIED_BEND_RETURN_ID_KEY}-(\\d+)$`);
 
 /** The id key of the `index`th row that returns a channel to the state at the cut. */
 export function carriedBendReturnIdKey(index: number): string {
@@ -322,27 +324,31 @@ export function editSetsBendRangeWhereItLands(
     }
     const replacedByEdit = (row: StoredRegisteredParameterRow) =>
         row.beat === edit.beat && row.controller === edit.controller;
+    const state = replayInReaderOrder(
+        stored.filter((row) => row.beat <= edit.beat && !replacedByEdit(row)),
+        edit.channel
+    );
+    return isPitchBendSensitivitySelected(state);
+}
+
+/** The state a channel is in after its registered-parameter rows of `rows`, in beat order with list order breaking ties. */
+function replayInReaderOrder(
+    rows: readonly StoredRegisteredParameterRow[],
+    channel: number
+): MidiChannelControllerState {
     const state = createMidiChannelControllerState();
-    const arrived = stored
-        .filter(
-            (row) =>
-                row.channel === edit.channel &&
-                row.beat <= edit.beat &&
-                isRegisteredParameterController(row.controller) &&
-                !replacedByEdit(row)
-        )
+    const arrived = rows
+        .filter((row) => row.channel === channel && isRegisteredParameterController(row.controller))
         .toSorted((first, second) => first.beat - second.beat);
     for (const { controller, value } of arrived) {
         applyRegisteredParameterChange(state, controller, value);
     }
-    return isPitchBendSensitivitySelected(state);
+    return state;
 }
 
 /**
  * Whether `row` is a return a split or a glue wrote for a carried bend, from the head `edit` lands on: on the head
- * itself or up to one return tick after it. When the edit sets the range there (`editSetsBendRangeWhereItLands`)
- * the return would re-send the state at the cut over it for every later bend; the edit governs them instead, and
- * the return, which the hand edit has made obsolete, goes with it.
+ * itself or up to one return tick after it. Such a return re-sends the state at the cut (`landEditOnRows`).
  */
 export function isCarriedBendReturnOnEditedHead(
     row: { id: string; channel: number; beat: number },
@@ -353,4 +359,80 @@ export function isCarriedBendReturnOnEditedHead(
     }
     const afterEdit = row.beat - edit.beat;
     return afterEdit >= -SAME_BEAT_TOLERANCE && afterEdit <= SEQUENCER_TICK_BEATS + SAME_BEAT_TOLERANCE;
+}
+
+/** `state` with RPN 0's range replaced by `semitones`; the selection and every other parameter stay as they are. */
+function withBendRange(state: MidiChannelControllerState, semitones: number): MidiChannelControllerState {
+    const replaced = { ...state, bendRangeSemitones: semitones };
+    if (!isPitchBendSensitivitySelected(state)) {
+        return replaced;
+    }
+    const { msb, lsb } = encodeBendRange(semitones);
+    return { ...replaced, dataEntryMsb: msb, dataEntryLsb: lsb };
+}
+
+/** One past the highest return index the rows hold, whatever the channel, so a new return never takes an id in use. */
+function nextCarriedBendReturnIndex(rows: readonly { id: string }[]): number {
+    let next = 0;
+    for (const { id } of rows) {
+        const index = CARRIED_BEND_RETURN_ID_INDEX.exec(id)?.[1];
+        if (index !== undefined) {
+            next = Math.max(next, Number(index) + 1);
+        }
+    }
+    return next;
+}
+
+/**
+ * The clip's rows after `edit`, a point set by hand, lands on `stored`: the rows at the edit's key are replaced and
+ * the edit goes last, as `addMidiCC` appends it.
+ *
+ * A split or glue that carries a bend onto its head also writes, just after it, returns that restore the state at
+ * the cut: its range, but also the selection (an NRPN, the Null RPN, RPN 0) and the data bytes. An edit that changes
+ * RPN 0's range where it lands (`editSetsBendRangeWhereItLands`) must govern every later bend, so the returns keep
+ * restoring the cut state with the range replaced by the one the edit left: they are rewritten, in place and
+ * under new ids, to reconcile the state after the edit to that target. Returns that restore nothing but the
+ * range the edit already set are dropped.
+ */
+export function landEditOnRows(stored: readonly MidiCC[], edit: MidiCC): MidiCC[] {
+    const kept = stored.filter(
+        (row) => !(row.beat === edit.beat && row.channel === edit.channel && row.controller === edit.controller)
+    );
+    if (!editSetsBendRangeWhereItLands(stored, edit)) {
+        return [...kept, edit];
+    }
+    const returns = kept.filter((row) => isCarriedBendReturnOnEditedHead(row, edit));
+    const [firstReturn] = returns;
+    if (!firstReturn) {
+        return [...kept, edit];
+    }
+
+    const headRows = kept.filter((row) => row.beat <= edit.beat && !returns.includes(row));
+    const afterEdit = replayInReaderOrder([...headRows, edit], edit.channel);
+    const cut = replayInReaderOrder(
+        stored.filter(
+            (row) => row.beat <= edit.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, edit)
+        ),
+        edit.channel
+    );
+    const target = withBendRange(cut, afterEdit.bendRangeSemitones ?? STANDARD_BEND_RANGE_SEMITONES);
+    const messages = reconcileRegisteredParameterMessages({
+        current: [...headRows.filter((row) => row.channel === edit.channel), edit].toSorted(
+            (first, second) => first.beat - second.beat
+        ),
+        target: declareChannelState(target).map((message) => ({ ...message, channel: edit.channel })),
+    });
+
+    const idPrefix = firstReturn.id.replace(CARRIED_BEND_RETURN_ID, ':');
+    const firstIndex = nextCarriedBendReturnIndex(stored);
+    const rewritten: MidiCC[] = messages.map(({ controller, value, channel }, index) => ({
+        id: `${idPrefix}${carriedBendReturnIdKey(firstIndex + index)}`,
+        controller,
+        value,
+        beat: firstReturn.beat,
+        channel,
+    }));
+    const others = kept.filter((row) => !returns.includes(row));
+    const at = kept.indexOf(firstReturn);
+    return [...others.slice(0, at), ...rewritten, ...others.slice(at), edit];
 }
