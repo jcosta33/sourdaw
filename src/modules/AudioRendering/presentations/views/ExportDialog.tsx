@@ -40,12 +40,12 @@ import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/mo
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { applyDeliveryPreset } from '../../useCases/applyDeliveryPreset';
-import { getDeliveryPresets } from '../../useCases/getDeliveryPresets';
-import { resolveDeliveryTargets } from '../../useCases/resolveDeliveryTargets';
 import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
 import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
 import { streamExport } from '../../useCases/audioExport/streamExport';
+import { getDeliveryPresets } from '../../useCases/getDeliveryPresets';
 import { renderToClip } from '../../useCases/renderToClip';
+import { resolveDeliveryTargets } from '../../useCases/resolveDeliveryTargets';
 
 import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
 import {
@@ -526,15 +526,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             // to call on every export regardless of how the project was loaded.
             const ctx = audioContextSnapshot;
             if (ctx) {
-                // Pass only the buffer IDs referenced by this project's clips so
-                // that unrelated takes from other sessions are not mass-loaded.
+                // Include current frozen prints with the referenced clip buffers so
+                // that frozen tracks keep their sound after a cold reload.
                 const exportTracks = trackStore.value?.tracks ?? [];
                 const neededIds = exportTracks
                     .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
+                const frozenTracks = exportTracks.filter((track) => track.freezeState?.status === 'frozen');
+                const frozenIds = frozenTracks
+                    .map((track) => track.freezeState.frozenBufferId)
+                    .filter((id): id is string => Boolean(id));
                 await restoreCachedAudioBuffersFromIdb({
                     audioContext: ctx,
-                    bufferIds: neededIds.length > 0 ? neededIds : undefined,
+                    bufferIds: neededIds.length > 0 ? [...neededIds, ...frozenIds] : undefined,
                 });
             } else {
                 // Engine not yet initialised (pre-first-gesture) — proceed without

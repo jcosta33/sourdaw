@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { type Track } from '#/modules/Arrangement/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
@@ -37,6 +38,7 @@ type TestTrack = {
     name: string;
     kind: 'audio';
     clips: TestClip[];
+    freezeState?: Track['freezeState'];
 };
 
 type TestTrackStoreState = {
@@ -991,6 +993,70 @@ describe('ExportDialog', () => {
         });
     });
 
+    it.each(['mixdown', 'stem'] as const)('restores frozen print IDs before %s export', async (mode) => {
+        const restoring = createDeferred<number>();
+        mocks.restoreCachedAudioBuffersFromIdb.mockReturnValue(restoring.promise);
+        setProjectTracks([
+            {
+                id: 'audio-track',
+                name: 'Audio',
+                kind: 'audio',
+                clips: [
+                    createClip({ id: 'clip-1', audioBufferId: 'clip-pcm' }),
+                    createClip({ id: 'clip-2', audioBufferId: 'clip-pcm' }),
+                ],
+            },
+            {
+                id: 'frozen-track',
+                name: 'Frozen',
+                kind: 'audio',
+                clips: [createClip({ id: 'original-clip', audioBufferId: 'original-clip-pcm' })],
+                freezeState: { status: 'frozen', frozenBufferId: 'freeze-print-pcm' },
+            },
+            {
+                id: 'stale-track',
+                name: 'Stale',
+                kind: 'audio',
+                clips: [],
+                freezeState: { status: 'stale', frozenBufferId: 'stale-print-pcm' },
+            },
+        ]);
+        const stemBuffer = MockAudioBuffer.create(2, 128, 44100);
+        mocks.exportStems.mockResolvedValue(new Map([['frozen-track', stemBuffer]]));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        if (mode === 'stem') {
+            fireEvent.click(screen.getByTestId('export-mode-stems'));
+        }
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+        const callsWhileRestoring = {
+            mixdown: mocks.renderOffline.mock.calls.length,
+            stems: mocks.exportStems.mock.calls.length,
+            wav: mocks.encodeWav.mock.calls.length,
+            mp3: mocks.encodeMp3.mock.calls.length,
+            flac: mocks.encodeFlac.mock.calls.length,
+            commit: mocks.commit.mock.calls.length,
+        };
+
+        await act(async () => restoring.resolve(0));
+        await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByRole('button', { name: /slices/i })).toBeEnabled());
+        expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+        expect(callsWhileRestoring).toEqual({ mixdown: 0, stems: 0, wav: 0, mp3: 0, flac: 0, commit: 0 });
+        if (mode === 'stem') {
+            expect(mocks.exportStems).toHaveBeenCalledTimes(1);
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+        } else {
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+            expect(mocks.exportStems).not.toHaveBeenCalled();
+        }
+        expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext: mocks.audioContext,
+            bufferIds: ['clip-pcm', 'clip-pcm', 'original-clip-pcm', 'freeze-print-pcm'],
+        });
+    });
+
     it('uses the detected project tail for a default mixdown export', async () => {
         mocks.getAutoDetectedTailSeconds.mockReturnValue({
             seconds: 9.25,
@@ -1094,6 +1160,25 @@ describe('ExportDialog', () => {
 
     it('should pass undefined buffer ids when no clips reference audio buffers', async () => {
         setProjectClips([createClip({ id: 'clip-without-buffer' })]);
+
+        await startMixdownExport();
+
+        expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext: mocks.audioContext,
+            bufferIds: undefined,
+        });
+    });
+
+    it('keeps the undefined restoration fallback for a frozen-only project without clip buffer IDs', async () => {
+        setProjectTracks([
+            {
+                id: 'frozen-track',
+                name: 'Frozen',
+                kind: 'audio',
+                clips: [createClip({ id: 'clip-without-buffer' })],
+                freezeState: { status: 'frozen', frozenBufferId: 'freeze-print-pcm' },
+            },
+        ]);
 
         await startMixdownExport();
 
