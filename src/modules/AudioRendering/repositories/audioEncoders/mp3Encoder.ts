@@ -65,4 +65,5 @@ export async function audioBufferToMp3(
         }
         return result;
     }
+    return undefined;
 }

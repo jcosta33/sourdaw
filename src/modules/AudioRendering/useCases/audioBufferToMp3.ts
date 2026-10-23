@@ -39,7 +39,7 @@ export async function audioBufferToMp3(
             await writer.write(tag);
         }
         await encode(buffer, bitRate, onProgress, dither, writer);
-        return;
+        return undefined;
     }
     const bytes = await encode(buffer, bitRate, onProgress, dither);
     if (!tag || tag.length === 0) {
