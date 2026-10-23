@@ -55,6 +55,13 @@ type RecordedControllerTakeState = {
      * stands in for part of it.
      */
     bendRangeSeeds: Map<string, readonly MidiCC[]>;
+    /**
+     * The registered-parameter state the live input held per channel when the
+     * take began, as declaration rows at beat 0. An overdub into an existing clip
+     * opens no clip, so what the keyboard held is compared with the clip's own
+     * state where the overdub starts, when the take ends.
+     */
+    registeredStateAtStart: readonly MidiCC[];
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
@@ -64,4 +71,5 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     carriedOverClipIds: new Set(),
     heldPedalSeeds: new Map(),
     bendRangeSeeds: new Map(),
+    registeredStateAtStart: [],
 };

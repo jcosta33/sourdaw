@@ -55,6 +55,7 @@ const { webMidiRuntime } = await import('../../../repositories/webMidi/state');
 const { createStoredBendRangeReader } = await import('../../midiClipData/createStoredBendRangeReader');
 const { beginRecordedControllerTake } = await import('../beginRecordedControllerTake');
 const { bufferRecordedMidiCC } = await import('../bufferRecordedMidiCC');
+const { bufferRecordedMidiPitchBend } = await import('../bufferRecordedMidiPitchBend');
 const { commitRecordedControllers } = await import('../commitRecordedControllers');
 const { endRecordedControllerTake } = await import('../endRecordedControllerTake');
 const { planRecordedControllers } = await import('../planRecordedControllers');
@@ -222,8 +223,8 @@ describe('the bend range a keyboard declared before a take', () => {
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
-        it('for a channel whose declared range is the default of two semitones', () => {
-            declareRange(0, 2);
+        it('for a channel that only received controllers outside the registered-parameter machine', () => {
+            send(0, [1, 64], [7, 100]);
             beginTake();
 
             commitRecordedControllers({ clip: spanOf(CLIP) });
@@ -259,6 +260,83 @@ describe('the bend range a keyboard declared before a take', () => {
             commitRecordedControllers({ clip: spanOf(CLIP) });
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual(rangeRows(0, 12));
+        });
+    });
+
+    describe('a Data Entry the take records while the keyboard left RPN 0 selected', () => {
+        it.each([
+            ['no range declared', () => send(0, [RPN_MSB, 0], [RPN_LSB, 0])],
+            ['the default range of two semitones', () => declareRange(0, 2)],
+        ])('is heard and replayed at the range it set, with %s before the take', (_name, prepare) => {
+            prepare();
+            beginTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: DATA_MSB, value: 12, beat: 1, channel: 0 } });
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
+            expect(createStoredBendRangeReader(rows)(0, 2)).toBe(12);
+        });
+    });
+
+    describe('an overdub into a clip the recorder did not open', () => {
+        const recordFirstTakeAtTwelve = () => {
+            declareRange(0, 12);
+            beginTake();
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+        };
+
+        function overdubBendAtBeat(beat: number): void {
+            mocks.activeRecordingRef.current = [];
+            setLiveClips(CLIP);
+            beginRecordedControllerTake();
+            bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 4096, beat, channel: 0 } });
+            endRecordedControllerTake();
+        }
+
+        it('declares the range the keyboard is back at where the overdub starts, and leaves the earlier take its own', () => {
+            recordFirstTakeAtTwelve();
+            send(0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 2], [DATA_LSB, 0]);
+            sendNullRpn(0);
+
+            overdubBendAtBeat(2);
+
+            const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
+            const rangeAt = createStoredBendRangeReader(rows);
+            expect(rangeAt(0, 2)).toBe(2);
+            expect(rangeAt(0, 3)).toBe(2);
+            expect(rangeAt(0, 0)).toBe(12);
+            expect(rangeAt(0, 1.99)).toBe(12);
+            expect(bare(rows).slice(0, 4)).toEqual(rangeRows(0, 12));
+            expect(
+                bare(rows)
+                    .slice(4)
+                    .every((row) => row.beat === 2)
+            ).toBe(true);
+        });
+
+        it('declares nothing when the keyboard is at the range the clip already holds', () => {
+            recordFirstTakeAtTwelve();
+            const rowsBefore = mocks.midi.value?.ccByClipId[CLIP];
+
+            overdubBendAtBeat(2);
+
+            expect(mocks.midi.value?.ccByClipId[CLIP]).toEqual(rowsBefore);
+        });
+
+        it('declares nothing on a channel the overdub writes no bend or parameter row to', () => {
+            recordFirstTakeAtTwelve();
+            send(0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 2], [DATA_LSB, 0]);
+            sendNullRpn(0);
+            mocks.activeRecordingRef.current = [];
+            setLiveClips(CLIP);
+            beginRecordedControllerTake();
+            bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 64, beat: 2, channel: 0 } });
+            endRecordedControllerTake();
+
+            const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
+            expect(bare(rows)).toEqual([...rangeRows(0, 12), { controller: 1, value: 64, beat: 2, channel: 0 }]);
+            expect(createStoredBendRangeReader(rows)(0, 3)).toBe(12);
         });
     });
 

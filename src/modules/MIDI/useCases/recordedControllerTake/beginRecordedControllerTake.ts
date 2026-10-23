@@ -6,6 +6,7 @@ import { recordedControllerTakeState } from '../../repositories/webMidi/recorded
 import { readBendRangeSeedRows } from './readBendRangeSeedRows';
 import { readHeldPedalRows } from './readHeldPedalRows';
 import { readLiveClipIds } from './readLiveClipIds';
+import { readLiveRegisteredStateRows } from './readLiveRegisteredStateRows';
 
 /** The clips of an earlier take that are still on the timeline and whose commit has not run yet. */
 function readClipsAwaitingCommit(): Set<string> {
@@ -41,7 +42,9 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * messages move them, because a pedal pressed before the take is still down when
  * it begins and no message will say so. So is the pitch-bend range the input
  * declared, which the clip's own rows could not otherwise tell stored playback;
- * both are seeded whether or not the take records anything else. The clips the recorder just opened are
+ * both are seeded whether or not the take records anything else. When the take
+ * overdubs into an existing clip no clip is opened, so the state the input held is kept
+ * for `endRecordedControllerTake` to declare there. The clips the recorder just opened are
  * the ones whose commit flushes their rows; `startRecording` opens them before
  * the transport reports recording.
  */
@@ -80,6 +83,7 @@ export function beginRecordedControllerTake(): void {
     }
     // A clip carried over from an earlier take already holds its own declaration,
     // with the ids its redo snapshot names; a second one would replace them.
+    recordedControllerTakeState.registeredStateAtStart = readLiveRegisteredStateRows();
     const bendRangeRows = readBendRangeSeedRows();
     if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClipIds.has(seededClipId)) {
         bendRangeSeeds.set(seededClipId, bendRangeRows);
