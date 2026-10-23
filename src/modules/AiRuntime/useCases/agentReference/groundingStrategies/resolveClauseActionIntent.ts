@@ -1,6 +1,7 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { findGappedIntentPhrase, type IntentPhraseGaps } from './findGappedIntentPhrase';
+import { findReferencedIntentPhrase } from './findReferencedIntentPhrase';
 import { getClauseIntentVocabulary, type CreationProposal } from './getClauseIntentVocabulary';
 import { getIntentPhraseIndex } from './getIntentPhraseIndex';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
@@ -51,11 +52,17 @@ export function resolveClauseActionIntent(
     const matches = catalog
         .flatMap((entry) => {
             const vocabulary = getClauseIntentVocabulary(entry, statedLevelForms, creationProposal);
-            return vocabulary.phrases.map((phrase) => ({
+            const referencedMatches = vocabulary.referencedPhrases.map((phrase) => ({
+                actionType: entry.actionType,
+                index: findReferencedIntentPhrase(maskedText, phrase)?.index ?? -1,
+                phrase,
+            }));
+            const phraseMatches = vocabulary.phrases.map((phrase) => ({
                 actionType: entry.actionType,
                 index: findPhraseIndex(maskedText, phrase, vocabulary.gaps),
                 phrase,
             }));
+            return [...phraseMatches, ...referencedMatches];
         })
         .filter((match) => match.index >= 0 && !isNegatedIntent(maskedText, match.phrase, match.index))
         .sort((left, right) => {

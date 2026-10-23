@@ -1,6 +1,7 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { findGappedIntentPhrase, type IntentPhraseGaps } from './findGappedIntentPhrase';
+import { findReferencedIntentPhrase } from './findReferencedIntentPhrase';
 import { getClauseIntentVocabulary, type CreationProposal } from './getClauseIntentVocabulary';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { normalizePromptText } from './normalizePromptText';
@@ -30,6 +31,14 @@ function startsWithGappedPhrase(commandSource: string, phrase: string, gaps: Int
     return !describesRatherThanCommands(normalizePromptText(commandSource.slice(gapped.end)));
 }
 
+function startsWithReferencedPhrase(commandSource: string, phrase: string): boolean {
+    const referenced = findReferencedIntentPhrase(commandSource, phrase);
+    if (referenced === null || referenced.index !== 0) {
+        return false;
+    }
+    return !describesRatherThanCommands(normalizePromptText(commandSource.slice(referenced.end)));
+}
+
 export function isExplicitCommandClause(
     maskedText: string,
     catalog: GroundingCatalog,
@@ -54,9 +63,12 @@ export function isExplicitCommandClause(
         if (!vocabulary.statesDeclaredLevel && vocabulary.gaps.proposedNames.length === 0) {
             return false;
         }
-        return vocabulary.phrases.some(
-            (phrase) =>
-                startsWithPhrase(commandText, phrase) || startsWithGappedPhrase(commandSource, phrase, vocabulary.gaps)
+        return (
+            vocabulary.phrases.some(
+                (phrase) =>
+                    startsWithPhrase(commandText, phrase) ||
+                    startsWithGappedPhrase(commandSource, phrase, vocabulary.gaps)
+            ) || vocabulary.referencedPhrases.some((phrase) => startsWithReferencedPhrase(commandSource, phrase))
         );
     });
 }

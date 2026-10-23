@@ -377,17 +377,43 @@ describe('one level change stated for a coordinated list of named tracks', () =>
     });
 
     it.each([
-        ['set Drums to -6 dB', 'set Drums, Bass and Keys to -6 dB', [drums, bass, keys], { gainDb: -6 }],
-        ['Drums up 2 dB', 'both Drums and Bass up 2 dB', [drums, bass], { deltaDb: 2 }],
-    ])('refuses a list worded as "%s" refuses its single track', (singlePrompt, listPrompt, tracks, value) => {
-        const single = bridge([gainCall(drums.id, value)], singlePrompt);
-        const list = bridge(
-            tracks.map((track) => gainCall(track.id, value)),
-            listPrompt
+        ['set Drums to -6 dB', { gainDb: -6 }],
+        ['Drums up 2 dB', { deltaDb: 2 }],
+    ])('grounds the single track worded as "%s"', (prompt, value) => {
+        const result = bridge([gainCall(drums.id, value)], prompt);
+
+        expect(result.actions).toEqual([gainAction(drums.id, value)]);
+    });
+
+    it('grounds a list worded "set ... to" as it grounds the same list worded with volume, and holds it to every member', () => {
+        const prompt = 'set Drums, Bass and Keys to -6 dB';
+        const value = { gainDb: -6 };
+
+        const complete = bridge(
+            [drums, bass, keys].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const missingMember = bridge(
+            [drums, bass].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const differingMember = bridge(
+            [gainCall(drums.id, value), gainCall(bass.id, value), gainCall(keys.id, { gainDb: -3 })],
+            prompt
         );
 
-        expect(single.actions).toEqual([]);
-        expect(list.actions).toEqual([]);
+        expect(complete.actions).toEqual([drums, bass, keys].map((track) => gainAction(track.id, value)));
+        expect(missingMember.actions).toEqual([]);
+        expect(differingMember.actions).toEqual([]);
+    });
+
+    it('still refuses the list worded "both Drums and Bass up 2 dB"', () => {
+        const result = bridge(
+            [drums, bass].map((track) => gainCall(track.id, { deltaDb: 2 })),
+            'both Drums and Bass up 2 dB'
+        );
+
+        expect(result.actions).toEqual([]);
     });
 });
 

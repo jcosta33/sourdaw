@@ -457,3 +457,166 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, gain: 0.8 } }]);
     });
 });
+
+describe('a decibel level stated on a named track without the word gain or volume', () => {
+    const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+    const fx = createTrack({ id: 'track-fx', name: 'FX' });
+    const drumsContext: ProjectContext = {
+        ...projectContext,
+        tracks: [
+            drums,
+            {
+                ...fx,
+                deviceCount: 1,
+                devices: [
+                    {
+                        id: 'device-plate',
+                        name: 'Plate',
+                        type: 'Native',
+                        bypassed: false,
+                        parameters: [
+                            {
+                                id: 'native-threshold',
+                                name: 'native-threshold',
+                                type: 'float',
+                                value: -24,
+                                minValue: -60,
+                                maxValue: 0,
+                                unit: 'dB',
+                            },
+                        ],
+                    },
+                ],
+            },
+            master,
+        ],
+        selectedTrackId: null,
+    };
+
+    function bridgeDrums(calls: Parameters<typeof bridge>[0], prompt: string) {
+        return bridge(calls, prompt, drumsContext);
+    }
+
+    it('grounds "set ... to" with a decibel figure as an absolute fader level', () => {
+        const prompt = 'set Drums to -6 dB';
+
+        const destination = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } }],
+            prompt
+        );
+        const wrongFigure = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -3 } }],
+            prompt
+        );
+        const asChange = bridgeDrums([{ name: 'setTrackGain', arguments: { trackId: drums.id, deltaDb: -6 } }], prompt);
+        const asAmplitude = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gain: 0.5 } }],
+            prompt
+        );
+
+        expect(destination.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, gainDb: -6 } }]);
+        expect(wrongFigure.actions).toEqual([]);
+        expect(asChange.actions).toEqual([]);
+        expect(asAmplitude.actions).toEqual([]);
+    });
+
+    it('grounds a bare "<track> up N dB" as a relative change and refuses the other readings', () => {
+        const prompt = 'Drums up 2 dB';
+
+        const change = bridgeDrums([{ name: 'setTrackGain', arguments: { trackId: drums.id, deltaDb: 2 } }], prompt);
+        const wrongDirection = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, deltaDb: -2 } }],
+            prompt
+        );
+        const asDestination = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: 2 } }],
+            prompt
+        );
+
+        expect(change.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, deltaDb: 2 } }]);
+        expect(wrongDirection.actions).toEqual([]);
+        expect(asDestination.actions).toEqual([]);
+    });
+
+    it('grounds a bare "<track> down N dB" as a relative change and refuses the other readings', () => {
+        const prompt = 'Drums down 2 dB';
+
+        const change = bridgeDrums([{ name: 'setTrackGain', arguments: { trackId: drums.id, deltaDb: -2 } }], prompt);
+        const wrongDirection = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, deltaDb: 2 } }],
+            prompt
+        );
+        const asDestination = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -2 } }],
+            prompt
+        );
+
+        expect(change.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, deltaDb: -2 } }]);
+        expect(wrongDirection.actions).toEqual([]);
+        expect(asDestination.actions).toEqual([]);
+    });
+
+    it('does not read a figure with no decibel unit or a percentage as a decibel level', () => {
+        const noUnit = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } }],
+            'set Drums to -6'
+        );
+        const percent = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gain: 0.5 } }],
+            'set Drums to 50%'
+        );
+        const percentPan = bridgeDrums(
+            [{ name: 'setTrackPan', arguments: { trackId: drums.id, pan: 50 } }],
+            'set Drums to 50%'
+        );
+
+        expect(noUnit.actions).toEqual([]);
+        expect(percent.actions).toEqual([]);
+        expect(percentPan.actions).toEqual([]);
+    });
+
+    it('does not ground a different action on the same words', () => {
+        const prompt = 'set Drums to -6 dB';
+
+        const pan = bridgeDrums([{ name: 'setTrackPan', arguments: { trackId: drums.id, pan: -6 } }], prompt);
+        const deviceParameter = bridgeDrums(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-plate', paramId: 'native-threshold', value: -6 },
+                },
+            ],
+            prompt
+        );
+
+        expect(pan.actions).toEqual([]);
+        expect(deviceParameter.actions).toEqual([]);
+    });
+
+    it('refuses a fader level for a name that is a device, not a track', () => {
+        const prompt = 'set the Plate to -6 dB';
+
+        const onHostTrack = bridgeDrums([{ name: 'setTrackGain', arguments: { trackId: fx.id, gainDb: -6 } }], prompt);
+        const onOtherTrack = bridgeDrums(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } }],
+            prompt
+        );
+
+        expect(onHostTrack.actions).toEqual([]);
+        expect(onOtherTrack.actions).toEqual([]);
+    });
+
+    it('still grounds a device parameter stated in decibels with its parameter named', () => {
+        const result = bridgeDrums(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-plate', paramId: 'native-threshold', value: -6 },
+                },
+            ],
+            'set native-threshold on device-plate to -6 dB'
+        );
+
+        expect(result.actions).toHaveLength(1);
+    });
+});
