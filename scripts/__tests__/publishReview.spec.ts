@@ -170,6 +170,7 @@ function fakePort(
         actorNodeId?: string;
         login?: string;
         labels?: { name: string; description?: string }[];
+        unresolvedThreads?: number;
     } = {}
 ) {
     const calls: string[] = [];
@@ -239,6 +240,14 @@ function fakePort(
         },
         publicReviews: () => [],
         publicReviewComments: () => [],
+        // Every approval publication now proves no review thread is open, so the
+        // default state reads zero; a case sets `unresolvedThreads` to exercise
+        // the refusal.
+        reviewState: () => ({
+            latestReviewerStateOnHead: null,
+            latestReviewerReviewDatabaseId: null,
+            unresolvedThreads: input.unresolvedThreads ?? 0,
+        }),
         applyApprovalLabel: (number) => labelWrites.push(`apply:${number}`),
         removeApprovalLabel: (number) => labelWrites.push(`remove:${number}`),
         log: (message) => logs.push(message),
@@ -370,6 +379,25 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                     if (command === 'gh' && args[0] === 'api' && args.includes('--paginate')) {
                         return '[]';
                     }
+                    if (command === 'gh' && args[0] === 'api' && args[1] === 'graphql') {
+                        // The approval-thread gate reads the live review state before the
+                        // post; this head carries no reviews and no open threads.
+                        return JSON.stringify({
+                            data: {
+                                repository: {
+                                    pullRequest: {
+                                        id: 'PR_kwDOfixture',
+                                        headRefOid: head,
+                                        reviews: {
+                                            nodes: [],
+                                            pageInfo: { hasPreviousPage: false, startCursor: null },
+                                        },
+                                        reviewThreads: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                                    },
+                                },
+                            },
+                        });
+                    }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
                     }
@@ -493,6 +521,35 @@ describe('review publish', () => {
             publishPreparedReview(42, { head: 'headsha', document, payloadDigest: 'unused' }, fixture.port)
         ).toThrow(/approval context/);
         expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it('refuses a reviewer approval over unresolved review threads before any remote write', () => {
+        const fixture = fakePort({ unresolvedThreads: 2 });
+        const journal = vi.fn();
+        expect(() =>
+            publishReview(42, fixture.port, {
+                ownerOid: 'owner',
+                journalReviewPublication: journal,
+                markRemoteMutationAttempt: vi.fn(),
+                markDefinitiveNoMutationHttpStatus: vi.fn(),
+                registerSuccessfulCompletion: vi.fn(),
+            })
+        ).toThrow(/has 2 unresolved review thread\(s\); an approval cannot authorize delivery/u);
+        // The refusal lands before the publication journal, so no mutation was
+        // attempted and nothing posted (#5436).
+        expect(journal).not.toHaveBeenCalled();
+        expect(fixture.posted.review).toBeUndefined();
+        expect(fixture.calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('still posts a change request over unresolved review threads', () => {
+        const fixture = fakePort({
+            unresolvedThreads: 1,
+            json: { event: 'REQUEST_CHANGES', body: 'Please fix the merge gate.', comments: [validComment] },
+        });
+
+        expect(publishReview(42, fixture.port)).toBe(99);
+        expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
     });
 
     it.each(['baseSha', 'baseRefName', 'headSha', 'pr'] as const)(
@@ -996,6 +1053,36 @@ describe('review publish', () => {
         expect(acquired).toBe(false);
     });
 
+    it('refuses a reviewer approval over unresolved threads on the production coordinator route', async () => {
+        // The gate lives in the publication preflight every route takes, so the
+        // real command path — coordinate to publishPreparedReview — refuses
+        // before the lock is acquired, nothing is journaled, and nothing posts
+        // (#5436).
+        const fixture = fakePort({ unresolvedThreads: 2 });
+        let acquired = false;
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async () => {
+                acquired = true;
+                throw new Error('lock must not be acquired');
+            },
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => fixture.port,
+            publish: publishPreparedReview,
+        };
+
+        await expect(coordinatePublishReview(42, dependencies)).rejects.toThrow(
+            /has 2 unresolved review thread\(s\); an approval cannot authorize delivery/u
+        );
+        expect(acquired).toBe(false);
+        expect(fixture.posted.review).toBeUndefined();
+        expect(fixture.calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
     it.each([
         ['closes', { state: 'CLOSED', head: 'headsha' }],
         ['moves', { state: 'OPEN', head: 'moved-head' }],
@@ -1082,6 +1169,11 @@ describe('review publish', () => {
                     readBundleDiff: () => '',
                     publicReviews: () => [],
                     publicReviewComments: () => [],
+                    reviewState: () => ({
+                        latestReviewerStateOnHead: null,
+                        latestReviewerReviewDatabaseId: null,
+                        unresolvedThreads: 0,
+                    }),
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
                         if (oid === undefined) {
@@ -5951,6 +6043,62 @@ describe('fresh reviewer dossier publication', () => {
                 intent: 'deliver',
                 evidenceManifestDigest: authorizedEvidenceDigest(parseReviewDossier(first)),
             });
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays a recorded approval over reopened threads and retries the label', async () => {
+        // The replay exemption is load-bearing: a label write that failed after a successful
+        // approval promises that a re-run replays the review and retries the label, and a thread
+        // reopened in between must not turn that re-run into a refusal (#5436 gates fresh
+        // approvals only). Driven through the coordinator, whose label sync is the retry.
+        const landedReview: RemotePublishedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({ plan: riskPlan(), remoteReviews: { 99: landedReview } });
+        const reopenedThreadsPort: PublishReviewPort = {
+            ...fixture.port,
+            reviewState: () => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: 99,
+                latestReviewerCommitOid: head,
+                unresolvedThreads: 1,
+            }),
+        };
+        const dependencies = (port: PublishReviewPort): PublishReviewCoordinatorDependencies => ({
+            primaryRoot: () => fixture.root,
+            serializeMutation: (_primaryRoot, _number, operation) =>
+                operation({
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: () => undefined,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            publish: publishPreparedReview,
+        });
+        try {
+            await coordinatePublishReview(number, dependencies(fixture.port));
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+
+            // The thread reopened after the approval posted; the re-run replays the
+            // recorded publication, posts nothing new, and retries the label.
+            fixture.labelWrites.length = 0;
+            await coordinatePublishReview(number, dependencies(reopenedThreadsPort));
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            expect(fixture.labelWrites).toEqual([`apply:${number}`]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
