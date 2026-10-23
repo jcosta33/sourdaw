@@ -16,6 +16,11 @@ export type ProjectedClipPitchBend = MidiPitchBend & {
     /** Where the row sits in the clip's content, before the pass and the content offset placed it. */
     contentBeat: number;
     /**
+     * Where the row was recorded in the clip's content: `contentBeat`, except for a carry, which sits on the pass
+     * head though its row was recorded before it. A caller reads the state the row was recorded under here.
+     */
+    recordedContentBeat: number;
+    /**
      * Where the pass that plays the move puts the row's own content beat on the timeline: `beat` for a row the
      * pass reaches, and earlier for a carry, which sits on the pass head though the row was recorded before it
      * (before the clip start, for a row of a trimmed-off head).
@@ -23,7 +28,7 @@ export type ProjectedClipPitchBend = MidiPitchBend & {
     recordedBeat: number;
 };
 
-type RecordedPitchBend = MidiPitchBend & { recordedContentBeat: number };
+type RecordedPitchBend = MidiPitchBend & Pick<ProjectedClipPitchBend, 'recordedContentBeat'>;
 
 /**
  * The channel pitch-bend moves a clip plays inside the timeline window `[fromBeat, toBeat)`,
@@ -64,12 +69,12 @@ export function projectClipPitchBendEvents({
             pitchBends: recordedPitchBends,
             window,
         });
-        for (const { recordedContentBeat, ...bend } of projected.pitchBends) {
+        for (const bend of projected.pitchBends) {
             if (bend.beat >= fromBeat && bend.beat < toBeat) {
                 events.push({
                     ...bend,
                     contentBeat: bend.beat - window.beatOffset,
-                    recordedBeat: recordedContentBeat + window.beatOffset,
+                    recordedBeat: bend.recordedContentBeat + window.beatOffset,
                 });
             }
         }
