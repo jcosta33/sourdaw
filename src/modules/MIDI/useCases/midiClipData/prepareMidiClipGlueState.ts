@@ -127,24 +127,29 @@ export function prepareMidiClipGlueState({
         const projected = projectMidiClipWindow({
             notes: sourceNotes,
             controlChanges,
-            pitchBends,
+            // The carry moves a row to the window start, so each row takes the beat it was recorded at along.
+            pitchBends: pitchBends.map((bend) => ({ ...bend, recordedBeat: bend.beat })),
             window: { ...source, closingLineBeat: closingLineBeatOf(sources, sourceIndex) },
             carriesRegisteredParameterLanes: false,
         });
-        const openingRegisteredParameters = declareGluedRegisteredParameters({
+        const glueBeat = source.visibleStartBeat + source.beatOffset;
+        const registeredParameters = declareGluedRegisteredParameters({
             gluedSoFar: mergedControlChanges,
             sourceControlChanges: controlChanges,
             visibleStartBeat: source.visibleStartBeat,
-            glueBeat: source.visibleStartBeat + source.beatOffset,
+            glueBeat,
+            carriedBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat < source.visibleStartBeat),
+            windowRowBeats: [...projected.controlChanges, ...projected.pitchBends].map(({ beat }) => beat),
             createId: (key) => `cc-glue:${targetClipId}:${sourceIndex}:${key}`,
         });
         mergedNotes.push(...projected.notes);
+        // Ahead of the window's own rows, so a declaration on a beat they share is read first.
         mergedControlChanges.push(
-            ...openingRegisteredParameters,
+            ...registeredParameters,
             ...projected.controlChanges,
             ...projected.closingControlChanges
         );
-        mergedPitchBends.push(...projected.pitchBends);
+        mergedPitchBends.push(...projected.pitchBends.map(({ recordedBeat: _recordedBeat, ...bend }) => bend));
     }
     if (
         mergedNotes.some((row) => !Number.isFinite(row.startBeat) || !Number.isFinite(row.duration)) ||
