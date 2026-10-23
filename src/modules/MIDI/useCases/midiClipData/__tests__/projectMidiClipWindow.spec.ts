@@ -64,3 +64,31 @@ describe('projectMidiClipWindow controller rows at the window end', () => {
         expect(projected.pitchBends.map((row) => row.id)).toEqual(['head', 'inside']);
     });
 });
+
+describe('projectMidiClipWindow registered-parameter rows before the window start', () => {
+    const window = { beatOffset: 0, visibleStartBeat: 2, visibleEndBeat: 6 };
+    const rows: MidiCC[] = [
+        { id: 'rpn-msb', controller: 101, value: 0, beat: 0, channel: 0 },
+        { id: 'data', controller: 6, value: 12, beat: 1, channel: 0 },
+        { id: 'pedal', controller: 64, value: 127, beat: 1, channel: 0 },
+        { id: 'inside', controller: 6, value: 5, beat: 3, channel: 0 },
+    ];
+
+    it('carries them by the last value of each lane, as every other controller is, unless the caller declares them', () => {
+        const projected = projectMidiClipWindow({ notes: [], controlChanges: rows, pitchBends: [], window });
+
+        expect(projected.controlChanges.map((row) => row.id)).toEqual(['rpn-msb', 'data', 'pedal', 'inside']);
+    });
+
+    it('leaves them behind for a caller that declares the state they left, and still carries the other lanes', () => {
+        const projected = projectMidiClipWindow({
+            notes: [],
+            controlChanges: rows,
+            pitchBends: [],
+            window,
+            carriesRegisteredParameterLanes: false,
+        });
+
+        expect(projected.controlChanges.map((row) => row.id)).toEqual(['pedal', 'inside']);
+    });
+});

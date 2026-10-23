@@ -15,7 +15,7 @@ import {
     toBendRangeSemitones,
     type MidiChannelControllerState,
     type SelectedParameterKind,
-} from '../../models/MidiControllerState';
+} from '../models/MidiControllerState';
 
 function selectParameter(
     state: MidiChannelControllerState,

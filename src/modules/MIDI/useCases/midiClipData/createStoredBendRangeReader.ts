@@ -7,7 +7,7 @@ import {
 } from '../../models/MidiControllerState';
 import { type MidiCC } from '../../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
-import { applyRegisteredParameterChange } from '../../repositories/webMidi/applyRegisteredParameterChange';
+import { applyRegisteredParameterChange } from '../../services/applyRegisteredParameterChange';
 
 /** The range a channel's state machine declared as of a row; `undefined` until a data entry set one. */
 type BendRangeChange = { beat: number; semitones: number | undefined };

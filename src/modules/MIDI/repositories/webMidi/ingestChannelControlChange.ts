@@ -11,8 +11,8 @@ import {
     isHighResolutionMsbCc,
     type MidiChannelControllerState,
 } from '../../models/MidiControllerState';
+import { applyRegisteredParameterChange } from '../../services/applyRegisteredParameterChange';
 
-import { applyRegisteredParameterChange } from './applyRegisteredParameterChange';
 import { channelControllerState } from './channelControllerState';
 import { heldPedalState } from './heldPedalState';
 
