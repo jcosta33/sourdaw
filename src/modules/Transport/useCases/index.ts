@@ -51,6 +51,7 @@ export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
 export { isTransportIdle } from './transportControls/isTransportIdle';
 export { countSettledTakes } from './transportControls/countSettledTakes';
+export { commitRecoveredAudioRecording } from './transportControls/commitRecoveredAudioRecording';
 export { rearmNativeSessionAfterEngineRetire } from './transportControls/rearmNativeSessionAfterEngineRetire';
 export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
 export { toggleCountIn } from './transportControls/toggleCountIn';

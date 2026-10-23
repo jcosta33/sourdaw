@@ -105,6 +105,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
     observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     addTakeLane: vi.fn(),
@@ -122,6 +124,8 @@ vi.mock('../transportControls/panicYeastRuntime', () => ({
     panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     advanceNoteExpression: vi.fn(),
     cacheAudioBuffer: harness.cache_audio_buffer,
     getTrackStrip: vi.fn(),

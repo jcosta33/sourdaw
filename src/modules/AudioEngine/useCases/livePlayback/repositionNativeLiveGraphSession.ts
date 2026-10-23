@@ -48,6 +48,7 @@ import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
@@ -80,6 +81,11 @@ export function repositionNativeLiveGraphSession(
             // engine is still where it was, not that the graph went away.
             return { outcome: 'declined', reason: result.reason };
         }
+        nativeRecordingCaptureClockState.retainAdmission(
+            nativeLiveGraphSession.captureAdmissions.at(-1)?.geometry ?? undefined,
+            result.admittedBatch ?? null,
+            true
+        );
         const pass = nativeLiveAutomationWriter.pass;
         if (pass) {
             // Only now. The locate is what drops the automation the move made

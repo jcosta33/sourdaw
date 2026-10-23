@@ -63,6 +63,9 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     resolveClipsWithComping: mocks.resolveClipsWithComping,
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
@@ -93,6 +96,8 @@ vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: 
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../scheduling/scheduleFrozenTrack', () => ({ scheduleFrozenTrack: () => false }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,

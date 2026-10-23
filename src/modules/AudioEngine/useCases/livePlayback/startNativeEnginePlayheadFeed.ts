@@ -5,6 +5,7 @@ import {
     pollNativeEnginePlayheadOnce,
     NATIVE_ENGINE_PLAYHEAD_FEED_ID,
 } from './nativeEnginePlayheadFeedState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 
 /**
  * Begin reading the native engine's playhead once per animation frame.
@@ -21,5 +22,6 @@ export function startNativeEnginePlayheadFeed(): void {
     // adopted here nor hold this run's first frame back.
     nativeEnginePlayheadFeed.epoch += 1;
     nativeEnginePlayheadFeed.reading = null;
+    nativeRecordingCaptureClockState.reset();
     animationScheduler.register(NATIVE_ENGINE_PLAYHEAD_FEED_ID, pollNativeEnginePlayheadOnce);
 }

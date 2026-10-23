@@ -44,6 +44,23 @@ describe('recording pass capture-clock witnesses', () => {
         expect(recordingPassTiming.depthSeconds(second, 50.9, 4.9)).toBeCloseTo(1.1, 10);
     });
 
+    it.each([
+        { intended: undefined, expected: 11.8 },
+        { intended: 11.5, expected: 11.5 },
+    ])('freezes native ending $expected before a pending first frame is admitted', ({ intended, expected }) => {
+        recordingPassTiming.begin('capture', 9.8, () => null, true);
+        recordingPassTiming.observeEntry(['capture'], 10.5, 51.25, true);
+        expect(recordingPassTiming.ownedTakes('capture')?.openPassContextSeconds).toBeNull();
+        recordingPassTiming.setEndingClock('capture', () => ({
+            contextSeconds: 51.9,
+            beatAtContextSeconds: (seconds) => 10 + (seconds - 51) * 2,
+        }));
+        recordingPassTiming.finish('capture', { contextSeconds: 51.9, beatAtContextSeconds: () => 9.8 }, intended);
+        expect(recordingPassTiming.admitNative('capture', 10, 51)).toBe(true);
+        expect(recordingPassTiming.captureEnd('capture', 52.4)?.endBeat).toBeCloseTo(expected, 10);
+        expect(recordingPassTiming.ownedTakes('capture')?.recordPointBeat).toBe(10);
+    });
+
     it('keeps the run-up out of the first loop pass', () => {
         clock.beat = 6;
         clock.audioTimeSeconds = 50;

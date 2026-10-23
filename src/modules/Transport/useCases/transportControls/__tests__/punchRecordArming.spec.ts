@@ -85,6 +85,9 @@ vi.mock('../startPlayback', () => ({
 }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mocks.stopActiveRecording }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
@@ -92,6 +95,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     commitRecording: mocks.commitRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,

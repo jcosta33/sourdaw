@@ -62,6 +62,23 @@ describe('recording capture occurrence clocks', () => {
         expect(clock.relocation).toBeNull();
     });
 
+    it.each([
+        { firstFrame: 52.059, occurrence: 51 },
+        { firstFrame: 52.06, occurrence: 52 },
+        { firstFrame: 52.061, occurrence: 52 },
+    ])(
+        'compares raw first frame $firstFrame with the output seam plus input latency once',
+        ({ firstFrame, occurrence }) => {
+            const clock = clocks.create('compensated', 0.02 + 0.03 + 0.01);
+            recordingLifecycle.observeCaptureClock(10, 51, true, undefined, 5, true);
+            clock.setReader(() => ({ status: 'retry' }));
+            recordingLifecycle.observeCaptureClock(8, 52, true, undefined, 4, true);
+            clock.freeze(firstFrame);
+            expect(clock.relocation?.contextSeconds).toBe(occurrence);
+            expect(clock.relocation?.effectiveFromContextSeconds).toBeCloseTo(occurrence + 0.06, 10);
+        }
+    );
+
     it.each(['captured', 'retry', 'unadmitted'] as const)(
         'keeps a %s first frame before a tempo epoch in its previous occurrence',
         (publication) => {
@@ -163,6 +180,24 @@ describe('recording capture occurrence clocks', () => {
         expect(lateReader).not.toHaveBeenCalled();
         clock.freeze(51.2);
         expect(clock.relocation).toEqual(occurrence);
+    });
+
+    it('keeps each input latency and first-frame readiness independent at the same native seam', () => {
+        const later = clocks.create('later-input', 0.06);
+        const earlier = clocks.create('earlier-input', 0.01);
+        recordingLifecycle.observeCaptureClock(10, 51, true, undefined, 5, true);
+        later.setReader(() => ({ status: 'retry' }));
+        earlier.setReader(() => ({ status: 'retry' }));
+        recordingLifecycle.observeCaptureClock(8, 52, true, undefined, 4, true);
+        later.setReader(() => ({ status: 'captured', contextSeconds: 52.03 }));
+        recordingLifecycle.observeCaptureClock(8.2, 52.1, false);
+        expect(later.frozen).toBe(true);
+        expect(earlier.frozen).toBe(false);
+        expect(later.relocation?.contextSeconds).toBe(51);
+        earlier.freeze(52.03);
+        expect(earlier.relocation?.contextSeconds).toBe(52);
+        expect(earlier.relocation?.effectiveFromContextSeconds).toBe(52.01);
+        expect(later.relocation?.effectiveFromContextSeconds).toBe(51.06);
     });
 
     it('rejects a removed owner reader while the successor retains its own occurrence', () => {

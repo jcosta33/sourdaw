@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
@@ -112,19 +112,25 @@ function encodeFloat32(values: Float32Array): string {
 }
 
 describe('saveProject audio durability integration', () => {
-    beforeEach(() => {
+    let indexedDb: ReturnType<typeof installMultiDatabaseIndexedDb>;
+    let buildProjectDataModule: typeof import('../../fileIO/buildProjectData');
+
+    beforeAll(async () => {
         clearHandlerRegistry();
         localStorage.clear();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
-    });
+        indexedDb = installMultiDatabaseIndexedDb();
+        // Cold module initialization owns this hook's allowance; the behavioral
+        // case keeps its own existing allowance and the original import order.
+        buildProjectDataModule = await import('../../fileIO/buildProjectData');
+    }, 20_000);
 
     afterEach(async () => {
-        const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
-            import('#/modules/AudioEngine/useCases'),
-            import('../../helpers/stopActiveAutoSave'),
-        ]);
+        const [{ configureDurableAudioBufferOwnership, clearRuntimeCachedAudioBuffers }, { stopActiveAutoSave }] =
+            await Promise.all([import('#/modules/AudioEngine/useCases'), import('../../helpers/stopActiveAutoSave')]);
         configureDurableAudioBufferOwnership(null);
+        clearRuntimeCachedAudioBuffers();
         stopActiveAutoSave();
         clearHandlerRegistry();
         Container.clear();
@@ -133,8 +139,6 @@ describe('saveProject audio durability integration', () => {
     });
 
     it('refuses failed PCM writes, retries exact sources, and reopens both save paths', async () => {
-        const indexedDb = installMultiDatabaseIndexedDb();
-        const buildProjectDataModule = await import('../../fileIO/buildProjectData');
         const realBuildProjectData = buildProjectDataModule.buildProjectData;
         let queuedSnapshotEdit: (() => void) | undefined;
         vi.spyOn(buildProjectDataModule, 'buildProjectData').mockImplementation((...args) => {
@@ -309,7 +313,6 @@ describe('saveProject audio durability integration', () => {
         });
         expect(getCachedAudioBuffer({ bufferId })).toBeNull();
         expect(trackStore.value?.tracks).toEqual([]);
-
         await expect(project.loadRecentProject(project.getProjectSnapshotKey(CREATED_AT))).resolves.toBe('committed');
         const reopenedClip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
         expect(reopenedClip?.audioBufferId).toBe(bufferId);
@@ -424,5 +427,144 @@ describe('saveProject audio durability integration', () => {
         const reopenedImportedClip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
         expect(reopenedImportedClip?.audioBufferId).toBe(IMPORTED_BUFFER_ID);
         expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })?.getChannelData(0)).toEqual(IMPORTED_SOURCE_PCM);
+        // Keep the real persistence runtime and database from this scaffold.
+        // Reinstalling IndexedDB between cases would replace its backing store
+        // while the asset runtime still owns the original connection.
+        {
+            const [
+                audio,
+                arrangement,
+                project,
+                { projectStore },
+                { trackStore, takeLaneStore },
+                crdt,
+                { resetModuleStoresToDefault },
+                { createFreshProjectMetadata },
+                command,
+                { undoHistoryStore },
+            ] = await Promise.all([
+                import('#/modules/AudioEngine/useCases'),
+                import('#/modules/Arrangement/useCases'),
+                import('#/modules/Project/useCases'),
+                import('#/modules/Project/stores'),
+                import('#/modules/Arrangement/stores'),
+                import('#/modules/CrdtDocument/useCases'),
+                import('../../helpers/resetModuleStoresToDefault'),
+                import('../../../createFreshProjectMetadata'),
+                import('#/modules/Command/useCases'),
+                import('#/modules/Command/stores'),
+            ]);
+            const context = audio.audioEngine.context;
+            context.createBuffer = createAudioBuffer;
+            context.decodeAudioData = (bytes) => Promise.resolve(decodeMonoWave(bytes));
+            await audio.restoreCachedAudioBuffersFromIdb({ audioContext: context });
+            arrangement.setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
+            const { configureCollaborationAssetOwner } = await import('#/modules/Collaboration/useCases');
+            configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
+            audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
+            project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+            crdt.resetCrdtProjectAuthority('Recovered PCM');
+            resetModuleStoresToDefault();
+            projectStore.set({
+                ...createFreshProjectMetadata({ name: 'Recovered PCM', loading: false, initialized: true }),
+                createdAt: CREATED_AT + 2,
+                updatedAt: CREATED_AT + 2,
+                dirty: true,
+            });
+            await arrangement.importAudioFile(makeMonoWave(PCM), { shouldContinue: () => true });
+            const base = trackStore.value!.tracks[0]!.clips[0]!;
+            const durableBase = await audio.ensureCachedAudioBuffersDurable([base.audioBufferId!]);
+            if (durableBase.status !== 'durable') {
+                throw new Error('Base fixture was not durable');
+            }
+            durableBase.release();
+            arrangement.armTrack(base.trackId, true);
+            command.clearUndoHistory();
+            const [provisional] = arrangement.startRecording(10, undefined, null);
+            expect(provisional).toBeDefined();
+            const originalTakeId = takeLaneStore.value!.lanes[0]!.takes[0]!.id;
+            const buffer = createAudioBuffer(2, 128, 48000);
+            const left = Float32Array.from({ length: 128 }, (_value, frame) => frame / 128);
+            const right = Float32Array.from({ length: 128 }, (_value, frame) => (frame % 2 ? -0.25 : 0.5));
+            buffer.copyToChannel(left, 0);
+            buffer.copyToChannel(right, 1);
+            const rejectedBeforeRecovery = indexedDb.rejectedAudioWriteCount();
+            indexedDb.pauseAudioWriteSettlements();
+            const bufferId = audio.cacheAudioBuffer({ buffer, bufferId: 'undated-recovery-pcm' });
+            await vi.waitFor(() => expect(indexedDb.pendingAudioWriteSettlements()).toBe(1));
+            const { commitRecoveredAudioRecording, countSettledTakes, isTransportIdle } =
+                await import('#/modules/Transport/useCases');
+            const settledBefore = countSettledTakes();
+            const recoveryNotices = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
+            injectDependencies(notifyUser, { eventBus: { emit: recoveryNotices } });
+            const closing = commitRecoveredAudioRecording(
+                { ...provisional!, audioBufferId: bufferId },
+                buffer.duration * 2
+            );
+            await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
+            expect(isTransportIdle()).toBe(false);
+            expect(countSettledTakes()).toBe(settledBefore);
+            indexedDb.abortAudioWrites();
+            indexedDb.releaseNextAudioWriteSettlement();
+            await vi.waitFor(() => expect(indexedDb.rejectedAudioWriteCount()).toBe(rejectedBeforeRecovery + 1));
+            indexedDb.resumeAudioWriteSettlements();
+            await closing;
+            expect(isTransportIdle()).toBe(true);
+            expect(countSettledTakes()).toBe(settledBefore + 1);
+            expect(recoveryNotices).toHaveBeenCalledWith('ui.notify', {
+                level: 'error',
+                message:
+                    'The muted recording is still in this project, but its audio could not be saved. Keep the project open and try saving again.',
+            });
+            const recovered = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id === provisional!.id)!;
+            expect(recovered).toMatchObject({ audioBufferId: bufferId, muted: true });
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            await command.undo();
+            expect(trackStore.value!.tracks[0]!.clips).toEqual([base]);
+            await command.redo();
+            expect(trackStore.value!.tracks[0]!.clips.find((clip) => clip.id === provisional!.id)).toEqual(recovered);
+            expect(takeLaneStore.value!.lanes[0]!.takes[0]!.id).toBe(originalTakeId);
+            expect(await project.saveProject()).toBe(false);
+            expect(projectStore.value?.dirty).toBe(true);
+            expect(audio.getCachedAudioBuffer({ bufferId })?.getChannelData(0)).toEqual(left);
+            expect(trackStore.value!.tracks[0]!.clips.some((clip) => clip.id === provisional!.id && clip.muted)).toBe(
+                true
+            );
+            indexedDb.allowAudioWrites();
+            expect(await project.saveProject()).toBe(true);
+            const exported = await project.buildProjectData({ includeAudioBuffers: true });
+            expect(exported?.requiredAudioBufferIds).toContain(bufferId);
+            expect(exported?.data.audioBuffers?.[bufferId]).toBeDefined();
+            expect(exported?.missingBufferCount).toBe(0);
+            const key = project.getProjectSnapshotKey(CREATED_AT + 2);
+            audio.clearRuntimeCachedAudioBuffers();
+            crdt.resetCrdtProjectAuthority('Blank project');
+            resetModuleStoresToDefault();
+            projectStore.set({
+                ...createFreshProjectMetadata({ name: 'Blank project', loading: false, initialized: true }),
+                createdAt: CREATED_AT + 3,
+                updatedAt: CREATED_AT + 3,
+                dirty: false,
+            });
+            expect(audio.getCachedAudioBuffer({ bufferId })).toBeNull();
+            expect(await project.loadRecentProject(key)).toBe('committed');
+            const loaded = trackStore
+                .value!.tracks.flatMap((track) => track.clips)
+                .find((clip) => clip.id === provisional!.id)!;
+            expect(loaded).toMatchObject({
+                muted: true,
+                startBeat: 0,
+                endBeat: 1,
+                audioOffsetBeats: 0,
+                audioBufferId: bufferId,
+            });
+            expect(takeLaneStore.value!.lanes[0]!.takes[0]!.id).toBe(originalTakeId);
+            const restored = audio.getCachedAudioBuffer({ bufferId })!;
+            expect(restored.sampleRate).toBe(48000);
+            expect(restored.length).toBe(128);
+            expect(restored.numberOfChannels).toBe(2);
+            expect(restored.getChannelData(0)).toEqual(left);
+            expect(restored.getChannelData(1)).toEqual(right);
+        }
     }, 20_000);
 });

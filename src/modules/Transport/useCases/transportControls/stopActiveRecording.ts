@@ -20,7 +20,8 @@ async function closeActiveRecording(): Promise<void> {
     const closesTake = activeRecordingRef.current.length > 0;
     const recordingCommit = stopRecording(
         rolling ? ending?.beatAtContextSeconds(ending.contextSeconds) : undefined,
-        ending
+        ending,
+        true
     );
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to

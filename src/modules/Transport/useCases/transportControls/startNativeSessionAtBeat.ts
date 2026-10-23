@@ -28,6 +28,8 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
+import { captureNativeRecordingGeometry } from './captureNativeRecordingGeometry';
+
 /**
  * What Web Audio is doing while the session starts, derived from the use case
  * that takes it rather than imported: AudioEngine keeps its models private, and
@@ -53,6 +55,7 @@ export function startNativeSessionAtBeat(
             // the timeline holds now rather than the one it held when the
             // session object was made.
             transportMaps: projectEngineTransportMaps(),
+            recordingGeometry: captureNativeRecordingGeometry(),
             // The grid the live scheduler already places this arrangement on,
             // so the native programme lands on the same samples the Web Audio
             // path does rather than on a second rounding of the same beats.

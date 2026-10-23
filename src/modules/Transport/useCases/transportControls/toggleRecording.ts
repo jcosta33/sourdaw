@@ -16,14 +16,15 @@ import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } 
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { getGestureClockSource } from '../../stores/gestureClockSource';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
+import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry';
 
+import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
@@ -41,6 +42,7 @@ import { stopActiveRecording } from './stopActiveRecording';
  * lead is written with a new roll's request, before the finaliser can run.
  */
 type TransportHold = {
+    nativeOwned: boolean;
     requestedAtContextSeconds: number | null;
     rolledAtContextSeconds: number | null;
     rollLeadBeats: number | null;
@@ -51,30 +53,45 @@ type TransportHold = {
 
 type CaptureClock = ReturnType<ReturnType<typeof createRecordingCaptureClocks>['create']>;
 
-function capturePlayingAdmissionClock(hold: TransportHold, changes: readonly TempoChange[], tempo: number): void {
-    const source = getGestureClockSource();
-    const nativeCursor = source?.readNativeCursorBeats() ?? null;
-    if (source && nativeCursor !== null) {
-        hold.rolledAtContextSeconds = source.getAudioTimeSeconds();
-        hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, nativeCursor, tempo);
-        hold.firstPassContextSeconds = hold.rolledAtContextSeconds;
+function capturePlayingAdmissionClock(
+    hold: TransportHold,
+    captureClocks: ReturnType<typeof createRecordingCaptureClocks>
+): void {
+    const read = captureClocks.nativeClock.read(getAudioContext());
+    if (read.carrier === 'native') {
+        hold.nativeOwned = true;
+        if (read.status === 'available') {
+            const entry = nativeRecordingEntry(read.snapshot);
+            hold.rolledAtContextSeconds = entry.contextSeconds;
+            hold.captureStartSongSeconds = entry.songSeconds;
+            hold.firstPassContextSeconds = entry.contextSeconds;
+        }
         return;
     }
     hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
-    hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, playheadClockRef.beat, tempo);
+    hold.captureStartSongSeconds = secondsBetweenBeats(
+        tempoMapStore.value?.changes ?? [],
+        0,
+        playheadClockRef.beat,
+        getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM
+    );
 }
 
 function createCaptureOwnerClock(
     trackId: string,
     captureClocks: ReturnType<typeof createRecordingCaptureClocks>,
-    hold: TransportHold
+    hold: TransportHold,
+    latencySeconds: number
 ): CaptureClock {
-    const clock = captureClocks.create(trackId);
+    const clock = captureClocks.create(trackId, latencySeconds);
     if (hold.rolledAtContextSeconds !== null && hold.captureStartSongSeconds !== null) {
         clock.relocation = {
             contextSeconds: hold.rolledAtContextSeconds,
             songSeconds: hold.captureStartSongSeconds,
         };
+        if (hold.nativeOwned) {
+            clock.relocation.effectiveFromContextSeconds = hold.rolledAtContextSeconds + latencySeconds;
+        }
     }
     return clock;
 }
@@ -108,13 +125,20 @@ function openManualRecordingClips(
     // Worker readiness and its first input block can arrive after admission.
     // Preserve the playback correlation that was retained before producer start.
     if (hold.rolledAtContextSeconds === null) {
-        capturePlayingAdmissionClock(hold, changes, tempo);
+        // Native admission stays explicitly pending until a dated observation exists.
+        if (!hold.nativeOwned) {
+            hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, playheadClockRef.beat, tempo);
+            hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
+        }
     }
     if (hold.firstPassContextSeconds !== null && hold.captureStartSongSeconds !== null) {
         return startRecording(playheadPositionRef.current, undefined, {
             beat: samplesToBeat(changes, hold.captureStartSongSeconds, tempo, 1),
             contextSeconds: hold.firstPassContextSeconds,
         });
+    }
+    if (hold.nativeOwned) {
+        return startRecording(playheadPositionRef.current, undefined, null);
     }
     return startRecording(playheadPositionRef.current);
 }
@@ -201,10 +225,47 @@ type ManualRecordingTerminalInput = {
     nowContextSeconds: number;
 };
 
+function prepareManualNativeTerminal(
+    input: ManualRecordingTerminalInput,
+    result: Extract<ManualRecordingTerminalInput['result'], { kind: 'completed' }>
+): ManualRecordingTerminalInput['recClip'] {
+    let recClip = input.recClip;
+    if (!recClip || !input.transportHold.nativeOwned) {
+        return recClip;
+    }
+    const clock = input.captureClock;
+    clock.freeze(result.sampleZeroContextFrame / result.sampleRate, result.buffer.duration);
+    if (!clock.nativeHistory.isOwnerCurrent()) {
+        return undefined;
+    }
+    // Pending native admission may replace the provisional placement only
+    // after actual sample zero identifies its historical occurrence.
+    recClip =
+        getTrackStoreState()
+            ?.tracks.flatMap((track) => track.clips)
+            .find((clip) => clip.id === recClip?.id) ?? recClip;
+    if (clock.relocation) {
+        return recClip;
+    }
+    const bufferId = `rec-${crypto.randomUUID()}`;
+    cacheAudioBuffer({ buffer: result.buffer, bufferId });
+    commitRecoveredAudioRecording(
+        { ...recClip, audioBufferId: bufferId },
+        samplesToBeat(input.admissionChanges, result.buffer.duration, input.admissionTempo, 1)
+    ).catch((error: unknown) => {
+        logger.error(new Error('Recovered recording terminal failed', { cause: error }));
+        notifyUser(
+            'The recovered audio could not be added to this project. Keep the project open and try saving again.',
+            'error'
+        );
+    });
+    return undefined;
+}
+
 function completeManualRecording(input: ManualRecordingTerminalInput): void {
     const {
         result,
-        recClip,
+        recClip: admittedClip,
         totalLatencySec,
         transportHold,
         captureClock,
@@ -217,13 +278,14 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
         // WAV that never decoded) must not strand an empty provisional
         // clip on the arrangement or stay silent about it (#4265).
         notifyUser('Recording failed — the partial take was discarded. Check your audio input and try again.', 'error');
-        const failedClip = recClip;
+        const failedClip = admittedClip;
         if (failedClip) {
             discardRecording(failedClip.id);
         }
         return;
     }
     const { buffer } = result;
+    const recClip = prepareManualNativeTerminal(input, result);
     if (recClip) {
         const transport = getTransportState();
         const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
@@ -330,6 +392,27 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
     }
 }
 
+function readManualRecordingAdmission() {
+    const transport = getTransportState();
+    return {
+        tempo: transport?.tempo ?? DEFAULT_TEMPO_BPM,
+        changes: structuredClone(tempoMapStore.value?.changes ?? []),
+        rolling: transport?.isPlaying === true,
+    };
+}
+
+function bindManualRecordingOwners(
+    clips: ReturnType<typeof startRecording>,
+    owners: { track: { id: string }; captureClock: CaptureClock }[]
+): void {
+    for (const { track, captureClock } of owners) {
+        const clip = clips.find((candidate) => candidate.trackId === track.id);
+        if (clip) {
+            captureClock.bind(clip.id);
+        }
+    }
+}
+
 async function beginActualRecording(
     startToken: number,
     anchorBeat: number | undefined,
@@ -348,16 +431,18 @@ async function beginActualRecording(
     // Every producer may publish while another input still awaits permission.
     // Retain the rolling correlation and observe seams before starting any of them.
     if (getTransportState()?.isPlaying) {
-        capturePlayingAdmissionClock(transportHold, admissionChanges, admissionTempo);
+        capturePlayingAdmissionClock(transportHold, captureClocks);
     }
-    const captureOwners = audioTracks.map((track) => ({
-        track,
-        captureClock: createCaptureOwnerClock(track.id, captureClocks, transportHold),
-    }));
+    const captureOwners = audioTracks.map((track) => {
+        const totalLatencySec = totalHardwareLatencySec + getCompensationDelay(track.id);
+        return {
+            track,
+            totalLatencySec,
+            captureClock: createCaptureOwnerClock(track.id, captureClocks, transportHold, totalLatencySec),
+        };
+    });
     captureClocks.register();
-    const recordingStarts = captureOwners.map(({ track, captureClock }) => {
-        const trackLatencySec = getCompensationDelay(track.id);
-        const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
+    const recordingStarts = captureOwners.map(({ track, captureClock, totalLatencySec }) => {
         return startAudioRecording(
             track.id,
             (result) => {
@@ -409,11 +494,11 @@ async function beginActualRecording(
     // started at — `startRecording`'s default would open the clip back there.
     // Otherwise an armed count-in hands in the boundary beat it counted to;
     // `undefined` keeps the stationary default.
-    const admittedTransport = getTransportState();
-    admissionTempo = admittedTransport?.tempo ?? DEFAULT_TEMPO_BPM;
-    admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
-    const rolling = admittedTransport?.isPlaying === true;
-    clips = openManualRecordingClips(rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
+    const admitted = readManualRecordingAdmission();
+    admissionTempo = admitted.tempo;
+    admissionChanges = admitted.changes;
+    clips = openManualRecordingClips(admitted.rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
+    bindManualRecordingOwners(clips, captureOwners);
     updateTransportState({ isRecording: true });
     return true;
 }
@@ -421,6 +506,7 @@ async function beginActualRecording(
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
     const transportHold: TransportHold = {
+        nativeOwned: false,
         requestedAtContextSeconds: null,
         rolledAtContextSeconds: null,
         rollLeadBeats: null,

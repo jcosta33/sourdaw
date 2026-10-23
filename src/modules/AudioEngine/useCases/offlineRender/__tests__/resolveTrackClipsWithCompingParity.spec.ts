@@ -543,6 +543,54 @@ describe('captured pass source endings', () => {
         tempoMapStore.set({ changes: [] });
     });
 
+    it('retains source frames 43680 through 57600 with a floating capture depth on a constant sample grid', () => {
+        tempoMapStore.set({ changes: [{ id: 'flat', beat: 0, tempo: 120, curve: 'instant' }] });
+        const sampleRate = 48000;
+        const clip = recording(8, 12, -2.179999999999998);
+        const take = {
+            ...placedPass('floating-depth', [8, 8.579999999999991], -1.089999999999999, 0.9100000000000037),
+            passSourceEndSeconds: 1.2,
+        };
+        const state = lane([take], take.id, 8, 8.58);
+        takeLaneStore.set(state);
+        const secondsAtBeat = (beat: number) => Math.round((beat / 2) * sampleRate) / sampleRate;
+        const offline = resolveTrackClipsWithComping(
+            't1',
+            [clip],
+            state,
+            renderTempoTimeline(secondsAtBeat, () => 120)
+        );
+        const live = resolveClipsWithComping('t1', [clip]);
+        const pcm = Float32Array.from({ length: 57600 }, (_value, frame) => frame);
+        for (const fragments of [live, offline]) {
+            const selected = fragments.find((fragment) => fragment.regionStartBeat === 8)!;
+            expect(selected).toBeDefined();
+            expect(selected.regionEndBeat).toBeCloseTo(8.58, 10);
+            const [playback] = projectOfflineAudioClipPlaybacks({
+                clip: selected,
+                bufferDurationSeconds: 1.2,
+                regionStartBeat: 8,
+                regionStartSec: 4,
+                durationSeconds: 2,
+                compensationDelay: 0,
+                projectBeatToSeconds: secondsAtBeat,
+                resolveTempoAtBeat: () => 120,
+            });
+            expect(playback).toBeDefined();
+            expect(playback!.bufferOffsetSec).toBe(0.9100000000000037);
+            const entry = Math.round(playback!.bufferOffsetSec * sampleRate);
+            const end = Math.round(
+                (playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate) * sampleRate
+            );
+            expect(entry).toBe(43680);
+            expect(end).toBe(57600);
+            expect(end - entry).toBe(13920);
+            expect(pcm[entry]).toBe(43680);
+            expect(pcm[end - 1]).toBe(57599);
+            expect(pcm[end]).toBeUndefined();
+        }
+    });
+
     it.each([0, 0.25])('retains every captured frame through a short tempo drop when comp entry is %s', (compStart) => {
         const changes: TempoChange[] = [
             { id: 'fast', beat: 0, tempo: 180, curve: 'instant' },

@@ -1,9 +1,17 @@
+import { type createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
+
+import { type NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
+
+type NativeCaptureReader = () => ReturnType<ReturnType<typeof createNativeRecordingCaptureClock>['read']>;
+
 type CaptureClockObserver = (
     beat: number,
     contextSeconds: number,
     relocated: boolean,
     effectiveFromContextSeconds?: number,
-    songSeconds?: number
+    songSeconds?: number,
+    nativeOutput?: boolean,
+    nativeBoundary?: NativeCaptureBoundary
 ) => void;
 
 type RecordingLifecycle = {
@@ -22,6 +30,9 @@ type RecordingLifecycle = {
     registerEnding: (end: () => void) => () => void;
     endRecording: () => void;
     registerCaptureClock: (observe: CaptureClockObserver) => () => void;
+    registerNativeCaptureClock: (read: NativeCaptureReader, readSourceStart?: () => number | null) => () => void;
+    readNativeCaptureClock: () => ReturnType<NativeCaptureReader> | undefined;
+    readNativeCaptureSourceStart: () => number | null;
     observeCaptureClock: CaptureClockObserver;
     /** Own the stop that is closing a recording, so every later stop and the idle check can see it. */
     trackClosing: (closing: Promise<void>) => void;
@@ -51,6 +62,8 @@ let settledCommitCount = 0;
  */
 const recordingEndings = new Set<() => void>();
 const recordingClocks = new Set<CaptureClockObserver>();
+const nativeCaptureReaders = new Set<NativeCaptureReader>();
+const nativeSourceStarts = new Map<NativeCaptureReader, () => number | null>();
 
 const pendingCommits = new Set<Promise<void>>();
 
@@ -158,9 +171,40 @@ export const recordingLifecycle: RecordingLifecycle = {
             recordingClocks.delete(observe);
         };
     },
-    observeCaptureClock: (beat, contextSeconds, relocated, effectiveFromContextSeconds, songSeconds) => {
+    registerNativeCaptureClock: (read, readSourceStart) => {
+        nativeCaptureReaders.add(read);
+        if (readSourceStart) {
+            nativeSourceStarts.set(read, readSourceStart);
+        }
+        return () => {
+            nativeCaptureReaders.delete(read);
+            nativeSourceStarts.delete(read);
+        };
+    },
+    readNativeCaptureClock: () => nativeCaptureReaders.values().next().value?.(),
+    readNativeCaptureSourceStart: () => {
+        const reader = nativeCaptureReaders.values().next().value;
+        return reader ? (nativeSourceStarts.get(reader)?.() ?? null) : null;
+    },
+    observeCaptureClock: (
+        beat,
+        contextSeconds,
+        relocated,
+        effectiveFromContextSeconds,
+        songSeconds,
+        nativeOutput,
+        nativeBoundary
+    ) => {
         for (const observe of recordingClocks) {
-            observe(beat, contextSeconds, relocated, effectiveFromContextSeconds, songSeconds);
+            observe(
+                beat,
+                contextSeconds,
+                relocated,
+                effectiveFromContextSeconds,
+                songSeconds,
+                nativeOutput,
+                nativeBoundary
+            );
         }
     },
     trackClosing,

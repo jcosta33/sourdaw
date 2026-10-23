@@ -95,6 +95,20 @@ function legacyPassMedia(clip: TrackClip, sourceOffsetBeats: number, timeline: R
     };
 }
 
+/** Use the known linear span before inverting a render's whole-sample steps. */
+function beatAfterSourceSeconds(
+    fromBeat: number,
+    sourceSeconds: number,
+    timeline: ResolutionTempoTimeline,
+    sourceRate: number
+): number {
+    const constantTempoBeat = fromBeat + (sourceSeconds * timeline.tempoAtBeat(fromBeat)) / (60 * sourceRate);
+    if (isTempoConstantBetween(timeline, fromBeat, constantTempoBeat)) {
+        return constantTempoBeat;
+    }
+    return timeline.beatAtSeconds(timeline.secondsAtBeat(fromBeat) + sourceSeconds / sourceRate);
+}
+
 /** The beat a clip's media reaches `anchorSeconds` on. */
 function beatAtClipMediaSeconds(
     clip: TrackClip,
@@ -103,12 +117,7 @@ function beatAtClipMediaSeconds(
     sourceRate: number
 ): number {
     const entrySeconds = clipEntrySeconds(timeline, clip.startBeat, clip.audioOffsetBeats ?? 0);
-    const constantTempoBeat =
-        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / (60 * sourceRate);
-    if (isTempoConstantBetween(timeline, clip.startBeat, constantTempoBeat)) {
-        return constantTempoBeat;
-    }
-    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) + (anchorSeconds - entrySeconds) / sourceRate);
+    return beatAfterSourceSeconds(clip.startBeat, anchorSeconds - entrySeconds, timeline, sourceRate);
 }
 
 /** A placed audio pass, held in media seconds. */
@@ -135,8 +144,11 @@ function placedPassMedia(
         },
     };
     if (sourceEndSeconds !== undefined) {
-        const passEndBeat = timeline.beatAtSeconds(
-            timeline.secondsAtBeat(passStartBeat) + (sourceEndSeconds - depthSeconds) / sourceRate
+        const passEndBeat = beatAfterSourceSeconds(
+            passStartBeat,
+            sourceEndSeconds - depthSeconds,
+            timeline,
+            sourceRate
         );
         media.latestBeatAt = (beat) => {
             const entrySeconds = clipEntrySeconds(timeline, beat, media.offsetAt(beat));
@@ -144,9 +156,7 @@ function placedPassMedia(
             if (remainingSourceSeconds <= 0) {
                 return beat;
             }
-            const fragmentEndBeat = timeline.beatAtSeconds(
-                timeline.secondsAtBeat(beat) + remainingSourceSeconds / sourceRate
-            );
+            const fragmentEndBeat = beatAfterSourceSeconds(beat, remainingSourceSeconds, timeline, sourceRate);
             return Math.min(passEndBeat, fragmentEndBeat);
         };
     }

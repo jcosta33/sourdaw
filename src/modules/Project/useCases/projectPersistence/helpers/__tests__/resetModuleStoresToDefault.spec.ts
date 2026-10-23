@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingCaptureClock: vi.fn(),
+    prepareRecoveredRecording: vi.fn(),
     observeRecordingPassEntry: vi.fn(),
     removeClip: vi.fn(),
     acceptsExternalPluginAutomationParameter: vi.fn(),

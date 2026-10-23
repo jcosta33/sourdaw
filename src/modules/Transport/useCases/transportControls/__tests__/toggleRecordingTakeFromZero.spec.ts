@@ -95,12 +95,17 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: mocks.stopPlayheadScheduler,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
     startRecording: mocks.startRecording,
     discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     audioEngine: {
         setTransportInfo: vi.fn(),
     },

@@ -1,6 +1,7 @@
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { nativeEnginePlayheadFeed, NATIVE_ENGINE_PLAYHEAD_FEED_ID } from './nativeEnginePlayheadFeedState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 
 /**
  * Stop reading, and forget the last position read.
@@ -18,5 +19,6 @@ export function stopNativeEnginePlayheadFeed(): void {
     // a restart inside that round trip cannot inherit its position.
     nativeEnginePlayheadFeed.epoch += 1;
     nativeEnginePlayheadFeed.reading = null;
+    nativeRecordingCaptureClockState.reset();
     animationScheduler.unregister(NATIVE_ENGINE_PLAYHEAD_FEED_ID);
 }

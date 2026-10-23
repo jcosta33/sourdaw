@@ -70,7 +70,8 @@ function closeTakeAt(take: Take, endBeat: number): Take {
  */
 export async function stopRecording(
     atBeat?: number,
-    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number }
+    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number },
+    manualAudioEnd = false
 ): Promise<void> {
     const clipIds = activeRecordingRef.current;
     activeRecordingRef.current = [];
@@ -96,7 +97,7 @@ export async function stopRecording(
                 if (!clipIdSet.has(clip.id) || clip.type !== 'audio') {
                     continue;
                 }
-                const pendingEnd = recordingPassTiming.finish(clip.id, ending, endBeat);
+                const pendingEnd = recordingPassTiming.finish(clip.id, ending, manualAudioEnd ? undefined : endBeat);
                 if (pendingEnd) {
                     pendingEnds.set(clip.id, pendingEnd);
                 }

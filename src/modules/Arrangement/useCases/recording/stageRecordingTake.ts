@@ -77,6 +77,7 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
             );
         }
     }
+    recordingPassTiming.ownTake(input.clipId, take.id);
     recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
     if (input.nextPassStartBeat !== undefined) {
         recordingPassTiming.relocateEntry(input.clipId, input.nextPassStartBeat);

@@ -8,6 +8,10 @@ type RecordingEnd = { contextSeconds: number; beatAtContextSeconds: (seconds: nu
 type PassStart =
     { contextSeconds: number; endContextSeconds: number } | { songSeconds: number; endSongSeconds: number };
 type RecordingPassTiming = {
+    pendingNative: boolean;
+    ownedTakeIds: Set<string>;
+    originalTakeId: string | null;
+    endingClock: (() => RecordingEnd | undefined) | null;
     recordPointBeat: number;
     firstPassClock: (() => number | null) | undefined;
     openPassContextSeconds: number | null;
@@ -22,7 +26,12 @@ type RecordingPassTiming = {
 // Capture-clock witnesses belong to a provisional recording, never project truth.
 const recordingPassTimings = new Map<string, RecordingPassTiming>();
 
-function beginRecordingPassTiming(clipId: string, recordPointBeat: number, firstPassClock?: () => number | null): void {
+function beginRecordingPassTiming(
+    clipId: string,
+    recordPointBeat: number,
+    firstPassClock?: () => number | null,
+    pendingNative = false
+): void {
     const transport = transportStore.value;
     if (!transport) {
         return;
@@ -31,12 +40,16 @@ function beginRecordingPassTiming(clipId: string, recordPointBeat: number, first
     const recordPointSeconds = seconds(recordPointBeat);
     const openPassBeat = Math.max(recordPointBeat, transport.loopStart);
     let recordPointContextSeconds: number | null = null;
-    if (transport.isPlaying) {
+    if (transport.isPlaying && !pendingNative) {
         recordPointContextSeconds =
             firstPassClock?.() ??
             playheadClockRef.audioTimeSeconds + recordPointSeconds - seconds(playheadClockRef.beat);
     }
     recordingPassTimings.set(clipId, {
+        pendingNative,
+        ownedTakeIds: new Set(),
+        originalTakeId: null,
+        endingClock: null,
         recordPointBeat,
         firstPassClock,
         openPassContextSeconds: openPassBeat === recordPointBeat ? recordPointContextSeconds : null,
@@ -147,7 +160,7 @@ function observeRecordingPassEntry(
     }
     for (const clipId of clipIds) {
         const timing = recordingPassTimings.get(clipId);
-        if (!timing) {
+        if (!timing || timing.pendingNative) {
             continue;
         }
         if (
@@ -208,20 +221,22 @@ function relocateRecordingPassEntry(clipId: string, beat: number): void {
 }
 
 /** Freeze every audio ending; only an unsounded planned pass needs its take shortened here. */
-function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndBeat: number) {
+function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndBeat?: number) {
     const timing = recordingPassTimings.get(clipId);
     if (!timing) {
         return undefined;
     }
+    const nativeReceipt = timing.endingClock?.();
+    receipt = nativeReceipt ?? receipt;
     // A capture still waiting for its first roll has no moving song clock.
     // Its stopped PCM is retained on the hold's signed placement instead.
     const firstPassContextSeconds = timing.openPassContextSeconds ?? timing.firstPassClock?.() ?? null;
-    if (firstPassContextSeconds === null) {
+    if (firstPassContextSeconds === null && !nativeReceipt) {
         return undefined;
     }
     const pending = timing.pendingSeam;
     const stoppedBeat = receipt.beatAtContextSeconds(receipt.contextSeconds);
-    const endBeat = Math.min(intendedEndBeat, stoppedBeat);
+    const endBeat = intendedEndBeat === undefined ? stoppedBeat : Math.min(intendedEndBeat, stoppedBeat);
     const endContextSeconds =
         receipt.contextSeconds - readSecondsAtBeat({ beat: stoppedBeat }) + readSecondsAtBeat({ beat: endBeat });
     const unsounded = pending && (pending.cancelled || receipt.contextSeconds < pending.contextSeconds);
@@ -296,4 +311,30 @@ export const recordingPassTiming = {
     nextStartBeat: (clipId: string): number | undefined =>
         recordingPassTimings.get(clipId)?.nextPassStartBeat ?? undefined,
     relocateEntry: relocateRecordingPassEntry,
+    ownTake: (clipId: string, takeId: string): void => {
+        const timing = recordingPassTimings.get(clipId);
+        if (timing) {
+            timing.ownedTakeIds.add(takeId);
+            timing.originalTakeId ??= takeId;
+        }
+    },
+    ownedTakes: (clipId: string) => recordingPassTimings.get(clipId),
+    setEndingClock: (clipId: string, read: () => RecordingEnd | undefined): void => {
+        const timing = recordingPassTimings.get(clipId);
+        if (timing) {
+            timing.endingClock = read;
+        }
+    },
+    admitNative: (clipId: string, beat: number, contextSeconds: number): boolean => {
+        const timing = recordingPassTimings.get(clipId);
+        if (!timing?.pendingNative) {
+            return false;
+        }
+        timing.pendingNative = false;
+        timing.recordPointBeat = beat;
+        timing.openPassBeat = beat;
+        timing.openPassContextSeconds = contextSeconds;
+        timing.firstPassClock = () => contextSeconds;
+        return true;
+    },
 };

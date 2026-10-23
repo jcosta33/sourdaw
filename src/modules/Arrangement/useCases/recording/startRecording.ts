@@ -13,7 +13,7 @@ import { stageRecordingTake } from './stageRecordingTake';
 const recordClipId = 1;
 type AudioRecordingClock = { beat: number; contextSeconds: number };
 
-function trackRecordingBeat(kind: Track['kind'], recordBeat: number, audioClock?: AudioRecordingClock): number {
+function trackRecordingBeat(kind: Track['kind'], recordBeat: number, audioClock?: AudioRecordingClock | null): number {
     return kind === 'audio' ? (audioClock?.beat ?? recordBeat) : recordBeat;
 }
 
@@ -38,7 +38,7 @@ function trackRecordingBeat(kind: Track['kind'], recordBeat: number, audioClock?
 export function startRecording(
     atBeat?: number,
     firstPassClock?: () => number | null,
-    audioClock?: AudioRecordingClock
+    audioClock?: AudioRecordingClock | null
 ): Clip[] {
     const trackState = getTrackState();
     const transportState = transportStore.value;
@@ -95,11 +95,13 @@ export function startRecording(
         };
         newClips.push(clip);
         if (clip.type === 'audio') {
-            recordingPassTiming.begin(
-                clipId,
-                trackRecordBeat,
-                audioClock ? () => audioClock.contextSeconds : firstPassClock
-            );
+            let passClock = firstPassClock;
+            if (audioClock) {
+                passClock = () => audioClock.contextSeconds;
+            } else if (audioClock === null) {
+                passClock = () => null;
+            }
+            recordingPassTiming.begin(clipId, trackRecordBeat, passClock, audioClock === null);
         }
 
         // Take labels count per lane, the way the scheduler's wrap path mints

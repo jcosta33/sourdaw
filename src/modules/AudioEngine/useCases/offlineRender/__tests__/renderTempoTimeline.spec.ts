@@ -103,6 +103,14 @@ describe('renderTempoTimeline', () => {
         expect(target - placement).toBeLessThan(1 / sampleRate);
     });
 
+    it.each([0, 0.25, 0.75])('keeps the true fractional sample %s out of the following frame', (fraction) => {
+        const sampleRate = 48000;
+        const secondsAtBeat = (beat: number) => Math.round(beat * sampleRate) / sampleRate;
+        const timeline = renderTempoTimeline(secondsAtBeat, () => 60);
+        const target = (60000 + fraction) / sampleRate;
+        expect(Math.round(secondsAtBeat(timeline.beatAtSeconds(target)) * sampleRate)).toBe(60000);
+    });
+
     it.each([NaN, Infinity, -Infinity])('refuses non-finite target %s', (seconds) => {
         const reader = vi.fn((beat: number) => beat);
         expect(() => renderTempoTimeline(reader, () => 60).beatAtSeconds(seconds)).toThrow(RangeError);

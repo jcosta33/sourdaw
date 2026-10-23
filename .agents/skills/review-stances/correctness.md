@@ -27,6 +27,12 @@ carries it in addition.
   sweep; an unverified member of the same class is the finding.
 - Probe every boundary the change establishes or relies on one quantum to each side: the value the
   bug report named, and the adjacent value the report did not name.
+- For an inverse of a monotone but quantized forward map, compare returned points with that exact
+  forward reader at the target and adjacent quanta, including a short change-and-reversal of its
+  local rate. A round trip through an unquantized surrogate or one long segment is insufficient.
+  Off-grid targets must stay on available lower placement without crossing an exclusive end; a
+  fixed local-step budget must not silently return a non-inverse.
+
 - A green gate is not evidence: name what would have to break for the existing checks to fail, and
   whether anything observes it.
 - When the change touches a shared control or a component that shares its input model, read the
@@ -65,6 +71,14 @@ carries it in addition.
   unit records. A failure that is a property of one unit but is read as a property of the run
   reports every later unit under a cause that never happened, and the volume of that report hides
   the single unit that actually failed.
+
+## Quantized tempo inverse escape
+
+PR #4987's whole-sample tempo inverse passed single-change round trips but
+oscillated across 180→60→180 BPM changes at beats 0/.25/.5. The omitted
+quantized-boundary probe let finite comp playback retain only 320 of 8320 frames;
+the public review covered tempo parity broadly, while its exact private prompt
+and tier remain unavailable.
 
 ## Lessons from escapes
 

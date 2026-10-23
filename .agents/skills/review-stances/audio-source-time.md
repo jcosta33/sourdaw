@@ -16,6 +16,15 @@ offline playback. Then change only the tempo map and verify cached waveform
 models refresh; drag-preview the clip across the change and verify its projected
 source window changes. Include zero and negative offsets so pre-roll is retained.
 
+When a source-window reader inverts tempo placement, drive the inverse with the
+actual whole-sample forward reader used by export, not an unquantized analytic
+substitute. Include instant 180 BPM at beat 0, 60 at .25, and 180 at .5, with a
+finite pass ending at .34 and comps entering at 0 and .25. At 48 kHz require live
+and offline PCM windows `[0,8320)` and `[4000,8320)`: the last available frame is
+8319 and 8320 is excluded. Check off-grid targets on both sides of a sample
+boundary so inversion neither truncates available source nor rounds into
+unavailable PCM.
+
 ## Escape
 
 PR #4570 made audio-to-MIDI honor trimmed source windows but converted the
@@ -27,6 +36,13 @@ could pass while the waveform, analysis, and edit helpers inspected different
 source samples than playback. A change inside the clip's audible span requires
 integrated source-to-timeline mapping and separate edit-history review; a
 clip-start conversion alone does not prove that case.
+
+PR #4987 introduced a 32-step local-tempo inverse for offline comp placement. A
+short fast–slow–fast excursion made it return beat .02 for a pass whose finite
+end was .34, exporting 320 of 8320 frames. Its original single-change and
+onset-parity cases remained green. The public review expressly covered tempo
+changes and live/export parity, but not this quantized inverse and finite
+source-window boundary; the exact private prompt and tier are unknown.
 
 ## Recording terminal parity
 

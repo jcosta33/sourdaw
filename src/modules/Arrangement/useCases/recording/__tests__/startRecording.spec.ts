@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { recordingPassTiming } from '../recordingPassTiming';
 import { startRecording } from '../startRecording';
 
 const mocks = vi.hoisted(() => {
@@ -218,6 +219,21 @@ describe('startRecording', () => {
             startBeat: 9.8,
             endBeat: 9.8,
         });
+    });
+
+    it('keeps explicit native-pending audio provisional without manufacturing a browser capture clock', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'audio', armed: true, kind: 'audio', clips: [] }] });
+        mocks.transportStoreValue = { playheadPosition: 4, isPlaying: true, loopStart: 8 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+        const [clip] = startRecording(9.8, undefined, null);
+        const timing = recordingPassTiming.ownedTakes(clip!.id)!;
+        expect(clip).toMatchObject({ startBeat: 9.8, endBeat: 9.8 });
+        expect(timing.pendingNative).toBe(true);
+        expect(timing.openPassContextSeconds).toBeNull();
+        expect(timing.firstPassClock?.()).toBeNull();
+        recordingPassTiming.observeEntry([clip!.id], 10.5, 51.25, true);
+        expect(timing.openPassContextSeconds).toBeNull();
+        recordingPassTiming.retire(clip!.id);
     });
 
     it('skips MIDI clip creation when overdubbing inside an active loop region', () => {
