@@ -108,7 +108,7 @@ const createdContexts: RenderHarnessContext[] = [];
 
 /** What the tests read back off a strip the real builder produced. */
 type HarnessStrip = {
-    outputNode: { connect: { calls: unknown[][] } };
+    outputNode: { connect: { mock: { calls: unknown[][] } } };
     inputNode: Record<string, unknown>;
     postFaderGain: { gain: { value: number } };
     faderNode: { gain: ReturnType<typeof createParam> };
@@ -200,6 +200,14 @@ class RenderHarnessContext {
     createStereoPanner() {
         return { ...createNode(), pan: createParam(0) };
     }
+
+    readonly createBiquadFilter = vi.fn(() => ({
+        ...createNode(),
+        type: 'lowpass',
+        frequency: createParam(350),
+        Q: createParam(1),
+        gain: createParam(0),
+    }));
 
     createDelay() {
         return { ...createNode(), delayTime: createParam(0) };
@@ -2174,6 +2182,114 @@ describe('renderTrackSubgraphOffline', () => {
         afterEach(() => {
             setAudioDeviceRuntimeSink({});
         });
+
+        it.each([
+            { effectType: 'volume' as const, movingDsp: false },
+            { effectType: 'pan' as const, movingDsp: false },
+            { effectType: 'volume' as const, movingDsp: true },
+        ])(
+            'keeps contributor EQ in a keepLive crop with historical $effectType and moving DSP=$movingDsp',
+            async ({ effectType, movingDsp }) => {
+                const { configureOfflinePpqEndpointProjection } =
+                    await import('../../configureOfflinePpqEndpointProjection');
+                configureOfflinePpqEndpointProjection({
+                    project: projectPpqEndpoints,
+                    resolveTempoAtBeat,
+                    beatAtSecondsFromAnchor,
+                });
+                const contributor = TrackDummy.create({ id: 'contributor', outputId: 'target' });
+                const target = TrackDummy.create({ id: 'target', kind: 'bus', gain: 0.4, pan: 20 });
+                const earlyLayer: AdjustmentLayer = {
+                    id: 'early-mixer',
+                    name: 'Early mixer change',
+                    effectType,
+                    parameters: [
+                        {
+                            name: effectType === 'volume' ? 'Gain' : 'Pan',
+                            value: -12,
+                            min: -100,
+                            max: 100,
+                            unit: effectType === 'volume' ? 'dB' : '%',
+                        },
+                    ],
+                    affectedTrackIds: [contributor.id, target.id],
+                    insertionIndex: 0,
+                    regions: [{ id: 'early', startBeat: 0, endBeat: 4, blend: 1, fadeInBeats: 0, fadeOutBeats: 4 }],
+                    enabled: true,
+                    mix: 1,
+                    color: '#fff',
+                };
+                const eq: AdjustmentLayer = {
+                    ...earlyLayer,
+                    id: 'steady-eq',
+                    effectType: 'eq',
+                    parameters: [{ name: 'Low Gain', value: 6, min: -24, max: 24, unit: 'dB' }],
+                    regions: [],
+                };
+                const secondEq: AdjustmentLayer = {
+                    ...eq,
+                    id: 'second-eq',
+                    parameters: [{ name: 'High Gain', value: -4, min: -24, max: 24, unit: 'dB' }],
+                };
+                const movingFilter: AdjustmentLayer = { ...earlyLayer, id: 'moving-filter', effectType: 'filter' };
+                const layers = movingDsp ? [earlyLayer, eq, movingFilter, secondEq] : [earlyLayer, eq, secondEq];
+                adjustmentLayerStore.set({ layers });
+                try {
+                    const onWarning = vi.fn();
+                    const buffer = await renderTrackSubgraphOffline({
+                        targetTrackId: target.id,
+                        renderTracks: [contributor, target],
+                        startBeat: 4,
+                        endBeat: 8,
+                        targetMixer: 'keepLive',
+                        source: { project: suppliedDocument([contributor, target]) },
+                        onWarning,
+                    });
+                    const context = createdContexts.at(-1)!;
+                    const filters = context.createBiquadFilter.mock.results.map(({ value }) => value);
+                    // The real EQ factories must run only for the contributor,
+                    // with its saved gain, while the target remains live.
+                    expect(filters).toHaveLength(6);
+                    expect(filters.map((filter) => filter.gain.value)).toEqual([6, 0, 0, 0, 0, -4]);
+                    const contributorStrip = mocks.builtStripsById.get(contributor.id)!;
+                    const targetStrip = mocks.builtStripsById.get(target.id)!;
+                    const busInput = contributorStrip.outputNode.connect.mock.calls[0]![0] as ReturnType<
+                        typeof createNode
+                    >;
+                    expect(busInput.connect).toHaveBeenCalledWith(filters[0]);
+                    const wetGain = filters[2]!.connect.mock.calls[0]![0] as ReturnType<
+                        RenderHarnessContext['createGain']
+                    >;
+                    const busOutput = wetGain.connect.mock.calls[0]![0] as ReturnType<typeof createNode>;
+                    const secondBusInput = busOutput.connect.mock.calls[0]![0] as ReturnType<typeof createNode>;
+                    expect(secondBusInput.connect).toHaveBeenCalledWith(filters[3]);
+                    const secondWetGain = filters[5]!.connect.mock.calls[0]![0] as ReturnType<
+                        RenderHarnessContext['createGain']
+                    >;
+                    const secondBusOutput = secondWetGain.connect.mock.calls[0]![0] as ReturnType<typeof createNode>;
+                    expect(secondBusOutput.connect).toHaveBeenCalledWith(targetStrip.inputNode);
+                    expect(targetStrip.faderNode.gain.value).toBe(1);
+                    expect(targetStrip.panNode.pan.value).toBe(0);
+                    expect(targetStrip.faderNode.gain.setValueAtTime).not.toHaveBeenCalled();
+                    expect(targetStrip.panNode.pan.setValueAtTime).not.toHaveBeenCalled();
+                    const mixerWrites =
+                        effectType === 'volume'
+                            ? contributorStrip.faderNode.gain.setValueAtTime.mock.calls
+                            : contributorStrip.panNode.pan.setValueAtTime.mock.calls;
+                    expect(mixerWrites.length).toBeGreaterThan(1);
+                    expect(buffer!.length).toBe(2 * SAMPLE_RATE);
+                    if (movingDsp) {
+                        expect(onWarning).toHaveBeenCalledExactlyOnceWith(
+                            'A DSP adjustment layer that fades across this bounce is skipped; only steady layers render offline.'
+                        );
+                    } else {
+                        expect(onWarning).not.toHaveBeenCalled();
+                    }
+                } finally {
+                    adjustmentLayerStore.set({ layers: [] });
+                }
+            }
+        );
 
         it.each([
             { layerScope: 'crop', compensationDelay: 0 },
