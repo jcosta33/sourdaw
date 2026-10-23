@@ -1,0 +1,24 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_7afb15c9ae11a2 2104-2107,2117-2118,2125-2132,2137-2140,2149-2150,2157-2162,2219
+  s_59e31a5c6f3e31::t_a9ba0cd2af8be0 2082-2103,2108-2116,2119-2124,2133-2136,2141-2148,2151-2156,2163-2164
+  s_59e31a5c6f3e31::t_59dfea362ca8b0 2204-2218,2220-2231
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_f0cf353fcf8bbf 419-423,512-513,531-533,1034,1047,1072
+  s_59e31a5c6f3e31::t_aa36c6108de055 465-466,511,530
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7f90678499d09d3dad7208d1a5193522d996154",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
