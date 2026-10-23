@@ -1,0 +1,323 @@
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_3e7dea5cde3f9e::t_fe98b8badb6129 96-100
+evidence/agent-campaign/manifest.json
+  s_3e7dea5cde3f9e::t_f54c12650754ce 374,748
+scripts/__tests__/removeLane.spec.ts
+  s_3e7dea5cde3f9e::t_7bb1afc76ec114 199-207
+scripts/__tests__/resourceGuard.spec.ts
+  s_3e7dea5cde3f9e::t_4301573edaa46f 757-762,1908-1950,2800-3081
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_3e7dea5cde3f9e::t_746730cff58a0c 147-196,368-369,373,451,456,1381,1389-1391,1395,1397-1398,1401-1407,1409,2776-2779,4210-4218,4476-4490
+scripts/removeLane.ts
+  s_3e7dea5cde3f9e::t_cfdd62222983d4 133-134,136
+scripts/resourceGuard.ts
+  s_3e7dea5cde3f9e::t_9f578e4693cafc 1805-1807,1809-1820,2583-2690,3047,3075-3085
+src/modules/AiRuntime/AGENTS.md
+  s_3e7dea5cde3f9e::t_0b83a5dbdc9b15 44-45
+src/modules/AiRuntime/models/IntentResult.ts
+  s_3e7dea5cde3f9e::t_9dd7912435118f 9,63-74
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_3e7dea5cde3f9e::t_a195e3e2401dd4 1-53
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_3e7dea5cde3f9e::t_1562818d258633 32-37,64-74
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_3e7dea5cde3f9e::t_79472e21001357 456-494
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_3e7dea5cde3f9e::t_938f449234dd60 10,128-132,335,381
+src/modules/AiRuntime/transformers/__tests__/diffProposalCommands.spec.ts
+  s_3e7dea5cde3f9e::t_ea4ccbca6d975a 1-711
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_3e7dea5cde3f9e::t_57dca94b847449 7
+src/modules/AiRuntime/transformers/buildThreadContext.ts
+  s_3e7dea5cde3f9e::t_f42810d825c228 13,31,222-227
+src/modules/AiRuntime/transformers/diffProposalCommands.ts
+  s_3e7dea5cde3f9e::t_8cbc1f27925ae0 1-193
+src/modules/AiRuntime/transformers/fitThreadContext.ts
+  s_3e7dea5cde3f9e::t_f7d55a975efed5 42-43
+src/modules/AiRuntime/transformers/proposalDecibelFormat.ts
+  s_3e7dea5cde3f9e::t_d7c072bee82e1a 1-9
+src/modules/AiRuntime/transformers/unionProtectedObjects.ts
+  s_3e7dea5cde3f9e::t_0329b14777bbf4 1-12
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_3e7dea5cde3f9e::t_d01c17617ad228 14,276-378
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_3e7dea5cde3f9e::t_718b87584a7619 225-226,239-240,595-780
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_3e7dea5cde3f9e::t_73881e55b781c0 204-205
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_3e7dea5cde3f9e::t_65605ed8fb4f78 1-1162
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_3e7dea5cde3f9e::t_c30be2f874cc5d 1-5639
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_3e7dea5cde3f9e::t_6d217f0a93a4ae 39,45,47-48,71,358-359,980-1110
+src/modules/AiRuntime/useCases/__tests__/threadContextFixture.ts
+  s_3e7dea5cde3f9e::t_0e13624bf11313 34-35
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_3e7dea5cde3f9e::t_7d09dab0fe126e 142,151-153,159,302-303,321,330-371,396-397,1070-1075,1129,1160-1161,1201-1202,1293-1298
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_3e7dea5cde3f9e::t_0c83c80662a0a9 268-273,292,322
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_3e7dea5cde3f9e::t_505f04e1f03c10 1-764
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3e7dea5cde3f9e::t_0413d0ad5a1fbb 15,38,71,81,152-156,175-179,230-242,3314-3315,3324-3329,3701-3702,3720-3721,3844-3845,3868-3869,5945-6791
+src/modules/AiRuntime/useCases/agentReference/findTargetOwnerTrackIds.ts
+  s_3e7dea5cde3f9e::t_3e5d497aeccb43 1-74
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_3e7dea5cde3f9e::t_4ae47469fdb28b 56,67
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/maskProjectReferences.ts
+  s_3e7dea5cde3f9e::t_a9cacebc6be8d1 6
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_3e7dea5cde3f9e::t_871891408c3668 1-283
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_3e7dea5cde3f9e::t_aca74f06da9a2e 1-93
+src/modules/AiRuntime/useCases/agentReference/readStoredCardRemoval.ts
+  s_3e7dea5cde3f9e::t_a794b3d38ca004 1-498
+src/modules/AiRuntime/useCases/agentReference/refinementActionWords.ts
+  s_3e7dea5cde3f9e::t_eae93986ad1926 1-174
+src/modules/AiRuntime/useCases/agentReference/refinementCardCommands.ts
+  s_3e7dea5cde3f9e::t_2491c21fac2784 1-63
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_3e7dea5cde3f9e::t_d05571de2e1304 1-509
+src/modules/AiRuntime/useCases/agentReference/refinementCourtesy.ts
+  s_3e7dea5cde3f9e::t_10ccbd1ee0b74a 1-76
+src/modules/AiRuntime/useCases/agentReference/refinementMarks.ts
+  s_3e7dea5cde3f9e::t_347fe29c17ad2b 1-87
+src/modules/AiRuntime/useCases/agentReference/refinementProtectionForms.ts
+  s_3e7dea5cde3f9e::t_4a013fa65bdcee 1-220
+src/modules/AiRuntime/useCases/agentReference/refinementRemovalReading.ts
+  s_3e7dea5cde3f9e::t_e724a34d32bfa9 1-406
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_3e7dea5cde3f9e::t_a5d852da11822a 1-308
+src/modules/AiRuntime/useCases/agentReference/refinementValueUnits.ts
+  s_3e7dea5cde3f9e::t_d86fe03ad6a493 1-92
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/retireSupersededConfirmation.spec.ts
+  s_3e7dea5cde3f9e::t_aa3750b6c34ade 1-78
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_3e7dea5cde3f9e::t_5d69396398b495 22,39,268-275,280-304,307-311,314,332-361,393-394,432-437,459-462,469-474,476-479,516-519,521,536,542,544-549,757-760,820,829
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_3e7dea5cde3f9e::t_0772f700b5a20b 40-41,130
+src/modules/AiRuntime/useCases/agentRequestOrchestration/retireSupersededConfirmation.ts
+  s_3e7dea5cde3f9e::t_8321162d9551e8 1-40
+src/modules/AiRuntime/useCases/agentRequestOrchestration/supersedeRefinedProposal.ts
+  s_3e7dea5cde3f9e::t_7d9b767611ea14 1-80
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_3e7dea5cde3f9e::t_4c31af13f13837 50,388-394
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_3e7dea5cde3f9e::t_bce0664b396484 42,1423-1434,1461,1463-1466,1639-1643,1645,1648,1652
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_3e7dea5cde3f9e::t_7c08e989b87f42 40,463-464,466
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_3e7dea5cde3f9e::t_ce2ab0ea37c4c3 15-16,28-31,34-35,68-70,73,311-312,314-317,338-347
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_3e7dea5cde3f9e::t_d1adc58d863a2a 9,11,75-90,108-109,315-339,377
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_3e7dea5cde3f9e::t_fcabe33c9ad282 10,15,19,21-22,42-52,62-64,103-116,119,133,135-144,256-268,281-282,286-343
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_3e7dea5cde3f9e::t_95961297c67809 480-523
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3e7dea5cde3f9e::t_0667f7e6f9b42e 33,44,59-60,844-872,883-884,886,890,1060-1079,1084,1104,1130-1151,1159,1174-1182
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_3e7dea5cde3f9e::t_4a113fbcbb2d95 11,18,45,379-380,395
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_3e7dea5cde3f9e::t_83e7cc9f46d20a 283-291
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_3e7dea5cde3f9e::t_8a9208ac94c341 1-200
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStartControllerRows.integration.spec.ts
+  s_3e7dea5cde3f9e::t_a8959f6b12b814 1-256
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_365d4857ccc876 161
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_6fa2e4f5a089d6 149
+src/modules/AudioEngine/AGENTS.md
+  s_3e7dea5cde3f9e::t_8edba4f0f5eebb 36
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_3e7dea5cde3f9e::t_dfa064ae1b4c3f 609,611,752,755,1172
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_3e7dea5cde3f9e::t_8fbaaa41306ca9 495-499,504,508-509,603
+src/modules/AudioEngine/useCases/offlineRender/__tests__/levainMultiInstancePcm.spec.ts
+  s_3e7dea5cde3f9e::t_41c15054bc619c 1-453
+src/modules/CommandInterface/useCases/commands/ProjectCommands.ts
+  s_3e7dea5cde3f9e::t_5274915ff9e1f5 3,20,25-27,30
+src/modules/CommandInterface/useCases/commands/__tests__/ProjectCommands.spec.ts
+  s_3e7dea5cde3f9e::t_33556b5491b8dd 5,14-18,20-28,99-123
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  s_3e7dea5cde3f9e::t_07a7c398ed071a 124-157
+src/modules/DawInterchange/useCases/__tests__/pickAndImportDawProject.spec.ts
+  s_3e7dea5cde3f9e::t_09005204bb97c5 3,8-12,14-22,53-84
+src/modules/DawInterchange/useCases/importDawProject.ts
+  s_3e7dea5cde3f9e::t_f831c2ef7698df 12-13,19,21,34,36,56
+src/modules/DawInterchange/useCases/pickAndImportDawProject.ts
+  s_3e7dea5cde3f9e::t_435a19b26286aa 1,13-14,19,24
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_3e7dea5cde3f9e::t_35c786a9ebb2e3 9,1470-1516,2279-2302
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_3e7dea5cde3f9e::t_a2dff13cf38ac5 7,80-86,183,456
+src/modules/Levain/repositories/sampleLoader/sharedBankOwnerEnded.ts
+  s_3e7dea5cde3f9e::t_55d285e555237a 1-17
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_3e7dea5cde3f9e::t_c1e5d74b5e108a 3-6,24-25,27,38,129-176
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_3e7dea5cde3f9e::t_10a2873f773a15 1-177
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_3e7dea5cde3f9e::t_536a0bce058803 7,12-30,86-105
+src/modules/Levain/useCases/levainParamBridge/__tests__/multiInstanceIsolation.spec.ts
+  s_3e7dea5cde3f9e::t_d302f0b350f6fd 1-170
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_3e7dea5cde3f9e::t_2106d8139a6a79 2,608-620,629
+src/modules/Levain/useCases/levainParamBridge/levainBridge.ts
+  s_3e7dea5cde3f9e::t_cabc6dda63246c 9
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  s_3e7dea5cde3f9e::t_fcb154ac4e78b2 1
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_1a67ad852adb7b 25
+src/modules/MIDI/models/SequencerTick.ts
+  s_3e7dea5cde3f9e::t_3fee5d691289ce 1-2
+src/modules/MIDI/repositories/webMidi/__tests__/ingestChannelControlChange.spec.ts
+  s_3e7dea5cde3f9e::t_151884287f8768 172-182
+src/modules/MIDI/repositories/webMidi/recordedControllerTakeState.ts
+  s_3e7dea5cde3f9e::t_5e061fa8ebc73e 23-32,35-37,54-57,59,65-72,79,81
+src/modules/MIDI/services/__tests__/registeredParameterState.spec.ts
+  s_3e7dea5cde3f9e::t_1e4be90c8c700e 25-28,172,175-199
+src/modules/MIDI/services/applyRegisteredParameterChange.ts
+  s_3e7dea5cde3f9e::t_e926b6aea616a1 11,64-65
+src/modules/MIDI/services/registeredParameterState.ts
+  s_3e7dea5cde3f9e::t_23e921a191e88b 18-19,85,116,135-141,149,181,184,188-286
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_3e7dea5cde3f9e::t_ee5dbcf7c06632 3-11,490,498-499,501-508,522-551,557-561,563-566,572-579,581-589,592-597,667-673,677,685-687,749-761,770-773,787-792
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_3e7dea5cde3f9e::t_e84555d52a6798 3,491-702
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipSplit.spec.ts
+  s_3e7dea5cde3f9e::t_264dd6b15014cd 3,184-368
+src/modules/MIDI/useCases/midiClipData/__tests__/projectChannelBend.spec.ts
+  s_3e7dea5cde3f9e::t_5e3fa69a1b7513 31-35,354-427
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipPitchBendEvents.spec.ts
+  s_3e7dea5cde3f9e::t_3e4479bb49fee8 66-72
+src/modules/MIDI/useCases/midiClipData/declareGluedRegisteredParameters.ts
+  s_3e7dea5cde3f9e::t_aee917f6770b04 2-9,20-27,36-49,56-61,68-71,74-90
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_3e7dea5cde3f9e::t_635d0803d18777 130-131,135-136,140-144,148,150,154
+src/modules/MIDI/useCases/midiClipData/projectChannelBend.ts
+  s_3e7dea5cde3f9e::t_55cfa84a5d4409 42,82
+src/modules/MIDI/useCases/midiClipData/projectClipPitchBendEvents.ts
+  s_3e7dea5cde3f9e::t_d5d96ebea9c45c 18-22,31,72,77
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/seedBendRangeAtTakeStart.spec.ts
+  s_3e7dea5cde3f9e::t_fd839df669cb44 1-680
+src/modules/MIDI/useCases/recordedControllerTake/beginRecordedControllerTake.ts
+  s_3e7dea5cde3f9e::t_0b9d10e35c0aaa 6,42-49,54,62-66,71,73,75-78,90-95
+src/modules/MIDI/useCases/recordedControllerTake/bufferRecordedMidiCC.ts
+  s_3e7dea5cde3f9e::t_1646ecdf295c36 2,5,8-13,16,20-25
+src/modules/MIDI/useCases/recordedControllerTake/bufferRecordedMidiPitchBend.ts
+  s_3e7dea5cde3f9e::t_3f70c289142b22 5,15-20
+src/modules/MIDI/useCases/recordedControllerTake/captureRegisteredStateAtFirstRow.ts
+  s_3e7dea5cde3f9e::t_c7b312af2cc439 1-25
+src/modules/MIDI/useCases/recordedControllerTake/commitRecordedControllers.ts
+  s_3e7dea5cde3f9e::t_8038767b99aa2b 30-31
+src/modules/MIDI/useCases/recordedControllerTake/declareOverdubRegisteredState.ts
+  s_3e7dea5cde3f9e::t_b69d0e3a6f99fa 1-42
+src/modules/MIDI/useCases/recordedControllerTake/discardRecordedControllers.ts
+  s_3e7dea5cde3f9e::t_fc2f460d4431ae 4,9,12
+src/modules/MIDI/useCases/recordedControllerTake/endRecordedControllerTake.ts
+  s_3e7dea5cde3f9e::t_85b88b35785c36 3,15-20,23,30-31,36-38,45-49
+src/modules/MIDI/useCases/recordedControllerTake/interleaveRegisteredStateDeclarations.ts
+  s_3e7dea5cde3f9e::t_24cbe15707a73b 1-171
+src/modules/MIDI/useCases/recordedControllerTake/openRecordedControllerBuffer.ts
+  s_3e7dea5cde3f9e::t_fc0528eb1c59a7 20
+src/modules/MIDI/useCases/recordedControllerTake/planRecordedControllers.ts
+  s_3e7dea5cde3f9e::t_51da6785474d2f 45-47,55,61-62
+src/modules/MIDI/useCases/recordedControllerTake/readBendRangeSeedRows.ts
+  s_3e7dea5cde3f9e::t_48d66a5f4d05f5 1-37
+src/modules/MIDI/useCases/recordedControllerTake/readLiveRegisteredStateRows.ts
+  s_3e7dea5cde3f9e::t_73c3141f175553 1-23
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_3e7dea5cde3f9e::t_b90137c5dfbe0b 6-7,992-1015
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_3e7dea5cde3f9e::t_dc8612de59ff2e 10,18-19,73-78,121
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_3e7dea5cde3f9e::t_134672b8945a87 3-4,13-20,67
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_53105dd3270a51 222
+src/modules/Project/AGENTS.md
+  s_3e7dea5cde3f9e::t_75fc5f82067189 13,20,38,40-41
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_3e7dea5cde3f9e::t_62214614af6932 28,32,74,80-81,84,122-132,145-148
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_3e7dea5cde3f9e::t_78b3781c676bd9 9,346,355-356,359
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_3e7dea5cde3f9e::t_2fb064da177ae3 6-7,15,44,56-67,316,348,352-510
+src/modules/Project/presentations/views/__tests__/TemplateChooser.spec.tsx
+  s_3e7dea5cde3f9e::t_e5b473d31c7ff3 4,72-108
+src/modules/Project/useCases/index.ts
+  s_3e7dea5cde3f9e::t_5320947e73026e 10,62
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_3e7dea5cde3f9e::t_88096a680973ce 292-341,479-517
+src/modules/Project/useCases/projectPersistence/__tests__/pendingProjectReplacements.spec.ts
+  s_3e7dea5cde3f9e::t_9b1fafe1994a45 1-27
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_3e7dea5cde3f9e::t_9153fdb3869d29 4,24,112,238-291
+src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts
+  s_3e7dea5cde3f9e::t_e4fa04d437a0a6 12-13,20,32
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_3e7dea5cde3f9e::t_918df24f74c17f 8,23-26,37-39,49-51,54,56-59
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.spec.ts
+  s_3e7dea5cde3f9e::t_cd05ce1c79bc01 163-188
+src/modules/Project/useCases/projectPersistence/helpers/markOutgoingProjectDirtyAfterAbort.ts
+  s_3e7dea5cde3f9e::t_6f547ed60e0079 1-23
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_3e7dea5cde3f9e::t_9ea9801f236869 28,153-155
+src/modules/Project/useCases/projectPersistence/helpers/resetCrdtProjectWithTransportStopped.ts
+  s_3e7dea5cde3f9e::t_39bdbf9526ef75 64-70,95,118-122
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_3e7dea5cde3f9e::t_330ab5c0083d5f 22,39-40,47,59-61,135,144-146,148,156,165,177,298,308
+src/modules/Project/useCases/projectPersistence/pendingProjectReplacements.ts
+  s_3e7dea5cde3f9e::t_a0c4c8afc42863 1-23
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_3e7dea5cde3f9e::t_568817454e83c0 54,89-90,236,251,493,607-705
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_3e7dea5cde3f9e::t_1ae9906a025d32 51,324-379
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_3e7dea5cde3f9e::t_1fda8db69ca2d0 21,82-110,116,131-133,135,140,150,163
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_3e7dea5cde3f9e::t_240971f92456a2 22-23,38
+src/modules/Project/useCases/recentProjects/__tests__/isOpenProjectKey.spec.ts
+  s_3e7dea5cde3f9e::t_e6c8d6c6d5c85c 1-29
+src/modules/Project/useCases/recentProjects/isOpenProjectKey.ts
+  s_3e7dea5cde3f9e::t_72ae910de6e2dc 1-8
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_118a1b1b738f5f 32
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_3e7dea5cde3f9e::t_2fe4a90e829e63 220,224-227,300-328
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_3e7dea5cde3f9e::t_515c389f17bc66 11,87-95
+src/modules/WorkspaceShell/handlers/workspace/__tests__/workspaceProjectHandlers.spec.ts
+  s_3e7dea5cde3f9e::t_8e1837dc35c096 7,50-51,53-62,104-126
+src/modules/WorkspaceShell/handlers/workspace/handleNewProject.ts
+  s_3e7dea5cde3f9e::t_e15ee8be87c428 1,6,11-13,16
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_3e7dea5cde3f9e::t_d627e7073ce93b 37-44,53-54,205-237,397
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_3e7dea5cde3f9e::t_6b5931c9a884b8 51,58,63-64,66-77,101,107,272,1204,1208-1374,1379-1380,1408-1410,1419,1423
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_3e7dea5cde3f9e::t_798d4e7428e338 15-16,81-101,121,168-169
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_3e7dea5cde3f9e::t_864ad70a2bc391 234,774-834
+src/modules/WorkspaceShell/useCases/__tests__/importDroppedLaunchFiles.spec.ts
+  s_3e7dea5cde3f9e::t_8836168194e430 175-196,199-224
+src/modules/WorkspaceShell/useCases/importDroppedLaunchFiles.ts
+  s_3e7dea5cde3f9e::t_85db9591c413c2 87,109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5504516fa95d537dee788bfafe4c13190b2a80ab",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
