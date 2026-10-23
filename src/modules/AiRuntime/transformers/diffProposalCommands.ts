@@ -1,6 +1,8 @@
 import { formatDecibels } from '#/utils/audioLevelLaw';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
+import { PROPOSAL_DECIBEL_FORMAT } from './proposalDecibelFormat';
+
 type ProposalCommands = {
     actions: ReadonlyArray<{ type: string; payload?: unknown }>;
     actionLabels: readonly string[];
@@ -62,7 +64,7 @@ function renderValue(field: string, value: unknown): string | null {
         return null;
     }
     if (typeof value === 'number' && field.endsWith('Db')) {
-        return `${formatDecibels(value, { trimTrailingZeros: true })} dB`;
+        return `${formatDecibels(value, PROPOSAL_DECIBEL_FORMAT)} dB`;
     }
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
         return String(value);

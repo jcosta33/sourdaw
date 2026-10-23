@@ -216,6 +216,29 @@ describe('diffProposalCommands', () => {
         });
     });
 
+    it('renders decibel fields at the precision the card labels state them in', () => {
+        const vocals = (field: 'gainDb' | 'deltaDb', value: number) => ({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-vocals', [field]: value },
+        });
+        const rows: Array<['gainDb' | 'deltaDb', number, number, string, string]> = [
+            ['gainDb', -1.25, -1.3, '-1.25 dB', '-1.3 dB'],
+            ['gainDb', -1.04, -1, '-1.04 dB', '-1 dB'],
+            ['deltaDb', -1.25, -1.3, '-1.25 dB', '-1.3 dB'],
+            ['deltaDb', -1.04, -1, '-1.04 dB', '-1 dB'],
+        ];
+        for (const [field, before, after, previous, next] of rows) {
+            expect(
+                diff(
+                    { actions: [vocals(field, before)], actionLabels: ['Before'] },
+                    { actions: [vocals(field, after)], actionLabels: ['After'] }
+                ).changes
+            ).toEqual([
+                { kind: 'changed', actionType: 'setTrackGain', label: 'After', fields: [{ field, previous, next }] },
+            ]);
+        }
+    });
+
     describe('pairs a command by the object it acts on, not by every argument the registry calls a target', () => {
         function changedOnly(actionType: string, before: Record<string, unknown>, after: Record<string, unknown>) {
             return diff(
@@ -371,6 +394,68 @@ describe('diffProposalCommands', () => {
                     { actions: [sendRange(['track-3'], 3)], actionLabels: ['Keys send'] }
                 ).changes.map(({ kind }) => kind)
             ).toEqual(['added', 'removed', 'removed']);
+        });
+
+        it('pairs a VCA group whose every member changed, by type, since its members are no identity', () => {
+            expect(
+                changedOnly(
+                    'createVcaGroup',
+                    { name: 'Kit', trackIds: ['track-1', 'track-2'] },
+                    { name: 'Kit', trackIds: ['track-3', 'track-4'] }
+                ).changes
+            ).toEqual([
+                {
+                    kind: 'changed',
+                    actionType: 'createVcaGroup',
+                    label: 'After',
+                    fields: [
+                        {
+                            field: 'trackIds',
+                            previous: canonicalJson(['track-1', 'track-2']),
+                            next: canonicalJson(['track-3', 'track-4']),
+                        },
+                    ],
+                },
+            ]);
+        });
+
+        it('pairs each of two send ranges whose sources only reordered with its own, by its sorted sources', () => {
+            const sendRange = (trackIds: string[], reductionDb: number) =>
+                ({
+                    type: 'automateSendRange',
+                    payload: { trackIds, busId: 'bus-1', sectionName: 'Chorus', reductionDb },
+                }) satisfies AppAction;
+
+            expect(
+                diff(
+                    {
+                        actions: [sendRange(['track-1', 'track-2'], 3), sendRange(['track-2', 'track-3'], 6)],
+                        actionLabels: ['Lead sends', 'Pad sends'],
+                    },
+                    {
+                        actions: [sendRange(['track-2', 'track-1'], 3), sendRange(['track-3', 'track-2'], 6)],
+                        actionLabels: ['Lead sends again', 'Pad sends again'],
+                    }
+                ).changes.map(({ kind, label }) => [kind, label])
+            ).toEqual([
+                ['changed', 'Lead sends again'],
+                ['changed', 'Pad sends again'],
+            ]);
+        });
+
+        it('pairs a creation grounded again under a fresh minted id, never reading that id as its object', () => {
+            const compressor = (deviceId: string) =>
+                ({
+                    type: 'addDevice',
+                    payload: { trackId: 'track-1', deviceType: 'Compressor', deviceId },
+                }) satisfies AppAction;
+
+            expect(
+                diff(
+                    { actions: [compressor('device-command-1')], actionLabels: ['Compressor'] },
+                    { actions: [compressor('device-command-2')], actionLabels: ['Compressor'] }
+                ).changes.map(({ kind }) => kind)
+            ).toEqual(['changed']);
         });
 
         it('pairs a placement set that dropped a clip, by the clip both still place', () => {

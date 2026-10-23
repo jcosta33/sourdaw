@@ -390,6 +390,8 @@ async function dispatchPromptPlan(input: {
     request: PromptChatRequestInput;
     admission: PromptRequestAdmission;
     aborter: AbortController;
+    /** Lets go of the chat's Stop, so a later Stop cancels nothing this request owns. */
+    releaseStop: () => void;
     state: PromptRequestState;
     context: Awaited<ReturnType<typeof planPromptActions>>['context'];
     result: Awaited<ReturnType<typeof planPromptActions>>['result'];
@@ -540,6 +542,9 @@ async function dispatchPromptPlan(input: {
                 supersedes: refinedProposal?.id ?? null,
             });
             if (confirmationId !== null && refinedProposal !== null) {
+                // The replacement now waits in this request's run, so a Stop while the refined card
+                // retires would cancel the replacement with it and leave neither card applicable.
+                input.releaseStop();
                 await refinedProposalSupersession.retire(refinedProposal, confirmationId);
             }
             return undefined;
@@ -749,6 +754,10 @@ export async function orchestratePromptChatRequest(
             ? 'User cancelled the run while provider planning was active.'
             : 'User cancelled the run while local planning was active.',
     });
+    const releaseStop = () => {
+        releasePlanningCancellation();
+        setActiveAborter(null);
+    };
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
@@ -808,6 +817,7 @@ export async function orchestratePromptChatRequest(
             request: input,
             admission,
             aborter,
+            releaseStop,
             state,
             context,
             result,
@@ -816,8 +826,7 @@ export async function orchestratePromptChatRequest(
     } catch (error) {
         await mapPromptFailure({ request: input, admission, aborter, state, error });
     } finally {
-        releasePlanningCancellation();
-        setActiveAborter(null);
+        releaseStop();
         setChatGenerating(false);
     }
     return undefined;

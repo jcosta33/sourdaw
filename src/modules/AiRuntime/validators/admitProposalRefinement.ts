@@ -23,6 +23,9 @@ export function admitProposalRefinement(
     refines: unknown,
     thread: ThreadContext | null | undefined
 ): ProposalRefinementAdmission {
+    // Only an absent `refines` is no refinement. The tool loop drops a strict reply's `refines: null`
+    // before the planner reads it, so null never arrives here; any other value names a card and is
+    // checked as one, so one that did arrive would be refused rather than read as none.
     if (refines === undefined) {
         return { status: 'none' };
     }

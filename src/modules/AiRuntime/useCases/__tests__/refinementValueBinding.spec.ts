@@ -667,6 +667,24 @@ describe('binding a terse refinement to the pending card it refines', () => {
             }
         });
 
+        it('a figure clause stating both a lowering and a raising word asks which way it goes', () => {
+            for (const [card, refinement] of [
+                [P0_CARD, 'turn it up 2 dB down'],
+                [P0_CARD, 'turn it down 2 dB louder'],
+                [UP_CARD, 'turn it up 2 dB down'],
+            ] as const) {
+                for (const calls of [[vocalsBy(-2)], [vocalsBy(2)]]) {
+                    const result = refine(card, refinement, calls);
+
+                    expect({
+                        refinement,
+                        calls,
+                        asked: result.status === 'clarify' ? result.planningOutcome.questions[0] : result.status,
+                    }).toEqual({ refinement, calls, asked: 'Should 2 dB go up or down?' });
+                }
+            }
+        });
+
         it('a clause with no direction cue still keeps the pending boost', () => {
             for (const refinement of ['less, make it 1.5 dB', 'make it 1.5 dB']) {
                 const result = refine(UP_CARD, refinement, [vocalsBy(1.5)]);
@@ -774,6 +792,43 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     expect(statusOf(P1_CARD, refinement, calls)).toEqual({ refinement, calls, status: 'clarify' });
                 }
             }
+        });
+
+        it('an "except" or "without" right after a protection or rest-of-mix clause asks whether it keeps or removes that change', () => {
+            const refinements = [
+                'make the vocals 1.5 dB, keep everything else unchanged except the snare',
+                'make the vocals 1.5 dB, everything else stays as is except the snare',
+                'make the vocals 1.5 dB and leave everything else alone except the snare',
+                'make the vocals 1.5 dB, leave the rest unchanged without the snare',
+                'make the vocals 1.5 dB, nothing else should change except the snare',
+                'make the vocals 1.5 dB, leaving the drum bus unchanged except the snare',
+                'make the vocals 1.5 dB, everything else unchanged, except the snare',
+            ];
+            for (const refinement of refinements) {
+                for (const calls of [[vocalsBy(-1.5)], [vocalsBy(-1.5), snareBy(-2)]]) {
+                    const result = refine(P1_CARD, refinement, calls);
+
+                    expect({
+                        refinement,
+                        calls,
+                        asked: result.status === 'clarify' ? result.planningOutcome.questions[0] : result.status,
+                    }).toEqual({
+                        refinement,
+                        calls,
+                        asked: expect.stringContaining('after a protection does not say whether'),
+                    });
+                }
+            }
+            // An "except" after a value clause still removes the change it names and protects it.
+            const removed = refine(P1_CARD, 'make the vocals 1.5 dB, except the snare', [vocalsBy(-1.5)]);
+
+            expect(commandsOf(removed)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 }]);
+            expect(removed.status === 'grounded' ? removed.groundingBasis?.protectedUnchanged : null).toEqual(
+                expect.arrayContaining([{ id: 'track-snare', name: 'Snare' }])
+            );
+            expect(
+                refine(P1_CARD, 'make the vocals 1.5 dB, except the snare', [vocalsBy(-1.5), snareBy(-2)]).status
+            ).toBe('rejected');
         });
 
         it('a negation with an operation word removes only that operation of the object it names, keeping its pan', () => {
@@ -2081,6 +2136,84 @@ describe('binding a terse refinement to the pending card it refines', () => {
             );
         });
 
+        it('an addition stating a restriction or replacement word asks whether it replaces the pending change', () => {
+            const KEYS_MUTE_CARD = { prompt: 'mute Keys', calls: [keysMute(true)] };
+            const snareDown = snareBy(-2);
+            const rows: Array<[{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[][]]> = [
+                ...[
+                    'mute Bass instead',
+                    'mute Bass, instead',
+                    'instead, mute Bass',
+                    'mute Bass instead thanks',
+                    'mute Bass only',
+                    'mute just Bass',
+                    'mute Bass alone',
+                    'mute Bass exclusively',
+                    'mute Bass solely',
+                    'mute Bass rather',
+                    'mute Bass in place of that',
+                ].map((refinement): [{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[][]] => [
+                    KEYS_MUTE_CARD,
+                    refinement,
+                    [[bassMute(true), keysMute(true)], [bassMute(true)]],
+                ]),
+                ...[
+                    'turn Snare down 2 dB only',
+                    'turn Snare down 2 dB alone',
+                    'turn Snare down 2 dB exclusively',
+                    'turn Snare down 2 dB solely',
+                    'just turn Snare down 2 dB',
+                    'turn Snare down 2 dB rather',
+                    'turn Snare down 2 dB instead',
+                    'turn Snare down 2 dB in place',
+                ].map((refinement): [{ prompt: string; calls: readonly ProviderCall[] }, string, ProviderCall[][]] => [
+                    P0_CARD,
+                    refinement,
+                    [[snareDown, vocalsBy(-3)], [snareDown]],
+                ]),
+            ];
+            for (const [card, refinement, callSets] of rows) {
+                for (const calls of callSets) {
+                    const result = refine(card, refinement, calls);
+
+                    expect({
+                        refinement,
+                        calls,
+                        asked: result.status === 'clarify' ? result.planningOutcome.questions[0] : result.status,
+                    }).toEqual({
+                        refinement,
+                        calls,
+                        asked: expect.stringContaining('adds a change and says it replaces or restricts'),
+                    });
+                }
+            }
+            // An addition with no such word still adds beside the pending change, and omitting that
+            // change stays refused.
+            expect(commandsOf(refine(KEYS_MUTE_CARD, 'mute Bass', [bassMute(true), keysMute(true)]))).toEqual([
+                { type: 'muteTrack', trackId: 'track-bass' },
+                { type: 'muteTrack', trackId: 'track-keys' },
+            ]);
+            expect(refine(KEYS_MUTE_CARD, 'mute Bass', [bassMute(true)]).status).toBe('rejected');
+        });
+
+        it('a toggle word naming two pending toggles asks which it changes, even when it would turn only one', () => {
+            const context = projectContext(
+                BASE_TRACKS.map((track) => (track.id === 'track-keys' ? { ...track, muted: true } : track))
+            );
+            const card = { prompt: 'mute Bass and unmute Keys', calls: [bassMute(true), keysMute(false)] };
+            for (const calls of [
+                [bassMute(false), keysMute(false)],
+                [bassMute(true), keysMute(false)],
+            ]) {
+                const result = refine(card, 'unmute Bass Keys', calls, context);
+
+                expect({
+                    calls,
+                    asked: result.status === 'clarify' ? result.planningOutcome.questions[0] : result.status,
+                }).toEqual({ calls, asked: 'Which pending change should "unmute Bass Keys" apply to?' });
+            }
+        });
+
         it('a toggle clause naming two pending toggles asks which one it changes on the inherited route', () => {
             const card = {
                 prompt: 'turn Vocals down 3 dB, mute Bass and mute Keys',
@@ -2595,6 +2728,64 @@ describe('binding a terse refinement to the pending card it refines', () => {
             for (const [pending, next, prompt, status] of rows) {
                 expect({ prompt, status: admission(pending, next, prompt) }).toEqual({ prompt, status });
             }
+        });
+
+        it('a removal two pending creations of one name on one host both answer removes neither', () => {
+            const first = compressorOn('track-bass', 'device-command-1');
+            const second = compressorOn('track-bass', 'device-command-2');
+            const pending = [first, second, vocalGain(0.5)];
+            const prompt = 'remove the compressor from Bass';
+
+            expect(
+                [first, second].map(
+                    (command) =>
+                        readStoredCardRemoval({ prompt, command, pendingActions: pending, context: PAIRING_CONTEXT })
+                            .status
+                )
+            ).toEqual(['keeps', 'keeps']);
+            for (const next of [[vocalGain(0.5)], [second, vocalGain(0.5)], [first, vocalGain(0.5)]]) {
+                expect(admission(pending, next, prompt)).toBe('refused');
+            }
+        });
+
+        it('a removal does not continue into a bare object name after a clause that kept its object', () => {
+            const context = projectContext([...PAIRING_CONTEXT.tracks, projectTrack('track-snare', 'Snare')]);
+            const snareGain: StoredCommand = { type: 'setTrackGain', payload: { trackId: 'track-snare', gain: 0.6 } };
+            const pending = [snareGain, vocalGain(0.5)];
+            const prompt = 'drop the snare gain a bit and the vocal gain';
+
+            expect(
+                readStoredCardRemoval({ prompt, command: vocalGain(0.5), pendingActions: pending, context }).status
+            ).toBe('keeps');
+            expect(admission(pending, [snareGain], prompt, context)).toBe('refused');
+            // The same bare name after a removal that ends at its object continues it.
+            expect(
+                readStoredCardRemoval({
+                    prompt: 'drop the snare gain and the vocal gain',
+                    command: vocalGain(0.5),
+                    pendingActions: pending,
+                    context,
+                }).status
+            ).toBe('removes');
+        });
+
+        it('a name inside an unclosed quotation mark binds nothing', () => {
+            const guitarCompressor = compressorOn('track-guitar', 'device-command-1');
+            const pending = [guitarCompressor, vocalGain(0.5)];
+            const rows: Array<[string, StoredCommand]> = [
+                ['remove "Compressor', guitarCompressor],
+                ['remove the gain of "Vocal', vocalGain(0.5)],
+            ];
+            for (const [prompt, command] of rows) {
+                expect({
+                    prompt,
+                    read: readStoredCardRemoval({ prompt, command, pendingActions: pending, context: PAIRING_CONTEXT })
+                        .status,
+                }).toEqual({ prompt, read: 'keeps' });
+            }
+            expect(admission(pending, [vocalGain(0.5)], 'remove "Compressor')).toBe('refused');
+            // Closed, the same quotation names the creation it holds.
+            expect(admission(pending, [vocalGain(0.5)], 'remove "Compressor"')).toBe('valid');
         });
 
         it('a removal drops a command acting on two objects only when it names both', () => {
@@ -4030,6 +4221,23 @@ describe('binding a terse refinement to the pending card it refines', () => {
             // the clause asks what the value should be instead of standing as an unanswered addition.
             expect(refine(P0_CARD, 'make it ２ s', [vocalsBy(-3)]).status).toBe('clarify');
             expect(refine(P0_CARD, 'make it so', [vocalsBy(-3)]).status).toBe('rejected');
+        });
+
+        it('"preserving" opens a protection like "keeping", so it protects the object off the card it names', () => {
+            const refinement = 'make the vocals 1.5 dB, preserving the Bass unchanged';
+            const calls = [vocalsBy(-1.5), snareBy(-2)];
+
+            expect(protectedBy(refine(P1_CARD, refinement, calls))).toEqual(expect.arrayContaining([BASS]));
+            expect(
+                chainOf(P1_CARD, refinement, calls, {
+                    prompt: 'turn Bass up 2 dB',
+                    calls: [...calls, bassBy(2)],
+                })
+            ).toEqual({
+                refinement,
+                status: 'grounded',
+                later: expect.stringContaining('changes "Bass", which the request chain leaves unchanged'),
+            });
         });
     });
 

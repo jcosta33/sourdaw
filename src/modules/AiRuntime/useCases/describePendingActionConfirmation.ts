@@ -12,6 +12,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
+import { PROPOSAL_DECIBEL_FORMAT } from '../transformers/proposalDecibelFormat';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
@@ -64,11 +65,11 @@ function formatDescriptorParameterValue(value: number, unit: string, choices?: r
  * The confirmation prose's dB readout. The conversion and the `-∞` branch come
  * from the shared level law rather than from a fourth copy of the arithmetic
  * here — a confirmation sentence free to drift from the strip the user is
- * about to look at is worse than no sentence. Two trimmed decimals is this
- * surface's presentation choice: prose wants `0 dB`, not the mixer's `0.0 dB`.
+ * about to look at is worse than no sentence. Its precision is the one every
+ * proposal surface states decibels in.
  */
 function formatDecibelsFromGain(value: number): string {
-    return `${formatGainDb(value, { fractionDigits: 2, trimTrailingZeros: true })} dB`;
+    return `${formatGainDb(value, PROPOSAL_DECIBEL_FORMAT)} dB`;
 }
 
 /**

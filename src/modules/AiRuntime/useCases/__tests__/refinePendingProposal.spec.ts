@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -26,7 +27,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { agentRunStore } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { chatStore } from '../../stores/chatStore';
+import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -36,6 +37,7 @@ import {
 import { validateRefinedProposalActions } from '../../validators/admitProposalRefinement';
 import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 import { readStoredCardRemoval } from '../agentReference/readStoredCardRemoval';
+import { pendingActionResourceSettlement } from '../agentRequestOrchestration/pendingActionResourceSettlement';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
@@ -425,6 +427,89 @@ describe('refining the pending proposal', () => {
         await undo();
 
         expectMixUntouched();
+    });
+
+    it('a Stop while the refined card retires leaves the persisted replacement confirmable, applied once', async () => {
+        let pendingId = '';
+        scriptProvider([{ calls: MIX_PLAN }, { calls: REFINED_PLAN, refines: () => pendingId }]);
+        pendingId = await proposeTheMix();
+        const settle = pendingActionResourceSettlement.settleBestEffort;
+        let stoppedDuringRetirement = false;
+        const settlement = vi
+            .spyOn(pendingActionResourceSettlement, 'settleBestEffort')
+            .mockImplementation(async (input) => {
+                if (input.confirmationId === pendingId) {
+                    stopGenerating();
+                    stoppedDuringRetirement = true;
+                }
+                await settle(input);
+            });
+
+        try {
+            await sendChatMessage(REFINEMENT_PROMPT);
+        } finally {
+            settlement.mockRestore();
+        }
+
+        expect(stoppedDuringRetirement).toBe(true);
+        const [replacementId] = proposedIds();
+        const replacement = getPendingActionConfirmation(replacementId ?? '');
+        expect(replacement).toMatchObject({ status: 'proposed', supersedes: pendingId });
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'invalidated' });
+        expect(readRun(replacement?.runId)).toMatchObject({
+            phase: 'waiting-for-approval',
+            cancellation: { requestedAt: null },
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: replacementId ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getTrack('track-lead-vocal')).toMatchObject({ gain: 0.8 });
+        expect(getTrack('track-room-mic')).toMatchObject({ muted: true });
+        expect(new Set((undoHistoryStore.value?.past ?? []).map((entry) => entry.groupId)).size).toBe(1);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(4);
+        expect(readRun(replacement?.runId)?.receipts).toHaveLength(1);
+    });
+
+    it('a refined card whose run cannot settle is reported, and the persisted replacement still applies once', async () => {
+        let pendingId = '';
+        scriptProvider([{ calls: MIX_PLAN }, { calls: REFINED_PLAN, refines: () => pendingId }]);
+        pendingId = await proposeTheMix();
+        const replacedRunId = getPendingActionConfirmation(pendingId)?.runId;
+        const cancel = agentRunCancellation.cancel;
+        const settlement = vi.spyOn(agentRunCancellation, 'cancel').mockImplementation(async (input) => {
+            if (input.runId === replacedRunId) {
+                throw new Error('run settlement storage unavailable');
+            }
+            return cancel(input);
+        });
+        const reports: unknown[] = [];
+        const reported = vi.spyOn(logger, 'error').mockImplementation((error) => {
+            reports.push(error instanceof Error ? error.message : error);
+        });
+
+        try {
+            await sendChatMessage(REFINEMENT_PROMPT);
+        } finally {
+            settlement.mockRestore();
+            reported.mockRestore();
+        }
+
+        expect(reports).toContain('Refined proposal run settlement could not be persisted');
+        const [replacementId] = proposedIds();
+        const replacement = getPendingActionConfirmation(replacementId ?? '');
+        expect(replacement).toMatchObject({ status: 'proposed', supersedes: pendingId });
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'invalidated' });
+        expect(readRun(replacement?.runId)?.phase).toBe('waiting-for-approval');
+
+        await expect(confirmPendingChatActions({ confirmationId: replacementId ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getTrack('track-lead-vocal')).toMatchObject({ gain: 0.8 });
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(4);
+        expect(readRun(replacement?.runId)?.receipts).toHaveLength(1);
     });
 
     it('keeps the four-command card when a full refinement reply omits three requested commands', async () => {

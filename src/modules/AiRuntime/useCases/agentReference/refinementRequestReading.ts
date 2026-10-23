@@ -252,8 +252,22 @@ function resolveReference(
  * stated name read before any generic noun or operation word comes off, and the one removal
  * vocabulary.
  */
+/** The words that only join a clause to the one before it ("and", "but", "please"), read off its start. */
+const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
+
+function withoutLeadingConnectors(words: string): string {
+    return words.replace(LEADING_CONNECTOR, '');
+}
+
+/** A clause's normalized words, with the connectors it opens on read off. */
+function readClauseWords(clause: PromptClause): string {
+    return withoutLeadingConnectors(normalizePromptText(clause.text));
+}
+
 export const refinementRequestReading = {
     clauses: readClauseSpans,
+    clauseWords: readClauseWords,
+    withoutLeadingConnectors,
     statesFigure,
     statesNegation,
     removalVerbs: REMOVAL_VERBS,
