@@ -358,6 +358,33 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
             expect(doc.slot).toMatchObject({ tempo: 130, metronome: true });
             expect(readSlot(storage)).toMatchObject({ tempo: 130, metronome: true });
         });
+
+        it('takes the whole document for a later write derived from a deferred baseline behind a refused write', () => {
+            let refuseWrites = false;
+            const { doc, port } = createTestPort({ slot: slot({ tempo: 150 }) }, ({ changeFn }) => {
+                if (refuseWrites) {
+                    throw new AutomergeStorageWriteConflictError('refused');
+                }
+                changeFn(doc);
+            });
+            const storage = createSlotStorage();
+            storage.set(slot({ tempo: 97 }));
+            frameCallback?.(100);
+            configureAutomergeStoragePort(port);
+
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                storage.set({ ...readSlot(storage), loopEnd: 16 });
+            });
+            storage.set({ ...readSlot(storage), metronome: true });
+            refuseWrites = true;
+            expect(() => transaction.commit()).toThrow('refused');
+            transaction.abort();
+            refuseWrites = false;
+            expect(readSlot(storage)).toMatchObject({ tempo: 150, metronome: false });
+
+            flushAutomergeStorageWrites();
+            expect(doc.slot).toMatchObject({ tempo: 150, metronome: false });
+        });
     });
 
     // A store's inbound guard can enforce a rule across fields (the transport
