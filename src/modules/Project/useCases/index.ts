@@ -7,6 +7,7 @@ export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectS
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { saveProjectBeforeReplacement } from './projectPersistence/saveProject/saveProjectBeforeReplacement';
+export { pendingProjectReplacements } from './projectPersistence/pendingProjectReplacements';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
 export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProject/initGrooveTemplateDirtyTracking';
 export { initProjectDirtyTracking } from './projectPersistence/saveProject/initProjectDirtyTracking';
@@ -58,6 +59,7 @@ export { runProjectLoadTransaction } from './projectPersistence/helpers/runProje
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
 export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
+export { isOpenProjectKey } from './recentProjects/isOpenProjectKey';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
 
