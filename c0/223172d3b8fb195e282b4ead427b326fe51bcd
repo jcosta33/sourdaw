@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_3e7dea5cde3f9e::t_6e95ba7ea54ff6 10-26
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_3e7dea5cde3f9e::t_25d8fcc4bd911c 26-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0223172d3b8fb195e282b4ead427b326fe51bcd",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
