@@ -79,6 +79,7 @@ describe('discardProjectChanges', () => {
             outgoingProject: 'discard',
             requireDurable: true,
             shouldProceed: expect.any(Function),
+            transaction: expect.objectContaining({ prepare: expect.any(Function) }),
         });
         expect(create.newProject).not.toHaveBeenCalled();
         expect(state.project?.dirty).toBe(false);
@@ -162,6 +163,7 @@ describe('discardProjectChanges', () => {
             outgoingProject: 'discard',
             requireDurable: true,
             shouldProceed: expect.any(Function),
+            transaction: expect.objectContaining({ prepare: expect.any(Function) }),
         });
     });
 

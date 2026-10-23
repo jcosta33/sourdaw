@@ -461,6 +461,30 @@ describe('discardProjectChanges real load path', () => {
             expect(resetCrdtProject).not.toHaveBeenCalled();
         });
 
+        it('yields to a load allocated during the first read that activates during the saved-copy read', async () => {
+            const reads: ((raw: string) => void)[] = [];
+            vi.mocked(readNamedProjectJson).mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        reads.push(resolve);
+                    })
+            );
+
+            const discard = discardProjectChanges();
+            await vi.waitFor(() => expect(reads).toHaveLength(1));
+            const openRecent = runProjectLoadTransaction();
+            reads[0]?.(savedProject);
+            await vi.waitFor(() => expect(reads).toHaveLength(2));
+            await expect(openRecent.prepare()).resolves.toBe(true);
+            expect(openRecent.activate()).toBe(true);
+            reads[1]?.(savedProject);
+
+            await expect(discard).resolves.toBe(false);
+            expect(openRecent.isCurrent()).toBe(true);
+            expect(projectStore.value?.name).toBe('Unsaved song');
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+        });
+
         it('yields to a transition that prepares after the discard load has begun', async () => {
             let releasePreparation: (() => void) | undefined;
             vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);

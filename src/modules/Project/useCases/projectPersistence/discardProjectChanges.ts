@@ -8,6 +8,7 @@ import { loadRecentProject } from '../recentProjects/loadRecentProject';
 
 import { captureProjectTransitionAuthority } from './captureProjectTransitionAuthority';
 import { getProjectSnapshotKey } from './getProjectSnapshotKey';
+import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { newProject } from './newProject';
 
 const notifyDiscardFailure = (message: string): false => {
@@ -26,6 +27,12 @@ export async function discardProjectChanges(): Promise<boolean> {
     const hasRecentEntry = getRecentProjects().some((entry) => entry.key === snapshotKey);
     const transitionAuthority = captureProjectTransitionAuthority();
     const transitionWasCurrent = transitionAuthority.isCurrent();
+    // Allocated before the first read, in the same turn as the epoch capture:
+    // transitions win by creation order, so a transition the user starts while
+    // the discard reads gets a higher id and supersedes it even if it prepares
+    // and activates after the checks below. A transaction allocated only for the
+    // saved-copy load would let such a transition lose to the discard.
+    const transaction = runProjectLoadTransaction();
     const projectIdentity = captureProjectIdentity();
     // Identity, not revision: Don't Save already discards every edit, and the
     // native close request is only honoured while the document is unchanged from
@@ -35,10 +42,10 @@ export async function discardProjectChanges(): Promise<boolean> {
     // project, which moves the document identity, does.
     const stillOwnsProject = (): boolean =>
         projectStore.value?.createdAt === project.createdAt && captureProjectIdentity() === projectIdentity;
-    // Checked only before this discard allocates its own load transaction. Once
-    // the transaction exists its prepare() claims the newest epoch, so the
-    // captured one reads as superseded by the discard itself; from then on the
-    // transaction's own supersession is what detects a newer transition.
+    // Checked only before this discard's load transaction prepares. Its
+    // prepare() claims the newest epoch, so the captured one reads as superseded
+    // by the discard itself; from then on the transaction's own supersession is
+    // what detects a newer transition.
     const stillOwnsDiscard = (): boolean =>
         stillOwnsProject() && (!transitionWasCurrent || transitionAuthority.isCurrent());
     let snapshot: string | null;
@@ -62,6 +69,7 @@ export async function discardProjectChanges(): Promise<boolean> {
                 outgoingProject: 'discard',
                 requireDurable: true,
                 shouldProceed: stillOwnsProject,
+                transaction,
             })) === 'committed';
         if (restored && projectStore.value?.dirty === false) {
             return true;
