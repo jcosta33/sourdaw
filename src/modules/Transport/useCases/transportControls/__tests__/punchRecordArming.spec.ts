@@ -91,6 +91,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: mocks.startRecording,
     commitRecording: mocks.commitRecording,
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,

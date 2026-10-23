@@ -1,4 +1,4 @@
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
+import { countSettledOverdubPasses, isOverdubLanding } from '#/modules/MIDI/useCases';
 
 type RecordingLifecycle = {
     readonly countInTimerId: ReturnType<typeof setTimeout> | null;
@@ -52,12 +52,12 @@ const closingStops = new Set<Promise<void>>();
 
 /**
  * An overdub pass writes its rows after the falling edge, behind the snapshot transaction queue
- * (`pendingTakeLandings`, registered by MIDI), so a stop that has resolved its own commit is not
+ * (MIDI's `isOverdubLanding`), so a stop that has resolved its own commit is not
  * done while one is still landing: the pass counts as a take in flight, and as a settled one
  * once it has landed or been refused.
  */
 function isClosingRecording(): boolean {
-    return closingStops.size > 0 || commitsInFlight.size > 0 || pendingTakeLandings.isLanding();
+    return closingStops.size > 0 || commitsInFlight.size > 0 || isOverdubLanding();
 }
 
 function trackCommit(commit: Promise<void>): void {
@@ -108,7 +108,7 @@ export const recordingLifecycle: RecordingLifecycle = {
         return countInTimerId;
     },
     get settledCommitCount() {
-        return settledCommitCount + pendingTakeLandings.countSettled();
+        return settledCommitCount + countSettledOverdubPasses();
     },
     beginPendingRecordingStart: () => {
         const token = ++nextRecordingStartToken;

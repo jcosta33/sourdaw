@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
 import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../../repositories/automergeRepository';
@@ -28,6 +27,7 @@ const mocks = vi.hoisted(() => ({
     commitTake: vi.fn<() => Promise<void>>(),
     stopAudioRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     notifyUser: vi.fn<(message: string, level?: string) => void>(),
+    overdub: { landing: null as Promise<void> | null, settled: 0 },
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
@@ -51,6 +51,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     resetMidiState: vi.fn(),
+    // MIDI owns the overdub landings; the transport's stop reads them through these.
+    isOverdubLanding: () => mocks.overdub.landing !== null,
+    countSettledOverdubPasses: () => mocks.overdub.settled,
+    waitForOverdubLanding: async () => {
+        await mocks.overdub.landing;
+    },
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
@@ -161,16 +167,19 @@ describe('branch switch stops the transport', () => {
         // The pass's rows land after the falling edge, behind the snapshot transaction queue, onto
         // whichever document is root when they do.
         const passLanding = Promise.withResolvers<void>();
-        pendingTakeLandings.track(
-            passLanding.promise.then(() => {
-                mutateCrdtDoc<TakeDocument>({
-                    id: DOC_PREFIX_ROOT,
-                    changeFn: (draft) => {
-                        draft.take = PASS_MARKER;
-                    },
-                });
-            })
-        );
+        const landing = passLanding.promise.then(() => {
+            mutateCrdtDoc<TakeDocument>({
+                id: DOC_PREFIX_ROOT,
+                changeFn: (draft) => {
+                    draft.take = PASS_MARKER;
+                },
+            });
+        });
+        const settle = (): void => {
+            mocks.overdub.landing = null;
+            mocks.overdub.settled += 1;
+        };
+        mocks.overdub.landing = landing.then(settle, settle);
         const originalReplace = automergeRepository.replaceDoc.bind(automergeRepository);
         const rootReplaces: string[] = [];
         vi.spyOn(automergeRepository, 'replaceDoc').mockImplementation((id, doc, tx) => {

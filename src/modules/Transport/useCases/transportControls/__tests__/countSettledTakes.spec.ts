@@ -1,6 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
+// MIDI owns the overdub landings; Transport reads them through its use cases.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => overdub.state.landing !== null,
+    countSettledOverdubPasses: () => overdub.state.settled,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
+}));
 
 import { countSettledTakes } from '../countSettledTakes';
 import { recordingLifecycle } from '../recordingLifecycle';
@@ -31,16 +52,14 @@ describe('countSettledTakes', () => {
         const before = countSettledTakes();
         const landing = Promise.withResolvers<void>();
 
-        pendingTakeLandings.track(landing.promise);
+        overdub.land(landing.promise);
         expect(countSettledTakes()).toBe(before);
 
         landing.resolve();
-        await pendingTakeLandings.waitForSettled();
-        expect(countSettledTakes()).toBe(before + 1);
+        await vi.waitFor(() => expect(countSettledTakes()).toBe(before + 1));
 
-        pendingTakeLandings.track(Promise.reject(new Error('refused')));
-        await pendingTakeLandings.waitForSettled();
-        expect(countSettledTakes()).toBe(before + 2);
+        overdub.land(Promise.reject(new Error('refused')));
+        await vi.waitFor(() => expect(countSettledTakes()).toBe(before + 2));
     });
 
     it('counts a commit that was retired by a rejection too', async () => {

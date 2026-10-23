@@ -1,6 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
+// MIDI owns the overdub landings; Transport reads them through its use cases.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => overdub.state.landing !== null,
+    countSettledOverdubPasses: () => overdub.state.settled,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
+}));
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { transportStore } from '../../../stores/transportStore';
@@ -112,18 +133,16 @@ describe('isTransportIdle', () => {
     // An overdub pass writes its rows after the falling edge, behind the snapshot transaction queue.
     it('is not idle while an overdub pass is still landing, and is idle once it has landed or been refused', async () => {
         const landed = Promise.withResolvers<void>();
-        pendingTakeLandings.track(landed.promise);
+        overdub.land(landed.promise);
         expect(isTransportIdle()).toBe(false);
         landed.resolve();
-        await pendingTakeLandings.waitForSettled();
-        expect(isTransportIdle()).toBe(true);
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
 
         const refused = Promise.withResolvers<void>();
-        pendingTakeLandings.track(refused.promise);
+        overdub.land(refused.promise);
         expect(isTransportIdle()).toBe(false);
         refused.reject(new Error('refused'));
-        await pendingTakeLandings.waitForSettled();
-        expect(isTransportIdle()).toBe(true);
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
     });
 
     it('is idle once a take commit has settled although nobody ever waited for it', async () => {

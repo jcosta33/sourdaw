@@ -110,7 +110,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAllScheduled: mocks.stopAllScheduled,
     repositionNativeLiveGraphSession: mocks.repositionNativeLiveGraphSession,
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    resetMidiState: mocks.resetMidiState,
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 // Audit #4591 — a take whose latency-compensated start would fall before

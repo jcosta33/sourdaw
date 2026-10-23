@@ -1,10 +1,13 @@
 /**
- * Take writes that land after the transport's falling edge, outside the stop's
- * own commit: an overdub pass's controller rows wait behind the snapshot
- * transaction queue, so the stop that ended the take must not report settled
- * until they have landed or been refused. The owner of such a write registers
- * it here; the Transport module, which cannot be imported from the owner,
- * reads the registry for its idle check, its stop and its settled-take count.
+ * The overdub passes landing in the store after the transport's falling edge,
+ * next to `recordedControllerTakeState.overdubLanding`, which orders them.
+ *
+ * A pass's controller rows wait behind the snapshot transaction queue, so the
+ * stop that ended the take must not report settled until they have landed or
+ * been refused. `landOverdubPass` registers each landing here; Transport reads it
+ * through MIDI's use cases (`isOverdubLanding`, `waitForOverdubLanding`,
+ * `countSettledOverdubPasses`) for its idle check, its stop and its settled-take
+ * count.
  */
 
 /** Landings that have not settled; each removes itself as it settles. */
@@ -33,7 +36,7 @@ async function waitForSettled(): Promise<void> {
     }
 }
 
-export const pendingTakeLandings = {
+export const pendingOverdubLandings = {
     /** Own a write that lands after the take's falling edge. A rejection counts as settled. */
     track,
     /** True while a tracked landing has neither landed nor been refused. */

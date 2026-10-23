@@ -22,7 +22,6 @@ import {
     togglePlayback,
     toggleRecording,
 } from '#/modules/Transport/useCases';
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
 import { pickAndImportProjectFile } from '../../fileIO/pickAndImportProjectFile';
 import { saveProjectBeforeReplacement } from '../../saveProject/saveProjectBeforeReplacement';
@@ -40,6 +39,8 @@ const mocks = vi.hoisted(() => {
     return {
         audioClock,
         events: [] as string[],
+        // MIDI owns the overdub landings; the transport reads them through its use cases.
+        overdub: { landing: null as Promise<void> | null, settled: 0 },
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
@@ -76,6 +77,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     resetAudioGraph: mocks.resetAudioGraph,
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
+}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    isOverdubLanding: () => mocks.overdub.landing !== null,
+    countSettledOverdubPasses: () => mocks.overdub.settled,
+    waitForOverdubLanding: async () => {
+        await mocks.overdub.landing;
+    },
 }));
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
@@ -485,7 +494,11 @@ describe('replacing a project while a take is recording or closing (issue #5500)
     it('does not switch authority while an overdub pass is still landing, then saves it', async () => {
         seedTrack('midi');
         const landing = Promise.withResolvers<void>();
-        pendingTakeLandings.track(landing.promise);
+        const settle = (): void => {
+            mocks.overdub.landing = null;
+            mocks.overdub.settled += 1;
+        };
+        mocks.overdub.landing = landing.promise.then(settle, settle);
 
         const replacing = replace();
         await new Promise((resolve) => setTimeout(resolve, 20));

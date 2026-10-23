@@ -3,11 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { stopRecording } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
+
+// MIDI owns the overdub landings; Transport reads them through its use cases.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => overdub.state.landing !== null,
+    countSettledOverdubPasses: () => overdub.state.settled,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
+}));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
@@ -153,7 +175,7 @@ describe('stopActiveRecording', () => {
             const passLanding = Promise.withResolvers<void>();
             // The falling edge the stop writes is what starts the pass landing.
             vi.mocked(updateTransportState).mockImplementationOnce(() => {
-                pendingTakeLandings.track(passLanding.promise);
+                overdub.land(passLanding.promise);
             });
             let stopped = false;
 
@@ -172,7 +194,7 @@ describe('stopActiveRecording', () => {
         it('resolves when the overdub pass the stop waited on was refused', async () => {
             const passLanding = Promise.withResolvers<void>();
             vi.mocked(updateTransportState).mockImplementationOnce(() => {
-                pendingTakeLandings.track(passLanding.promise);
+                overdub.land(passLanding.promise);
             });
 
             const stopping = stopActiveRecording();

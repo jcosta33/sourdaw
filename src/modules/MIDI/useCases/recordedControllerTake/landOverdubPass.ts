@@ -1,8 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { type OverdubControllerRowsSnapshot } from '#/utils/handlerContract';
-import { pendingTakeLandings } from '#/utils/pendingTakeLandings';
 
+import { pendingOverdubLandings } from '../../repositories/webMidi/pendingOverdubLandings';
 import {
     type RecordedControllerBuffer,
     recordedControllerTakeState,
@@ -68,6 +68,6 @@ export function landOverdubPass(pass: readonly DetachedOverdubClip[]): Promise<v
     const landing = recordedControllerTakeState.overdubLanding.then(() => land(pass));
     recordedControllerTakeState.overdubLanding = landing;
     // The stop that ended this take is not done until the pass has landed or been refused.
-    pendingTakeLandings.track(landing);
+    pendingOverdubLandings.track(landing);
     return landing;
 }
