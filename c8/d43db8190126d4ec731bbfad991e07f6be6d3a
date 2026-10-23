@@ -1,0 +1,33 @@
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  s_59e31a5c6f3e31::t_bd2ee496600696 27,31,33,143-147,149-157,168-193,217-218,251,293-311,318,325-329,334-366,368,370-384,397-398,418-428,435-436,459,461-469,476-477,487,489-490,528-529,531-538,542-551,555-574,580
+  s_59e31a5c6f3e31::t_dd61b163e808e2 1-13,21-26,28-30,32,34-43,45-58,71-125,127-130,132-134,136-142,158-165,194-200,202-216,219-228,246-250,252-269,271-279,282-288,290-292,367,369,581-582
+  s_59e31a5c6f3e31::t_87ad778b59b5d0 44,59-70,126,131,135,201,270,289
+  s_59e31a5c6f3e31::t_889ba7ec662c82 166-167,385
+  s_59e31a5c6f3e31::t_8412ff8b72ff45 14-20,148,229-245,280-281,312-317,319-324,330-333,386-396,399-417,429-434,437-458,460,470-475,478-486,488,491-527,530,539-541,552-554,575-579
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  s_59e31a5c6f3e31::t_0d7b44776944ba 13-21,26-29,38-46,71-72,110-112,114-160,162-163
+  s_59e31a5c6f3e31::t_62b06c2bc9806f 164-167
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  s_59e31a5c6f3e31::t_b3161bd6120306 13-21
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  s_59e31a5c6f3e31::t_88282dcb7ce63d 1,4-6,125-134,136,138-176,178
+  s_59e31a5c6f3e31::t_68abd405648ced 137,177,179
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  s_59e31a5c6f3e31::t_282a843cc7e7fb 21-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8d43db8190126d4ec731bbfad991e07f6be6d3a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
