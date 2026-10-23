@@ -1169,6 +1169,7 @@ describe('LevainProcessor message handling', () => {
             expect(follower.port.postMessage).toHaveBeenCalledWith(
                 expect.objectContaining({ type: 'sampleBankError', loadToken: 2 })
             );
+            expect(follower.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerEnded: true }));
             expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
 
             send(follower, { type: 'releaseRetiredBank', loadToken: 2 });

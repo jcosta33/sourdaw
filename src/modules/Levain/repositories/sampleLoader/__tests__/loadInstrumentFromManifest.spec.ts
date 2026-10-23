@@ -1490,6 +1490,30 @@ describe('loadInstrumentFromManifest', () => {
         expect(rejection).toMatchObject({ message: 'Levain sample-bank load failed: owner gone' });
     });
 
+    it('rejects as a failure of its own, not a shared-bank owner ending, when a committed load gets a refusal that names no ended owner', async () => {
+        const port = makePort({ autoComplete: false });
+        const pending = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            buildZoneTables,
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+        void pending.catch(() => {});
+
+        await vi.waitFor(() => {
+            expect(postedTypes(port)).toContain('commitSampleBank');
+        });
+        const loadToken = postedMessages(port)[0]?.loadToken;
+
+        port.emit({ type: 'sampleBankError', loadToken, message: 'attach refused' });
+
+        const rejection: unknown = await pending.catch((error: unknown) => error);
+        expect(rejection).toBeInstanceOf(Error);
+        expect(isSharedBankOwnerEndedError(rejection)).toBe(false);
+        expect(rejection).toMatchObject({ message: 'Levain sample-bank load failed: attach refused' });
+    });
+
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
         // The token is still pending on this fake port when the abort lands
         // (commitSampleBank has not committed — `autoComplete: false`), so the
