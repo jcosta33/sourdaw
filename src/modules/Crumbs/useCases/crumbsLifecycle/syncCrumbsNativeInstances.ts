@@ -54,7 +54,6 @@ import {
 import { crumbsStore, removeInstance } from '../../stores/crumbsStore';
 import { ensurePadInstance, removePadInstance } from '../../stores/padStore';
 import { ensureSliceInstance, removeSliceInstance } from '../../stores/sliceStore';
-
 import { syncCrumbsRecordingState } from '../recording/syncCrumbsRecordingState';
 
 import { ensureCrumbsInstanceFromProject } from './ensureCrumbsInstanceFromProject';

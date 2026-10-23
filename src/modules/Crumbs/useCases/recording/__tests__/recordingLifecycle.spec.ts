@@ -1,8 +1,6 @@
 import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { CrumbsRecordingSnapshot } from '../../../stores/crumbsRecordingStore';
-
 const devicePopulation = vi.hoisted(() => ({
     subscribe:
         vi.fn<
@@ -30,11 +28,15 @@ vi.mock('../../../repositories/crumbsBridge/getCrumbsRecordingState', () => ({ g
 vi.mock('../../../repositories/crumbsBridge/onCrumbsRecordingState', () => ({ onCrumbsRecordingState: bridge.on }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
-import { crumbsRecordingOwners, crumbsRecordingStore } from '../../../stores/crumbsRecordingStore';
+import {
+    crumbsRecordingOwners,
+    crumbsRecordingStore,
+    type CrumbsRecordingSnapshot,
+} from '../../../stores/crumbsRecordingStore';
 import { ensurePadInstance, padStore } from '../../../stores/padStore';
+import { syncCrumbsNativeInstances } from '../../crumbsLifecycle/syncCrumbsNativeInstances';
 import { armCrumbsRecording } from '../armCrumbsRecording';
 import { stopCrumbsRecording } from '../stopCrumbsRecording';
-import { syncCrumbsNativeInstances } from '../../crumbsLifecycle/syncCrumbsNativeInstances';
 import { syncCrumbsRecordingState } from '../syncCrumbsRecordingState';
 
 const DEVICE = 'sampler';

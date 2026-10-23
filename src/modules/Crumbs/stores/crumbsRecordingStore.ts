@@ -48,6 +48,25 @@ function isDecimalU64(value: unknown): value is string {
     return typeof value === 'string' && /^(0|[1-9][0-9]*)$/u.test(value) && BigInt(value) <= 18446744073709551615n;
 }
 
+function decodeFirstInput(value: unknown): CrumbsRecordingSnapshot['first_input'] {
+    if (value === null) {
+        return null;
+    }
+    if (typeof value !== 'object') {
+        throw new TypeError('Invalid Crumbs first-input witness');
+    }
+    const input = value as Record<string, unknown>;
+    if (
+        !isDecimalU64(input.position_frames) ||
+        typeof input.frames !== 'number' ||
+        !Number.isSafeInteger(input.frames) ||
+        input.frames <= 0
+    ) {
+        throw new TypeError('Invalid Crumbs first-input witness');
+    }
+    return { position_frames: input.position_frames, frames: input.frames };
+}
+
 /** Validate the shared native snapshot/event contract without narrowing u64s. */
 export function decodeCrumbsRecordingSnapshot(value: unknown): CrumbsRecordingSnapshot {
     if (typeof value !== 'object' || value === null) {
@@ -75,22 +94,7 @@ export function decodeCrumbsRecordingSnapshot(value: unknown): CrumbsRecordingSn
     ) {
         throw new TypeError('Invalid Crumbs recording snapshot');
     }
-    let firstInput: CrumbsRecordingSnapshot['first_input'] = null;
-    if (candidate.first_input !== null) {
-        if (typeof candidate.first_input !== 'object' || candidate.first_input === null) {
-            throw new TypeError('Invalid Crumbs first-input witness');
-        }
-        const input = candidate.first_input as Record<string, unknown>;
-        if (
-            !isDecimalU64(input.position_frames) ||
-            typeof input.frames !== 'number' ||
-            !Number.isSafeInteger(input.frames) ||
-            input.frames <= 0
-        ) {
-            throw new TypeError('Invalid Crumbs first-input witness');
-        }
-        firstInput = { position_frames: input.position_frames, frames: input.frames };
-    }
+    const firstInput = decodeFirstInput(candidate.first_input);
     if ((candidate.phase === 'waiting' || candidate.phase === 'recording') && firstInput === null) {
         throw new TypeError('Crumbs readiness requires a first-input witness');
     }

@@ -8,6 +8,8 @@ import {
     isCrumbsRecordingTerminal,
     refreshCrumbsRecordingReadout,
     setCrumbsRecordingPhase,
+    type AcceptedCrumbsTake,
+    type CrumbsRecordingRequest,
 } from '../../stores/crumbsRecordingStore';
 import { padStore } from '../../stores/padStore';
 
@@ -16,6 +18,22 @@ function clamp(value: number, min: number, max: number): number {
         return min;
     }
     return Math.max(min, Math.min(max, value));
+}
+
+async function cancelLateAdmission(
+    instanceId: string,
+    request: CrumbsRecordingRequest,
+    accepted: AcceptedCrumbsTake | null
+): Promise<void> {
+    if (!accepted || request.stopSent) {
+        return;
+    }
+    request.stopSent = true;
+    try {
+        await stopRecording(instanceId, accepted.take_id);
+    } catch (error) {
+        logger.warn(`[Crumbs] could not cancel late take admission: ${String(error)}`);
+    }
 }
 
 /** Resolves on token admission only; first input and threshold arrive natively. */
@@ -50,14 +68,7 @@ export async function armCrumbsRecording(
     try {
         const accepted = await acceptance;
         if (request.disposed || !owner.active || crumbsRecordingOwners.get(instanceId) !== owner) {
-            if (accepted && !request.stopSent) {
-                request.stopSent = true;
-                try {
-                    await stopRecording(instanceId, accepted.take_id);
-                } catch (error) {
-                    logger.warn(`[Crumbs] could not cancel late take admission: ${String(error)}`);
-                }
-            }
+            await cancelLateAdmission(instanceId, request, accepted);
             return false;
         }
         if (!accepted) {

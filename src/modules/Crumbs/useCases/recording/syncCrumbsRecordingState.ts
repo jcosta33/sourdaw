@@ -58,6 +58,27 @@ function reportFailure(instanceId: string, owner: CrumbsRecordingOwner, error: u
     logger.warn(`[Crumbs] recording state unavailable for ${instanceId}: ${String(error)}`);
 }
 
+function detachCrumbsRecordingState(instanceId: string, owner: CrumbsRecordingOwner): void {
+    owner.active = false;
+    crumbsRecordingOwners.delete(instanceId);
+    owner.unlisten?.();
+    const request = owner.request;
+    if (request) {
+        request.disposed = true;
+        void request.acceptance
+            .then(async (accepted) => {
+                if (accepted && !request.stopSent) {
+                    request.stopSent = true;
+                    await stopRecording(instanceId, accepted.take_id);
+                }
+            })
+            .catch((error: unknown) => logger.warn(`[Crumbs] could not cancel disposed take: ${String(error)}`));
+    }
+    crumbsRecordingStore.update((current) =>
+        Object.fromEntries(Object.entries(current ?? {}).filter(([id]) => id !== instanceId))
+    );
+}
+
 /** Persistent device ownership starts/stops the listener; panels only reconcile. */
 export async function syncCrumbsRecordingState(
     instanceId: string,
@@ -68,24 +89,7 @@ export async function syncCrumbsRecordingState(
         if (!existing) {
             return;
         }
-        existing.active = false;
-        crumbsRecordingOwners.delete(instanceId);
-        existing.unlisten?.();
-        const request = existing.request;
-        if (request) {
-            request.disposed = true;
-            void request.acceptance
-                .then(async (accepted) => {
-                    if (accepted && !request.stopSent) {
-                        request.stopSent = true;
-                        await stopRecording(instanceId, accepted.take_id);
-                    }
-                })
-                .catch((error: unknown) => logger.warn(`[Crumbs] could not cancel disposed take: ${String(error)}`));
-        }
-        crumbsRecordingStore.update((current) =>
-            Object.fromEntries(Object.entries(current ?? {}).filter(([id]) => id !== instanceId))
-        );
+        detachCrumbsRecordingState(instanceId, existing);
         return;
     }
     if (operation === 'attach' && !existing) {

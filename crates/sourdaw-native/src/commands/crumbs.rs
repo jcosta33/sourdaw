@@ -2195,8 +2195,12 @@ pub(crate) mod tests {
             "reattaching an idle sampler must not acquire input"
         );
 
-        crate::block_on_test(set_crumbs_mode(instance_id.into(), "record".into(), &f.state))
-            .unwrap();
+        crate::block_on_test(set_crumbs_mode(
+            instance_id.into(),
+            "record".into(),
+            &f.state,
+        ))
+        .unwrap();
         let token = f.arm(instance_id, 0.1, 1.0);
         f.driver.service_owner_commands();
         let mut transient = [0.0f32; 1024];

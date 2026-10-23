@@ -11,12 +11,12 @@ import {
     markCrumbsInstanceCreating,
     markCrumbsInstanceFailed,
 } from '../../../stores/crumbsNativeLifecycleStore';
+import { crumbsRecordingStore, type CrumbsRecordingSnapshot } from '../../../stores/crumbsRecordingStore';
 import { crumbsStore, defaultCrumbsState, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
 import { ensurePadInstance, padStore } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
 import { ensureCrumbsInstanceFromProject } from '../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject';
 import { syncCrumbsRecordingState } from '../../../useCases/recording/syncCrumbsRecordingState';
-import { crumbsRecordingStore, type CrumbsRecordingSnapshot } from '../../../stores/crumbsRecordingStore';
 import { switchCrumbsMode } from '../../../useCases/setCrumbsMode';
 import { setCrumbsParamWithAudio } from '../../../useCases/setCrumbsParamWithAudio';
 import { CrumbsPanel } from '../CrumbsPanel';
