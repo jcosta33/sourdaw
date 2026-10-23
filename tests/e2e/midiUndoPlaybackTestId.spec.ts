@@ -71,6 +71,7 @@ test.describe('MIDI piano-roll editing and playback on a new clip', () => {
         await openPianoRollOnNewClip(page);
     });
 
+    // Owns note creation and undo/redo count changes in place of the weak workflow and Undo-enabled cases.
     test('painting a note changes the selected clip count through undo and redo', async ({ page }) => {
         const noteCount = page.getByTestId('selected-clip-note-count');
         const undo = page.getByRole('button', { name: 'Undo', exact: true });

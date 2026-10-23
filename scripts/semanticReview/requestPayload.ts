@@ -16,6 +16,7 @@
 
 import { type UnitChangedLineFacts } from './changeFacts.ts';
 import { serializedRegion } from './fit.ts';
+import { estimateInputTokens } from './provider.ts';
 
 import type { EvidenceReference } from './contracts.ts';
 import type { SemanticChangedFile } from './evidence.ts';
@@ -118,4 +119,46 @@ export function unitReservationBytes(
         evidence: { references: [], contents: new Map<string, string>() },
         changedLineFacts,
     });
+}
+
+/**
+ * One finding's request as a dry run reports it: the state and questions the provider would read, and
+ * the size the provider would measure them at. The body travels whole because a verify request is one
+ * finding's request, so the exported preview is the request itself rather than a summary of one.
+ */
+export type SemanticVerifyRequestPreview = {
+    readonly findingId: string;
+    /** The state the request would carry: the finding's own fields and every region the fitter kept. */
+    readonly state: Record<string, unknown>;
+    /** The questions the request would ask. */
+    readonly questions: Record<string, unknown>;
+    /** The bytes the live request submits: its state, its questions, and the model, as one body. */
+    readonly bodyBytes: number;
+    readonly estimatedInputTokens: number;
+    /** Why no request could be built, when every region the finding named was withheld. */
+    readonly omissionReason?: string;
+};
+
+/**
+ * The preview of one finding's request, measured by the same construction the live path sends, so a
+ * dry run's export cannot disagree with what a live run would have submitted and been charged for.
+ */
+export function verifyRequestPreview(
+    findingId: string,
+    payload: { readonly state: Record<string, unknown>; readonly questions: Record<string, unknown> },
+    model: string,
+    omissionReason?: string
+): SemanticVerifyRequestPreview {
+    // The live request's body carries the model beside the state and the questions, and the submitted
+    // budget is charged for those bytes, so the preview measures that same body rather than the
+    // state-plus-questions quantity the fitter caps.
+    const bodyBytes = Buffer.byteLength(JSON.stringify({ ...payload, model }), 'utf8');
+    const preview: SemanticVerifyRequestPreview = {
+        findingId,
+        state: payload.state,
+        questions: payload.questions,
+        bodyBytes,
+        estimatedInputTokens: estimateInputTokens(bodyBytes),
+    };
+    return omissionReason === undefined ? preview : { ...preview, omissionReason };
 }

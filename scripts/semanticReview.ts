@@ -35,7 +35,12 @@ import {
     resolveFromRefs,
     type ResolvedRevision,
 } from './semanticReview/gitSource.ts';
-import { createFileCache, createSdkProviderPort, TYPESAFE_API_KEY_ENV } from './semanticReview/provider.ts';
+import {
+    createFileCache,
+    createSdkProviderPort,
+    TYPESAFE_API_KEY_ENV,
+    type SemanticProviderPort,
+} from './semanticReview/provider.ts';
 import { parseStoredResponses, replayScanSignals } from './semanticReview/replay.ts';
 import {
     parseReportJson,
@@ -367,6 +372,11 @@ async function handlerVerify(parsed: ParsedArgs, primaryRoot: string): Promise<n
     if (parsed.bundlePath === undefined || parsed.findingsPath === undefined) {
         refuse('unsupported_scope', `verify needs --bundle and --findings\n\n${USAGE}`);
     }
+    // Refused before the run rather than after one, so an invalid invocation never spends provider
+    // budget to learn it is invalid.
+    if (parsed.exportPayloadPath !== undefined && !parsed.dryRun) {
+        refuse('unsupported_scope', '--export-payload is only supported together with --dry-run');
+    }
     const profile = profileFor(parsed);
     const resolved = resolveFromBundle(primaryRoot, parsed.bundlePath, parsed.trustedSha);
     const findings = parseCandidateFindings(
@@ -374,10 +384,23 @@ async function handlerVerify(parsed: ParsedArgs, primaryRoot: string): Promise<n
         `candidate findings at ${parsed.findingsPath}`
     );
     const controller = new AbortController();
+    // A dry run can never reach the provider, so it loads no key: refusing a credential the run is
+    // forbidden to spend would keep an offline export dying on a missing key before a request was
+    // built (#4836).
+    let provider: SemanticProviderPort;
+    if (parsed.dryRun) {
+        provider = {
+            systemOne: () => {
+                refuse('unsupported_scope', 'dry-run made a provider call; this is a defect');
+            },
+        };
+    } else {
+        provider = createSdkProviderPort({ apiKey: loadApiKey(primaryRoot) });
+    }
     const result = await runVerify({
         ports: {
             source: createGitSourcePort(primaryRoot),
-            provider: createSdkProviderPort({ apiKey: loadApiKey(primaryRoot) }),
+            provider,
             cache: responseCache(primaryRoot),
             clock: { now: () => Date.now() },
             signal: controller.signal,
@@ -387,9 +410,30 @@ async function handlerVerify(parsed: ParsedArgs, primaryRoot: string): Promise<n
         profile,
         findings,
         runId: `verify-${resolved.headSha.slice(0, 12)}-${new Date().toISOString()}`,
+        dryRun: parsed.dryRun,
     });
     const summary = renderSummary(result.report);
     console.log(summary);
+    if (parsed.exportPayloadPath !== undefined) {
+        console.warn(
+            `WARNING: ${parsed.exportPayloadPath} will contain repository source and is for local inspection only. Do not upload it or commit it.`
+        );
+        writeFileSync(parsed.exportPayloadPath, `${JSON.stringify(result.previews, null, 4)}\n`);
+    }
+    // A dry run produced no report to validate or write, exactly as scan's dry run leaves none. The
+    // export carries an entry for every finding, including the empty ones a live run never sends, so
+    // the summary counts only what would actually leave and names the withheld rest separately.
+    if (parsed.dryRun) {
+        const sendable = result.previews.filter((preview) => preview.omissionReason === undefined).length;
+        const withheld = result.previews.length - sendable;
+        console.log(`dry-run: ${String(sendable)} request(s) would be sent; no TypeSafe call was made`);
+        if (withheld > 0) {
+            console.log(
+                `dry-run: ${String(withheld)} finding(s) would send no request; every region they named was withheld`
+            );
+        }
+        return EXIT_OK;
+    }
     const reportPath = writeSidecar({
         primaryRoot,
         report: validateReport(result.report),
@@ -560,4 +604,4 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(await main());
 }
 
-export { parseCommandLine };
+export { handlerVerify, parseCommandLine };
