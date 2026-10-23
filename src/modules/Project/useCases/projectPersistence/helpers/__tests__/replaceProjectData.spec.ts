@@ -32,7 +32,7 @@ const {
     mockVerifyAudioBufferReferences,
     mockRearmInputMonitoring,
     mockSaveProject,
-    mockTakeClosed,
+    mockTakesSettled,
     mockTrackStoreValue,
     mockWatchClosedTakes,
 } = vi.hoisted(() => ({
@@ -73,8 +73,8 @@ const {
     mockVerifyAudioBufferReferences: vi.fn(),
     mockRearmInputMonitoring: vi.fn(),
     mockSaveProject: vi.fn(),
-    /** Stands for a take whose commit settled in the outgoing project since the watch began. */
-    mockTakeClosed: { value: false },
+    /** The takes whose commit settled in the outgoing project; each watch compares it with the count at its creation. */
+    mockTakesSettled: { value: 0 },
     mockTrackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
     mockWatchClosedTakes: vi.fn(),
 }));
@@ -205,14 +205,16 @@ describe('replaceProjectData', () => {
             publish: vi.fn(),
         });
         mockStopPlayback.mockResolvedValue(undefined);
-        mockTakeClosed.value = false;
         mockSaveProject.mockResolvedValue(true);
-        mockWatchClosedTakes.mockImplementation(() => ({
-            acknowledge: () => {
-                mockTakeClosed.value = false;
-            },
-            hasClosedTake: () => mockTakeClosed.value,
-        }));
+        mockWatchClosedTakes.mockImplementation(() => {
+            let acknowledged = mockTakesSettled.value;
+            return {
+                acknowledge: () => {
+                    acknowledged = mockTakesSettled.value;
+                },
+                hasClosedTake: () => mockTakesSettled.value !== acknowledged,
+            };
+        });
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
         mockFinalizeReset.mockResolvedValue('finalized');
@@ -426,7 +428,7 @@ describe('replaceProjectData', () => {
 
     it('watches for takes before its first stop, so a take that stop commits is saved before the switch', async () => {
         mockStopPlayback.mockImplementationOnce(() => {
-            mockTakeClosed.value = true;
+            mockTakesSettled.value++;
             return Promise.resolve();
         });
 

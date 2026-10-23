@@ -42,19 +42,23 @@ const resetMocks = vi.hoisted(() => ({
     finalize: vi.fn(),
 }));
 
-// The take watch the replacement hands the reset helper: `closed` stands for a
-// take whose commit settled in the outgoing project since the watch began.
+// The take watch the replacement hands the reset helper: `settled` counts the
+// takes whose commit settled in the outgoing project, and each watch compares it
+// against the count at the moment it was created, as the real one does.
 const takeMocks = vi.hoisted(() => {
-    const state = { closed: false };
+    const state = { settled: 0 };
     return {
         state,
         saveProject: vi.fn(() => Promise.resolve(true)),
-        watchClosedTakes: vi.fn(() => ({
-            acknowledge: () => {
-                state.closed = false;
-            },
-            hasClosedTake: () => state.closed,
-        })),
+        watchClosedTakes: vi.fn(() => {
+            let acknowledged = state.settled;
+            return {
+                acknowledge: () => {
+                    acknowledged = state.settled;
+                },
+                hasClosedTake: () => state.settled !== acknowledged,
+            };
+        }),
     };
 });
 
@@ -181,7 +185,6 @@ describe('newProject injectable', () => {
         Container.clear();
         vi.clearAllMocks();
         vi.mocked(stopPlayback).mockResolvedValue(undefined);
-        takeMocks.state.closed = false;
         takeMocks.saveProject.mockResolvedValue(true);
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
         resetMocks.finalize.mockReset();
@@ -316,7 +319,7 @@ describe('newProject injectable', () => {
 
     it('watches for takes before its first stop, so a take that stop commits is saved before the switch', async () => {
         vi.mocked(stopPlayback).mockImplementationOnce(() => {
-            takeMocks.state.closed = true;
+            takeMocks.state.settled++;
             return Promise.resolve();
         });
 

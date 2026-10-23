@@ -37,8 +37,8 @@ const mocks = vi.hoisted(() => ({
     transactionPrepare: vi.fn(),
     runProjectLoadTransaction: vi.fn(),
     saveProject: vi.fn(),
-    /** Stands for a take whose commit settled in the outgoing project since the watch began. */
-    takeClosed: { value: false },
+    /** The takes whose commit settled in the outgoing project; each watch compares it with the count at its creation. */
+    takesSettled: { value: 0 },
     watchClosedTakes: vi.fn(),
 }));
 
@@ -187,14 +187,16 @@ describe('createFromTemplate', () => {
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
         mocks.stopPlayback.mockResolvedValue(undefined);
-        mocks.takeClosed.value = false;
         mocks.saveProject.mockResolvedValue(true);
-        mocks.watchClosedTakes.mockImplementation(() => ({
-            acknowledge: () => {
-                mocks.takeClosed.value = false;
-            },
-            hasClosedTake: () => mocks.takeClosed.value,
-        }));
+        mocks.watchClosedTakes.mockImplementation(() => {
+            let acknowledged = mocks.takesSettled.value;
+            return {
+                acknowledge: () => {
+                    acknowledged = mocks.takesSettled.value;
+                },
+                hasClosedTake: () => mocks.takesSettled.value !== acknowledged,
+            };
+        });
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.finalize.mockResolvedValue('finalized');
@@ -517,7 +519,7 @@ describe('createFromTemplate', () => {
 
     it('watches for takes before its first stop, so a take that stop commits is saved before the switch', async () => {
         mocks.stopPlayback.mockImplementationOnce(() => {
-            mocks.takeClosed.value = true;
+            mocks.takesSettled.value++;
             return Promise.resolve();
         });
 

@@ -94,6 +94,18 @@ describe('stopActiveRecording', () => {
             expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1);
         });
 
+        it('is registered as closing while the recorder flush is pending, even when no take was open', async () => {
+            const flush = Promise.withResolvers<void>();
+            vi.mocked(stopAudioRecording).mockReturnValueOnce(flush.promise);
+
+            const stopping = stopActiveRecording();
+            expect(recordingLifecycle.isClosingRecording()).toBe(true);
+
+            flush.resolve();
+            await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
         it('counts no take when no recording was open', async () => {
             const settledBefore = recordingLifecycle.settledCommitCount;
 
