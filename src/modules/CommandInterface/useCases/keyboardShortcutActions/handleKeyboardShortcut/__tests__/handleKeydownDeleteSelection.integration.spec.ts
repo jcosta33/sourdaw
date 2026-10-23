@@ -208,8 +208,8 @@ describe('handleKeydown deleteSelection integration (issue #3627)', () => {
         const prevent = handleKeydown(deleteKeyDescriptor());
         expect(prevent).toBe(true);
 
-        // `deleteSelectionShortcut` fires the per-clip dispatches without
-        // awaiting them, so the real kernel's completion is observed through
+        // `handleKeydown` returns while the shortcut settles its per-clip
+        // actions in sequence, so the real kernel's completion is observed through
         // the state it owns: both clips gone and both history entries landed.
         await vi.waitFor(() => {
             expect(trackClips()).toEqual([]);
