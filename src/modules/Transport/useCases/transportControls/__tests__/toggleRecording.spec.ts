@@ -122,6 +122,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     repositionNativeLiveGraphSession: mocks.repositionNativeLiveGraphSession,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    // The recording terminal's root-identity witness reads one function; these
+    // specs exercise no branch machinery, so the identity never moves.
+    captureProjectRootIdentity: () => 'root-identity',
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 describe('toggleRecording', () => {
@@ -745,8 +750,13 @@ describe('toggleRecording', () => {
 
         // The failure is surfaced instead of swallowed, the empty provisional
         // clip is retired from the arrangement, and nothing buffer-shaped is
-        // cached or written into it.
-        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
+        // cached or written into it. The same-root arm of the notice is pinned
+        // exactly: the ternary's other arm claims a branch move that never
+        // happened here.
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the partial take was discarded. Check your audio input and try again.',
+            'error'
+        );
         expect(mocks.discardRecording).toHaveBeenCalledWith('clip-recording');
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.commitRecording).not.toHaveBeenCalled();
