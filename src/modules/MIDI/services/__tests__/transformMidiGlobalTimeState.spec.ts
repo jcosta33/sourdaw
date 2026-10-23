@@ -886,17 +886,23 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
         ]);
     });
 
-    it('pins the window bounds and the keep-zone overlap for retained controller rows', () => {
+    it('pins the window bounds, the keep-zone overlap, and the carried lane of a retained in-force row', () => {
         // The predicate is half-open [start, end) against the windows the resolver
         // plays, and retention shares one exclusive push with the keep-zone clause:
         // a row both retained and under keptEnd is stored once, a row exactly at a
         // window start stays, one exactly at the end goes, and one discarded into
-        // the gap between keptEnd and a later window is not resurrected.
+        // the gap between keptEnd and a later window is not resurrected. The
+        // retained at-start row is also the lane's value in force at the cut, so
+        // the same case pins that retention does not drop the carried-at-origin
+        // lane onto the right fragment.
         const keptOverlapCc = { id: 'cc-overlap', controller: 64, value: 32, beat: 1.5, channel: 0 };
-        const gapCc = { id: 'cc-gap', controller: 64, value: 36, beat: 2.25, channel: 0 };
-        const atStartCc = { id: 'cc-at-start', controller: 64, value: 40, beat: 2.5, channel: 0 };
-        const atEndCc = { id: 'cc-at-end', controller: 64, value: 44, beat: 3.5, channel: 0 };
-        const prepared = state({ ccByClipId: { source: [keptOverlapCc, gapCc, atStartCc, atEndCc] } });
+        const atEndCc = { id: 'cc-at-end', controller: 64, value: 36, beat: 2.25, channel: 0 };
+        const gapCc = { id: 'cc-gap', controller: 64, value: 38, beat: 2.75, channel: 0 };
+        const atStartCc = { id: 'cc-at-start', controller: 64, value: 40, beat: 3.25, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 64, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptOverlapCc, atEndCc, gapCc, atStartCc, afterCc] },
+        });
 
         const result = transformMidiGlobalTimeState({
             state: prepared,
@@ -904,8 +910,8 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
                 {
                     ...command,
                     retainOnSourceWindows: [
-                        { start: 1, end: 2 },
-                        { start: 2.5, end: 3.5 },
+                        { start: 1, end: 2.25 },
+                        { start: 3.25, end: 3.5 },
                     ],
                 },
             ],
@@ -917,6 +923,13 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
         // overlap row rides the single shared push, not two.
         expect(result.state.ccByClipId.source).toEqual([keptOverlapCc, atStartCc]);
         expect([...storedCopiesById(result.state.ccByClipId.source ?? []).values()]).toEqual([1, 1]);
+        // The retained at-start row is the value in force at the cut, so the right
+        // fragment still opens with its held value beside the rebased post-cut row;
+        // ids carry each row's source index.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...atStartCc, id: 'cc-split:right:3', beat: 0 },
+            { ...afterCc, id: 'cc-split:right:4', beat: 5 },
+        ]);
     });
 });
 
