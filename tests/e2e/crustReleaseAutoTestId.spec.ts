@@ -27,6 +27,15 @@ test.describe('Crust release-auto toggle — aria-pressed round-trip', () => {
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
         await page.waitForTimeout(800);
+
+        const effectControlDetail = inspector.getByRole('group', { name: 'Effect control detail' });
+        await expect(effectControlDetail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        const shape = effectControlDetail.getByRole('button', { name: 'shape', exact: true });
+        await shape.click();
+        await expect(shape).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('toggling Release auto flips aria-pressed off then on', async ({ page }) => {
