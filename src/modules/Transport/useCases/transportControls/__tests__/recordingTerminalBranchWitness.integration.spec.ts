@@ -29,6 +29,8 @@ const TRACK_ID = 'track-recording';
 
 type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed' }) => void;
 
+type CommitRecordingFn = (typeof import('#/modules/Arrangement/useCases'))['commitRecording'];
+
 const mocks = vi.hoisted(() => {
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
     let capturedAudioTerminal: RecordingTerminal | null = null;
@@ -55,6 +57,9 @@ const mocks = vi.hoisted(() => {
             capturedAudioTerminal = null;
             terminal?.(result);
         },
+        // Delegates to the real commit by default (the factory installs the
+        // delegation); a case arms mockImplementationOnce to fail one commit.
+        commitRecording: vi.fn<CommitRecordingFn>(),
     };
 });
 
@@ -66,16 +71,18 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
 }));
-// A staged optimistic take-lane write crossing a root replacement reconciles
-// against the replacement in the matching flush and aborts the branch switch,
-// which is orthogonal to the root-identity ownership this spec pins. Only that
-// matching flush is a no-op: the plain flush stays real so afterEach empties
-// the storage this spec wrote, and the document replacement, branch records,
-// and the recording route all stay real.
-vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
-    flushMatchingAutomergeStorageWrites: vi.fn(() => Promise.resolve()),
-}));
+// The commit seam: the real commit runs unless a case arms one failure, so the
+// commit-failure cleanup is drivable after a root replacement without inventing
+// document state. Everything else the Arrangement barrel exports stays real,
+// including the discard the cleanup guards.
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    mocks.commitRecording.mockImplementation((...args) => actual.commitRecording(...args));
+    return {
+        ...actual,
+        commitRecording: (...args: Parameters<CommitRecordingFn>) => mocks.commitRecording(...args),
+    };
+});
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('#/modules/CrdtDocument/useCases/compactProject', () => ({ compactProject: vi.fn(() => Promise.resolve()) }));
@@ -135,13 +142,11 @@ function storeClipIds(): string[] {
 
 /** Clip ids on the installed root document, the durable truth a cross-root write lands in. */
 function documentClipIds(): string[] {
-    const document = getCrdtDoc(DOC_PREFIX_ROOT);
+    const document = getCrdtDoc<{ tracks: unknown }>(DOC_PREFIX_ROOT);
     if (!document) {
         throw new Error('expected the root document to be installed');
     }
-    const tracks = sanitizeTrackSnapshot(
-        (document as { tracks?: Parameters<typeof sanitizeTrackSnapshot>[0] }).tracks
-    ).tracks;
+    const tracks = sanitizeTrackSnapshot(document.tracks).tracks;
     return tracks.flatMap((track) => (track.id === TRACK_ID ? (track.clips ?? []).map((clip) => clip.id) : []));
 }
 
@@ -269,6 +274,9 @@ describe('recording terminal publishes only under its captured root (issue #5289
 
         mocks.releaseHeldTerminal({ kind: 'failed' });
 
+        // The cleanup the guard gates is an optimistic store write: the document
+        // only moves on the next flush, so the live store is the decisive read.
+        expect(storeClipIds()).toEqual(successorClipsWithProvisional);
         expect(documentClipIds()).toEqual(successorClipsWithProvisional);
         expect(committedEntryCount()).toBe(0);
     });
@@ -287,5 +295,40 @@ describe('recording terminal publishes only under its captured root (issue #5289
 
         expect(mocks.cacheAudioBuffer).toHaveBeenCalled();
         expect(storeClipIds()).toEqual([provisionalId]);
+    });
+
+    it('keeps the successor clip when the commit itself fails after a branch switch', async () => {
+        // The third guarded terminal: the commit-failure cleanup runs after the
+        // commit's awaits, by which time a fork may have replaced the root, so
+        // its discard must not touch the successor's same-id clip (#5289). The
+        // rejection is held until the fork lands, the same captivity trick the
+        // audio terminal uses, so the switch happens inside the commit window.
+        await startAudioRecordingGesture();
+        let rejectCommit: ((error: Error) => void) | undefined;
+        mocks.commitRecording.mockImplementationOnce(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectCommit = reject;
+                })
+        );
+
+        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        await vi.waitFor(() => {
+            expect(mocks.commitRecording).toHaveBeenCalled();
+        });
+        await forkProjectBranch('feature');
+        const successorClipsWithProvisional = documentClipIds();
+        expect(successorClipsWithProvisional).toHaveLength(1);
+
+        rejectCommit?.(new Error('commit refused'));
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalled();
+        });
+
+        // The catch's guarded discard never ran: the successor keeps its clip in
+        // the live store and the durable document, and no entry was recorded.
+        expect(storeClipIds()).toEqual(successorClipsWithProvisional);
+        expect(documentClipIds()).toEqual(successorClipsWithProvisional);
+        expect(committedEntryCount()).toBe(0);
     });
 });
