@@ -1,0 +1,38 @@
+crates/sourdaw-native/src/commands/tuning.rs
+  s_59e31a5c6f3e31::t_9bc63521d94b46 93-96,128-129
+  s_59e31a5c6f3e31::t_a36acf585cc64e 75-92,97-127,130-132
+src/modules/Project/repositories/nativeTuning/parseScl.ts
+  s_59e31a5c6f3e31::t_02eef9077c5361 1,3-11,59-61
+src/modules/Project/useCases/__tests__/importSclFile.browser.spec.ts
+  s_59e31a5c6f3e31::t_563698171f7269 1-67,101-136,138-140,240-242,277-280
+  s_59e31a5c6f3e31::t_8efe5f739c26f1 68-100,141-207,214,217,226-238,243-276
+  s_59e31a5c6f3e31::t_043236188f4b78 137
+  s_59e31a5c6f3e31::t_21b80109cded1b 208-213,215-216,218-225,239
+src/modules/Project/services/__tests__/parseSclContent.spec.ts
+  s_59e31a5c6f3e31::t_a36acf585cc64e 1-34
+src/modules/Project/models/ScalaTuning.ts
+  s_59e31a5c6f3e31::t_02eef9077c5361 1-31
+src/modules/Project/services/parseSclContent.ts
+  s_59e31a5c6f3e31::t_21b80109cded1b 87,120
+  s_59e31a5c6f3e31::t_02eef9077c5361 1-86,88-119,121-150
+src/modules/Project/repositories/nativeTuning/__tests__/parseScl.spec.ts
+  s_59e31a5c6f3e31::t_a36acf585cc64e 3,5,10,16,70-106
+src/modules/Project/services/__tests__/fixtures/scalaParity.json
+  s_59e31a5c6f3e31::t_3b18a7a7ebe6e2 1-951
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f34f086a37c0e522751f9dbddaed8c56739457ed",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
