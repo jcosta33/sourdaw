@@ -1,5 +1,9 @@
 import { createMidiError } from '../../errors/MidiError';
 import { createMidiCC, type MidiCC } from '../../models/MidiNote';
+import {
+    isCarriedBendReturnSupersededByEdit,
+    isRegisteredParameterController,
+} from '../../services/registeredParameterState';
 import { midiStore } from '../../stores/midiStore';
 
 export function addMidiCC(
@@ -24,8 +28,13 @@ export function addMidiCC(
     // A CC point is keyed by (beat, channel, controller). Replace any existing
     // point at the same key rather than appending a duplicate, so repeated
     // calls update the value in place instead of stacking overlapping events.
+    // A registered-parameter row set by hand also replaces the returns a split or
+    // glue wrote just after the same head, which would re-send the state at the cut
+    // over it for every later bend.
     const deduped = existing.filter(
-        (event) => !(event.beat === beat && event.channel === channel && event.controller === controller)
+        (event) =>
+            !(event.beat === beat && event.channel === channel && event.controller === controller) &&
+            !(isRegisteredParameterController(controller) && isCarriedBendReturnSupersededByEdit(event, cc))
     );
 
     midiStore.set({

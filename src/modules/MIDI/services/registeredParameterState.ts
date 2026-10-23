@@ -284,3 +284,29 @@ export function carriedBendReturnBeat(head: EditedClipHead): number {
         head.beat + SEQUENCER_TICK_BEATS
     );
 }
+
+/** The id key of the rows that return a channel to the state at the cut, which the cut itself derives (`carriedBendReturnBeat`). */
+const CARRIED_BEND_RETURN_ID_KEY = 'rpn-after-carried';
+const CARRIED_BEND_RETURN_ID = new RegExp(`:${CARRIED_BEND_RETURN_ID_KEY}-\\d+$`);
+
+/** The id key of the `index`th row that returns a channel to the state at the cut. */
+export function carriedBendReturnIdKey(index: number): string {
+    return `${CARRIED_BEND_RETURN_ID_KEY}-${index}`;
+}
+
+/**
+ * Whether `row` is a return a split or a glue wrote for a carried bend, and `edit`, a registered-parameter row
+ * set by hand, lands on the head it returns from: on the head itself or up to one return tick after it. The
+ * return re-sends the state at the cut, so it would override what the edit set for every later bend; the edit
+ * governs them instead, and the return, which the hand edit has made obsolete, goes with it.
+ */
+export function isCarriedBendReturnSupersededByEdit(
+    row: { id: string; channel: number; beat: number },
+    edit: { channel: number; beat: number }
+): boolean {
+    if (row.channel !== edit.channel || !CARRIED_BEND_RETURN_ID.test(row.id)) {
+        return false;
+    }
+    const afterEdit = row.beat - edit.beat;
+    return afterEdit >= -SAME_BEAT_TOLERANCE && afterEdit <= SEQUENCER_TICK_BEATS + SAME_BEAT_TOLERANCE;
+}

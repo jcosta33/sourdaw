@@ -12,9 +12,14 @@ vi.mock('../../../stores/midiStore', () => ({
         get value(): MidiStoreStateInput | null {
             return mocks.state.value;
         },
+        set: vi.fn((next: MidiStoreStateInput | null) => {
+            mocks.state.value = next;
+        }),
     },
 }));
 
+const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipGlueState } = await import('../prepareMidiClipGlueState');
 const { projectChannelBend } = await import('../projectChannelBend');
 
@@ -600,6 +605,99 @@ describe('prepareMidiClipGlueState', () => {
                     ]);
                 }
             );
+
+            it.each([
+                { name: 'two ticks after the window start', addedBeat: 2 * SEQUENCER_TICK_BEATS },
+                { name: 'half a beat after the window start', addedBeat: 0.5 },
+                { name: 'just under a beat after the window start', addedBeat: 1 - SEQUENCER_TICK_BEATS },
+            ])('reads the state at the window start for a bend drawn $name', ({ addedBeat }) => {
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+
+                const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+
+                expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: addedBeat, channel: 0 })).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: addedBeat, rangeSemitones: 2 },
+                ]);
+            });
+
+            describe('a range set by hand on the window start', () => {
+                /** The glued clip, as the store holds it before the hand edit. */
+                function storeGluedClip() {
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { 'source-a': recordedUnderTwelve },
+                        pitchBendByClipId: { 'source-a': [carried] },
+                    };
+                    const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+                    const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                    const controlChanges = Array.from(target?.data.controlChanges.value ?? []);
+                    const pitchBends = Array.from(target?.data.pitchBends.value ?? []);
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { target: controlChanges },
+                        pitchBendByClipId: { target: pitchBends },
+                    };
+                }
+
+                function storedRows() {
+                    return mocks.state.value?.ccByClipId.target ?? [];
+                }
+
+                it('governs a bend drawn after it, in place of the state at the window start', () => {
+                    storeGluedClip();
+
+                    addMidiCC('target', 6, 7, 0, 0);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
+                    expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
+                });
+
+                it('leaves the state at the window start for a bend drawn after a hand edit on another channel', () => {
+                    storeGluedClip();
+
+                    addMidiCC('target', 6, 7, 0, 1);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                });
+
+                it('leaves the state at the window start for a hand edit that sets no registered parameter', () => {
+                    storeGluedClip();
+
+                    addMidiCC('target', 7, 100, 0, 0);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                });
+            });
+
+            it('places the return of a window ending a rounding step past the next source’s head ahead of that head', () => {
+                const windowLength = 1 / 2000;
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve, 'source-b': rangeAt('b', 0, 5) },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+                const overlapping = [
+                    {
+                        clipId: 'source-a',
+                        beatOffset: -1.35,
+                        visibleStartBeat: 1.35,
+                        visibleEndBeat: 1.35 + windowLength,
+                    },
+                    { clipId: 'source-b', beatOffset: windowLength - 1e-12, visibleStartBeat: 0, visibleEndBeat: 4 },
+                ];
+
+                const plan = prepareMidiClipGlueState({ sources: overlapping, targetClipId: 'target' });
+
+                expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: 1, channel: 0 })).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: 1, rangeSemitones: 5 },
+                ]);
+            });
 
             it('returns to the state at the window start inside a window shorter than the return offset', () => {
                 const windowLength = 1 / 2000;

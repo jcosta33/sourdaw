@@ -313,6 +313,34 @@ describe('CCLane', () => {
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual(preClick);
         });
 
+        it('restores a row the add displaced on another key, such as a return a split wrote, on undo', () => {
+            const returnRow = {
+                id: 'cc-split:right:rpn-after-carried-0',
+                controller: 6,
+                value: 2,
+                beat: 0.001,
+                channel: 0,
+            };
+            const unrelated = { id: 'cc-peer', controller: 11, value: 50, beat: 2, channel: 0 };
+            laneMocks.midiState.ccByClipId['clip-1'] = [returnRow, unrelated];
+            // The real use case drops a split's return row beside the clicked key; the lane's undo must put it back.
+            vi.mocked(addMidiCC).mockImplementationOnce((clipId, controller, value, beat, channel = 0): MidiCC => {
+                const cc: MidiCC = { id: 'clicked', controller, value, beat, channel };
+                laneMocks.midiState.ccByClipId[clipId] = [unrelated, cc];
+                return cc;
+            });
+            render(<CCLane {...defaultProps} controller={6} />);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: 40 });
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            expect(undoFn).toBeDefined();
+
+            undoFn!();
+
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
+        });
+
         it('leaves a row deleted between the gesture and the undo deleted when undoing an add', () => {
             // The seeded row sits on another key AND another controller, so the
             // gesture never displaced it. A collaborator's merged delete removes

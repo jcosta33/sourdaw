@@ -19,6 +19,8 @@ vi.mock('../../../stores/midiStore', () => ({
     },
 }));
 
+const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipSplit } = await import('../prepareMidiClipSplit');
 const { projectChannelBend } = await import('../projectChannelBend');
 const { restoreMidiClipSplitState } = await import('../restoreMidiClipSplitState');
@@ -280,6 +282,76 @@ describe('prepareMidiClipSplit bend range', () => {
                 ]);
             }
         );
+
+        it.each([
+            { name: 'two ticks after the origin', addedBeat: 2 * SEQUENCER_TICK_BEATS },
+            { name: 'half a beat after the origin', addedBeat: 0.5 },
+            { name: 'just under a beat after the origin', addedBeat: 1 - SEQUENCER_TICK_BEATS },
+        ])('reads the state at the cut for a bend drawn $name', ({ addedBeat }) => {
+            const plan = splitAtTwo(recordedUnderTwelve, [carried]);
+            const added: Bend = { id: 'added', value: 4096, beat: addedBeat, channel: 0 };
+
+            expect(
+                rangesPlayed({ startBeat: 2, endBeat: 4 }, plan.nextRight.controlChanges.value, [
+                    ...plan.nextRight.pitchBends.value,
+                    added,
+                ])
+            ).toEqual([
+                { beat: 2, rangeSemitones: 12 },
+                { beat: 2 + addedBeat, rangeSemitones: 2 },
+            ]);
+        });
+
+        describe('a range set by hand on the right half’s origin', () => {
+            /** The right half of the cut, as the store holds it before the hand edit. */
+            function storeRightHalf() {
+                const plan = splitAtTwo(recordedUnderTwelve, [carried]);
+                mocks.state.value = {
+                    probabilitySeed: 7,
+                    notesByClipId: {},
+                    ccByClipId: { right: [...plan.nextRight.controlChanges.value] },
+                    pitchBendByClipId: { right: [...plan.nextRight.pitchBends.value] },
+                };
+            }
+
+            function storedRows() {
+                return mocks.state.value?.ccByClipId.right ?? [];
+            }
+
+            it('governs a bend drawn after it, in place of the state at the cut', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 6, 7, 0, 0);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
+                expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
+            });
+
+            it('leaves the state at the cut for a bend drawn after a hand edit on another channel', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 6, 7, 0, 1);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+            });
+
+            it('leaves the state at the cut for a bend drawn after a hand edit that sets no registered parameter', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 7, 100, 0, 0);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+            });
+
+            it('leaves the state at the cut for a bend drawn after a hand edit a beat past the origin', () => {
+                storeRightHalf();
+
+                addMidiCC('right', 6, 7, 1, 0);
+
+                expect(createStoredBendRangeReader(storedRows())(0, 0.5)).toBe(2);
+                expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
+            });
+        });
 
         it('returns to the state at the cut ahead of a Data Entry of its own on the beat the return takes', () => {
             const controlChanges = [
