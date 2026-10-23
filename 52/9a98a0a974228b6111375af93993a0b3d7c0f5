@@ -1,0 +1,25 @@
+src/modules/Crust/useCases/setCrustPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_84ecce126e0440 2
+src/utils/UI/effectDisclosureTier.ts
+  s_59e31a5c6f3e31::t_8b69003e160407 25
+src/modules/Crust/useCases/__tests__/setCrustPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_84ecce126e0440 1,6,46,54-57,97-105,111
+  s_59e31a5c6f3e31::t_8b69003e160407 110
+  s_59e31a5c6f3e31::t_ac9e8dd107c61b 112-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "529a98a0a974228b6111375af93993a0b3d7c0f5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
