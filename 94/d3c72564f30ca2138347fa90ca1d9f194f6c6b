@@ -1,0 +1,45 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_11af71a69839f0 380-398,400-408,410-416
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_1c08b47ac3792f::t_048077619e0eab 460-622
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/findReferencedIntentPhrase.spec.ts
+  s_1c08b47ac3792f::t_b582022b41a30b 1-27
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findReferencedIntentPhrase.ts
+  s_1c08b47ac3792f::t_5df384fe25c336 1-59
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getClauseIntentVocabulary.ts
+  s_1c08b47ac3792f::t_128c2dd0f3fd04 16-17,25-26,38,40-45
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isExplicitCommandClause.ts
+  s_1c08b47ac3792f::t_b5d5018176646f 4,34-41,66-71
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveClauseActionIntent.ts
+  s_1c08b47ac3792f::t_8227739d5be854 4,55-60,65
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_59e31a5c6f3e31::t_166780e5e5b21c 164-172,1485
+src/modules/Command/useCases/getExecutableAppActionGroundingCatalog.ts
+  s_1c08b47ac3792f::t_3fb029fd8331ef 11,43
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_1c08b47ac3792f::t_4edb2b4a75601f 43-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94d3c72564f30ca2138347fa90ca1d9f194f6c6b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
