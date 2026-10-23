@@ -552,14 +552,19 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
 
     const containerUnit = readTimeUnit(lanesRoot, context.defaultTimeUnit);
 
-    function walkClips(node: XmlQuery, unit: 'beats' | 'seconds'): void {
+    function walkClips(node: XmlQuery, unit: 'beats' | 'seconds', insideClip = false): void {
         for (const laneOrClips of node.children()) {
             const laneUnit = readTimeUnit(laneOrClips, unit);
-            if (laneOrClips.element.tagName === 'Video') {
-                const trackRef = laneOrClips.attr('track') ?? laneOrClips.attr('channel');
-                const owner = (trackRef && context.trackNames.get(trackRef)) ?? trackRef ?? 'Arrangement';
-                const name = laneOrClips.attr('name') ?? laneOrClips.child(FILE)?.attr('path') ?? 'Video';
-                warn(context, laneOrClips, 'unsupported-clip', name, owner);
+            if (laneOrClips.element.tagName === AUDIO || laneOrClips.element.tagName === 'Video') {
+                if (!insideClip) {
+                    const trackRef = laneOrClips.attr('track') ?? laneOrClips.attr('channel');
+                    const owner = (trackRef && context.trackNames.get(trackRef)) ?? trackRef ?? 'Arrangement';
+                    const name =
+                        laneOrClips.attr('name') ??
+                        laneOrClips.child(FILE)?.attr('path') ??
+                        laneOrClips.element.tagName;
+                    warn(context, laneOrClips, 'unsupported-clip', name, owner);
+                }
                 continue;
             }
             if (laneOrClips.element.tagName === CLIPS) {
@@ -583,9 +588,8 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
                         warn(context, clipNode, 'unsupported-clip', clipNode.attr('name') ?? 'Clip', owner);
                     }
                 }
-                continue;
             }
-            walkClips(laneOrClips, laneUnit);
+            walkClips(laneOrClips, laneUnit, insideClip || laneOrClips.element.tagName === CLIP);
         }
     }
 

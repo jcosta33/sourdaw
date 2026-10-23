@@ -242,11 +242,13 @@ describe('parseProjectXml — clip parsing', () => {
     });
 
     it('reports one schema-valid direct Audio timeline that cannot become a clip', () => {
-        const xml = project(
+        const xml =
+            '<?xml version="1.0"?><Project version="1.0">' +
+            '<Application name="Fixture" version="1"/>' +
+            '<Transport><Tempo value="120" unit="bpm"/><TimeSignature numerator="4" denominator="4"/></Transport>' +
             '<Structure><Track id="t0" name="Drums" contentType="audio"/></Structure>' +
-                '<Arrangement><Lanes><Audio id="a0" track="t0" duration="4" channels="2" sampleRate="48000">' +
-                '<File path="media.wav"/></Audio></Lanes></Arrangement>'
-        );
+            '<Arrangement><Lanes><Audio id="a0" track="t0" duration="4" channels="2" sampleRate="48000">' +
+            '<File path="media.wav"/></Audio></Lanes></Arrangement></Project>';
         const parsed = parseProjectXml(xml);
         const mapped = mapToProjectData({
             parsed: { ...parsed, meta: { title: 'Audio', artist: '', comment: '' }, audioAssets: new Map() },
@@ -299,6 +301,25 @@ describe('parseProjectXml — clip parsing', () => {
             { pitch: 67, startBeat: 0, duration: 1, velocity: 102 },
         ]);
         expect(parsed.warnings).toEqual([]);
+    });
+
+    it('reports direct Video once and does not report its Clip wrapper twice', () => {
+        const inner =
+            '<Structure><Track id="t0" name="Picture" contentType="audio"/></Structure>' +
+            '<Arrangement><Lanes>' +
+            '<Video id="v0" name="Opening" track="t0" duration="2" channels="2" sampleRate="48000">' +
+            '<File path="opening.mov"/></Video>' +
+            '<Clips track="t0"><Clip name="Wrapped video" time="2" duration="2">' +
+            '<Video duration="2" channels="2" sampleRate="48000"><File path="wrapped.mov"/></Video>' +
+            '</Clip></Clips></Lanes></Arrangement>';
+        const parsed = parseProjectXml(project(inner));
+
+        expect(parsed.tracks[0]?.clips).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', name: 'Opening', sourceType: 'Video', context: 'Picture' },
+            { kind: 'unsupported-clip', name: 'Wrapped video', sourceType: 'Clip', context: 'Picture' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
     });
 
     it('resolves an audio asset from a Warps>Audio wrapper and a file= attr', () => {
