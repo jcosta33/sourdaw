@@ -816,12 +816,31 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                     },
                 };
             }
-            const descendant = `const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(terminated)}, 'received')); fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => { fs.writeFileSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, String(fs.existsSync(tmp))); fs.renameSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, ${JSON.stringify(lastLiveSample)}); }, 20);`;
+            const descendantPath = join(root, 'descendant.cjs');
+            const parentPath = join(root, 'parent.cjs');
+            writeFileSync(
+                descendantPath,
+                `const fs = require('node:fs');
+const [terminated, marker, lastLiveSample] = process.argv.slice(2);
+const tmp = require('node:os').tmpdir();
+process.on('SIGTERM', () => fs.writeFileSync(terminated, 'received'));
+fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, tmp }));
+setInterval(() => {
+    fs.writeFileSync(lastLiveSample + '.candidate', String(fs.existsSync(tmp)));
+    fs.renameSync(lastLiveSample + '.candidate', lastLiveSample);
+}, 20);
+`
+            );
+            writeFileSync(
+                parentPath,
+                `process.on('SIGTERM', () => {});
+const [descendantPath, ...paths] = process.argv.slice(2);
+require('node:child_process').spawn(process.execPath, [descendantPath, ...paths], { detached: true, stdio: 'ignore' });
+setInterval(() => {}, 1000);
+`
+            );
             const result = await guarded(root, {
-                args: [
-                    '-e',
-                    `process.on('SIGTERM', () => {}); require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000);`,
-                ],
+                args: [parentPath, descendantPath, terminated, marker, lastLiveSample],
                 timeoutMs: 1000,
                 sampleIntervalMs: 20,
                 hostSampleIntervalMs: 20,
