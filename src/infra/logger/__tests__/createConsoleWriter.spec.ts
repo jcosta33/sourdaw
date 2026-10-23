@@ -40,6 +40,89 @@ describe('createConsoleWriter', () => {
             expect(console.error).toHaveBeenCalledWith('[DEV][ERROR]', error);
         });
 
+        it('adds a plain diagnostic for nested committed-action failures while preserving the original Error', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const runtime = Object.assign(new Error('Device runtime delta rejected: compiled chain mismatch'), {
+                privateContext: 'private-context-marker',
+            });
+            const reconciliation = new Error('Runtime reconciliation also failed');
+            const aggregate = new AggregateError([runtime, reconciliation], 'Post-commit effects failed');
+            const outer = new Error('Action committed but post-commit processing failed: addDevice', {
+                cause: aggregate,
+            });
+
+            writer.error(outer);
+
+            const call = vi.mocked(console.error).mock.calls[0];
+            expect(call).toHaveLength(3);
+            expect(call?.[0]).toBe('[DEV][ERROR]');
+            expect(call?.[1]).toBe(outer);
+            expect(typeof call?.[2]).toBe('string');
+            expect(call?.[2]).toContain('AggregateError: Post-commit effects failed');
+            expect(call?.[2]).toContain('Device runtime delta rejected: compiled chain mismatch');
+            expect(call?.[2]).toContain('Runtime reconciliation also failed');
+            expect(call?.[2]).not.toContain('private-context-marker');
+        });
+
+        it('bounds cycles, aggregate width, depth, and long messages', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const cyclic = new Error('cyclic cause');
+            Object.defineProperty(cyclic, 'cause', { value: cyclic });
+            const deep = new Error('deepest');
+            let chain = deep;
+            for (let index = 0; index < 6; index += 1) {
+                chain = new Error(`depth ${index}`, { cause: chain });
+            }
+            const children = [cyclic, chain, ...Array.from({ length: 5 }, () => new Error('x'.repeat(500)))];
+            const outer = new Error('outer', { cause: new AggregateError(children, 'many failures') });
+
+            expect(() => writer.error(outer)).not.toThrow();
+
+            const diagnostic = vi.mocked(console.error).mock.calls[0]?.[2];
+            expect(typeof diagnostic).toBe('string');
+            expect(diagnostic).toContain('[cycle]');
+            expect(diagnostic).toContain('[depth limit]');
+            expect(diagnostic).toContain('more errors');
+            if (typeof diagnostic !== 'string') {
+                throw new TypeError('Missing nested-error diagnostic');
+            }
+            expect(diagnostic.length).toBeLessThanOrEqual(2048);
+        });
+
+        it('does not throw or expose unrelated data when a cause getter fails', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new Error('outer');
+            Object.defineProperty(error, 'cause', {
+                get() {
+                    throw new Error('unrelated getter detail');
+                },
+            });
+
+            expect(() => writer.error(error)).not.toThrow();
+
+            const call = vi.mocked(console.error).mock.calls[0];
+            expect(call?.[0]).toBe('[DEV][ERROR]');
+            expect(call?.[1]).toBe(error);
+            expect(call?.[2]).toContain('[unreadable cause]');
+            expect(call?.[2]).not.toContain('unrelated getter detail');
+        });
+
+        it('describes a shared child twice without calling it a cycle', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const shared = new Error('shared failure');
+            const error = new AggregateError([shared, shared], 'two effects');
+
+            writer.error(error);
+
+            const diagnostic = vi.mocked(console.error).mock.calls[0]?.[2];
+            expect(typeof diagnostic).toBe('string');
+            if (typeof diagnostic !== 'string') {
+                throw new TypeError('Missing nested-error diagnostic');
+            }
+            expect(diagnostic.match(/Error: shared failure/g)).toHaveLength(2);
+            expect(diagnostic).not.toContain('[cycle]');
+        });
+
         it('should handle multiple arguments', () => {
             const writer = createConsoleWriter({ mode: 'development' });
             writer.info('test', 123, { key: 'value' });
@@ -71,6 +154,16 @@ describe('createConsoleWriter', () => {
             const error = new Error('test');
             writer.error(error);
             expect(console.error).toHaveBeenCalledWith('[Sourdaw][ERROR]', error);
+        });
+
+        it('keeps nested errors on the original two-argument production call', () => {
+            const writer = createConsoleWriter({ mode: 'production' });
+            const error = new Error('outer', { cause: new Error('inner') });
+
+            writer.error(error);
+
+            expect(console.error).toHaveBeenCalledWith('[Sourdaw][ERROR]', error);
+            expect(vi.mocked(console.error).mock.calls[0]).toHaveLength(2);
         });
     });
 });
