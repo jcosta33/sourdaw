@@ -1781,9 +1781,10 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 describe('device write boundary closure', () => {
     let productionFiles: ProductionSource[];
 
+    // A full production-source census can exceed Vitest's default setup timeout on a cold checkout.
     beforeAll(() => {
         productionFiles = readProductionSources(process.cwd());
-    });
+    }, 30_000);
 
     it('classifies every production sink by family, path, and exact count', () => {
         expect(() => assertProductionClosure(productionFiles)).not.toThrow();
