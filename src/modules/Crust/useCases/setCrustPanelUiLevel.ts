@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { canonicalJson } from '#/utils/canonicalDigest';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { effectDisclosureTierFromLevel } from '#/utils/UI/effectDisclosureTier';
 
@@ -9,10 +10,11 @@ import { effectDisclosureTierFromLevel } from '#/utils/UI/effectDisclosureTier';
  * a write, so this function never changes the session patch optimistically.
  */
 export async function setCrustPanelUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): Promise<void> {
-    const device = trackStore.value?.tracks
-        .flatMap((track) => track.devices)
-        .find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
-    if (!device) {
+    const owner = trackStore.value?.tracks.find((track) =>
+        track.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'crust')
+    );
+    const device = owner?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
+    if (!owner || !device) {
         return;
     }
     const prior = device.deviceState;
@@ -20,6 +22,7 @@ export async function setCrustPanelUiLevel(deviceId: string, level: 1 | 2 | 3 | 
         notifyUser('This Crust control layout was saved by a newer version and cannot be changed here.', 'warning');
         return;
     }
+    const capturedDevice = canonicalJson(device);
     await executeUserAppAction(
         {
             type: 'setDeviceState',
@@ -28,6 +31,18 @@ export async function setCrustPanelUiLevel(deviceId: string, level: 1 | 2 | 3 | 
                 state: { version: 1, data: { ...prior?.data, disclosureTier: effectDisclosureTierFromLevel(level) } },
             },
         },
-        { skipMacroRecording: true }
+        {
+            skipMacroRecording: true,
+            shouldExecute: () => {
+                const currentDevice = trackStore.value?.tracks
+                    .find((track) => track.id === owner.id)
+                    ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'crust');
+                if (currentDevice === device && canonicalJson(currentDevice) === capturedDevice) {
+                    return true;
+                }
+                notifyUser('This Crust device changed before the control layout could be saved. Try again.', 'warning');
+                return false;
+            },
+        }
     );
 }
