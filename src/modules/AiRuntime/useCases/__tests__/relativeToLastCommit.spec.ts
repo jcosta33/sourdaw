@@ -79,6 +79,27 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackSoloGate: vi.fn(),
 }));
 
+type GroupRevert = Awaited<ReturnType<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>>;
+
+/**
+ * What the next group revert ends in, in place of the replay: a batch committing with a warning or
+ * one rejected, which Command's own spec pins from the batch result, as the chat must then report it.
+ */
+const revertMocks = vi.hoisted(() => ({ outcome: null as (() => Promise<GroupRevert>) | null }));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...actual,
+        revertActionGroupAtomically: (groupId: string) => {
+            if (revertMocks.outcome !== null) {
+                return revertMocks.outcome();
+            }
+            return actual.revertActionGroupAtomically(groupId);
+        },
+    };
+});
+
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({ getBackendChain: () => ['webllm'] }));
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({ resolveBackend: () => 'webllm' }));
@@ -329,6 +350,7 @@ describe('relative to the last commit', () => {
     });
 
     afterEach(() => {
+        revertMocks.outcome = null;
         vi.restoreAllMocks();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
@@ -594,6 +616,27 @@ describe('relative to the last commit', () => {
             expect(getTrack('track-bass').muted).toBe(true);
             expect(getTrack('track-bass').gain).toBe(1);
         });
+
+        it.each([
+            ['solo Bass too', 'track-solo', 'Solo'],
+            ['Solo Bass as well', 'track-solo', 'Solo'],
+            ['mute Bass too', 'track-mute', 'Mute'],
+        ])(
+            'leaves "%s" to ordinary planning though its leading action word is also a track name',
+            async (prompt, trackId, name) => {
+                addTrack(createTrack(trackId, name), 'audio');
+                scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+                await commitVocalsDown3Db();
+                const calls = providerCallCount();
+
+                await sendChatMessage(prompt);
+
+                expect(providerCallCount()).toBeGreaterThan(calls);
+                expect(decibelsOf(trackId)).toBe(0);
+                expect(decibelsOf('track-bass')).toBe(0);
+                expect(decibelsOf('track-vocals')).toBe(-3);
+            }
+        );
 
         /** Leaves the thread's last commit in the named state before an ordinary `too` request. */
         async function leaveThreadIn(state: string): Promise<void> {
@@ -957,8 +1000,23 @@ describe('relative to the last commit', () => {
             ['  undo that', undoRequest],
             ['take it\tback', undoRequest],
             ['undo that?', { kind: 'none' }],
+            ['undo your last change', undoRequest],
+            ['slightly more', vague('more')],
+            ['another 2', { kind: 'none' }],
+            ['do the same to the Guitars please', { kind: 'retarget', form: 'same', targetText: 'the Guitars' }],
         ])('"%s"', (prompt, request) => {
             expect(readLastCommitRequest(prompt)).toEqual(request);
+        });
+
+        it('plans "another 2", which states no unit, as any request', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await sendChatMessage('another 2');
+
+            expect(providerCallCount()).toBeGreaterThan(calls);
+            expect(decibelsOf('track-vocals')).toBe(-3);
         });
 
         it('leaves a question about the last change to ordinary planning, never undoing it', async () => {
@@ -987,6 +1045,36 @@ describe('relative to the last commit', () => {
             ).toMatchObject({
                 status: 'denied',
                 reason: expect.stringContaining('no longer holds the last committed change as one group') as unknown,
+            });
+        });
+
+        it('reads the revert group from the receipt of the commit, not the first receipt its run holds', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+            await commitVocalsDown3Db();
+            const firstRunId = readChatThreadContext()?.lastCommit?.runId;
+            await sendChatMessage('Mute Bass');
+            expect(getTrack('track-bass').muted).toBe(true);
+            const thread = readChatThreadContext();
+            const commit = thread?.lastCommit;
+            const committedGroupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+            expect(commit?.runId).not.toBe(firstRunId);
+            // A run that commits several batches, as a schedule does, holds one receipt per batch and
+            // may hold an earlier batch's receipt first: the scripted chat route commits one batch per
+            // run, so the second run is given the first run's receipt ahead of its own.
+            const state = agentRunStore.value!;
+            const earlierReceipts = state.runs.find((run) => run.runId === firstRunId)?.receipts ?? [];
+            expect(earlierReceipts).toHaveLength(1);
+            agentRunStore.set({
+                ...state,
+                runs: state.runs.map((run) =>
+                    run.runId === commit?.runId ? { ...run, receipts: [...earlierReceipts, ...run.receipts] } : run
+                ),
+            });
+
+            expect(planLastCommitContinuation({ prompt: 'undo that', context: getProjectContext(), thread })).toEqual({
+                status: 'revert',
+                runId: commit?.runId,
+                revertGroupId: committedGroupId,
             });
         });
 
@@ -1114,6 +1202,48 @@ describe('relative to the last commit', () => {
             expect(undoHistoryStore.value?.future ?? []).toHaveLength(1);
         });
 
+        it('records the refusal of an undo the user undid while it was planned as a conflict', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const settle = agentRunWorkLease.settle.bind(agentRunWorkLease);
+            vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                void undo();
+                return settle(input);
+            });
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.errors.map((error) => error.category)).toEqual(['conflict']);
+        });
+
+        it('lists what it undid and the warning of a replay that committed with one', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const label = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+            revertMocks.outcome = () => Promise.resolve({ status: 'reverted', warning: 'Effects are still settling' });
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.phase).toBe('completed');
+            expect(lastAssistantMessage()?.content).toBe(
+                `Undid the last committed change:\n\n- ${label}\n\nWarning: Effects are still settling`
+            );
+        });
+
+        it('fails, never reporting an undo, when the group revert throws', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            revertMocks.outcome = () => Promise.reject(new Error('Grouped undo failed: The inverse write failed'));
+
+            await sendChatMessage('undo that');
+
+            expect(lastAssistantMessage()?.content).toBe('Failed to execute prompt command.');
+            expect(lastAssistantMessage()?.error).toContain('Grouped undo failed: The inverse write failed');
+            expect(newestRun('undo that')?.phase).toBe('failed');
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+
         it('completes the run and lists what it undid', async () => {
             scriptProvider([[VOCALS_DOWN_3_DB]]);
             await commitVocalsDown3Db();
@@ -1189,6 +1319,8 @@ describe('relative to the last commit', () => {
             expect(undoHistoryStore.value?.future ?? []).toEqual([]);
         });
 
+        // A list that is an action word alone gives that action nothing to act on, so it reads only as
+        // the track of that name: "mute too" re-targets the Mute track, while "mute Bass too" is a mute.
         it('re-targets a too list a parameterized fast path would read as a mute of another track', async () => {
             addTrack(createTrack('track-mute', 'Mute'), 'audio');
             addTrack(createTrack('track-too', 'Too'), 'audio');

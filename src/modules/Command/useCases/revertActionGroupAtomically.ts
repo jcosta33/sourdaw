@@ -1,3 +1,4 @@
+import { type AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
@@ -9,6 +10,11 @@ import { runUndoRedoExclusive } from './undoRedo';
 type AtomicActionGroupRevert =
     | { status: 'reverted'; warning: string | null }
     | { status: 'refused'; reason: 'not-applied' | 'not-replayable' | 'conflict'; detail: string };
+
+/** The batch's own warning, which the committed error carries as its cause beneath a generic message. */
+function readCommittedWarning(error: AppActionCommittedError): string {
+    return error.cause instanceof Error ? error.cause.message : error.message;
+}
 
 async function revertActionGroupAtomicallyImpl(groupId: string): Promise<AtomicActionGroupRevert> {
     const state = undoStore.value;
@@ -43,7 +49,7 @@ async function revertActionGroupAtomicallyImpl(groupId: string): Promise<AtomicA
         };
     }
     commitRevertedEntries(entries);
-    return { status: 'reverted', warning: outcome.status === 'committed' ? outcome.error.message : null };
+    return { status: 'reverted', warning: outcome.status === 'committed' ? readCommittedWarning(outcome.error) : null };
 }
 
 /**

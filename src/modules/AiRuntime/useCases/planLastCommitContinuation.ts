@@ -1,6 +1,7 @@
 import { undoHistoryStore } from '#/modules/Command/stores';
 import {
     getExecutableAppActionEffect,
+    getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
     getExecutableAppActionProviderSchema,
     isExecutableAppActionType,
@@ -18,6 +19,8 @@ import { type LastCommitRequest, readLastCommitRequest } from '../transformers/r
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
+import { normalizePromptText } from './agentReference/groundingStrategies/normalizePromptText';
+import { resolveClauseActionIntent } from './agentReference/groundingStrategies/resolveClauseActionIntent';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 
@@ -286,6 +289,24 @@ function readNamedTracks(text: string, context: ProjectContext): NamedTracks {
     return { status: 'named', ids: [...new Set(ranges.map((range) => range.id))] };
 }
 
+/**
+ * Whether a `too` list opens on a word the action catalog reads as an action, with something after
+ * it to act on ("solo Bass too"): a request of its own, even where a track carries that word as its
+ * name. A list that is the action word alone gives the action nothing to act on, so it reads only as
+ * the track of that name ("mute too" beside a track called Mute).
+ */
+function opensOnAction(targetText: string): boolean {
+    const intent = resolveClauseActionIntent(targetText, getExecutableAppActionGroundingCatalog());
+    return (
+        intent !== null && intent.index === 0 && normalizePromptText(targetText) !== normalizePromptText(intent.phrase)
+    );
+}
+
+/** Whether a `too` list is a request of its own rather than a list of this project's tracks. */
+function isOwnTooRequest(targetText: string, context: ProjectContext): boolean {
+    return opensOnAction(targetText) || readNamedTracks(targetText, context).status === 'unread';
+}
+
 /** The one track target a committed command may be moved to, or `null` when it acts on anything else. */
 function readTrackTargetRule(command: CommittedCommand) {
     const targetRules = getExecutableAppActionGroundingRules(command.type)?.targetRules ?? [];
@@ -362,12 +383,8 @@ export function planLastCommitContinuation(input: {
         return NONE;
     }
     // "mute Bass too" is a request of its own, never a re-target, whatever the thread holds: only a
-    // `too` list of this project's tracks says it repeats the last change.
-    if (
-        request.kind === 'retarget' &&
-        request.form === 'too' &&
-        readNamedTracks(request.targetText, input.context).status === 'unread'
-    ) {
+    // `too` list of this project's tracks, led by no action, says it repeats the last change.
+    if (request.kind === 'retarget' && request.form === 'too' && isOwnTooRequest(request.targetText, input.context)) {
         return NONE;
     }
     const commit = input.thread?.lastCommit ?? null;

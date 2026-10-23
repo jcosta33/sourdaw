@@ -362,4 +362,88 @@ describe('revertActionGroupAtomically', () => {
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         }
     );
+
+    function holdGroupOf(...entries: UndoEntry[]): void {
+        mocks.undoStoreValue.value = { past: entries, future: [] };
+    }
+
+    it('refuses a cancelled batch as a conflict, moving nothing', async () => {
+        holdGroupOf(groupEntry('older', 'track-a'), groupEntry('newer', 'track-b'));
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'cancelled',
+            reason: 'Batch execution authority was revoked',
+            actions: [],
+        });
+
+        await expect(revertActionGroupAtomically('g1')).resolves.toEqual({
+            status: 'refused',
+            reason: 'conflict',
+            detail: 'Batch execution authority was revoked',
+        });
+
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
+    it.each(['rejected', 'failed'] as const)(
+        'throws a %s batch as a failed write, never a refusal, moving nothing',
+        async (status) => {
+            holdGroupOf(groupEntry('older', 'track-a'), groupEntry('newer', 'track-b'));
+            mocks.executeAppActionBatch.mockResolvedValue({ status, reason: 'The inverse write failed', actions: [] });
+
+            await expect(revertActionGroupAtomically('g1')).rejects.toThrow(
+                'Grouped undo failed: The inverse write failed'
+            );
+
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([
+        ['an ambiguous batch', { status: 'ambiguous', reason: 'The write may have landed', actions: [] }],
+        [
+            'a batch committed with a warning',
+            { status: 'committed-with-warning', warning: 'The write may have landed', actions: [] },
+        ],
+    ] satisfies Array<[string, Awaited<ReturnType<typeof mocks.executeAppActionBatch>>]>)(
+        'reports %s as reverted with its own warning, moving the group to future',
+        async (_label, result) => {
+            const older = groupEntry('older', 'track-a');
+            const newer = groupEntry('newer', 'track-b');
+            holdGroupOf(older, newer);
+            mocks.executeAppActionBatch.mockResolvedValue(result);
+
+            await expect(revertActionGroupAtomically('g1')).resolves.toEqual({
+                status: 'reverted',
+                warning: 'The write may have landed',
+            });
+
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [older, newer] });
+        }
+    );
+
+    it('puts the reverted group ahead of the redo entries already in future', async () => {
+        const reverted = groupEntry('reverted', 'track-a');
+        const redoable = actionEntry('redoable', 'g2');
+        mocks.undoStoreValue.value = { past: [reverted], future: [redoable] };
+
+        await revertActionGroupAtomically('g1');
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [reverted, redoable] });
+    });
+
+    it('replays a group whose members carry different sources under the source of its oldest member', async () => {
+        // Coalescing joins an entry to the group of the one before it whatever that one's source.
+        const older = { ...groupEntry('older', 'track-a'), source: 'manual' } satisfies UndoEntry;
+        const newer = groupEntry('newer', 'track-b');
+        holdGroupOf(older, newer);
+
+        await revertActionGroupAtomically('g1');
+
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledExactlyOnceWith(
+            [newer.inverseAction, older.inverseAction],
+            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
+        );
+    });
 });
