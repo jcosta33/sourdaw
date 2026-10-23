@@ -379,6 +379,25 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                     if (command === 'gh' && args[0] === 'api' && args.includes('--paginate')) {
                         return '[]';
                     }
+                    if (command === 'gh' && args[0] === 'api' && args[1] === 'graphql') {
+                        // The approval-thread gate reads the live review state before the
+                        // post; this head carries no reviews and no open threads.
+                        return JSON.stringify({
+                            data: {
+                                repository: {
+                                    pullRequest: {
+                                        id: 'PR_kwDOfixture',
+                                        headRefOid: head,
+                                        reviews: {
+                                            nodes: [],
+                                            pageInfo: { hasPreviousPage: false, startCursor: null },
+                                        },
+                                        reviewThreads: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                                    },
+                                },
+                            },
+                        });
+                    }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
                     }
@@ -1034,6 +1053,36 @@ describe('review publish', () => {
         expect(acquired).toBe(false);
     });
 
+    it('refuses a reviewer approval over unresolved threads on the production coordinator route', async () => {
+        // The gate lives in the publication preflight every route takes, so the
+        // real command path — coordinate to publishPreparedReview — refuses
+        // before the lock is acquired, nothing is journaled, and nothing posts
+        // (#5436).
+        const fixture = fakePort({ unresolvedThreads: 2 });
+        let acquired = false;
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async () => {
+                acquired = true;
+                throw new Error('lock must not be acquired');
+            },
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => fixture.port,
+            publish: publishPreparedReview,
+        };
+
+        await expect(coordinatePublishReview(42, dependencies)).rejects.toThrow(
+            /has 2 unresolved review thread\(s\); an approval cannot authorize delivery/u
+        );
+        expect(acquired).toBe(false);
+        expect(fixture.posted.review).toBeUndefined();
+        expect(fixture.calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
     it.each([
         ['closes', { state: 'CLOSED', head: 'headsha' }],
         ['moves', { state: 'OPEN', head: 'moved-head' }],
@@ -1120,6 +1169,11 @@ describe('review publish', () => {
                     readBundleDiff: () => '',
                     publicReviews: () => [],
                     publicReviewComments: () => [],
+                    reviewState: () => ({
+                        latestReviewerStateOnHead: null,
+                        latestReviewerReviewDatabaseId: null,
+                        unresolvedThreads: 0,
+                    }),
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
                         if (oid === undefined) {
@@ -2398,24 +2452,6 @@ describe('shellPort postReview state verification', () => {
                         state: 'OPEN',
                         headRefOid: head,
                         labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-                    });
-                }
-                if (command === 'gh' && args[0] === 'api' && args.includes('reviews')) {
-                    // The approval-thread gate reads the live review state; this
-                    // head carries no reviews and no threads.
-                    return JSON.stringify({
-                        data: {
-                            repository: {
-                                pullRequest: {
-                                    reviews: {
-                                        nodes: [],
-                                        pageInfo: { hasPreviousPage: false, startCursor: null },
-                                        headRefOid: head,
-                                    },
-                                    reviewThreads: { nodes: [] },
-                                },
-                            },
-                        },
                     });
                 }
                 throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
