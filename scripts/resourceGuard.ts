@@ -1802,9 +1802,22 @@ export function storageFileState(
     }
 }
 
-function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessEnv): number {
+// An inherited override takes whole MiB, as --disk-reserve-mib does. 1.5 MiB converts to a whole
+// byte count, so the byte check alone would admit it.
+function inheritedDiskReserveBytes(env: NodeJS.ProcessEnv): number {
     const inheritedMib = env[DISK_RESERVE_ENV];
-    const bytes = value ?? (inheritedMib === undefined ? DEFAULT_DISK_RESERVE_BYTES : Number(inheritedMib) * 1024 ** 2);
+    if (inheritedMib === undefined) {
+        return DEFAULT_DISK_RESERVE_BYTES;
+    }
+    const mib = Number(inheritedMib);
+    if (!Number.isSafeInteger(mib) || mib < 1 || !Number.isSafeInteger(mib * 1024 ** 2)) {
+        throw new Error(`disk reserve ${DISK_RESERVE_ENV} must be a positive safe integer MiB count`);
+    }
+    return mib * 1024 ** 2;
+}
+
+function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessEnv): number {
+    const bytes = value ?? inheritedDiskReserveBytes(env);
     if (!Number.isSafeInteger(bytes) || bytes <= 0) {
         throw new Error('disk reserve must be a positive safe integer byte count');
     }
