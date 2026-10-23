@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
+const capability = vi.hoisted(() => ({ hasMidiInput: true }));
+vi.mock('#/utils/platformCapabilities', () => ({
+    getPlatformCapabilities: () => capability,
+}));
+
 import { midiLearnStore, type LearningTarget } from '../../../stores/midiLearnStore';
 import { MIDI_LEARN_TIMEOUT_MS, startMidiLearn } from '../startMidiLearn';
 
@@ -7,6 +14,7 @@ const target: LearningTarget = { targetType: 'trackGain', trackId: 'track1' };
 
 describe('startMidiLearn', () => {
     beforeEach(() => {
+        capability.hasMidiInput = true;
         midiLearnStore.set({ mappingsSchemaVersion: 1, mappings: [], isLearning: false, learningTarget: null });
     });
 
@@ -27,6 +35,25 @@ describe('startMidiLearn', () => {
         startMidiLearn(target);
 
         expect(midiLearnStore.value).toBeNull();
+    });
+
+    it('refuses an unsupported route before replacing an armed target or scheduling another timeout', () => {
+        vi.useFakeTimers();
+        startMidiLearn(target);
+        const before = structuredClone(midiLearnStore.value);
+        const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+        const infoSpy = vi.spyOn(logger, 'info');
+        capability.hasMidiInput = false;
+
+        startMidiLearn({ targetType: 'trackPan', trackId: 'track2' });
+
+        expect(midiLearnStore.value).toEqual(before);
+        expect(timeoutSpy).not.toHaveBeenCalled();
+        expect(infoSpy).not.toHaveBeenCalled();
+        timeoutSpy.mockRestore();
+        infoSpy.mockRestore();
+        vi.advanceTimersByTime(MIDI_LEARN_TIMEOUT_MS);
+        expect(midiLearnStore.value?.isLearning).toBe(false);
     });
 
     it('auto-cancels an armed learn that receives no CC within the timeout (F-10)', () => {

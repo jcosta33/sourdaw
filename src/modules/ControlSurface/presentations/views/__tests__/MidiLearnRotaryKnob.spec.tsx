@@ -1,6 +1,14 @@
 import { fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const capability = vi.hoisted(() => ({
+    hasMidiInput: true,
+    degradations: [] as { feature: 'midi-input'; reason: 'api-absent'; message: string }[],
+}));
+vi.mock('#/utils/platformCapabilities', () => ({
+    getPlatformCapabilities: () => capability,
+}));
+
 import { midiLearnStore, type MidiLearnState } from '../../../stores/midiLearnStore';
 import { removeMapping } from '../../../useCases/midiLearn/removeMapping';
 import { startMidiLearn } from '../../../useCases/midiLearn/startMidiLearn';
@@ -36,6 +44,8 @@ const getRoot = (container: HTMLElement): HTMLElement => {
 
 describe('MidiLearnRotaryKnob', () => {
     beforeEach(() => {
+        capability.hasMidiInput = true;
+        capability.degradations = [];
         midiLearnStore.set({ ...baseMidiState });
         vi.mocked(startMidiLearn).mockClear();
         vi.mocked(stopMidiLearn).mockClear();
@@ -152,6 +162,40 @@ describe('MidiLearnRotaryKnob', () => {
             trackId: 'track-1',
             deviceId: 'device-1',
         });
+    });
+
+    it('keeps knob editing and its title while refusing unsupported learning', () => {
+        capability.hasMidiInput = false;
+        capability.degradations = [
+            { feature: 'midi-input', reason: 'api-absent', message: 'MIDI input is unavailable' },
+        ];
+        const onChange = vi.fn();
+        const { container } = render(
+            <MidiLearnRotaryKnob value={50} onChange={onChange} paramId="cutoff" title="Frequency" />
+        );
+        const root = getRoot(container);
+        expect(root).toHaveAttribute('title', 'Frequency — MIDI input is unavailable');
+
+        fireEvent.contextMenu(root);
+        fireEvent.keyDown(root, { key: 'ArrowUp' });
+
+        expect(startMidiLearn).not.toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledWith(50.5, false);
+    });
+
+    it('does not add an unavailable reason or context-menu handler without a parameter id', () => {
+        capability.hasMidiInput = false;
+        capability.degradations = [
+            { feature: 'midi-input', reason: 'api-absent', message: 'MIDI input is unavailable' },
+        ];
+        const { container } = render(<MidiLearnRotaryKnob value={50} onChange={vi.fn()} title="Frequency" />);
+        const root = getRoot(container);
+        expect(root).toHaveAttribute('title', 'Frequency');
+
+        const event = fireEvent.contextMenu(root);
+
+        expect(event).toBe(true);
+        expect(startMidiLearn).not.toHaveBeenCalled();
     });
 
     it('does not substitute a "global" trackId sentinel when none is supplied (F-11)', () => {

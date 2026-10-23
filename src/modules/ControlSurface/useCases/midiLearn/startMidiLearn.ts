@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 
 import { midiLearnStore, type LearningTarget } from '../../stores/midiLearnStore';
 
@@ -23,6 +24,9 @@ export const startMidiLearn = inject({ logger })(
         function startMidiLearn(target: LearningTarget): void {
             const state = midiLearnStore.value;
             if (!state) {
+                return;
+            }
+            if (!getPlatformCapabilities().hasMidiInput) {
                 return;
             }
 
