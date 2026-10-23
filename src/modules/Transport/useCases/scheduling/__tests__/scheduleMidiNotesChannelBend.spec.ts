@@ -13,10 +13,10 @@ import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { forgetHeldNoteExpression } from '../../../services/heldNoteExpression';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
+import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 // What a stored bend becomes at a frame is the contract under test: the engine's curve projection and
@@ -478,5 +478,139 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined, 8191]);
         await play(3.5, 6);
         expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined, 8191, 0]);
+    });
+
+    it('reads the depth at the content beat of the bend, not at its place on the timeline', async () => {
+        stripFor(FERMENTER);
+        // The clip sits at beat 4, so content beat c lands on c + 4. The controller declares ±2 at content
+        // beat 0 and ±24 at content beat 3 (timeline beat 7): the bend at timeline beat 6 is content beat 2,
+        // still ±2, though a depth read at the timeline beat would already find the second declaration.
+        const declare = (beat: number, semitones: number) => [
+            controller(`rpn-msb-${beat}`, beat, 101, 0),
+            controller(`rpn-lsb-${beat}`, beat, 100, 0),
+            controller(`data-${beat}`, beat, 6, semitones),
+            controller(`null-msb-${beat}`, beat, 101, 127),
+            controller(`null-lsb-${beat}`, beat, 100, 127),
+        ];
+        setProject({
+            track: midiTrack(FERMENTER, [midiClip({ startBeat: 4, endBeat: 12 })]),
+            notes: { 'clip-1': [note('n0', 0, 6)] },
+            controllers: { 'clip-1': [...declare(0, 2), ...declare(3, 24)] },
+            bends: { 'clip-1': [bend('before', 2, 4096), bend('after', 4, 8191)] },
+        });
+
+        await play(0, 12);
+
+        expect(appliedBend().slice(1)).toEqual([
+            { sampleFrame: 6 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+            { sampleFrame: 8 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 24 },
+        ]);
+    });
+
+    describe('when the clips change while a note sounds', () => {
+        const bendClip = (muted: boolean) => [midiClip({ id: 'notes' }), midiClip({ id: 'bends', muted })];
+        const longNote = { notes: [note('n0', 0, 7)] };
+        const originalBends = [bend('out', 4, 8191), bend('return', 6, 0)];
+
+        function loadSong(options: { bendsMuted: boolean; bends?: ReturnType<typeof bend>[] }): void {
+            setProject({
+                track: midiTrack(FERMENTER, bendClip(options.bendsMuted)),
+                notes: { notes: longNote.notes },
+                bends: { bends: options.bends ?? originalBends },
+            });
+        }
+
+        /** A window on the timeline's own clock, as a rolling transport gives it: a beat has one frame throughout. */
+        async function playOnTheClock(fromBeat: number, toBeat: number): Promise<void> {
+            vi.mocked(getCurrentTime).mockReturnValue((fromBeat * FRAMES_PER_BEAT) / 48_000);
+            await play(fromBeat, toBeat);
+        }
+
+        beforeEach(() => {
+            stripFor(FERMENTER);
+        });
+
+        it('posts no bend to a note once the clip that holds it is muted, though the note started before the mute', async () => {
+            loadSong({ bendsMuted: false });
+            await playOnTheClock(0, 1);
+            loadSong({ bendsMuted: true });
+            await playOnTheClock(1, 8);
+
+            // Only the note-on's own expression: the moves at 4 and 6 are the muted clip's.
+            expect(appliedBend().map(({ pitchBend }) => pitchBend)).toEqual([undefined]);
+        });
+
+        it('bends a note that started while the clip was muted once the clip is unmuted', async () => {
+            loadSong({ bendsMuted: true });
+            await playOnTheClock(0, 1);
+            loadSong({ bendsMuted: false });
+            await playOnTheClock(1, 8);
+
+            expect(appliedBend()).toEqual([
+                { sampleFrame: 0, pitchBend: undefined, bendRangeSemitones: undefined },
+                { sampleFrame: 4 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                { sampleFrame: 6 * FRAMES_PER_BEAT, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('gives a note the bend in force when the window that unmutes the clip opens, then the moves of the window', async () => {
+            loadSong({ bendsMuted: false });
+            await playOnTheClock(0, 1);
+            loadSong({ bendsMuted: true });
+            await playOnTheClock(1, 5);
+            loadSong({ bendsMuted: false });
+            await playOnTheClock(5, 8);
+
+            // The move at 4 fell in the muted span and was never posted at its own frame; the instrument is
+            // told what it left in force when the unmuting window opens, ahead of the move at 6.
+            expect(appliedBend()).toEqual([
+                { sampleFrame: 0, pitchBend: undefined, bendRangeSemitones: undefined },
+                { sampleFrame: 5 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                { sampleFrame: 6 * FRAMES_PER_BEAT, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('plays the moves the clip holds when a window comes, not the ones it held when the note started', async () => {
+            loadSong({ bendsMuted: false });
+            await playOnTheClock(0, 1);
+            // The bend lane is edited while the note sounds: the move at 4 moves to 3, and the one at 6 is gone.
+            loadSong({ bendsMuted: false, bends: [bend('out', 3, 4096)] });
+            await playOnTheClock(1, 8);
+
+            expect(appliedBend()).toEqual([
+                { sampleFrame: 0, pitchBend: undefined, bendRangeSemitones: undefined },
+                { sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('lets a move of the clip override the bend the note itself holds, and the note’s next bend point override the move', async () => {
+            loadSong({ bendsMuted: false });
+            setProject({
+                track: midiTrack(FERMENTER, bendClip(false)),
+                notes: {
+                    notes: [
+                        {
+                            ...note('n0', 0, 7),
+                            pitchBend: 1000,
+                            pitchBendRangeSemitones: 48,
+                            expression: { pitchBend: [{ offsetBeats: 5, value: -1000 }] },
+                        },
+                    ],
+                },
+                bends: { bends: originalBends },
+            });
+
+            await playOnTheClock(0, 1);
+            await playOnTheClock(1, 8);
+
+            // The note-on keeps its own bend; the move at 4 takes the bend at the move's depth, the note's own
+            // point at 5 takes it back at the note's, and the move at 6 takes it again.
+            expect(appliedBend()).toEqual([
+                { sampleFrame: 0, pitchBend: 1000, bendRangeSemitones: 48 },
+                { sampleFrame: 4 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                { sampleFrame: 5 * FRAMES_PER_BEAT, pitchBend: -1000, bendRangeSemitones: 48 },
+                { sampleFrame: 6 * FRAMES_PER_BEAT, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+        });
     });
 });

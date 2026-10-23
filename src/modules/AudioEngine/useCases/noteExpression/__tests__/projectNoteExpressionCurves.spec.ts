@@ -260,6 +260,27 @@ describe('projectNoteExpressionCurves', () => {
         expect(changes.map((change) => [change.beat, change.expression.pressure])).toEqual([[3, 20]]);
     });
 
+    it('starts the note on its last point when a cut passed every point of it', () => {
+        const { atStart, changes } = projectNoteExpressionCurves({
+            note: {
+                pressure: 10,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.5, value: 40 },
+                        { offsetBeats: 1, value: 60 },
+                    ],
+                },
+            },
+            startBeat: 2,
+            beatsIntoNote: 2,
+            releaseFrame: frameAtBeat(4),
+            frameAtBeat,
+        });
+
+        expect(atStart?.pressure).toBe(60);
+        expect(changes).toEqual([]);
+    });
+
     it('clamps a recorded bend range above 127 to 127', () => {
         const { changes } = projectNoteExpressionCurves({
             note: {
@@ -347,31 +368,130 @@ describe('projectNoteExpressionCurves', () => {
             expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[1.5, 0]]);
         });
 
-        it('lets a bend in force stand over the note’s own bend, and its curve moves nothing while it stands', () => {
+        it('leaves the glide of an MPE note intact under a stale centred bend from before it started', () => {
             const { atStart, changes } = projectNoteExpressionCurves({
                 note: {
-                    pressure: 10,
-                    pitchBend: 1_000,
+                    pitchBend: 0,
                     pitchBendRangeSemitones: 48,
-                    expression: {
-                        pitchBend: [{ offsetBeats: 1.5, value: -1_000 }],
-                        pressure: [{ offsetBeats: 1.5, value: 90 }],
-                    },
+                    expression: { pitchBend: [{ offsetBeats: 1, value: 4_000 }] },
                 },
-                channelBend: [move(0.5, 2_000)],
+                channelBend: [move(0.5, 0)],
                 startBeat: 1,
                 releaseFrame: frameAtBeat(4),
                 frameAtBeat,
             });
 
-            expect(atStart).toEqual({ pressure: 10, slide: undefined, pitchBend: 2_000, pitchBendRangeSemitones: 2 });
-            // Only the pressure of the curve point reaches the engine: the channel bend still owns the bend.
+            // The note's own bend is the latest at its start, so the note-on keeps its scalar and the glide plays.
+            expect(atStart).toBeUndefined();
             expect(changes).toEqual([
                 {
-                    beat: 2.5,
-                    frame: frameAtBeat(2.5),
-                    expression: { pressure: 90, slide: undefined, pitchBend: 2_000, pitchBendRangeSemitones: 2 },
+                    beat: 2,
+                    frame: frameAtBeat(2),
+                    expression: {
+                        pressure: undefined,
+                        slide: undefined,
+                        pitchBend: 4_000,
+                        pitchBendRangeSemitones: 48,
+                    },
                 },
+            ]);
+        });
+
+        it('starts a note with a bend of its own on that bend, whatever bend is in force, even on the start frame', () => {
+            const note = { pitchBend: 1_000, pitchBendRangeSemitones: 48 };
+
+            const before = projectNoteExpressionCurves({
+                note,
+                channelBend: [move(0.5, 2_000)],
+                startBeat: 1,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+            const onTheFrame = projectNoteExpressionCurves({
+                note,
+                channelBend: [move(1, 2_000)],
+                startBeat: 1,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(before).toEqual({ changes: [] });
+            expect(onTheFrame).toEqual({ changes: [] });
+        });
+
+        it('starts a note with no bend of its own on the bend in force, at that move’s range', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: plainNote,
+                channelBend: [move(0.5, 8_191, 12)],
+                startBeat: 1,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart).toEqual({ pressure: 10, slide: 64, pitchBend: 8_191, pitchBendRangeSemitones: 12 });
+            expect(changes).toEqual([]);
+        });
+
+        it('lets the later of a channel move and the note’s own bend point hold the bend and its range', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: {
+                    pitchBend: 1_000,
+                    pitchBendRangeSemitones: 48,
+                    expression: {
+                        pitchBend: [
+                            { offsetBeats: 2, value: 2_000 },
+                            { offsetBeats: 4, value: -1_000 },
+                        ],
+                    },
+                },
+                channelBend: [move(1, 8_191, 12), move(3, 0)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(6),
+                frameAtBeat,
+            });
+
+            expect(atStart).toBeUndefined();
+            // A move holds the bend until the note's next own point, and that point holds it until the next move.
+            expect(
+                changes.map((change) => [
+                    change.beat,
+                    change.expression.pitchBend,
+                    change.expression.pitchBendRangeSemitones,
+                ])
+            ).toEqual([
+                [1, 8_191, 12],
+                [2, 2_000, 48],
+                [3, 0, 2],
+                [4, -1_000, 48],
+            ]);
+        });
+
+        it('lets the note’s own bend point have the last word over a move on the same frame', () => {
+            const { changes } = projectNoteExpressionCurves({
+                note: { pitchBend: 1_000, expression: { pitchBend: [{ offsetBeats: 2, value: 2_000 }] } },
+                channelBend: [move(2, 8_191)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(6),
+                frameAtBeat,
+            });
+
+            expect(changes.map((change) => change.expression.pitchBend)).toEqual([2_000]);
+        });
+
+        it('holds a move’s bend over a later pressure point of the note, which is not a bend point', () => {
+            const { changes } = projectNoteExpressionCurves({
+                note: { pitchBend: 1_000, expression: { pressure: [{ offsetBeats: 3, value: 90 }] } },
+                channelBend: [move(1, 8_191)],
+                startBeat: 0,
+                releaseFrame: frameAtBeat(6),
+                frameAtBeat,
+            });
+
+            expect(
+                changes.map((change) => [change.beat, change.expression.pressure, change.expression.pitchBend])
+            ).toEqual([
+                [1, undefined, 8_191],
+                [3, 90, 8_191],
             ]);
         });
 

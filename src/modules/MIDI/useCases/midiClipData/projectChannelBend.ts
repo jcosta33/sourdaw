@@ -17,8 +17,15 @@ type ProjectChannelBendInput = {
      * one sample frame a later clip's bend lands after an earlier clip's.
      */
     clips: readonly ChannelBendClip[];
-    /** The sample frame a note at this beat is posted at: the caller's own clock, the one that places its notes. */
+    /**
+     * The sample frame a note at this beat is posted at: the caller's own clock, the one that places its notes.
+     * It must not clamp a beat before its own origin (an export region's start) to one frame, because frames
+     * order the moves: two moves that clamp together would be ordered by clip sequence, not timeline position.
+     */
     frameAtBeat: (beat: number) => number;
+    /** The timeline window `[fromBeat, toBeat)` to list; the whole timeline when absent. */
+    fromBeat?: number;
+    toBeat?: number;
 };
 
 /** One move of the track's channel bend, in the units a voice's expression takes. */
@@ -34,8 +41,9 @@ type ChannelBendPoint = {
 type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number };
 
 /**
- * The track's channel pitch bend over the whole timeline: every move of every clip's stored
- * bend lane, in the order the instrument receives them.
+ * The track's channel pitch bend over the whole timeline, or over the window `[fromBeat, toBeat)`
+ * when one is given: every move of every clip's stored bend lane, in the order the instrument
+ * receives them.
  *
  * A bend belongs to the channel, not to a note, so it is the bend of the whole track: a note
  * struck while a bend is in force sounds under it, and a note sounding when a move arrives is
@@ -49,16 +57,16 @@ type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number
  * controllers. Every move comes from `projectClipPitchBendEvents`, so a clip's passes, offset
  * and carry place a bend as they place a controller.
  */
-export function projectChannelBend({ clips, frameAtBeat }: ProjectChannelBendInput): ChannelBendPoint[] {
+export function projectChannelBend({
+    clips,
+    frameAtBeat,
+    fromBeat = Number.NEGATIVE_INFINITY,
+    toBeat = Number.POSITIVE_INFINITY,
+}: ProjectChannelBendInput): ChannelBendPoint[] {
     const placed: PlacedBend[] = [];
     for (const [clipIndex, { clip, controlChanges, pitchBends }] of clips.entries()) {
         const readRange = createStoredBendRangeReader(controlChanges);
-        const bends = projectClipPitchBendEvents({
-            pitchBends,
-            clip,
-            fromBeat: Number.NEGATIVE_INFINITY,
-            toBeat: Number.POSITIVE_INFINITY,
-        });
+        const bends = projectClipPitchBendEvents({ pitchBends, clip, fromBeat, toBeat });
         for (const [rowIndex, bend] of bends.entries()) {
             placed.push({
                 point: {

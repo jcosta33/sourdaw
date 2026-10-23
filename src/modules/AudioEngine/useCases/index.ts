@@ -53,10 +53,12 @@ export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFro
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
 
+export { advanceNoteExpression } from './noteExpression/advanceNoteExpression';
 export { applyNoteExpression } from './noteExpression/applyNoteExpression';
 export { getDefaultBendRangeSemitones } from './noteExpression/getDefaultBendRangeSemitones';
 export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
 export { projectNoteExpressionCurves } from './noteExpression/projectNoteExpressionCurves';
+export { startNoteExpression } from './noteExpression/startNoteExpression';
 
 export { buildDeviceChain } from './buildDeviceChain';
 export { buildLevainZoneTables } from './buildLevainZoneTables';

@@ -86,12 +86,12 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { destroyWebMidi, initWebMidi, setMidiInputTrack, setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { forgetHeldNoteExpression } from '../../../services/heldNoteExpression';
 import {
     forgetStoredControllerEngagements,
     noteStoredControllerPost,
 } from '../../../services/storedControllerEngagement';
 import { transportStore } from '../../../stores/transportStore';
+import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 const TRACK_ID = 'track-midi';

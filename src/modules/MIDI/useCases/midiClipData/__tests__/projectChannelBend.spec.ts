@@ -94,6 +94,28 @@ describe('projectChannelBend', () => {
         expect(points.map((point) => point.value)).toEqual([50, 100, 200]);
     });
 
+    it('lists only the moves of the window it is given, with the depth the clip declared before it', () => {
+        const clips = [
+            {
+                clip: { startBeat: 0, endBeat: 8 },
+                controlChanges: declareRange(0, 12),
+                pitchBends: [bend('a', 1, 100), bend('b', 3, 200), bend('c', 5, 300)],
+            },
+        ];
+
+        const window = projectChannelBend({ clips, frameAtBeat, fromBeat: 2, toBeat: 5 });
+        const upToTheWindowEnd = projectChannelBend({
+            clips,
+            frameAtBeat,
+            fromBeat: Number.NEGATIVE_INFINITY,
+            toBeat: 5,
+        });
+
+        expect(summarize(window)).toEqual([{ beat: 3, value: 200, rangeSemitones: 12 }]);
+        // From the start of the timeline the window lists what an earlier, muted span kept from the instrument.
+        expect(upToTheWindowEnd.map((point) => point.value)).toEqual([100, 200]);
+    });
+
     it('lists the rows of a lane stored out of beat order by beat', () => {
         const points = projectChannelBend({
             clips: [
@@ -232,6 +254,27 @@ describe('projectChannelBend', () => {
             });
 
             expect(points.map((point) => point.rangeSemitones)).toEqual([2, 24]);
+        });
+
+        it('is read at the content beat of the move, whatever beat the clip sits at on the timeline', () => {
+            // The clip sits at 4, so content beat c plays at c + 4. ±2 is declared at content 0 and ±24 at
+            // content 3 (timeline 7): the move at content 2 (timeline 6) is still ±2, though the second
+            // declaration is already behind its timeline beat; the move at content 4 (timeline 8) is ±24.
+            const points = projectChannelBend({
+                clips: [
+                    {
+                        clip: { startBeat: 4, endBeat: 12 },
+                        controlChanges: [...declareRange(0, 2), ...declareRange(3, 24)],
+                        pitchBends: [bend('before', 2, 100), bend('after', 4, 100)],
+                    },
+                ],
+                frameAtBeat,
+            });
+
+            expect(points.map((point) => [point.beat, point.rangeSemitones])).toEqual([
+                [6, 2],
+                [8, 24],
+            ]);
         });
 
         it('belongs to the channel that declared it', () => {

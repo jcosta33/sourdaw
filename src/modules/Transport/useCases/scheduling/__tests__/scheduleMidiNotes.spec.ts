@@ -27,7 +27,6 @@ import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNot
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { forgetHeldNoteExpression } from '../../../services/heldNoteExpression';
 import {
     forgetStoredControllerEngagements,
     noteStoredControllerPost,
@@ -37,6 +36,7 @@ import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
@@ -57,11 +57,17 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
  * The engine barrel's own projection of a note's expression curves, loaded on its
  * own so the double below can keep the rest of the barrel doubled.
  */
-const realProjectNoteExpressionCurves = vi.hoisted(async () => {
-    const actual = await vi.importActual<
-        Pick<typeof import('#/modules/AudioEngine/useCases'), 'projectNoteExpressionCurves'>
-    >('#/modules/AudioEngine/useCases/noteExpression/projectNoteExpressionCurves');
-    return actual.projectNoteExpressionCurves;
+const realNoteExpression = vi.hoisted(async () => {
+    const start = await vi.importActual<Pick<typeof import('#/modules/AudioEngine/useCases'), 'startNoteExpression'>>(
+        '#/modules/AudioEngine/useCases/noteExpression/startNoteExpression'
+    );
+    const advance = await vi.importActual<
+        Pick<typeof import('#/modules/AudioEngine/useCases'), 'advanceNoteExpression'>
+    >('#/modules/AudioEngine/useCases/noteExpression/advanceNoteExpression');
+    return {
+        startNoteExpression: start.startNoteExpression,
+        advanceNoteExpression: advance.advanceNoteExpression,
+    };
 });
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
@@ -110,7 +116,8 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
     applyNoteExpression: vi.fn(),
     // The real projection: what a curve becomes is the contract under test here,
     // with only the engine surface around it doubled.
-    projectNoteExpressionCurves: await realProjectNoteExpressionCurves,
+    startNoteExpression: (await realNoteExpression).startNoteExpression,
+    advanceNoteExpression: (await realNoteExpression).advanceNoteExpression,
     registerScheduledSource: registerScheduledSourceMock,
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).
@@ -3591,6 +3598,7 @@ describe('scheduleMidiNotes', () => {
                     'muted-clip': [{ id: 'n2', pitch: 61, startBeat: 0, duration: 0.25, velocity: 100 }],
                 },
                 ccByClipId: {},
+                pitchBendByClipId: {},
             };
 
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
@@ -5325,6 +5333,7 @@ describe('scheduleMidiNotes', () => {
                             'clip-3': notesOnEveryBeat.map((note) => ({ ...note, id: `muted-${note.id}`, pitch: 72 })),
                         },
                         ccByClipId: { 'clip-1': sustainLane },
+                        pitchBendByClipId: {},
                     };
                     const posted = recordGrandBoule();
                     loadClips([laneClip(false), { id: 'clip-3', startBeat: 0, endBeat: 4, muted: true }]);
