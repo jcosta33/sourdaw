@@ -421,6 +421,71 @@ describe('the bend range a keyboard declared before a take', () => {
             expect(bare(rows)).toEqual([...rangeRows(0, 12), { controller: 1, value: 64, beat: 2, channel: 0 }]);
             expect(createStoredBendRangeReader(rows)(0, 3)).toBe(12);
         });
+
+        it('replays the bend at the beat the earlier take bends, the overdub and the earlier take sharing it', () => {
+            recordFirstTakeAtTwelve(2);
+            keyboardBackAtTwo();
+
+            overdubBendAtBeat(2);
+
+            expect(storedRangesAt(2)).toEqual([2]);
+        });
+
+        describe('a channel that was never addressed when the overdub began, while the earlier take left RPN 1 selected', () => {
+            it.each([
+                [
+                    'Data Increment',
+                    [
+                        [RPN_MSB, 0],
+                        [96, 1],
+                    ],
+                    3,
+                ],
+                [
+                    'Data Decrement',
+                    [
+                        [RPN_MSB, 0],
+                        [97, 1],
+                    ],
+                    1,
+                ],
+                [
+                    'a lone RPN MSB select of RPN 0 and a Data Entry',
+                    [
+                        [RPN_MSB, 0],
+                        [DATA_MSB, 5],
+                    ],
+                    5,
+                ],
+                [
+                    'a lone RPN LSB select of RPN 0 and a Data Entry',
+                    [
+                        [RPN_LSB, 0],
+                        [DATA_MSB, 5],
+                    ],
+                    5,
+                ],
+            ] satisfies [string, [number, number][], number][])(
+                'replays a bend after %s at the range it had live',
+                (_name, messages, heardRange) => {
+                    send(0, [RPN_MSB, 0], [RPN_LSB, 1]);
+                    beginTake();
+                    recordBend(CLIP, 1);
+                    commitRecordedControllers({ clip: spanOf(CLIP) });
+                    channelControllerState.clear();
+                    beginOverdub();
+
+                    recordBend(CLIP, 2);
+                    send(0, ...messages);
+                    recordCc(CLIP, 2, ...messages);
+                    const heard = channelControllerState.get(0)?.bendRangeSemitones;
+                    endRecordedControllerTake();
+
+                    expect(heard).toBe(heardRange);
+                    expect(storedRangesAt(2)).toEqual([heardRange]);
+                }
+            );
+        });
     });
 
     describe('a take that overdubs more than one existing clip', () => {
@@ -564,6 +629,27 @@ describe('the bend range a keyboard declared before a take', () => {
             const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
             expect(rows).toEqual(plan.cc);
             const rangeAt = createStoredBendRangeReader(rows);
+            expect([1, 2, 3].map((beat) => rangeAt(0, beat))).toEqual([12, 2, 12]);
+        });
+
+        it('replays each take of a carried-over clip at the state it recorded under when the earlier take recorded controller rows itself', () => {
+            beginTake();
+            recordCc(CLIP, 0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 12]);
+            recordBend(CLIP, 1);
+            recordBend(CLIP, 3);
+            endRecordedControllerTake();
+
+            declareRange(0, 2);
+            sendNullRpn(0);
+            mocks.activeRecordingRef.current = [NEXT_CLIP];
+            setLiveClips(CLIP, NEXT_CLIP);
+            beginRecordedControllerTake();
+            recordBend(CLIP, 2);
+            endRecordedControllerTake();
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            const rangeAt = createStoredBendRangeReader(mocks.midi.value?.ccByClipId[CLIP] ?? []);
             expect([1, 2, 3].map((beat) => rangeAt(0, beat))).toEqual([12, 2, 12]);
         });
     });

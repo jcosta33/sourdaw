@@ -111,7 +111,7 @@ export function declareChannelState(state: MidiChannelControllerState): Register
 /**
  * What `target` asks of a channel that is in the state `current`: a range the channel never declared is the
  * MIDI 1.0 default of ±2 and a selection it never made is no selection, and a channel that has declared or
- * selected something cannot be returned to never having done so, only to the default and the Null RPN.
+ * selected something cannot be returned to never having done so, only to the default range and the Null NRPN.
  */
 function stateToReach(
     current: MidiChannelControllerState,
@@ -130,6 +130,13 @@ function withDefaultRange(
     return target;
 }
 
+/**
+ * No selection is the Null NRPN, not the Null RPN: an RPN select over a channel that already selected
+ * from the RPN bank keeps the other half of its number, while one over a channel that selected from the
+ * NRPN bank starts the number over, as it does on a channel that never selected anything. A take's lone
+ * half-select of RPN 0 therefore lands on RPN 0 afterwards, as it did live, and Data Entry stays an
+ * ordinary control until then, as it was on that channel.
+ */
 function withNullSelection(
     current: MidiChannelControllerState,
     target: MidiChannelControllerState
@@ -137,7 +144,7 @@ function withNullSelection(
     if (target.selectedParameterKind === null && current.selectedParameterKind !== null) {
         return {
             ...target,
-            selectedParameterKind: 'rpn',
+            selectedParameterKind: 'nrpn',
             selectedParameterMsb: NULL_PARAMETER_HALF,
             selectedParameterLsb: NULL_PARAMETER_HALF,
         };
