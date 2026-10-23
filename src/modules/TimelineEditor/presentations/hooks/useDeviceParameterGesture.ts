@@ -363,7 +363,7 @@ export function useDeviceParameterGesture({ param, device, trackId }: DevicePara
         previewValue: draftCurrent ? draft.value : undefined,
         gestureOwner,
         startGesture,
-        isGestureCurrent: (token: number): boolean => {
+        isGestureCurrent: (token: string | number): boolean => {
             const gesture = gestureRef.current;
             return gesture?.id === token && !gesture.invalidated && !!readGestureDevice(gesture, true);
         },
