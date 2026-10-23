@@ -4725,6 +4725,294 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('an addition is answered by its own action, beside no rest phrase, and any unread mark asks', () => {
+        type Card = { prompt: string; calls: readonly ProviderCall[] };
+        const toggle = (name: string, trackId: string, argument: string, value: boolean): ProviderCall => ({
+            name,
+            arguments: { trackId, [argument]: value },
+        });
+        const mute = (trackId: string, muted = true) => toggle('muteTrack', trackId, 'muted', muted);
+        const solo = (trackId: string) => toggle('soloTrack', trackId, 'soloed', true);
+        const arm = (trackId: string) => toggle('armTrack', trackId, 'armed', true);
+        const bassBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-bass', deltaDb },
+        });
+        const bassPan = (pan: number): ProviderCall => ({
+            name: 'setTrackPan',
+            arguments: { trackId: 'track-bass', pan },
+        });
+        const bassMute = mute('track-bass');
+        const MUTE_ARM_CARD: Card = { prompt: 'mute Bass and arm Keys', calls: [bassMute, arm('track-keys')] };
+
+        function outcomeOf(result: ReturnType<typeof ground>) {
+            if (result.status === 'rejected') {
+                return { status: result.status, said: result.rejectionReason };
+            }
+            if (result.status === 'clarify') {
+                return { status: result.status, said: result.planningOutcome.questions.join(' ') };
+            }
+            return { status: result.status, said: commandsOf(result) };
+        }
+
+        function expectOutcome(card: Card, refinement: string, calls: readonly ProviderCall[], read: unknown) {
+            expect({ refinement, calls, read: outcomeOf(refine(card, refinement, calls)) }).toEqual({
+                refinement,
+                calls,
+                read,
+            });
+        }
+
+        const restricted = {
+            status: 'clarify',
+            said: expect.stringContaining('adds a change and says it replaces or restricts'),
+        };
+
+        it('asks an addition beside any rest-of-mix phrase, which may mean only the addition stays', () => {
+            for (const refinement of [
+                'mute Bass, nothing else',
+                'mute Bass and nothing else',
+                'mute Bass, no other changes',
+                'mute Bass, nothing else should change',
+                'mute Bass, keep everything else unchanged',
+                'mute Bass, the rest as is',
+                'keep everything else, mute Bass',
+            ]) {
+                for (const calls of [[vocalsBy(-3), bassMute], [bassMute]]) {
+                    expectOutcome(P0_CARD, refinement, calls, restricted);
+                }
+            }
+        });
+
+        it('asks an addition stating that it stands alone or in place of the pending changes', () => {
+            for (const refinement of [
+                'mute Bass on its own',
+                'mute Bass by itself',
+                'mute Bass in its place',
+                'mute Bass as a replacement',
+                'mute Bass to replace them',
+                'mute Bass from scratch',
+            ]) {
+                for (const calls of [[vocalsBy(-3), snareBy(-2), bassMute], [bassMute]]) {
+                    expectOutcome(P1_CARD, refinement, calls, restricted);
+                }
+            }
+        });
+
+        it('keeps a rest phrase beside only restatements, value clauses and removals as it reads today', () => {
+            expectOutcome(P1_CARD, 'make the vocals 1.5 dB, nothing else', [vocalsBy(-1.5), snareBy(-2)], {
+                status: 'grounded',
+                said: [
+                    { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+                    { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                ],
+            });
+            expectOutcome(P1_CARD, 'not the snare, nothing else should change', [vocalsBy(-3)], {
+                status: 'grounded',
+                said: [{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }],
+            });
+            expectOutcome(P1_CARD, 'turn Vocals down, keep everything else unchanged', P1_PLAN, {
+                status: 'grounded',
+                said: [
+                    { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                    { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
+                ],
+            });
+        });
+
+        it('answers a clause stating an action only by a call of that action on an object it names', () => {
+            const rows: Array<[string, ProviderCall[], string]> = [
+                ['turn Bass down 1 dB and mute Bass', [vocalsBy(-3), bassBy(-1)], 'mute Bass'],
+                ['make it 3 dB, mute Bass and solo Bass', [vocalsBy(-3), solo('track-bass')], 'mute Bass'],
+                ['make it 3 dB, mute Bass, arm Bass, solo Bass', [vocalsBy(-3), bassMute], 'arm Bass'],
+                ['make it 3 dB, pan Bass 20% left, mute Bass', [vocalsBy(-3), bassMute], 'pan Bass 20% left'],
+            ];
+            for (const [refinement, calls, unanswered] of rows) {
+                expectOutcome(P0_CARD, refinement, calls, {
+                    status: 'rejected',
+                    said: expect.stringContaining(`No proposed change answers "${unanswered}"`),
+                });
+            }
+            const answered: Array<[string, ProviderCall[]]> = [
+                ['turn Bass down 1 dB and mute Bass', [vocalsBy(-3), bassBy(-1), bassMute]],
+                ['make it 3 dB, mute Bass and solo Bass', [vocalsBy(-3), bassMute, solo('track-bass')]],
+                [
+                    'make it 3 dB, mute Bass, arm Bass, solo Bass',
+                    [vocalsBy(-3), bassMute, arm('track-bass'), solo('track-bass')],
+                ],
+                ['make it 3 dB, pan Bass 20% left, mute Bass', [vocalsBy(-3), bassPan(-20), bassMute]],
+            ];
+            for (const [refinement, calls] of answered) {
+                expect({ refinement, status: refine(P0_CARD, refinement, calls).status }).toEqual({
+                    refinement,
+                    status: 'grounded',
+                });
+            }
+        });
+
+        it('grounds one call answering two addition clauses in the text of both', () => {
+            // "Bass please" states no action, so the Bass mute answers it by the object it names, and
+            // grounds only in the clause beside it that states the mute.
+            expectOutcome(P0_CARD, 'Bass please, mute Bass', [vocalsBy(-3), bassMute], {
+                status: 'grounded',
+                said: [
+                    { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
+                    { type: 'muteTrack', trackId: 'track-bass' },
+                ],
+            });
+        });
+
+        it('reports a refused call of a group answering one clause by its index in the batch', () => {
+            for (const calls of [
+                [vocalsBy(-3), bassMute, bassMute],
+                [vocalsBy(-3), bassMute, mute('track-bass', false)],
+            ]) {
+                const result = bridgeGroundedLlmToolCalls({
+                    calls,
+                    context: CONTEXT,
+                    prompt: 'mute Bass',
+                    refinementBasis: cardBasis(P0, P0_PLAN),
+                });
+
+                expect({ calls, indexes: result.rejections.map((groupRejection) => groupRejection.index) }).toEqual({
+                    calls,
+                    indexes: expect.arrayContaining([2]),
+                });
+                expect(result.rejections.every((groupRejection) => groupRejection.index > 0)).toBe(true);
+            }
+        });
+
+        it('asks a clause of any kind holding a mark the grammar does not read', () => {
+            const rows: Array<[Card, string, readonly ProviderCall[]]> = [
+                ...['↑', '🔇', '❌', '🚫'].map((mark): [Card, string, readonly ProviderCall[]] => [
+                    P0_CARD,
+                    `turn Vocals down ${mark}`,
+                    [vocalsBy(-3)],
+                ]),
+                [P0_CARD, 'turn Vocals down 1.5 dB!', [vocalsBy(-1.5)]],
+                ...['mute Bass ❌', 'mute Bass 🚫', 'mute Bass ✗', 'mute Bass and arm Keys 🚫'].map(
+                    (refinement): [Card, string, readonly ProviderCall[]] => [
+                        MUTE_ARM_CARD,
+                        refinement,
+                        MUTE_ARM_CARD.calls,
+                    ]
+                ),
+                [MUTE_ARM_CARD, 'unmute Bass 🔊', [mute('track-bass', false), arm('track-keys')]],
+                [P1_CARD, 'remove the snare 🚫', [vocalsBy(-3)]],
+                [P1_CARD, 'not the snare ❌', [vocalsBy(-3)]],
+                [P1_CARD, 'make the vocals 1.5 dB, leaving the Drum Bus unchanged ✓', [vocalsBy(-1.5), snareBy(-2)]],
+                [P0_CARD, 'mute Bass 🚫', [vocalsBy(-3), bassMute]],
+                [P0_CARD, 'turn Vocals down 1.5 dB, thanks 🙏', [vocalsBy(-1.5)]],
+            ];
+            for (const [card, refinement, calls] of rows) {
+                expectOutcome(card, refinement, calls, {
+                    status: 'clarify',
+                    said: expect.stringMatching(/^What does ".+" .*mean\? Restate/u),
+                });
+            }
+            // A full stop the splitter cuts at, a decimal mark, a percent sign, a read sign and an
+            // apostrophe inside a word still read.
+            for (const [card, refinement, calls] of [
+                [P0_CARD, 'turn Vocals down 1.5 dB.', [vocalsBy(-1.5)]],
+                [P0_CARD, 'make it 1.5 dB.', [vocalsBy(-1.5)]],
+                [P0_CARD, 'turn Vocals down 1.5 dB. Thanks.', [vocalsBy(-1.5)]],
+                [P0_CARD, 'turn it by – 1.5 dB', [vocalsBy(-1.5)]],
+                [PD_CARD, 'make it 50 %', [reverbMix(50)]],
+                [MUTE_ARM_CARD, "mute Bass and arm Keys, that's all", MUTE_ARM_CARD.calls],
+            ] as Array<[Card, string, readonly ProviderCall[]]>) {
+                expect({ refinement, status: refine(card, refinement, calls).status }).toEqual({
+                    refinement,
+                    status: 'grounded',
+                });
+            }
+        });
+
+        it('asks a negation naming nothing that states the pending operation in any of its forms', () => {
+            const SOLO_CARD: Card = { prompt: 'solo Bass', calls: [solo('track-bass')] };
+            const ARM_CARD: Card = { prompt: 'arm Bass', calls: [arm('track-bass')] };
+            const PAN_BASS_CARD: Card = { prompt: 'pan Bass 20% left', calls: [bassPan(-20)] };
+            const rows: Array<[Card, string]> = [
+                [SOLO_CARD, 'not soloed'],
+                [SOLO_CARD, 'without soloing'],
+                [ARM_CARD, 'without arming'],
+                [PAN_BASS_CARD, 'not panned'],
+                [PAN_BASS_CARD, 'without panning'],
+                [P0_CARD, 'not the level'],
+                [P0_CARD, "don't touch the level"],
+            ];
+            for (const [card, refinement] of rows) {
+                expectOutcome(card, refinement, card.calls, {
+                    status: 'clarify',
+                    said: expect.stringContaining('says what not to do'),
+                });
+            }
+        });
+
+        it('reads a clause by the pending commands it names, kept or removed, before reading it as an addition', () => {
+            // Naming nothing, an action no pending command takes adds nothing the restriction words ask.
+            expectOutcome(P0_CARD, 'mute it instead', [vocalsBy(-3)], {
+                status: 'rejected',
+                said: expect.stringContaining('No proposed change answers "mute it instead"'),
+            });
+            // Naming a removed pending change, it is read against that removal, never as an addition.
+            expectOutcome(
+                P1_CARD,
+                'remove the Snare, and turn the Snare down 2 dB instead',
+                [vocalsBy(-3), snareBy(-2)],
+                {
+                    status: 'rejected',
+                    said: expect.stringContaining('can only mean a pending change the refinement removes'),
+                }
+            );
+        });
+
+        it('carries a pending command sharing its type and target with another only by a call of its exact payload', () => {
+            const LANE_CONTEXT: ProjectContext = {
+                ...CONTEXT,
+                automationLanes: [
+                    {
+                        id: 'lane-vocal-gain',
+                        trackId: 'track-vocals',
+                        parameterId: 'gain',
+                        name: 'Gain',
+                        enabled: true,
+                        minValue: 0,
+                        maxValue: 1,
+                        points: [],
+                    },
+                ],
+            };
+            const point = (beat: number, value: number): ProviderCall => ({
+                name: 'addAutomationPoint',
+                arguments: { laneId: 'lane-vocal-gain', beat, value },
+            });
+            const first = 'add automation point to Gain on Vocals at beat 8 with value 0.5';
+            const POINTS_CARD: Card = {
+                prompt: `${first} and add automation point to Gain on Vocals at beat 12 with value 0.25`,
+                calls: [point(8, 0.5), point(12, 0.25)],
+            };
+            for (const [refinement, calls] of [
+                [first, [point(8, 0.5)]],
+                ['add automation point to Gain on Vocals at beat 8 with value 0.6', [point(8, 0.6)]],
+            ] as Array<[string, ProviderCall[]]>) {
+                expect({ refinement, read: outcomeOf(refine(POINTS_CARD, refinement, calls, LANE_CONTEXT)) }).toEqual({
+                    refinement,
+                    read: { status: 'rejected', said: expect.stringContaining('omits a pending addAutomationPoint') },
+                });
+            }
+            expect(refine(POINTS_CARD, POINTS_CARD.prompt, [...POINTS_CARD.calls], LANE_CONTEXT).status).toBe(
+                'grounded'
+            );
+        });
+
+        it('asks a negation naming nothing beside a changed pending value before refusing a dropped one', () => {
+            expectOutcome(P1_CARD, 'turn Vocals down 4 dB, not too loud', [vocalsBy(-4)], {
+                status: 'clarify',
+                said: expect.stringContaining('does not say what the value should be'),
+            });
+        });
+    });
+
     describe('each rule the value and clause readers decide by holds an input that reaches it', () => {
         const AT_CARD = {
             prompt: 'put Vocals at -6 dB',

@@ -14,6 +14,7 @@ import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseAc
 import { refinementActionWords } from './refinementActionWords';
 import { refinementCardCommands, type CommandView } from './refinementCardCommands';
 import { refinementCourtesy } from './refinementCourtesy';
+import { refinementProtectionForms } from './refinementProtectionForms';
 import { refinementRemovalReading } from './refinementRemovalReading';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 
@@ -61,12 +62,10 @@ const COMPARATIVE =
 const RESTRICTED_ADDITION_REASON = 'The refinement adds a change without saying whether the pending changes stay.';
 /**
  * The closed restriction and replacement words an addition is asked for, in normalized words with
- * object names masked: each may say the addition stands in place of the pending changes.
+ * object names masked: each may say the addition stands alone or in place of the pending changes.
  */
 const RESTRICTION_WORDS =
-    /(?:^|\s)(?:only|just|alone|instead|exclusively|rather|solely|merely|simply|strictly|purely|in\s+place|and\s+nothing\s+else)(?:\s|$)/u;
-/** The text an addition's clause may run on into, cut off it by the splitter, that restricts it the same way. */
-const RESTRICTING_CONTINUATION = /^and nothing else$/u;
+    /(?:^|\s)(?:only|just|alone|instead|exclusively|rather|solely|merely|simply|strictly|purely|afresh|anew|in\s+(?:(?:its|their|that|this|the)\s+)?place|on\s+(?:its|their)\s+own|by\s+(?:itself|themselves)|as\s+(?:a\s+)?replacement|replac(?:e|es|ed|ing)|from\s+scratch)(?:\s|$)/u;
 
 const normalizedClause = refinementRequestReading.clauseWords;
 
@@ -225,34 +224,26 @@ function statesRestriction(clause: RefinementClause): boolean {
 
 /**
  * Whether a clause adds a change: it names an object no pending command acts on, or takes an action no
- * pending command takes on the objects it names ("mute Keys" beside a pending Reverb mix on Keys).
+ * pending command, kept or removed, takes on the objects it names ("mute Keys" beside a pending Reverb
+ * mix on Keys). A clause naming pending objects and stating no action means every pending command on
+ * them, so only a stated action can leave it meaning none; one naming nothing adds nothing here.
  */
 function addsChange(scope: ClauseScope): boolean {
     if (scope.kind === 'addition') {
         return true;
     }
-    return (
-        scope.kind === 'scoped' &&
-        scope.namesObjects &&
-        scope.statesAction &&
-        scope.meant.length === 0 &&
-        scope.removed.length === 0
-    );
-}
-
-/** Whether the text right after a clause runs on into "and nothing else", which the splitter cut off it. */
-function runsOnIntoRestriction(clause: RefinementClause, clauses: readonly RefinementClause[], text: string): boolean {
-    const next = clauses.find((candidate) => candidate.start >= clause.end);
-    return next !== undefined && RESTRICTING_CONTINUATION.test(normalizePromptText(text.slice(clause.end, next.end)));
+    return scope.kind === 'scoped' && scope.namesObjects && scope.meant.length === 0 && scope.removed.length === 0;
 }
 
 /**
  * A clause adding a change beside the pending card adds to it, so one stating a restriction or
- * replacement word ("mute Bass instead", "turn Snare down 2 dB only", "mute Keys and nothing else"),
- * or standing beside a clause that is exactly `instead` ("mute Bass, instead"), may mean the pending
- * changes go, which no reading can tell from an addition kept beside them: it is asked, as a
- * restatement in such words is. That holds for an action no pending command takes on a pending
- * object's track as for an object off the card ("mute Keys instead" beside a Reverb mix on Keys).
+ * replacement word ("mute Bass instead", "turn Snare down 2 dB only", "mute Bass on its own"), or
+ * standing beside a clause that is exactly `instead` ("mute Bass, instead") or beside any clause keeping
+ * the rest of the mix ("mute Bass, nothing else", "mute Bass and nothing else", "mute Bass, keep
+ * everything else unchanged"), may mean the pending changes go, which no reading can tell from an
+ * addition kept beside them: it is asked, as a restatement in such words is. That holds for an action no
+ * pending command takes on a pending object's track as for an object off the card ("mute Keys instead"
+ * beside a Reverb mix on Keys). A rest-of-mix clause beside no addition keeps its meaning.
  */
 function findRestrictedAddition(input: {
     text: string;
@@ -269,10 +260,10 @@ function findRestrictedAddition(input: {
     if (first === undefined) {
         return null;
     }
-    const restricted =
-        additions.find(
-            (clause) => statesRestriction(clause) || runsOnIntoRestriction(clause, allClauses, input.text)
-        ) ?? (clauses.some((clause) => normalizedClause(clause) === 'instead') ? first : undefined);
+    const restrictsAll =
+        clauses.some((clause) => normalizedClause(clause) === 'instead') ||
+        allClauses.some((clause) => refinementProtectionForms.readsRestOfMix(normalizedClause(clause)));
+    const restricted = additions.find(statesRestriction) ?? (restrictsAll ? first : undefined);
     if (restricted === undefined) {
         return null;
     }
@@ -317,6 +308,23 @@ function findClauseCombinationQuestion(input: {
                 return `The refinement states the value of one pending change in more than one clause. State it once, as in "make it 2 dB".`;
             }
             stating.add(view.index);
+        }
+    }
+    return null;
+}
+
+const UNREAD_MARK_REASON = 'The refinement holds a mark its clause grammar does not read.';
+
+/**
+ * The first clause of a refinement, of any kind — filler, protection, removal, negation, addition,
+ * restatement or value clause — holding a mark the grammar does not read, asked before any clause is
+ * read, since the mark may withdraw, negate or qualify what the clause states.
+ */
+function askUnreadMark(input: { text: string; context: ProjectContext }): { reason: string; question: string } | null {
+    for (const clause of refinementRequestReading.clauses(input.text, input.context)) {
+        const question = refinementFigure.unreadMarkQuestion(clause);
+        if (question !== null) {
+            return { reason: UNREAD_MARK_REASON, question };
         }
     }
     return null;
@@ -484,11 +492,13 @@ function statesFigureComparative(input: {
 }
 
 /**
- * How a refinement's own text reads against the pending card it refines: what it removes, whether its
+ * How a refinement's own text reads against the pending card it refines: any mark it holds that its
+ * grammar does not read, what it removes, whether its
  * clauses combine into one value clause per pending command, the comparative it states on its own or
  * beside a figure, and the value each of its clauses binds to a pending command.
  */
 export const refinementClauseReader = {
+    unreadMark: askUnreadMark,
     removals: refinementRemovalReading.read,
     combination: readClauseCombination,
     comparative: readRefinementComparative,

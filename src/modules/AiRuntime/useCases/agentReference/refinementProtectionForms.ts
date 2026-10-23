@@ -199,6 +199,14 @@ function readProtectionList(
 }
 
 /**
+ * Whether a whole clause, in normalized words, keeps the rest of the mix as it is ("nothing else",
+ * "keep everything else unchanged", "the rest as is"), whatever else the refinement states.
+ */
+function readsRestOfMix(words: string): boolean {
+    return readStatedForm(words)?.kind === 'rest';
+}
+
+/**
  * How a refinement clause reads as a protection: one closed reader of every closed form, its outcome
  * decided by what the form names. The rest of the mix protects nothing; one or more whole project
  * objects off the card, each named alone and stated with no operation word, are each protected; a
@@ -208,4 +216,5 @@ function readProtectionList(
 export const refinementProtectionForms = {
     read: readProtection,
     readList: readProtectionList,
+    readsRestOfMix,
 } as const;

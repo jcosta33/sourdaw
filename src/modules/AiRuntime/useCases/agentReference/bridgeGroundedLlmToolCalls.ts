@@ -151,7 +151,9 @@ import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameter
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
+import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
+import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
 import { resolveCompleteClipReference } from './resolveCompleteClipReference';
 
@@ -6062,14 +6064,33 @@ function findSilentOmission(input: {
     return null;
 }
 
-/** The pending commands a batch the refinement text grounded by itself still carries, by type and target. */
-function getCarriedCommandIndexes(calls: readonly ToolCallResult[], basis: ProposalGroundingBasis): Set<number> {
-    const keys = new Set(calls.map((call) => proposalCommandShape.targetKey(call.name, call.arguments)));
-    return new Set(
-        basis.commands.flatMap((command, index) =>
-            keys.has(proposalCommandShape.targetKey(command.type, command.payload)) ? [index] : []
-        )
-    );
+/**
+ * The pending commands a batch carries on, each by at most one call: the one pending command of a
+ * call's type and full target tuple, or, where several share that tuple (two automation points on one
+ * lane), the one of them whose payload the call states exactly, so a call never carries two.
+ */
+function getCarriedCommandIndexes(
+    calls: readonly ToolCallResult[],
+    inheritedCommandIndexes: ReadonlyArray<number | null>,
+    basis: ProposalGroundingBasis
+): Set<number> {
+    const carried = new Set(inheritedCommandIndexes.filter((index): index is number => index !== null));
+    for (const [position, call] of calls.entries()) {
+        if (inheritedCommandIndexes[position] !== null) {
+            continue;
+        }
+        const key = proposalCommandShape.targetKey(call.name, call.arguments);
+        const exact = basis.commands.findIndex(
+            (command, index) =>
+                !carried.has(index) &&
+                proposalCommandShape.targetKey(command.type, command.payload) === key &&
+                canonicalJson(command.payload) === canonicalJson(call.arguments)
+        );
+        if (exact !== -1) {
+            carried.add(exact);
+        }
+    }
+    return carried;
 }
 
 /** Which source calls still ground in their own request text, replayed against the project as it is now. */
@@ -6183,21 +6204,27 @@ function validateBoundValue(
     );
 }
 
-/** Whether a new call answers an addition clause: by the action the clause asks for, or by an object it names. */
+/**
+ * Whether a new call answers an addition clause. A clause stating an action an intent resolves is
+ * answered only by a call of that action, on an object the clause names when it names any ("mute Bass"
+ * is never answered by a Bass gain change); only a clause stating no such action ("Bass please") is
+ * answered by a call touching an object it names.
+ */
 function answersAdditionClause(
     clause: RefinementClause,
     call: ToolCallResult,
-    catalog: GroundingCatalog,
-    context: ProjectContext
+    input: { catalog: GroundingCatalog; candidates: readonly ReferenceCandidate[]; context: ProjectContext }
 ): boolean {
-    const intent = resolveClauseActionIntent(clause.masked, catalog)?.actionType;
-    if (intent === call.name) {
+    const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
+    if (intent !== null && intent !== call.name) {
+        return false;
+    }
+    const named = refinementRequestReading.references(clause.text, input.candidates);
+    if (intent !== null && named.length === 0) {
         return true;
     }
-    const touched = new Set(getActionTouchedIds(call.name, call.arguments, context));
-    return context.tracks.some(
-        (track) => touched.has(track.id) && getReferenceRanges(clause.text, track.name).length > 0
-    );
+    const touched = new Set(getActionTouchedIds(call.name, call.arguments, input.context));
+    return named.some((reference) => refinementCardCommands.intersects(reference.denotes, touched));
 }
 
 /** Whether a pending command's target still names an object of the open project. */
@@ -6369,7 +6396,8 @@ function withRefinement(
  * admitted exactly as any request; otherwise each call continuing one pending command inherits that
  * command's target authority, re-read from the request text that granted it, and may change only the
  * value a refinement clause binds. Every other call grounds in the refinement text alone. A batch
- * changing one pending command twice is refused before either route. Whichever route grounds it, the
+ * changing one pending command twice is refused, and a clause holding a mark the grammar does not read
+ * is asked, before either route. Whichever route grounds it, the
  * result then passes one check: a negation naming nothing stands beside no changed value, a pending
  * command may leave the batch only by name, every clause must be answered, and nothing the chain
  * protects may change.
@@ -6384,6 +6412,14 @@ function bridgeRefinedLlmToolCalls(
     const repeated = findRepeatedPendingCommand(inheritedCommandIndexes, basis, context);
     if (repeated !== null) {
         return refuseRefinement(repeated);
+    }
+    const unreadMark = refinementClauseReader.unreadMark({ text: prompt, context });
+    if (unreadMark !== null) {
+        return {
+            actions: [],
+            rejections: [],
+            clarification: { reason: unreadMark.reason, questions: [unreadMark.question] },
+        };
     }
     const removals = refinementClauseReader.removals({ text: prompt, basis, context });
     if (removals.status === 'refused') {
@@ -6456,9 +6492,7 @@ function bridgeRefinedLlmToolCalls(
     const defect = findRefinementDefect({
         calls,
         inheritedCommandIndexes,
-        kept: groundsDirectly
-            ? getCarriedCommandIndexes(calls, basis)
-            : new Set(inheritedCommandIndexes.filter((index): index is number => index !== null)),
+        kept: getCarriedCommandIndexes(calls, inheritedCommandIndexes, basis),
         groundsDirectly,
         basis,
         removals,
@@ -6496,7 +6530,7 @@ function changesPendingValue(
  * The one check every refinement result passes, whichever route grounded it: no pending command the
  * refinement removes is kept, none the batch leaves out stands without a removal naming it, and every
  * clause asking for something the card does not carry is answered by a call continuing no pending
- * command. Beside a batch the refinement text grounded by itself, a clause of courtesy alone asks for
+ * command, of the action the clause states. Beside a batch the refinement text grounded by itself, a clause of courtesy alone asks for
  * nothing.
  */
 function findRefinementDefect(input: {
@@ -6526,7 +6560,11 @@ function findRefinementDefect(input: {
     if (omission !== null) {
         return omission;
     }
-    const catalog = getExecutableAppActionGroundingCatalog();
+    const answering = {
+        catalog: getExecutableAppActionGroundingCatalog(),
+        candidates: refinementRequestReading.candidates(context),
+        context,
+    };
     const unanswered = refinementClauseReader
         .additions({
             text: prompt,
@@ -6540,8 +6578,7 @@ function findRefinementDefect(input: {
             (clause) =>
                 !input.calls.some(
                     (call, index) =>
-                        input.inheritedCommandIndexes[index] === null &&
-                        answersAdditionClause(clause, call, catalog, context)
+                        input.inheritedCommandIndexes[index] === null && answersAdditionClause(clause, call, answering)
                 )
         );
     return unanswered === undefined ? null : `No proposed change answers "${unanswered.text.trim()}" in the refinement`;
@@ -6571,7 +6608,11 @@ function groundNewRefinedCalls(input: {
     if (!inheritedCommandIndexes.includes(null)) {
         return { actions: new Map(), rejections: [] };
     }
-    const catalog = getExecutableAppActionGroundingCatalog();
+    const answering = {
+        catalog: getExecutableAppActionGroundingCatalog(),
+        candidates: refinementRequestReading.candidates(context),
+        context,
+    };
     const additions = refinementClauseReader.additions({
         text: prompt,
         basis,
@@ -6585,7 +6626,7 @@ function groundNewRefinedCalls(input: {
         if (inheritedCommandIndexes[index] !== null) {
             continue;
         }
-        const answered = additions.filter((clause) => answersAdditionClause(clause, call, catalog, context));
+        const answered = additions.filter((clause) => answersAdditionClause(clause, call, answering));
         if (answered.length === 0) {
             return {
                 actions: new Map(),

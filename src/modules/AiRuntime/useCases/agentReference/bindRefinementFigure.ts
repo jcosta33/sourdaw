@@ -9,6 +9,7 @@ import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import { type PromptClause } from './groundingStrategies/promptScope';
 import { refinementActionWords } from './refinementActionWords';
+import { refinementMarks } from './refinementMarks';
 import { refinementValueUnits } from './refinementValueUnits';
 
 export type RefinementClause = PromptClause & { start: number; end: number };
@@ -78,17 +79,6 @@ const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WO
  * not read: "60% dry" is 40% wet, which a plain value that lands where it says would invert.
  */
 const MIX_WORDS: ReadonlySet<string> = new Set(['wet']);
-/**
- * A sign spoken or typeset before the figure, touching it or a space away: "minus 1.5 dB", and any
- * dash or minus character — "-", "–" (U+2013), "‑" (U+2011), "−" (U+2212) — as in "by – 1.5 dB".
- */
-const SIGN_MARK = /(?:\b(minus|plus)\s+|([\p{Pd}−])\s*)$/iu;
-/**
- * A symbol or punctuation mark: beside a figure it may be a sign this reading does not read ("➖",
- * "⁻", "＋"). The glyph a masked object name is written in is no such mark.
- */
-const UNREAD_MARK = /[\p{S}\p{P}]/u;
-const PROJECT_REFERENCE_MASK_GLYPH = '□';
 /**
  * Words that compare the figure with something: "2 dB more", "1 dB quieter". Against a pending move
  * they cannot say whether the figure replaces that move or adds to it, so such a clause is asked.
@@ -234,7 +224,7 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         return 'unreadable';
     }
     const after = clause.masked.slice(number.end);
-    const signMark = SIGN_MARK.exec(clause.masked.slice(0, number.index));
+    const signMark = refinementMarks.signBefore(clause.masked.slice(0, number.index));
     const before = clause.masked.slice(0, signMark?.index ?? number.index);
     let sign: StatedFigure['sign'] = null;
     let raw = number.raw;
@@ -254,23 +244,25 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         ...readConnector(before),
         direction: readDirection(words),
         words,
-        symbol: findUnreadMark(`${before} ${after.slice(unit.length)}`),
+        symbol: refinementMarks.unreadIn(`${before} ${after.slice(unit.length)}`),
     };
 }
 
 /**
- * A mark anywhere in the clause outside the object names it states that is none of the ones its figure
- * is read by: the decimal mark and percent sign inside the figure, and the sign before it. The text it
- * is read in leaves out the figure, its read sign and its unit word, so any other symbol or punctuation
- * mark, touching the figure or not ("2 dB ↑", "2 dB+", "2 dB 🔊"), may state a sign or direction this
- * reading does not read.
+ * What to ask of a clause holding a mark the grammar does not read, whatever kind of clause it is:
+ * beside its one figure the mark may state a sign or direction, and anywhere else it may withdraw,
+ * negate or qualify what the clause states ("mute Bass ❌", "turn Vocals down 🔇"); `null` for none.
  */
-function findUnreadMark(text: string): string | null {
-    return (
-        Array.from(text).find(
-            (character) => character !== PROJECT_REFERENCE_MASK_GLYPH && UNREAD_MARK.test(character)
-        ) ?? null
-    );
+function askUnreadMark(clause: RefinementClause): string | null {
+    const mark = refinementMarks.unreadInClause(clause.masked);
+    if (mark === null) {
+        return null;
+    }
+    const figure = readFigure(clause);
+    if (typeof figure !== 'string' && figure.symbol !== null) {
+        return `What does "${figure.symbol}" beside ${figure.raw} mean? Restate the value without it, writing a sign as "-", "+", "minus" or "plus".`;
+    }
+    return `What does "${mark}" in "${clause.text.trim()}" mean? Restate the change in words, without it.`;
 }
 
 /** The comparative a clause states beside its one figure ("2 dB more", "1 dB quieter"), if it states both. */
@@ -379,6 +371,7 @@ export const refinementFigure = {
     canMean,
     restatementQuestion: findRestatementQuestion,
     ownActionWords: readOwnActionWords,
+    unreadMarkQuestion: askUnreadMark,
 } as const;
 
 function getLevelArguments(actionType: string): { absolute: string | null; relative: string | null } {
@@ -729,12 +722,6 @@ export function bindRefinementFigure(input: FigureClauseInput): FigureRead {
         return {
             kind: 'clarify',
             question: `What should the value be? "${clause.text.trim()}" quotes words beside its figure; state the new value without them, as in "make it 2 dB".`,
-        };
-    }
-    if (figure.symbol !== null) {
-        return {
-            kind: 'clarify',
-            question: `What does "${figure.symbol}" beside ${figure.raw} mean? Restate the value without it, writing a sign as "-", "+", "minus" or "plus".`,
         };
     }
     if (figure.separatedConnector !== null) {
