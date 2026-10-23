@@ -1,0 +1,19 @@
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  s_441e828df58f9e::t_c7ad86034d8efd 299-301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97a29a4e6acc9662724866475e2a7b4b2d4d5191",
+  "prompts": {},
+  "sessions": {
+    "s_441e828df58f9e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2845244a-811e-4f69-a89a-e2b3d9dedcec",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
