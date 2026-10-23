@@ -1,0 +1,71 @@
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/markElasticDetectionComplete.spec.ts
+  s_59e31a5c6f3e31::t_ca8a8aa888c42b 3-5,20,37
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/selectElasticMarkers.spec.ts
+  s_59e31a5c6f3e31::t_ca8a8aa888c42b 3-5,28,45
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/closeElasticEditor.spec.ts
+  s_59e31a5c6f3e31::t_ca8a8aa888c42b 3-5,26-27,36
+src/modules/Preferences/useCases/__tests__/updatePreferences.spec.ts
+  s_59e31a5c6f3e31::t_981febb304d1ee 45-60
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_59e31a5c6f3e31::t_39ed3e5551bf25 1,93-116,320,333,335,338-340
+  s_59e31a5c6f3e31::t_6bb35e8038c080 4-6,247,263,321-332,334,336-337,341-345
+  s_59e31a5c6f3e31::t_8041c711b07954 346
+src/modules/Preferences/stores/preferencesStore.ts
+  s_59e31a5c6f3e31::t_4fe4342e9e9025 12,60
+src/modules/Preferences/useCases/updatePreferences.ts
+  s_59e31a5c6f3e31::t_4fe4342e9e9025 3-8
+  s_59e31a5c6f3e31::t_ac53821d08b827 22-26
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/openElasticEditor.spec.ts
+  s_59e31a5c6f3e31::t_ca8a8aa888c42b 3-5,31-32,40
+src/modules/Preferences/stores/__tests__/preferencesStore.spec.ts
+  s_59e31a5c6f3e31::t_981febb304d1ee 107-119
+src/modules/Preferences/models/Preferences.ts
+  s_59e31a5c6f3e31::t_4fe4342e9e9025 77,86-92,107,137
+src/modules/AudioEngine/handlers/finalFeature/handleDetectTransients.ts
+  s_59e31a5c6f3e31::t_4fe4342e9e9025 2-3,9-13
+src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts
+  s_59e31a5c6f3e31::t_0e29002f9d34cb 4-5,18-21,41-48
+  s_1c08b47ac3792f::t_a596def683247a 49
+src/modules/Preferences/models/__tests__/Preferences.spec.ts
+  s_59e31a5c6f3e31::t_981febb304d1ee 9,104-126
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  s_59e31a5c6f3e31::t_cc13f300f42303 3-5,22,26,30-50
+  s_59e31a5c6f3e31::t_ca8a8aa888c42b 52,54,59,61,64-70
+  s_1c08b47ac3792f::t_b75d372002429d 51,71
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  s_59e31a5c6f3e31::t_4fe4342e9e9025 1-3,19,40-42
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_59e31a5c6f3e31::t_981febb304d1ee 68-96
+src/modules/Preferences/AGENTS.md
+  s_59e31a5c6f3e31::t_981febb304d1ee 13
+src/modules/ElasticAudio/AGENTS.md
+  s_59e31a5c6f3e31::t_981febb304d1ee 19,28
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_59e31a5c6f3e31::t_4fe4342e9e9025 24-25,95,190,206,354,367
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticTool.spec.ts
+  s_59e31a5c6f3e31::t_ca8a8aa888c42b 3-5,22,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4282d790b02050ceb6266567343aacaf6a0aeec",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
