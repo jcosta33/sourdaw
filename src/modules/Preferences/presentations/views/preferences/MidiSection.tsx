@@ -7,6 +7,7 @@ import { Row } from '#/components/layout';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { MidiDevicePicker } from '#/modules/AudioEngine/presentations/views';
+import { HardwareMappingManager } from '#/modules/ControlSurface/presentations/views';
 
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
@@ -65,5 +66,6 @@ export const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
                 ))}
             </DawCompactSelect>
         </FieldGroup>
+        <HardwareMappingManager />
     </>
 );
