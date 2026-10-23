@@ -3519,6 +3519,13 @@ describe('package scripts and gitignore', () => {
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
                 publicReviews: () => [],
                 publicReviewComments: () => [],
+                // The fence case drives a minimal port; the approval-thread gate
+                // still needs its reader to let the flow reach the fence.
+                reviewState: () => ({
+                    latestReviewerStateOnHead: null,
+                    latestReviewerReviewDatabaseId: null,
+                    unresolvedThreads: 0,
+                }),
                 postReview: () => expect.fail('review creation should not start'),
                 applyApprovalLabel: () => expect.fail('review creation should not start'),
                 removeApprovalLabel: () => expect.fail('review creation should not start'),

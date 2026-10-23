@@ -1,3 +1,4 @@
+import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -33,6 +34,7 @@ import {
     getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
@@ -1555,6 +1557,62 @@ describe('punch audio capture loop placement', () => {
             expectProjectProjection();
         }
     );
+
+    it('refuses undated native PCM after root replacement retains the original clip and take IDs', async () => {
+        hardware.now = 51;
+        hardware.latencySeconds = 0;
+        hardware.nativeTimingUnavailable = true;
+        hardware.nativeCursorBeat = (now) => 8 + ((2 + (now - 51) * 2) % 4);
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+        playheadClockRef.beat = 10;
+        playheadClockRef.audioTimeSeconds = 51;
+        playheadPositionRef.current = 10;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        const clipId = activeRecordingRef.current[0]!;
+        const takeId = lane().takes[0]!.id;
+        let releaseFlush = () => {};
+        hardware.flushGate = new Promise<void>((resolve) => {
+            releaseFlush = resolve;
+        });
+        hardware.now = 51.25;
+        const stopping = stopPlayback();
+        await vi.waitFor(() => expect(hardware.flushes).toBe(1));
+        flushAutomergeStorageWrites();
+        replaceCrdtDoc({ id: 'root', doc: cloneAutomergeDoc(getCrdtDoc('root')!) });
+        expect(recordedClips().map((clip) => clip.id)).toEqual([clipId]);
+        expect(lane().takes.map((take) => take.id)).toEqual([takeId]);
+        const successorDocument = JSON.stringify(getCrdtDoc('root'));
+        const successorTracks = structuredClone(trackStore.value);
+        const successorTakes = structuredClone(takeLaneStore.value);
+        const history = structuredClone(undoHistoryStore.value);
+        const audio = await import('#/modules/AudioEngine/useCases');
+        const arrangement = await import('#/modules/Arrangement/useCases');
+        const cache = vi.spyOn(audio, 'cacheAudioBuffer');
+        const recover = vi.spyOn(arrangement, 'prepareRecoveredRecording');
+        const commit = vi.spyOn(arrangement, 'commitRecording');
+        const discard = vi.spyOn(arrangement, 'discardRecording');
+        releaseFlush();
+        await stopping;
+
+        expect(hardware.buffer!.length).toBe(12000);
+        expect(hardware.buffer!.getChannelData(0)[11999]).toBe(11999);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(successorDocument);
+        expect(trackStore.value).toEqual(successorTracks);
+        expect(takeLaneStore.value).toEqual(successorTakes);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(cache).not.toHaveBeenCalled();
+        expect(recover).not.toHaveBeenCalled();
+        expect(commit).not.toHaveBeenCalled();
+        expect(discard).not.toHaveBeenCalled();
+        expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        const { notifyUser } = await import('#/utils/Notification/notifyUser');
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+            'warning'
+        );
+        expectProjectProjection();
+    });
 
     it('does not resurrect a retired capture owner when its first-frame history becomes readable at terminal', async () => {
         hardware.now = 51;

@@ -10,6 +10,7 @@ import {
     getCompensationDelay,
     cacheAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } from '../../models/TempoMap';
@@ -223,6 +224,7 @@ type ManualRecordingTerminalInput = {
     admissionChanges: readonly TempoChange[];
     admissionTempo: number;
     nowContextSeconds: number;
+    stillOwnsCaptureRoot: () => boolean;
 };
 
 function prepareManualNativeTerminal(
@@ -262,26 +264,44 @@ function prepareManualNativeTerminal(
     return undefined;
 }
 
+function retireFailedManualRecording({
+    recClip,
+    stillOwnsCaptureRoot,
+}: Pick<ManualRecordingTerminalInput, 'recClip' | 'stillOwnsCaptureRoot'>): void {
+    // A failed capture retires its provisional clip only on its original root.
+    if (recClip && stillOwnsCaptureRoot()) {
+        discardRecording(recClip.id);
+    }
+    notifyUser(
+        stillOwnsCaptureRoot()
+            ? 'Recording failed — the partial take was discarded. Check your audio input and try again.'
+            : 'Recording failed — the partial take was not kept on this branch.',
+        'error'
+    );
+}
+
 function completeManualRecording(input: ManualRecordingTerminalInput): void {
     const {
         result,
-        recClip: admittedClip,
         totalLatencySec,
         transportHold,
         captureClock,
         admissionChanges,
         admissionTempo,
         nowContextSeconds,
+        stillOwnsCaptureRoot,
     } = input;
     if (result.kind === 'failed') {
-        // A capture that dies mid-take (ring overrun, worker crash, a
-        // WAV that never decoded) must not strand an empty provisional
-        // clip on the arrangement or stay silent about it (#4265).
-        notifyUser('Recording failed — the partial take was discarded. Check your audio input and try again.', 'error');
-        const failedClip = admittedClip;
-        if (failedClip) {
-            discardRecording(failedClip.id);
-        }
+        retireFailedManualRecording(input);
+        return;
+    }
+    if (!stillOwnsCaptureRoot()) {
+        // Native terminal preparation can stage history or recover undated PCM,
+        // so root ownership must be established before either path has effects.
+        notifyUser(
+            'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+            'warning'
+        );
         return;
     }
     const { buffer } = result;
@@ -384,8 +404,14 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
                     sourceDurationSeconds: buffer.duration,
                 }).catch((error: unknown) => {
                     logger.error(new Error('Recording commit failed', { cause: error }));
-                    notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                    discardRecording(recordedClip.id);
+                    // A commit can reject after the root was replaced. Its
+                    // cleanup must not discard the successor's same-id clip.
+                    if (stillOwnsCaptureRoot()) {
+                        discardRecording(recordedClip.id);
+                        notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                    } else {
+                        notifyUser('Recording failed — the take was not kept on this branch.', 'error');
+                    }
                 })
             )
         );
@@ -419,6 +445,10 @@ async function beginActualRecording(
     transportHold: TransportHold
 ): Promise<boolean> {
     const ctx = getAudioContext();
+    // A terminal belongs to this runtime root, including forks that retain the
+    // same clip IDs. Capture the witness before awaiting recorder admission.
+    const captureRootIdentity = captureProjectRootIdentity();
+    const stillOwnsCaptureRoot = (): boolean => captureProjectRootIdentity() === captureRootIdentity;
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
@@ -457,6 +487,7 @@ async function beginActualRecording(
                     admissionChanges,
                     admissionTempo,
                     nowContextSeconds: ctx.currentTime,
+                    stillOwnsCaptureRoot,
                 });
             },
             track.inputId,
@@ -479,6 +510,15 @@ async function beginActualRecording(
             recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
             notifyUser('Unable to start recording. Check the selected audio input.', 'error');
+            return false;
+        }
+        // Hardware admission may resolve after a fork installed a successor.
+        // Refuse before staging a provisional clip on that different root.
+        if (!stillOwnsCaptureRoot()) {
+            detachReaders();
+            recordingLifecycle.completePendingRecordingStart(startToken);
+            await stopAudioRecording();
+            notifyUser('Recording was not started — the project moved to another branch. Try again.', 'error');
             return false;
         }
     }
