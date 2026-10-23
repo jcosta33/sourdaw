@@ -192,7 +192,11 @@ describe('stopRecording during a loop recording', () => {
 
         expect(writtenClip()).toMatchObject({ startBeat: 12, endBeat: 16 });
         expect(writtenClip()).not.toHaveProperty('midiOffsetBeats');
-        expect(mocks.commitRecording).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 12, endBeat: 16 }));
+        expect(mocks.commitRecording).toHaveBeenCalledWith(
+            expect.objectContaining({ startBeat: 12, endBeat: 16 }),
+            undefined,
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
     });
 
     it('does not place the takes of an audio recording, which its capture terminal owns', () => {

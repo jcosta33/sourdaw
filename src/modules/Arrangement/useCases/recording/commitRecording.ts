@@ -59,9 +59,16 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
  * would leave the staged clip, take, and notes behind with no entry and call it
  * a success (#4439). The wrapper keeps that behaviour for every other action.
  */
-export async function commitRecording(clip: Clip, capture?: RecordedCapture): Promise<void> {
+export async function commitRecording(
+    clip: Clip,
+    capture?: RecordedCapture,
+    options?: { shouldExecute?: () => boolean }
+): Promise<void> {
+    // The shouldExecute option rides the dispatch's own post-wait re-check: a commit
+    // parked on the snapshot-transaction queue must not resume into a root the
+    // caller no longer owns (#5517).
     if (capture === undefined) {
-        await executeAppAction({ type: 'commitRecording', payload: { clip } });
+        await executeAppAction({ type: 'commitRecording', payload: { clip } }, options);
         return;
     }
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
@@ -73,5 +80,5 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
+    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } }, options);
 }
