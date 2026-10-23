@@ -662,8 +662,25 @@ test('automatic punch closes an actual virtual-keyboard recording at punch out w
     await expect.poll(async () => (await snapshot(page)).notes.length).toBe(1);
     const punched = await snapshot(page);
     expect(punched.notes).toHaveLength(1);
-    expect(punched.notes[0].pitch).toBe(64);
-    expect(punched.notes[0].recordingPassId).toBeTruthy();
+    const note = punched.notes[0];
+    expect(note.pitch).toBe(64);
+    expect(note.recordingPassId).toBeTruthy();
+    expect(punched.clips).toHaveLength(1);
+    const clip = punched.clips[0];
+    expect(clip).toMatchObject({ type: 'midi', trackId: punched.trackId, startBeat: 1, endBeat: 3 });
+    expect(punched.lane?.takes).toHaveLength(1);
+    expect(punched.lane!.takes[0]).toMatchObject({
+        clipId: clip.id,
+        startBeat: 1,
+        endBeat: 3,
+        recordingPassId: note.recordingPassId,
+    });
+    const sourcePunchOut = 3 - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+    expect(Number.isFinite(note.startBeat)).toBe(true);
+    expect(Number.isFinite(note.duration)).toBe(true);
+    expect(note.duration).toBeGreaterThan(0);
+    expect(note.startBeat).toBeLessThan(sourcePunchOut);
+    expect(note.startBeat + note.duration).toBeCloseTo(sourcePunchOut, 5);
     expect(punched.historyCount).toBe(historyBefore + 1);
     await key(page, 'd', false);
     expect((await snapshot(page)).notes).toEqual(punched.notes);
