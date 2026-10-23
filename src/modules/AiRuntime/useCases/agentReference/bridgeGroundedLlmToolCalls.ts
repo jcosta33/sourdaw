@@ -6547,10 +6547,94 @@ function findRefinementDefect(input: {
     return unanswered === undefined ? null : `No proposed change answers "${unanswered.text.trim()}" in the refinement`;
 }
 
+type GroundedNewCalls = {
+    /** Each new call's grounded action, by the call's index in the batch. */
+    actions: ReadonlyMap<number, BridgeGroundedLlmToolCallsResult['actions'][number]>;
+    rejections: BridgeGroundedLlmToolCallsResult['rejections'];
+};
+
+/**
+ * Ground each call continuing no pending command in the text of the addition clauses it answers, never
+ * in the whole refinement: the clauses that change or keep pending commands ground nothing new, and
+ * read whole they would hold the new call to objects it does not act on ("turn Vocals down 1.5 dB and
+ * turn Bass down 1 dB" grounds the Bass cut in its own clause). Calls answering the same clauses ground
+ * together, as one request; a call no addition clause answers is refused.
+ */
+function groundNewRefinedCalls(input: {
+    unrefined: BridgeGroundedLlmToolCallsInput;
+    basis: ProposalGroundingBasis;
+    removals: ReadRemovals;
+    inheritedCommandIndexes: ReadonlyArray<number | null>;
+}): GroundedNewCalls {
+    const { unrefined, basis, removals, inheritedCommandIndexes } = input;
+    const { calls, context, prompt } = unrefined;
+    if (!inheritedCommandIndexes.includes(null)) {
+        return { actions: new Map(), rejections: [] };
+    }
+    const catalog = getExecutableAppActionGroundingCatalog();
+    const additions = refinementClauseReader.additions({
+        text: prompt,
+        basis,
+        context,
+        removalClauseStarts: removals.removalClauseStarts,
+        removedCommandIndexes: removals.removedCommandIndexes,
+        readsCourtesy: false,
+    });
+    const groups = new Map<string, number[]>();
+    for (const [index, call] of calls.entries()) {
+        if (inheritedCommandIndexes[index] !== null) {
+            continue;
+        }
+        const answered = additions.filter((clause) => answersAdditionClause(clause, call, catalog, context));
+        if (answered.length === 0) {
+            return {
+                actions: new Map(),
+                rejections: [
+                    rejection(
+                        index,
+                        call.name,
+                        `Refined proposal adds a ${call.name} change no clause of the refinement asks for`
+                    ),
+                ],
+            };
+        }
+        const text = answered.map((clause) => clause.text.trim()).join(', ');
+        groups.set(text, [...(groups.get(text) ?? []), index]);
+    }
+    const actions = new Map<number, BridgeGroundedLlmToolCallsResult['actions'][number]>();
+    for (const [text, indexes] of groups) {
+        const grounded = bridgeGroundedLlmToolCalls({
+            ...unrefined,
+            prompt: text,
+            calls: indexes.map((index) => calls[index]!),
+        });
+        if (grounded.rejections.length > 0) {
+            return {
+                actions: new Map(),
+                rejections: grounded.rejections.map((groupRejection) =>
+                    groupRejection.name === '<batch>'
+                        ? groupRejection
+                        : { ...groupRejection, index: indexes[groupRejection.index] ?? groupRejection.index }
+                ),
+            };
+        }
+        if (grounded.actions.length !== indexes.length) {
+            return {
+                actions: new Map(),
+                rejections: [rejection(0, '<batch>', 'Refined proposal lost a command while grounding it')],
+            };
+        }
+        for (const [position, index] of indexes.entries()) {
+            actions.set(index, grounded.actions[position]!);
+        }
+    }
+    return { actions, rejections: [] };
+}
+
 /**
  * Ground a batch whose calls continue pending commands: each such call inherits that command's target
  * authority, re-read from the request text that granted it, and may change only the value one
- * refinement clause binds; every other call grounds in the refinement text alone.
+ * refinement clause binds; every other call grounds in the text of the addition clauses it answers.
  */
 function groundInheritedRefinement(route: {
     input: BridgeGroundedLlmToolCallsInput;
@@ -6597,21 +6681,9 @@ function groundInheritedRefinement(route: {
             `Refined proposal leaves out the pending ${describePendingCommand(basis.commands[unboundValue]!, context)} change the refinement restates`
         );
     }
-    const newCallIndexes = calls.flatMap((_call, index) => (inheritedCommandIndexes[index] === null ? [index] : []));
-    const newCalls = newCallIndexes.map((index) => calls[index]!);
-    const groundedNew =
-        newCalls.length === 0
-            ? { actions: [], rejections: [] }
-            : bridgeGroundedLlmToolCalls({ ...unrefined, calls: newCalls });
+    const groundedNew = groundNewRefinedCalls({ unrefined, basis, removals, inheritedCommandIndexes });
     if (groundedNew.rejections.length > 0) {
-        return {
-            actions: [],
-            rejections: groundedNew.rejections.map((newRejection) =>
-                newRejection.name === '<batch>'
-                    ? newRejection
-                    : { ...newRejection, index: newCallIndexes[newRejection.index] ?? newRejection.index }
-            ),
-        };
+        return { actions: [], rejections: groundedNew.rejections };
     }
     for (const [index, commandIndex] of inheritedCommandIndexes.entries()) {
         const command = commandIndex === null ? undefined : basis.commands[commandIndex];
@@ -6632,11 +6704,10 @@ function groundInheritedRefinement(route: {
     const replays = new Map<number, ReadonlySet<number>>();
     const actions: BridgeGroundedLlmToolCallsResult['actions'] = [];
     const keptDirectionActionIndexes: number[] = [];
-    const newActions = [...groundedNew.actions];
     for (const [index, call] of calls.entries()) {
         const commandIndex = inheritedCommandIndexes[index];
         if (commandIndex === null || commandIndex === undefined) {
-            const action = newActions.shift();
+            const action = groundedNew.actions.get(index);
             if (action === undefined) {
                 return refuseRefinement('Refined proposal lost a command while grounding it');
             }

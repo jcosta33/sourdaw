@@ -58,7 +58,7 @@ function keyCommands(proposal: ProposalCommands, objectIdentity: CommandObjectId
     });
 }
 
-/** A field value as a musician reads it: decibel fields with their unit, as the labels state them. */
+/** A field value as a musician reads it: decibel fields with their unit, at the diff's own two trimmed decimals. */
 function renderValue(field: string, value: unknown): string | null {
     if (value === undefined) {
         return null;

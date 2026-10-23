@@ -216,7 +216,7 @@ describe('diffProposalCommands', () => {
         });
     });
 
-    it('renders decibel fields at the precision the card labels state them in', () => {
+    it('renders decibel fields at two trimmed decimals, so distinct values look distinct', () => {
         const vocals = (field: 'gainDb' | 'deltaDb', value: number) => ({
             type: 'setTrackGain',
             payload: { trackId: 'track-vocals', [field]: value },
@@ -226,6 +226,7 @@ describe('diffProposalCommands', () => {
             ['gainDb', -1.04, -1, '-1.04 dB', '-1 dB'],
             ['deltaDb', -1.25, -1.3, '-1.25 dB', '-1.3 dB'],
             ['deltaDb', -1.04, -1, '-1.04 dB', '-1 dB'],
+            ['deltaDb', -6, -1.333, '-6 dB', '-1.33 dB'],
         ];
         for (const [field, before, after, previous, next] of rows) {
             expect(

@@ -83,6 +83,20 @@ const OPERATION_WORDS: Readonly<Record<string, readonly string[]>> = {
     solo: ['soloTrack'],
     arm: ['armTrack'],
 };
+/**
+ * Every spelling an operation word is read in where a clause states the operation rather than naming its
+ * object: the word itself and its -ing and -ed forms ("don't mute", "without muting", "not armed").
+ */
+const OPERATION_WORD_FORMS: Readonly<Record<string, readonly string[]>> = {
+    ...OPERATION_WORDS,
+    panned: ['setTrackPan'],
+    muting: ['muteTrack'],
+    muted: ['muteTrack'],
+    soloing: ['soloTrack'],
+    soloed: ['soloTrack'],
+    arming: ['armTrack'],
+    armed: ['armTrack'],
+};
 const GENERIC_REFERENCE_NOUNS = /\s+(?:track|channel|bus|change|one)$/u;
 
 /** The refinement's clauses: the shared clause splitter, then any trailing `except`/`without` phrase on its own. */
@@ -119,6 +133,15 @@ const NEGATION_WORD = /(?<![\p{L}\p{N}])(?:not|never|without|except|cannot|\p{L}
 
 function statesNegation(clause: PromptClause): boolean {
     return NEGATION_WORD.test(normalizePromptText(clause.masked));
+}
+
+/** The action types a clause's operation words state outside object names, in any form the reader reads. */
+function readStatedOperations(clause: PromptClause): Set<string> {
+    return new Set(
+        normalizePromptText(clause.masked)
+            .split(' ')
+            .flatMap((word) => (Object.hasOwn(OPERATION_WORD_FORMS, word) ? OPERATION_WORD_FORMS[word]! : []))
+    );
 }
 
 /**
@@ -270,6 +293,7 @@ export const refinementRequestReading = {
     withoutLeadingConnectors,
     statesFigure,
     statesNegation,
+    statedOperations: readStatedOperations,
     removalVerbs: REMOVAL_VERBS,
     /** The articles a removal may state before its object. */
     articles: REFERENCE_ARTICLE_WORDS,

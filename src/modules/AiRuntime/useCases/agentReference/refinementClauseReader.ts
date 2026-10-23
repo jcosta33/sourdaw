@@ -63,7 +63,10 @@ const RESTRICTED_ADDITION_REASON = 'The refinement adds a change without saying 
  * The closed restriction and replacement words an addition is asked for, in normalized words with
  * object names masked: each may say the addition stands in place of the pending changes.
  */
-const RESTRICTION_WORDS = /(?:^|\s)(?:only|just|alone|instead|exclusively|rather|solely|in\s+place)(?:\s|$)/u;
+const RESTRICTION_WORDS =
+    /(?:^|\s)(?:only|just|alone|instead|exclusively|rather|solely|merely|simply|strictly|purely|in\s+place|and\s+nothing\s+else)(?:\s|$)/u;
+/** The text an addition's clause may run on into, cut off it by the splitter, that restricts it the same way. */
+const RESTRICTING_CONTINUATION = /^and nothing else$/u;
 
 const normalizedClause = refinementRequestReading.clauseWords;
 
@@ -221,10 +224,35 @@ function statesRestriction(clause: RefinementClause): boolean {
 }
 
 /**
- * An addition beside the pending card adds to it, so one stating a restriction or replacement word
- * ("mute Bass instead", "turn Snare down 2 dB only"), or standing beside a clause that is exactly
- * `instead` ("mute Bass, instead"), may mean the pending changes go, which no reading can tell from
- * an addition kept beside them: it is asked, as a restatement in such words is.
+ * Whether a clause adds a change: it names an object no pending command acts on, or takes an action no
+ * pending command takes on the objects it names ("mute Keys" beside a pending Reverb mix on Keys).
+ */
+function addsChange(scope: ClauseScope): boolean {
+    if (scope.kind === 'addition') {
+        return true;
+    }
+    return (
+        scope.kind === 'scoped' &&
+        scope.namesObjects &&
+        scope.statesAction &&
+        scope.meant.length === 0 &&
+        scope.removed.length === 0
+    );
+}
+
+/** Whether the text right after a clause runs on into "and nothing else", which the splitter cut off it. */
+function runsOnIntoRestriction(clause: RefinementClause, clauses: readonly RefinementClause[], text: string): boolean {
+    const next = clauses.find((candidate) => candidate.start >= clause.end);
+    return next !== undefined && RESTRICTING_CONTINUATION.test(normalizePromptText(text.slice(clause.end, next.end)));
+}
+
+/**
+ * A clause adding a change beside the pending card adds to it, so one stating a restriction or
+ * replacement word ("mute Bass instead", "turn Snare down 2 dB only", "mute Keys and nothing else"),
+ * or standing beside a clause that is exactly `instead` ("mute Bass, instead"), may mean the pending
+ * changes go, which no reading can tell from an addition kept beside them: it is asked, as a
+ * restatement in such words is. That holds for an action no pending command takes on a pending
+ * object's track as for an object off the card ("mute Keys instead" beside a Reverb mix on Keys).
  */
 function findRestrictedAddition(input: {
     text: string;
@@ -234,17 +262,17 @@ function findRestrictedAddition(input: {
     removedCommandIndexes: ReadonlySet<number>;
 }): string | null {
     const scopeInput = createClauseScopeInput(input);
-    const clauses = refinementRequestReading
-        .clauses(input.text, input.context)
-        .filter((clause) => !input.removalClauseStarts.has(clause.start));
-    const additions = clauses.filter((clause) => readClauseScope(clause, scopeInput).kind === 'addition');
+    const allClauses = refinementRequestReading.clauses(input.text, input.context);
+    const clauses = allClauses.filter((clause) => !input.removalClauseStarts.has(clause.start));
+    const additions = clauses.filter((clause) => addsChange(readClauseScope(clause, scopeInput)));
     const [first] = additions;
     if (first === undefined) {
         return null;
     }
     const restricted =
-        additions.find(statesRestriction) ??
-        (clauses.some((clause) => normalizedClause(clause) === 'instead') ? first : undefined);
+        additions.find(
+            (clause) => statesRestriction(clause) || runsOnIntoRestriction(clause, allClauses, input.text)
+        ) ?? (clauses.some((clause) => normalizedClause(clause) === 'instead') ? first : undefined);
     if (restricted === undefined) {
         return null;
     }

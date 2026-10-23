@@ -49,7 +49,7 @@ type StatedFigure = {
     direction: -1 | 1 | null | 'conflicting';
     /** The words beside the figure, read from the clause with every object name masked. */
     words: string;
-    /** A symbol touching the figure that this reading does not read as its sign, decimal mark or percent. */
+    /** A symbol anywhere outside object names that this reading does not read as its sign, decimal mark or percent. */
     symbol: string | null;
 };
 
@@ -254,21 +254,21 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         ...readConnector(before),
         direction: readDirection(words),
         words,
-        symbol: findTouchingMark(before, after),
+        symbol: findUnreadMark(`${before} ${after.slice(unit.length)}`),
     };
 }
 
 /**
- * A mark touching the figure that is none of the ones it is read by: the decimal mark and percent sign
- * inside the figure, and the sign before it. The mark before may stand a space away, as a read sign
- * may; a mark after the figure touches it.
+ * A mark anywhere in the clause outside the object names it states that is none of the ones its figure
+ * is read by: the decimal mark and percent sign inside the figure, and the sign before it. The text it
+ * is read in leaves out the figure, its read sign and its unit word, so any other symbol or punctuation
+ * mark, touching the figure or not ("2 dB ↑", "2 dB+", "2 dB 🔊"), may state a sign or direction this
+ * reading does not read.
  */
-function findTouchingMark(before: string, after: string): string | null {
-    const touching = [/(\S)\s*$/u.exec(before)?.[1], after.at(0)];
+function findUnreadMark(text: string): string | null {
     return (
-        touching.find(
-            (character): character is string =>
-                character !== undefined && character !== PROJECT_REFERENCE_MASK_GLYPH && UNREAD_MARK.test(character)
+        Array.from(text).find(
+            (character) => character !== PROJECT_REFERENCE_MASK_GLYPH && UNREAD_MARK.test(character)
         ) ?? null
     );
 }

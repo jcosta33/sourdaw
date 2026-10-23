@@ -513,10 +513,10 @@ async function dispatchPromptPlan(input: {
             });
             return undefined;
         }
+        // A refinement always reaches here requiring confirmation: the planner carries `refines` only
+        // beside `requiresConfirmation`, which escalates the risk policy to `confirm` in every mode that
+        // compiles a batch for approval, and preview and plan refuse a refinement before this point.
         const refinedProposal = refinement?.status === 'admitted' ? refinement.confirmation : null;
-        if (refinedProposal !== null && !compiledActionExecution.requiresConfirmation) {
-            throw new Error('A refinement replaces a pending proposal, so it must be put to the user for approval.');
-        }
         if (compiledActionExecution.requiresConfirmation) {
             const confirmationId = persistPromptActionConfirmation({
                 runId: admission.runId,

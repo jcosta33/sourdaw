@@ -18,9 +18,9 @@ type ProtectionRead = NonNullable<ReturnType<typeof refinementProtectionForms.re
  * negation removes only in the form `not`/`except`/`except for`/`without` [the] <object> [operation
  * word]: naming a pending object it removes that object's changes (of the operation the word
  * states), naming a project object outside the card it protects that object; right before or after a
- * removal clause it is asked instead, as a "leave ... alone" there is. Any other negated
- * clause is asked, unless it names no project object and states no figure ("not too loud"), which is
- * read and left alone.
+ * removal clause, or right after a protection, it is asked instead, as a "leave ... alone" beside a
+ * removal is. Any other negated clause is asked, unless it names no project object, states no figure
+ * and states no pending command's operation word ("not too loud"), which is read and left alone.
  */
 type RefinementRemovals =
     | { status: 'refused'; reason: string }
@@ -71,8 +71,11 @@ const normalizedClause = refinementRequestReading.clauseWords;
 
 /** The one form a negation removes or protects in: `not`/`except`/`except for`/`without` and what follows. */
 const NEGATION_FORM = /^(?:not|except(?:\s+for)?|without)\s+(.+)$/u;
-/** The exception a protection may carry, which the splitter cuts off it as a clause of its own. */
-const EXCEPTION_FORM = /^(?:except|without)\s/u;
+/**
+ * The exception a protection may carry, which the splitter cuts off it as a clause of its own: an
+ * `except`/`without`, or a `not`/`but not` (its `but` read off as any clause's connector is).
+ */
+const EXCEPTION_FORM = /^(?:except|without|not)\s/u;
 const LEAVE_ALONE = /^leave\s+(.+?)\s+alone$/u;
 /** What may stand between two clauses the splitter cut inside one protection's list of objects. */
 const LIST_SEPARATOR = /^\s*(?:,\s*(?:and\s+)?|and\s+)$/iu;
@@ -84,12 +87,23 @@ function describeUnresolvedRemoval(reference: string, what: 'object' | 'change')
 /**
  * A negated clause outside the one form a negation removes in ("don't raise Snare", "not the snare at
  * 2 dB", "never boost Snare") says what not to do in words this reading does not bind: it is asked,
- * unless it names no project object and states no figure ("without changing anything else"), which
- * is read and left alone.
+ * unless it names no project object, states no figure and states no pending command's operation word
+ * ("without changing anything else"), which is read and left alone. One stating such a word ("don't
+ * arm", "without muting", "not armed") may withdraw that pending change, so it is asked.
  */
-function readOtherNegation(clause: RefinementClause, candidates: readonly ReferenceCandidate[]): RemovalClauseRead {
+function readOtherNegation(
+    clause: RefinementClause,
+    candidates: readonly ReferenceCandidate[],
+    commands: readonly CommandView[]
+): RemovalClauseRead {
     const statesFigure = findPromptNumbers(clause.masked).length > 0;
-    if (!statesFigure && refinementRequestReading.references(clause.text, candidates).length === 0) {
+    const operations = refinementRequestReading.statedOperations(clause);
+    const statesPendingOperation = commands.some((view) => operations.has(view.command.type));
+    if (
+        !statesFigure &&
+        !statesPendingOperation &&
+        refinementRequestReading.references(clause.text, candidates).length === 0
+    ) {
         return { kind: 'unread-negation' };
     }
     return {
@@ -122,11 +136,11 @@ function askNegationBesideRemoval(clause: RefinementClause): RemovalClauseRead {
 }
 
 /**
- * An `except`/`without` right after a protection or a rest-of-mix clause ("keep everything else
- * unchanged except the snare", "leaving the drum bus unchanged, except the snare") may carve its object
- * out of that protection, so the pending change on it stands, or remove that change, which no reading
- * can tell apart, so it is asked rather than read as a removal. One naming no project object ("without
- * changing anything else") carves nothing out and is read as any other negation is.
+ * An `except`, `without`, `not` or `but not` right after a protection or a rest-of-mix clause ("keep
+ * everything else unchanged except the snare", "leaving the drum bus unchanged, not the snare") may
+ * carve its object out of that protection, so the pending change on it stands, or remove that change,
+ * which no reading can tell apart, so it is asked rather than read as a removal. One naming no project
+ * object ("without changing anything else") carves nothing out and is read as any other negation is.
  */
 function askExceptionAfterProtection(clause: RefinementClause): RemovalClauseRead {
     return {
@@ -135,7 +149,7 @@ function askExceptionAfterProtection(clause: RefinementClause): RemovalClauseRea
     };
 }
 
-/** Whether an `except`/`without` clause names a project object it could carve out of a protection. */
+/** Whether an exception clause names a project object it could carve out of a protection. */
 function carvesExceptionOut(
     clause: RefinementClause,
     text: string,
@@ -164,7 +178,7 @@ function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
     const resolved = refinementRequestReading.resolveReference(stated, candidates);
     if (resolved === null) {
         if (negation !== null) {
-            return readOtherNegation(clause, candidates);
+            return readOtherNegation(clause, candidates, input.commands);
         }
         return { kind: 'refused', reason: describeUnresolvedRemoval(stated, 'object') };
     }
@@ -216,7 +230,7 @@ function readProtectionOrNegation(input: RemovalClauseInput, text: string): Remo
         return askNegationBesideRemoval(clause);
     }
     if (negation === null && refinementRequestReading.statesNegation(clause)) {
-        return readOtherNegation(clause, candidates);
+        return readOtherNegation(clause, candidates, input.commands);
     }
     if (protection === null || protection.kind === 'removal') {
         return null;
