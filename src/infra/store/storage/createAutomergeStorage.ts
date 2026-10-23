@@ -1188,6 +1188,14 @@ export function countPendingAutomergeStorageWrites(): number {
     return pendingAutomergeStorageWrites.size;
 }
 
+/** Pending writes from another owner can make projected stores newer than the committed document. */
+export function hasForeignPendingAutomergeStorageWrites(docId: AutomergeStorageDocId): boolean {
+    const currentOwner = getCurrentAutomergeStorageMutationOwner();
+    return [...pendingAutomergeStorageWrites].some(
+        (pending) => pending.docId === docId && pending.commitOwner !== currentOwner
+    );
+}
+
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
     const previousPort = automergeStoragePort;
     if (previousPort === port) {

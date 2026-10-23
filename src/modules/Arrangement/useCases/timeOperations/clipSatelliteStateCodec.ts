@@ -67,16 +67,19 @@ function validateGainEnvelope(value: unknown, clipId: string): ClipGainEnvelope 
     }
 
     const points: GainEnvelopePoint[] = [];
+    const pointIds = new Set<string>();
     for (const point of candidatePoints) {
         const pointProperties = readDataObject(point, GAIN_ENVELOPE_POINT_KEYS);
         if (
             !pointProperties ||
             !isNonEmptyString(pointProperties.id) ||
             !isFiniteNumber(pointProperties.beatOffset) ||
-            !isFiniteNumber(pointProperties.gainDb)
+            !isFiniteNumber(pointProperties.gainDb) ||
+            pointIds.has(pointProperties.id)
         ) {
             return false;
         }
+        pointIds.add(pointProperties.id);
         points.push({
             id: pointProperties.id,
             beatOffset: pointProperties.beatOffset,
@@ -137,7 +140,7 @@ function validateWarpMarker(value: unknown): WarpMarker | null {
     return validated;
 }
 
-function validateWarpState(value: unknown): WarpState | null | false {
+function validateWarpState(value: unknown, markerIds: Set<string>): WarpState | null | false {
     if (value === null) {
         return null;
     }
@@ -166,9 +169,10 @@ function validateWarpState(value: unknown): WarpState | null | false {
     const markers: WarpMarker[] = [];
     for (const candidate of properties.markers) {
         const marker = validateWarpMarker(candidate);
-        if (!marker) {
+        if (!marker || markerIds.has(marker.id)) {
             return false;
         }
+        markerIds.add(marker.id);
         markers.push(marker);
     }
     const state: WarpState = {
@@ -191,6 +195,7 @@ function decodeEntries(value: unknown): ClipSatelliteEntry[] | null {
         return null;
     }
     const clipIds = new Set<string>();
+    const warpMarkerIds = new Set<string>();
     const entries: ClipSatelliteEntry[] = [];
     for (const candidate of value) {
         const entry = readDataObject(candidate, ENTRY_KEYS);
@@ -198,7 +203,7 @@ function decodeEntries(value: unknown): ClipSatelliteEntry[] | null {
             return null;
         }
         const gainEnvelope = validateGainEnvelope(entry.gainEnvelope, entry.clipId);
-        const warpState = validateWarpState(entry.warpState);
+        const warpState = validateWarpState(entry.warpState, warpMarkerIds);
         if (gainEnvelope === false || warpState === false) {
             return null;
         }

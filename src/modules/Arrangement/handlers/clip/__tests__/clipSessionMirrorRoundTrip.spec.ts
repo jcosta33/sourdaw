@@ -7,6 +7,7 @@ import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
@@ -1546,6 +1547,84 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }
     });
 
+    it.each([false, true])(
+        'restores loop anchors through a saved split and ripple group anchored=%s',
+        async (anchored) => {
+            const source = createClipFixture('clip-b', 4, 12);
+            if (anchored) {
+                source.loopLength = 4;
+            }
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: TRACK_ID,
+                        kind: 'midi',
+                        clips: [createClipFixture('clip-a', 0, 4), source],
+                    }),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            if (anchored) {
+                await executeAppAction(
+                    { type: 'setClipLoop', payload: { clipId: 'clip-b', enabled: true } },
+                    { source: 'manual' }
+                );
+                expect(clipOnTrack(TRACK_ID, 'clip-b')?.loopOriginBeat).toBe(4);
+            } else {
+                expect(Object.hasOwn(clipOnTrack(TRACK_ID, 'clip-b')!, 'loopOriginBeat')).toBe(false);
+            }
+            expectValidProject();
+            const original = ownerProjections();
+            const originalRaw = structuredClone(getCrdtDoc('root'));
+            const group = { source: 'manual' as const, groupId: `split-ripple-loop-${anchored}` };
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'clip-b', beat: 8, rightClipId: 'clip-right' } },
+                group
+            );
+            await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a', ripple: true } }, group);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            const changed = ownerProjections();
+            const changedRaw = structuredClone(getCrdtDoc('root'));
+            reloadSavedProject();
+            expectValidProject();
+            const removal = undoHistoryStore.value?.past[1];
+            if (removal?.kind !== 'action' || removal.inverseAction?.type !== 'restoreClip') {
+                throw new Error('Expected a genuine saved ripple inverse');
+            }
+            const prefix = projectClipReplayPrefix([removal.inverseAction]);
+            expect(prefix?.clips.find((owner) => owner.clip.id === 'clip-b')?.clip.loopOriginBeat).toBe(
+                anchored ? 4 : undefined
+            );
+            expect(prefix?.clips.find((owner) => owner.clip.id === 'clip-right')?.clip.loopOriginBeat).toBe(
+                anchored ? 8 : undefined
+            );
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(ownerProjections()).toEqual(original);
+                expect(getCrdtDoc('root')).toEqual(originalRaw);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+                );
+                reloadSavedProject();
+                expectValidProject();
+                await redo();
+                expect(ownerProjections()).toEqual(changed);
+                expect(getCrdtDoc('root')).toEqual(changedRaw);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+                );
+                reloadSavedProject();
+                expectValidProject();
+            }
+        }
+    );
+
     it('replays a saved sequential ripple group through restored automation and shared shifted owners', async () => {
         await persistSequentialRippleGroup();
         for (let round = 0; round < 2; round += 1) {
@@ -3077,6 +3156,76 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(warpStateStore.value).toEqual(beforeWarpProjection);
         expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
     });
+
+    it.each(['gain', 'warp'] as const)(
+        'rejects a saved removeClip with duplicate %s satellite identities before real Undo',
+        async (owner) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+            setEnvelope('clip-a', {
+                clipId: 'clip-a',
+                enabled: true,
+                points: [
+                    { id: 'gain-a', beatOffset: 0, gainDb: -6 },
+                    { id: 'gain-b', beatOffset: 2, gainDb: -12 },
+                ],
+            });
+            setWarpState('clip-a', {
+                enabled: true,
+                markers: [
+                    { id: 'warp-a', originalBeat: 0, warpedBeat: 0.5 },
+                    { id: 'warp-b', originalBeat: 2, warpedBeat: 2.5 },
+                ],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const original = ownerProjections();
+            expectValidProject();
+            await executeAppAction(
+                { type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(ownerProjections()).toEqual(original);
+            await redo();
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            reloadSavedProject();
+            expectValidProject();
+
+            const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entries = persisted.past as {
+                inverseAction: {
+                    payload: {
+                        ripplePlan: {
+                            clipSatellites: {
+                                gainEnvelope: { points: { id: string }[] };
+                                warpState: { markers: { id: string }[] };
+                            }[];
+                        };
+                    };
+                };
+            }[];
+            const satellite = entries[0]!.inverseAction.payload.ripplePlan.clipSatellites[0]!;
+            const rows = owner === 'gain' ? satellite.gainEnvelope.points : satellite.warpState.markers;
+            expect(rows).toHaveLength(2);
+            expect(rows[0]!.id).not.toBe(rows[1]!.id);
+            rows[1]!.id = rows[0]!.id;
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+            reloadSavedProject();
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            await expectReplayRefused('undo');
+            expectValidProject();
+        }
+    );
 
     it('restores real gain and warp captures after removal, persistence, and fresh hydration', async () => {
         const envelope = {
@@ -5702,4 +5851,111 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(clipOnTrack('peer-track', 'clip-a')).toEqual(peerClip);
         expect(midiStore.value?.notesByClipId['clip-a']).toEqual([peerNote]);
     });
+
+    it.each([false, true].flatMap((grouped) => ['abort', 'commit'].map((settle) => ({ grouped, settle }))))(
+        'saved remove Redo refuses a foreign pending capture then retries grouped=$grouped settle=$settle',
+        async ({ grouped, settle }) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            const committedNote = { id: 'captured-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
+            const committedTake = { ...createTake('clip-a', 'Committed take A', 0, 4), selected: true };
+            const committedLane = {
+                ...createTakeLane(TRACK_ID),
+                id: 'captured-take-lane',
+                takes: [committedTake],
+                activeCompRegions: [],
+            };
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: { 'clip-a': [committedNote] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            takeLaneStore.set({ lanes: [committedLane] });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            if (grouped) {
+                const result = await executeAppActionBatch(
+                    [
+                        { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                        { type: 'removeClip', payload: { clipId: 'clip-b' } },
+                    ],
+                    { source: 'manual', groupId: 'pending-owner-group' }
+                );
+                expect(result.status).toBe('committed');
+            } else {
+                await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+            }
+            const entryCount = grouped ? 2 : 1;
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(entryCount)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(
+                    entryCount
+                )
+            );
+            reloadSavedProject();
+
+            const pendingNote = { ...committedNote, pitch: 72 };
+            const pendingTake = { ...committedTake, name: 'Unpublished take B' };
+            const pending = runWithAutomergeStorageTransaction(undefined, () => {
+                midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [pendingNote] } });
+                takeLaneStore.set({ lanes: [{ ...committedLane, takes: [pendingTake] }] });
+            });
+            expect(pending.status).toBe('returned');
+            expect(midiStore.value?.notesByClipId['clip-a']).toEqual([pendingNote]);
+            expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([committedNote]);
+            expect(takeLaneStore.value?.lanes[0]?.takes[0]?.name).toBe(pendingTake.name);
+            expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes[0]?.takes[0]?.name).toBe(committedTake.name);
+            const raw = structuredClone(getCrdtDoc('root'));
+            const heads = Automerge.getHeads(getCrdtDoc('root')!);
+            const owners = ownerProjections();
+            const history = structuredClone(undoHistoryStore.value);
+            const mirror = sessionStorage.getItem(UNDO_SESSION_KEY);
+            const held = undoHistoryStore.value?.future.find(
+                (entry) =>
+                    entry.kind === 'action' &&
+                    entry.action.type === 'removeClip' &&
+                    entry.action.payload.clipId === 'clip-a'
+            );
+            if (held?.kind !== 'action') {
+                throw new Error('Expected the genuine saved removal inverse');
+            }
+            const inverse = held.inverseAction;
+            try {
+                await redo();
+                expect(getCrdtDoc('root')).toEqual(raw);
+                expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+                expect(ownerProjections()).toEqual(owners);
+                expect(undoHistoryStore.value).toEqual(history);
+                expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(mirror);
+                expect(held.inverseAction).toBe(inverse);
+            } finally {
+                if (settle === 'commit') {
+                    pending.commit();
+                } else {
+                    pending.abort();
+                }
+            }
+
+            const expectedNote = settle === 'commit' ? pendingNote : committedNote;
+            const expectedTake = settle === 'commit' ? pendingTake : committedTake;
+            projectCrdtToStores();
+            expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([expectedNote]);
+            expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes[0]?.takes[0]?.name).toBe(expectedTake.name);
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(entryCount)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([expectedNote]);
+            expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes[0]?.takes[0]?.name).toBe(expectedTake.name);
+            expectValidProject();
+        }
+    );
 });

@@ -1,4 +1,5 @@
 import { getAutomationLanes, isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSnapshot } from '#/utils/handlerContract';
 
 import { getTrackStoreState } from '../getTrackStoreState';
@@ -147,7 +148,15 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
             if (!shift || owner.owningTrackId !== trackId) {
                 return owner;
             }
-            return { ...owner, clip: { ...owner.clip, startBeat: shift.origStartBeat, endBeat: shift.origEndBeat } };
+            return {
+                ...owner,
+                clip: {
+                    ...owner.clip,
+                    startBeat: shift.origStartBeat,
+                    endBeat: shift.origEndBeat,
+                    ...shiftLoopOriginEntry(owner.clip, shift.origStartBeat - owner.clip.startBeat),
+                },
+            };
         });
         const shiftedLanes = state.lanes.map((lane) => {
             const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);

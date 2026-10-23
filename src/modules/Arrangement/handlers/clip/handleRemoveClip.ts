@@ -4,6 +4,7 @@ import {
     captureDurableDocumentWitness,
     captureProjectMutationAuthorization,
     getCrdtDoc,
+    hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -52,6 +53,10 @@ function admittedRedoTarget(action: RemoveClipAction, context: HandlerValidation
     if (paired?.type !== 'restoreClip') {
         preflightRedoTargets.delete(action);
         return true;
+    }
+    if (hasForeignPendingProjectWrites()) {
+        preflightRedoTargets.delete(action);
+        return false;
     }
     // Earlier group members may have shifted this target before its own removal.
     // Compare the paired capture to that completed prefix, then pin it for execute.
@@ -142,7 +147,11 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return { status: 'no-write' };
         }
         const paired = pairedInverseForRedo(alpha);
-        if (!redoTargetMatchesAtExecution(alpha, context, paired)) {
+        if (
+            (paired?.type === 'restoreClip' && hasForeignPendingProjectWrites()) ||
+            !redoTargetMatchesAtExecution(alpha, context, paired)
+        ) {
+            preflightRedoTargets.delete(alpha);
             pendingInverseCaptures.delete(alpha);
             pendingRedoCaptures.delete(alpha);
             return { status: 'conflict' };
