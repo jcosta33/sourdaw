@@ -1,0 +1,65 @@
+src/modules/Collaboration/useCases/__tests__/assetTransferLibrary.spec.ts
+  s_59e31a5c6f3e31::t_54aaf8c531c4ed 534-566,568-582,584,587-608
+  s_59e31a5c6f3e31::t_47bf02cb0f2df9 5,470-472
+  s_59e31a5c6f3e31::t_beeaf44d35b70e 1,6,14-16,19-20,22-23,25-26,39-42,60,69,72-74,111,118,124,128-129,138,140,143-145,164-170,177-204,213,220-229,232-252,259,271,281-290,295-297,309-376,413,415-427,491-496,498-512,609-618,622,626,631-638,644-647
+  s_59e31a5c6f3e31::t_4e9ee2735a120b 513-533
+  s_59e31a5c6f3e31::t_3d12ee33703515 52-57,214-219,230-231,428-469,473-490
+  s_59e31a5c6f3e31::t_762d91cfd58c07 13,27-35,37-38
+  s_59e31a5c6f3e31::t_d7b051a1b7e5a2 43-51,58-59,567,583,585-586
+  s_59e31a5c6f3e31::t_e3da0dd9b1ae00 7-11,24,36,125-127,131-134,146-162,205-212,253-258,291-294,298-308,377-412,414,497,619-621,623-625,627-630,639-643
+  s_59e31a5c6f3e31::t_28b74951fb93bc 4,175
+  s_59e31a5c6f3e31::t_2f6fb3b9692409 2-3,12,17-18,21,61-68,70-71,75-110,112-117,119-123,130,135-137,139,141-142,163,171-174,176,260-270,272-280,648-649
+src/modules/SampleLibrary/repositories/libraryAssetMappings.ts
+  s_59e31a5c6f3e31::t_4e57a6d609c66b 99-103,173-178,180-181
+  s_59e31a5c6f3e31::t_70b86d6a198839 1-98,104-172,179,182-194
+src/modules/SampleLibrary/repositories/__tests__/libraryAssetMappings.spec.ts
+  s_59e31a5c6f3e31::t_b4aed329c4d608 1-61,66-96,98-109,111-124,126-127,135-153,159-164
+  s_59e31a5c6f3e31::t_e3da0dd9b1ae00 62-65,97,110,125,128-134,154-158
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_59e31a5c6f3e31::t_1c335f365be636 820-838
+src/modules/SampleLibrary/useCases/index.ts
+  s_59e31a5c6f3e31::t_70b86d6a198839 5-6
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_59e31a5c6f3e31::t_e3da0dd9b1ae00 1463-1470,1492-1510,1512-1522,1535-1537,1566-1574,1584-1596,1612-1619,1622-1631
+  s_59e31a5c6f3e31::t_d88e90efab737a 1-2,5-6,34-35,83-84,161,170-171
+  s_59e31a5c6f3e31::t_1c335f365be636 1449-1462,1471-1472,1489-1491,1511,1523-1534,1538-1565,1575-1583,1597-1611,1620-1621,1632-1636
+  s_59e31a5c6f3e31::t_0a74bd44b01454 1473-1488
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_59e31a5c6f3e31::t_4e57a6d609c66b 274,384-391,448,452
+  s_59e31a5c6f3e31::t_5b843f3f29c680 380-383
+  s_59e31a5c6f3e31::t_c7020c98f7657e 7,379,392,445-447,449-451,453-456
+src/modules/SampleLibrary/useCases/__tests__/resolveMappedLibraryAssetCandidate.spec.ts
+  s_59e31a5c6f3e31::t_b4aed329c4d608 1-3,6-7,9-19,29-32,38-50,56-59,63-80,82-84,89-91,101-102,127-141,147,150-156
+  s_59e31a5c6f3e31::t_47bf02cb0f2df9 5,20-28,33-37,51-55,60-62,85-88,111-119,142-146
+  s_59e31a5c6f3e31::t_28b74951fb93bc 4,120-121,148-149
+  s_59e31a5c6f3e31::t_08d9b2537e1423 8,81,92-100,103-110,122-126
+src/modules/SampleLibrary/useCases/resolveMappedLibraryAssetCandidate.ts
+  s_59e31a5c6f3e31::t_08d9b2537e1423 69
+  s_59e31a5c6f3e31::t_70b86d6a198839 1-2,4-20,43-68,70-78,85-90
+  s_59e31a5c6f3e31::t_47bf02cb0f2df9 3,21-42,79-84
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_59e31a5c6f3e31::t_c7020c98f7657e 2,439-442,445,452-454,456,1184-1187,1209,1213-1279,2040
+  s_59e31a5c6f3e31::t_d7b051a1b7e5a2 92,1177-1183,1210-1212,1481-1485
+  s_59e31a5c6f3e31::t_75ab5290a9803f 1280
+src/modules/SampleLibrary/useCases/rememberLibraryAssetMapping.ts
+  s_59e31a5c6f3e31::t_70b86d6a198839 1-42
+src/modules/SampleLibrary/useCases/__tests__/rememberLibraryAssetMapping.spec.ts
+  s_59e31a5c6f3e31::t_b4aed329c4d608 1-18,22-47,51-60,62-70
+  s_59e31a5c6f3e31::t_e3da0dd9b1ae00 19-21,48-50,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a665a46f4ec5f9c474bd568d28f4c85b724d31b2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
