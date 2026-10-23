@@ -57,9 +57,17 @@ function shiftMidiRowsWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrapped
  * records a clip that carried none and removes any key the action minted (an
  * extension-undo replaying a rightward trim must stay anchorless, not mint at
  * the extension start). Absent — a fresh trim, or a legacy entry — keeps the
- * mint law below exactly as it always was.
+ * mint law below exactly as it always was. `restoredMidiOffsetBeats` is the
+ * restore leg's exact-offset form (#5512): the pre-action stored offset a
+ * recorded inverse captures, restored verbatim — see the midi branch below
+ * for the arithmetic that demands it. Absent keeps the re-wrapping law.
  */
-export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?: number | null): boolean {
+export function trimClipStart(
+    clipId: string,
+    newStartBeat: number,
+    anchorBeat?: number | null,
+    restoredMidiOffsetBeats?: number
+): boolean {
     if (!Number.isFinite(newStartBeat)) {
         return false;
     }
@@ -68,6 +76,15 @@ export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?:
     // derives a NaN loop window in every reader. Drop it to the absent form —
     // exactly the behavior a payload without the field gets.
     const restoreAnchorBeat = anchorBeat !== null && !Number.isFinite(anchorBeat) ? undefined : anchorBeat;
+    // A non-finite offset capture is corrupted data on the same channel as the
+    // anchor above (#5512): a persisted `1e999` decodes as Infinity, and
+    // restoring it verbatim writes Infinity into clip state and shifts every
+    // stored row by it. Drop it to the absent form — exactly the behavior a
+    // payload without the field gets.
+    const restoreMidiOffsetBeats =
+        restoredMidiOffsetBeats !== undefined && !Number.isFinite(restoredMidiOffsetBeats)
+            ? undefined
+            : restoredMidiOffsetBeats;
 
     try {
         const state = getTrackState();
@@ -118,6 +135,43 @@ export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?:
                 delete updated.loopOriginBeat;
             }
             if (context.type === 'midi') {
+                if (restoreMidiOffsetBeats !== undefined) {
+                    // The recorded-inverse offset restore (#5512). The forward
+                    // trim wrapped its raw advance against the loop length the
+                    // clip plays AFTER the trim — the duration itself when
+                    // `loopLength` is unset — while this replay's wrap below
+                    // (`loopedMidiOffsetBeats`) derives against the length the
+                    // clip plays AFTER the restore. With a configured
+                    // `loopLength` the two bases are the same constant L: the
+                    // forward wrap lowered the raw figure `raw` to `raw − k·L`
+                    // and shifted the rows −k·L, so re-wrapping here raises by
+                    // exactly k·L and the pair composes back to the captured
+                    // figures. On a duration-derived loop the basis moves under
+                    // the pair — the trim changed the very duration the wrap
+                    // derives from — and the replay's re-derived phase lands
+                    // `k·D′` away from the captured figure, displacing the
+                    // stored rows the slip's own verbatim inverse then restores
+                    // against. So the inverse restores its capture verbatim and
+                    // shifts the rows by the exact reverse of the forward
+                    // displacement: the raw figure the forward trim wrapped
+                    // FROM was `capture − delta` (the replay's `delta` is the
+                    // forward trim's negated), minus the offset the clip
+                    // carries now. The relative law is untouched —
+                    // `rows + shift − capture = rows − offset − delta`, the
+                    // same figure the re-wrapping leg leaves — so a divergent
+                    // replay keeps today's reading, and only the stored bytes
+                    // become the ones the pre-action clip carried. Presence of
+                    // the capture keys this law (zero included, the slip's
+                    // `rowLiftBeats` precedent): fresh dispatches and entries
+                    // recorded before the field existed take the re-wrapping
+                    // leg below exactly as they always did.
+                    const currentOffsetBeats = context.midiOffsetBeats ?? 0;
+                    const rowShiftBeats = restoreMidiOffsetBeats - delta - currentOffsetBeats;
+                    if (rowShiftBeats !== 0) {
+                        shiftClipMidiNotes(clipId, rowShiftBeats);
+                    }
+                    return { ...updated, midiOffsetBeats: restoreMidiOffsetBeats };
+                }
                 const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
                 const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);
                 shiftMidiRowsWithOffsetWrap(updated, rawOffsetBeats, midiOffsetBeats);

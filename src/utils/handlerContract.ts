@@ -1421,6 +1421,22 @@ export type AppAction =
                * set it.
                */
               loopOriginBeat?: number | null;
+              /**
+               * The pre-action stored `midiOffsetBeats` a recorded inverse
+               * restores verbatim (#5512). The trim's forward wrap derives its
+               * loop length from the post-trim duration while the replay's wrap
+               * derives from the post-restore duration, and on a
+               * duration-derived loop (`loopLength` unset) those durations
+               * differ, so the re-wrapping replay lands the stored rows a
+               * trim-wrap distance from the figures the slip's own recorded
+               * inverse then restores against. The capture keys the verbatim
+               * restoration on this key's presence — zero included — the same
+               * recorded-inverse law the slip's `rowLiftBeats` follows. Only
+               * recorded inverses set it: a fresh dispatch never carries it,
+               * and entries recorded before the field existed decode without it
+               * and replay the re-wrapping law they always did.
+               */
+              midiOffsetBeats?: number;
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
