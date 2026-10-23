@@ -64,6 +64,8 @@ const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { admitPitchBend } = await import('../../../repositories/webMidi/admitPitchBend');
+const { memberExpressionState } = await import('../../../repositories/webMidi/memberExpressionState');
 const { channelPitchBendState } = await import('../../../repositories/webMidi/channelPitchBendState');
 const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
 const { releaseAllActiveNotes } = await import('../../../repositories/webMidi/releaseAllActiveNotes');
@@ -814,9 +816,15 @@ describe('handleWebMidiNoteOn', () => {
     });
 
     describe('starting under the channel bend', () => {
+        /** Receive a bend as the input route does: admitted as the channel's wheel, then handled. */
+        function bendWheel(channel: number, lsb: number, msb: number): void {
+            admitPitchBend(channel, lsb, msb);
+            handleWebMidiPitchBend(channel, lsb, msb);
+        }
+
         /** Hold the wheel at +4096 (a quarter of full scale up) on a channel through the live pitch-bend route. */
         function holdWheelUp(channel: number): void {
-            handleWebMidiPitchBend(channel, 0, 96);
+            bendWheel(channel, 0, 96);
         }
 
         function declareBendRange(channel: number, semitones: number): void {
@@ -902,7 +910,7 @@ describe('handleWebMidiNoteOn', () => {
         it('posts no start bend once the wheel returned to centre', async () => {
             const fn = stripWithNoteOn('levain', vi.fn());
             holdWheelUp(1);
-            handleWebMidiPitchBend(1, 0, 64);
+            bendWheel(1, 0, 64);
             apply_note_expression.mockClear();
 
             await fn(1, 64, 90);
@@ -968,7 +976,7 @@ describe('handleWebMidiNoteOn', () => {
             await fn(1, 60, 100);
             expect(oscillators).toHaveLength(2);
             expect(oscillators[0]?.detune.settled).toBe(100);
-            handleWebMidiPitchBend(1, 0, 64);
+            bendWheel(1, 0, 64);
 
             // Every oscillator is back at its own unbent detune: the second one
             // is not left holding a bend a live bend cannot move.
@@ -979,7 +987,7 @@ describe('handleWebMidiNoteOn', () => {
             const fn = stripWithNoteOn('levain', vi.fn());
             holdWheelUp(2);
             mpe_enabled.value = true;
-            handleWebMidiPitchBend(2, 0, 64);
+            bendWheel(2, 0, 64);
             mpe_enabled.value = false;
             apply_note_expression.mockClear();
 
@@ -992,26 +1000,33 @@ describe('handleWebMidiNoteOn', () => {
             mpe_enabled.value = true;
             const fn = stripWithNoteOn('levain', vi.fn());
             holdWheelUp(0);
+            memberExpressionState.set(3, { pressure: 80, slide: 30 });
             apply_note_expression.mockClear();
 
-            await fn(3, 64, 90);
+            try {
+                await fn(3, 64, 90);
+            } finally {
+                memberExpressionState.clear();
+            }
 
             // The master's wheel is read at the master's range (the ±2 default
-            // here), not the member default of ±48 the mocked surface reports.
-            expect(apply_note_expression).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    channel: 3,
-                    expression: expect.objectContaining({ pitchBend: 4096 }),
-                    bendRangeSemitones: 2,
-                })
-            );
+            // here), not the member default of ±48 the mocked surface reports,
+            // and the member's own pressure and slide stand beside it.
+            expect(apply_note_expression).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                note: 64,
+                channel: 3,
+                expression: { pitchBend: 4096, pressure: 80, slide: 30 },
+                bendRangeSemitones: 2,
+                sampleFrame: LIVE_DISPATCH_FRAME,
+            });
         });
 
         it('leaves an MPE member note carrying its own bend to that bend', async () => {
             mpe_enabled.value = true;
             const fn = stripWithNoteOn('levain', vi.fn());
             holdWheelUp(0);
-            handleWebMidiPitchBend(3, 0, 100);
+            bendWheel(3, 0, 100);
             apply_note_expression.mockClear();
 
             await fn(3, 64, 90);

@@ -14,7 +14,6 @@ import {
 import { applyRegisteredParameterChange } from '../../services/applyRegisteredParameterChange';
 
 import { channelControllerState } from './channelControllerState';
-import { channelPitchBendState } from './channelPitchBendState';
 import { heldPedalState } from './heldPedalState';
 
 type IngestChannelControlChangeInput = {
@@ -174,11 +173,10 @@ export function ingestChannelControlChange({
     if (isHeldPedalCc(cc)) {
         resolveHeldPedals(channel).set(cc, byte);
     } else if (cc === CC_RESET_ALL_CONTROLLERS) {
-        // The message that lifts every pedal and recentres the wheel;
-        // remembering either past it would press it back onto the next take
-        // and bend the next note struck.
+        // The message that lifts every pedal; remembering one past it would
+        // press it back onto the next take. The wheel it recentres is
+        // recorded when the message is admitted (`admitResetAllControllers`).
         heldPedalState.get(channel)?.clear();
-        channelPitchBendState.delete(channel);
     }
 
     return sevenBitResult(cc, byte);

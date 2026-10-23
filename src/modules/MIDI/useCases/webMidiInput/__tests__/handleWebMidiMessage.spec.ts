@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     defaultTransportState,
@@ -41,10 +41,22 @@ vi.mock('../handleWebMidiPitchBend', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    applyNoteExpression: vi.fn(),
     audioEngine: { context: audio_clock },
+    getCompensationDelay: () => 0,
+    getDefaultBendRangeSemitones: () => 48,
+    getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: async () => true,
+    sendNativeLiveMidiNote: async () => true,
+    soundsNativeNotes: () => false,
 }));
 
 const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
+const { handleWebMidiPitchBend: actualHandleWebMidiPitchBend } =
+    await vi.importActual<typeof import('../handleWebMidiPitchBend')>('../handleWebMidiPitchBend');
+const { channelPitchBendState } = await import('../../../repositories/webMidi/channelPitchBendState');
+const { resolveChannelBendAtNoteStart } = await import('../resolveChannelBendAtNoteStart');
 const { resolveInputEventTime } = await import('../resolveInputEventTime');
 const { resolveInputDispatchFrame } = await import('../resolveInputDispatchFrame');
 
@@ -440,5 +452,105 @@ describe('handleWebMidiMessage', () => {
                 readNativeCursorBeats: () => null,
             });
         }
+    });
+
+    describe('the wheel a channel receives', () => {
+        beforeEach(() => {
+            channelPitchBendState.clear();
+            setMpeEnabledInternal(false);
+            setTargetTrackId('wheel-target');
+            handle_note_on.mockReset();
+            handle_pitch_bend.mockReset();
+            handle_pitch_bend.mockImplementation(actualHandleWebMidiPitchBend);
+        });
+
+        afterEach(() => {
+            handle_pitch_bend.mockReset();
+            setMpeEnabledInternal(false);
+            channelPitchBendState.clear();
+        });
+
+        /** What a note struck now on channel 1, outside MPE, starts under. */
+        function startBendOnChannelOne() {
+            return resolveChannelBendAtNoteStart({ channel: 1, mpeEnabled: false, ownPitchBend: undefined });
+        }
+
+        it.each([
+            ['transport reset', () => resetChannelControllerState()],
+            ['target change', () => setTargetTrackId('other-target')],
+            ['MPE toggle', () => setMpeEnabledInternal(true)],
+        ])(
+            'keeps a centring bend queued behind a note-on that a %s then fences, so the next note starts unbent',
+            async (_boundary, fence) => {
+                let finishNoteOn!: () => void;
+                const noteOnInFlight = new Promise<void>((resolve) => {
+                    finishNoteOn = resolve;
+                });
+                handle_note_on.mockImplementationOnce(() => noteOnInFlight);
+                handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+                expect(startBendOnChannelOne()?.pitchBend).toBe(4096);
+
+                handleWebMidiMessage(midi_event([0x91, 60, 100]));
+                const queuedCentre = handleWebMidiMessage(midi_event([0xe1, 0, 64]));
+                fence();
+                finishNoteOn();
+                await noteOnInFlight;
+                await queuedCentre;
+
+                expect(startBendOnChannelOne()).toBeUndefined();
+            }
+        );
+
+        it('starts a queued note under the wheel received behind it, and the queued bend then agrees with that start', async () => {
+            let finishFirstNoteOn!: () => void;
+            const firstNoteOnInFlight = new Promise<void>((resolve) => {
+                finishFirstNoteOn = resolve;
+            });
+            let secondNoteStartedUnder: number | undefined;
+            let wheelWhenBendRan: number | undefined;
+            handle_note_on.mockImplementationOnce(() => firstNoteOnInFlight);
+            handle_note_on.mockImplementationOnce(() => {
+                secondNoteStartedUnder = startBendOnChannelOne()?.pitchBend;
+            });
+            handle_pitch_bend.mockImplementation((...args: Parameters<typeof actualHandleWebMidiPitchBend>) => {
+                wheelWhenBendRan = startBendOnChannelOne()?.pitchBend;
+                actualHandleWebMidiPitchBend(...args);
+            });
+
+            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            handleWebMidiMessage(midi_event([0x91, 62, 100]));
+            const queuedBend = handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+
+            // Received, so held, before any queued handler has run.
+            expect(startBendOnChannelOne()?.pitchBend).toBe(4096);
+            expect(handle_pitch_bend).not.toHaveBeenCalled();
+
+            finishFirstNoteOn();
+            await queuedBend;
+
+            expect(secondNoteStartedUnder).toBe(4096);
+            expect(handle_pitch_bend).toHaveBeenCalledWith(1, 0, 96, { audioTime: 2 });
+            expect(wheelWhenBendRan).toBe(4096);
+            expect(startBendOnChannelOne()?.pitchBend).toBe(4096);
+        });
+
+        it('recentres a channel on Reset All Controllers when it is received, in arrival order with the bends around it', async () => {
+            let finishNoteOn!: () => void;
+            const noteOnInFlight = new Promise<void>((resolve) => {
+                finishNoteOn = resolve;
+            });
+            handle_note_on.mockImplementationOnce(() => noteOnInFlight);
+            handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+
+            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            const queuedReset = handleWebMidiMessage(midi_event([0xb1, 121, 0]));
+            resetChannelControllerState();
+            finishNoteOn();
+            await queuedReset;
+
+            expect(startBendOnChannelOne()).toBeUndefined();
+            expect(channelPitchBendState.get(2)).toBe(4096);
+        });
     });
 });

@@ -233,16 +233,6 @@ describe('ingestChannelControlChange', () => {
             expect(heldPedalState.get(5)?.get(64)).toBe(127);
         });
 
-        it('recentres the wheel of the channel on Reset All Controllers and leaves other channels bent', () => {
-            channelPitchBendState.set(CHANNEL, 4096);
-            channelPitchBendState.set(5, -2048);
-
-            ingest(121, 0);
-
-            expect(channelPitchBendState.has(CHANNEL)).toBe(false);
-            expect(channelPitchBendState.get(5)).toBe(-2048);
-        });
-
         it('keeps the wheel through a transport reset and drops it when the input device is reset', () => {
             channelPitchBendState.set(CHANNEL, 4096);
 

@@ -3,7 +3,6 @@ import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases
 import { PITCH_BEND_CENTER } from '#/utils/midiData';
 
 import { MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
-import { channelPitchBendState } from '../../repositories/webMidi/channelPitchBendState';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
@@ -44,13 +43,6 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
             const bendCents = (bendValue / PITCH_BEND_CENTER) * bendRangeSemitones * CENTS_PER_SEMITONE;
             const targetTrackId = getTargetTrackId();
             const baseDetune = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId).detune : 0;
-
-            // The wheel is channel state: notes struck on this channel from now
-            // on start under it (`resolveChannelBendAtNoteStart`). A member
-            // channel's bend is still that channel's last wheel, so it is kept
-            // too: a note struck there after MPE is switched off must start
-            // where the wheel last was, not where it stood before MPE.
-            channelPitchBendState.set(channel, bendValue);
 
             if (mpeEnabled && channel >= MPE_FIRST_MEMBER_CHANNEL) {
                 setMemberExpression(channel, { pitchBend: bendValue });

@@ -1,7 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
 import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { admitPitchBend } from '../../repositories/webMidi/admitPitchBend';
+import { admitResetAllControllers } from '../../repositories/webMidi/admitResetAllControllers';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
@@ -182,6 +185,9 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 admittedRelease(channel, message.note)
             );
         case 'cc': {
+            if (message.cc === CC_RESET_ALL_CONTROLLERS) {
+                admitResetAllControllers(channel);
+            }
             const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
                 handleWebMidiCC(channel, message.cc, message.value, admittedTime);
@@ -192,6 +198,7 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
         case 'pitchBend': {
+            admitPitchBend(channel, message.lsb, message.msb);
             const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
                 handleWebMidiPitchBend(channel, message.lsb, message.msb, admittedTime);

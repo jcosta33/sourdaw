@@ -8,7 +8,8 @@
  * the bend that channel holds, and a bend moves only that channel's notes. An
  * absent entry is a wheel at centre. Like `heldPedalState`, the wheel is a fact
  * about the physical controller, so a transport stop, pause or seek leaves it
- * standing. It is dropped when the input device is reset or torn down, and per
+ * standing. It is written on admission (`admitPitchBend`, `admitResetAllControllers`), never from the
+ * fenced handlers. It is dropped when the input device is reset or torn down, and per
  * channel by Reset All Controllers, which recentres it.
  */
 export const channelPitchBendState = new Map<number, number>();

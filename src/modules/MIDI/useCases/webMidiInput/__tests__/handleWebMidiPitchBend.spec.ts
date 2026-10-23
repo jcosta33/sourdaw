@@ -45,7 +45,6 @@ const LIVE_DISPATCH_FRAME = 96_128;
 const LIVE_DISPATCH_TIME = LIVE_DISPATCH_FRAME / 48_000;
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
-const { channelPitchBendState } = await import('../../../repositories/webMidi/channelPitchBendState');
 const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
@@ -78,7 +77,6 @@ describe('handleWebMidiPitchBend', () => {
         activeNotes.clear();
         channelToNote.clear();
         apply_note_expression.mockClear();
-        channelPitchBendState.clear();
         resetChannelControllerState();
         mpe_enabled.value = true;
         target_track_id.value = 'track-1';
@@ -394,17 +392,7 @@ describe('handleWebMidiPitchBend', () => {
             );
         });
 
-        it('keeps the wheel position of a non-member channel for the notes struck after it', () => {
-            mpe_enabled.value = false;
-
-            handleWebMidiPitchBend(1, 0, 96);
-            handleWebMidiPitchBend(2, 127, 127);
-
-            expect(channelPitchBendState.get(1)).toBe(4096);
-            expect(channelPitchBendState.get(2)).toBe(8191);
-        });
-
-        it('keeps an MPE member-channel bend on its note and as that channel last wheel for a later non-MPE note', () => {
+        it('keeps an MPE member-channel bend on its note', () => {
             const key = createWebMidiNoteKey(2, 64);
             activeNotes.set(key, {
                 channel: 2,
@@ -419,7 +407,6 @@ describe('handleWebMidiPitchBend', () => {
             handleWebMidiPitchBend(2, 0, 96);
 
             expect(activeNotes.get(key)?.pitchBend).toBe(4096);
-            expect(channelPitchBendState.get(2)).toBe(4096);
         });
     });
 
