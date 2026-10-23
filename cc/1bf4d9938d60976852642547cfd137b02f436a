@@ -1,0 +1,32 @@
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_59e31a5c6f3e31::t_f73c9cb687e6e2 14
+src/modules/Crumbs/stores/crumbsRecordingStore.ts
+  s_59e31a5c6f3e31::t_c3fcf5d2059a33 51-69,97
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_59e31a5c6f3e31::t_f73c9cb687e6e2 2198-2203
+src/modules/Crumbs/useCases/recording/syncCrumbsRecordingState.ts
+  s_59e31a5c6f3e31::t_3e92e2c76ab274 61-81,92
+src/modules/Crumbs/useCases/recording/__tests__/recordingLifecycle.spec.ts
+  s_59e31a5c6f3e31::t_39e93893926e22 31-35
+  s_59e31a5c6f3e31::t_f73c9cb687e6e2 37
+src/modules/Crumbs/useCases/recording/armCrumbsRecording.ts
+  s_59e31a5c6f3e31::t_b3f342f62182e1 11-12,23-38,71
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_59e31a5c6f3e31::t_f73c9cb687e6e2 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc1bf4d9938d60976852642547cfd137b02f436a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
