@@ -73,7 +73,7 @@ function committedIdentityMaterialAfterPrefix(root: Record<string, unknown>, ret
                 if (takes.length === 0 && existingTakes.length > 0) {
                     return [];
                 }
-                const nextLane = { ...lane, takes };
+                const nextLane: Record<string, unknown> = { ...lane, takes };
                 if (Array.isArray(lane.activeCompRegions)) {
                     const regions: unknown[] = lane.activeCompRegions;
                     nextLane.activeCompRegions = regions.filter(
