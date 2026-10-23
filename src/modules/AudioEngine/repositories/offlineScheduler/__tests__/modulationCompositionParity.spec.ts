@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
@@ -268,6 +269,94 @@ describe('offline modulation composes device units and actual terminal writes', 
             }
         }
     );
+
+    for (const family of ['audioParam', 'segments', 'curveWrite'] as const) {
+        it.each([false, true])(
+            `${family} admits a short clip at both sample-frame boundaries across a tempo step, reversed=%s`,
+            (reversed) => {
+                const sampleRate = 44_100;
+                const compensationDelaySec = 0.005;
+                const changes = [
+                    { id: 'initial', beat: 0, tempo: 120, curve: 'instant' as const },
+                    { id: 'step', beat: 4.04, tempo: 240, curve: 'instant' as const },
+                ];
+                const projectBeatToSeconds = (beat: number) => secondsBetweenBeats(changes, 0, beat, 120);
+                const regionStartSeconds = projectBeatToSeconds(4);
+                const stepSeconds = projectBeatToSeconds(4.04);
+                expect(Math.round((stepSeconds - regionStartSeconds) * sampleRate)).toBe(882);
+                expect(Math.round((projectBeatToSeconds(4.08) - regionStartSeconds) * sampleRate)).toBe(1323);
+                const target = param();
+                let segments: readonly OfflineAutomationSegment[] = [];
+                const ceiling = { gain: { value: 0 } } as GainNode;
+                const clipper = { curve: null } as WaveShaperNode;
+                const frameWrites: { time: number; value: number }[] = [];
+                let binding: OfflineAutomationBinding;
+                if (family === 'audioParam') {
+                    binding = audioBinding(target).binding;
+                } else if (family === 'segments') {
+                    binding = {
+                        kind: 'segments',
+                        apply: (stream) => {
+                            segments = stream;
+                        },
+                    };
+                } else {
+                    binding = { kind: 'curveWrite', targets: { ceiling, clipper } };
+                }
+
+                const source = { ...lane(4, 'source'), trackId: 'other' };
+                source.points.push({ beat: 4.08, value: 10, curve: 'linear', tension: 0 });
+                source.points[0] = { beat: 4, value: 4, curve: 'linear', tension: 0 };
+                const linked = { ...lane(0, 'linked'), linkedLaneId: 'source', points: [] };
+                const held = {
+                    ...lane(30, 'held'),
+                    points: [{ beat: 4, value: 30, curve: 'step' as const, tension: 0 }],
+                };
+                const clip = { ...lane(12, 'clip'), clipId: 'clip' };
+                const ordered = reversed ? [clip, held, linked] : [held, linked, clip];
+                run(binding, [plan(0)], [source, ...ordered], undefined, {
+                    durationSeconds: 0.05,
+                    sampleRate,
+                    changes,
+                    regionStartBeat: 4,
+                    regionStartSeconds,
+                    projectBeatToSeconds,
+                    projectSecondsToBeat: (seconds) => {
+                        const absolute = regionStartSeconds + seconds;
+                        if (absolute < stepSeconds) {
+                            return 4 + seconds * 2;
+                        }
+                        return 4.04 + (absolute - stepSeconds) * 4;
+                    },
+                    clipBoundsById: new Map([['clip', { startBeat: 4.04, endBeat: 4.08 }]]),
+                    compensationDelaySec,
+                    scheduleFrame: (time, call) => {
+                        call();
+                        frameWrites.push({ time: time ?? 0, value: 20 * Math.log10(ceiling.gain.value) });
+                    },
+                });
+
+                let writes: { frame: number; value: number }[];
+                if (family === 'audioParam') {
+                    writes = target.writes
+                        .filter(({ time }) => time > 0)
+                        .map(({ time, value }) => ({ frame: Math.round(time * sampleRate), value }));
+                } else if (family === 'segments') {
+                    writes = segments.map(({ startFrame, startValue }) => ({ frame: startFrame, value: startValue }));
+                } else {
+                    writes = frameWrites.map(({ time, value }) => ({ frame: Math.round(time * sampleRate), value }));
+                    expect(clipper.curve).not.toBeNull();
+                }
+                const outputFrames = [0, 0.01, 0.02, 0.03, 0.04].map((tick) =>
+                    Math.round((tick + compensationDelaySec) * sampleRate)
+                );
+                expect(writes.map(({ frame }) => frame)).toEqual(outputFrames);
+                for (const [index, value] of [4, 4.24, 7.344, 9.2064, 9.52384].entries()) {
+                    expect(writes[index]?.value).toBeCloseTo(value, 5);
+                }
+            }
+        );
+    }
 
     it('uses a fresh arbitrary region and does not reset shared slew at a tempo change', () => {
         const { target, binding } = audioBinding();

@@ -347,30 +347,45 @@ function scheduleCurveWritePoints(
 
 /**
  * The raw device-unit value of one lane's compiled curve at a region-relative
- * second, or `null` before its scope opens. Binding conversion and both live
+ * sample frame, or `null` before its scope opens. Binding conversion and both live
  * slew/write gates run only after scope resolution below.
  *
  * A `linear` event ramps from the previous event's value to its own over the
  * span between them (`scheduleCompiledEventsOnParam` writes exactly that
- * timeline); a `set` anchors and holds.
+ * timeline); a `set` anchors and holds. Comparing on the render frame grid
+ * admits a tick on the same frame as an event even when rebasing their project
+ * seconds across a tempo step gives slightly different floating-point values.
  */
-function sampleCompiledTimeline(events: readonly CompiledAutomationEvent[], timeSeconds: number): number | null {
+function sampleCompiledTimeline(
+    events: readonly CompiledAutomationEvent[],
+    timeFrame: number,
+    durationSeconds: number,
+    sampleRate: number
+): number | null {
     const first = events[0];
-    if (!first || timeSeconds < first.timeSeconds) {
+    if (!first) {
+        return null;
+    }
+    let previousFrame = eventStreamFrame(first.timeSeconds, durationSeconds, sampleRate);
+    if (timeFrame < previousFrame) {
         return null;
     }
     let previous = first;
     let next: CompiledAutomationEvent | undefined;
+    let nextFrame = previousFrame;
     for (let index = 1; index < events.length; index++) {
         const event = events[index]!;
-        if (event.timeSeconds > timeSeconds) {
+        const eventFrame = eventStreamFrame(event.timeSeconds, durationSeconds, sampleRate);
+        if (eventFrame > timeFrame) {
             next = event;
+            nextFrame = eventFrame;
             break;
         }
         previous = event;
+        previousFrame = eventFrame;
     }
-    if (next && next.type === 'linear' && next.timeSeconds > previous.timeSeconds) {
-        const fraction = (timeSeconds - previous.timeSeconds) / (next.timeSeconds - previous.timeSeconds);
+    if (next && next.type === 'linear' && nextFrame > previousFrame) {
+        const fraction = (timeFrame - previousFrame) / (nextFrame - previousFrame);
         return previous.value + (next.value - previous.value) * fraction;
     }
     return previous.value;
@@ -413,14 +428,18 @@ function scheduleModulatedGroup(input: {
     const hasMaterialTrackLane = streams.some((stream) => stream.scope === 'track' && !stream.curveCoversNoSpan);
     for (let tick = 0; tick * input.slewTickSeconds < input.durationSeconds; tick++) {
         const timeSeconds = tick * input.slewTickSeconds;
+        const timeFrame = eventStreamFrame(timeSeconds, input.durationSeconds, input.sampleRate);
         const beat = input.projectSecondsToBeat(timeSeconds);
         let winner: { stream: AutomationEventStream; value: number } | undefined;
         let activeLaneCount = 0;
         for (const stream of streams) {
-            if (stream.windowEndSeconds !== undefined && timeSeconds > stream.windowEndSeconds) {
+            if (
+                stream.windowEndSeconds !== undefined &&
+                timeFrame > eventStreamFrame(stream.windowEndSeconds, input.durationSeconds, input.sampleRate)
+            ) {
                 continue;
             }
-            const value = sampleCompiledTimeline(stream.events, timeSeconds);
+            const value = sampleCompiledTimeline(stream.events, timeFrame, input.durationSeconds, input.sampleRate);
             if (value === null) {
                 continue;
             }
