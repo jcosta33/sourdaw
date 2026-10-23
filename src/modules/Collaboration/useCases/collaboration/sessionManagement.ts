@@ -68,6 +68,8 @@ type InstalledSessionOwner = {
     automergeSync: AutomergeSync | null;
     assetTransfer: AssetTransfer | null;
     cleanupProjectionBridge: (() => void) | null;
+    unsubscribeAssetAliases: (() => void) | null;
+    resolvingAssetAliasKeys: Set<string>;
     synchronizeAssetOwner: ((nextOwnerId: string) => ReturnType<AssetTransfer['prepareDurableOwnerRebind']>) | null;
 };
 
@@ -117,6 +119,8 @@ function retireSessionOwner(owner: InstalledSessionOwner | null): void {
         return;
     }
     owner.retired = true;
+    owner.unsubscribeAssetAliases?.();
+    owner.unsubscribeAssetAliases = null;
     owner.automergeSync?.stop();
 }
 
@@ -710,6 +714,8 @@ async function initializeSessionRuntime(
         automergeSync: null,
         assetTransfer: null,
         cleanupProjectionBridge: null,
+        unsubscribeAssetAliases: null,
+        resolvingAssetAliasKeys: new Set(),
         synchronizeAssetOwner: null,
     };
     installedSessionOwner = owner;
@@ -784,6 +790,7 @@ async function initializeSessionRuntime(
         );
         owner.assetTransfer = assetTransfer;
         sessionState.assetTransfer = assetTransfer;
+        owner.unsubscribeAssetAliases = observeActiveAssetAliases(owner);
 
         const queueAssetOwnershipTask = <Result>(task: () => Promise<Result>): Promise<Result> => {
             const result = sessionState.assetOwnershipTask.then(() => {
@@ -1012,6 +1019,68 @@ function settleRetainedSessionTeardown(): Promise<void> {
 
 // -- Asset resolution --
 
+type AssetClipAlias = {
+    trackId: string;
+    clipId: string;
+    hash: string;
+    bufferId: string;
+};
+
+function assetClipAliasKey(alias: AssetClipAlias): string {
+    return JSON.stringify([alias.trackId, alias.clipId, alias.hash, alias.bufferId]);
+}
+
+function collectActiveAssetAliases(state: typeof trackStore.value, hash?: string): AssetClipAlias[] {
+    const aliases: AssetClipAlias[] = [];
+    for (const track of state?.tracks ?? []) {
+        for (const clip of track.clips) {
+            if (!clip.assetHash || !clip.audioBufferId || (hash !== undefined && clip.assetHash !== hash)) {
+                continue;
+            }
+            aliases.push({ trackId: track.id, clipId: clip.id, hash: clip.assetHash, bufferId: clip.audioBufferId });
+        }
+    }
+    return aliases;
+}
+
+function observeActiveAssetAliases(owner: InstalledSessionOwner): () => void {
+    let previousAliases = new Set<string>();
+    const scan = (state: typeof trackStore.value): void => {
+        if (!canSessionOwnerWrite(owner)) {
+            return;
+        }
+        const nextAliases = new Set<string>();
+        const newlyActiveByHash = new Map<string, AssetClipAlias[]>();
+        for (const alias of collectActiveAssetAliases(state)) {
+            const key = assetClipAliasKey(alias);
+            nextAliases.add(key);
+            if (previousAliases.has(key) || owner.resolvingAssetAliasKeys.has(key)) {
+                continue;
+            }
+            if (getCachedAudioBuffer({ bufferId: alias.bufferId })) {
+                continue;
+            }
+            const grouped = newlyActiveByHash.get(alias.hash) ?? [];
+            grouped.push(alias);
+            newlyActiveByHash.set(alias.hash, grouped);
+        }
+        previousAliases = nextAliases;
+        for (const [hash, aliases] of newlyActiveByHash) {
+            if (owner.assetTransfer?.getAsset(hash)) {
+                void resolveAssetForClips(owner, hash, aliases);
+            }
+        }
+    };
+    const unsubscribe = trackStore.subscribe(scan);
+    try {
+        scan(trackStore.value);
+    } catch (error) {
+        unsubscribe();
+        throw error;
+    }
+    return unsubscribe;
+}
+
 function isCurrentUncachedAssetClip(trackId: string, clipId: string, hash: string, bufferId: string): boolean {
     const currentTrack = trackStore.value?.tracks.find((track) => track.id === trackId);
     const currentClip = currentTrack?.clips.find((clip) => clip.id === clipId);
@@ -1021,11 +1090,16 @@ function isCurrentUncachedAssetClip(trackId: string, clipId: string, hash: strin
 }
 
 /**
- * When a peer sends us an audio asset, find all clips that reference its hash
- * and decode the blob into the AudioEngine buffer cache under their audioBufferId.
- * This lets the scheduler play the clip on the next playback start.
+ * A delivered asset resolves current clips that reference its hash; a new clip
+ * can also reuse raw bytes already resident in this session. Both paths decode
+ * into the AudioEngine cache so the scheduler can play the clip. Only delivery
+ * completes a transfer and clears its failure, not passive reuse of older bytes.
  */
-async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string): Promise<void> {
+async function resolveAssetForClips(
+    owner: InstalledSessionOwner,
+    hash: string,
+    newlyActiveAliases?: readonly AssetClipAlias[]
+): Promise<void> {
     if (!canSessionOwnerWrite(owner)) {
         return;
     }
@@ -1034,7 +1108,7 @@ async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string):
         return;
     }
 
-    const tracks = trackStore.value?.tracks ?? [];
+    const aliases = newlyActiveAliases ?? collectActiveAssetAliases(trackStore.value, hash);
     let ctx: BaseAudioContext;
     try {
         ctx = getAudioContext();
@@ -1042,18 +1116,20 @@ async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string):
         return;
     }
 
-    for (const track of tracks) {
-        for (const clip of track.clips) {
-            const trackId = track.id;
-            const clipId = clip.id;
-            const assetHash = clip.assetHash;
-            const bufferId = clip.audioBufferId;
-            if (assetHash !== hash || !bufferId) {
-                continue;
-            }
-            if (getCachedAudioBuffer({ bufferId })) {
-                continue;
-            }
+    const pendingAliases: AssetClipAlias[] = [];
+    for (const alias of aliases) {
+        const key = assetClipAliasKey(alias);
+        if (
+            owner.resolvingAssetAliasKeys.has(key) ||
+            !isCurrentUncachedAssetClip(alias.trackId, alias.clipId, hash, alias.bufferId)
+        ) {
+            continue;
+        }
+        owner.resolvingAssetAliasKeys.add(key);
+        pendingAliases.push(alias);
+    }
+    try {
+        for (const { trackId, clipId, bufferId } of pendingAliases) {
             try {
                 const arrayBuffer = await blob.arrayBuffer();
                 if (!canSessionOwnerWrite(owner)) {
@@ -1076,13 +1152,17 @@ async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string):
                 }
             }
         }
+    } finally {
+        for (const alias of pendingAliases) {
+            owner.resolvingAssetAliasKeys.delete(assetClipAliasKey(alias));
+        }
     }
 
     // A delivered asset retires whatever transfer failure is on the panel. The
     // failure row is written by `onTransferFailed` and otherwise only cleared by
     // session-lifecycle use cases, so without this the message survives its own
     // successful retry and sits there until the user leaves the session.
-    if (canSessionOwnerWrite(owner)) {
+    if (newlyActiveAliases === undefined && canSessionOwnerWrite(owner)) {
         clearCollaborationFailure();
     }
 }

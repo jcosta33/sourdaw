@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { testOverrides } from '#/infra/di/internal/containerState';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { hydrateTracksForProject } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import {
     readNativeLibrarySampleFile,
@@ -18,6 +19,8 @@ import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync } from '../automergeSync';
 import { sessionRuntimePrimitives as runtime } from '../collaboration/sessionManagement';
+
+import type { Clip } from '#/modules/Arrangement/stores';
 
 const installed = vi.hoisted(() => {
     const tracks: Array<{ id: string; clips: Array<{ id: string; assetHash: string; audioBufferId: string }> }> = [];
@@ -67,6 +70,7 @@ beforeEach(() => {
     vi.stubGlobal('indexedDB', new IDBFactory());
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     installed.tracks.length = 0;
+    installed.decode.mockReset();
 });
 
 afterEach(async () => {
@@ -645,5 +649,55 @@ describe('local library fulfillment through the real asset request boundary', ()
         expect(requests).toEqual([]);
         expect(read).toHaveBeenCalledTimes(1);
         expect(new Uint8Array(await transfer.getAsset(hash)!.arrayBuffer())).toEqual(bytes);
+    });
+
+    it('decodes a later active clip from resident library bytes without another availability event', async () => {
+        const bytes = new Uint8Array([41, 43, 47, 53]);
+        const original = endpoint();
+        const hash = await original.transfer.addLocalAsset(new Blob([bytes]), 'kick.wav');
+        await seedBinding(hash);
+        const read = armNativeLibrary(bytes);
+        original.transfer.dispose();
+        vi.spyOn(AutomergeSync.prototype, 'start').mockImplementation(() => undefined);
+        const peer = await runtime.initialize('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        const requests: PeerMessage[] = [];
+        vi.spyOn(peer, 'broadcastCrdtSync').mockImplementation((message) => {
+            requests.push(message);
+        });
+        const transfer = runtime.state.assetTransfer;
+        if (!transfer) {
+            throw new TypeError('Expected the real installed asset transfer');
+        }
+        const pcm = decodedBuffer();
+        installed.decode.mockResolvedValue(pcm);
+        transfer.requestAsset(hash);
+        await vi.waitFor(() => expect(transfer.getAsset(hash)).toBeDefined());
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(installed.decode).not.toHaveBeenCalled();
+
+        const bufferId = `library-later-${crypto.randomUUID()}`;
+        const clip: Clip = {
+            id: 'later-clip',
+            trackId: 'later-track',
+            name: 'Later clip',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio',
+            audioBufferId: bufferId,
+            assetHash: hash,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ff0000',
+            locked: false,
+            muted: false,
+        };
+        installed.tracks.push({ id: 'later-track', clips: [clip] });
+        hydrateTracksForProject({ tracks: [{ id: 'later-track', name: 'Later track', kind: 'audio', clips: [clip] }] });
+
+        await vi.waitFor(() => expect(getCachedAudioBuffer({ bufferId })).toBe(pcm));
+        expect(installed.decode).toHaveBeenCalledTimes(1);
+        expect(requests).toEqual([]);
+        expect(read).toHaveBeenCalledTimes(1);
     });
 });
