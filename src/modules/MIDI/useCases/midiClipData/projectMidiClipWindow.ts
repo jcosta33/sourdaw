@@ -19,10 +19,11 @@ type MidiClipWindow = {
     closingLineBeat?: number;
 };
 
-type ProjectMidiClipWindowInput = {
+type ProjectMidiClipWindowInput<TPitchBend extends MidiPitchBend> = {
     notes: readonly MidiNote[];
     controlChanges: readonly MidiCC[];
-    pitchBends: readonly MidiPitchBend[];
+    /** Rebased, and carried to the window start, with every other field of the row kept as it is. */
+    pitchBends: readonly TPitchBend[];
     window: MidiClipWindow;
     /**
      * Whether the RPN/NRPN and Data Entry rows before the window start are carried into it like any other
@@ -153,17 +154,17 @@ function playsOnClosingLine(row: MidiCC): boolean {
  * Pitch-bend rows on the closing line are always dropped: bend is a continuous position, not
  * a switch, so no row there ends anything (`projectClipPitchBendEvents` plays the lane).
  */
-export function projectMidiClipWindow({
+export function projectMidiClipWindow<TPitchBend extends MidiPitchBend>({
     notes,
     controlChanges,
     pitchBends,
     window,
     carriesRegisteredParameterLanes = true,
-}: ProjectMidiClipWindowInput): {
+}: ProjectMidiClipWindowInput<TPitchBend>): {
     notes: MidiNote[];
     controlChanges: MidiCC[];
     closingControlChanges: MidiCC[];
-    pitchBends: MidiPitchBend[];
+    pitchBends: TPitchBend[];
 } {
     const controllers = projectVisibleControllerRows(
         controlChanges,

@@ -14,6 +14,11 @@ export type ScheduledNoteExpression = {
 export type ChannelBendPoint = {
     beat: number;
     frame: number;
+    /**
+     * Where the move was recorded, on the timeline of the pass that plays it: `beat`, except for a move a pass
+     * head carries from before it (a trimmed-off clip head's row), which was recorded earlier than it plays.
+     */
+    recordedBeat: number;
     /** Signed 14-bit wire delta, -8192..8191. */
     value: number;
     /** The depth `value` is read against, in semitones. */

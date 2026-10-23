@@ -9,6 +9,7 @@ const newPassFrameAtBeat = (beat: number) => 50_000 + beat * 1000;
 const move = (beat: number, value: number, rangeSemitones = 2) => ({
     beat,
     frame: beat * 1000,
+    recordedBeat: beat,
     value,
     rangeSemitones,
 });
@@ -19,6 +20,7 @@ const AT_FRAME = 50_000;
 const newPassMove = (beat: number, value: number, rangeSemitones = 2) => ({
     beat,
     frame: newPassFrameAtBeat(beat),
+    recordedBeat: beat,
     value,
     rangeSemitones,
 });

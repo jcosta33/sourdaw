@@ -32,6 +32,11 @@ type ProjectChannelBendInput = {
 type ChannelBendPoint = {
     beat: number;
     frame: number;
+    /**
+     * Where the move was recorded, on the timeline of the pass that plays it: `beat`, except for a carry,
+     * which a pass head plays though the row was recorded before it (`projectClipPitchBendEvents`).
+     */
+    recordedBeat: number;
     /** The signed 14-bit wire delta, -8192..8191, 0 at centre. */
     value: number;
     /** The depth `value` is read against, in semitones. */
@@ -72,6 +77,7 @@ export function projectChannelBend({
                 point: {
                     beat: bend.beat,
                     frame: frameAtBeat(bend.beat),
+                    recordedBeat: bend.recordedBeat,
                     value: bend.value,
                     rangeSemitones: readRange(bend.channel, bend.contentBeat),
                 },

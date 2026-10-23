@@ -46,8 +46,28 @@ describe('projectChannelBend', () => {
         });
 
         expect(points).toEqual([
-            { beat: 3, frame: 72_000, value: 8_191, rangeSemitones: 2 },
-            { beat: 4, frame: 96_000, value: 0, rangeSemitones: 2 },
+            { beat: 3, frame: 72_000, recordedBeat: 3, value: 8_191, rangeSemitones: 2 },
+            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2 },
+        ]);
+    });
+
+    it('keeps where a move a trimmed clip head carries onto the head was recorded', () => {
+        // The clip at 2 plays content from beat 2, so content beat c lands on c: the move at content 0.5 is
+        // carried onto the head at 2 though it was recorded at 0.5, before the clip starts.
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 2, endBeat: 10, midiOffsetBeats: 2 },
+                    controlChanges: [],
+                    pitchBends: [bend('stale', 0.5, 4_096), bend('later', 3, 0)],
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(points.map(({ beat, frame, recordedBeat }) => ({ beat, frame, recordedBeat }))).toEqual([
+            { beat: 2, frame: 48_000, recordedBeat: 0.5 },
+            { beat: 3, frame: 72_000, recordedBeat: 3 },
         ]);
     });
 

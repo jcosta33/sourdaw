@@ -110,7 +110,7 @@ export type OfflineChannelBendProjector = (input: {
         pitchBends: readonly { id: string; value: number; beat: number; channel: number }[];
     }[];
     frameAtBeat: (beat: number) => number;
-}) => readonly { beat: number; frame: number; value: number; rangeSemitones: number }[];
+}) => readonly { beat: number; frame: number; recordedBeat: number; value: number; rangeSemitones: number }[];
 
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;

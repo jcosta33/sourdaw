@@ -1054,14 +1054,20 @@ export async function scheduleMidiNotes(
     // A relocation that lands where a track has no clip playing still carries what its earlier clips
     // left, as continuous playback does, on the device the window would route stored controllers to; a
     // posted device the scheduler no longer routes to is left to the release sweep. A track resuming
-    // after a mute is owed the same restore wherever it resumes.
-    const restoreStoredControllersAtGap = (track: SchedulerTrack, resumesAfterMute: boolean): void => {
+    // after a mute is owed the same restore wherever it resumes, and so is each note it left sounding:
+    // the window that ends the mute gives it the bend in force then, whether or not a clip plays in it.
+    const settleGapWindow = (track: SchedulerTrack, resumesAfterMute: boolean): void => {
         const target = opensAtRelocation || resumesAfterMute ? resolveStoredControllerDevice(track, tracks) : null;
-        if (!target) {
+        if (!target && !resumesAfterMute) {
             return;
         }
         const queue = createSameFramePostQueue();
-        restoreStoredControllersOnTrack(track, target, queue);
+        if (resumesAfterMute) {
+            postHeldNoteExpression(track, queue, resumesAfterMute);
+        }
+        if (target) {
+            restoreStoredControllersOnTrack(track, target, queue);
+        }
         queue.flush(isCurrent);
     };
     // Whether this window is the one a track schedules again in after a mute kept its stored controllers
@@ -1125,6 +1131,39 @@ export async function scheduleMidiNotes(
             });
             return channelBend;
         };
+    };
+    // What the sounding notes of the track do in this window, the notes it started included: their own
+    // curve points, the channel bend moves, and, after a mute, the expression in force when it opens. A
+    // window that resumes the track or a clip after a mute lists the moves from the start of the timeline,
+    // because the instrument was told none of what the mute kept from it, and a note still sounding is given
+    // the bend in force.
+    const postHeldNoteExpression = (
+        track: SchedulerTrack,
+        posts: ReturnType<typeof createSameFramePostQueue>,
+        resumesAfterMute: boolean
+    ): void => {
+        for (const { pitch, channel, change } of takeHeldNoteExpression({
+            trackId: track.id,
+            fromBeat,
+            toBeat,
+            fromFrame: sampleFrameAtBeatOnTrack(track.id)(fromBeat),
+            readChannelBend: () =>
+                projectChannelBend({
+                    clips: resolveChannelBendClipsOnTrack(track),
+                    frameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+                    fromBeat: resumesAfterMute ? Number.NEGATIVE_INFINITY : fromBeat,
+                    toBeat,
+                }),
+        })) {
+            postNoteExpression({
+                posts,
+                trackId: track.id,
+                pitch,
+                channel,
+                sampleFrame: change.frame,
+                expression: change.expression,
+            });
+        }
     };
     // The notes a relocation left sounding take the bend in force at its destination, on every track whose
     // instrument still voices them and before any track's window starts a note, whatever else that window
@@ -1206,7 +1245,7 @@ export async function scheduleMidiNotes(
         const resumesAfterMute = takeResumeAfterMute(track);
         const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
         if (windowMidiClips.length === 0) {
-            restoreStoredControllersAtGap(track, resumesAfterMute);
+            settleGapWindow(track, resumesAfterMute);
             continue;
         }
 
@@ -1215,7 +1254,7 @@ export async function scheduleMidiNotes(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
-            restoreStoredControllersAtGap(track, resumesAfterMute);
+            settleGapWindow(track, resumesAfterMute);
             continue;
         }
 
@@ -1387,16 +1426,6 @@ export async function scheduleMidiNotes(
         // The whole timeline, read when the first note that can bend starts: the bend in force at its start
         // is the last move of any earlier clip.
         const readChannelBend = createChannelBendReader(track);
-        // The moves the sounding notes take in this window. A window that resumes the track or a clip after a
-        // mute lists them from the start of the timeline, because the instrument was told none of what the
-        // mute kept from it, and a note still sounding is given the bend in force.
-        const readWindowChannelBend = () =>
-            projectChannelBend({
-                clips: resolveChannelBendClipsOnTrack(track),
-                frameAtBeat: sampleFrameAtBeatOnTrack(track.id),
-                fromBeat: resumesAfterMute ? Number.NEGATIVE_INFINITY : fromBeat,
-                toBeat,
-            });
         for (const clip of activeMidiClips) {
             // A clip with no note list plays no notes; its stored controllers still play.
             const notes = midiState.notesByClipId[clip.id] ?? [];
@@ -1911,24 +1940,7 @@ export async function scheduleMidiNotes(
                 }
             }
         }
-        // What the sounding notes of the track do in this window, the notes it started included: their own
-        // curve points, the channel bend moves, and, after a mute, the expression in force when it opens.
-        for (const { pitch, channel, change } of takeHeldNoteExpression({
-            trackId: track.id,
-            fromBeat,
-            toBeat,
-            fromFrame: sampleFrameAtBeatOnTrack(track.id)(fromBeat),
-            readChannelBend: readWindowChannelBend,
-        })) {
-            postNoteExpression({
-                posts,
-                trackId: track.id,
-                pitch,
-                channel,
-                sampleFrame: change.frame,
-                expression: change.expression,
-            });
-        }
+        postHeldNoteExpression(track, posts, resumesAfterMute);
         if ((opensAtRelocation || resumesAfterMute) && storedControllerTarget) {
             restoreStoredControllersOnTrack(track, storedControllerTarget, posts);
         }
