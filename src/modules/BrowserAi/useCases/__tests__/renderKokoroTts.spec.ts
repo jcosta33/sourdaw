@@ -20,6 +20,7 @@ const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<MessagePort | nul
 type ReadRenderCacheInput = Parameters<typeof import('../../repositories/readRenderCache').readRenderCache>[0];
 const readRenderCache = vi.hoisted(() => vi.fn<(input: ReadRenderCacheInput) => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
+const getStorageStatus = vi.fn();
 type ComputeRenderCacheKeyCall = Parameters<
     typeof import('../../repositories/computeRenderCacheKey').computeRenderCacheKey
 >[0];
@@ -64,6 +65,7 @@ vi.mock('../../services/audioResampler', () => ({ resampleTo44100, applyFades, T
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
 import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
+import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { enqueueRender, renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 import { renderKokoroTts } from '../renderKokoroTts';
@@ -122,6 +124,8 @@ describe('renderKokoroTts', () => {
         readVerifiedModel.mockReset().mockResolvedValue(modelDataPort);
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
+        getStorageStatus.mockReset().mockResolvedValue({ usedBytes: 321 });
+        modelRegistryStore.update((state) => (state ? { ...state, storageUsedBytes: 12 } : state));
         computeRenderCacheKey.mockReset().mockResolvedValue('cache-key-1');
         textToKokoroInputIds.mockReset().mockReturnValue({ inputIds: [1n, 2n, 3n], tokenCount: 3, warnings: [] });
         resampleTo44100.mockReset().mockImplementation(({ audio }: { audio: Float32Array }) => Promise.resolve(audio));
@@ -139,8 +143,39 @@ describe('renderKokoroTts', () => {
             readVerifiedModel,
             supersedeBrowserRender,
             writeRenderCache,
+            getStorageStatus,
         });
         stub_fetch_ok(voice_embedding_buffer());
+    });
+
+    it('refreshes the model manager from measured storage after writing the render', async () => {
+        getStorageStatus.mockImplementation(async () => {
+            expect(writeRenderCache).toHaveBeenCalledOnce();
+            return { usedBytes: 321 };
+        });
+        await callRender();
+        expect(getStorageStatus).toHaveBeenCalledOnce();
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(321);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+    });
+
+    it('does not publish storage or completion after cancellation during measurement', async () => {
+        let finishMeasurement = (_value: { usedBytes: number }): void => undefined;
+        getStorageStatus.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    finishMeasurement = resolve;
+                })
+        );
+        const pending = callRender().catch((error: unknown) => error);
+        await vi.waitFor(() => expect(getStorageStatus).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        finishMeasurement({ usedBytes: 321 });
+        expect(await pending).toBeInstanceOf(Error);
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(12);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).not.toBe('preview');
     });
 
     it('rejects rendering while Kokoro artifacts are withheld', async () => {

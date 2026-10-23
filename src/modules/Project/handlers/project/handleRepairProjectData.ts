@@ -2,6 +2,7 @@ import { Counter, ImmutableString } from '@automerge/automerge';
 
 import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { DOC_PREFIX_ROOT, mutateCrdtDoc, projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
+import { isTransportIdle } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 type ConflictRepairCandidate = Extract<
@@ -92,6 +93,17 @@ export const handleRepairProjectData = createHandler<'repairProjectData'>({
         const repairState = agentProjectRepairStateStore.value;
         if (!repairState) {
             return { status: 'no-write' };
+        }
+
+        // The projection below resets the transport store, which says nothing
+        // to the scheduler or the engine: a roll still running would play on
+        // against a store that reads stopped, and a take still closing would
+        // lose its pending close to the reset. The dispatcher stops the
+        // transport and lands the take's commit first (`repairProjectData`), so
+        // a transport that rolls again by now is the user's newer gesture:
+        // refuse rather than stop it under them.
+        if (!isTransportIdle()) {
+            return { status: 'conflict', reason: 'The transport started while the repair was dispatched.' };
         }
 
         const conflictPaths = repairState.repairCandidates

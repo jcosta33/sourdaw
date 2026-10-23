@@ -10,6 +10,7 @@ import {
 
 import {
     offlineMidiEventProjectorState,
+    type OfflineChannelBendProjector,
     type OfflineChordPitchProjector,
     type OfflineAutomationValueEvaluator,
     type OfflineClipControllerProjector,
@@ -51,6 +52,7 @@ export type OfflineRenderContext = {
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId?: OfflineMidiArticulationResolver | null;
     projectClipControllers?: OfflineClipControllerProjector | null;
+    projectChannelBend?: OfflineChannelBendProjector | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -114,5 +116,6 @@ export function resolveRenderContext(
         ...captureOfflineMusicalProjections(tracks, source),
         resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
         projectClipControllers: offlineMidiEventProjectorState.projectClipControllers,
+        projectChannelBend: offlineMidiEventProjectorState.projectChannelBend,
     };
 }

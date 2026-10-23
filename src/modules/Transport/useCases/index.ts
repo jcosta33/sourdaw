@@ -7,6 +7,7 @@ export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
 export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
+export { selectMidiNotesForLoopWindow } from './scheduling/selectMidiNotesForLoopWindow';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 export { readNativeEngineCursorBeats } from './playheadScheduler/readNativeEngineCursorBeats';
 
@@ -48,6 +49,8 @@ export { createPunchRegionPatch } from './transportControls/punchRegion';
 export { setPunchOut } from './transportControls/setPunchOut';
 export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
+export { isTransportIdle } from './transportControls/isTransportIdle';
+export { countSettledTakes } from './transportControls/countSettledTakes';
 export { rearmNativeSessionAfterEngineRetire } from './transportControls/rearmNativeSessionAfterEngineRetire';
 export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
 export { toggleCountIn } from './transportControls/toggleCountIn';
@@ -65,6 +68,7 @@ export { replaceTimeSignatureMap } from './timeSignatureChanges/replaceTimeSigna
 
 export { getTransportHandlers } from './getTransportHandlers';
 
+export { preferencesSeededTransportState } from './preferencesSeededTransportState';
 export { defaultTransportState } from './transportQueries/helpers';
 export { getTransportState } from './transportQueries/getTransportState';
 export { getTempoMapState } from './transportQueries/getTempoMapState';

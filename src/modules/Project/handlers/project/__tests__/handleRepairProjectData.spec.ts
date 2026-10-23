@@ -14,6 +14,12 @@ const mocks = vi.hoisted(() => ({
     },
     mutateCrdtDoc: vi.fn<typeof mutateCrdtDoc<Record<string, unknown>>>(),
     projectCrdtToStores: vi.fn(),
+    rolling: false,
+}));
+
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    isTransportIdle: () => !mocks.rolling,
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
@@ -42,6 +48,7 @@ function setRepairState(candidates: AgentProjectRepairState['repairCandidates'])
 describe('handleRepairProjectData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.rolling = false;
         mocks.agentProjectRepairStateStore.value = null;
         clearHandlerRegistry();
         clearUndoHistory();
@@ -177,6 +184,40 @@ describe('handleRepairProjectData', () => {
         await expect(executeAppAction({ type: 'repairProjectData' })).rejects.toThrow(
             'Action conflicts with current project state: repairProjectData'
         );
+    });
+
+    it('refuses a transport that is rolling when it executes, without writing or re-projecting', async () => {
+        setRepairState([
+            {
+                kind: 'choose-automerge-conflict-value',
+                conflictIds: ['conflict-gain'],
+                path: ['targets', 'track-bass', 'gain'],
+                targetIds: ['track-bass'],
+            },
+        ]);
+        mocks.rolling = true;
+
+        await expect(executeAppAction({ type: 'repairProjectData' })).rejects.toThrow(
+            'Action conflicts with current project state: repairProjectData: The transport started while the repair was dispatched.'
+        );
+
+        expect(mocks.mutateCrdtDoc).not.toHaveBeenCalled();
+        expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        expect(mocks.agentProjectRepairStateStore.value).not.toBeNull();
+    });
+
+    it('repairs once the transport is idle again', async () => {
+        setRepairState([{ kind: 'repair-project-invariants', targetIds: [] }]);
+        mocks.projectCrdtToStores.mockImplementation(() => {
+            mocks.agentProjectRepairStateStore.value = null;
+        });
+        mocks.rolling = true;
+        await expect(executeAppAction({ type: 'repairProjectData' })).rejects.toThrow('transport started');
+        mocks.rolling = false;
+
+        await expect(executeAppAction({ type: 'repairProjectData' })).resolves.toBeUndefined();
+
+        expect(mocks.projectCrdtToStores).toHaveBeenCalledOnce();
     });
 
     it('is admitted through the repair gate while every other action is refused', async () => {

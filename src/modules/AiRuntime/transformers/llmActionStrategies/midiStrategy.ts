@@ -1,11 +1,10 @@
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
-import { type ClipContentWindow, validateNotesWithinClipWindow } from '../validateNotesWithinClipWindow';
+import { type ClipContentWindowInput, validateNotesWithinClipWindow } from '../validateNotesWithinClipWindow';
 
 import { findClip, hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
@@ -63,30 +62,28 @@ function findWritableMidiClip(context: ProjectContext, clipId: unknown) {
 }
 
 /**
- * The span of clip content that actually sounds, in the clip's own media coordinates. The scheduler
- * reads notes at `note.startBeat - midiOffsetBeats` and drops everything at or past the clip's loop
- * length, so the window starts at the offset and runs for that length — which `projectClipLoopExpansion`
- * reports as the clip's own duration whenever the clip does not loop.
- *
- * The loop length alone is not the bound, because a clip shorter than its own loop never plays a
- * whole iteration: every scheduler truncates one at the clip end, so the content that sounds is
- * whichever of the two is shorter. A four-beat clip looping every sixty-four beats would otherwise
- * accept a note at beat sixty that no route ever reaches.
+ * The clip fields the note-window validation reads, refused when the clip cannot state where its
+ * content is. The window itself is the schedulers' law, applied note-wise in
+ * `validateNotesWithinClipWindow` through the same anchored predicate and pass span they enforce —
+ * not recomputed here, where hand-derived bounds truncated a negative advance's pass at the visual
+ * span and silenced material the schedulers sound (#5198).
  */
-function clipContentWindow(clip: ProjectContextClip): ClipContentWindow | undefined {
+function clipContentWindow(clip: ProjectContextClip): ClipContentWindowInput | undefined {
     const startBeat = clip.midiOffsetBeats ?? 0;
-    const { loopLengthBeats } = projectClipLoopExpansion({
-        clipDurationBeats: clip.endBeat - clip.startBeat,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const endBeat = startBeat + Math.min(loopLengthBeats, clip.endBeat - clip.startBeat);
+    const clipSpanBeats = clip.endBeat - clip.startBeat;
     // A non-finite bound makes every comparison against it false, so an unguarded window would
     // admit any note at all rather than refusing the clip that cannot state where its content is.
-    if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat)) {
+    if (!Number.isFinite(startBeat) || !Number.isFinite(clipSpanBeats)) {
         return undefined;
     }
-    return { endBeat, startBeat };
+    return {
+        endBeat: clip.endBeat,
+        loopEnabled: clip.loopEnabled,
+        loopLength: clip.loopLength,
+        loopOriginBeat: clip.loopOriginBeat,
+        midiOffsetBeats: clip.midiOffsetBeats,
+        startBeat: clip.startBeat,
+    };
 }
 
 function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {

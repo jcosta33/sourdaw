@@ -6,28 +6,63 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { PlayheadDisplay } from '../PlayheadDisplay';
 
 const playheadPosition = vi.hoisted(() => ({ current: 0 }));
-const transportState = vi.hoisted(() => ({ value: { isPlaying: false, playheadPosition: 0 } }));
+const { transportState, timeSignatureState } = vi.hoisted(() => {
+    function createTestStore<T>(initial: T) {
+        let value = initial;
+        const listeners = new Set<() => void>();
+        function subscribe(listener: () => void): () => void {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        }
+        return {
+            get value() {
+                return value;
+            },
+            set value(next: T) {
+                value = next;
+                for (const listener of listeners) {
+                    listener();
+                }
+            },
+            getSnapshot: () => value,
+            subscribe,
+            subscribeReact: subscribe,
+        };
+    }
+    return {
+        transportState: createTestStore({
+            isPlaying: false,
+            playheadPosition: 0,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            tempo: 120,
+            loopStart: 0,
+            loopEnd: 0,
+        }),
+        timeSignatureState: createTestStore<{
+            changes: Array<{ id: string; beat: number; numerator: number; denominator: number }>;
+        }>({ changes: [] }),
+    };
+});
 const toggleTimeDisplayMode = vi.hoisted(() => vi.fn());
 
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => transportState.value),
-}));
-
-vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: {
-        get value() {
-            return transportState.value;
-        },
-        subscribe: () => () => {},
-        subscribeReact: () => () => {},
-        getSnapshot: () => transportState.value,
-    },
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: transportState,
+    timeSignatureMapStore: timeSignatureState,
     playheadPositionRef: playheadPosition,
+    readBarStartBeat: vi.fn(() => {
+        throw new Error('Unexpected named-bar lookup in a PlayheadDisplay test');
+    }),
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({
-    defaultTransportState: { isPlaying: false, playheadPosition: 0 },
-}));
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
+    return {
+        defaultTransportState: actual.defaultTransportState,
+        createMusicalPositionProjector: actual.createMusicalPositionProjector,
+    };
+});
 
 vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleTimeDisplayMode', () => ({
     toggleTimeDisplayMode,
@@ -40,7 +75,16 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('PlayheadDisplay', () => {
     beforeEach(() => {
         playheadPosition.current = 0;
-        transportState.value = { isPlaying: false, playheadPosition: 0 };
+        transportState.value = {
+            isPlaying: false,
+            playheadPosition: 0,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            tempo: 120,
+            loopStart: 0,
+            loopEnd: 0,
+        };
+        timeSignatureState.value = { changes: [] };
         vi.clearAllMocks();
     });
 
@@ -70,12 +114,53 @@ describe('PlayheadDisplay', () => {
             expect(screen.getByText('240')).toBeInTheDocument();
         });
 
-        it('respects a non-4 numerator (7/8 → numerator 7)', () => {
-            // Position 7.25 beats, numerator 7 → bar = floor(7/7)+1 = 2, beat = (7%7)+1 = 1.
+        it('preserves the canonical tick when the projector fraction rescales just below its integer', () => {
+            playheadPosition.current = 0.257;
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
+
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars1.1.123');
+        });
+
+        it('reads eighth-note beats and ticks in 7/8', () => {
+            transportState.value = { ...transportState.value, timeSignatureNumerator: 7, timeSignatureDenominator: 8 };
             playheadPosition.current = 7.25;
             renderWithTooltip(<PlayheadDisplay tempo={120} numerator={7} timeDisplayMode="musical" />);
 
-            expect(screen.getByText('120')).toBeInTheDocument(); // tick = floor(0.25*480) = 120
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars3.1.240');
+        });
+
+        it('starts bar 2 after three quarter notes in 6/8', () => {
+            transportState.value = { ...transportState.value, timeSignatureNumerator: 6, timeSignatureDenominator: 8 };
+            playheadPosition.current = 3;
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={6} timeDisplayMode="musical" />);
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars2.1.000');
+        });
+
+        it('reads shifted on-beat material from the canonical fractional meter grid', () => {
+            timeSignatureState.value = {
+                changes: [
+                    { id: 'base', beat: 0, numerator: 3, denominator: 4 },
+                    { id: 'carry', beat: 6 + 10 / 3, numerator: 3, denominator: 4 },
+                ],
+            };
+            playheadPosition.current = 13 + 10 / 3;
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={3} timeDisplayMode="musical" />);
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars6.2.000');
+        });
+
+        it('repaints a paused readout when its meter map or default denominator changes', () => {
+            playheadPosition.current = 5.5;
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars2.2.240');
+            act(() => {
+                timeSignatureState.value = { changes: [{ id: 'change', beat: 5, numerator: 3, denominator: 8 }] };
+            });
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars2.2.000');
+            act(() => {
+                timeSignatureState.value = { changes: [] };
+                transportState.value = { ...transportState.value, timeSignatureDenominator: 8 };
+            });
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars3.4.000');
         });
 
         it('switches the display mode when the readout is clicked', () => {
@@ -119,8 +204,38 @@ describe('PlayheadDisplay', () => {
     });
 
     describe('playing state', () => {
+        it('updates fractional musical coordinates through the live frame callback', () => {
+            const frameStart = 1_000;
+            vi.spyOn(performance, 'now').mockReturnValue(frameStart);
+            let animationFrameCallback: FrameRequestCallback | null = null;
+            vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+                animationFrameCallback = callback;
+                return 1;
+            });
+            vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+            transportState.value = { ...transportState.value, isPlaying: true };
+            timeSignatureState.value = {
+                changes: [
+                    { id: 'base', beat: 0, numerator: 3, denominator: 4 },
+                    { id: 'carry', beat: 6 + 10 / 3, numerator: 3, denominator: 4 },
+                ],
+            };
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={3} timeDisplayMode="musical" />);
+
+            playheadPosition.current = 13 + 10 / 3;
+            act(() => {
+                animationFrameCallback!(frameStart + 17);
+            });
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars6.2.000');
+            playheadPosition.current = 14 + 10 / 3;
+            act(() => {
+                animationFrameCallback!(frameStart + 34);
+            });
+            expect(screen.getByTestId('transport-playhead')).toHaveTextContent('Bars6.3.000');
+        });
+
         it('renders the active (playing) readout when transport is playing', () => {
-            transportState.value = { isPlaying: true, playheadPosition: 0 };
+            transportState.value = { ...transportState.value, isPlaying: true, playheadPosition: 0 };
             renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
 
             const button = screen.getByRole('button', { name: /switch to wall-clock time/i });
@@ -137,7 +252,7 @@ describe('PlayheadDisplay', () => {
                 return 1;
             });
             vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
-            transportState.value = { isPlaying: true, playheadPosition: 0 };
+            transportState.value = { ...transportState.value, isPlaying: true, playheadPosition: 0 };
             renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
             const segment = screen.getByText('000');
             const initialTextNode = segment.firstChild;
@@ -165,7 +280,7 @@ describe('PlayheadDisplay', () => {
             // must react to that write and snap the readout back to 1.1.000 —
             // not stay frozen at the paused beat.
             playheadPosition.current = 3.25;
-            transportState.value = { isPlaying: false, playheadPosition: 3.25 };
+            transportState.value = { ...transportState.value, isPlaying: false, playheadPosition: 3.25 };
             const { rerender } = renderWithTooltip(
                 <PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />
             );
@@ -175,7 +290,9 @@ describe('PlayheadDisplay', () => {
 
             // Stop fires: ref and store both reset to 0.
             playheadPosition.current = 0;
-            transportState.value = { isPlaying: false, playheadPosition: 0 };
+            act(() => {
+                transportState.value = { ...transportState.value, isPlaying: false, playheadPosition: 0 };
+            });
             rerender(
                 <TooltipProvider>
                     <PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />

@@ -3,6 +3,7 @@ import {
     appendFileSync,
     chmodSync,
     cpSync,
+    existsSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
@@ -13,13 +14,20 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { selectAffectedE2e } from '../e2eAffectedGraph';
-import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
+import {
+    canNarrow,
+    parseChangedPaths,
+    productPathsOf,
+    selectedSpecArguments,
+    selectValidationPlan,
+    SMOKE_SPEC,
+} from '../prValidationScope';
 
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
@@ -116,6 +124,83 @@ describe('graph-backed browser selection', () => {
     });
 
     // Four planner invocations collect the real Playwright suite, alongside a direct list check.
+    it.each([
+        ['deletes', (git: (args: string[]) => string) => git(['rm', '--quiet', 'docs/retired.md'])],
+        ['renames', (git: (args: string[]) => string) => git(['mv', 'docs/retired.md', 'docs/moved.md'])],
+    ])(
+        'widens a module-only candidate when only the integration delta %s a path',
+        (_name, change) => {
+            const root = temporaryRoot();
+            const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust];
+            for (const path of [
+                source,
+                ...specs,
+                'scripts/e2eSuiteOwners.json',
+                'docs/retired.md',
+                'public/fixture.js',
+            ]) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            }
+            writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+            writeFileSync(join(root, 'docs/retired.md'), 'retired\n');
+            writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.' } }));
+            writeFileSync(
+                join(root, 'scripts/e2eSuiteOwners.json'),
+                JSON.stringify({
+                    version: 1,
+                    owners: ['Crust', 'Tuner'],
+                    entries: [
+                        { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                        { spec: crust, owners: ['Crust'] },
+                    ],
+                })
+            );
+            for (const spec of specs) {
+                writeFileSync(
+                    join(root, spec),
+                    `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+                );
+            }
+            fixturePlaywright(root);
+            writeFileSync(
+                join(root, 'playwright.config.mjs'),
+                "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+            );
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git(['init', '--quiet', '-b', 'trunk']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', 'src', 'public', 'scripts', 'tests', 'docs', 'tsconfig.json']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', '-b', 'feature']);
+            writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+            git(['add', source]);
+            git(['commit', '--quiet', '-m', 'change tuner panel']);
+            const head = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', 'trunk']);
+            change(git);
+            git(['commit', '--quiet', '-m', 'main moves a documentation path']);
+            git(['merge', '--quiet', '--no-ff', '-m', 'integration', 'feature']);
+            const output = join(root, 'github-output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(plan)).toEqual([crust, TUNER_SPECS[0]].sort());
+            expect(plan.reasons.some((row) => row.reason.startsWith('affected feature owners'))).toBe(false);
+        },
+        60_000
+    );
+
     it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
         const root = temporaryRoot();
         const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -287,8 +372,6 @@ const PR_4902_PATHS = [
     'scripts/trustedGithubWriteBootstrap.ts',
 ];
 const KNOWN_NODE_REVIEW_TOOLING = [
-    'scripts/checkStancesRecord.ts',
-    'scripts/__tests__/checkStancesRecord.spec.ts',
     'scripts/typesafeRequest.ts',
     'scripts/__tests__/typesafeRequest.spec.ts',
     'scripts/semanticReviewEvaluation.ts',
@@ -316,6 +399,7 @@ const REVIEW_REPAIR_TOOLING = [
 ];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/reviewApprovalLabel.ts',
     'scripts/reviewRiskPolicy.ts',
     'scripts/savedProjectStatePaths.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
@@ -325,7 +409,6 @@ const REVIEW_HELPER_STEMS = [
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -371,6 +454,13 @@ const SHARED_OR_BROWSER_OWNED_SCRIPTS = [
     'loopbackOpenAiProvider',
     'offlineAudioWorkletTrace',
 ];
+// The tooling unit suite excludes these specs, so they and every script they reach must plan broad.
+const RESOURCE_GUARD_SPECS = [
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+];
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport|\bvi\.mock)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -402,6 +492,41 @@ function fixturePlaywright(root: string): void {
 function fixtureBrowserCase(root: string, path: string): void {
     writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
 }
+
+function resolveRelativeImport(importer: string, specifier: string): string {
+    const base = posix.join(posix.dirname(importer), specifier);
+    const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`];
+    const found = candidates.find((candidate) => /\.tsx?$/.test(candidate) && existsSync(resolve(candidate)));
+    if (found === undefined) {
+        throw new Error(`${importer} imports unresolved ${specifier}`);
+    }
+    return found;
+}
+
+function relativeImportClosure(roots: readonly string[]): string[] {
+    const reached = new Set<string>();
+    const pending = [...roots];
+    for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+        if (reached.has(path)) {
+            continue;
+        }
+        reached.add(path);
+        for (const [statement, specifier] of readFileSync(resolve(path), 'utf8').matchAll(RELATIVE_IMPORT)) {
+            if (specifier === undefined) {
+                throw new Error(`${path} import ${statement} captured no specifier`);
+            }
+            pending.push(resolveRelativeImport(path, specifier));
+        }
+    }
+    return [...reached].sort();
+}
+
+const BROAD_WITHOUT_BROWSER = {
+    profile: 'broad',
+    browser: false,
+    browserAi: false,
+    matrix: { include: [] },
+} as const;
 
 function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
     return plan.matrix.include.flatMap((group) => group.specs).sort();
@@ -515,12 +640,18 @@ describe('required affected verification', () => {
         for (const path of [
             'scripts/reviewStructuralAdmissionFuture.ts',
             'scripts/__tests__/reviewStructuralAdmissionFuture.spec.ts',
-            'src/modules/Arrangement/presentations/views/Timeline.tsx',
         ]) {
-            const plan = selectValidationPlan([...helperPaths, path], INVENTORY);
-            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+            expect(selectValidationPlan([...helperPaths, path], INVENTORY)).toMatchObject({
+                ...BROAD_WITHOUT_BROWSER,
+                codeql: true,
+            });
         }
+        const product = selectValidationPlan(
+            [...helperPaths, 'src/modules/Arrangement/presentations/views/Timeline.tsx'],
+            INVENTORY
+        );
+        expect(product).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+        expect(allSelected(product)).toEqual(fullInventory(INVENTORY));
     });
 
     it('keeps the planner, collector helper, and owning spec in the Node tooling suite', () => {
@@ -786,6 +917,10 @@ describe('required affected verification', () => {
                 expect(result.stderr).toContain('Playwright collection failed');
                 continue;
             }
+            if (testCase.name === 'shared mix') {
+                expect(planAt(caseBase, caseHead)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
+                continue;
+            }
             expectBroad(caseBase, caseHead);
         }
 
@@ -802,12 +937,31 @@ describe('required affected verification', () => {
         expectBroad(renameBase, renameHead);
     }, 30_000);
 
-    it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)('keeps shared or browser-owned script %s broad', (stem) => {
-        for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {
-            const plan = selectValidationPlan([path], INVENTORY);
-            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)(
+        'keeps shared or browser-owned script %s on broad validation without browser execution',
+        (stem) => {
+            for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {
+                expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                    ...BROAD_WITHOUT_BROWSER,
+                    codeql: true,
+                });
+            }
         }
+    );
+
+    it('keeps every resource guard spec and the scripts it reaches off the tooling profile', () => {
+        const closure = relativeImportClosure(RESOURCE_GUARD_SPECS);
+        expect(closure).toEqual(
+            expect.arrayContaining([
+                ...RESOURCE_GUARD_SPECS,
+                'scripts/resourceGuard.ts',
+                'scripts/resourceGuardStorage.ts',
+                'scripts/pnpmModulesPreflight.ts',
+            ])
+        );
+        expect(closure.every((path) => path.startsWith('scripts/'))).toBe(true);
+        const toolingPaths = closure.filter((path) => selectValidationPlan([path], INVENTORY).profile !== 'broad');
+        expect(toolingPaths).toEqual([]);
     });
 
     it.each([
@@ -817,10 +971,8 @@ describe('required affected verification', () => {
         'scripts/recoverPublishReviewLock5008.ts',
         'scripts/nested/reviewPublicationBinding.ts',
         'scripts/__tests__/nested/reviewPublicationBinding.spec.ts',
-    ])('keeps unclassified lookalike or nested script %s broad', (path) => {
-        const plan = selectValidationPlan([path], INVENTORY);
-        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    ])('keeps unclassified lookalike or nested script %s on broad validation without browser execution', (path) => {
+        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
     });
 
     it('keeps the exact 17 paths of PR 4890 in the tooling scope', () => {
@@ -895,14 +1047,10 @@ describe('required affected verification', () => {
     });
 
     it('preserves unknown release and WASM, product, and config fallback when metadata changes', () => {
-        for (const path of [
-            'release/new-release-metadata.json',
-            'release/wasm-artifacts.json',
-            'public/wasm/manifest.json',
-            'src/app/bootstrap.ts',
-            'vite.config.ts',
-            'package.json',
-        ]) {
+        for (const path of ['release/new-release-metadata.json', 'release/wasm-artifacts.json']) {
+            expect(selectValidationPlan([...RELEASE_METADATA, path], INVENTORY)).toMatchObject(BROAD_WITHOUT_BROWSER);
+        }
+        for (const path of ['public/wasm/manifest.json', 'src/app/bootstrap.ts', 'vite.config.ts', 'package.json']) {
             const plan = selectValidationPlan([...RELEASE_METADATA, path], INVENTORY);
             expect(plan).toMatchObject({
                 profile: 'broad',
@@ -968,7 +1116,6 @@ describe('required affected verification', () => {
             })),
         });
         const nodePaths = [
-            'scripts/checkStancesRecord.ts',
             'scripts/typesafeRequest.ts',
             'scripts/semanticReview/evaluation/runEvaluation.ts',
             'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
@@ -1011,44 +1158,41 @@ describe('required affected verification', () => {
         writeFileSync(join(root, unknown), 'export const fixture = true;\n');
         git(['add', unknown]);
         git(['commit', '--quiet', '-m', 'unknown semantic module']);
-        const unknownPlan = planAt(broadHead);
-        expect(unknownPlan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(unknownPlan).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
+        expect(planAt(broadHead)).toMatchObject(BROAD_WITHOUT_BROWSER);
         const unknownHead = git(['rev-parse', 'HEAD']);
         writeFileSync(join(root, 'scripts/e2eServerIdentity.ts'), 'export const fixture = true;\n');
         git(['add', 'scripts/e2eServerIdentity.ts']);
         git(['commit', '--quiet', '-m', 'browser-owned script helper']);
-        const browserOwned = planAt(unknownHead);
-        expect(browserOwned).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(browserOwned).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
+        expect(planAt(unknownHead)).toMatchObject(BROAD_WITHOUT_BROWSER);
     });
 
     it('uses broad scope for mixed, unknown, and build paths', () => {
-        for (const path of [
-            'src/app/bootstrap.ts',
-            'scripts/newBuildStep.ts',
-            'scripts/semanticReview/newBuildStep.ts',
-            'package.json',
-        ]) {
+        for (const path of ['src/app/bootstrap.ts', 'package.json']) {
             expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject({
                 profile: 'broad',
                 browser: true,
                 browserAi: true,
             });
         }
+        for (const path of ['scripts/newBuildStep.ts', 'scripts/semanticReview/newBuildStep.ts']) {
+            expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject(BROAD_WITHOUT_BROWSER);
+        }
     });
 
     it('keeps mixed product, unknown, and lookalike paths broad', () => {
+        expect(selectValidationPlan([...PR_4902_PATHS, 'src/app/bootstrap.ts'], INVENTORY)).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: true,
+            codeql: true,
+        });
         for (const path of [
-            'src/app/bootstrap.ts',
             'scripts/newBuildStep.ts',
             'scripts/agentDeliveryScriptsLookalike.ts',
             'scripts/__tests__/agentDeliveryScriptsLookalike.spec.ts',
         ]) {
             expect(selectValidationPlan([...PR_4902_PATHS, path], INVENTORY)).toMatchObject({
-                profile: 'broad',
-                browser: true,
-                browserAi: true,
+                ...BROAD_WITHOUT_BROWSER,
                 codeql: true,
             });
         }
@@ -1196,7 +1340,7 @@ describe('required affected verification', () => {
         'package.json',
         'pnpm-lock.yaml',
         'playwright.config.ts',
-        'scripts/newBuildStep.ts',
+        'vite.config.ts',
     ])('widens unknown/shared dependency %s to all browser proofs and hardware', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(allSelected(plan)).toEqual(INVENTORY.filter((spec) => spec !== SMOKE_SPEC).sort());
@@ -1625,5 +1769,63 @@ describe('required affected verification', () => {
             expect(() => readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).toThrow();
             expect(() => readFileSync(output, 'utf8')).toThrow();
         }
+    });
+});
+
+describe('repository tooling selects no browser suite', () => {
+    it.each([
+        'scripts/__tests__/restampWasmInventory.spec.ts',
+        'scripts/resourceGuard.ts',
+        'scripts/gen-daw-dsp-worklet.ts',
+        'scripts/buildElectronPreload.ts',
+        'scripts/e2eServerIdentity.ts',
+        'release/web-artifact-manifest.json',
+        '.agents/skills/review-stances/stances.json',
+        'crates/daw-dsp/README.md',
+    ])('keeps %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+    });
+
+    it('keeps a deleted scripts file browser-free and either product side of a rename selected', () => {
+        expect(selectValidationPlan(parseChangedPaths('D\0scripts/oldBuildStep.ts\0'), INVENTORY)).toMatchObject(
+            BROAD_WITHOUT_BROWSER
+        );
+        for (const diff of [
+            'R100\0src/app/bootstrap.ts\0scripts/bootstrap.ts\0',
+            'R100\0scripts/bootstrap.ts\0src/app/bootstrap.ts\0',
+        ]) {
+            const plan = selectValidationPlan(parseChangedPaths(diff), INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        }
+    });
+
+    it('lets the product path decide browser selection when scripts change beside it', () => {
+        const full = selectValidationPlan(['scripts/gen-daw-dsp-worklet.ts', 'src/app/bootstrap.ts'], INVENTORY);
+        expect(full).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
+
+        const paths = ['scripts/gen-daw-dsp-worklet.ts', TUNER];
+        const productPaths = productPathsOf(paths, INVENTORY, false);
+        expect(productPaths).toEqual([TUNER]);
+        expect(canNarrow({ productPaths, candidateDiff: `M\0${TUNER}\0`, integrationDiff: '' })).toBe(true);
+        const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
+            kind: 'narrow',
+            specs: [...TUNER_SPECS],
+            browserAi: false,
+            owners: ['Tuner'],
+        });
+        expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+        expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+    });
+
+    it('keeps Markdown inside product trees on the product route', () => {
+        const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
 });
