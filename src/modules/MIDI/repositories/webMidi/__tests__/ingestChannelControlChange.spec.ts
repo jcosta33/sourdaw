@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { channelControllerState } from '../channelControllerState';
+import { channelPitchBendState } from '../channelPitchBendState';
 import { getChannelBendRangeSemitones } from '../getChannelBendRangeSemitones';
 import { heldPedalState } from '../heldPedalState';
 import { ingestChannelControlChange } from '../ingestChannelControlChange';
@@ -230,6 +231,26 @@ describe('ingestChannelControlChange', () => {
 
             expect(heldPedalState.get(CHANNEL)?.size).toBe(0);
             expect(heldPedalState.get(5)?.get(64)).toBe(127);
+        });
+
+        it('recentres the wheel of the channel on Reset All Controllers and leaves other channels bent', () => {
+            channelPitchBendState.set(CHANNEL, 4096);
+            channelPitchBendState.set(5, -2048);
+
+            ingest(121, 0);
+
+            expect(channelPitchBendState.has(CHANNEL)).toBe(false);
+            expect(channelPitchBendState.get(5)).toBe(-2048);
+        });
+
+        it('keeps the wheel through a transport reset and drops it when the input device is reset', () => {
+            channelPitchBendState.set(CHANNEL, 4096);
+
+            resetChannelControllerState();
+            expect(channelPitchBendState.get(CHANNEL)).toBe(4096);
+
+            resetInputDeviceControllerState();
+            expect(channelPitchBendState.size).toBe(0);
         });
 
         it('stands through a reset of the decoded channel state, which a transport stop, pause and seek run', () => {

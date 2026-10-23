@@ -12,6 +12,7 @@ const ensure_track_strip = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 const start_faust_note = vi.hoisted(() => vi.fn<(...args: unknown[]) => () => void>());
+const apply_note_expression = vi.hoisted(() => vi.fn());
 const schedule_device_key_on = vi.hoisted(() => vi.fn());
 const schedule_device_key_off = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
@@ -35,6 +36,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    applyNoteExpression: apply_note_expression,
     audioEngine: {
         context: audio_clock,
         ensureTrackStrip: ensure_track_strip,
@@ -59,7 +61,10 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
+const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { channelPitchBendState } = await import('../../../repositories/webMidi/channelPitchBendState');
+const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
 const { releaseAllActiveNotes } = await import('../../../repositories/webMidi/releaseAllActiveNotes');
 const { pendingYeastRelease } = await import('../../../repositories/webMidi/pendingYeastRelease');
 const { releaseCapturedYeastVoices } = await import('../../../repositories/webMidi/releaseCapturedYeastVoices');
@@ -107,6 +112,9 @@ describe('handleWebMidiNoteOn', () => {
         ensure_track_strip.mockReset();
         get_track_strip.mockReset();
         start_faust_note.mockReset();
+        apply_note_expression.mockReset();
+        channelPitchBendState.clear();
+        resetChannelControllerState();
         target_track_id.value = 'track-1';
         mpe_enabled.value = false;
         faust_instrument_types.value = new Set();
@@ -743,6 +751,161 @@ describe('handleWebMidiNoteOn', () => {
 
         expect(levain_note_on).toHaveBeenCalledWith(72, 88, LIVE_DISPATCH_FRAME, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 72))?.levainDeviceId).toBe('lev-1');
+    });
+
+    describe('starting under the channel bend', () => {
+        /** Hold the wheel at +4096 (a quarter of full scale up) on a channel through the live pitch-bend route. */
+        function holdWheelUp(channel: number): void {
+            handleWebMidiPitchBend(channel, 0, 96);
+        }
+
+        function declareBendRange(channel: number, semitones: number): void {
+            ingestChannelControlChange({ channel, cc: 101, value: 0 });
+            ingestChannelControlChange({ channel, cc: 100, value: 0 });
+            ingestChannelControlChange({ channel, cc: 6, value: semitones });
+            ingestChannelControlChange({ channel, cc: 38, value: 0 });
+        }
+
+        type ExpressionDevice = 'fermenter' | 'grand-boule' | 'levain';
+
+        function stripWithNoteOn(deviceType: ExpressionDevice, noteOn: ReturnType<typeof vi.fn>) {
+            const controlsKey = {
+                fermenter: 'fermenterControls',
+                'grand-boule': 'grandBouleControls',
+                levain: 'levainControls',
+            }[deviceType];
+            ensure_track_strip.mockReturnValue({
+                gainNode: {},
+                deviceNodes: [{ type: deviceType, deviceId: 'dev-1', [controlsKey]: { ready: true, noteOn } }],
+            });
+            return handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', type: deviceType }] }],
+                        selectedTrackId: 'track-1',
+                    }),
+                })
+            );
+        }
+
+        it.each(['fermenter', 'grand-boule', 'levain'] as const)(
+            'starts a %s note struck while its channel wheel is held at that bend, after the note-on',
+            async (deviceType) => {
+                const note_on = vi.fn();
+                const fn = stripWithNoteOn(deviceType, note_on);
+                holdWheelUp(1);
+
+                await fn(1, 64, 90);
+
+                expect(apply_note_expression).toHaveBeenCalledTimes(1);
+                expect(apply_note_expression).toHaveBeenCalledWith({
+                    trackId: 'track-1',
+                    note: 64,
+                    channel: 1,
+                    expression: { pitchBend: 4096, pressure: undefined, slide: undefined },
+                    bendRangeSemitones: 2,
+                    sampleFrame: LIVE_DISPATCH_FRAME,
+                });
+                expect(note_on.mock.invocationCallOrder[0]).toBeLessThan(
+                    apply_note_expression.mock.invocationCallOrder.at(-1) ?? 0
+                );
+            }
+        );
+
+        it('starts the note at the range the channel declared through RPN 0', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            declareBendRange(1, 12);
+            holdWheelUp(1);
+
+            await fn(1, 64, 90);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
+        });
+
+        it('leaves a note struck on another channel unbent while one channel holds the wheel', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(1);
+
+            await fn(2, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('posts no start bend while the wheel was never moved', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+
+            await fn(1, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('posts no start bend once the wheel returned to centre', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(1);
+            handleWebMidiPitchBend(1, 0, 64);
+            apply_note_expression.mockClear();
+
+            await fn(1, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('starts the built-in synth oscillator detuned by the held wheel on top of its own detune', async () => {
+            const schedule_note = vi.fn((..._args: unknown[]) => ({ _env: { gain: {} } }));
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getSynthParamsForTrack: () => ({ detune: 5, release: 0.3 }),
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+            holdWheelUp(1);
+
+            await fn(1, 60, 100);
+
+            // +4096 of 8192 at the default ±2 semitones is +100 cents.
+            expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 105, release: 0.3 });
+        });
+
+        it('leaves the built-in synth detune untouched while the wheel is centred', async () => {
+            const schedule_note = vi.fn((..._args: unknown[]) => ({ _env: { gain: {} } }));
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getSynthParamsForTrack: () => ({ detune: 5, release: 0.3 }),
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+            await fn(1, 60, 100);
+
+            expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 5, release: 0.3 });
+        });
+
+        it('starts an MPE member note under the zone master wheel', async () => {
+            mpe_enabled.value = true;
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(0);
+            apply_note_expression.mockClear();
+
+            await fn(3, 64, 90);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(
+                expect.objectContaining({ channel: 3, expression: expect.objectContaining({ pitchBend: 4096 }) })
+            );
+        });
+
+        it('leaves an MPE member note carrying its own bend to that bend', async () => {
+            mpe_enabled.value = true;
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(0);
+            handleWebMidiPitchBend(3, 0, 100);
+            apply_note_expression.mockClear();
+
+            await fn(3, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
     });
 
     it('schedules a builtin synth note and stores the oscillator for later release', async () => {

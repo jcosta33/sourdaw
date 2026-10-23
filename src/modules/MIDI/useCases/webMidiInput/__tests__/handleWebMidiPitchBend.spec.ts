@@ -45,6 +45,7 @@ const LIVE_DISPATCH_FRAME = 96_128;
 const LIVE_DISPATCH_TIME = LIVE_DISPATCH_FRAME / 48_000;
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { channelPitchBendState } = await import('../../../repositories/webMidi/channelPitchBendState');
 const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
@@ -77,6 +78,7 @@ describe('handleWebMidiPitchBend', () => {
         activeNotes.clear();
         channelToNote.clear();
         apply_note_expression.mockClear();
+        channelPitchBendState.clear();
         resetChannelControllerState();
         mpe_enabled.value = true;
         target_track_id.value = 'track-1';
@@ -351,6 +353,61 @@ describe('handleWebMidiPitchBend', () => {
             fn(5, 0, 96);
 
             expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 2 }));
+        });
+    });
+
+    describe('channel scope', () => {
+        function hold_note(channel: number, note: number): void {
+            activeNotes.set(createWebMidiNoteKey(channel, note), {
+                channel,
+                note,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+        }
+
+        it('moves only the notes on the channel the bend arrived on outside MPE', () => {
+            mpe_enabled.value = false;
+            hold_note(1, 60);
+            hold_note(2, 64);
+
+            handleWebMidiPitchBend(1, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledTimes(1);
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ note: 60, channel: 1 }));
+        });
+
+        it('keeps a manager-channel bend zone-wide over notes on member channels in MPE mode', () => {
+            hold_note(1, 60);
+            hold_note(2, 64);
+
+            handleWebMidiPitchBend(0, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledTimes(2);
+            expect(apply_note_expression).toHaveBeenCalledWith(
+                expect.objectContaining({ note: 60, channel: 1, bendRangeSemitones: 2 })
+            );
+            expect(apply_note_expression).toHaveBeenCalledWith(
+                expect.objectContaining({ note: 64, channel: 2, bendRangeSemitones: 2 })
+            );
+        });
+
+        it('keeps the wheel position of a non-member channel for the notes struck after it', () => {
+            mpe_enabled.value = false;
+
+            handleWebMidiPitchBend(1, 0, 96);
+            handleWebMidiPitchBend(2, 127, 127);
+
+            expect(channelPitchBendState.get(1)).toBe(4096);
+            expect(channelPitchBendState.get(2)).toBe(8191);
+        });
+
+        it('keeps an MPE member-channel bend per-note and out of the channel wheel state', () => {
+            handleWebMidiPitchBend(2, 0, 96);
+
+            expect(channelPitchBendState.has(2)).toBe(false);
         });
     });
 

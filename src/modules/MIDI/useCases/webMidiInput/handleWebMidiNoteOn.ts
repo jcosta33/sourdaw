@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
+import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isBypassedNoteReceiver, resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
@@ -20,6 +20,7 @@ import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
+import { resolveChannelBendAtNoteStart } from './resolveChannelBendAtNoteStart';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
@@ -137,6 +138,32 @@ export const handleWebMidiNoteOn = inject({
             const toasterChildPad = resolvedInstrument?.toasterChildPad ?? null;
 
             noteData.instrumentTrackId = instrumentTrackId;
+
+            // A note starts under the bend its channel holds. The engines reset a
+            // voice's bend at its note-on, so the bend is posted behind the note-on
+            // on the same frame, and not at all while the wheel is centred.
+            const startBend = resolveChannelBendAtNoteStart({
+                channel,
+                mpeEnabled,
+                ownPitchBend: noteData.pitchBend,
+            });
+            const postStartBend = (): void => {
+                if (!startBend) {
+                    return;
+                }
+                applyNoteExpression({
+                    trackId: instrumentTrackId,
+                    note,
+                    channel,
+                    expression: {
+                        pitchBend: startBend.pitchBend,
+                        pressure: noteData.pressure,
+                        slide: noteData.slide,
+                    },
+                    bendRangeSemitones: startBend.bendRangeSemitones,
+                    sampleFrame: dispatchFrame,
+                });
+            };
 
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
@@ -366,6 +393,7 @@ export const handleWebMidiNoteOn = inject({
                 const deviceNode = resolveDeviceNode(strip, { deviceId: fermenterDevice.id, type: 'fermenter' });
                 if (deviceNode?.fermenterControls?.ready) {
                     deviceNode.fermenterControls.noteOn(note, velocity, dispatchFrame, channel);
+                    postStartBend();
                     noteData.fermenterDeviceId = deviceNode.deviceId;
                 }
                 return;
@@ -402,6 +430,7 @@ export const handleWebMidiNoteOn = inject({
                     const calibration = grandBouleStore.value?.midiCalibration;
                     const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
                     deviceNode.grandBouleControls.noteOn(note, finalVelocity, dispatchFrame, channel);
+                    postStartBend();
                     noteData.grandBouleDeviceId = playedDeviceId;
                     void deps.eventBus.emit('midi.noteOn', {
                         deviceId: playedDeviceId,
@@ -417,6 +446,7 @@ export const handleWebMidiNoteOn = inject({
                 const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: 'levain' });
                 if (deviceNode?.levainControls?.ready) {
                     deviceNode.levainControls.noteOn(note, velocity, dispatchFrame, channel);
+                    postStartBend();
                     noteData.levainDeviceId = deviceNode.deviceId;
                 }
                 return;
@@ -492,7 +522,9 @@ export const handleWebMidiNoteOn = inject({
                 dispatchTime,
                 HOLD_UNTIL_NOTE_OFF_SECONDS,
                 velocity,
-                synthParams
+                // The oscillator is bent through its detune, so a held wheel is
+                // part of the detune it is created with.
+                startBend ? { ...synthParams, detune: synthParams.detune + startBend.detuneCents } : synthParams
             );
 
             if (oscillator) {
