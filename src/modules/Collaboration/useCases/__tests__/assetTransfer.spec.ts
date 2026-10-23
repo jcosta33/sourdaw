@@ -110,6 +110,13 @@ describe('AssetTransfer', () => {
     let onTransferFailed: Mock<(hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void>;
     let transfer: AssetTransfer;
 
+    function request(hash: string): Promise<void> {
+        const emitted = Promise.withResolvers<void>();
+        vi.mocked(peer.broadcastCrdtSync).mockImplementationOnce(() => emitted.resolve());
+        transfer.requestAsset(hash);
+        return emitted.promise;
+    }
+
     beforeEach(() => {
         durableAssetIndexedDb.reset();
         peer = makePeerManager();
@@ -126,8 +133,8 @@ describe('AssetTransfer', () => {
         vi.useRealTimers();
     });
 
-    it('requestAsset broadcasts an asset.request message', () => {
-        transfer.requestAsset('sha256:abc');
+    it('requestAsset broadcasts an asset.request message', async () => {
+        await request('sha256:abc');
         expect(peer.broadcastCrdtSync).toHaveBeenCalledWith(
             expect.objectContaining({
                 docId: DOC_ID_ASSET,
@@ -164,7 +171,7 @@ describe('AssetTransfer', () => {
         // The receiver must have an outstanding request for the hash before a
         // manifest is accepted — unsolicited manifests are dropped as a DoS
         // guard, so the real flow always issues requestAsset first.
-        transfer.requestAsset(hash);
+        await request(hash);
 
         // Sanity: the host emitted one manifest followed by >1 chunk.
         const manifestCount = messages.filter(
@@ -236,7 +243,7 @@ describe('AssetTransfer', () => {
 
         // Solicit the asset so the manifest is accepted; the corruption must be
         // caught by the integrity check, not silently dropped at the manifest.
-        transfer.requestAsset(hash);
+        await request(hash);
 
         // Corrupt exactly one chunk's bytes on the wire so the reassembled blob
         // no longer matches the manifest hash, tripping the integrity check.
@@ -303,7 +310,7 @@ describe('AssetTransfer', () => {
     });
 
     it('accepts a manifest only after the hash was requested', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
 
         // A valid chunk is now accepted and progress is reported.
@@ -312,7 +319,7 @@ describe('AssetTransfer', () => {
     });
 
     it('first-responder-wins: a late manifest does not reset an in-flight transfer', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         // First responder opens a consistent 2-chunk transfer and delivers chunk 0.
         const twoChunk = {
             size: MIN_ASSET_CHUNK_SIZE * 2,
@@ -336,7 +343,7 @@ describe('AssetTransfer', () => {
     });
 
     it('rejects and aborts on a chunk whose index is out of range', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
 
         // index 1 is >= chunkCount (1) → rejected, transfer aborted.
@@ -349,7 +356,7 @@ describe('AssetTransfer', () => {
     });
 
     it('rejects a chunk whose decoded size exceeds the declared chunk size', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         // Declare the smallest legal chunkSize so an oversized chunk trips the bound.
         await transfer.handleMessage(
             'peer-1',
@@ -362,7 +369,7 @@ describe('AssetTransfer', () => {
     });
 
     it('rejects a manifest with inconsistent dimensions', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         // chunkCount does not equal ceil(size / chunkSize).
         await transfer.handleMessage(
             'peer-1',
@@ -377,7 +384,7 @@ describe('AssetTransfer', () => {
     // --- F7: manifest dimension bounds -------------------------------------
 
     it('rejects a manifest whose chunk size is below the accepted floor', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         // Internally consistent and inside the byte ceiling, but declares one
         // chunk slot per byte: ~5e8 Map + Set entries once chunks start landing.
         await transfer.handleMessage(
@@ -390,7 +397,7 @@ describe('AssetTransfer', () => {
     });
 
     it('rejects a manifest whose chunk size is above the accepted ceiling', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         const chunkSize = MAX_ASSET_CHUNK_SIZE + 1;
         await transfer.handleMessage('peer-1', manifestMessage({ size: chunkSize, chunkSize, chunkCount: 1 }));
 
@@ -399,7 +406,7 @@ describe('AssetTransfer', () => {
     });
 
     it('rejects a manifest with an over-long name or mime string', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage({ name: 'n'.repeat(MAX_ASSET_NAME_LEN + 1) }));
         await transfer.handleMessage('peer-1', chunkMessage(0, btoa('x')));
         expect(onProgress).not.toHaveBeenCalled();
@@ -416,7 +423,7 @@ describe('AssetTransfer', () => {
         expect(ASSET_CHUNK_SIZE).toBeGreaterThanOrEqual(MIN_ASSET_CHUNK_SIZE);
         expect(ASSET_CHUNK_SIZE).toBeLessThanOrEqual(MAX_ASSET_CHUNK_SIZE);
 
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
         await transfer.handleMessage('peer-1', chunkMessage(0, btoa('1234567890')));
         expect(onProgress).toHaveBeenCalledWith(HASH, 1, 1);
@@ -463,7 +470,7 @@ describe('AssetTransfer', () => {
 
     it('reports a failure and re-opens the hash when a chunk is rejected', async () => {
         vi.useFakeTimers();
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
         vi.mocked(peer.broadcastCrdtSync).mockClear();
 
@@ -478,7 +485,7 @@ describe('AssetTransfer', () => {
         // and a fresh manifest from a different peer is accepted rather than
         // dropped as unsolicited.
         vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
-        transfer.requestAsset(HASH);
+        await request(HASH);
         expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
         await transfer.handleMessage('peer-2', manifestMessage());
         await transfer.handleMessage('peer-2', chunkMessage(0, btoa('1234567890')));
@@ -492,7 +499,7 @@ describe('AssetTransfer', () => {
             chunkSize: MIN_ASSET_CHUNK_SIZE,
             chunkCount: 2,
         };
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage(twoChunk));
         await transfer.handleMessage('peer-1', chunkMessage(0, btoa('a'.repeat(MIN_ASSET_CHUNK_SIZE))));
         expect(onProgress).toHaveBeenLastCalledWith(HASH, 1, 2);
@@ -513,7 +520,7 @@ describe('AssetTransfer', () => {
         // And the asset is fetchable again from scratch once the retry cooldown
         // that the abort armed has elapsed.
         vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
-        transfer.requestAsset(HASH);
+        await request(HASH);
         expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
     });
 
@@ -524,7 +531,7 @@ describe('AssetTransfer', () => {
             chunkSize: MIN_ASSET_CHUNK_SIZE,
             chunkCount: 2,
         };
-        transfer.requestAsset(HASH);
+        await request(HASH);
 
         // Each step sits just inside the deadline; the clock must restart on
         // every accepted message rather than measure total duration.
@@ -538,10 +545,11 @@ describe('AssetTransfer', () => {
         expect(onProgress).toHaveBeenLastCalledWith(HASH, 1, 2);
     });
 
-    it('requestAsset is idempotent while a request is outstanding', () => {
+    it('requestAsset is idempotent while a request is outstanding', async () => {
+        const emitted = request(HASH);
         transfer.requestAsset(HASH);
         transfer.requestAsset(HASH);
-        transfer.requestAsset(HASH);
+        await emitted;
 
         expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
     });
@@ -556,7 +564,7 @@ describe('AssetTransfer', () => {
             chunkCount: 2,
         };
         const fullChunk = btoa('a'.repeat(MIN_ASSET_CHUNK_SIZE));
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage(twoChunk));
         await transfer.handleMessage('peer-1', chunkMessage(0, fullChunk));
         expect(onProgress).toHaveBeenLastCalledWith(HASH, 1, 2);
@@ -580,7 +588,7 @@ describe('AssetTransfer', () => {
         const { hash, messages } = await captureTransferMessages(new Blob(['dup-me'], { type: 'audio/wav' }), 'd.wav');
         const manifest = messages.find((m) => m.type === 'crdt-sync' && m.data.includes('asset.manifest'));
         const chunk = messages.find((m) => m.type === 'crdt-sync' && m.data.includes('asset.chunk'));
-        transfer.requestAsset(hash);
+        await request(hash);
         await transfer.handleMessage('host', manifest!);
 
         // Four copies of the completing chunk, all dispatched before any of
@@ -600,7 +608,7 @@ describe('AssetTransfer', () => {
         const { hash, messages } = await captureTransferMessages(new Blob(['oom-me'], { type: 'audio/wav' }), 'o.wav');
         const manifest = messages.find((m) => m.type === 'crdt-sync' && m.data.includes('asset.manifest'));
         const chunk = messages.find((m) => m.type === 'crdt-sync' && m.data.includes('asset.chunk'));
-        transfer.requestAsset(hash);
+        await request(hash);
         await transfer.handleMessage('host', manifest!);
 
         // The digest runs over a blob that may be half a gigabyte; a rejection
@@ -619,7 +627,7 @@ describe('AssetTransfer', () => {
     // --- Chunk payload is bounded before it is decoded ----------------------
 
     it('rejects a chunk whose payload is not a string', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
 
         await transfer.handleMessage('peer-1', {
@@ -634,7 +642,7 @@ describe('AssetTransfer', () => {
     });
 
     it('rejects an over-long chunk payload before decoding it', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage(
             'peer-1',
             manifestMessage({ size: MIN_ASSET_CHUNK_SIZE, chunkSize: MIN_ASSET_CHUNK_SIZE, chunkCount: 1 })
@@ -653,7 +661,7 @@ describe('AssetTransfer', () => {
     // --- Empty manifests ----------------------------------------------------
 
     it('refuses a manifest that declares an empty asset', async () => {
-        transfer.requestAsset(HASH);
+        await request(HASH);
         // `chunkCount: 0` is internally consistent, but completion is only ever
         // evaluated when a chunk lands and no chunk index is valid, so such a
         // transfer could only sit in its slot until the stall deadline.
@@ -674,7 +682,7 @@ describe('AssetTransfer', () => {
 
     it('does not re-request an aborted hash before the cooldown expires', async () => {
         vi.useFakeTimers();
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
         await transfer.handleMessage('peer-1', chunkMessage(1, btoa('x')));
         expect(onTransferFailed).toHaveBeenCalledTimes(1);
@@ -690,14 +698,14 @@ describe('AssetTransfer', () => {
         expect(peer.broadcastCrdtSync).not.toHaveBeenCalled();
 
         vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
-        transfer.requestAsset(HASH);
+        await request(HASH);
         expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
     });
 
     it('gives up on a hash that keeps failing and stops re-broadcasting it', async () => {
         vi.useFakeTimers();
         for (let attempt = 0; attempt < ASSET_REQUEST_MAX_ATTEMPTS; attempt++) {
-            transfer.requestAsset(HASH);
+            await request(HASH);
             await transfer.handleMessage('peer-1', manifestMessage());
             await transfer.handleMessage('peer-1', chunkMessage(1, btoa('x')));
             vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
@@ -811,7 +819,7 @@ describe('AssetTransfer', () => {
 
     it('dispose clears armed stall timers so a discarded session reports nothing', async () => {
         vi.useFakeTimers();
-        transfer.requestAsset(HASH);
+        await request(HASH);
         await transfer.handleMessage('peer-1', manifestMessage());
 
         transfer.dispose();

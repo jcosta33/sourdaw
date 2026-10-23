@@ -27,6 +27,7 @@ afterEach(() => {
 
 function endpoint(owner = 'project:A') {
     const sent: PeerMessage[] = [];
+    const requests: Array<() => void> = [];
     let blocked: Promise<void> | undefined;
     let manifestBlocked: Promise<void> | undefined;
     let manifestStarted: (() => void) | undefined;
@@ -44,7 +45,16 @@ function endpoint(owner = 'project:A') {
         return blocked ?? Promise.resolve();
     }
     const peer = {
-        broadcastCrdtSync: (message: PeerMessage) => sent.push(message),
+        // This fixture retains the pre-integrity protocol's same-session contract.
+        // The separate restart/integrity specs negotiate production v1 frames.
+        broadcastCrdtSync: (message: PeerMessage) => {
+            sent.push(
+                rewrite(message, (frame) => {
+                    delete frame.integrityVersion;
+                })
+            );
+            requests.shift()?.();
+        },
         sendCrdtSync: record,
         sendCrdtSyncBuffered: recordBuffered,
     } as unknown as PeerConnectionManager;
@@ -60,6 +70,11 @@ function endpoint(owner = 'project:A') {
         sent,
         callbacks,
         completion,
+        request: (hash: string) => {
+            const emitted = new Promise<void>((resolve) => requests.push(resolve));
+            transfer.requestAsset(hash);
+            return emitted;
+        },
         block: (promise?: Promise<void>) => {
             blocked = promise;
         },
@@ -103,10 +118,10 @@ async function fixture(priorFailures = 0) {
     const hash = await sender.transfer.addLocalAsset(blob, 'take.wav');
     vi.useFakeTimers();
     for (let attempt = 0; attempt < priorFailures; attempt++) {
-        receiver.transfer.requestAsset(hash);
+        await receiver.request(hash);
         vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS + ASSET_REQUEST_RETRY_COOLDOWN_MS);
     }
-    receiver.transfer.requestAsset(hash);
+    await receiver.request(hash);
     await sender.transfer.handleMessage('receiver', receiver.sent.at(-1)!);
     expect(sender.sent).toHaveLength(4);
     await receiver.transfer.handleMessage('A', sender.sent[0]!);
@@ -115,10 +130,10 @@ async function fixture(priorFailures = 0) {
     return { sender, receiver, hash, bytes, blob };
 }
 
-function retry(receiver: ReturnType<typeof endpoint>, hash: string) {
+async function retry(receiver: ReturnType<typeof endpoint>, hash: string) {
     vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS);
     vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
-    receiver.transfer.requestAsset(hash);
+    await receiver.request(hash);
     return receiver.sent.at(-1)!;
 }
 
@@ -139,10 +154,10 @@ async function rebind(transfer: AssetTransfer, owner: string) {
     expect(await handoff.commit()).toMatchObject({ status: 'committed' });
 }
 
-describe('same-session asset resume over serialized peer frames', () => {
+describe('same-session legacy compatibility over serialized peer frames', () => {
     it('requests only actual missing indices and verifies the exact completed bytes', async () => {
         const { sender, receiver, hash, bytes } = await fixture();
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         expect(control(request).missingChunks).toEqual([1, 2]);
         expect(control(request).attemptToken).not.toBe(control(receiver.sent[0]!).attemptToken);
         sender.sent.length = 0;
@@ -163,7 +178,7 @@ describe('same-session asset resume over serialized peer frames', () => {
             const { sender, receiver, hash, blob, bytes } = await fixture();
             const alternate = endpoint();
             await alternate.transfer.addLocalAsset(blob, 'take.wav');
-            const request = retry(receiver, hash);
+            const request = await retry(receiver, hash);
             expect(control(request).missingChunks).toEqual([1, 2]);
             const responder = kind === 'other-peer' ? alternate : sender;
             responder.sent.length = 0;
@@ -200,7 +215,7 @@ describe('same-session asset resume over serialized peer frames', () => {
             receiver.transfer.requestAsset(hash);
             expect(receiver.sent).toHaveLength(2);
             vi.advanceTimersByTime(1);
-            receiver.transfer.requestAsset(hash);
+            await receiver.request(hash);
             const fullRequest = receiver.sent.at(-1)!;
             expect(control(fullRequest).missingChunks).toEqual([]);
             expect(control(fullRequest).attemptToken).not.toBe(control(request).attemptToken);
@@ -227,7 +242,7 @@ describe('same-session asset resume over serialized peer frames', () => {
             const alternate = endpoint();
             await alternate.transfer.addLocalAsset(blob, 'take.wav');
             const responder = kind === 'B' ? alternate : sender;
-            const request = retry(receiver, hash);
+            const request = await retry(receiver, hash);
             responder.sent.length = 0;
             let wireRequest = request;
             if (kind === 'legacy') {
@@ -250,7 +265,7 @@ describe('same-session asset resume over serialized peer frames', () => {
     it('ignores stale, malformed, wrong-hash and wrong-peer frames before budget or deadline changes', async () => {
         const { sender, receiver, hash } = await fixture();
         const old = [...sender.sent];
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         sender.sent.length = 0;
         await sender.transfer.handleMessage('receiver', request);
         await receiver.transfer.handleMessage('A', sender.sent[0]!);
@@ -292,7 +307,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         expect(vi.getTimerCount()).toBe(1);
         vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS + ASSET_TRANSFER_STALL_TIMEOUT_MS);
         expect(vi.getTimerCount()).toBe(0);
-        receiver.transfer.requestAsset(hash);
+        await receiver.request(hash);
         expect(control(receiver.sent.at(-1)!).missingChunks).toEqual([]);
         receiver.transfer.dispose();
         expect(vi.getTimerCount()).toBe(0);
@@ -300,7 +315,7 @@ describe('same-session asset resume over serialized peer frames', () => {
 
     it('drops corrupted retained bytes after the mandatory final whole-asset digest fails', async () => {
         const { sender, receiver, hash } = await fixture();
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         sender.sent.length = 0;
         await sender.transfer.handleMessage('receiver', request);
         for (const message of sender.sent) {
@@ -320,7 +335,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         expect(receiver.callbacks.onTransferFailed.mock.calls.at(-1)?.[1]).toContain('integrity check failed');
         expect(receiver.transfer.hasAsset(hash)).toBe(false);
         vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
-        receiver.transfer.requestAsset(hash);
+        await receiver.request(hash);
         expect(control(receiver.sent.at(-1)!).missingChunks).toEqual([]);
     });
 
@@ -348,7 +363,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         });
         expect(receiver.transfer.hasAsset(accepted)).toBe(true);
         expect(await receiver.transfer.reopenDurableAsset(staged.hash)).toMatchObject({ status: 'opened' });
-        receiver.transfer.requestAsset(hash);
+        await receiver.request(hash);
         expect(control(receiver.sent.at(-1)!).missingChunks).toEqual([]);
     });
 
@@ -378,7 +393,7 @@ describe('same-session asset resume over serialized peer frames', () => {
             releaseDigest.resolve();
             await digest.mock.results[0]!.value;
             await vi.advanceTimersByTimeAsync(0);
-            successor.transfer.requestAsset(hash);
+            await successor.request(hash);
             for (const message of sender.sent) {
                 await successor.transfer.handleMessage('A', message);
             }
@@ -406,7 +421,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         const firstRequest = receiver.sent[0]!;
         const serving = sender.transfer.handleMessage('receiver', firstRequest);
         await started;
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         await sender.transfer.handleMessage('receiver', request);
         const latest = rewrite(request, (frame) => {
             frame.attemptToken = crypto.randomUUID();
@@ -450,7 +465,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         const bytes = new Uint8Array(ASSET_CHUNK_SIZE * 2 + 17).fill(37);
         const hash = await sender.transfer.addLocalAsset(new Blob([bytes]), 'legacy.wav');
         vi.useFakeTimers();
-        receiver.transfer.requestAsset(hash);
+        await receiver.request(hash);
         function legacy(message: PeerMessage) {
             return rewrite(message, (frame) => {
                 delete frame.attemptToken;
@@ -459,7 +474,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         await sender.transfer.handleMessage('receiver', legacy(receiver.sent[0]!));
         await receiver.transfer.handleMessage('legacy', sender.sent[0]!);
         await receiver.transfer.handleMessage('legacy', sender.sent[1]!);
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         expect(control(request).missingChunks).toEqual([]);
         sender.sent.length = 0;
         await sender.transfer.handleMessage('receiver', legacy(request));
@@ -478,7 +493,7 @@ describe('same-session asset resume over serialized peer frames', () => {
                 frame.data = btoa('z'.repeat(ASSET_CHUNK_SIZE));
             })
         );
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         sender.sent.length = 0;
         await sender.transfer.handleMessage('receiver', request);
         for (const message of sender.sent) {
@@ -496,7 +511,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         const started = sender.nextManifest();
         const serving = sender.transfer.handleMessage('receiver', receiver.sent[0]!);
         await started;
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         await sender.transfer.handleMessage('receiver', request);
         expect(sender.sent).toHaveLength(1);
         sender.blockManifest();
@@ -529,7 +544,7 @@ describe('same-session asset resume over serialized peer frames', () => {
         });
         const serving = sender.transfer.handleMessage('receiver', receiver.sent[0]!);
         await readStarted.promise;
-        const request = retry(receiver, hash);
+        const request = await retry(receiver, hash);
         await sender.transfer.handleMessage('receiver', request);
         releaseRead.resolve();
         await serving;
