@@ -81,6 +81,12 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             false) &&
         batchMembersAreIndependent(action, context),
     execute: (alpha) => {
+        const trackId = findOwningTrackId(alpha.payload.clipId);
+        if (!trackId) {
+            pendingInverseCaptures.delete(alpha);
+            pendingRedoCaptures.delete(alpha);
+            return { status: 'no-write' };
+        }
         const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
         const pendingRedo = pendingRedoCaptures.get(alpha);
         pendingRedoCaptures.delete(alpha);
@@ -126,20 +132,6 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             };
         };
 
-        const state = getTrackStoreState();
-        let trackId: string | null = null;
-        if (state) {
-            for (const track of state.tracks) {
-                if (track.clips.some((context) => context.id === alpha.payload.clipId)) {
-                    trackId = track.id;
-                    break;
-                }
-            }
-        }
-        if (!trackId) {
-            removeClip(alpha.payload.clipId);
-            return committedResult();
-        }
         const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId], ripple });
         if (rippleResult === null) {
             removeClip(alpha.payload.clipId);

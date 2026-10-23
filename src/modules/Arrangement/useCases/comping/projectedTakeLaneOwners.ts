@@ -5,9 +5,10 @@ import {
 } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type Take } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
-type TakeLaneOwners = { id: string; trackId: string; takes: { id: string; clipId: string }[] };
+type TakeLaneOwners = { id: string; trackId: string; takes: Take[] };
 
 function restoreRetiredOwners(lanes: TakeLaneOwners[], captures: readonly RetiredTakeLaneSnapshot[]): void {
     for (const { lane, retiredTakeIds } of captures) {

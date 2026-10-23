@@ -1,3 +1,4 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -15,6 +16,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -149,6 +151,35 @@ describe('clip gesture undo grouping (issue #3622)', () => {
         expect(trackClips()).toEqual([]);
         expect(undoStore.value?.future).toEqual([]);
         expect(undoStore.value?.past).toHaveLength(2);
+    });
+
+    it('records no history for a stale single removal and only the live member of a grouped gesture', async () => {
+        await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } }, { skipUndo: true });
+        const before = Automerge.clone(getCrdtDoc('root')!);
+        const heads = Automerge.getHeads(getCrdtDoc('root')!);
+        await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } });
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+        expect(undoStore.value?.past).toEqual([]);
+
+        const groupId = `clip-menu-delete-${crypto.randomUUID()}`;
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            { groupId, groupLabel: 'Delete 2 clips' }
+        );
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-b' } },
+            { groupId, groupLabel: 'Delete 2 clips' }
+        );
+        expect(trackClips()).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        await undo();
+        expect(trackClips().map((clip) => clip.id)).toEqual(['clip-a']);
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expect(trackClips()).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(1);
     });
 
     it('discards both copies of a grouped two-clip duplicate gesture with one undo', async () => {
