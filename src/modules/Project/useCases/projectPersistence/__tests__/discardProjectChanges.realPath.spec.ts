@@ -326,6 +326,50 @@ describe('discardProjectChanges real load path', () => {
             expect(notifyUser).not.toHaveBeenCalled();
         });
 
+        /** The stop commits the take through the CRDT, which moves the project revision. */
+        function closeATakeThatMovesTheRevision(): void {
+            closeATakeDuringTheStop();
+            const stopThatSettlesATake = vi.mocked(stopPlayback).getMockImplementation();
+            vi.mocked(stopPlayback).mockImplementation(async () => {
+                await stopThatSettlesATake?.();
+                vi.mocked(captureProjectRevision).mockReturnValue('revision-after-take');
+            });
+        }
+
+        it('restores the saved copy when a take closes during the stop', async () => {
+            closeATakeThatMovesTheRevision();
+            vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
+
+            await expect(discardProjectChanges()).resolves.toBe(true);
+
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(saveProject).not.toHaveBeenCalled();
+            expect(writeProjectJson).toHaveBeenCalledOnce();
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(projectStore.value?.name).toBe('Saved song');
+            expect(projectStore.value?.dirty).toBe(false);
+        });
+
+        it('refuses a user edit that lands while the saved copy loads', async () => {
+            let releasePreparation: (() => void) | undefined;
+            vi.mocked(readNamedProjectJson).mockResolvedValue(savedProject);
+            vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementation(
+                () =>
+                    new Promise((resolve) => {
+                        releasePreparation = () => resolve({ cancel: vi.fn(), publish: () => 0 });
+                    })
+            );
+
+            const discard = discardProjectChanges();
+            await vi.waitFor(() => expect(projectStore.value?.loading).toBe(true));
+            vi.mocked(captureProjectRevision).mockReturnValue('revision-after-edit');
+            releasePreparation?.();
+
+            await expect(discard).resolves.toBe(false);
+            expect(projectStore.value?.name).toBe('Unsaved song');
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+        });
+
         it('yields to a transition that starts and activates while the snapshot is read', async () => {
             let releaseRead: ((raw: string) => void) | undefined;
             vi.mocked(readNamedProjectJson).mockImplementation(

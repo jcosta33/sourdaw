@@ -15,6 +15,7 @@ const snapshot = vi.hoisted(() => ({ readNamedProjectJson: vi.fn() }));
 const load = vi.hoisted(() => ({ loadRecentProject: vi.fn() }));
 const create = vi.hoisted(() => ({ newProject: vi.fn() }));
 const crdt = vi.hoisted(() => ({ compactProject: vi.fn(), captureProjectRevision: vi.fn(() => 'revision-1') }));
+const transport = vi.hoisted(() => ({ stopPlayback: vi.fn() }));
 const notifications = vi.hoisted(() => ({ notifyUser: vi.fn() }));
 const transitionAuthority = vi.hoisted(() => ({ current: true }));
 
@@ -39,6 +40,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: crdt.compactProject,
     captureProjectRevision: crdt.captureProjectRevision,
 }));
+vi.mock('#/modules/Transport/useCases', () => transport);
 vi.mock('#/utils/Notification/notifyUser', () => notifications);
 
 describe('discardProjectChanges', () => {
@@ -57,7 +59,21 @@ describe('discardProjectChanges', () => {
         crdt.captureProjectRevision.mockReset();
         crdt.captureProjectRevision.mockReturnValue('revision-1');
         notifications.notifyUser.mockClear();
+        transport.stopPlayback.mockReset().mockResolvedValue(undefined);
         transitionAuthority.current = true;
+    });
+
+    it('keeps the edits and denies close when playback cannot be stopped', async () => {
+        transport.stopPlayback.mockRejectedValue(new Error('stop failed'));
+
+        await expect(discardProjectChanges()).resolves.toBe(false);
+
+        expect(notifications.notifyUser).toHaveBeenCalledWith(
+            'Could not stop playback. Your changes were not discarded.',
+            'error'
+        );
+        expect(snapshot.readNamedProjectJson).not.toHaveBeenCalled();
+        expect(state.project?.dirty).toBe(true);
     });
 
     it('restores an orphaned named snapshot without consulting the recent-project index as authority', async () => {
@@ -95,6 +111,7 @@ describe('discardProjectChanges', () => {
         );
 
         const discard = discardProjectChanges();
+        await vi.waitFor(() => expect(resolveSnapshot).toBeDefined());
         state.project = {
             // The same identity is not enough: the later edit is a new store
             // publication and must not be discarded by the stale request.
@@ -123,6 +140,7 @@ describe('discardProjectChanges', () => {
         );
 
         const discard = discardProjectChanges();
+        await vi.waitFor(() => expect(resolveSnapshot).toBeDefined());
         // `markDirty` short-circuits for an already-dirty project, so its
         // metadata object and load authority legitimately remain unchanged.
         crdt.captureProjectRevision.mockReturnValue('revision-after-edit');
