@@ -30,6 +30,7 @@ import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/
 import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
 import { isOpenProjectKey } from '../../useCases/recentProjects/isOpenProjectKey';
 import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
+import { pendingRecentLoads } from '../../useCases/recentProjects/pendingRecentLoads';
 import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
 
 import { TemplateChooser } from './TemplateChooser';
@@ -118,11 +119,15 @@ export const RecentProjectsMenu = (): ReactElement => {
     const handleLoad = (entry: RecentProjectEntry) => {
         // The project is already open: a reload would read its named save before
         // a closing take's own save lands and replace the session with that
-        // stale read, so keep the session as it is (#5536).
+        // stale read, so keep the session as it is (#5536). A replacement still
+        // pending from an earlier choice is withdrawn, because the store keeps
+        // this project until that replacement activates.
         if (isOpenProjectKey(entry.key)) {
+            pendingRecentLoads.withdraw();
             setOpen(false);
             return;
         }
+        const isStillChosen = pendingRecentLoads.capture();
         void (async () => {
             // Await the pre-switch save (audit #568 F2) and abort on its
             // failure or on a save that resolved with the project still dirty
@@ -135,7 +140,10 @@ export const RecentProjectsMenu = (): ReactElement => {
             if (!(await saveProjectBeforeReplacement())) {
                 return;
             }
-            const outcome = await loadRecentProject(entry.key);
+            if (!isStillChosen()) {
+                return;
+            }
+            const outcome = await loadRecentProject(entry.key, { shouldProceed: isStillChosen });
             if (outcome === 'not-found') {
                 notifyUser(`Could not find "${entry.name}" — removing it from recent projects.`, 'error');
                 removeFromRecentProjects(entry.key);

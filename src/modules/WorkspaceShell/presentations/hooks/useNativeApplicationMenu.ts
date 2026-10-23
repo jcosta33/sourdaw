@@ -13,6 +13,7 @@ import {
     getRecentProjects,
     getProjectSnapshotKey,
     isOpenProjectKey,
+    pendingRecentLoads,
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
@@ -75,6 +76,19 @@ const reportCloseResult = async (
         projectKey: current === null ? fallbackProjectKey : nativeProjectKey(current),
         revision: captureProjectRevision(),
     });
+};
+
+/** Choosing the open project withdraws a pending replacement; any other project opens after a clean save. */
+const openRecentProject = async (recentKey: string): Promise<void> => {
+    // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
+    if (isOpenProjectKey(recentKey)) {
+        pendingRecentLoads.withdraw();
+        return;
+    }
+    const isStillChosen = pendingRecentLoads.capture();
+    if ((await saveProjectIfClean()) && isStillChosen()) {
+        await loadRecentProject(recentKey, { shouldProceed: isStillChosen });
+    }
 };
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
@@ -145,12 +159,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             return;
         }
         case 'project:open-recent':
-            // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
-            if (intent.recentKey === undefined || isOpenProjectKey(intent.recentKey)) {
-                return;
-            }
-            if (await saveProjectIfClean()) {
-                await loadRecentProject(intent.recentKey);
+            if (intent.recentKey !== undefined) {
+                await openRecentProject(intent.recentKey);
             }
             return;
         case 'project:import-audio':

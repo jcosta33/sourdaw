@@ -60,8 +60,12 @@ const projectActions = vi.hoisted(() => ({
     getRecentProjects: vi.fn<ProjectUseCases['getRecentProjects']>(() => []),
     getProjectSnapshotKey: vi.fn((createdAt: number) => `sourdaw:project:${createdAt}`),
     isOpenProjectKey: vi.fn((key: string) => key === `sourdaw:project:${projectState.createdAt}`),
-    loadRecentProject: vi.fn(async () => 'committed'),
+    loadRecentProject: vi.fn<ProjectUseCases['loadRecentProject']>(async () => 'committed'),
     recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
+    pendingRecentLoads: {
+        capture: vi.fn(() => () => true),
+        withdraw: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/Project/stores', () => ({
@@ -85,6 +89,7 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 vi.mock('#/modules/Project/useCases', () => ({
+    pendingRecentLoads: projectActions.pendingRecentLoads,
     cancelProjectSessionQuiesce: projectActions.cancelProjectSessionQuiesce,
     discardProjectChanges: projectActions.discardProjectChanges,
     exportProjectFile: projectActions.exportProjectFile,
@@ -255,6 +260,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue('rejected');
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
+        projectActions.pendingRecentLoads.withdraw.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
         arrangement.zoomTimelineBy.mockClear();
         arrangement.clearClipSelection.mockClear();
@@ -1186,7 +1192,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
-        expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project');
+        expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything());
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
     });
 
@@ -1212,9 +1218,76 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
-        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
+        await vi.waitFor(() =>
+            expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything())
+        );
         expect(projectActions.loadRecentProject).not.toHaveBeenCalledWith('sourdaw:project:1');
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1);
+    });
+
+    // The store keeps the open project until a pending replacement activates, so
+    // the open project's entry must withdraw that replacement, whichever route
+    // started it.
+    it('withdraws a pending Recent load when Open Recent names the open project', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
+
+        await vi.waitFor(() => expect(projectActions.pendingRecentLoads.withdraw).toHaveBeenCalledTimes(1));
+        expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
+    });
+
+    it('opens a project chosen after a pending native replacement through the queue', async () => {
+        let releaseSave: ((saved: boolean) => void) | undefined;
+        projectActions.saveProjectBeforeReplacement.mockImplementationOnce(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    releaseSave = resolve;
+                })
+        );
+        projectActions.loadRecentProject.mockImplementationOnce(async () => {
+            projectState.createdAt = 2;
+            return 'committed';
+        });
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
+        await vi.waitFor(() => expect(releaseSave).toBeDefined());
+        releaseSave?.(true);
+
+        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledTimes(2));
+        expect(projectActions.loadRecentProject.mock.calls.map(([key]) => key)).toEqual([
+            'recent-project',
+            'sourdaw:project:1',
+        ]);
     });
 
     it('serializes native project transitions in menu delivery order', async () => {
@@ -1250,7 +1323,9 @@ describe('useNativeApplicationMenu', () => {
 
         releaseNewProject?.();
 
-        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
+        await vi.waitFor(() =>
+            expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything())
+        );
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
     });
 

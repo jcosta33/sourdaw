@@ -301,7 +301,7 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
         await waitFor(() =>
             expect(notifyUser).toHaveBeenCalledWith(
                 'Could not find "Project One" — removing it from recent projects.',
@@ -333,7 +333,7 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(screen.getByLabelText(/Project menu/i));
         fireEvent.click(screen.getByText('Project One'));
 
-        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
         expect(notifyUser).not.toHaveBeenCalled();
         expect(removeFromRecentProjects).not.toHaveBeenCalled();
     });
@@ -342,7 +342,7 @@ describe('RecentProjectsMenu', () => {
     // named project before a closing take's own save lands, and hydrate that
     // stale read over the session (#5536). Opening the open project is a no-op.
     it('keeps the session untouched when the chosen entry is the project that is open', async () => {
-        mocks.projectStoreValue.value = { dirty: true, createdAt: 1_700_000_000_000 };
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
         vi.mocked(saveProject).mockResolvedValue(true);
 
         render(<RecentProjectsMenu />);
@@ -355,5 +355,72 @@ describe('RecentProjectsMenu', () => {
         expect(loadRecentProject).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    // The store still holds the open project while a replacement is pending, so
+    // choosing the open project then must withdraw the pending replacement
+    // instead of leaving the session in the project chosen first (#5536).
+    it('keeps the open project when its entry is chosen while another replacement is saving', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        const saves: ((saved: boolean) => void)[] = [];
+        vi.mocked(saveProject).mockImplementation(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    saves.push(resolve);
+                })
+        );
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+        await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Open Project'));
+        for (const resolve of saves) {
+            resolve(true);
+        }
+
+        await waitFor(() => expect(vi.mocked(saveProject).mock.results).toHaveLength(1));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(loadRecentProject).not.toHaveBeenCalled();
+        expect(saveProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('withdraws a replacement already reading its project when the open project is chosen', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('aborted');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledTimes(1));
+        const options = vi.mocked(loadRecentProject).mock.calls[0]?.[1];
+        expect(options?.shouldProceed?.()).toBe(true);
+
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Open Project'));
+
+        expect(options?.shouldProceed?.()).toBe(false);
+        expect(loadRecentProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('still opens a different project chosen while another replacement is saving', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('committed');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledTimes(1));
+        const options = vi.mocked(loadRecentProject).mock.calls[0]?.[1];
+
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project Two'));
+
+        expect(options?.shouldProceed?.()).toBe(true);
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-2', expect.anything()));
     });
 });
