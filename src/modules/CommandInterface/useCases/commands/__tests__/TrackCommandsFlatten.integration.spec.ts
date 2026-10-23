@@ -30,7 +30,7 @@ import {
     removeCrdtDoc,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
+import { arrangementStore, defaultArrangementId, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import {
     type ConfirmPayload,
@@ -247,6 +247,19 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
         flushAutomergeStorageWrites();
         audioBufferCache.set('buffer-a', pcm(0.25));
         audioBufferCache.set('buffer-b', pcm(0.5));
+        arrangementStore.set({
+            activeArrangementId: defaultArrangementId,
+            arrangements: [
+                {
+                    id: defaultArrangementId,
+                    name: 'Arrangement A',
+                    tracks: { tracks: [], selectedTrackId: null },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
         await activateProjectEpoch();
     });
@@ -475,7 +488,7 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
         ]);
     });
 
-    it.each(['project epoch', 'frozen take'] as const)(
+    it.each(['project epoch', 'frozen take', 'arrangement'] as const)(
         'checks %s again after a real queued Command transaction releases admission',
         async (change) => {
             const handler = getArrangementHandlers().flattenTrack;
@@ -501,15 +514,20 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
                 expect(forward).not.toHaveBeenCalled();
                 expect(readTruth().tracks.tracks[0]?.frozen).toBe(true);
                 expect(undoHistoryStore.value?.past).toEqual([]);
+                let changed: Root;
                 if (change === 'project epoch') {
                     await activateProjectEpoch();
-                } else {
+                    changed = readTruth();
+                } else if (change === 'frozen take') {
                     await executeAppAction(
                         { type: 'unfreezeTrack', payload: { trackId: 'a' } },
                         { snapshotTransaction, skipUndo: true }
                     );
+                    changed = readTruth();
+                } else {
+                    changed = readTruth();
+                    arrangementStore.set({ ...arrangementStore.value!, activeArrangementId: 'arrangement-b' });
                 }
-                const changed = readTruth();
                 release.resolve();
                 await blockingTransaction;
                 await actionHarness.opens[0];

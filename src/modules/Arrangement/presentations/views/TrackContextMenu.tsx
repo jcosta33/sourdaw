@@ -6,6 +6,7 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Grid } from '#/components/layout';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -101,6 +102,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const handleFlatten = () => {
         close();
         const projectAuthority = captureProjectTransitionAuthority();
+        const arrangementId = arrangementStore.value?.activeArrangementId;
         const trackId = track.id;
         const { frozenBufferId, freezeId, renderedAt } = track.freezeState;
         if (!frozenBufferId) {
@@ -129,6 +131,8 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                         const current = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
                         const allowed =
                             projectAuthority.isCurrent() &&
+                            arrangementId !== undefined &&
+                            arrangementStore.value?.activeArrangementId === arrangementId &&
                             current?.frozen === true &&
                             current.freezeState.status === 'frozen' &&
                             current.freezeState.frozenBufferId === frozenBufferId &&
@@ -147,7 +151,9 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                     'warning'
                 );
             }
-        })();
+        })().catch(() => {
+            notifyUser('Flatten could not finish. Check the track before trying again.', 'error');
+        });
     };
 
     let freezeLabel = 'Freeze';

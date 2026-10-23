@@ -1,6 +1,7 @@
 import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -127,6 +128,7 @@ export const trackCommands: CallableCommandEntry[] = [
                 return;
             }
             const projectAuthority = captureProjectTransitionAuthority();
+            const arrangementId = arrangementStore.value?.activeArrangementId;
             const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
             const { frozenBufferId, freezeId, renderedAt } = track?.freezeState ?? {};
             if (!track || !frozenBufferId) {
@@ -155,6 +157,8 @@ export const trackCommands: CallableCommandEntry[] = [
                             const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
                             const allowed =
                                 projectAuthority.isCurrent() &&
+                                arrangementId !== undefined &&
+                                arrangementStore.value?.activeArrangementId === arrangementId &&
                                 current?.frozen === true &&
                                 current.freezeState.status === 'frozen' &&
                                 current.freezeState.frozenBufferId === frozenBufferId &&
