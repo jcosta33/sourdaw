@@ -44,7 +44,10 @@ describe('handleRestoreClipLoop — execute', () => {
             },
         });
         expect(result).toEqual({ status: 'written' });
-        expect(mockedSetLoop).toHaveBeenCalledWith('c1', false);
+        // The restore leg forwards the payload's anchor as the third argument
+        // (#5198); a keyless replacement payload forwards the absent anchor —
+        // the legacy-restoration form.
+        expect(mockedSetLoop).toHaveBeenCalledWith('c1', false, undefined);
     });
 
     it('returns conflict when expected does not match', () => {
@@ -85,7 +88,7 @@ describe('handleRestoreClipLoop — execute', () => {
                 replacement: { present: false, enabled: false },
             },
         });
-        expect(mockedSetLoop).toHaveBeenCalledWith('c1', undefined);
+        expect(mockedSetLoop).toHaveBeenCalledWith('c1', undefined, undefined);
     });
 });
 

@@ -1,4 +1,5 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -29,7 +30,15 @@ export function nudgeClip(clipId: string, beats: number): boolean {
         const newStart = Math.max(0, context.startBeat + beats);
         const duration = context.endBeat - context.startBeat;
         appliedDelta = newStart - context.startBeat;
-        return { ...context, startBeat: newStart, endBeat: newStart + duration };
+        // The nudge is a relocation, not a trim: the loop anchor moves with
+        // the rectangle so the applied delta (clamped at zero) never re-derives
+        // the loop window or the pass count from the new placement (#4988).
+        return {
+            ...context,
+            startBeat: newStart,
+            endBeat: newStart + duration,
+            ...shiftLoopOriginEntry(context, appliedDelta),
+        };
     });
 
     // Clip-scoped automation is stored at timeline-absolute beats and must

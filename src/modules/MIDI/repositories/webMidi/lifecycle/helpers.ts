@@ -1,6 +1,6 @@
 import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getActiveInput } from '../getActiveInput';
-import { resetChannelControllerState } from '../resetChannelControllerState';
+import { resetInputDeviceControllerState } from '../resetInputDeviceControllerState';
 import { setActiveInput } from '../setActiveInput';
 import { webMidiRuntime } from '../state';
 
@@ -12,7 +12,7 @@ type AttachInputInput = {
 export function attachInput({ input, onMidiMessage }: AttachInputInput): void {
     const current = getActiveInput();
     if (current !== input) {
-        resetChannelControllerState();
+        resetInputDeviceControllerState();
     }
     // `midimessage` only ever delivers a MIDIMessageEvent, which satisfies
     // WebMidiInputMessage; the checked assignment below proves the handler

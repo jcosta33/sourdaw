@@ -20,7 +20,11 @@ import { describe, expect, it } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { resolveMidiNoteArticulationId, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import {
+    createGrooveMidiEventProjector,
+    resolveMidiNoteArticulationId,
+    shouldPlayMidiEvent,
+} from '#/modules/MIDI/useCases';
 
 import {
     type OfflineMidiEventProjector,
@@ -194,6 +198,48 @@ describe('projectLiveMidiProgramme', () => {
                     { time: seconds(3), note: 64, velocity: 0, channel: 0, isNoteOn: false },
                 ],
             },
+        ]);
+    });
+
+    // The loop anchor's pass-through into the real projection (#5198): the
+    // flat stand-in above never reads `loopOriginBeat`, so this case drives
+    // the groove projector the composition root actually injects. The clip is
+    // the state a born-looped clip (start 0, anchor 0, loop 4) carries after a
+    // start trim to 4: head 4, anchor kept at 0 (advance 4), offset wrapped to
+    // its phase 0, and the stored rows ridden by the wrap's −4 — the loop head
+    // at −4 and one row of source material a beat past the region end at 0.5.
+    it('carries the loop anchor to the real projection: the trimmed-in head sounds at its pass, the row past the region stays silent', () => {
+        const clip = midiClip({
+            id: 'clip-1',
+            trackId: 'midi-1',
+            startBeat: 4,
+            endBeat: 12,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 0,
+        });
+        const programme = projectProgramme({
+            stripTracks: [voicedTrack([clip])],
+            projectMidiEvents: createGrooveMidiEventProjector(),
+            notesByClipId: {
+                'clip-1': [
+                    note({ id: 'n-loop-head', pitch: 60, startBeat: -4, duration: 1 }),
+                    note({ id: 'n-past-region', pitch: 72, startBeat: 0.5, duration: 0.25 }),
+                ],
+            },
+        });
+
+        // The anchored window [−4, 0) admits the head and the projection wraps
+        // it onto the opening of every pass — beats 4 and 8 here; the row at
+        // 0.5 reads outside that window and never sounds. The unanchored
+        // [0, 4) reading admits the past-region row and drops the head, so
+        // losing the pass-through swaps the audible material.
+        expect(programme.targets[0]?.events).toEqual([
+            { time: seconds(4), note: 60, velocity: 100, channel: 0, isNoteOn: true },
+            { time: seconds(5), note: 60, velocity: 0, channel: 0, isNoteOn: false },
+            { time: seconds(8), note: 60, velocity: 100, channel: 0, isNoteOn: true },
+            { time: seconds(9), note: 60, velocity: 0, channel: 0, isNoteOn: false },
         ]);
     });
 

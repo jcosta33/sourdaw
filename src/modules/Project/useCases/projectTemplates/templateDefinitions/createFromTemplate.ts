@@ -4,18 +4,17 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { rearmInputMonitoring } from '#/modules/Arrangement/useCases';
 import { forgetProjectLatchedPedals, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
-import {
-    compactProject,
-    projectActionHistoryToStore,
-    resetCrdtProject,
-    startCrdtAutoSave,
-} from '#/modules/CrdtDocument/useCases';
+import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
 import { markProjectDurabilityPending } from '../../projectPersistence/helpers/markProjectDurabilityPending';
+import {
+    resetCrdtProjectWithTransportStopped,
+    type ReplacedProject,
+} from '../../projectPersistence/helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import {
     projectLoadEpoch,
@@ -24,9 +23,6 @@ import {
 import { stopActiveAutoSave } from '../../projectPersistence/helpers/stopActiveAutoSave';
 
 import { templates } from './helpers';
-
-/** The replacement branch of the reset contract, derived from its callable shape. */
-type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
 
 function restoreAudioGraph(templateId: string): void {
     try {
@@ -134,9 +130,15 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             releaseRuntimeTransition();
             return false;
         }
-        const reset = await resetCrdtProject(template.name, () => {
-            authorityReplaced = true;
-        });
+        // The reset refuses a transport rolling at the switch itself, and this
+        // stops it and asks again; see `resetCrdtProjectWithTransportStopped`.
+        const reset = await resetCrdtProjectWithTransportStopped(
+            template.name,
+            () => {
+                authorityReplaced = true;
+            },
+            transaction.isCurrent
+        );
         if (reset.status === 'refused') {
             // Decided before the switch, so the previous project is intact and
             // the ordinary abort recovery still applies.

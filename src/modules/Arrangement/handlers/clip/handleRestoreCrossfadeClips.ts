@@ -6,7 +6,13 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type ReadCrossfadeSnapshotInput = {
     clipA: { endBeat: number; fadeOutBeats: number };
-    clipB: { startBeat: number; fadeInBeats: number; audioOffsetBeats?: number; midiOffsetBeats?: number };
+    clipB: {
+        startBeat: number;
+        fadeInBeats: number;
+        audioOffsetBeats?: number;
+        midiOffsetBeats?: number;
+        loopOriginBeat?: number;
+    };
 };
 
 function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
@@ -17,6 +23,7 @@ function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
         clipBFadeInBeats: number;
         clipBAudioOffsetBeats?: number;
         clipBMidiOffsetBeats?: number;
+        clipBLoopOriginBeat?: number;
     } = {
         clipAEndBeat: clipA.endBeat,
         clipAFadeOutBeats: clipA.fadeOutBeats,
@@ -29,6 +36,9 @@ function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
     if (clipB.midiOffsetBeats !== undefined) {
         snapshot.clipBMidiOffsetBeats = clipB.midiOffsetBeats;
     }
+    if (clipB.loopOriginBeat !== undefined) {
+        snapshot.clipBLoopOriginBeat = clipB.loopOriginBeat;
+    }
     return snapshot;
 }
 
@@ -37,6 +47,10 @@ type SnapshotsMatchInput = {
     right: ReturnType<typeof readCrossfadeSnapshot>;
 };
 
+// The anchor is deliberately absent from the comparison: a legacy expected
+// snapshot carries no anchor field while the live clip may hold one a later
+// edit minted, and comparing the two would refuse every legacy entry's undo.
+// The anchor rides in the replacement alone (#5198).
 function snapshotsMatch({ left, right }: SnapshotsMatchInput) {
     return (
         left.clipAEndBeat === right.clipAEndBeat &&

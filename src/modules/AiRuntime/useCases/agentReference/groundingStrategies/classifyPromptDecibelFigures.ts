@@ -53,7 +53,7 @@ export const LEVEL_DIRECTION_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Words anywhere in the action scope that decide which way a figure with no adjacent cue moves. */
-const QUIETER_SCOPE_PHRASES: readonly string[] = [
+export const QUIETER_SCOPE_PHRASES: readonly string[] = [
     'attenuate',
     'cut',
     'drop',
@@ -64,7 +64,7 @@ const QUIETER_SCOPE_PHRASES: readonly string[] = [
     'turn down',
 ];
 
-const LOUDER_SCOPE_PHRASES: readonly string[] = ['boost', 'higher', 'hotter', 'louder', 'raise', 'turn up'];
+export const LOUDER_SCOPE_PHRASES: readonly string[] = ['boost', 'higher', 'hotter', 'louder', 'raise', 'turn up'];
 
 function namesPhrase(normalizedScope: string, phrase: string): boolean {
     return ` ${normalizedScope} `.includes(` ${phrase} `);

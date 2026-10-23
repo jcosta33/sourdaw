@@ -265,6 +265,12 @@ describe('transform.compile planner tool', () => {
             throw new Error('Expected command.batch.propose in the application-owned catalog');
         }
         const wire = projectOpenAiStrictToolSchema(schema);
+        // A strict reply states every property the projection requires, `null` where it means none,
+        // so it is built from the projection rather than from a property list that can go stale.
+        const strictReply = (stated: Record<string, unknown>): Record<string, unknown> => ({
+            ...Object.fromEntries(Object.keys(wire.function.parameters.properties).map((key) => [key, null])),
+            ...stated,
+        });
         const { protocol, request } = readyRequest({
             operation: 'tools',
             tools: [
@@ -283,7 +289,7 @@ describe('transform.compile planner tool', () => {
                     call: {
                         id: 'propose-compiled-only',
                         name: 'command.batch.propose',
-                        arguments: { commands: [], list: null, compiledCallIds: ['compile-1'], plan: null },
+                        arguments: strictReply({ commands: [], compiledCallIds: ['compile-1'] }),
                     },
                 })
             )
@@ -313,7 +319,7 @@ describe('transform.compile planner tool', () => {
                 call: {
                     id: 'propose-empty',
                     name: 'command.batch.propose',
-                    arguments: { commands: [], list: null, compiledCallIds: null, plan: null },
+                    arguments: strictReply({ commands: [] }),
                 },
             })
         );

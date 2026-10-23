@@ -6,6 +6,18 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
+
+PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
+separate storage-proof allowances. A controlled pair of complete 4.6-second proofs finished actual
+forced cleanup after 16 seconds. The historical review prompt and tier are unestablished; the
+test-validity gap is the missing composition of stage deadlines.
+
+Keep the real-census case and a slow complete-proof row with actual termination, descendant death,
+live-storage and final-removal assertions. Require both proof calls, then restore only the case's
+old deadline in a committed private probe: the unchanged slow row must fail. Simulated proof timing
+does not identify the cause of an earlier uninstrumented macOS failure or prove census convergence.
+
 ### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
 
 The native mutation runner had no real-child fixture: direct-child close canceled KILL while a
@@ -310,6 +322,54 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
+
+PR #5331's controlled Darwin census cases asserted retention after exactly three catalogs for
+persistent descriptor omissions and PID gaps. Those expectations encoded the cap that stopped
+lanes under real load, so they would fail any convergent census while proving nothing about
+whether a later complete catalog could be reached. This supersedes the three-observation bound in
+the 2026-10-12 Darwin lesson below. Probe persistent omission through the whole simulated
+deadline: every whole and PID-scoped `lsof` call must receive the remaining deadline as its
+timeout, and expiry must name the last uncovered process. A reintroduced count cap must fail.
+
+### 2026-10-21 — final storage cleanup outlived the returned leak verdict
+
+PR #5274 (`40baa0716b`) recorded a retained-storage verdict before an existing final cleanup
+attempt. A first refusal followed by complete proof could remove the real owned payload in that
+final attempt while the guard still returned `reason: leak` and a retained message. The historical
+review stance, prompt, and tier are unestablished; the missing oracle compared the final
+filesystem state with the reported disposition.
+
+Probe the real guarded child and owned storage with one controlled proof refusal followed by
+complete direct and claimed proof. Require both physical removal and a result without a
+storage-only leak. Keep a persistently incomplete or thrown proof retained, preserve an earlier
+nonstorage failure, and retain child-authored text that resembles the guard's diagnostic.
+
+### 2026-10-12 — one omitted Darwin field did not prove a bounded omission sequence
+
+PR #5274 (`40baa0716b`) tested one missing descriptor type followed by complete proof,
+but did not exercise two omissions before a complete catalog. Live account captures
+later demonstrated transient `f,n` records without `t`; their exact historical failed-run
+descriptor identities and review dispatch are unestablished.
+
+Probe the real parser and census with two omissions then complete third proof, persistent
+three omissions, a third live borrower, a third uncovered live PID, and the unchanged
+five-second deadline. Assert observation counts and remaining command timeouts. Pair the
+controlled census with real owned release and borrower retention; a parser result alone
+does not prove deletion. Reverting the bounded admission must fail the release case.
+
+Probe two successive exclusively new, same-UID live PID gaps, then require a third wholly
+complete catalog to release real owned storage. A protected borrower in that third catalog
+must veto deletion; another new PID there must retain storage. Keep a prior missing PID
+present in the next pre-sample as a refusal, and assert the shared three-observation and
+original five-second bounds on every path.
+
+An earlier `dead` sample does not bind a later startup recovery: a new uncovered live PID
+can make that later census `unknown` while the new run itself succeeds. Require retention
+only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
+and inspect both the original run and claim payloads. Keep complete-proof deletion
+unconditional; observing a prior sample or the new run's exit code cannot prove it.
 
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 
