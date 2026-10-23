@@ -1,0 +1,19 @@
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_1c08b47ac3792f::t_409707291304ef 889,894-897,899-905,913-914,926-932
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a71685894678e7a0ea10accf53bb421005479b47",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
