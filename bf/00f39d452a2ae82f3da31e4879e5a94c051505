@@ -1,0 +1,32 @@
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_59e31a5c6f3e31::t_5130b26664390b 204-214
+src/modules/WorkspaceShell/presentations/views/Transport/PlayheadDisplay.tsx
+  s_59e31a5c6f3e31::t_5130b26664390b 5-11,25-32
+  s_59e31a5c6f3e31::t_207ee4f3056937 33-37,44,47-52,75,78,107,113,121
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_59e31a5c6f3e31::t_4b7dd35792f05e 1252
+  s_59e31a5c6f3e31::t_8b76dc074a8fbd 1219-1251,1253-1259,1263-1265
+  s_59e31a5c6f3e31::t_76ab46125e6013 1260-1262,1266
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/PlayheadDisplay.spec.tsx
+  s_59e31a5c6f3e31::t_bf86031ecdb22e 9-46,50-51,55-61,74-83,113-121,125-159,203-210,214,222,224,228,230
+  s_59e31a5c6f3e31::t_df3e26eca49ff5 211-213,215-221,223,225-227,229,231-232,234,251,279,289-291
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_59e31a5c6f3e31::t_8b76dc074a8fbd 42-88,94
+  s_59e31a5c6f3e31::t_93f529484802e0 89-93,95-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf00f39d452a2ae82f3da31e4879e5a94c051505",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
