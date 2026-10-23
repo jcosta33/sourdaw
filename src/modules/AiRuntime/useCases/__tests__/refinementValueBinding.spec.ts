@@ -1366,9 +1366,12 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(refine(COMP_CARD, refinement, [threshold(-12)], DEVICE_CONTEXT).status).toBe('clarify');
         });
 
-        it('asks about "Bass up 2 dB" on a pan card, whose pending value is in percent', () => {
-            expect(refine(PAN_CARD, 'Bass up 2 dB', [bassPan(-30)], DEVICE_CONTEXT).status).toBe('clarify');
-        });
+        it.each(['Bass up 2 dB', 'Bass down 2 dB'])(
+            'asks about "%s" on a pan card, whose pending value is in percent',
+            (refinement) => {
+                expect(refine(PAN_CARD, refinement, [bassPan(-30)], DEVICE_CONTEXT).status).toBe('clarify');
+            }
+        );
 
         it('asks which pending change "Piano down 2 dB" means when the card holds a fader and a device on Piano', () => {
             const result = refine(MIXED_CARD, 'Piano down 2 dB', [pianoBy(-2), tilt(3)], DEVICE_CONTEXT);

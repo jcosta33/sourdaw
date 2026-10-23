@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
@@ -19,6 +19,27 @@ import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmT
  * where the level lands, "down 2 dB" says how far it moves, and a path that
  * confuses them writes a level nobody asked for.
  */
+
+const catalogReading = vi.hoisted(() => ({ withholdsReferencedLevelPhrases: false }));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...actual,
+        getExecutableAppActionGroundingCatalog: () => {
+            const catalog = actual.getExecutableAppActionGroundingCatalog();
+            if (!catalogReading.withholdsReferencedLevelPhrases) {
+                return catalog;
+            }
+            return catalog.map((entry) => {
+                if (entry.referencedLevelIntentPhrases === undefined) {
+                    return entry;
+                }
+                return { ...entry, referencedLevelIntentPhrases: [] };
+            });
+        },
+    };
+});
 
 type ProjectTrack = ProjectContext['tracks'][number];
 
@@ -844,8 +865,8 @@ describe('the words a referenced level phrase is matched on', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections.map((rejection) => rejection.reason)).toEqual([
-            'Target trackId is not grounded in the user request',
-            'Provider track is not the reference the level phrase names',
+            'Provider action is not grounded in the user request',
+            'Provider action is not grounded in the user request',
         ]);
     });
 
@@ -868,7 +889,7 @@ describe('the words a referenced level phrase is matched on', () => {
     });
 });
 
-describe('a referenced level phrase grounds only beside clauses that are read', () => {
+describe("a referenced level phrase is a fallback, read only when main's reading refuses and every clause is accounted for", () => {
     const drums = createTrack({
         id: 'track-drums',
         name: 'Drums',
@@ -902,7 +923,11 @@ describe('a referenced level phrase grounds only beside clauses that are read', 
                     },
                 ],
             },
-            keys,
+            {
+                ...keys,
+                deviceCount: 1,
+                devices: [{ id: 'device-gate', name: 'Gate', type: 'Gate', bypassed: false, parameters: [] }],
+            },
             bass,
             reverb,
             master,
@@ -910,75 +935,74 @@ describe('a referenced level phrase grounds only beside clauses that are read', 
         selectedTrackId: null,
     };
 
-    function bridgeDrums(prompt: string, value: Record<string, number>) {
-        return bridge([{ name: 'setTrackGain', arguments: { trackId: drums.id, ...value } }], prompt, mixContext);
+    function gain(track: ProjectTrack, value: Record<string, number>) {
+        return { name: 'setTrackGain', arguments: { trackId: track.id, ...value } };
+    }
+
+    const bypassComp = { name: 'bypassDevice', arguments: { deviceId: 'device-comp', bypassed: true } };
+    const bypassGate = { name: 'bypassDevice', arguments: { deviceId: 'device-gate', bypassed: true } };
+
+    function faderChangesOnDrums(result: ReturnType<typeof bridge>) {
+        return result.actions.filter((action) => action.type === 'setTrackGain' && action.payload.trackId === drums.id);
     }
 
     it.each([
-        ['Drums up 2 dB, on the Reverb send', { deltaDb: 2 }],
-        ['Drums up 2 dB, Reverb send', { deltaDb: 2 }],
-        ['set Drums to -6 dB, Comp threshold', { gainDb: -6 }],
-        ['Drums down 2 dB, Comp threshold', { deltaDb: -2 }],
-        ['set Drums to -6 dB, send', { gainDb: -6 }],
-        ['set Drums to -6 dB, threshold', { gainDb: -6 }],
-        ['set Drums to -1 dB, normalize', { gainDb: -1 }],
-        ['set Drums to -1 dB, peak', { gainDb: -1 }],
-        ['set Drums to -6 dB, only in the chorus', { gainDb: -6 }],
-        ['set Drums to -6 dB, on Keys', { gainDb: -6 }],
-        ['set Drums to -6 dB, instead', { gainDb: -6 }],
-    ])('does not read "%s", whose later clause is unread, as a fader level', (prompt, value) => {
-        const result = bridgeDrums(prompt, value);
+        ['set Drums to -6 dB, turn the Comp off instead', [gain(drums, { gainDb: -6 }), bypassComp]],
+        ['Drums up 2 dB, switch to the Reverb send', [gain(drums, { deltaDb: 2 }), bypassComp]],
+        ['set Drums to -6 dB, switch that to Bass', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, turn it into a send', [gain(drums, { gainDb: -6 })]],
+        ['Drums up 2 dB, turn the Comp off', [gain(drums, { deltaDb: 2 }), bypassGate]],
+        ['set Drums to -6 dB, turn the Comp off', [gain(drums, { gainDb: -6 }), bypassComp]],
+        ['set Drums to -6 dB, volume on the Reverb send', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, gain on the Reverb send', [gain(drums, { gainDb: -6 })]],
+        ['Drums up 2 dB, quieter on the Reverb send', [gain(drums, { deltaDb: 2 })]],
+        ['set Drums to -6 dB, actually, set Bass to -6 dB', [gain(drums, { gainDb: -6 }), gain(bass, { gainDb: -6 })]],
+        ['Drums up 2 dB, actually, Bass up 2 dB', [gain(drums, { deltaDb: 2 }), gain(bass, { deltaDb: 2 })]],
+        ['set Drums to -6 dB, hmm, set Bass to -6 dB', [gain(drums, { gainDb: -6 }), gain(bass, { gainDb: -6 })]],
+        ['set Drums to -6 dB, well, set Bass to -6 dB', [gain(drums, { gainDb: -6 }), gain(bass, { gainDb: -6 })]],
+        ['set Drums to -6 dB, instead, gain Bass to -3 dB', [gain(drums, { gainDb: -6 }), gain(bass, { gainDb: -3 })]],
+        ['instead, set Drums to -6 dB', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, sure', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, yes', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, thanks a lot', [gain(drums, { gainDb: -6 })]],
+        [
+            'set Drums to -6 dB, and mute Keys',
+            [gain(drums, { gainDb: -6 }), { name: 'muteTrack', arguments: { trackId: keys.id, muted: true } }],
+        ],
+        ['set Drums to -6 dB, only in the chorus', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, on Keys', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, instead', [gain(drums, { gainDb: -6 })]],
+        ['Drums up 2 dB, on the Reverb send', [gain(drums, { deltaDb: 2 })]],
+        ['Drums up 2 dB, Reverb send', [gain(drums, { deltaDb: 2 })]],
+        ['set Drums to -6 dB, Comp threshold', [gain(drums, { gainDb: -6 })]],
+        ['Drums down 2 dB, Comp threshold', [gain(drums, { deltaDb: -2 })]],
+        ['set Drums to -6 dB, send', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -6 dB, threshold', [gain(drums, { gainDb: -6 })]],
+        ['set Drums to -1 dB, normalize', [gain(drums, { gainDb: -1 })]],
+        ['set Drums to -1 dB, peak', [gain(drums, { gainDb: -1 })]],
+    ])('puts no fader level on Drums for "%s", which main refused', (prompt, calls) => {
+        const result = bridge(calls, prompt, mixContext);
 
-        expect(result.actions).toEqual([]);
+        expect(faderChangesOnDrums(result)).toEqual([]);
     });
 
     it.each([
         ['set Drums to -6 dB, please', { gainDb: -6 }],
         ['set Drums to -6 dB, thanks', { gainDb: -6 }],
+        ['Set Drums to -6 dB, Thanks.', { gainDb: -6 }],
         ['set Drums to -6 dB, ok', { gainDb: -6 }],
         ['okay, set Drums to -6 dB', { gainDb: -6 }],
         ['Drums up 2 dB, thank you', { deltaDb: 2 }],
-    ])('still grounds "%s", whose other clause is filler', (prompt, value) => {
-        const result = bridgeDrums(prompt, value);
+        ['Drums up 2 dB, OKAY!', { deltaDb: 2 }],
+    ])('grounds "%s", whose other clause is strict courtesy', (prompt, value) => {
+        const result = bridge([gain(drums, value)], prompt, mixContext);
 
         expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
     });
 
-    it('still grounds a referenced level phrase beside a clause that grounds its own call', () => {
-        const mute = bridge(
-            [
-                { name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } },
-                { name: 'muteTrack', arguments: { trackId: keys.id, muted: true } },
-            ],
-            'set Drums to -6 dB, and mute Keys',
-            mixContext
-        );
-        const pan = bridge(
-            [
-                { name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } },
-                { name: 'setTrackPan', arguments: { trackId: bass.id, pan: -30 } },
-            ],
-            'set Drums to -6 dB and pan Bass 30% left',
-            mixContext
-        );
-
-        expect(mute.actions).toEqual([
-            { type: 'setTrackGain', payload: { trackId: drums.id, gainDb: -6 } },
-            { type: 'muteTrack', payload: { trackId: keys.id, muted: true } },
-        ]);
-        expect(pan.actions).toEqual([
-            { type: 'setTrackGain', payload: { trackId: drums.id, gainDb: -6 } },
-            { type: 'setTrackPan', payload: { trackId: bass.id, pan: -30 } },
-        ]);
-    });
-
-    it('still grounds a referenced level phrase beside a coordinated list that grounds its own calls', () => {
+    it('grounds a referenced level phrase beside a coordinated list that grounds its own calls', () => {
         const result = bridge(
-            [
-                { name: 'setTrackGain', arguments: { trackId: drums.id, deltaDb: 2 } },
-                { name: 'setTrackGain', arguments: { trackId: bass.id, deltaDb: -3 } },
-                { name: 'setTrackGain', arguments: { trackId: keys.id, deltaDb: -3 } },
-            ],
+            [gain(drums, { deltaDb: 2 }), gain(bass, { deltaDb: -3 }), gain(keys, { deltaDb: -3 })],
             'Drums up 2 dB, and turn the Bass and the Keys down 3 dB',
             mixContext
         );
@@ -990,23 +1014,143 @@ describe('a referenced level phrase grounds only beside clauses that are read', 
         ]);
     });
 
-    it('still grounds a referenced level phrase beside a directional command the batch also plans', () => {
-        const result = bridge(
-            [
-                { name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } },
-                { name: 'bypassDevice', arguments: { deviceId: 'device-comp', bypassed: true } },
-            ],
-            'set Drums to -6 dB, turn the Comp off',
+    it('refuses a referenced level phrase beside a clause that grounds a call of its own', () => {
+        const mute = bridge(
+            [gain(drums, { gainDb: -6 }), { name: 'muteTrack', arguments: { trackId: keys.id, muted: true } }],
+            'set Drums to -6 dB, and mute Keys',
+            mixContext
+        );
+        const pan = bridge(
+            [gain(drums, { gainDb: -6 }), { name: 'setTrackPan', arguments: { trackId: bass.id, pan: -30 } }],
+            'set Drums to -6 dB and pan Bass 30% left',
             mixContext
         );
 
-        expect(result.actions.map((action) => action.type)).toEqual(['setTrackGain', 'bypassDevice']);
+        expect(faderChangesOnDrums(mute)).toEqual([]);
+        expect(faderChangesOnDrums(pan)).toEqual([]);
     });
 
     it('does not read a directional clause as a command when the batch plans no directional action', () => {
-        const result = bridgeDrums('set Drums to -6 dB, turn the Comp off', { gainDb: -6 });
+        const result = bridge([gain(drums, { gainDb: -6 })], 'set Drums to -6 dB, turn the Comp off', mixContext);
 
         expect(result.actions).toEqual([]);
+    });
+});
+
+describe('a request main grounds is grounded exactly as main grounds it', () => {
+    const drums = createTrack({
+        id: 'track-drums',
+        name: 'Drums',
+        sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }],
+    });
+    const bass = createTrack({ id: 'track-bass', name: 'Bass' });
+    const vocalsWithSend = createTrack({
+        id: 'track-vocals',
+        name: 'Vocals',
+        sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }],
+    });
+    const mixContext: ProjectContext = {
+        ...projectContext,
+        tracks: [
+            {
+                ...drums,
+                deviceCount: 1,
+                devices: [
+                    {
+                        id: 'device-comp',
+                        name: 'Comp',
+                        type: 'Comp',
+                        bypassed: false,
+                        parameters: [
+                            {
+                                id: 'comp-threshold',
+                                name: 'Threshold',
+                                type: 'float',
+                                value: -24,
+                                minValue: -60,
+                                maxValue: 0,
+                                unit: 'dB',
+                            },
+                            {
+                                id: 'comp-ratio',
+                                name: 'Ratio',
+                                type: 'float',
+                                value: 4,
+                                minValue: 1,
+                                maxValue: 20,
+                                unit: 'dB',
+                            },
+                        ],
+                    },
+                ],
+            },
+            bass,
+            vocalsWithSend,
+            reverb,
+            master,
+        ],
+        selectedTrackId: null,
+    };
+
+    function gain(track: ProjectTrack, value: Record<string, number>) {
+        return { name: 'setTrackGain', arguments: { trackId: track.id, ...value } };
+    }
+
+    /** The row is one main grounds, and the head result is exactly the one main's catalog reading gives. */
+    function groundsAsMain(calls: Parameters<typeof bridge>[0], prompt: string) {
+        const head = bridge(calls, prompt, mixContext);
+        catalogReading.withholdsReferencedLevelPhrases = true;
+        try {
+            const main = bridge(calls, prompt, mixContext);
+
+            expect(main.rejections).toEqual([]);
+            expect(head).toEqual(main);
+        } finally {
+            catalogReading.withholdsReferencedLevelPhrases = false;
+        }
+        return head;
+    }
+
+    it.each([
+        ['turn the Drums down 3 dB and the Bass down 2 dB', [-3, -2]],
+        ['turn the Drums up 3 dB and the Bass up 2 dB', [3, 2]],
+        ['put the Drums at -3 dB and the Bass at -2 dB', [-3, -2]],
+    ])('grounds "%s" on the two tracks it names, in the provider\'s order', (prompt, [drumsFigure, bassFigure]) => {
+        const absolute = prompt.includes(' at ');
+        const key = absolute ? 'gainDb' : 'deltaDb';
+
+        const result = groundsAsMain(
+            [gain(bass, { [key]: bassFigure! }), gain(drums, { [key]: drumsFigure! })],
+            prompt
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'setTrackGain', payload: { trackId: bass.id, [key]: bassFigure } },
+            { type: 'setTrackGain', payload: { trackId: drums.id, [key]: drumsFigure } },
+        ]);
+    });
+
+    it("grounds a send adjustment beside a second track's level the way main does", () => {
+        const result = groundsAsMain(
+            [
+                { name: 'setSend', arguments: { trackId: vocalsWithSend.id, busId: reverb.id, deltaDb: -3 } },
+                { name: 'setSend', arguments: { trackId: drums.id, busId: reverb.id, deltaDb: -2 } },
+            ],
+            'adjust send on Vocals to Reverb down 3 dB and the Drums down 2 dB'
+        );
+
+        expect(result.actions.map((action) => action.type)).toEqual(['setSend', 'setSend']);
+    });
+
+    it.each([
+        ['set Threshold to -20 dB and turn Drums down 2 dB'],
+        ['turn Drums down 2 dB and set Threshold to -20 dB'],
+        ['set the compressor to -6 dB and turn Drums down 2 dB'],
+        ['turn Drums down 2 dB, set the Ratio to -6 dB'],
+    ])('grounds only the fader change in "%s", leaving the device level to its own clause', (prompt) => {
+        const result = groundsAsMain([gain(drums, { deltaDb: -2 })], prompt);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, deltaDb: -2 } }]);
     });
 });
 
@@ -1045,6 +1189,49 @@ describe('the figure and clause shapes a referenced level phrase is read from', 
         const result = bridgeDrums(prompt, value);
 
         expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['could you set Drums to -6 dB', { gainDb: -6 }],
+        ['Could you please set Drums to -6 dB', { gainDb: -6 }],
+        ['please would you Drums up 2 dB', { deltaDb: 2 }],
+    ])('grounds "%s", reading the polite carrier as it reads "please"', (prompt, value) => {
+        const result = bridgeDrums(prompt, value);
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
+    });
+
+    it.each(['Drums at -6 dB', 'Drums to -6 dB', 'Drums by -6 dB', 'Drums -6 dB', 'Drums set to -6 dB'])(
+        'does not read "%s", which no registered level phrase words, as a fader level',
+        (prompt) => {
+            const result = bridgeDrums(prompt, { gainDb: -6 });
+
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it('refuses a fader level on a track whose name only contains the one the phrase names', () => {
+        const drumsTwo = createTrack({ id: 'track-drums-2', name: 'Drums 2' });
+        const context: ProjectContext = { ...drumsContext, tracks: [drums, drumsTwo, master] };
+        const onNamed = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } }],
+            'set Drums to -6 dB',
+            context
+        );
+        const onContaining = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: drumsTwo.id, gainDb: -6 } }],
+            'set Drums to -6 dB',
+            context
+        );
+        const onNamedByLongerName = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: drums.id, gainDb: -6 } }],
+            'set Drums 2 to -6 dB',
+            context
+        );
+
+        expect(onNamed.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, gainDb: -6 } }]);
+        expect(onContaining.actions).toEqual([]);
+        expect(onNamedByLongerName.actions).toEqual([]);
     });
 
     it.each(['Drums volume is -6 dB', 'Drums gain is -6 dB', 'Drums level is -6 dB'])(

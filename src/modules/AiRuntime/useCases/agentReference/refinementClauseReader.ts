@@ -11,6 +11,7 @@ import {
 } from './bindRefinementFigure';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
+import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { refinementActionWords } from './refinementActionWords';
 import { refinementCardCommands, type CommandView } from './refinementCardCommands';
 import { refinementCourtesy } from './refinementCourtesy';
@@ -92,10 +93,7 @@ function readClauseScope(clause: RefinementClause, input: ClauseScopeInput): Cla
     if (references.some((reference) => !refinementCardCommands.intersects(reference.denotes, pendingIds))) {
         return { kind: 'addition' };
     }
-    const resolvedIntent = resolveClauseActionIntent(clause.masked, input.catalog);
-    // "Reverb down 2 dB" names an object and a level, not the command that sets it, so it states no action
-    // and means every pending command on that object, as a clause with no intent does.
-    const intent = resolvedIntent?.referenceSlot ? null : (resolvedIntent?.actionType ?? null);
+    const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
     const meant = commands.filter(
         (view) =>
             (intent === null || view.command.type === intent) &&
@@ -171,7 +169,8 @@ function createClauseScopeInput(input: {
 }): ClauseScopeInput {
     const commands = refinementCardCommands.view(input.basis, input.context);
     const candidates = refinementRequestReading.candidates(input.context);
-    const catalog = getExecutableAppActionGroundingCatalog();
+    // A refinement reads a level phrase naming its track as it always has: as a value on the card's commands.
+    const catalog = withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog());
     return {
         commands,
         removedCommandIndexes: input.removedCommandIndexes,

@@ -9,6 +9,16 @@ describe('findReferencedIntentPhrase', () => {
         expect(findReferencedIntentPhrase('please set □□□□□ to -6 dB', 'set {reference} to')?.index).toBe(7);
     });
 
+    it('reads the polite carrier the other command phrases read, and no other opening words', () => {
+        expect(findReferencedIntentPhrase('could you set □□□□□ to -6 dB', 'set {reference} to')?.index).toBe(10);
+        expect(
+            findReferencedIntentPhrase('please can you please set □□□□□ to -6 dB', 'set {reference} to')
+        ).not.toBeNull();
+        expect(findReferencedIntentPhrase('would you □□□□□ up 2 dB', '{reference} up')).not.toBeNull();
+        expect(findReferencedIntentPhrase('could you maybe set □□□□□ to -6 dB', 'set {reference} to')).toBeNull();
+        expect(findReferencedIntentPhrase('you set □□□□□ to -6 dB', 'set {reference} to')).toBeNull();
+    });
+
     it('reports where the reference the placeholder stands for sits', () => {
         const text = 'set the □□□□□ to -6 dB';
 

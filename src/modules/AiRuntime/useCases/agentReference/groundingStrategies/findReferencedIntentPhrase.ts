@@ -17,8 +17,11 @@ const MASKED_REFERENCE = '(?:the\\s+)?(□+)';
 /** A signed decibel figure and its unit, the way `classifyPromptDecibelFigures.ts` reads one. */
 const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
 
-/** The clause opens with at most "please" and closes with at most "please" and a full stop. */
-const CLAUSE_START = '^\\s*(?:please\\s+)?';
+/**
+ * The clause opens with at most the polite carrier `isExplicitCommandClause.ts` strips ("could you",
+ * "please") and closes with at most "please" and a full stop.
+ */
+const CLAUSE_START = '^\\s*(?:(?:please\\s+)?(?:can|could|would)\\s+you(?:\\s+please)?\\s+)?(?:please\\s+)?';
 const CLAUSE_END = '(?:\\s+please)?\\s*\\.?\\s*$';
 
 /** Registry phrases bound this; each pattern is built once. */

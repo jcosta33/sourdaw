@@ -452,6 +452,23 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(lastMember.actions).toEqual([]);
     });
 
+    it('never grounds the tail of a "both" list whose head clause is unread', () => {
+        const prompt = 'turn both Drums, Bass and Keys down 3 dB';
+        const value = { deltaDb: -3 };
+
+        const tail = bridge(
+            [bass, keys].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const whole = bridge(
+            [drums, bass, keys].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+
+        expect(tail.actions).toEqual([]);
+        expect(whole.actions).toEqual([]);
+    });
+
     it('holds an up/down list to one figure for every member', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: 2 }), gainCall(bass.id, { deltaDb: 3 })],
