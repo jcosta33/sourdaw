@@ -234,7 +234,8 @@ function prepareReviewPublication(
     // Reviewer diversity and the round freeze bound fresh posts; a recorded replay posts nothing. The
     // freeze precedes approval context and comment preflight so a frozen pull request is named even
     // when the manifest cannot be read (#4754).
-    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID && !bundleReplaysRecordedPublication(bundle, port)) {
+    const replaysRecordedPublication = bundleReplaysRecordedPublication(bundle, port);
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID && !replaysRecordedPublication) {
         assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
         assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
     }
@@ -242,6 +243,14 @@ function prepareReviewPublication(
     // order matters: a refusal here must not have written the canonical dossier.
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
+    // A fresh reviewer APPROVE over unresolved review threads can never authorize its head, and the
+    // persisted publication then replays forever without an authorization, stranding the head until
+    // a new commit and a full fresh round (#5436). Refused here, on the preflight route every
+    // publication takes, before the dossier is written; replays and the orchestrator acceptance
+    // route (which carries its own thread gate) stay ungated.
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID && !replaysRecordedPublication && document.event === 'APPROVE') {
+        assertApprovalWithoutOpenThreads(number, head, port);
+    }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
         prepareReviewDossierPublication({ number, head, bundle, document, port });
     }
@@ -416,16 +425,9 @@ export function publishReview(
     port: PublishReviewPort,
     boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
-    // Fresh reviewer publications only: an APPROVE over unresolved review threads can never
-    // authorize its head, and the persisted publication then replays forever without an
-    // authorization, stranding the head until a new commit and a full fresh round (#5436).
-    // Recovery re-posts are the exact-replay exception and stay ungated here. Preparing is
-    // read-only, and the extra `pullRequest` read the gate would need is avoided: ports are
-    // one-shot about head movement, so the prepared head is passed instead.
+    // The open-thread approval gate lives in prepareReviewPublication, on the route every
+    // publication takes (#5436); this wrapper only pairs prepare with the reviewer post.
     const prepared = prepareReviewPublication(number, port);
-    if (parseReviewDocument(prepared.document).event === 'APPROVE') {
-        assertApprovalWithoutOpenThreads(number, prepared.head, port);
-    }
     return publishPreparedReview(number, prepared, port, boundary);
 }
 
