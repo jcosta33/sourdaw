@@ -79,8 +79,14 @@ function trackClosing(closing: Promise<void>): void {
 }
 
 async function waitForClosing(): Promise<void> {
+    // Forgets what it awaited, as `waitForCommits` does, so the wait ends on its
+    // own settlement and never on a settle observer having run.
     while (closingStops.size > 0) {
-        await Promise.allSettled([...closingStops]);
+        const closing = [...closingStops];
+        await Promise.allSettled(closing);
+        for (const settled of closing) {
+            closingStops.delete(settled);
+        }
     }
 }
 

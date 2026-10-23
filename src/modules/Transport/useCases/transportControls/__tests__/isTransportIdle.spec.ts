@@ -68,6 +68,24 @@ describe('isTransportIdle', () => {
         expect(isTransportIdle()).toBe(true);
     });
 
+    it('is idle once a closing stop has settled although nobody ever waited for it', async () => {
+        const closing = Promise.withResolvers<void>();
+        recordingLifecycle.trackClosing(closing.promise);
+
+        closing.resolve();
+
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
+    });
+
+    it('is idle once a closing stop has rejected although nobody ever waited for it', async () => {
+        const closing = Promise.withResolvers<void>();
+        recordingLifecycle.trackClosing(closing.promise);
+
+        closing.reject(new Error('recorder flush failed'));
+
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
+    });
+
     it('is idle again after a closing stop rejects', async () => {
         const closing = Promise.withResolvers<void>();
         recordingLifecycle.trackClosing(closing.promise);
