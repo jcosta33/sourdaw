@@ -1,0 +1,100 @@
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_3e7dea5cde3f9e::t_05103e9cb1955a 478-493,501,507-518,520-521,533-539,545-547,559,564,566,576-579
+  s_3e7dea5cde3f9e::t_2995af4427dc8b 519
+  s_3e7dea5cde3f9e::t_73bc127bc0087c 522-523,525-526,528-532
+  s_3e7dea5cde3f9e::t_4c14a121c75365 597-598,600-602,610-612,614
+  s_3e7dea5cde3f9e::t_3a25dc6ecd4d50 613
+  s_3e7dea5cde3f9e::t_2febe08f91770b 683
+  s_3e7dea5cde3f9e::t_791072834d75cd 599
+  s_3e7dea5cde3f9e::t_2fb7e840cce3ba 3
+  s_3e7dea5cde3f9e::t_bb440100e9a8ef 527
+  s_3e7dea5cde3f9e::t_a82e9e1676ed55 524
+src/modules/MIDI/services/applyRegisteredParameterChange.ts
+  s_3e7dea5cde3f9e::t_a3f291f53ea5bf 18
+src/modules/MIDI/useCases/midiClipData/createStoredBendRangeReader.ts
+  s_3e7dea5cde3f9e::t_db8aeb67a4a699 10
+src/modules/MIDI/useCases/midiClipData/declareGluedRegisteredParameters.ts
+  s_3e7dea5cde3f9e::t_74035524cf843c 36
+  s_3e7dea5cde3f9e::t_160e77c1854dba 16-17
+  s_3e7dea5cde3f9e::t_6df4fca3a85317 2
+  s_3e7dea5cde3f9e::t_5ed038b719679c 18
+  s_3e7dea5cde3f9e::t_d7cc54314ace5d 37
+  s_3e7dea5cde3f9e::t_594573b317c058 1,3-15,19-35,38-45
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_3e7dea5cde3f9e::t_95117bf6297957 138
+  s_3e7dea5cde3f9e::t_ba7756431db42f 143
+  s_3e7dea5cde3f9e::t_4a1152a183838e 139
+  s_3e7dea5cde3f9e::t_a7de75532cc0fd 7
+  s_3e7dea5cde3f9e::t_647b46c2bf8085 132
+  s_3e7dea5cde3f9e::t_bc063e22e0a32b 134-137,142,144-146
+  s_3e7dea5cde3f9e::t_bd29349497cd04 133
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipSplit.spec.ts
+  s_3e7dea5cde3f9e::t_96feca909492f7 140-183
+  s_3e7dea5cde3f9e::t_87633ccecf2dde 22
+  s_3e7dea5cde3f9e::t_0c5ea44f89c680 138-139,184-191
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts
+  s_3e7dea5cde3f9e::t_670e2c8b3ccd49 270-312
+src/modules/MIDI/useCases/midiClipData/projectMidiClipWindow.ts
+  s_3e7dea5cde3f9e::t_5789128b5e11d6 161
+  s_3e7dea5cde3f9e::t_879b989ed47211 27-33
+  s_3e7dea5cde3f9e::t_9c5a525eeb37fa 173
+  s_3e7dea5cde3f9e::t_25fca4ce98dbbe 109-111
+  s_3e7dea5cde3f9e::t_5f90dcbd3fc9f6 156-160,162,172
+  s_3e7dea5cde3f9e::t_53c7ff18f46b79 5
+  s_3e7dea5cde3f9e::t_78544fea00d364 89-90,96-97
+src/modules/MIDI/services/__tests__/registeredParameterState.spec.ts
+  s_3e7dea5cde3f9e::t_be682b37953a1d 89-98
+  s_3e7dea5cde3f9e::t_c89005f63c008b 142
+  s_3e7dea5cde3f9e::t_64445cacda074e 1-88,99-141,143-187
+  s_3e7dea5cde3f9e::t_8880491baf69b0 188-203
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_c4e9798bd220de 25
+src/modules/MIDI/repositories/webMidi/ingestChannelControlChange.ts
+  s_3e7dea5cde3f9e::t_a204976a129468 14
+src/modules/MIDI/services/registeredParameterState.ts
+  s_3e7dea5cde3f9e::t_92495849f927ac 105
+  s_3e7dea5cde3f9e::t_cc659369ea64f6 155-156
+  s_3e7dea5cde3f9e::t_f1860646474be3 172-174
+  s_3e7dea5cde3f9e::t_ad41a49b34b5ac 8,10,25,28,30,36-44,46,75-76,79-81,83,109-115,137,144,146-154,157-165,167,169,171,175-177
+  s_3e7dea5cde3f9e::t_1d680d1d824e3c 103
+  s_3e7dea5cde3f9e::t_252bfd63b8a65c 29
+  s_3e7dea5cde3f9e::t_624fb50861a322 116-119,138,140-143
+  s_3e7dea5cde3f9e::t_4fd4c1e19c0a07 24
+  s_3e7dea5cde3f9e::t_998a86ecd6bf72 104
+  s_3e7dea5cde3f9e::t_b463beb207317f 1-7,9,11-23,26-27,31-35,45,47-49,51-66,68-74,77-78,82,84-93,97-98,100-102,106-108,178
+  s_3e7dea5cde3f9e::t_83d5df7888979f 67
+  s_3e7dea5cde3f9e::t_5fa7f6d5922e8c 99
+  s_3e7dea5cde3f9e::t_f98162683e4f46 94-96
+  s_3e7dea5cde3f9e::t_016c2eff7642cf 166,170
+  s_3e7dea5cde3f9e::t_5399c4b8608dff 50
+  s_3e7dea5cde3f9e::t_c517f918e53801 120-136,139,145
+  s_3e7dea5cde3f9e::t_4bd26444597ebc 168
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_3e7dea5cde3f9e::t_3eab8d542b0223 1196-1210
+  s_3e7dea5cde3f9e::t_183442a6f7d349 1344-1363
+  s_3e7dea5cde3f9e::t_98ba336aef95a2 1154-1195,1211-1343,1364-1373
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipWindow.spec.ts
+  s_3e7dea5cde3f9e::t_ca7a8f70de8954 80
+  s_3e7dea5cde3f9e::t_906b2d268aa914 67-79,81-94
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_3e7dea5cde3f9e::t_60cd4cee3998df 405,408-425
+  s_3e7dea5cde3f9e::t_813e387ffb2fea 358-404,406-407,426-427,451-502
+  s_3e7dea5cde3f9e::t_0add746699b5fe 18
+  s_3e7dea5cde3f9e::t_1a76013d793ef0 428-450
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59648077cc0c37afa5524c67eb3f7468f0f96be3",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
