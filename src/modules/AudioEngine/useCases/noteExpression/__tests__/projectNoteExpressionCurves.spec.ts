@@ -521,6 +521,100 @@ describe('projectNoteExpressionCurves', () => {
             expect(atStart?.pitchBend).toBe(8_191);
         });
 
+        it('starts a cut note on a channel move recorded after its scalar bend, before the cut', () => {
+            const { atStart, changes } = projectNoteExpressionCurves({
+                note: { pitchBend: 0, pitchBendRangeSemitones: 48 },
+                channelBend: [move(1, 4_096)],
+                startBeat: 2,
+                beatsIntoNote: 2,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart?.pitchBend).toBe(4_096);
+            expect(atStart?.pitchBendRangeSemitones).toBe(2);
+            expect(changes).toEqual([]);
+        });
+
+        it('keeps a cut note on its own bend point recorded after the channel move', () => {
+            const { atStart } = projectNoteExpressionCurves({
+                note: {
+                    pitchBend: 0,
+                    pitchBendRangeSemitones: 48,
+                    expression: { pitchBend: [{ offsetBeats: 1.5, value: 1_000 }] },
+                },
+                channelBend: [move(1, 4_096)],
+                startBeat: 2,
+                beatsIntoNote: 2,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart).toEqual({
+                pressure: undefined,
+                slide: undefined,
+                pitchBend: 1_000,
+                pitchBendRangeSemitones: 48,
+            });
+        });
+
+        it('starts a cut note on a channel move recorded after its own bend point', () => {
+            const { atStart } = projectNoteExpressionCurves({
+                note: {
+                    pitchBend: 0,
+                    pitchBendRangeSemitones: 48,
+                    expression: { pitchBend: [{ offsetBeats: 0.5, value: 1_000 }] },
+                },
+                channelBend: [move(1, 4_096)],
+                startBeat: 2,
+                beatsIntoNote: 2,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart?.pitchBend).toBe(4_096);
+            expect(atStart?.pitchBendRangeSemitones).toBe(2);
+        });
+
+        it('leaves a cut note with its own bend when a move shares the frame of its bend point or its uncut start', () => {
+            const onThePoint = projectNoteExpressionCurves({
+                note: {
+                    pitchBend: 0,
+                    pitchBendRangeSemitones: 48,
+                    expression: { pitchBend: [{ offsetBeats: 1, value: 1_000 }] },
+                },
+                channelBend: [move(1, 4_096)],
+                startBeat: 2,
+                beatsIntoNote: 2,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+            const onTheUncutStart = projectNoteExpressionCurves({
+                note: { pitchBend: 0, pitchBendRangeSemitones: 48 },
+                channelBend: [move(1, 4_096)],
+                startBeat: 2,
+                beatsIntoNote: 1,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(onThePoint.atStart?.pitchBend).toBe(1_000);
+            expect(onTheUncutStart.atStart).toBeUndefined();
+        });
+
+        it('keeps a cut note on its scalar bend when the channel move came before the uncut start', () => {
+            const { atStart } = projectNoteExpressionCurves({
+                note: { pitchBend: 0, pitchBendRangeSemitones: 48 },
+                channelBend: [move(0.5, 4_096)],
+                startBeat: 2,
+                beatsIntoNote: 1,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(atStart).toBeUndefined();
+        });
+
         it('interleaves the moves with the curve points of the note in time order', () => {
             const { changes } = projectNoteExpressionCurves({
                 note: { pressure: 10, expression: { pressure: [{ offsetBeats: 1.5, value: 90 }] } },

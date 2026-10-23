@@ -593,6 +593,12 @@ export async function scheduleTrackClips({
         return Math.floor(seconds * offlineCtx.sampleRate);
     }
 
+    // The frame the timeline gives a beat, below zero before the region start: the clock the channel bend is
+    // ordered on, and the one a note's own bend is compared with its moves on.
+    function frameOnTimelineAtBeat(beat: number): number {
+        return frameAtSeconds(timelineSecondsAtBeat(beat, -1));
+    }
+
     // The track's stored channel pitch bend, on the clock a note at the same beat is placed on. Only an
     // instrument with an expression surface takes any (the engines that bend a held voice), as live
     // playback, and only the track's own MIDI clips that play (a muted clip does not, a clip with no note
@@ -617,7 +623,7 @@ export async function scheduleTrackClips({
         // one on the timeline, not the last one of the last clip in the track's clip list.
         return projectChannelBend({
             clips,
-            frameAtBeat: (beat) => frameAtSeconds(timelineSecondsAtBeat(beat, -1)),
+            frameAtBeat: frameOnTimelineAtBeat,
         });
     }
 
@@ -675,6 +681,7 @@ export async function scheduleTrackClips({
                           beatsIntoNote: note.beatsIntoNote,
                           releaseFrame: frameAtSeconds(endTime),
                           frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
+                          channelBendFrameAtBeat: frameOnTimelineAtBeat,
                       });
                 workletEvents.push({
                     time: startTime,

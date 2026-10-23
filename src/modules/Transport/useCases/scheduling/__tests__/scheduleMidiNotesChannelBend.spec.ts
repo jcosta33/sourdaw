@@ -1019,6 +1019,69 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 ]);
             });
 
+            describe('when the window that ends a mute falls in a gap', () => {
+                /**
+                 * Clip B plays [0, 1.6) with a centre at 0 and a bend out at 1.5, clip A plays [2, 8) and holds the
+                 * long note: the bend out falls in the muted span and the window after the mute has no clip.
+                 */
+                const twoClipSong = (overrides: { trackMuted?: boolean; clipBMuted?: boolean } = {}) => ({
+                    track: midiTrack(
+                        FERMENTER,
+                        [
+                            midiClip({
+                                id: 'clip-b',
+                                startBeat: 0,
+                                endBeat: 1.6,
+                                muted: overrides.clipBMuted ?? false,
+                            }),
+                            midiClip({ id: 'clip-a', startBeat: 2, endBeat: 8 }),
+                        ],
+                        undefined,
+                        { muted: overrides.trackMuted ?? false }
+                    ),
+                    // The note sits at the head of clip A, so it sounds on [2, 6) of the timeline.
+                    notes: { 'clip-a': [note('long', 0, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-b': [bend('centre', 0, 0), bend('out', 1.5, 4096)] },
+                });
+
+                it('gives a note carried across the seam while the track was muted the bend in force', async () => {
+                    setProject(twoClipSong());
+                    await playOnPass(0, 2, 4);
+                    vi.mocked(applyNoteExpression).mockClear();
+                    setProject(twoClipSong({ trackMuted: true }));
+
+                    await playOnPass(SEAM_SECONDS, 0, 1, true);
+                    await playOnPass(SEAM_SECONDS, 1, 1.5);
+                    setProject(twoClipSong());
+                    await playOnPass(SEAM_SECONDS, 1.75, 1.9);
+                    await playOnPass(SEAM_SECONDS, 1.9, 2);
+
+                    // The bend out at 1.5 fell in the muted span, and clip B has ended by the window after it.
+                    expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                        { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                        { sampleFrame: SEAM_FRAME + 1.75 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+                    ]);
+                });
+
+                it('gives a note carried across the seam while the clip holding the bend was muted the bend in force', async () => {
+                    setProject(twoClipSong());
+                    await playOnPass(0, 2, 4);
+                    vi.mocked(applyNoteExpression).mockClear();
+                    setProject(twoClipSong({ clipBMuted: true }));
+
+                    await playOnPass(SEAM_SECONDS, 0, 1, true);
+                    await playOnPass(SEAM_SECONDS, 1, 1.5);
+                    setProject(twoClipSong());
+                    await playOnPass(SEAM_SECONDS, 1.75, 1.9);
+                    await playOnPass(SEAM_SECONDS, 1.9, 2);
+
+                    expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                        { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                        { sampleFrame: SEAM_FRAME + 1.75 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+                    ]);
+                });
+            });
+
             it('carries a note of a track that still names the buffer of an earlier freeze but is not frozen', async () => {
                 loadSeamSong({});
                 await playOnPass(0, 2, 4);

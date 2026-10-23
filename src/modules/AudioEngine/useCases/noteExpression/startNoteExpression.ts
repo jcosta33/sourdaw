@@ -48,6 +48,12 @@ type StartNoteExpressionInput = {
     releaseFrame: number;
     /** The caller's beat-to-frame conversion, the same one that places the note's own start and release. */
     frameAtBeat: (beat: number) => number;
+    /**
+     * The clock `channelBend` frames are on, when it differs from `frameAtBeat` by not clamping a beat before
+     * the render region's start. The note's own bend and the channel move are compared on it, because the
+     * clamp would put a note's earlier bend on the same frame as a later move. Defaults to `frameAtBeat`.
+     */
+    channelBendFrameAtBeat?: (beat: number) => number;
 };
 
 type ExpressionReader = (offsetBeats: number) => number | undefined;
@@ -122,6 +128,33 @@ function listOwnMoments({
     return moments;
 }
 
+type FindOwnBendFrameInput = {
+    scalarBend: number | undefined;
+    /** The note's own moments at or before the start frame, in time order. */
+    passedMoments: readonly OwnExpressionMoment[];
+    /** Where the note began before any cut, where its scalar bend took hold. */
+    noteStartBeat: number;
+    /** The clock the channel bend's frames are on. */
+    frameAtBeat: (beat: number) => number;
+};
+
+/**
+ * Where the note's own bend was last set at or before its start: its last bend point, else its scalar at
+ * the uncut note start. Undefined when the note holds no bend, which leaves it to the channel.
+ */
+function findOwnBendFrame({
+    scalarBend,
+    passedMoments,
+    noteStartBeat,
+    frameAtBeat,
+}: FindOwnBendFrameInput): number | undefined {
+    const lastBendMoment = passedMoments.findLast((moment) => moment.claimsBend);
+    if (lastBendMoment) {
+        return frameAtBeat(lastBendMoment.beat);
+    }
+    return scalarBend === undefined ? undefined : frameAtBeat(noteStartBeat);
+}
+
 /**
  * Starts a note's expression: what its note-on carries and the timeline that moves it on.
  *
@@ -129,10 +162,12 @@ function listOwnMoments({
  * passed fold into it) or when a channel bend stands in for a bend the note does not hold. It is absent
  * when the note's scalars govern, so the caller posts them as they are.
  *
- * At the start the note's own bend wins when it holds one (its scalar, or a curve point at or before the
- * start), as a performer's note-on carries its own bend; only a note with none sounds under the channel
- * bend in force there, the last move at or before the start frame. From then on the later event wins
- * (`advanceNoteExpression`).
+ * At the start the later of the note's own last bend and the channel move in force there holds the bend,
+ * by frame: the note's last bend point at or before the start, else its scalar counted at the uncut note
+ * start (a performer's note-on carries its own bend, so an earlier channel move leaves it alone, while a
+ * move recorded after it, before a cut head, is in force). A tie on one frame stays with the note. A note
+ * with no bend sounds under the channel bend in force, the last move at or before the start frame. From
+ * then on the later event wins (`advanceNoteExpression`).
  */
 export function startNoteExpression({
     note,
@@ -141,6 +176,7 @@ export function startNoteExpression({
     beatsIntoNote = 0,
     releaseFrame,
     frameAtBeat,
+    channelBendFrameAtBeat = frameAtBeat,
 }: StartNoteExpressionInput): { atStart: ScheduledNoteExpression | undefined; timeline: NoteExpressionTimeline } {
     const startFrame = frameAtBeat(startBeat);
     const moments = listOwnMoments({ note, noteStartBeat: startBeat - beatsIntoNote, releaseFrame, frameAtBeat });
@@ -154,7 +190,13 @@ export function startNoteExpression({
         );
     const inForce = findChannelBendInForce(channelBend, startFrame);
     const channel = inForce && { value: inForce.value, rangeSemitones: inForce.rangeSemitones };
-    const bendOwner = own.pitchBend === undefined && channel ? 'channel' : 'note';
+    const ownBendFrame = findOwnBendFrame({
+        scalarBend: note.pitchBend,
+        passedMoments: moments.slice(0, passedCount),
+        noteStartBeat: startBeat - beatsIntoNote,
+        frameAtBeat: channelBendFrameAtBeat,
+    });
+    const bendOwner = inForce && (ownBendFrame === undefined || inForce.frame > ownBendFrame) ? 'channel' : 'note';
     const timeline: NoteExpressionTimeline = {
         startFrame,
         releaseFrame,
