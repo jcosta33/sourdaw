@@ -57,10 +57,11 @@ async function keepClosedTakes(closedTakes: ClosedTakes): Promise<void> {
  * already released, so each lap tears the audio graph and the plugins down again
  * before it asks.
  *
- * `shouldContinue` is asked after every stop, because a newer project load can
- * take over while the take commits and must not then be replaced by this one:
- * the answer is a refusal, which every caller already treats as an abort before
- * the switch. A stop that rejects ends the loop with the rejection, which the
+ * `shouldContinue` is asked after every stop and again after every teardown,
+ * because a newer project load can take over while the take commits or the
+ * plugins unload and must not then be replaced by this one: the answer is a
+ * refusal, which every caller already treats as an abort before the switch. A
+ * stop or teardown that rejects ends the loop with the rejection, which the
  * caller's abort path treats like any failure before the switch.
  *
  * `closedTakes` is created by the caller before its first stop, so a take that
