@@ -5,9 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { getWarpState } from '#/modules/Arrangement/stores';
+import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
 import { useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
+import { ElasticEditorPanel } from '#/modules/ElasticAudio/presentations/views';
+import { elasticAudioStore } from '#/modules/ElasticAudio/stores';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 import { type ActionHandler } from '#/utils/handlerContract';
 
@@ -261,7 +265,7 @@ describe('TimelineClipNavigator', () => {
         expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
     });
 
-    it('claims Space before the real global listener and gates unclaimed Delete through listbox containment', async () => {
+    it('contains listbox keys without canceling native Tab or changing shortcuts outside it', async () => {
         act(() =>
             trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [clip('one', 'voice', 0)])] })
         );
@@ -282,8 +286,9 @@ describe('TimelineClipNavigator', () => {
                 'true'
             );
 
-            fireEvent.keyDown(listbox, { key: 'Delete' });
-            expect(windowKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key: 'Delete' }));
+            expect(fireEvent.keyDown(listbox, { key: 'Delete' })).toBe(true);
+            expect(fireEvent.keyDown(listbox, { key: 'Tab' })).toBe(true);
+            expect(windowKeydown).not.toHaveBeenCalled();
             expect(commandIntent).not.toHaveBeenCalled();
             expect(trackStore.value?.tracks[0]?.clips.map((item) => item.id)).toEqual(['one']);
             expect(clipSelectionStore.value?.selectedClipIds).toEqual(['one']);
@@ -300,5 +305,36 @@ describe('TimelineClipNavigator', () => {
             window.removeEventListener('keydown', windowKeydown);
             commandIntent.mockRestore();
         }
+    });
+
+    it('keeps an Elastic marker intact when Delete is pressed in the timeline listbox', async () => {
+        const audioClip: Clip = { ...clip('one', 'voice', 0), type: 'audio' };
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [audioClip])] }));
+        registerHandlerMap(getFinalFeatureHandlers());
+        await act(async () => {
+            await commandUseCases.executeAppAction({ type: 'openElasticEditor', payload: { clipId: 'one' } });
+            await commandUseCases.executeAppAction({
+                type: 'elasticAddMarker',
+                payload: { clipId: 'one', localBeat: 1 },
+            });
+        });
+        const before = structuredClone(getWarpState('one').markers);
+        expect(before).toHaveLength(1);
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 4 });
+        expect(elasticAudioStore.value?.selectedMarkerIds).toEqual([before[0]?.id]);
+        const details = screen.getByTestId('elastic-detail-strip');
+        expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
+
+        const listbox = openNavigator();
+        expect(listbox).toHaveFocus();
+        fireEvent.keyDown(listbox, { key: 'Delete' });
+        fireEvent.keyDown(listbox, { key: 'Backspace' });
+
+        expect(getWarpState('one').markers).toEqual(before);
+        expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
     });
 });

@@ -88,6 +88,7 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
     function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
         const claimed = ['ArrowDown', 'ArrowUp', 'Home', 'End', ' ', 'Spacebar', 'Enter', 'Escape'];
         if (!claimed.includes(event.key)) {
+            event.stopPropagation();
             return;
         }
         event.preventDefault();
