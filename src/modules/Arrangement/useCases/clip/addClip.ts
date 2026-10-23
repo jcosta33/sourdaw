@@ -1,3 +1,5 @@
+import { loopOriginEntry } from '#/utils/clipLoopOrigin';
+
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -27,6 +29,8 @@ export function addClip(input: {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    /** Optional source-clip loop anchor to preserve when duplicating or pasting (#4988). */
+    loopOriginBeat?: number;
     followAction?: FollowAction;
 }): Clip | null {
     const state = getTrackState();
@@ -89,6 +93,11 @@ export function addClip(input: {
         stretchRatio: input.stretchRatio,
         loopEnabled: input.loopEnabled,
         loopLength: input.loopLength,
+        // The anchor rides only when it exists: an explicit `loopOriginBeat:
+        // undefined` key is a shape the CRDT normalizer never rebuilds and the
+        // time-operation codec's plan encode rejects, so any later global time
+        // operation would silently refuse (#4988).
+        ...loopOriginEntry(input.loopOriginBeat),
         followAction: input.followAction,
         isGhost: input.isGhost,
     };

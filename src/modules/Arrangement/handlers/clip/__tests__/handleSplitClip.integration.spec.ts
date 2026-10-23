@@ -31,6 +31,7 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { gainSeamPointId } from '../../../models/GainSeamPointId';
 import { readClipSatelliteEntry, serializeClipSatelliteEntries } from '../../../stores/clipSatelliteState';
 import { removeEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { trackStore } from '../../../stores/trackStore';
@@ -377,7 +378,7 @@ describe('handleSplitClip atomic integration', () => {
                 enabled: true,
                 points: [
                     { id: 'p0', beatOffset: -5, gainDb: 0 },
-                    { id: `gep-split-${rightClip.id}-right`, beatOffset: 0, gainDb: -10 },
+                    { id: gainSeamPointId(rightClip.id, 'right'), beatOffset: 0, gainDb: -10 },
                     { id: 'p6', beatOffset: 1, gainDb: -12 },
                 ],
             },
@@ -390,7 +391,7 @@ describe('handleSplitClip atomic integration', () => {
         });
         expect(readClipSatelliteEntry('clip-1').gainEnvelope?.points).toEqual([
             { id: 'p0', beatOffset: 0, gainDb: 0 },
-            { id: `gep-split-${rightClip.id}-left`, beatOffset: 5, gainDb: -10 },
+            { id: gainSeamPointId(rightClip.id, 'left'), beatOffset: 5, gainDb: -10 },
             { id: 'p6', beatOffset: 6, gainDb: -12 },
         ]);
 
@@ -410,7 +411,7 @@ describe('handleSplitClip atomic integration', () => {
         expect(serializeClipSatelliteEntries(['clip-1'])).toBe(partitionedLeft);
         expect(readClipSatelliteEntry(rightClip.id).gainEnvelope?.points).toEqual([
             { id: 'p0', beatOffset: -5, gainDb: 0 },
-            { id: `gep-split-${rightClip.id}-right`, beatOffset: 0, gainDb: -10 },
+            { id: gainSeamPointId(rightClip.id, 'right'), beatOffset: 0, gainDb: -10 },
             { id: 'p6', beatOffset: 1, gainDb: -12 },
         ]);
     });

@@ -68,6 +68,40 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
+
+PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
+take of a pedal or mod wheel with no notes committed its rows but never a note list. Every
+playback and export reader admits a MIDI clip by its note list (`scheduleMidiNotes`,
+`resolveStoredControllerClips`, the Yeast route, `scheduleTrackClips`), so the take was stored,
+visible and silent. The blind spot was reading the recording writers and their redo snapshot
+without reading the readers' admission gates; the specs always recorded a note beside the
+controllers. The historical review stance, prompt and tier are unestablished.
+
+A recording change that stores a new kind of row must be checked against every playback
+reader's admission gate, including a take made of only that kind of row. Enumerate the readers
+of the stored kind on the live head and read each one's skip condition, then drive a take of
+that kind alone through commit, undo, redo, live playback and export, and require the take to
+be heard. Restoring any reader's skip must fail a case that drives a controller-only clip with no
+note list through that reader.
+
+Fix a playback reader's admission rather than write a structural placeholder (an empty note
+list) into shared CRDT state: the placeholder races with a peer's concurrent first write to the
+same key, and a clip derived by split, copy, duplicate or paste (#5470) never carries it.
+
+### 2026-10-21 — final cleanup changed storage state after result construction
+
+PR #5274 (`40baa0716b`) set a storage-only leak reason and retained message before its
+existing `finally` cleanup attempt. Complete proof on that final attempt could delete the
+owned payload while the returned result still said it was retained. The historical review
+stance, prompt, and tier are unestablished. A result assembled before finalization was not
+an oracle for the final state.
+
+Probe a real guarded child and owned payload with the first release refused and the final
+direct and claimed release permitted. Assert exact owner and claim removal alongside the
+reported reason and output. Persistent refusal must still report retention, and an earlier
+process or resource failure must remain a failure after storage removal.
+
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
 The orchestrator packet prescribed the requested beat-four anchor without tracing

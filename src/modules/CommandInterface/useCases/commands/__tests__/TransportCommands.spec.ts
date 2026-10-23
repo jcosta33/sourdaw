@@ -8,6 +8,7 @@ import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { transportCommands } from '../TransportCommands';
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     seekPlayhead: vi.fn(),
     panicAllNotes: vi.fn(() => Promise.resolve()),
 }));

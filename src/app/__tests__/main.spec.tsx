@@ -96,6 +96,9 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     canPrepareMidiClipGlueState: vi.fn(),
     createGrooveTemplate: vi.fn(),
     downloadMidiFile: vi.fn(),
+    commitRecordedControllers: vi.fn(),
+    discardRecordedControllers: vi.fn(),
+    planRecordedControllers: vi.fn(),
     duplicateClipNotes: vi.fn(),
     duplicateMidiClipData: vi.fn(),
     getCanonicalGrooveTemplateKey: vi.fn(),
@@ -143,6 +146,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setMidiStoreState: vi.fn(),
     setNotesForClip: vi.fn(),
     shouldPlayMidiEvent: vi.fn(),
+    shiftClipMidiNotes: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
     transposeForChordTrack: vi.fn(),
 }));

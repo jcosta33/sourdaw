@@ -14,6 +14,8 @@ type OfflineClipMidiEventProjectionInput<Event extends OfflineMidiProjectableEve
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    /** The clip's loop anchor; playback callers carry it (#4988). */
+    loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
     phase?: 'clip-groove' | 'complete';
@@ -27,9 +29,12 @@ type OfflineSequencerMidiEventProjectionInput<Event extends OfflineMidiProjectab
 type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> =
     OfflineClipMidiEventProjectionInput<Event> | OfflineSequencerMidiEventProjectionInput<Event>;
 
+/** An event as one clip pass plays it; `beatsIntoNote` is how far into the event a cut segment begins. */
+export type OfflineProjectedMidiEvent<Event> = Event & { beatsIntoNote?: number };
+
 export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEvent>(
     input: OfflineMidiEventProjectionInput<Event>
-) => readonly Event[];
+) => readonly OfflineProjectedMidiEvent<Event>[];
 
 export type OfflineMidiEventProjectorFactory = () => OfflineMidiEventProjector;
 
