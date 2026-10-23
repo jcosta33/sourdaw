@@ -10,6 +10,9 @@
 
 /** Where the native engine's transport stands, as of its last rendered block. */
 export type EngineTransportPosition = {
+    /** Optional only for older in-process providers; the bridge parser emits null when unavailable. */
+    captureClock?: EngineCaptureClock | null;
+    captureClockQuery?: EngineCaptureClockQuery | null;
     /**
      * False when no native engine has been started, and also false for an
      * engine that exists but whose output stream has produced no render
@@ -85,6 +88,24 @@ export type EngineTransportPosition = {
     tunerTelemetry: Readonly<Record<string, NativeTunerReading>>;
 };
 
+/** One callback's exclusive-end presentation estimate, in native monotonic seconds. */
+export type EngineCaptureClock = Readonly<{
+    epoch: number;
+    streamEpoch: number;
+    sampleRate: number;
+    presentationSeconds: number;
+    quality: 'estimated' | 'degraded';
+    /** Local measurement bracket only; null is an unknown bound, never zero hardware error. */
+    uncertaintySeconds: number | null;
+}>;
+
+/** Measured inside the native query in the same epoch as the callback date. */
+export type EngineCaptureClockQuery = Readonly<{
+    epoch: number;
+    enteredSeconds: number;
+    leavingSeconds: number;
+}>;
+
 /**
  * One Tuner body's detection, as the native payload carries it.
  *
@@ -106,6 +127,8 @@ export type NativeTunerReading = Readonly<{
 
 /** The shape a stopped engine reports, and the shape the browser build reports. */
 export const stoppedEngineTransportPosition: EngineTransportPosition = {
+    captureClock: null,
+    captureClockQuery: null,
     running: false,
     playing: false,
     positionSeconds: 0,

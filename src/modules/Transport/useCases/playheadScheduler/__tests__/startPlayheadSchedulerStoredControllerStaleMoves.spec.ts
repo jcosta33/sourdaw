@@ -214,6 +214,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
@@ -232,6 +235,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: () => ({}),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

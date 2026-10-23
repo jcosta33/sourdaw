@@ -4,6 +4,8 @@ import {
     stoppedEngineTransportPosition,
     type EngineTransportPosition,
     type NativeTunerReading,
+    type EngineCaptureClock,
+    type EngineCaptureClockQuery,
 } from '../../models/EngineTransportPosition';
 
 function readNumber(payload: Record<string, unknown>, key: keyof EngineTransportPosition): number {
@@ -66,6 +68,55 @@ function finiteNumber(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function positiveEpoch(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function readCaptureClock(value: unknown): EngineCaptureClock | null {
+    const clock = record(value);
+    if (!clock || !positiveEpoch(clock.epoch) || !positiveEpoch(clock.streamEpoch)) {
+        return null;
+    }
+    const sampleRate = finiteNumber(clock.sampleRate);
+    const presentationSeconds = finiteNumber(clock.presentationSeconds);
+    const uncertaintySeconds = clock.uncertaintySeconds === null ? null : finiteNumber(clock.uncertaintySeconds);
+    if (
+        sampleRate === null ||
+        sampleRate <= 0 ||
+        presentationSeconds === null ||
+        presentationSeconds < 0 ||
+        (clock.quality !== 'estimated' && clock.quality !== 'degraded') ||
+        (clock.uncertaintySeconds !== null && (uncertaintySeconds === null || uncertaintySeconds < 0))
+    ) {
+        return null;
+    }
+    return {
+        epoch: clock.epoch,
+        streamEpoch: clock.streamEpoch,
+        sampleRate,
+        presentationSeconds,
+        quality: clock.quality,
+        uncertaintySeconds,
+    };
+}
+
+function readCaptureClockQuery(value: unknown): EngineCaptureClockQuery | null {
+    const query = record(value);
+    if (!query || !positiveEpoch(query.epoch)) {
+        return null;
+    }
+    const enteredSeconds = finiteNumber(query.enteredSeconds);
+    const leavingSeconds = finiteNumber(query.leavingSeconds);
+    if (enteredSeconds === null || enteredSeconds < 0 || leavingSeconds === null || leavingSeconds < enteredSeconds) {
+        return null;
+    }
+    return { epoch: query.epoch, enteredSeconds, leavingSeconds };
+}
+
 /** One payload entry as a reading, or `null` when any part of it is unusable. */
 function asTunerReading(value: unknown): NativeTunerReading | null {
     if (typeof value !== 'object' || value === null) {
@@ -100,7 +151,11 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
     }
 
     const payload = response as Record<string, unknown>;
+    const captureClockQuery = readCaptureClockQuery(payload.captureClockQuery);
+    const captureClock = readCaptureClock(payload.captureClock);
     return {
+        captureClock: captureClock?.epoch === captureClockQuery?.epoch ? captureClock : null,
+        captureClockQuery,
         running: payload.running === true,
         playing: payload.playing === true,
         positionSeconds: readNumber(payload, 'positionSeconds'),

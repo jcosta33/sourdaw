@@ -14,7 +14,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { playheadClockRef, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import {
     countSettledTakes,
     isTransportIdle,
@@ -30,7 +30,12 @@ import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 const TRACK_ID = 'track-recording';
 
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } }) => void;
+type RecordingTerminal = (result: {
+    kind: 'completed';
+    buffer: { duration: number };
+    sampleZeroContextFrame: number;
+    sampleRate: number;
+}) => void;
 type ResetAttempt = (name: string, onAuthorityReplaced: () => void, isIdle: () => boolean) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => {
@@ -61,7 +66,12 @@ const mocks = vi.hoisted(() => {
         stopAudioRecording: vi.fn<() => Promise<void>>(() => {
             const terminal = capturedAudioTerminal;
             capturedAudioTerminal = null;
-            terminal?.({ kind: 'completed', buffer: { duration: 2 } });
+            terminal?.({
+                kind: 'completed',
+                buffer: { duration: 2 },
+                sampleZeroContextFrame: 0,
+                sampleRate: 48000,
+            });
             return Promise.resolve();
         }),
     };
@@ -200,12 +210,21 @@ function openMidiTake(): void {
  */
 async function openAudioTake(): Promise<void> {
     seedTrack('audio');
+    playheadClockRef.beat = 4;
+    playheadClockRef.audioTimeSeconds = 0;
+    playheadPositionRef.current = 4;
     transportStore.set({ ...transportStore.value!, isPlaying: true });
     toggleRecording();
     await vi.waitFor(() => {
         expect(clipIds()).toHaveLength(1);
     });
     flushAutomergeStorageWrites();
+    // PCM frames [0, 96000) at 48 kHz span beats [4, 8) at 120 BPM.
+    // Pause freezes this terminal beat before its flush completes the capture.
+    mocks.audioClock.currentTime = 2;
+    playheadClockRef.beat = 8;
+    playheadClockRef.audioTimeSeconds = 2;
+    playheadPositionRef.current = 8;
 }
 
 /**

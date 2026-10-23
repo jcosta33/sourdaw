@@ -26,7 +26,10 @@ import { toggleRecording } from '../toggleRecording';
 
 const TRACK_ID = 'track-recording';
 
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed' }) => void;
+type StartAudioRecordingFn = (typeof import('#/modules/AudioEngine/useCases'))['startAudioRecording'];
+type RecordingTerminal = Parameters<StartAudioRecordingFn>[1];
+type StartPlaybackFn = (typeof import('../startPlayback'))['startPlayback'];
+type CacheAudioBufferFn = (typeof import('#/modules/AudioEngine/useCases'))['cacheAudioBuffer'];
 
 type CommitRecordingFn = (typeof import('#/modules/Arrangement/useCases'))['commitRecording'];
 
@@ -37,15 +40,17 @@ const mocks = vi.hoisted(() => {
         audioClock,
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
-        cacheAudioBuffer: vi.fn(),
+        cacheAudioBuffer: vi.fn<CacheAudioBufferFn>(),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
-        startPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-        startAudioRecording: vi.fn<(trackId: string, terminal: RecordingTerminal) => Promise<boolean>>(
-            (_trackId, terminal) => {
-                capturedAudioTerminal = terminal;
-                return Promise.resolve(true);
-            }
-        ),
+        startPlayback: vi.fn<StartPlaybackFn>((onRoll) => {
+            // This fixture rolls at admission, before the held terminal returns.
+            onRoll?.(audioClock.currentTime, 4);
+            return Promise.resolve();
+        }),
+        startAudioRecording: vi.fn<StartAudioRecordingFn>((_trackId, terminal) => {
+            capturedAudioTerminal = terminal;
+            return Promise.resolve(true);
+        }),
         // The real Stop awaits a recorder flush that settles the capture and
         // invokes its terminal. This mock keeps the terminal captive instead, so
         // the test can move the project to another branch while the outgoing
@@ -54,6 +59,7 @@ const mocks = vi.hoisted(() => {
         releaseHeldTerminal: (result: Parameters<RecordingTerminal>[0]): void => {
             const terminal = capturedAudioTerminal;
             capturedAudioTerminal = null;
+            audioClock.currentTime = 2;
             terminal?.(result);
         },
         // Delegates to the real commit by default (the factory installs the
@@ -84,6 +90,22 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+
+/** PCM starts at admission; completion is delivered two seconds later. */
+function completedAudioRecording(): Extract<Parameters<RecordingTerminal>[0], { kind: 'completed' }> {
+    const sampleRate = 48000;
+    const pcm = Float32Array.from({ length: 96000 }, (_value, index) => index);
+    const buffer: AudioBuffer = {
+        duration: pcm.length / sampleRate,
+        length: pcm.length,
+        sampleRate,
+        numberOfChannels: 1,
+        getChannelData: () => pcm,
+        copyFromChannel: (target, _channel, offset = 0) => target.set(pcm.subarray(offset, offset + target.length)),
+        copyToChannel: (source, _channel, offset = 0) => pcm.set(source, offset),
+    };
+    return { kind: 'completed', buffer, sampleZeroContextFrame: 0, sampleRate };
+}
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -175,6 +197,7 @@ async function startAudioRecordingGesture(): Promise<void> {
         countInEnabled: false,
         punchInEnabled: false,
         playheadPosition: 4,
+        tempo: 120,
     });
     flushAutomergeStorageWrites();
     toggleRecording();
@@ -262,7 +285,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         const successorClipIdsBeforeRelease = documentClipIds();
         expect(successorClipIdsBeforeRelease).toEqual([]);
 
-        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        mocks.releaseHeldTerminal(completedAudioRecording());
         await vi.waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalled();
         });
@@ -282,7 +305,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         const successorClipsWithProvisional = documentClipIds();
         expect(successorClipsWithProvisional).toHaveLength(1);
 
-        mocks.releaseHeldTerminal({ kind: 'failed' });
+        mocks.releaseHeldTerminal({ kind: 'failed', reason: 'worker-crash' });
 
         // The cleanup the guard gates is an optimistic store write: the document
         // only moves on the next flush, so the live store is the decisive read.
@@ -304,13 +327,28 @@ describe('recording terminal publishes only under its captured root (issue #5289
             throw new Error('expected a provisional recording clip');
         }
 
-        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        mocks.releaseHeldTerminal(completedAudioRecording());
         await vi.waitFor(() => {
             expect(committedEntryCount()).toBe(1);
         });
 
         expect(mocks.cacheAudioBuffer).toHaveBeenCalled();
         expect(storeClipIds()).toEqual([provisionalId]);
+        const clip = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(clip).toMatchObject({ id: provisionalId, startBeat: 4, endBeat: 8 });
+        expect(mocks.commitRecording.mock.calls[0]?.[1]).toEqual({
+            provisionalStartBeat: 4,
+            mediaOriginSeconds: 2,
+            sourceContextOriginSeconds: 0,
+            sourceDurationSeconds: 2,
+        });
+        const buffer = mocks.cacheAudioBuffer.mock.calls[0]?.[0].buffer;
+        if (!buffer) {
+            throw new Error('expected the completed PCM to be cached');
+        }
+        expect(buffer.length).toBe(96000);
+        expect(buffer.sampleRate).toBe(48000);
+        expect(buffer.getChannelData(0)[95999]).toBe(95999);
     });
 
     it('keeps the successor clip when the commit itself fails after a branch switch', async () => {
@@ -328,7 +366,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
                 })
         );
 
-        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        mocks.releaseHeldTerminal(completedAudioRecording());
         await vi.waitFor(() => {
             expect(mocks.commitRecording).toHaveBeenCalled();
         });

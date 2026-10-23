@@ -39,14 +39,17 @@
  */
 
 import { type EngineLoopRegion, type EngineTransportMaps } from '../../models/EngineTransportPosition';
+import { type NativeRecordingGeometry } from '../../models/NativeRecordingCapture';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 
 export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
+    recordingGeometry?: NativeRecordingGeometry;
     /**
      * The arrangement's tempo map, meter map and loop region, already projected
      * into engine coordinates — the same shape a session start carries, and
@@ -57,7 +60,7 @@ export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
 }>;
 
 export type UpdateNativeLiveGraphSessionTransportMapsResult =
-    Readonly<{ outcome: 'updated' }> | Readonly<{ outcome: 'declined'; reason: string }>;
+    Readonly<{ outcome: 'updated'; admittedBatch?: number }> | Readonly<{ outcome: 'declined'; reason: string }>;
 
 function sameLoopRegion(left: EngineLoopRegion | null, right: EngineLoopRegion | null): boolean {
     if (!left || !right) {
@@ -91,6 +94,10 @@ export function updateNativeLiveGraphSessionTransportMaps(
             !sameLoopRegion(region, nativeLiveGraphSession.loopRegion);
         nativeLiveGraphSession.loopRegion = region;
         nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
+        nativeRecordingCaptureClockState.retainAdmission(
+            input.recordingGeometry && { ...input.recordingGeometry, isLooping: maps.applied.loopEnabled },
+            maps.applied.admittedBatch
+        );
 
         if (regionChanged) {
             // The pass was written for the region that just went away — its
@@ -110,6 +117,9 @@ export function updateNativeLiveGraphSessionTransportMaps(
             await rearmNativeLiveMidiWriterInPlace({
                 positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
             });
+        }
+        if (input.recordingGeometry) {
+            return { outcome: 'updated', admittedBatch: maps.applied.admittedBatch };
         }
         return { outcome: 'updated' };
     });

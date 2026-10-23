@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { recordingPassTiming } from '../recordingPassTiming';
 import { startRecording } from '../startRecording';
 
 const mocks = vi.hoisted(() => {
@@ -187,6 +188,52 @@ describe('startRecording', () => {
 
         expect(startRecording(9)).toHaveLength(0);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('keeps native audio admission on its paired beat while MIDI retains the scheduling anchor', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 'audio', armed: true, kind: 'audio', clips: [] },
+                { id: 'midi', armed: true, kind: 'midi', clips: [] },
+            ],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4, isPlaying: true, loopStart: 8 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+
+        const clips = startRecording(9.8, undefined, { beat: 10, contextSeconds: 51 });
+
+        expect(clips).toHaveLength(2);
+        expect(clips[0]).toMatchObject({ trackId: 'audio', startBeat: 10, endBeat: 10 });
+        expect(clips[1]).toMatchObject({ trackId: 'midi', startBeat: 9.8, endBeat: 9.8 });
+        expect(mocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'audio',
+            clipId: clips[0]!.id,
+            name: expect.any(String),
+            startBeat: 10,
+            endBeat: 10,
+        });
+        expect(mocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'midi',
+            clipId: clips[1]!.id,
+            name: expect.any(String),
+            startBeat: 9.8,
+            endBeat: 9.8,
+        });
+    });
+
+    it('keeps explicit native-pending audio provisional without manufacturing a browser capture clock', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'audio', armed: true, kind: 'audio', clips: [] }] });
+        mocks.transportStoreValue = { playheadPosition: 4, isPlaying: true, loopStart: 8 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+        const [clip] = startRecording(9.8, undefined, null);
+        const timing = recordingPassTiming.ownedTakes(clip!.id)!;
+        expect(clip).toMatchObject({ startBeat: 9.8, endBeat: 9.8 });
+        expect(timing.pendingNative).toBe(true);
+        expect(timing.openPassContextSeconds).toBeNull();
+        expect(timing.firstPassClock?.()).toBeNull();
+        recordingPassTiming.observeEntry([clip!.id], 10.5, 51.25, true);
+        expect(timing.openPassContextSeconds).toBeNull();
+        recordingPassTiming.retire(clip!.id);
     });
 
     it('skips MIDI clip creation when overdubbing inside an active loop region', () => {

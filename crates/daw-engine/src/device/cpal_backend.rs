@@ -5,12 +5,14 @@
 
 use super::{
     accept_input, CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest,
-    NegotiatedInput, NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, RenderFn,
-    StreamErrorFn,
+    NegotiatedInput, NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, OutputTiming,
+    RenderFn, StreamErrorFn,
 };
 use crate::audio_thread::effective_buffer_size;
+use crate::capture_clock::{CaptureClockQuality, PresentationTime};
 use crate::engine_events::StreamErrorKind;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::time::{Duration, Instant};
 
 pub(crate) struct CpalOutputBackend;
 
@@ -88,6 +90,26 @@ pub(crate) fn output_path_frames(
     .round() as usize
 }
 
+fn presentation_end(
+    at: Instant,
+    timestamp: &cpal::OutputStreamTimestamp,
+    frames: usize,
+    sample_rate: f32,
+    stream_epoch: u64,
+) -> Option<PresentationTime> {
+    let delay = timestamp
+        .playback
+        .checked_duration_since(timestamp.callback)?;
+    let duration = Duration::try_from_secs_f64(frames as f64 / f64::from(sample_rate)).ok()?;
+    Some(PresentationTime {
+        at: at.checked_add(delay)?.checked_add(duration)?,
+        stream_epoch,
+        quality: CaptureClockQuality::Estimated,
+        // The backend predicts playback; there is no measured driver bound.
+        uncertainty_seconds: None,
+    })
+}
+
 impl OpenOutput for CpalOpenOutput {
     type Stream = cpal::Stream;
 
@@ -111,6 +133,10 @@ impl OpenOutput for CpalOpenOutput {
         let err_fn = move |err: cpal::Error| on_error(StreamErrorKind::from(&err));
         let channels = self.negotiated.channels;
         let sample_rate = self.negotiated.sample_rate;
+        let mut stream_epoch = 1u64;
+        let mut previous_path_frames = None;
+        let mut settled_path_frames = None;
+        let mut previous_callback = None;
 
         let stream = match self.config.sample_format() {
             cpal::SampleFormat::F32 => self
@@ -118,10 +144,37 @@ impl OpenOutput for CpalOpenOutput {
                 .build_output_stream(
                     self.stream_config,
                     move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                        let at = Instant::now();
+                        let timestamp = info.timestamp();
+                        let path_frames = output_path_frames(&timestamp, sample_rate);
+                        // A route/clock discontinuity starts a new timing epoch;
+                        // no renderer calibration may silently bridge it.
+                        if (previous_path_frames == Some(path_frames)
+                            && settled_path_frames.is_some_and(|settled| settled != path_frames))
+                            || previous_callback
+                                .is_some_and(|previous| timestamp.callback < previous)
+                        {
+                            stream_epoch = stream_epoch.saturating_add(1);
+                        }
+                        if previous_path_frames == Some(path_frames) {
+                            settled_path_frames = Some(path_frames);
+                        }
+                        previous_path_frames = Some(path_frames);
+                        previous_callback = Some(timestamp.callback);
+                        let presentation = presentation_end(
+                            at,
+                            &timestamp,
+                            data.len() / channels.max(1),
+                            sample_rate,
+                            stream_epoch,
+                        );
                         render(
                             data,
                             channels,
-                            output_path_frames(&info.timestamp(), sample_rate),
+                            OutputTiming {
+                                output_path_frames: path_frames,
+                                presentation_end: presentation,
+                            },
                         )
                     },
                     err_fn,
@@ -299,6 +352,28 @@ mod tests {
         };
 
         assert_eq!(output_path_frames(&timestamp, 48_000.0), 553);
+    }
+
+    #[test]
+    fn capture_clock_cpal_dates_the_whole_callback_exclusive_end() {
+        let at = std::time::Instant::now();
+        let timestamp = OutputStreamTimestamp {
+            callback: StreamInstant::from_nanos(1_000_000_000),
+            playback: StreamInstant::from_nanos(1_010_000_000),
+        };
+        let end = super::presentation_end(at, &timestamp, 4608, 48_000.0, 3).unwrap();
+        assert_eq!(
+            end.at.duration_since(at),
+            std::time::Duration::from_millis(106)
+        );
+        assert_eq!(end.stream_epoch, 3);
+        assert_eq!(end.quality, crate::CaptureClockQuality::Estimated);
+        assert_eq!(end.uncertainty_seconds, None);
+        let invalid = OutputStreamTimestamp {
+            callback: timestamp.playback,
+            playback: timestamp.callback,
+        };
+        assert!(super::presentation_end(at, &invalid, 4608, 48_000.0, 3).is_none());
     }
 
     /// A playback instant the backend reports earlier than its own callback

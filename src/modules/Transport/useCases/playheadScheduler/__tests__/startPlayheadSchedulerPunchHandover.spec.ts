@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { pausePlayback } from '../../transportControls/pausePlayback';
+import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
@@ -68,6 +69,22 @@ const startAudioRecordingSpy = vi.hoisted(() =>
     vi.fn<(trackId: string) => Promise<boolean>>(() => Promise.resolve(true))
 );
 
+const captureMocks = vi.hoisted(() => ({
+    createNativeRecordingCaptureClock: vi.fn<
+        typeof import('#/modules/AudioEngine/useCases').createNativeRecordingCaptureClock
+    >(() => ({ admission: null, last: null, read: () => ({ carrier: 'browser' }) })),
+    // startRecording returns a descriptor here; it never inserts a clip/take owner.
+    admitRecordingCaptureClock: vi.fn<typeof import('#/modules/Arrangement/useCases').admitRecordingCaptureClock>(
+        () => null
+    ),
+    observeRecordingPassEntry: vi.fn<typeof import('#/modules/Arrangement/useCases').observeRecordingPassEntry>(),
+    prepareRecoveredRecording: vi.fn<typeof import('#/modules/Arrangement/useCases').prepareRecoveredRecording>(
+        () => null
+    ),
+    ensureCachedAudioBuffersDurable:
+        vi.fn<typeof import('#/modules/AudioEngine/useCases').ensureCachedAudioBuffersDurable>(),
+}));
+
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -130,6 +147,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingCaptureClock: captureMocks.admitRecordingCaptureClock,
+    observeRecordingPassEntry: captureMocks.observeRecordingPassEntry,
+    prepareRecoveredRecording: captureMocks.prepareRecoveredRecording,
     discardRecording: vi.fn(),
     // The punched clip the recorder opens; the audio arm then starts the
     // recorder for the armed track that owns it. `stopRecording` resolves the
@@ -151,6 +171,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: () => ({}),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: captureMocks.createNativeRecordingCaptureClock,
+    ensureCachedAudioBuffersDurable: captureMocks.ensureCachedAudioBuffersDurable,
     startFaustNote: vi.fn(),
     advanceNoteExpression: vi.fn(),
     getNoteExpressionDimensions: vi.fn(),
@@ -214,7 +236,10 @@ vi.mock('../../transportControls/panicYeastRuntime', () => ({ panicYeastRuntime:
 // Pause awaits the recorder flush through this call; the held promise is the
 // window a Play can land in.
 vi.mock('../../transportControls/stopActiveRecording', () => ({
-    stopActiveRecording: vi.fn(() => heldFlush.pending ?? Promise.resolve()),
+    stopActiveRecording: vi.fn(() => {
+        recordingLifecycle.endRecording();
+        return heldFlush.pending ?? Promise.resolve();
+    }),
 }));
 // Applied rather than stubbed: Pause's own `isPlaying: false` write, and the
 // punch-in's `isRecording: true`, are what the continuation and the next
@@ -316,6 +341,9 @@ describe('punch ownership across a Pause handover (issue #5272)', () => {
         trackStoreState.value = { tracks: [armedAudioTrack()] };
         midiStoreState.value = { notesByClipId: {}, probabilitySeed: 1 };
         startAudioRecordingSpy.mockClear();
+        for (const mock of Object.values(captureMocks)) {
+            mock.mockClear();
+        }
         disposePlayheadScheduler();
         vi.stubGlobal(
             'Worker',
@@ -330,6 +358,10 @@ describe('punch ownership across a Pause handover (issue #5272)', () => {
     });
 
     afterEach(() => {
+        recordingLifecycle.endRecording();
+        expect(recordingLifecycle.readNativeCaptureClock()).toBeUndefined();
+        expect(captureMocks.prepareRecoveredRecording).not.toHaveBeenCalled();
+        expect(captureMocks.ensureCachedAudioBuffersDurable).not.toHaveBeenCalled();
         heldFlush.release?.();
         disposePlayheadScheduler();
         vi.unstubAllGlobals();

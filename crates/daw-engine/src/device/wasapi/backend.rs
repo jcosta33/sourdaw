@@ -13,8 +13,10 @@ use super::policy::{
     DeviceNegotiation, FormatCandidate, MixFormatReport, NegotiatedPlan, NegotiationFailure,
     SampleLayout, SharedEnginePeriods, WindowsStreamPath,
 };
+use crate::capture_clock::{device_presentation_end, PresentationTime};
 use crate::device::{
-    DeviceOpenRequest, NegotiatedOutput, OpenOutput, OutputBackend, RenderFn, StreamErrorFn,
+    DeviceOpenRequest, NegotiatedOutput, OpenOutput, OutputBackend, OutputTiming, RenderFn,
+    StreamErrorFn,
 };
 use crate::engine_events::StreamErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -22,11 +24,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use windows::core::{w, Interface, GUID, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, IAudioClient, IAudioClient3, IAudioRenderClient, IMMDevice,
+    eConsole, eRender, IAudioClient, IAudioClient3, IAudioClock, IAudioRenderClient, IMMDevice,
     IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT,
     AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, WAVEFORMATEX,
@@ -635,6 +637,10 @@ struct StreamRuntime {
     /// Preallocated interleaved f32 the render callback fills; sized to
     /// the whole device buffer at attach time so the loop never allocates.
     scratch: Vec<f32>,
+    clock: Option<IAudioClock>,
+    clock_frequency: Option<u64>,
+    submitted_frames: u64,
+    stream_epoch: u64,
 }
 
 enum LoopExit {
@@ -653,6 +659,12 @@ impl StreamRuntime {
             .map_err(|error| format!("GetService(IAudioRenderClient) failed: {error}"))?;
         let scratch =
             vec![0.0f32; buffer_frames as usize * usize::from(initialized.format.channels)];
+        // Timing is additive: an unavailable clock does not prevent playback.
+        let clock = unsafe { initialized.client.GetService::<IAudioClock>() }.ok();
+        let clock_frequency = clock
+            .as_ref()
+            .and_then(|clock| unsafe { clock.GetFrequency() }.ok())
+            .filter(|value| *value > 0);
         Ok(Self {
             client: initialized.client,
             render_client,
@@ -661,10 +673,14 @@ impl StreamRuntime {
             buffer_frames,
             exclusive: initialized.exclusive,
             scratch,
+            clock,
+            clock_frequency,
+            submitted_frames: 0,
+            stream_epoch: 1,
         })
     }
 
-    fn start(&self) -> Result<(), String> {
+    fn start(&mut self) -> Result<(), String> {
         // One silent period before Start: an exclusive stream otherwise
         // plays whatever the DMA buffer held, and a shared one opens on an
         // underrun. SILENT zero-fills on release, so the returned pointer
@@ -676,6 +692,7 @@ impl StreamRuntime {
                 .ReleaseBuffer(self.buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT.0 as u32)
         }
         .map_err(|error| format!("Pre-fill ReleaseBuffer failed: {error}"))?;
+        self.submitted_frames = u64::from(self.buffer_frames);
         unsafe { self.client.Start() }.map_err(|error| format!("Failed to play stream: {error}"))
     }
 
@@ -704,6 +721,37 @@ impl StreamRuntime {
         unsafe { self.client.GetCurrentPadding() }
             .map(|_| ())
             .map_err(|error| hresult_of(&error))
+    }
+
+    fn presentation_end(&self, frames: u32) -> Option<PresentationTime> {
+        let clock = self.clock.as_ref()?;
+        let frequency = self.clock_frequency?;
+        let mut position = 0u64;
+        let before = Instant::now();
+        // Preserve S_FALSE: the generated Result wrapper erases this degraded
+        // success. The optional QPC output is unnecessary because the native
+        // monotonic reads bracket the same position query explicitly.
+        let status = unsafe {
+            (Interface::vtable(clock).GetPosition)(
+                Interface::as_raw(clock),
+                &mut position,
+                std::ptr::null_mut(),
+            )
+        };
+        let after = Instant::now();
+        if status.is_err() {
+            return None;
+        }
+        device_presentation_end(
+            before,
+            after,
+            position,
+            frequency,
+            self.submitted_frames.checked_add(u64::from(frames))?,
+            f64::from(self.format.rate),
+            self.stream_epoch,
+            status.0 == 1,
+        )
     }
 
     /// The event-driven buffer loop.
@@ -752,13 +800,25 @@ impl StreamRuntime {
             };
 
             let samples = frames as usize * channels;
+            let presentation_end = self.presentation_end(frames);
             let interleaved = &mut self.scratch[..samples];
             // A panicking render callback must end the stream audibly —
             // through the error path and its taxonomy — not by silently
             // killing this thread while the engine believes audio flows.
-            // WASAPI publishes no output-path figure until ADR 0027 D4; this
-            // backend reports zero, the seam's "no figure" reading.
-            if catch_unwind(AssertUnwindSafe(|| render(&mut *interleaved, channels, 0))).is_err() {
+            // The cursor's separate settled latency slot retains its existing
+            // unavailable value; recording carries its dated device-clock edge.
+            if catch_unwind(AssertUnwindSafe(|| {
+                render(
+                    &mut *interleaved,
+                    channels,
+                    OutputTiming {
+                        output_path_frames: 0,
+                        presentation_end,
+                    },
+                )
+            }))
+            .is_err()
+            {
                 return LoopExit::Error(E_FAIL);
             }
 
@@ -784,6 +844,7 @@ impl StreamRuntime {
             if let Err(error) = unsafe { self.render_client.ReleaseBuffer(frames, 0) } {
                 return LoopExit::Error(hresult_of(&error));
             }
+            self.submitted_frames = self.submitted_frames.saturating_add(u64::from(frames));
         }
     }
 }
@@ -940,7 +1001,9 @@ fn stream_thread_main(
                 // buffer loop.
                 match reopen_after_invalidation(&request, &stop, original_rate) {
                     ReopenOutcome::Reopened(new_runtime) => {
+                        let stream_epoch = runtime.stream_epoch.saturating_add(1);
                         runtime = new_runtime;
+                        runtime.stream_epoch = stream_epoch;
                         on_error(StreamErrorKind::DeviceChanged);
                     }
                     ReopenOutcome::RateChanged => {
@@ -975,7 +1038,7 @@ fn reopen_after_invalidation(
             return ReopenOutcome::Stopped;
         }
         match open_stream_runtime(request) {
-            Ok(runtime) => {
+            Ok(mut runtime) => {
                 if (runtime.negotiated().sample_rate - original_rate).abs() > f32::EPSILON {
                     return ReopenOutcome::RateChanged;
                 }

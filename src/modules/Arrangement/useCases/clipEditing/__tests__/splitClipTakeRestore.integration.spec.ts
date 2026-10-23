@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore, setWarpState, warpStates } from '#/modules/Arrangement/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -20,11 +20,13 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, readTempoAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 import { splitClipWithUndo } from '../splitClipWithUndo';
 
 const noActionHistoryMetadataPort = {
@@ -78,6 +80,9 @@ describe('splitClipWithUndo take restore', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
+        warpStates.clear();
         const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 8 });
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
@@ -89,6 +94,8 @@ describe('splitClipWithUndo take restore', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+        warpStates.clear();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -185,4 +192,102 @@ describe('splitClipWithUndo take restore', () => {
         );
         expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
     });
+
+    it.each([
+        { mode: 'off', ratio: 1, consumed: 1 },
+        { mode: 'timestretch', ratio: 2, consumed: 2 },
+        { mode: 'off', ratio: 2, consumed: 1 },
+    ] as const)(
+        'keeps bounded pass media and warp source coordinates across a tempo-change split with $mode ratio $ratio',
+        async ({ mode, ratio, consumed }) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-start', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-drop', beat: 9, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const originalClip = ClipDummy.create({
+                id: 'clip-1',
+                startBeat: 8,
+                endBeat: 12,
+                stretchMode: mode,
+                stretchRatio: ratio,
+            });
+            trackStore.set({ ...trackStore.value!, tracks: [TrackDummy.create({ clips: [originalClip] })] });
+            const take = {
+                ...createTake('clip-1', 'Recorded pass', 8, 12, 0),
+                passAnchorSeconds: 1.25 * consumed,
+                passDepthSeconds: 1.25 * consumed,
+                passSourceEndSeconds: 1.75 * consumed,
+            };
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        ...createTakeLane('track-1'),
+                        takes: [take],
+                        activeCompRegions: [{ startBeat: 9.75, endBeat: 10.25, takeId: take.id }],
+                    },
+                ],
+            });
+            const between = {
+                id: 'between-old-and-source-cut',
+                originalBeat: 2.5 * consumed,
+                warpedBeat: 2.5 * consumed,
+            };
+            const after = { id: 'after-source-cut', originalBeat: 3.5 * consumed, warpedBeat: 3.5 * consumed };
+            setWarpState('clip-1', {
+                enabled: true,
+                markers: [between, after],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            });
+            flushAutomergeStorageWrites();
+            const originalLane = structuredClone(lane());
+            const originalWarp = structuredClone(warpStates.get('clip-1'));
+            const clips = () => trackStore.value!.tracks[0]!.clips;
+            const selected = () =>
+                resolveClipsWithComping('track-1', clips()).filter(
+                    (fragment) => fragment.startBeat >= 9.75 && fragment.endBeat <= 10.25
+                );
+            expect(selected().map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([[9.75, 10.25]]);
+
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'clip-1', beat: 10, resolvedBeat: 10 } },
+                { source: 'manual' }
+            );
+
+            expect(selected().map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([
+                [9.75, 10],
+                [10, 10.25],
+            ]);
+            const right = clips().find((clip) => clip.id !== 'clip-1')!;
+            const rightTempo = readTempoAtBeat({ beat: right.startBeat });
+            expect(((right.audioOffsetBeats ?? 0) * 60) / rightTempo).toBe(1.5 * consumed);
+            expect(selected().find((fragment) => fragment.startBeat === 10)?.audioOffsetBeats).toBe(1.5 * consumed);
+            expect(lane().takes.map((pass) => pass.passSourceEndSeconds)).toEqual([1.75 * consumed, 1.75 * consumed]);
+            expect(warpStates.get('clip-1')?.markers).toEqual([between]);
+            expect(warpStates.get(right.id)?.markers).toEqual([after]);
+            const splitClips = structuredClone(clips());
+            const splitLane = structuredClone(lane());
+            const splitWarps = structuredClone([...warpStates.entries()]);
+
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(clips()).toEqual([originalClip]);
+            expect(lane()).toEqual(originalLane);
+            expect(warpStates.get('clip-1')).toEqual(originalWarp);
+            expect(warpStates.has(right.id)).toBe(false);
+            expect(selected().map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([[9.75, 10.25]]);
+
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(clips()).toEqual(splitClips);
+            expect(lane()).toEqual(splitLane);
+            expect([...warpStates.entries()]).toEqual(splitWarps);
+            expect(selected().map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([
+                [9.75, 10],
+                [10, 10.25],
+            ]);
+        }
+    );
 });

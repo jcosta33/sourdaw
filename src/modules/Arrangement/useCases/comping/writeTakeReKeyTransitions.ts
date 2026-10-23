@@ -20,7 +20,8 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
         take.name !== other.name ||
         take.sourceOffsetBeats !== other.sourceOffsetBeats ||
         take.passAnchorSeconds !== other.passAnchorSeconds ||
-        take.passDepthSeconds !== other.passDepthSeconds
+        take.passDepthSeconds !== other.passDepthSeconds ||
+        take.passSourceEndSeconds !== other.passSourceEndSeconds
     );
 }
 
@@ -181,7 +182,8 @@ function takesMatch(left: readonly Take[], right: readonly Take[]): boolean {
                 take.selected === other.selected &&
                 take.sourceOffsetBeats === other.sourceOffsetBeats &&
                 take.passAnchorSeconds === other.passAnchorSeconds &&
-                take.passDepthSeconds === other.passDepthSeconds
+                take.passDepthSeconds === other.passDepthSeconds &&
+                take.passSourceEndSeconds === other.passSourceEndSeconds
             );
         })
     );

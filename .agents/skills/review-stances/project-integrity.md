@@ -124,6 +124,15 @@ redo to apply interval surgery to current state while preserving unrelated lane 
 same-lane selections outside the footprint. A source-count assertion does not prove that the
 resolved playback retains the selected source phase; verify source timing separately.
 
+For a finite recorded pass, prove a selected comp retains the exact available
+source interval, not only its selected timeline region or fragment count. Under
+a tempo change inside the pass, compare the whole pass and a later comp entry
+through live and offline resolvers and the actual PCM projector. Require exact
+exclusive source ends and the same last playable frame; equality of two fragment
+arrays can preserve the same truncated mistake. PR #4987's 32-step inverse
+escaped the original comp-onset checks and later cut an 8320-frame pass to 320
+frames.
+
 ## Lesson from the parameter replay-operation escape
 
 Commit `4f410257b212bbbd2210fa6553f7aaa3394f69bc` introduced session undo hydration without

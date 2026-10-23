@@ -2157,6 +2157,65 @@ describe('startNativeLiveGraphSession', () => {
 });
 
 describe('updateNativeLiveGraphSessionTransportMaps', () => {
+    it('retains capture geometry at real start, tempo-only maps and locate fences without an automation pass', async () => {
+        const geometry = {
+            secondsAtBeat: (beat: number) => beat / 2,
+            beatAtSeconds: (seconds: number) => seconds * 2,
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 0,
+        };
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({ ...APPLIED, admittedBatch: 6 });
+        await startHeldSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            recordingGeometry: geometry,
+        });
+        expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toMatchObject({
+            admittedBatch: 6,
+            located: true,
+            geometry,
+        });
+        nativeLiveAutomationWriter.pass = null;
+        const edited = {
+            ...geometry,
+            secondsAtBeat: (beat: number) => beat,
+            beatAtSeconds: (seconds: number) => seconds,
+        };
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({
+            outcome: 'applied',
+            applied: {
+                sampleRate: SAMPLE_RATE,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: false,
+                admittedBatch: 7,
+            },
+        });
+        expect(
+            await updateNativeLiveGraphSessionTransportMaps({
+                transportMaps: { ...FLAT_MAPS, tempo: [{ startSeconds: 0, beatsPerMinute: 60 }] },
+                recordingGeometry: edited,
+            })
+        ).toEqual({ outcome: 'updated', admittedBatch: 7 });
+        const admitted = nativeLiveGraphSession.captureAdmissions.at(-1)!;
+        expect(admitted).toMatchObject({ admittedBatch: 7, located: false, geometry: edited });
+        expect(admitted.geometry!.secondsAtBeat(12)).toBe(12);
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'queue full' });
+        await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS, recordingGeometry: geometry });
+        expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toBe(admitted);
+        mocks.applyGraphCommands.mockResolvedValueOnce({ ...APPLIED, admittedBatch: 9 });
+        await repositionNativeLiveGraphSession({ positionSeconds: 3 });
+        expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toMatchObject({
+            admittedBatch: 9,
+            located: true,
+            geometry: edited,
+        });
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
+    });
+
     it('declines when no session ever started, which is the browser-build answer', async () => {
         const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
 

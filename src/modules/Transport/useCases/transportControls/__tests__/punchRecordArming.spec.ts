@@ -85,6 +85,9 @@ vi.mock('../startPlayback', () => ({
 }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mocks.stopActiveRecording }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
@@ -92,6 +95,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     commitRecording: mocks.commitRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
@@ -130,13 +135,6 @@ function armedAudioTrack(inputId: string | null = null): void {
     });
 }
 
-/** Let `beginActualRecording`'s promise chain settle if one was started. */
-async function settle(): Promise<void> {
-    for (let index = 0; index < 4; index++) {
-        await Promise.resolve();
-    }
-}
-
 describe('pressing Record with punch enabled', () => {
     it("passes the armed audio track's selected input to the capture", async () => {
         // Punch disabled records immediately, so the capture start is
@@ -145,9 +143,14 @@ describe('pressing Record with punch enabled', () => {
         armedAudioTrack('dev-3773');
 
         toggleRecording();
-        await settle();
+        await vi.waitFor(() => expect(mocks.transport.value?.isRecording).toBe(true));
 
-        expect(mocks.startAudioRecording).toHaveBeenCalledWith('track-audio', expect.any(Function), 'dev-3773');
+        expect(mocks.startAudioRecording).toHaveBeenCalledWith(
+            'track-audio',
+            expect.any(Function),
+            'dev-3773',
+            expect.any(Function)
+        );
     });
 
     beforeEach(() => {
@@ -177,7 +180,7 @@ describe('pressing Record with punch enabled', () => {
         seedTransport({ playheadPosition: 0 });
 
         toggleRecording();
-        await settle();
+        await vi.waitFor(() => expect(mocks.transport.value?.isPlaying).toBe(true));
 
         // The capture the old path opened here would be anchored at beat 0 —
         // `startRecording` reads the playhead for the new clip's startBeat.
@@ -194,11 +197,11 @@ describe('pressing Record with punch enabled', () => {
         seedTransport({ playheadPosition: 4, isPlaying: true });
 
         toggleRecording();
-        await settle();
 
         expect(mocks.startPlayback).not.toHaveBeenCalled();
         expect(mocks.startRecording).not.toHaveBeenCalled();
         expect(mocks.transport.value?.isRecording).toBe(false);
+        expect(mocks.transport.value?.isPlaying).toBe(true);
     });
 
     // --- negatives: punch arming must not become "never record" ---
@@ -209,7 +212,7 @@ describe('pressing Record with punch enabled', () => {
         seedTransport({ playheadPosition: 4, punchInBeat: 16, punchOutBeat: 16 });
 
         toggleRecording();
-        await settle();
+        await vi.waitFor(() => expect(mocks.transport.value?.isRecording).toBe(true));
 
         expect(mocks.startRecording).toHaveBeenCalledOnce();
         expect(mocks.transport.value?.isRecording).toBe(true);
@@ -219,7 +222,7 @@ describe('pressing Record with punch enabled', () => {
         seedTransport({ playheadPosition: 4, punchInEnabled: false });
 
         toggleRecording();
-        await settle();
+        await vi.waitFor(() => expect(mocks.transport.value?.isRecording).toBe(true));
 
         expect(mocks.startRecording).toHaveBeenCalledOnce();
         expect(mocks.transport.value?.isRecording).toBe(true);
@@ -229,7 +232,6 @@ describe('pressing Record with punch enabled', () => {
         seedTransport({ playheadPosition: 12, isPlaying: true, isRecording: true });
 
         toggleRecording();
-        await settle();
 
         expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
         expect(mocks.startPlayback).not.toHaveBeenCalled();

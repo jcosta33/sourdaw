@@ -17,12 +17,16 @@ import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } 
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
+import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry';
 
+import { commitRecoveredAudioRecording } from './commitRecoveredAudioRecording';
+import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startPlayback } from './startPlayback';
@@ -33,22 +37,122 @@ import { stopActiveRecording } from './stopActiveRecording';
  * runs on, and how far ahead of the record point that roll starts. Instants
  * rather than a duration because the finaliser can run before the roll answers
  * — Record pressed again inside the hold stops the take from within it — and a
- * duration written after the roll would still read zero there. All stay null
- * while nothing has been asked to roll; the lead is written with the request,
- * before the finaliser can run.
+ * duration written after the roll would still read zero there. A capture joining
+ * playback retains its audible context/song pair: the native cursor while
+ * active, or the scheduler's committed pair otherwise. The
+ * lead is written with a new roll's request, before the finaliser can run.
  */
 type TransportHold = {
+    nativeOwned: boolean;
     requestedAtContextSeconds: number | null;
     rolledAtContextSeconds: number | null;
     rollLeadBeats: number | null;
+    captureStartSongSeconds: number | null;
+    firstPassContextSeconds: number | null;
+    endedAtContextSeconds: number | null;
 };
 
-/** A take stopped before the roll answered is placed against the clock at its stop, so the whole wait so far counts. */
-function heldTransportSeconds(hold: TransportHold, nowContextSeconds: number): number {
-    if (hold.requestedAtContextSeconds === null) {
+type CaptureClock = ReturnType<ReturnType<typeof createRecordingCaptureClocks>['create']>;
+
+function capturePlayingAdmissionClock(
+    hold: TransportHold,
+    captureClocks: ReturnType<typeof createRecordingCaptureClocks>
+): void {
+    const read = captureClocks.nativeClock.read(getAudioContext());
+    if (read.carrier === 'native') {
+        hold.nativeOwned = true;
+        if (read.status === 'available') {
+            const entry = nativeRecordingEntry(read.snapshot);
+            hold.rolledAtContextSeconds = entry.contextSeconds;
+            hold.captureStartSongSeconds = entry.songSeconds;
+            hold.firstPassContextSeconds = entry.contextSeconds;
+        }
+        return;
+    }
+    hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
+    hold.captureStartSongSeconds = secondsBetweenBeats(
+        tempoMapStore.value?.changes ?? [],
+        0,
+        playheadClockRef.beat,
+        getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM
+    );
+}
+
+function createCaptureOwnerClock(
+    trackId: string,
+    captureClocks: ReturnType<typeof createRecordingCaptureClocks>,
+    hold: TransportHold,
+    latencySeconds: number
+): CaptureClock {
+    const clock = captureClocks.create(trackId, latencySeconds);
+    if (hold.rolledAtContextSeconds !== null && hold.captureStartSongSeconds !== null) {
+        clock.relocation = {
+            contextSeconds: hold.rolledAtContextSeconds,
+            songSeconds: hold.captureStartSongSeconds,
+        };
+        if (hold.nativeOwned) {
+            clock.relocation.effectiveFromContextSeconds = hold.rolledAtContextSeconds + latencySeconds;
+        }
+    }
+    return clock;
+}
+
+function createManualCaptureClocks(ctx: AudioContext, hold: TransportHold) {
+    return createRecordingCaptureClocks(
+        ctx,
+        (beat) =>
+            secondsBetweenBeats(
+                tempoMapStore.value?.changes ?? [],
+                0,
+                beat,
+                getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM
+            ),
+        () => {
+            hold.endedAtContextSeconds ??= ctx.currentTime;
+        }
+    );
+}
+
+function openManualRecordingClips(
+    rolling: boolean,
+    anchorBeat: number | undefined,
+    hold: TransportHold,
+    changes: readonly TempoChange[],
+    tempo: number
+): ReturnType<typeof startRecording> {
+    if (!rolling) {
+        return startRecording(anchorBeat, () => hold.firstPassContextSeconds);
+    }
+    // Worker readiness and its first input block can arrive after admission.
+    // Preserve the playback correlation that was retained before producer start.
+    if (hold.rolledAtContextSeconds === null) {
+        // Native admission stays explicitly pending until a dated observation exists.
+        if (!hold.nativeOwned) {
+            hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, playheadClockRef.beat, tempo);
+            hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
+        }
+    }
+    if (hold.firstPassContextSeconds !== null && hold.captureStartSongSeconds !== null) {
+        return startRecording(playheadPositionRef.current, undefined, {
+            beat: samplesToBeat(changes, hold.captureStartSongSeconds, tempo, 1),
+            contextSeconds: hold.firstPassContextSeconds,
+        });
+    }
+    if (hold.nativeOwned) {
+        return startRecording(playheadPositionRef.current, undefined, null);
+    }
+    return startRecording(playheadPositionRef.current);
+}
+
+/**
+ * Signed distance from sample zero to the roll (or stop while held). Capture
+ * may begin on either side of that clock; a late first frame moves media ahead.
+ */
+function captureToRollSeconds(hold: TransportHold, sourceContextSeconds: number, nowContextSeconds: number): number {
+    if (hold.requestedAtContextSeconds === null && hold.rolledAtContextSeconds === null) {
         return 0;
     }
-    return Math.max((hold.rolledAtContextSeconds ?? nowContextSeconds) - hold.requestedAtContextSeconds, 0);
+    return (hold.rolledAtContextSeconds ?? hold.endedAtContextSeconds ?? nowContextSeconds) - sourceContextSeconds;
 }
 
 type CapturePlacementInput = {
@@ -111,112 +215,228 @@ function placeCapture(input: CapturePlacementInput): CapturePlacement {
     return { startBeat, audioOffsetBeats: (leadInSeconds * startBeatTempo) / 60, capture };
 }
 
-/**
- * Place and commit one resolved capture against the root it was opened on. The
- * caller has already established that the root still owns the take; the
- * commit's own failure cleanup re-checks, because it runs after awaits.
- */
-function commitResolvedCapture(input: {
-    readonly recClip: ReturnType<typeof startRecording>[number];
-    readonly buffer: AudioBuffer;
-    readonly totalLatencySec: number;
-    readonly transportHold: TransportHold;
-    readonly contextClockSeconds: number;
-    readonly stillOwnsCaptureRoot: () => boolean;
-}): void {
-    const { recClip, buffer, totalLatencySec, transportHold, contextClockSeconds, stillOwnsCaptureRoot } = input;
-    const transport = getTransportState();
-    const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
-    const tempoChanges = tempoMapStore.value?.changes ?? [];
-    // The capture is open before the transport is asked to roll, and
-    // on a desktop build the roll waits for the native session, so
-    // the buffer's first sample predates the beat the clip is
-    // anchored on by that wait. It is subtracted like hardware
-    // latency. The wait and the take both sit on the timeline the
-    // active tempo map shapes, so both convert through the map's own
-    // integration — the base tempo only falls back where no change
-    // governs. `samplesToBeat` inverts exactly that integration; a
-    // rate of one sample per second makes its coordinate seconds.
-    const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, contextClockSeconds);
-    // The capture runs from wherever the transport rolls from,
-    // which is ahead of the record point by the pre-roll when
-    // one is enabled. With no pre-roll, or no roll of its own
-    // (record engaged on a moving transport), it is the anchor.
-    const rollLeadBeats = transportHold.rollLeadBeats ?? 0;
-    const captureStartBeat = recClip.startBeat - rollLeadBeats;
-    const captureStartSeconds = secondsBetweenBeats(tempoChanges, 0, captureStartBeat, defaultTempo);
-    // The buffer's first sample was captured at this timeline
-    // position: the beat the capture began on, rewound by the
-    // latency the musician heard it through (and, on a stopped
-    // transport, the roll the capture waited through).
-    const originSeconds = captureStartSeconds - offsetSeconds;
-    const { startBeat, audioOffsetBeats, capture } = placeCapture({
-        originSeconds,
-        recordPointBeat: recClip.startBeat,
-        rollLeadBeats,
-        tempoChanges,
-        defaultTempo,
-    });
-    const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
-    // A capture shorter than the offset that precedes it ends
-    // before the timeline begins: `startBeat` clamps to 0 and
-    // nothing audible remains. Committing it would write an
-    // inverted clip (`endBeat < startBeat`) — the shape every
-    // clip writer refuses and playback skips — with a take-lane
-    // entry claiming audio that does not exist. Refuse the take
-    // the way a capture that never completes is refused, matching
-    // the scheduler's own `playDuration <= 0` do-not-start rule:
-    // the provisional clip — and with it the staged take and the
-    // lane it would leave empty — is discarded before anything
-    // is cached or committed.
-    if (exactEndBeat <= startBeat) {
+type ManualRecordingTerminalInput = {
+    result: Parameters<Parameters<typeof startAudioRecording>[1]>[0];
+    recClip: ReturnType<typeof startRecording>[number] | undefined;
+    totalLatencySec: number;
+    transportHold: TransportHold;
+    captureClock: CaptureClock;
+    admissionChanges: readonly TempoChange[];
+    admissionTempo: number;
+    nowContextSeconds: number;
+    stillOwnsCaptureRoot: () => boolean;
+};
+
+function prepareManualNativeTerminal(
+    input: ManualRecordingTerminalInput,
+    result: Extract<ManualRecordingTerminalInput['result'], { kind: 'completed' }>
+): ManualRecordingTerminalInput['recClip'] {
+    let recClip = input.recClip;
+    if (!recClip || !input.transportHold.nativeOwned) {
+        return recClip;
+    }
+    const clock = input.captureClock;
+    clock.freeze(result.sampleZeroContextFrame / result.sampleRate, result.buffer.duration);
+    if (!clock.nativeHistory.isOwnerCurrent()) {
+        return undefined;
+    }
+    // Pending native admission may replace the provisional placement only
+    // after actual sample zero identifies its historical occurrence.
+    recClip =
+        getTrackStoreState()
+            ?.tracks.flatMap((track) => track.clips)
+            .find((clip) => clip.id === recClip?.id) ?? recClip;
+    if (clock.relocation) {
+        return recClip;
+    }
+    const bufferId = `rec-${crypto.randomUUID()}`;
+    cacheAudioBuffer({ buffer: result.buffer, bufferId });
+    commitRecoveredAudioRecording(
+        { ...recClip, audioBufferId: bufferId },
+        samplesToBeat(input.admissionChanges, result.buffer.duration, input.admissionTempo, 1)
+    ).catch((error: unknown) => {
+        logger.error(new Error('Recovered recording terminal failed', { cause: error }));
         notifyUser(
-            'Recording discarded — the take was shorter than its latency offset, so nothing audible was captured.',
-            'warning'
+            'The recovered audio could not be added to this project. Keep the project open and try saving again.',
+            'error'
         );
+    });
+    return undefined;
+}
+
+function retireFailedManualRecording({
+    recClip,
+    stillOwnsCaptureRoot,
+}: Pick<ManualRecordingTerminalInput, 'recClip' | 'stillOwnsCaptureRoot'>): void {
+    // A failed capture retires its provisional clip only on its original root.
+    if (recClip && stillOwnsCaptureRoot()) {
         discardRecording(recClip.id);
+    }
+    notifyUser(
+        stillOwnsCaptureRoot()
+            ? 'Recording failed — the partial take was discarded. Check your audio input and try again.'
+            : 'Recording failed — the partial take was not kept on this branch.',
+        'error'
+    );
+}
+
+function completeManualRecording(input: ManualRecordingTerminalInput): void {
+    const {
+        result,
+        totalLatencySec,
+        transportHold,
+        captureClock,
+        admissionChanges,
+        admissionTempo,
+        nowContextSeconds,
+        stillOwnsCaptureRoot,
+    } = input;
+    if (result.kind === 'failed') {
+        retireFailedManualRecording(input);
         return;
     }
-
-    const bufferId = `rec-${crypto.randomUUID()}`;
-    cacheAudioBuffer({ buffer, bufferId });
-
-    const recordedClip = {
-        ...recClip,
-        audioBufferId: bufferId,
-        startBeat,
-        endBeat: exactEndBeat,
-    };
-    // Absent when the origin is on or after beat 0, so an
-    // ordinary take commits without an offset field.
-    if (audioOffsetBeats > 0) {
-        recordedClip.audioOffsetBeats = audioOffsetBeats;
+    if (!stillOwnsCaptureRoot()) {
+        // Native terminal preparation can stage history or recover undated PCM,
+        // so root ownership must be established before either path has effects.
+        notifyUser(
+            'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+            'warning'
+        );
+        return;
     }
-    // The provisional clip and take the recorder opened are
-    // committed as ONE history entry here, once the capture has
-    // completed. A capture that never reaches this branch never
-    // commits, so no incomplete take becomes replayable. The
-    // lifecycle owns the promise so the user-facing stop can wait
-    // for the entry; a commit that fails retires the provisional
-    // result instead of leaving it visible with no entry (#4439),
-    // and says so the way the capture-failure sibling does.
-    recordingLifecycle.trackCommit(
-        Promise.resolve().then(() =>
-            commitRecording(recordedClip, capture).catch((error: unknown) => {
-                logger.error(new Error('Recording commit failed', { cause: error }));
-                // The failure cleanup re-checks the root: the catch
-                // runs after the commit's awaits, by which time a
-                // branch switch may have replaced the document — and
-                // the notice states only what actually ran.
-                if (stillOwnsCaptureRoot()) {
-                    discardRecording(recordedClip.id);
-                    notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                } else {
-                    notifyUser('Recording failed — the take was not kept on this branch.', 'error');
-                }
-            })
-        )
-    );
+    const { buffer } = result;
+    const recClip = prepareManualNativeTerminal(input, result);
+    if (recClip) {
+        const transport = getTransportState();
+        const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
+        const tempoChanges = tempoMapStore.value?.changes ?? [];
+        // Recorder admission can precede its first input block. Sample zero
+        // can fall before the native roll or after it, so preserve the signed
+        // distance between their clocks alongside hardware latency. The roll
+        // and the take both sit on the timeline the
+        // active tempo map shapes, so both convert through the map's own
+        // integration — the base tempo only falls back where no change
+        // governs. `samplesToBeat` inverts exactly that integration; a
+        // rate of one sample per second makes its coordinate seconds.
+        const offsetSeconds =
+            totalLatencySec +
+            captureToRollSeconds(transportHold, result.sampleZeroContextFrame / result.sampleRate, nowContextSeconds);
+        // The capture runs from wherever the transport rolls from,
+        // which is ahead of the record point by the pre-roll when
+        // one is enabled. With no pre-roll, or no roll of its own
+        // (record engaged on a moving transport), it is the anchor.
+        const rollLeadBeats = transportHold.rollLeadBeats ?? 0;
+        const captureStartBeat = recClip.startBeat - rollLeadBeats;
+        const captureStartSeconds =
+            transportHold.captureStartSongSeconds ??
+            secondsBetweenBeats(admissionChanges, 0, captureStartBeat, admissionTempo);
+        // The buffer's first sample was captured at this timeline
+        // position: the beat the capture began on, rewound by the
+        // latency the musician heard it through (and, on a stopped
+        // transport, the roll the capture waited through).
+        const sampleZeroContextSeconds = result.sampleZeroContextFrame / result.sampleRate;
+        // Locate sample zero in its own traversal, even when completion follows
+        // further wraps or Stop. Later occurrences cannot redate earlier PCM.
+        if (!captureClock.frozen) {
+            captureClock.freeze(sampleZeroContextSeconds);
+        }
+        const relocation = captureClock.relocation;
+        let originSeconds = captureStartSeconds - offsetSeconds;
+        if (relocation) {
+            originSeconds =
+                relocation.songSeconds + sampleZeroContextSeconds - relocation.contextSeconds - totalLatencySec;
+        }
+        const { startBeat, audioOffsetBeats, capture } = placeCapture({
+            originSeconds,
+            recordPointBeat: recClip.startBeat,
+            rollLeadBeats,
+            tempoChanges,
+            defaultTempo,
+        });
+        const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
+        // A capture shorter than the offset that precedes it ends
+        // before the timeline begins: `startBeat` clamps to 0 and
+        // nothing audible remains. Committing it would write an
+        // inverted clip (`endBeat < startBeat`) — the shape every
+        // clip writer refuses and playback skips — with a take-lane
+        // entry claiming audio that does not exist. Refuse the take
+        // the way a capture that never completes is refused, matching
+        // the scheduler's own `playDuration <= 0` do-not-start rule:
+        // the provisional clip — and with it the staged take and the
+        // lane it would leave empty — is discarded before anything
+        // is cached or committed.
+        if (exactEndBeat <= startBeat) {
+            notifyUser(
+                'Recording discarded — the take was shorter than its latency offset, so nothing audible was captured.',
+                'warning'
+            );
+            discardRecording(recClip.id);
+            return;
+        }
+
+        const bufferId = `rec-${crypto.randomUUID()}`;
+        cacheAudioBuffer({ buffer, bufferId });
+
+        const recordedClip = {
+            ...recClip,
+            audioBufferId: bufferId,
+            startBeat,
+            endBeat: exactEndBeat,
+        };
+        // Absent when the origin is on or after beat 0, so an
+        // ordinary take commits without an offset field.
+        if (audioOffsetBeats > 0) {
+            recordedClip.audioOffsetBeats = audioOffsetBeats;
+        }
+        // The provisional clip and take the recorder opened are
+        // committed as ONE history entry here, once the capture has
+        // completed. A capture that never reaches this branch never
+        // commits, so no incomplete take becomes replayable. The
+        // lifecycle owns the promise so the user-facing stop can wait
+        // for the entry; a commit that fails retires the provisional
+        // result instead of leaving it visible with no entry (#4439),
+        // and says so the way the capture-failure sibling does.
+        recordingLifecycle.trackCommit(
+            Promise.resolve().then(() =>
+                commitRecording(recordedClip, {
+                    ...capture,
+                    sourceContextOriginSeconds: result.sampleZeroContextFrame / result.sampleRate - totalLatencySec,
+                    sourceDurationSeconds: buffer.duration,
+                }).catch((error: unknown) => {
+                    logger.error(new Error('Recording commit failed', { cause: error }));
+                    // A commit can reject after the root was replaced. Its
+                    // cleanup must not discard the successor's same-id clip.
+                    if (stillOwnsCaptureRoot()) {
+                        discardRecording(recordedClip.id);
+                        notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                    } else {
+                        notifyUser('Recording failed — the take was not kept on this branch.', 'error');
+                    }
+                })
+            )
+        );
+    }
+}
+
+function readManualRecordingAdmission() {
+    const transport = getTransportState();
+    return {
+        tempo: transport?.tempo ?? DEFAULT_TEMPO_BPM,
+        changes: structuredClone(tempoMapStore.value?.changes ?? []),
+        rolling: transport?.isPlaying === true,
+    };
+}
+
+function bindManualRecordingOwners(
+    clips: ReturnType<typeof startRecording>,
+    owners: { track: { id: string }; captureClock: CaptureClock }[]
+): void {
+    for (const { track, captureClock } of owners) {
+        const clip = clips.find((candidate) => candidate.trackId === track.id);
+        if (clip) {
+            captureClock.bind(clip.id);
+        }
+    }
 }
 
 async function beginActualRecording(
@@ -225,91 +445,77 @@ async function beginActualRecording(
     transportHold: TransportHold
 ): Promise<boolean> {
     const ctx = getAudioContext();
-    // The capture terminal belongs to the root it was opened on. A branch switch
-    // while Stop awaits the recorder flush installs a different document in the
-    // root slot, and a terminal dispatching then would append the outgoing
-    // branch's clip into the successor — or delete a same-id clip the successor
-    // forked — against a document that never owned the take (#5289). The root
-    // identity epoch changes with every root replacement, so the witness stays
-    // valid for exactly the document the recording was opened on.
+    // A terminal belongs to this runtime root, including forks that retain the
+    // same clip IDs. Capture the witness before awaiting recorder admission.
     const captureRootIdentity = captureProjectRootIdentity();
     const stillOwnsCaptureRoot = (): boolean => captureProjectRootIdentity() === captureRootIdentity;
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
+    let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
+    let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
     const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
     let clips: ReturnType<typeof startRecording> = [];
 
-    const recordingStarts = audioTracks.map((track) => {
-        const trackLatencySec = getCompensationDelay(track.id);
-        const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
-
+    const captureClocks = createManualCaptureClocks(ctx, transportHold);
+    const detachReaders = captureClocks.dispose;
+    // Every producer may publish while another input still awaits permission.
+    // Retain the rolling correlation and observe seams before starting any of them.
+    if (getTransportState()?.isPlaying) {
+        capturePlayingAdmissionClock(transportHold, captureClocks);
+    }
+    const captureOwners = audioTracks.map((track) => {
+        const totalLatencySec = totalHardwareLatencySec + getCompensationDelay(track.id);
+        return {
+            track,
+            totalLatencySec,
+            captureClock: createCaptureOwnerClock(track.id, captureClocks, transportHold, totalLatencySec),
+        };
+    });
+    captureClocks.register();
+    const recordingStarts = captureOwners.map(({ track, captureClock, totalLatencySec }) => {
         return startAudioRecording(
             track.id,
             (result) => {
-                if (result.kind === 'failed') {
-                    // A capture that dies mid-take (ring overrun, worker crash, a
-                    // WAV that never decoded) must not strand an empty provisional
-                    // clip on the arrangement or stay silent about it (#4265).
-                    // The cleanup belongs to the root the take was opened on: a
-                    // successor that forked the provisional clip keeps its own
-                    // copy, and the notice states only what actually ran.
-                    const failedClip = clips.find((context) => context.trackId === track.id);
-                    if (failedClip && stillOwnsCaptureRoot()) {
-                        discardRecording(failedClip.id);
-                    }
-                    notifyUser(
-                        stillOwnsCaptureRoot()
-                            ? 'Recording failed — the partial take was discarded. Check your audio input and try again.'
-                            : 'Recording failed — the partial take was not kept on this branch.',
-                        'error'
-                    );
-                    return;
-                }
-                const { buffer } = result;
-                const recClip = clips.find((context) => context.trackId === track.id);
-                if (recClip) {
-                    if (!stillOwnsCaptureRoot()) {
-                        // The take belongs to a branch the user already left; the
-                        // successor keeps its document, take state, and history, and
-                        // the outgoing branch keeps the provisional clip its own
-                        // snapshot already flushed.
-                        notifyUser(
-                            'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
-                            'warning'
-                        );
-                        return;
-                    }
-                    commitResolvedCapture({
-                        recClip,
-                        buffer,
-                        totalLatencySec,
-                        transportHold,
-                        contextClockSeconds: ctx.currentTime,
-                        stillOwnsCaptureRoot,
-                    });
-                }
+                captureClock.readStart = null;
+                captureClocks.remove(track.id);
+                completeManualRecording({
+                    result,
+                    recClip: clips.find((clip) => clip.trackId === track.id),
+                    totalLatencySec,
+                    transportHold,
+                    captureClock,
+                    admissionChanges,
+                    admissionTempo,
+                    nowContextSeconds: ctx.currentTime,
+                    stillOwnsCaptureRoot,
+                });
             },
-            track.inputId
+            track.inputId,
+            (readStart) => {
+                if (recordingLifecycle.ownsPendingRecordingStart(startToken)) {
+                    captureClock.setReader(readStart);
+                }
+            }
         );
     });
 
     if (recordingStarts.length > 0) {
         const started = await Promise.all(recordingStarts);
         if (!recordingLifecycle.ownsPendingRecordingStart(startToken)) {
+            detachReaders();
             return false;
         }
         if (started.some((didStart) => !didStart)) {
+            detachReaders();
             recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
             notifyUser('Unable to start recording. Check the selected audio input.', 'error');
             return false;
         }
-        // The admission await parks on real input hardware, and a fork in that
-        // window installs a successor the staging below would write the
-        // provisional clip onto — a ghost no later terminal claims, because the
-        // terminal guards refuse to clean up a root they do not own (#5289).
-        // The open refuses a replaced root instead of staging across roots.
+        // Hardware admission may resolve after a fork installed a successor.
+        // Refuse before staging a provisional clip on that different root.
         if (!stillOwnsCaptureRoot()) {
+            detachReaders();
             recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
             notifyUser('Recording was not started — the project moved to another branch. Try again.', 'error');
@@ -318,6 +524,7 @@ async function beginActualRecording(
     }
 
     if (!recordingLifecycle.completePendingRecordingStart(startToken)) {
+        detachReaders();
         await stopAudioRecording();
         return false;
     }
@@ -327,8 +534,11 @@ async function beginActualRecording(
     // started at — `startRecording`'s default would open the clip back there.
     // Otherwise an armed count-in hands in the boundary beat it counted to;
     // `undefined` keeps the stationary default.
-    const rolling = getTransportState()?.isPlaying === true;
-    clips = startRecording(rolling ? playheadPositionRef.current : anchorBeat);
+    const admitted = readManualRecordingAdmission();
+    admissionTempo = admitted.tempo;
+    admissionChanges = admitted.changes;
+    clips = openManualRecordingClips(admitted.rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
+    bindManualRecordingOwners(clips, captureOwners);
     updateTransportState({ isRecording: true });
     return true;
 }
@@ -336,21 +546,37 @@ async function beginActualRecording(
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
     const transportHold: TransportHold = {
+        nativeOwned: false,
         requestedAtContextSeconds: null,
         rolledAtContextSeconds: null,
         rollLeadBeats: null,
+        captureStartSongSeconds: null,
+        firstPassContextSeconds: null,
+        endedAtContextSeconds: null,
     };
     void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
-        if (started && current && !current.isPlaying) {
+        if (started && transportHold.endedAtContextSeconds === null && current && !current.isPlaying) {
             const ctx = getAudioContext();
             // The instant the transport is asked to roll, read on the clock the
             // capture runs on: the take opened here is placed against it.
             transportHold.requestedAtContextSeconds = ctx.currentTime;
-            transportHold.rollLeadBeats =
-                current.playheadPosition - resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
-            await startPlayback();
-            transportHold.rolledAtContextSeconds = ctx.currentTime;
+            const recordPointBeat = current.playheadPosition;
+            const rollStartBeat = resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
+            transportHold.rollLeadBeats = recordPointBeat - rollStartBeat;
+            await startPlayback((contextSeconds, beat) => {
+                if (transportHold.endedAtContextSeconds !== null) {
+                    return;
+                }
+                const rolled = getTransportState();
+                const changes = structuredClone(tempoMapStore.value?.changes ?? []);
+                const tempo = rolled?.tempo ?? DEFAULT_TEMPO_BPM;
+                transportHold.rolledAtContextSeconds = contextSeconds;
+                transportHold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, beat, tempo);
+                const firstPassBeat = Math.max(recordPointBeat, rolled?.loopStart ?? recordPointBeat);
+                transportHold.firstPassContextSeconds =
+                    contextSeconds + secondsBetweenBeats(changes, beat, firstPassBeat, tempo);
+            });
         }
         return null;
     });

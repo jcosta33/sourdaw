@@ -116,7 +116,11 @@ async function recordLoop(): Promise<void> {
     }
     await commitRecording(
         { ...provisional, audioBufferId: 'rec-buf', startBeat: RECORD_POINT_BEAT, endBeat: 10 },
-        { provisionalStartBeat: RECORD_POINT_BEAT, mediaOriginSeconds: MEDIA_ORIGIN_SECONDS }
+        {
+            provisionalStartBeat: RECORD_POINT_BEAT,
+            mediaOriginSeconds: MEDIA_ORIGIN_SECONDS,
+            sourceContextOriginSeconds: MEDIA_ORIGIN_SECONDS,
+        }
     );
     flushAutomergeStorageWrites();
 }

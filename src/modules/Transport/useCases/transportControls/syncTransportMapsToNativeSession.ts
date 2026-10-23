@@ -125,6 +125,8 @@ import { type TimeSignatureChange, timeSignatureMapStore } from '../../stores/ti
 import { transportStore } from '../../stores/transportStore';
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
+import { captureNativeRecordingGeometry } from './captureNativeRecordingGeometry';
+
 type MapsRelevantSnapshot = Readonly<{
     tempo: number;
     timeSignatureNumerator: number;
@@ -208,7 +210,12 @@ export function syncTransportMapsToNativeSession(): () => void {
         }
 
         sending = true;
-        Promise.resolve(updateNativeLiveGraphSessionTransportMaps({ transportMaps: projectEngineTransportMaps() }))
+        Promise.resolve(
+            updateNativeLiveGraphSessionTransportMaps({
+                transportMaps: projectEngineTransportMaps(),
+                recordingGeometry: captureNativeRecordingGeometry(),
+            })
+        )
             .then((result) => {
                 if (result.outcome === 'declined') {
                     logger.debug(`Native live graph session did not take the transport maps: ${result.reason}`);

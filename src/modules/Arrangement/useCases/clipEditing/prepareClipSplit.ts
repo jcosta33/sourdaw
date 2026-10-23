@@ -2,10 +2,12 @@ import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
 import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
+import { clipEntrySeconds, isTempoConstantBetween } from '../../models/TempoTimeline';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
@@ -22,19 +24,19 @@ type PrepareClipSplitInput = {
 /**
  * The spread entry the right fragment writes for the loop anchor (#4988): the
  * MIDI fragment restamps at its own start, the audio fragment shifts by
- * `timelineSplitDelta - contentSplitDelta`, and an unanchored source keeps the
+ * `timelineSplitDelta - mediaOffsetDelta`, and an unanchored source keeps the
  * key absent.
  */
 function fragmentLoopOriginEntry(
     clip: Clip,
     anchoredStartBeat: number,
     timelineSplitDelta: number,
-    contentSplitDelta: number
+    mediaOffsetDelta: number
 ): { loopOriginBeat: number } | Record<string, never> {
     if (clip.type === 'midi') {
         return restampLoopOriginEntry(clip, anchoredStartBeat);
     }
-    return shiftLoopOriginEntry(clip, timelineSplitDelta - contentSplitDelta);
+    return shiftLoopOriginEntry(clip, timelineSplitDelta - mediaOffsetDelta);
 }
 
 export function prepareClipSplit({
@@ -92,8 +94,20 @@ export function prepareClipSplit({
     // The consumed content is what the runtimes play: 1x unless stretch is on,
     // the bounded ratio when it is — the shared law, not the raw stored ratio
     // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
-    const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
-    const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    const sourceRate = consumedStretchFactor(clip);
+    const contentSplitDelta = timelineSplitDelta * sourceRate;
+    let contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    let rightAudioOffsetBeats = contentSplitBeats;
+    if (clip.type === 'audio' && !isTempoConstantBetween(liveTempoTimeline, clip.startBeat, adjustedSplitBeat)) {
+        const sourceSeconds =
+            clipEntrySeconds(liveTempoTimeline, clip.startBeat, clip.audioOffsetBeats ?? 0) +
+            (liveTempoTimeline.secondsAtBeat(adjustedSplitBeat) - liveTempoTimeline.secondsAtBeat(clip.startBeat)) *
+                sourceRate;
+        // The right reader decodes its entry at the new start's tempo; warp
+        // markers keep the original clip's source-content beat coordinates.
+        rightAudioOffsetBeats = (sourceSeconds * liveTempoTimeline.tempoAtBeat(adjustedSplitBeat)) / 60;
+        contentSplitBeats = (sourceSeconds * liveTempoTimeline.tempoAtBeat(clip.startBeat)) / 60;
+    }
 
     const satellites = prepareClipSplitSatellites({
         clipId,
@@ -117,24 +131,19 @@ export function prepareClipSplit({
     // restamps at the fragment's own start — key absent for an unanchored
     // source, the same law the delete/bounce fragment writers follow. The
     // audio fragment's media basis is preserved, and its offset advances by
-    // the media delta `contentSplitDelta` — the stretched span the runtimes
-    // actually played over the cut, not `timelineSplitDelta`. For the region
+    // the stored entry's actual delta — including its conversion at the new
+    // head's tempo, not just `timelineSplitDelta`. For the region
     // the audio readers recover —
     // `audioOffsetBeats - (startBeat - loopOriginBeat)` — to survive the
     // split, the carried anchor's advance (`startBeat - loopOriginBeat`)
-    // must grow by that same media delta: shifted by
-    // `timelineSplitDelta - contentSplitDelta`, the fragment's advance grows
-    // to `(startBeat - loopOriginBeat) + contentSplitDelta`, which cancels
-    // the offset's advance exactly at any stretch (the shift is zero at
-    // stretch 1, so an unstretched split carries the anchor unchanged).
-    // Carried unshifted, a stretched split displaces the region by
-    // `timelineSplitDelta * (stretch - 1)` source beats and the fragment
-    // enters on the wrong material at the cut.
+    // must grow by that same delta. Shifting the anchor by the timeline delta
+    // minus the stored offset delta cancels the entry's advance at any stretch
+    // and across a tempo change, keeping the loop region unchanged.
     const rightLoopOriginEntry = fragmentLoopOriginEntry(
         clip,
         adjustedSplitBeat,
         timelineSplitDelta,
-        contentSplitDelta
+        rightAudioOffsetBeats - (clip.audioOffsetBeats ?? 0)
     );
     const rightClip: Clip = {
         ...clip,
@@ -142,7 +151,7 @@ export function prepareClipSplit({
         name: `${clip.name} (R)`,
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
-        audioOffsetBeats: contentSplitBeats,
+        audioOffsetBeats: rightAudioOffsetBeats,
         midiOffsetBeats: 0,
         ...rightLoopOriginEntry,
     };

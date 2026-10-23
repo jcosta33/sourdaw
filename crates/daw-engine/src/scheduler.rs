@@ -142,6 +142,9 @@ pub struct TransportPositionSnapshot {
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
+    /// Callback-owned presentation date paired with these exact counters.
+    /// Offline/same-thread drivers have no device presentation clock.
+    pub capture_clock: Option<crate::CaptureClockSnapshot>,
 }
 
 pub struct TransportPositionReader {
@@ -6271,12 +6274,16 @@ impl AudioScheduler {
             tempo: self.transport.tempo,
             time_sig_num: self.transport.time_sig_num,
             time_sig_denom: self.transport.time_sig_denom,
+            capture_clock: None,
         }
     }
 
-    #[inline]
-    pub(crate) fn publish_transport_position(&mut self) {
-        let snapshot = self.transport_position();
+    pub(crate) fn publish_transport_position(
+        &mut self,
+        capture_clock: Option<crate::CaptureClockSnapshot>,
+    ) {
+        let mut snapshot = self.transport_position();
+        snapshot.capture_clock = capture_clock;
         self.transport_position_tx.write(snapshot);
     }
 
