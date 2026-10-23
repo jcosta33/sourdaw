@@ -1,6 +1,7 @@
 import { logger as appLogger } from '#/infra/logger/appLogger';
 
 import { createMemoryStorage } from './storage/createMemoryStorage';
+import { type StorageHydrateOptions } from './storage/types';
 import { type Store, type StoreOptions } from './types';
 
 let storeBatchDepth = 0;
@@ -262,11 +263,11 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
             queueStoreNotification(notify);
         },
 
-        hydrate(): void {
+        hydrate(options?: StorageHydrateOptions): void {
             if (storage.hydrate) {
                 let changed: boolean;
                 try {
-                    changed = storage.hydrate();
+                    changed = storage.hydrate(options);
                 } catch (error) {
                     if (logger) {
                         logger.error(new Error('Store hydration failed', { cause: error }));

@@ -3,13 +3,15 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { branchStore, createDefaultBranchStoreState, type BranchStoreState } from '../stores/branchStore';
 
+import { getResetSettlement } from './branchReset/getResetSettlement';
+import { isSameResetRecord } from './branchReset/isSameResetRecord';
+import { isSameResetSide } from './branchReset/isSameResetSide';
 import {
     branchStateEnvelopeStorage,
     type BranchResetRecord,
     type BranchSessionRecord,
     type BranchStateEnvelope,
 } from './branchStateEnvelopeStorage';
-import { arePersistenceAuthoritiesEqual } from './crdtPersistence/arePersistenceAuthoritiesEqual';
 import { loadPersistenceSnapshotFromIdb } from './crdtPersistence/loadPersistenceSnapshotFromIdb';
 import {
     EMPTY_PERSISTENCE_AUTHORITY,
@@ -91,6 +93,9 @@ export type BranchResetBeginResult =
 export type BranchResetFinalizeOutcome =
     'finalized' | 'authority-mismatch' | 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
 
+export type BranchResetAbortOutcome =
+    'aborted' | 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
+
 type BranchStateDecision<TRefusal extends BranchStateRefusal> =
     { kind: 'write'; next: BranchStateEnvelope } | { kind: 'refuse'; reason: TRefusal } | { kind: 'noop' };
 
@@ -134,6 +139,12 @@ let ownReset: {
     owner: string;
     target: CrdtPersistenceAuthority;
     intended: BranchStoreState;
+    /**
+     * Set when the reset was withdrawn but the withdrawal could not be written.
+     * The switch never ran, so the outgoing project is still live and the
+     * marker's `intended` list describes nothing that exists.
+     */
+    withdrawn: boolean;
     release: () => void;
 } | null = null;
 
@@ -152,12 +163,14 @@ function resetLockName(owner: string): string {
  * project's list and the intended one is what the reset already published, so
  * the marker's `intended` is projected instead: hydrating `current` would put
  * the replaced project's branches over the replacement's root, and every later
- * branch action would write them there.
+ * branch action would write them there. A reset that was withdrawn but whose
+ * withdrawal is unwritten never switched, so `current` is the live list.
  */
 function hydrate(envelope: BranchStateEnvelope, project: BranchStateProjectionScope = projectDirectly): void {
     liveRevision = envelope.revision;
     const own = ownReset;
-    const current = own !== null && envelope.reset?.owner === own.owner ? own.intended : envelope.current;
+    const switched = own !== null && !own.withdrawn && envelope.reset?.owner === own.owner;
+    const current = switched ? own.intended : envelope.current;
     project(() => branchStore.set(current));
 }
 
@@ -352,55 +365,6 @@ async function recoverAbandonedSession(
 
 function describeAuthority({ epoch, revision, rootLineage }: CrdtPersistenceAuthority): string {
     return `epoch ${epoch === '' ? '(none)' : epoch} revision ${revision} lineage ${rootLineage}`;
-}
-
-/**
- * Whether the marker still in the envelope is the one this boot classified.
- *
- * Owner, `old` and `target` together: an owner alone would let a restarted
- * instance's second reset be settled by the first one's durable reading.
- */
-function isSameResetRecord(fresh: BranchResetRecord | null, observed: BranchResetRecord): boolean {
-    return (
-        fresh !== null &&
-        fresh.owner === observed.owner &&
-        arePersistenceAuthoritiesEqual(fresh.old, observed.old) &&
-        arePersistenceAuthoritiesEqual(fresh.target, observed.target)
-    );
-}
-
-/**
- * Whether one authority is the project the other names.
- *
- * The epoch names the side: a reset mints a fresh epoch for the project it is
- * writing, so the target epoch is the replacement and the old epoch is the
- * project being replaced. The root lineage then proves the branch list this
- * marker carries still describes the durable root — a fork landing a new
- * lineage under the same epoch moved the project to a root that list does not
- * name. The revision is free: it only counts ordinary saves, and a save does
- * not change which project is durable.
- */
-function isSameResetSide(durable: CrdtPersistenceAuthority, side: CrdtPersistenceAuthority): boolean {
-    return durable.epoch === side.epoch && durable.rootLineage === side.rootLineage;
-}
-
-/**
- * Which side of the replacement the durable persistence authority proves.
- *
- * `null` when it proves neither, so no branch list this marker carries
- * describes the durable project and only a later boot can settle the reset.
- */
-function getResetSettlement(
-    reset: BranchResetRecord,
-    durable: CrdtPersistenceAuthority
-): { current: BranchStoreState; outcome: 'reset-rolled-back' | 'reset-finalized' } | null {
-    if (isSameResetSide(durable, reset.old)) {
-        return { current: reset.previous, outcome: 'reset-rolled-back' };
-    }
-    if (isSameResetSide(durable, reset.target)) {
-        return { current: reset.intended, outcome: 'reset-finalized' };
-    }
-    return null;
 }
 
 /** `null` when the marker changed underneath, so the caller classifies again. */
@@ -756,8 +720,38 @@ async function beginReset({
     // longer describes anything a booting instance has to wait for. Its handle
     // answers `superseded` from here on, as a foreign supersession does.
     ownReset?.release();
-    ownReset = { owner, target, intended, release: lifetime.release };
+    ownReset = { owner, target, intended, withdrawn: false, release: lifetime.release };
     return { status: 'begun', handle: { owner } };
+}
+
+/**
+ * Clear the marker this instance owns, durably listing `list(reset)`.
+ *
+ * A refused write leaves the marker durable, so the lifetime lock stays held: a
+ * booting instance must keep seeing this reset as live until it clears.
+ */
+async function settleOwnReset<TWritten extends 'finalized' | 'aborted'>(
+    handle: BranchResetHandle,
+    list: (reset: BranchResetRecord) => BranchStoreState,
+    written: TWritten
+): Promise<TWritten | Exclude<BranchResetAbortOutcome, 'aborted'>> {
+    const result = await transact<'superseded'>((envelope) => {
+        const reset = envelope.reset;
+        if (reset?.owner !== handle.owner) {
+            return { kind: 'refuse', reason: 'superseded' };
+        }
+        return { kind: 'write', next: advance(envelope, { current: list(reset), session: null }) };
+    });
+
+    if (result.status === 'committed') {
+        releaseOwnReset(handle.owner);
+        return written;
+    }
+    if (result.reason === 'superseded') {
+        releaseOwnReset(handle.owner);
+        return 'superseded';
+    }
+    return result.reason;
 }
 
 /**
@@ -788,25 +782,29 @@ async function finalizeReset(
         return 'authority-mismatch';
     }
 
-    const result = await transact<'superseded'>((envelope) => {
-        const reset = envelope.reset;
-        if (reset?.owner !== handle.owner) {
-            return { kind: 'refuse', reason: 'superseded' };
-        }
-        return { kind: 'write', next: advance(envelope, { current: reset.intended, session: null }) };
-    });
+    return settleOwnReset(handle, (reset) => reset.intended, 'finalized');
+}
 
-    if (result.status === 'committed') {
-        releaseOwnReset(handle.owner);
-        return 'finalized';
-    }
-    if (result.reason === 'superseded') {
-        releaseOwnReset(handle.owner);
+/**
+ * Withdraw a reset that was recorded but whose switch never ran.
+ *
+ * The outgoing project is still the live one, so the list the reset recorded
+ * as `previous` is the list to keep. Only a reset this instance still owns is
+ * withdrawn; a superseded handle leaves the envelope to whoever replaced it. A
+ * refused write leaves the marker in place: the durable authority still names
+ * the outgoing project, so a later reset of this instance settles it and a boot
+ * rolls it back. Until then the handle is marked withdrawn, so a hydration
+ * keeps projecting the live list instead of the marker's `intended` one, which
+ * only a reset whose switch ran may project.
+ */
+async function abortReset(handle: BranchResetHandle): Promise<BranchResetAbortOutcome> {
+    if (ownReset?.owner !== handle.owner) {
         return 'superseded';
     }
-    // The marker is still durable, so the lifetime lock stays held: a booting
-    // instance must keep seeing this reset as live until it clears.
-    return result.reason;
+    // Marked before the write: a withdrawal that is written or superseded
+    // releases the handle, so only a failed one leaves the mark observable.
+    ownReset.withdrawn = true;
+    return settleOwnReset(handle, (reset) => reset.previous, 'aborted');
 }
 
 /**
@@ -910,4 +908,7 @@ export const branchStateAuthority = {
 
     /** Publish the replacement's branch list once its bundle is durable. */
     finalizeReset,
+
+    /** Withdraw a recorded reset whose switch never ran. */
+    abortReset,
 };
