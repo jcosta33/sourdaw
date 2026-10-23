@@ -1,0 +1,39 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreReversedClip.spec.ts
+  s_59e31a5c6f3e31::t_66563a8ac4053c 148-193
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_59e31a5c6f3e31::t_0d0ef294aa8279 3,11,26,129,144,297-311,313-314,323-327,329-338,340,342,344-347,349-358,360-362,364,366-368,370-372,374-425,428-430,432-433,493-496,514,518
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_59e31a5c6f3e31::t_4ed7742402db33 40-45
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_59e31a5c6f3e31::t_e585cea2f583e3 7,23,33,53,57-60,71-75,91
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_1c08b47ac3792f::t_cf49c22c49eb60 3-6,9-64,190,196,257-258,338-405,407-423,425-441,443-469,473,479,481-487,489-495,794-797,833,837-842,866-868,876-877,880-882,884,889-894,944,982,1013-1064,1118
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_59e31a5c6f3e31::t_614fd6acbc6902 5,34-35,39-52,69,77-78,80
+src/modules/Arrangement/useCases/clipEditing/reversedClipAudioSource.ts
+  s_59e31a5c6f3e31::t_ea2787490806b1 2-4,8-58,60,74-76,82-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec7a08c0e02d48bafb53327163c8308618f15768",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
