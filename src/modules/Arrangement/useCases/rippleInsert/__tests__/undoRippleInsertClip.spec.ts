@@ -88,6 +88,87 @@ describe('undoRippleInsertClip', () => {
         });
     });
 
+    it('restores a looped clip with its anchor riding the undo delta', () => {
+        // The forward insert shifted this clip 16 → 20 and its anchor with it;
+        // the undo reverses the relocation, so the anchor rides the same delta
+        // back — carried through, the restored placement would read a spurious
+        // advance (#4988, the #5198 draw/discard round trip).
+        const shiftedClip = ClipDummy.create({
+            id: 'clip-shifted',
+            trackId: 'track-target',
+            startBeat: 20,
+            endBeat: 22,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 20,
+        });
+        const targetTrack = TrackDummy.create({
+            id: 'track-target',
+            clips: [shiftedClip],
+        });
+        vi.mocked(getTrackStoreState).mockReturnValue({
+            tracks: [targetTrack],
+            selectedTrackId: 'track-target',
+            ghostClips: [],
+        });
+
+        undoRippleInsertClip({
+            trackId: 'track-target',
+            plan: { shiftedClips: [{ clipId: 'clip-shifted', origStartBeat: 16, origEndBeat: 18 }] },
+        });
+
+        expect(setTrackState).toHaveBeenCalledWith({
+            tracks: [
+                {
+                    ...targetTrack,
+                    clips: [
+                        {
+                            ...shiftedClip,
+                            startBeat: 16,
+                            endBeat: 18,
+                            loopOriginBeat: 16,
+                        },
+                    ],
+                },
+            ],
+            selectedTrackId: 'track-target',
+            ghostClips: [],
+        });
+    });
+
+    it('leaves the anchor key absent on an unanchored clip it restores', () => {
+        // The entry-helper law: the key is written only when an anchor exists,
+        // never as an explicit undefined.
+        const shiftedClip = ClipDummy.create({
+            id: 'clip-shifted',
+            trackId: 'track-target',
+            startBeat: 20,
+            endBeat: 22,
+        });
+        const targetTrack = TrackDummy.create({
+            id: 'track-target',
+            clips: [shiftedClip],
+        });
+        vi.mocked(getTrackStoreState).mockReturnValue({
+            tracks: [targetTrack],
+            selectedTrackId: 'track-target',
+            ghostClips: [],
+        });
+
+        undoRippleInsertClip({
+            trackId: 'track-target',
+            plan: { shiftedClips: [{ clipId: 'clip-shifted', origStartBeat: 16, origEndBeat: 18 }] },
+        });
+
+        const written = vi.mocked(setTrackState).mock.calls[0]?.[0];
+        const restoredClip = written?.tracks[0]?.clips[0];
+        if (!restoredClip) {
+            throw new Error('Expected the restored clip to be written');
+        }
+        expect(restoredClip.startBeat).toBe(16);
+        expect(Object.hasOwn(restoredClip, 'loopOriginBeat')).toBe(false);
+    });
+
     it('is a no-op when the track store holds no state', () => {
         vi.mocked(getTrackStoreState).mockReturnValue(null);
 

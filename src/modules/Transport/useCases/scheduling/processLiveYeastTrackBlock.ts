@@ -1,5 +1,7 @@
+import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
+import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 import {
     beatToSamples,
@@ -24,6 +26,13 @@ export type LiveYeastNote = {
     /** Semitone range `pitchBend` was performed against; absent means ±48 (audit MD-8). */
     pitchBendRangeSemitones?: number;
     channel?: number;
+    /** Recorded curves; carried only to a note Yeast plays from this note's own instance. */
+    expression?: MidiNote['expression'];
+    /**
+     * How far into its note this one begins when the clip's head cut it off before Yeast saw it; the note's
+     * recorded expression curves count from the uncut start. Absent when nothing was cut.
+     */
+    beatsIntoNote?: number;
     articulation?: string;
     sourceEventId?: string;
     noteInstanceId?: string;
@@ -38,6 +47,13 @@ export type LiveYeastIteration = {
     /** Loop geometry of the owning clip; a descriptor without it never wraps. */
     loopEnabled?: boolean;
     loopLengthBeats?: number;
+    /**
+     * The owning clip's start and loop anchor (#5198); the membership window
+     * reads its trim advance against both. A descriptor without them predates
+     * the anchor and admits without the window, the pre-anchor behavior.
+     */
+    clipStartBeat?: number;
+    loopOriginBeat?: number;
     sourceNotes: readonly LiveYeastNote[];
 };
 
@@ -99,6 +115,9 @@ export async function processLiveYeastTrackBlock({
             .sort((alpha, beta) => alpha.beat - beta.beat),
     };
     const processedEvents: LiveYeastMidiEvent[] = [];
+    // The beats of a note the clip's head cut off before Yeast saw it, by note instance: the notes Yeast plays
+    // from that instance begin that far into the note they came from.
+    const headCutBeatsByInstance = new Map<string, number>();
 
     for (const block of splitRangeAtTempoChanges(changes, fromBeat, toBeat)) {
         if (!isCurrent()) {
@@ -122,6 +141,25 @@ export async function processLiveYeastTrackBlock({
 
         for (const iteration of iterations) {
             for (const sourceNote of iteration.sourceNotes) {
+                // #5198 — the anchored loop window owns membership on the row's
+                // stored figure, the same relative beat the synth path's
+                // admission reads: a row past the trimmed region end stays
+                // silent on every pass even though the wrap below would
+                // re-anchor it into the iteration. A descriptor without the
+                // clip's anchor pair predates the field and admits without the
+                // window, exactly as before the anchor existed.
+                if (
+                    iteration.clipStartBeat !== undefined &&
+                    !isBeatAdmittedByAnchoredClipLoopWindow({
+                        relativeBeat: sourceNote.startBeat - iteration.midiOffsetBeats,
+                        startBeat: iteration.clipStartBeat,
+                        loopOriginBeat: iteration.loopOriginBeat,
+                        loopLengthBeats: iteration.loopLengthBeats ?? 0,
+                        loopEnabled: iteration.loopEnabled === true,
+                    })
+                ) {
+                    continue;
+                }
                 const [groovedNote] = projectCommittedGroove({
                     events: [sourceNote],
                     consumerType: 'clip',
@@ -153,6 +191,7 @@ export async function processLiveYeastTrackBlock({
                 const loopLengthBeats = iteration.loopLengthBeats ?? 0;
                 let noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
                 let noteEndBeat = audibleStartBeat + groovedNote.duration;
+                let headCutBeats = noteStartBeat - audibleStartBeat;
                 if (
                     iteration.loopEnabled === true &&
                     loopLengthBeats > 0 &&
@@ -162,6 +201,8 @@ export async function processLiveYeastTrackBlock({
                         iteration.iterationStartBeat +
                         positiveModulo(audibleStartBeat - iteration.iterationStartBeat, loopLengthBeats);
                     noteEndBeat = noteStartBeat + groovedNote.duration;
+                    // A wrapped note rings its full duration from the wrapped start: nothing was cut.
+                    headCutBeats = 0;
                 }
                 if (noteEndBeat <= noteStartBeat) {
                     continue;
@@ -169,6 +210,9 @@ export async function processLiveYeastTrackBlock({
                 const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
                 const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
                 const noteInstanceId = `${iteration.routeId}:${sourceNote.id}`;
+                if (headCutBeats > 0) {
+                    headCutBeatsByInstance.set(noteInstanceId, headCutBeats);
+                }
                 const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
                 const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
                 if (ownsNoteOn) {
@@ -297,8 +341,11 @@ export async function processLiveYeastTrackBlock({
             // #4655 — the event time is already the audible beat; the
             // offset was applied once at ownership above and must not be
             // subtracted again here.
-            targetNotes.push({
+            // A note Yeast generates has no recorded curve of its own. It borrows the first source note's scalars
+            // above, but never that note's curves, which would replay on a pitch they were not played on.
+            const outputNote: LiveYeastNote = {
                 ...template,
+                expression: identifiedTemplate?.expression,
                 id: `${template.id}:yeast:${event.kind.note}:${event.timeSamples}:${ordinal}`,
                 sourceEventId: event.sourceEventId,
                 noteInstanceId: event.noteInstanceId,
@@ -306,7 +353,12 @@ export async function processLiveYeastTrackBlock({
                 velocity: event.kind.velocity,
                 startBeat: eventPpq,
                 duration,
-            });
+            };
+            const headCutBeats = event.noteInstanceId ? headCutBeatsByInstance.get(event.noteInstanceId) : undefined;
+            if (headCutBeats !== undefined) {
+                outputNote.beatsIntoNote = headCutBeats;
+            }
+            targetNotes.push(outputNote);
             continue;
         }
 

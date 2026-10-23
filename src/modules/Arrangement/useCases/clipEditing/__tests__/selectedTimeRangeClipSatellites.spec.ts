@@ -13,6 +13,7 @@ import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { gainSeamPointId } from '../../../models/GainSeamPointId';
 import { defaultWarpState, type WarpState } from '../../../models/WarpMarker';
 import {
     __resetGainEnvelopesForTest,
@@ -281,7 +282,7 @@ describe('Delete Time Range retires per-clip satellite data', () => {
             points: [
                 { id: 'p0', beatOffset: -6, gainDb: 0 },
                 { id: 'p4', beatOffset: -2, gainDb: -12 },
-                { id: `gep-split-${fragmentId}-right`, beatOffset: 0, gainDb: -12 },
+                { id: gainSeamPointId(fragmentId ?? '', 'right'), beatOffset: 0, gainDb: -12 },
             ],
         });
         expect(warpStates.get(fragmentId ?? '')?.markers).toEqual([

@@ -693,6 +693,43 @@ describe('renderTrackSubgraphOffline', () => {
         expect(magnitudeAt(note, 440)).toBeGreaterThan(0.4);
     });
 
+    it('bends the baked notes by the channel bend projection the render was configured with', async () => {
+        const { configureOfflineMidiEventProjection } = await import('../../configureOfflineMidiEventProjection');
+        configureOfflineMidiEventProjection({
+            createProjector: () => (input) => input.events,
+            selectProbability: () => true,
+            createChordPitchProjector: () => (input) => input.pitch,
+            evaluateAutomationValue: () => 0,
+            projectChannelBend: ({ frameAtBeat }) => [
+                { beat: 0.25, frame: frameAtBeat(0.25), recordedBeat: 0.25, value: 4_096, rangeSemitones: 12 },
+            ],
+        });
+        const { midiStore } = await import('#/modules/MIDI/stores');
+        midiStore.set({
+            ...midiStore.value!,
+            pitchBendByClipId: { 'clip-1': [{ id: 'pb-1', value: 4_096, beat: 0.25, channel: 0 }] },
+        });
+        const bends: number[] = [];
+        const entry = createInstrumentEntry('fermenter-1', 'fermenter');
+        entry.strategy.noteExpression = ({ bendSemitones }) => {
+            bends.push(bendSemitones);
+        };
+        mocks.buildDeviceChain.mockResolvedValue([entry]);
+        const track = TrackDummy.create({
+            id: 'track-1',
+            kind: 'midi',
+            clips: [midiClip()],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
+        });
+
+        await renderTrackSubgraphOffline({ targetTrackId: track.id, renderTracks: [track], startBeat: 0, endBeat: 4 });
+
+        // 4096 of 8192 over a 12-semitone range.
+        expect(bends).toEqual([6]);
+    });
+
     it('rejects an already-aborted render instead of returning a buffer', async () => {
         const controller = new AbortController();
         controller.abort();
