@@ -1,7 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
 import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { admitPitchBend } from '../../repositories/webMidi/admitPitchBend';
+import { admitResetAllControllers } from '../../repositories/webMidi/admitResetAllControllers';
+import { captureAdmittedWheels } from '../../repositories/webMidi/captureAdmittedWheels';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
@@ -167,9 +171,12 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
             // The recorded onset is the beat of the EVENT's own instant, not of
             // this callback's turn on the main thread (#4875).
             const admittedTime = { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
+            // The wheels it is struck under are those at arrival: bends admitted
+            // while it waits in the queue move the note at their own frame.
+            const admittedWheels = captureAdmittedWheels(channel);
             return dispatchNoteHandler(
                 channel,
-                () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime),
+                () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime, admittedWheels),
                 message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
             );
         }
@@ -182,6 +189,9 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 admittedRelease(channel, message.note)
             );
         case 'cc': {
+            if (message.cc === CC_RESET_ALL_CONTROLLERS) {
+                admitResetAllControllers(channel);
+            }
             const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
                 handleWebMidiCC(channel, message.cc, message.value, admittedTime);
@@ -192,6 +202,7 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
         case 'pitchBend': {
+            admitPitchBend(channel, message.lsb, message.msb);
             const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
                 handleWebMidiPitchBend(channel, message.lsb, message.msb, admittedTime);

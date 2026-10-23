@@ -4,9 +4,29 @@ import { type MicPositionType } from '../models/LevainPatch';
 import { WEB_LOD } from '../repositories/sampleLoader/helpers';
 import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
 import { resolveSampleBasePath } from '../repositories/sampleLoader/resolveSampleBasePath';
+import { isSharedBankOwnerEndedError } from '../repositories/sampleLoader/sharedBankOwnerEnded';
 import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
 
 import { configuredLevainZoneTableBuilder } from './configureLevainZoneTableBuilder';
+
+/**
+ * A device that followed another device's upload of the same bank is failed by
+ * the worklet when that device's load ends (its processor disposed, its load
+ * aborted), though it is healthy and still wanted. It loads again, becoming the
+ * uploader or following another one; each repeat needs another owner to end,
+ * and a load of its own that was aborted stops here.
+ */
+async function loadAgainWhileOrphaned<Bank>(load: () => Promise<Bank>, signal?: AbortSignal): Promise<Bank> {
+    while (true) {
+        try {
+            return await load();
+        } catch (error) {
+            if (signal?.aborted || !isSharedBankOwnerEndedError(error)) {
+                throw error;
+            }
+        }
+    }
+}
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
@@ -63,22 +83,26 @@ export async function autoLoadLevainSamples(
 
     let bank: Awaited<ReturnType<typeof loadInstrumentFromManifest>>;
     try {
-        bank = await loadInstrumentFromManifest({
-            manifestUrl,
-            basePath: manifestBase,
-            expectedInstrumentId: instrumentId,
-            nodePort,
-            buildZoneTables: configuredLevainZoneTableBuilder.build,
-            lod: WEB_LOD,
-            onProgress: (progress) => {
-                if (signal?.aborted) {
-                    return;
-                }
-                setSampleLoadProgress(deviceId, progress);
-                onDecodedProgress?.(progress);
-            },
-            signal,
-        });
+        bank = await loadAgainWhileOrphaned(
+            () =>
+                loadInstrumentFromManifest({
+                    manifestUrl,
+                    basePath: manifestBase,
+                    expectedInstrumentId: instrumentId,
+                    nodePort,
+                    buildZoneTables: configuredLevainZoneTableBuilder.build,
+                    lod: WEB_LOD,
+                    onProgress: (progress) => {
+                        if (signal?.aborted) {
+                            return;
+                        }
+                        setSampleLoadProgress(deviceId, progress);
+                        onDecodedProgress?.(progress);
+                    },
+                    signal,
+                }),
+            signal
+        );
     } catch (error) {
         // A superseding load aborted this one; it owns the UI now, stay silent.
         if (signal?.aborted) {

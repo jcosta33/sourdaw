@@ -121,6 +121,40 @@ describe('importDawProject', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to apply imported DAWproject data', 'error');
     });
 
+    // Choosing the open project's Recent entry while the import is pending
+    // withdraws it through its caller's check, which the transaction cannot see.
+    it('does not apply a project its caller withdrew while the assets decoded', async () => {
+        vi.clearAllMocks();
+        setupHappyPath();
+        let isStillChosen = true;
+        mocks.decodeDawProjectAssets.mockImplementationOnce(({ shouldContinue }: { shouldContinue: () => boolean }) => {
+            expect(shouldContinue()).toBe(true);
+            isStillChosen = false;
+            expect(shouldContinue()).toBe(false);
+            return Promise.resolve({ audioBuffers: [], bufferIdsByPath: {}, failedPaths: [] });
+        });
+
+        const result = await importDawProject({
+            buffer: new ArrayBuffer(8),
+            fileName: 'test.dawproject',
+            shouldProceed: () => isStillChosen,
+        });
+
+        expect(result).toBe(false);
+        expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('hands the replacement its caller continuation check', async () => {
+        vi.clearAllMocks();
+        setupHappyPath();
+        const shouldProceed = (): boolean => true;
+
+        await importDawProject({ buffer: new ArrayBuffer(8), fileName: 'test.dawproject', shouldProceed });
+
+        expect(mocks.applyImportedProjectData).toHaveBeenCalledWith(expect.objectContaining({ shouldProceed }));
+    });
+
     it('does not notify success when apply returns false', async () => {
         vi.clearAllMocks();
         mocks.runProjectLoadTransaction.mockReturnValue(mockTransaction);

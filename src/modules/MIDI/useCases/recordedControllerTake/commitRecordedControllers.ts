@@ -27,8 +27,8 @@ export function commitRecordedControllers({ clip }: CommitRecordedControllersInp
     const clipId = clip.id;
     const rows = planRecordedControllers({ clip });
     discardRecordedControllers(clipId);
-    const { openedClipIds, committedClipIds, carriedOverClipIds } = recordedControllerTakeState;
-    if (carriedOverClipIds.delete(clipId)) {
+    const { openedClipIds, committedClipIds, carriedOverClips } = recordedControllerTakeState;
+    if (carriedOverClips.delete(clipId)) {
         openedClipIds.delete(clipId);
     } else {
         committedClipIds.add(clipId);

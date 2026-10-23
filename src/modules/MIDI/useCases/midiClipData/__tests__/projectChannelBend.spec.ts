@@ -28,6 +28,11 @@ function declareRange(beat: number, semitones: number, cents = 0, channel = 0): 
     ];
 }
 
+/** Select RPN 0 and enter a range, leaving the selection open as a controller that never closes it does. */
+function declareRangeWithoutNull(beat: number, semitones: number, channel = 0): MidiCC[] {
+    return declareRange(beat, semitones, 0, channel).slice(0, 4);
+}
+
 function summarize(points: ReturnType<typeof projectChannelBend>) {
     return points.map(({ beat, value, rangeSemitones }) => ({ beat, value, rangeSemitones }));
 }
@@ -344,6 +349,80 @@ describe('projectChannelBend', () => {
             });
 
             expect(point?.rangeSemitones).toBe(2);
+        });
+
+        describe('of a move carried onto a pass head', () => {
+            // ±12 is declared at 0.1, the bend is recorded at 1.2 under it, and ±2 is declared at 1.3.
+            const controlChanges = [...declareRangeWithoutNull(0.1, 12), ...declareRangeWithoutNull(1.3, 2)];
+            const pitchBends = [bend('recorded', 1.2, 8_191)];
+
+            it('is the one in force where its row was recorded, not at the trimmed clip head it sits on', () => {
+                const [point] = projectChannelBend({
+                    clips: [
+                        {
+                            clip: { startBeat: 1.35, endBeat: 4, midiOffsetBeats: 1.35 },
+                            controlChanges,
+                            pitchBends,
+                        },
+                    ],
+                    frameAtBeat,
+                });
+
+                expect(point).toMatchObject({ beat: 1.35, recordedBeat: 1.2, value: 8_191, rangeSemitones: 12 });
+            });
+
+            it('is the one in force where its row was recorded, not at the loop pass head it sits on', () => {
+                // Visible content is [1.35, 3.35): the bend recorded at 1.2 is carried onto both pass heads,
+                // though the second declaration at 1.3 lies between it and each of them.
+                const points = projectChannelBend({
+                    clips: [
+                        {
+                            clip: {
+                                startBeat: 0,
+                                endBeat: 4,
+                                midiOffsetBeats: 1.35,
+                                loopEnabled: true,
+                                loopLength: 2,
+                            },
+                            controlChanges,
+                            pitchBends,
+                        },
+                    ],
+                    frameAtBeat,
+                });
+
+                expect(points.map((point) => [point.beat, point.rangeSemitones])).toEqual([
+                    [0, 12],
+                    [2, 12],
+                ]);
+            });
+
+            it('still reads a move the pass reaches at the depth in force at its own beat', () => {
+                const points = projectChannelBend({
+                    clips: [
+                        {
+                            clip: { startBeat: 1.35, endBeat: 4, midiOffsetBeats: 1.35 },
+                            controlChanges,
+                            pitchBends: [...pitchBends, bend('after', 2, 100)],
+                        },
+                    ],
+                    frameAtBeat,
+                });
+
+                expect(points.map((point) => [point.beat, point.rangeSemitones])).toEqual([
+                    [1.35, 12],
+                    [2, 2],
+                ]);
+            });
+
+            it('is unchanged for the untrimmed clip, whose bend is recorded where it plays', () => {
+                const [point] = projectChannelBend({
+                    clips: [{ clip: { startBeat: 0, endBeat: 4 }, controlChanges, pitchBends }],
+                    frameAtBeat,
+                });
+
+                expect(point).toMatchObject({ beat: 1.2, recordedBeat: 1.2, rangeSemitones: 12 });
+            });
         });
 
         it('is the one in force at the head of a loop pass the move is carried to', () => {

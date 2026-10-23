@@ -160,6 +160,32 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
     });
 
+    it('keeps the outgoing project when the caller gives up while the reset awaits its durable steps', async () => {
+        let wanted = true;
+        const onReplaced = vi.fn();
+        mocks.resetCrdtProject.mockImplementationOnce(
+            async (_name: string, onAuthorityReplaced: () => void, isQuietAtSwitch: () => boolean) => {
+                await Promise.resolve();
+                wanted = false;
+                if (!isQuietAtSwitch()) {
+                    return { status: 'transport-active' };
+                }
+                onAuthorityReplaced();
+                return replaced;
+            }
+        );
+
+        await expect(resetCrdtProjectWithTransportStopped('Song', onReplaced, () => wanted)).resolves.toEqual({
+            status: 'refused',
+            reason: 'superseded',
+        });
+
+        expect(onReplaced).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.stopPlayback).not.toHaveBeenCalled();
+        expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
+    });
+
     it('refuses as superseded after a stop, without tearing anything down, when the caller gave up meanwhile', async () => {
         let wanted = true;
         closeTake();

@@ -606,8 +606,9 @@ describe('LevainProcessor message handling', () => {
         expect(owner.port.postMessage).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
         );
+        expect(owner.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerEnded: true }));
         expect(follower.port.postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
+            expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed', ownerEnded: true })
         );
 
         addSampleShouldThrow = false;
@@ -748,8 +749,10 @@ describe('LevainProcessor message handling', () => {
             expect.objectContaining({
                 type: 'sampleBankError',
                 message: 'Levain processor was disposed during sample loading',
+                ownerEnded: true,
             })
         );
+        expect(owner.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'sampleBankError' }));
         expect(owner.process([], [makeChannels(2, FRAMES)])).toBe(false);
 
         calls.length = 0;
@@ -1166,6 +1169,7 @@ describe('LevainProcessor message handling', () => {
             expect(follower.port.postMessage).toHaveBeenCalledWith(
                 expect.objectContaining({ type: 'sampleBankError', loadToken: 2 })
             );
+            expect(follower.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ ownerEnded: true }));
             expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
 
             send(follower, { type: 'releaseRetiredBank', loadToken: 2 });

@@ -467,7 +467,7 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 
 /**
  * Duplicate ids across the project, with arrangement snapshots and canonical
- * clip gain-envelope points counted in their owning namespaces.
+ * clip gain-envelope points and warp markers counted in their owning namespaces.
  *
  * An arrangement snapshot holds a copy of the track state it arranges, so it
  * repeats the live `tracks` slot's track, clip, alternative and device ids by
@@ -481,6 +481,8 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  * Gain-point ids are local to each clip envelope, so copying them to another
  * clip is valid. Only those canonical point rows leave the global id set; a
  * repeated point within one envelope is still reported.
+ * Warp-marker ids are local to each clip's warp state; repeated ids within one
+ * state remain invalid.
  *
  * Other collisions within the live project, or within one snapshot, are still
  * reported. So is a repeated arrangement `id`: it is the
@@ -493,7 +495,7 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  */
 function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
-    const { arrangements, ...liveDocument } = document;
+    const { arrangements, warpStates, ...liveDocument } = document;
     const clipGainEnvelopePoints = collectClipGainEnvelopePoints(document, duplicateIds);
     findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>(), clipGainEnvelopePoints);
     const snapshots = asRecord(arrangements)?.arrangements;
@@ -501,6 +503,15 @@ function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): S
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
         recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
         findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
+    }
+    // Warp-marker identity is clip-local (#5570): duplication, paste and Strip
+    // Silence deliberately copy marker ids into independent states under
+    // different clip ids, so each clip's warp state is scanned in its own
+    // namespace — a shared marker id across clips is the valid copy contract,
+    // a repeated id inside one clip's state is the violation.
+    const warpSlot = asRecord(warpStates)?.states;
+    for (const state of Object.values(warpSlot ?? {})) {
+        findDuplicateIds(state, new Set<string>(), duplicateIds, new WeakSet<object>());
     }
     return duplicateIds;
 }

@@ -1802,9 +1802,22 @@ export function storageFileState(
     }
 }
 
-function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessEnv): number {
+// An inherited override takes whole MiB, as --disk-reserve-mib does. 1.5 MiB converts to a whole
+// byte count, so the byte check alone would admit it.
+function inheritedDiskReserveBytes(env: NodeJS.ProcessEnv): number {
     const inheritedMib = env[DISK_RESERVE_ENV];
-    const bytes = value ?? (inheritedMib === undefined ? DEFAULT_DISK_RESERVE_BYTES : Number(inheritedMib) * 1024 ** 2);
+    if (inheritedMib === undefined) {
+        return DEFAULT_DISK_RESERVE_BYTES;
+    }
+    const mib = Number(inheritedMib);
+    if (!Number.isSafeInteger(mib) || mib < 1 || !Number.isSafeInteger(mib * 1024 ** 2)) {
+        throw new Error(`disk reserve ${DISK_RESERVE_ENV} must be a positive safe integer MiB count`);
+    }
+    return mib * 1024 ** 2;
+}
+
+function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessEnv): number {
+    const bytes = value ?? inheritedDiskReserveBytes(env);
     if (!Number.isSafeInteger(bytes) || bytes <= 0) {
         throw new Error('disk reserve must be a positive safe integer byte count');
     }
@@ -2567,6 +2580,114 @@ export function clearGuardFailureReceiptIfUnchanged(
     return { status: 'mismatch' };
 }
 
+export type RecoverGuardFailureReceiptPorts = {
+    readdirSync?: typeof readdirSync;
+    readFileSync?: typeof readFileSync;
+    linkSync?: typeof linkSync;
+    rmSync?: typeof rmSync;
+};
+
+type RecoveredGuardFailureReceipt = {
+    receipt: GuardFailureReceipt | undefined;
+    adoptedFromClaimPath?: string;
+};
+
+function listGuardFailureReceiptClaimPaths(receiptsDir: string, laneName: string, list: typeof readdirSync): string[] {
+    let entries: string[];
+    try {
+        entries = list(receiptsDir);
+    } catch (error) {
+        if (isFileSystemError(error, 'ENOENT')) {
+            return [];
+        }
+        throw error;
+    }
+    const prefix = `${laneName}.json.claim-`;
+    return entries
+        .filter((name) => name.startsWith(prefix))
+        .sort()
+        .map((name) => join(receiptsDir, name));
+}
+
+// Recovery read for a lane whose canonical receipt is absent: a kill between the clear flow's
+// claim rename and its remove or restore strands the receipt bytes under
+// `<receipt>.claim-<uuid>` while nothing reads them (#4514). A single orphan holding this lane's
+// receipt is restored to the canonical path so the lane's stopped obligation is honored instead
+// of silently dropped; anything else found under the claim namespace is refused rather than
+// dropped or guessed at.
+function readGuardFailureReceiptAdoptingOrphans(
+    primaryRoot: string,
+    laneName: string,
+    ports: RecoverGuardFailureReceiptPorts = {}
+): RecoveredGuardFailureReceipt {
+    const canonical = readGuardFailureReceipt(primaryRoot, laneName);
+    if (canonical !== undefined) {
+        return { receipt: canonical };
+    }
+
+    const list = ports.readdirSync ?? readdirSync;
+    const read = ports.readFileSync ?? readFileSync;
+    const link = ports.linkSync ?? linkSync;
+    const remove = ports.rmSync ?? rmSync;
+    const claimPaths = listGuardFailureReceiptClaimPaths(join(primaryRoot, GUARD_FAILURES_DIR), laneName, list);
+    if (claimPaths.length === 0) {
+        return { receipt: undefined };
+    }
+    if (claimPaths.length > 1) {
+        throw new Error(
+            `multiple orphaned guard-failure receipt claims for lane ${laneName} (${claimPaths.join(', ')}); refusing to pick one`
+        );
+    }
+    const claimPath = claimPaths[0];
+    if (claimPath === undefined) {
+        throw new Error(`expected exactly one orphaned guard-failure receipt claim for lane ${laneName}`);
+    }
+
+    let claimed: GuardFailureReceipt;
+    try {
+        claimed = parseGuardFailureReceipt(read(claimPath, 'utf8'), claimPath);
+    } catch (error) {
+        throw new Error(
+            `orphaned guard-failure receipt claim for lane ${laneName} at ${claimPath} does not hold this lane's receipt (${errorMessage(error)}); refusing to drop or adopt it`,
+            { cause: error }
+        );
+    }
+    if (claimed.lane !== laneName) {
+        throw new Error(
+            `orphaned guard-failure receipt claim for lane ${laneName} at ${claimPath} records lane ${claimed.lane}; refusing to drop or adopt it`
+        );
+    }
+
+    const receiptPath = guardFailureReceiptPath(primaryRoot, laneName);
+    try {
+        // linkSync refuses an existing target, so a receipt a concurrent writer installs at the
+        // canonical path between the absent read and this link is preserved rather than clobbered.
+        link(claimPath, receiptPath);
+    } catch (error) {
+        if (!isFileSystemError(error, 'EEXIST')) {
+            throw new Error(
+                `could not restore the orphaned guard-failure receipt claim for lane ${laneName} from ${claimPath}: ${errorMessage(error)}`,
+                { cause: error }
+            );
+        }
+        // The canonical receipt is intact, so the obligation is honored from it and the stale
+        // claim may go.
+        try {
+            remove(claimPath);
+        } catch {
+            // A leftover claim file is harmless while the canonical receipt is intact.
+        }
+        return { receipt: readGuardFailureReceipt(primaryRoot, laneName) };
+    }
+    try {
+        remove(claimPath);
+    } catch {
+        // The canonical receipt holds the claimed bytes through the hard link; a leftover claim
+        // file is harmless.
+    }
+    return { receipt: readGuardFailureReceipt(primaryRoot, laneName), adoptedFromClaimPath: claimPath };
+}
+
 type CliInput = {
     profile: ResourceProfile;
     explicitProfile: boolean;
@@ -2923,6 +3044,7 @@ export async function main(
         runCommand?: typeof runGuardedCommand;
         assertModulesPreflight?: (cwd: string) => void;
         clearReceiptPorts?: ClearGuardFailureReceiptPorts;
+        recoverReadPorts?: RecoverGuardFailureReceiptPorts;
         log?: (message: string) => void;
         error?: (message: string) => void;
     } = {}
@@ -2950,7 +3072,17 @@ export async function main(
             if (lane === undefined) {
                 throw new Error('--recover must be run inside an author worktree');
             }
-            const receipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+            const recoveredReceipt = readGuardFailureReceiptAdoptingOrphans(
+                lane.primaryRoot,
+                lane.laneName,
+                options.recoverReadPorts
+            );
+            if (recoveredReceipt.adoptedFromClaimPath !== undefined) {
+                log(
+                    `guard: restored an orphaned guard-failure receipt for lane ${lane.laneName} from ${recoveredReceipt.adoptedFromClaimPath}`
+                );
+            }
+            const receipt = recoveredReceipt.receipt;
             if (receipt === undefined) {
                 if (input.lintTargetReplacements.length > 0) {
                     throw new Error('--replace-lint-target requires an active pnpm lint guard-failure receipt');

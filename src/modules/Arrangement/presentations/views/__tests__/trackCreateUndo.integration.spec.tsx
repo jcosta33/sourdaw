@@ -159,6 +159,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
     exportProjectFile: vi.fn(),
     newProject: vi.fn(),
+    pendingProjectReplacements: { capture: vi.fn(() => () => true), withdraw: vi.fn() },
     pickFiles: vi.fn(),
     saveProject: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),
