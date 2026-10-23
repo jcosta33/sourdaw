@@ -110,6 +110,17 @@ function findReceiverOfKind<TDevice extends { type: string }>(
 type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
 type SchedulerTrackStrip = ReturnType<typeof ensureTrackStrip>;
 
+/** The instrument that plays a track's notes now, undefined when it is bypassed or the track has none. */
+function resolvePlaybackReceiverId(devices: SchedulerTrack['devices']): string | undefined {
+    const receiver = resolvePlaybackNoteReceiver(devices);
+    return isBypassedNoteReceiver(receiver) ? undefined : receiver?.device.id;
+}
+
+/** The buffer a frozen track plays in place of its instrument, undefined when the instrument plays. */
+function frozenBufferIdOf(track: SchedulerTrack): string | undefined {
+    return track.freezeState.status === 'frozen' ? track.freezeState.frozenBufferId : undefined;
+}
+
 /**
  * The toaster a track's notes are dispatched to, when one has live controls: the
  * track's own when it is the track's receiving instrument, or its parent's when the
@@ -869,7 +880,7 @@ export async function scheduleMidiNotes(
     // leaves, and must not bend the notes the next pass starts at their pitch. A relocation that silences
     // the notes (a late wrap, a jump, an edit) has forgotten the registry before this window; the
     // scheduled seam leaves them sounding, so the ones that follow the channel bend are carried into the
-    // pass this window opens, on the tracks whose window runs.
+    // pass this window opens (`carrySoundingNotes`), on every track whatever its window does.
     const soundingAtRelocation = opensAtRelocation ? detachSoundingNoteExpression() : undefined;
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
@@ -1024,6 +1035,60 @@ export async function scheduleMidiNotes(
         }
         return resumes;
     };
+    // The track's channel pitch bend, which the clips hold as they are now: a bend in force when a note
+    // starts, and each move while it sounds, reach the voice as its expression, because the engines bend
+    // a held voice and carry no channel bend of their own, so there is nothing to reset.
+    const resolveChannelBendClipsOnTrack = (track: SchedulerTrack) =>
+        resolveChannelBendClips({
+            trackId: track.id,
+            clips: track.clips,
+            ccByClipId: midiState.ccByClipId,
+            pitchBendByClipId: midiState.pitchBendByClipId,
+        });
+    const createChannelBendReader = (track: SchedulerTrack) => {
+        let channelBend: ReturnType<typeof projectChannelBend> | undefined;
+        return () => {
+            channelBend ??= projectChannelBend({
+                clips: resolveChannelBendClipsOnTrack(track),
+                frameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+            });
+            return channelBend;
+        };
+    };
+    // The notes a relocation left sounding take the bend in force at its destination, on every track whose
+    // instrument still voices them and before any track's window starts a note, whatever else that window
+    // does or skips: a track muted, in a gap, or with every clip at the destination muted still has its
+    // notes ringing in the instrument, and a bend left on them would be stale for as long as they ring.
+    // A muted track's notes stay registered, so the chase that ends the mute reaches them. A frozen track
+    // plays its buffer, not its instrument, so its notes are not carried; the instrument that voiced a
+    // note and no longer does (a swap, a bypass) keeps none, and a Yeast track has none to carry.
+    const carrySoundingNotes = (): void => {
+        if (!soundingAtRelocation || !isCurrent()) {
+            return;
+        }
+        const relocationClockTime = getCurrentTime();
+        for (const track of tracks) {
+            const soundingNotes = soundingAtRelocation.get(track.id);
+            if (!soundingNotes || frozenBufferIdOf(track)) {
+                continue;
+            }
+            const atFrame = sampleFrameAtBeatOnTrack(track.id)(fromBeat);
+            const posts = createSameFramePostQueue();
+            for (const { pitch, channel, expression } of relocateHeldNoteExpression({
+                trackId: track.id,
+                notes: soundingNotes,
+                receiverId: resolvePlaybackReceiverId(track.devices),
+                atFrame,
+                frameAtBeat: sampleFrameAtBeatOnTrack(track.id, relocationClockTime),
+                beatAtFrame: beatAtFrameOnTrack(track.id, relocationClockTime),
+                readChannelBend: createChannelBendReader(track),
+            })) {
+                postNoteExpression({ posts, trackId: track.id, pitch, channel, sampleFrame: atFrame, expression });
+            }
+            posts.flush(isCurrent);
+        }
+    };
+    carrySoundingNotes();
     for (const track of tracks) {
         if (!isCurrent()) {
             return;
@@ -1034,15 +1099,15 @@ export async function scheduleMidiNotes(
         // A bypass or a swap panics the notes the instrument was voicing outside the transport teardown, so
         // what a muted or gapped window left parked for them must not post to the voice that is gone, or to
         // the next note the instrument starts on that pitch.
-        const playbackReceiver = resolvePlaybackNoteReceiver(track.devices);
-        const playbackReceiverId = isBypassedNoteReceiver(playbackReceiver) ? undefined : playbackReceiver?.device.id;
+        const playbackReceiverId = resolvePlaybackReceiverId(track.devices);
         keepHeldNoteExpressionOnReceiver(track.id, playbackReceiverId);
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             noteStoredControllersTrackMuteWithheld(track.id);
             continue;
         }
 
-        if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
+        const frozenBufferId = frozenBufferIdOf(track);
+        if (frozenBufferId) {
             // Dedup per session (same contract as scheduleAudioClips): the
             // whole frozen buffer is scheduled in a single shot anchored to the
             // absolute start time, so without the guard every 10 ms tick would
@@ -1051,7 +1116,7 @@ export async function scheduleMidiNotes(
             // (same track.id, new buffer) invalidates the dedup entry and the
             // refrozen render is scheduled instead of staying silent for the
             // rest of the session.
-            const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
+            const frozenKey = `${track.id}:${frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
                 const scheduled = scheduleFrozenTrack(
                     track,
@@ -1244,54 +1309,19 @@ export async function scheduleMidiNotes(
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
-        // The track's channel pitch bend, which the clips hold as they are now: a bend in force when a note
-        // starts, and each move while it sounds, reach the voice as its expression, because the engines bend
-        // a held voice and carry no channel bend of their own, so there is nothing to reset.
-        const channelBendClips = () =>
-            resolveChannelBendClips({
-                trackId: track.id,
-                clips: track.clips,
-                ccByClipId: midiState.ccByClipId,
-                pitchBendByClipId: midiState.pitchBendByClipId,
-            });
         // The whole timeline, read when the first note that can bend starts: the bend in force at its start
         // is the last move of any earlier clip.
-        let channelBend: ReturnType<typeof projectChannelBend> | undefined;
-        const readChannelBend = () => {
-            channelBend ??= projectChannelBend({
-                clips: channelBendClips(),
-                frameAtBeat: sampleFrameAtBeatOnTrack(track.id),
-            });
-            return channelBend;
-        };
+        const readChannelBend = createChannelBendReader(track);
         // The moves the sounding notes take in this window. A window that resumes the track or a clip after a
         // mute lists them from the start of the timeline, because the instrument was told none of what the
         // mute kept from it, and a note still sounding is given the bend in force.
         const readWindowChannelBend = () =>
             projectChannelBend({
-                clips: channelBendClips(),
+                clips: resolveChannelBendClipsOnTrack(track),
                 frameAtBeat: sampleFrameAtBeatOnTrack(track.id),
                 fromBeat: resumesAfterMute ? Number.NEGATIVE_INFINITY : fromBeat,
                 toBeat,
             });
-        // The notes the relocation left sounding take the bend in force at its destination before the window
-        // starts any note, so a note struck on the opening frame is not overridden by a carried one's update.
-        const soundingNotes = soundingAtRelocation?.get(track.id);
-        if (soundingNotes) {
-            const relocationClockTime = getCurrentTime();
-            const atFrame = sampleFrameAtBeatOnTrack(track.id)(fromBeat);
-            for (const { pitch, channel, expression } of relocateHeldNoteExpression({
-                trackId: track.id,
-                notes: soundingNotes,
-                receiverId: playbackReceiverId,
-                atFrame,
-                frameAtBeat: sampleFrameAtBeatOnTrack(track.id, relocationClockTime),
-                beatAtFrame: beatAtFrameOnTrack(track.id, relocationClockTime),
-                readChannelBend,
-            })) {
-                postNoteExpression({ posts, trackId: track.id, pitch, channel, sampleFrame: atFrame, expression });
-            }
-        }
         for (const clip of activeMidiClips) {
             // A clip with no note list plays no notes; its stored controllers still play.
             const notes = midiState.notesByClipId[clip.id] ?? [];

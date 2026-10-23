@@ -72,6 +72,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getAudioContext: vi.fn(() => ({ sampleRate: 48_000, createGain: vi.fn(() => ({ connect: vi.fn() })) })),
     scheduleFaustNote: vi.fn(),
 }));
+vi.mock('../scheduleFrozenTrack', () => ({ scheduleFrozenTrack: vi.fn(() => true) }));
 vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Synth/useCases')>()),
     getDrumKitDefByIndex: vi.fn(() => null),
@@ -101,7 +102,12 @@ const LEVAIN: InstrumentUnderTest = { type: 'levain', controlsKey: 'levainContro
 const GRAND_BOULE: InstrumentUnderTest = { type: 'grand-boule', controlsKey: 'grandBouleControls' };
 const CRUMBS: InstrumentUnderTest = { type: 'builtin-crumbs', controlsKey: 'crumbsControls' };
 
-function midiTrack(instrument: InstrumentUnderTest, clips: Clip[], devices?: { id: string; type: string }[]) {
+function midiTrack(
+    instrument: InstrumentUnderTest,
+    clips: Clip[],
+    devices?: { id: string; type: string; bypassed?: boolean }[],
+    overrides: Record<string, unknown> = {}
+) {
     return {
         id: 'track-1',
         kind: 'midi',
@@ -112,6 +118,7 @@ function midiTrack(instrument: InstrumentUnderTest, clips: Clip[], devices?: { i
         clips,
         sends: [],
         freezeState: { status: 'unfrozen' },
+        ...overrides,
     } as never;
 }
 
@@ -882,6 +889,247 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             await playOnPass(SEAM_SECONDS, 0, 1, true);
 
             expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+        });
+
+        describe('on a track whose own window does not start any note at the seam', () => {
+            /** The clip starts on beat 1, so the loop start (beat 0) falls in a gap of the track. */
+            function loadGapSong(options: { devices?: { id: string; type: string; bypassed?: boolean }[] } = {}): void {
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip({ startBeat: 1, endBeat: 8 })], options.devices),
+                    notes: { 'clip-1': [note('long', 1, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('early', 0.5, 4096), bend('out', 2, 8191)] },
+                });
+            }
+
+            it('gives the ringing note the bend in force at a loop start that falls in a gap, then the moves of the new pass', async () => {
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip({ startBeat: 1, endBeat: 8 })]),
+                    notes: { 'clip-1': [note('long', 1, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('out', 2, 8191)] },
+                });
+                await playOnPass(0, 2, 4);
+                expect(appliedTo(LONG_NOTE_PITCH).at(-1)).toEqual({
+                    sampleFrame: 72_000,
+                    pitchBend: 8191,
+                    bendRangeSemitones: 2,
+                });
+                vi.mocked(applyNoteExpression).mockClear();
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+                await playOnPass(SEAM_SECONDS, 1, 2);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('keeps moving a note carried over a gap with the moves of the clip that starts later in the new pass', async () => {
+                loadGapSong();
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+                // The move at content beat 0.5 lands on beat 1.5 of the new pass, 0.5 beats before the release.
+                await playOnPass(SEAM_SECONDS, 1, 2);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                    { sampleFrame: SEAM_FRAME + 1.5 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('leaves the ringing note alone in the gap once the instrument that voiced it is not the track’s', async () => {
+                loadGapSong();
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                loadGapSong({ devices: [{ id: 'device-2', type: FERMENTER.type }] });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+                expect(heldNotesByTrack.get('track-1') ?? []).toEqual([]);
+            });
+
+            it('returns the ringing note to centre when every clip at the loop start is muted', async () => {
+                loadSeamSong({});
+                await playOnPass(0, 2, 4);
+                expect(appliedTo(LONG_NOTE_PITCH).at(-1)?.pitchBend).toBe(8191);
+                vi.mocked(applyNoteExpression).mockClear();
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip({ muted: true })]),
+                    notes: { 'clip-1': [note('long', 2, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('centre', 0, 4096), bend('out', 3, 8191)] },
+                });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+                // The muted clip's own bend at the loop start is not in force, so the bend the note held is undone.
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('moves a note carried over a muted clip once the clip is unmuted while the note still rings', async () => {
+                const song = {
+                    notes: { 'clip-1': [note('long', 2, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('centre', 0, 0), bend('mid', 1.5, 4096), bend('out', 3, 8191)] },
+                };
+                setProject({ track: midiTrack(FERMENTER, [midiClip()]), ...song });
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                setProject({ track: midiTrack(FERMENTER, [midiClip({ muted: true })]), ...song });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+                setProject({ track: midiTrack(FERMENTER, [midiClip()]), ...song });
+                await playOnPass(SEAM_SECONDS, 1.75, 1.9);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                    { sampleFrame: SEAM_FRAME + 1.75 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('carries a note of a track that is muted at the seam, and moves it when the mute ends while it still rings', async () => {
+                loadSeamSong({ bends: [bend('centre', 0, 0), bend('mid', 1.5, 4096), bend('out', 3, 8191)] });
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                const song = {
+                    notes: { 'clip-1': [note('long', 2, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('centre', 0, 0), bend('mid', 1.5, 4096), bend('out', 3, 8191)] },
+                };
+                setProject({ track: midiTrack(FERMENTER, [midiClip()], undefined, { muted: true }), ...song });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+                // The mute keeps the note registered, with its release placed in the new pass's beats.
+                expect(heldNotesByTrack.get('track-1')?.map((held) => held.pitch)).toEqual([LONG_NOTE_PITCH]);
+                expect(heldNotesByTrack.get('track-1')?.[0]?.releaseBeat).toBeCloseTo(2, 6);
+                // The windows the mute keeps from the track post nothing, at their own frames or later.
+                await playOnPass(SEAM_SECONDS, 1, 1.5);
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                ]);
+
+                setProject({ track: midiTrack(FERMENTER, [midiClip()]), ...song });
+                await playOnPass(SEAM_SECONDS, 1.75, 1.9);
+
+                // The move at beat 1.5 fell in the muted span; the window that ends the mute tells the note.
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                    { sampleFrame: SEAM_FRAME + 1.75 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('carries a note of a track that still names the buffer of an earlier freeze but is not frozen', async () => {
+                loadSeamSong({});
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip()], undefined, {
+                        freezeState: { status: 'unfrozen', frozenBufferId: 'earlier-freeze' },
+                    }),
+                    notes: { 'clip-1': [note('long', 2, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('centre', 0, 0)] },
+                });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                    { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('leaves a ringing note alone once the instrument that voiced it is bypassed, and forgets it', async () => {
+                loadGapSong();
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                loadGapSong({ devices: [{ id: 'device-1', type: FERMENTER.type, bypassed: true }] });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+                expect(heldNotesByTrack.get('track-1') ?? []).toEqual([]);
+            });
+
+            it('posts and registers nothing for a window that is no longer current when the seam opens', async () => {
+                loadGapSong();
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                vi.mocked(getCurrentTime).mockReturnValue(SEAM_SECONDS);
+
+                await scheduleMidiNotes(
+                    0,
+                    1,
+                    0,
+                    new Set<string>(),
+                    [],
+                    defaultTransportState,
+                    120,
+                    { generation: 1, discontinuityEpoch: 1, isCurrent: () => false, yeastRouteLineage: new Map() },
+                    true
+                );
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+                expect(heldNotesByTrack.get('track-1') ?? []).toEqual([]);
+            });
+
+            it('forgets a ringing note of a track that is frozen at the seam, which plays its buffer and not its instrument', async () => {
+                loadSeamSong({});
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip()], undefined, {
+                        freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer' },
+                    }),
+                    notes: { 'clip-1': [note('long', 2, 4, LONG_NOTE_PITCH)] },
+                    bends: { 'clip-1': [bend('centre', 0, 0)] },
+                });
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+                expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+                expect(heldNotesByTrack.get('track-1') ?? []).toEqual([]);
+            });
+
+            it('carries the ringing notes of every track at once, whichever of them has a window that runs', async () => {
+                const secondTrack = {
+                    ...(midiTrack(FERMENTER, [midiClip({ id: 'clip-2', startBeat: 1, endBeat: 8 })]) as object),
+                    id: 'track-2',
+                } as never;
+                (trackStore as { value: unknown }).value = {
+                    tracks: [midiTrack(FERMENTER, [midiClip()]), secondTrack],
+                };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: {
+                        'clip-1': [note('long', 2, 4, LONG_NOTE_PITCH)],
+                        'clip-2': [note('long-2', 1, 4, 65)],
+                    },
+                    ccByClipId: {},
+                    pitchBendByClipId: {
+                        'clip-1': [bend('centre', 0, 0), bend('out', 3, 8191)],
+                        'clip-2': [bend('out-2', 2, 8191)],
+                    },
+                };
+                await playOnPass(0, 2, 4);
+                vi.mocked(applyNoteExpression).mockClear();
+
+                await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+                expect(
+                    vi
+                        .mocked(applyNoteExpression)
+                        .mock.calls.map(([input]) => [
+                            input.trackId,
+                            input.note,
+                            input.sampleFrame,
+                            input.expression.pitchBend,
+                        ])
+                ).toEqual(
+                    expect.arrayContaining([
+                        ['track-1', LONG_NOTE_PITCH, SEAM_FRAME, 0],
+                        ['track-2', 65, SEAM_FRAME, 0],
+                    ])
+                );
+            });
         });
     });
 });
