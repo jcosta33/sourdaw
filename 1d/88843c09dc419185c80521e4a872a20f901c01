@@ -1,0 +1,16 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  h_beb54bf43b47b7 139,142-143,148,153-155
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  h_beb54bf43b47b7 75-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d88843c09dc419185c80521e4a872a20f901c01",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
