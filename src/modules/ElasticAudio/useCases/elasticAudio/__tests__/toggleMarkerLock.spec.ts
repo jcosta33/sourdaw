@@ -55,7 +55,7 @@ describe('toggleMarkerLock', () => {
     });
 
     it('is a no-op when the marker cannot be found', () => {
-        toggleMarkerLock('missing');
+        toggleMarkerLock('clip-1', 'missing');
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
@@ -70,10 +70,39 @@ describe('toggleMarkerLock', () => {
             originalTempo: null,
         });
 
-        toggleMarkerLock('m-1');
+        toggleMarkerLock('clip-1', 'm-1');
         expect(mocks.warpStates.get('clip-1')?.markers.find((m) => m.id === 'm-1')!.locked).toBe(true);
-        toggleMarkerLock('m-2');
+        toggleMarkerLock('clip-1', 'm-2');
         expect(mocks.warpStates.get('clip-1')?.markers.find((m) => m.id === 'm-2')!.locked).toBe(false);
+    });
+
+    it('toggles only the named clip marker when two clips share the marker id', () => {
+        // Warp-marker identity is clip-local (#5570): the lock toggle targets
+        // the clip it was opened on, never a same-id marker in another clip.
+        const markers = (beat: number, locked: boolean) => [
+            { id: 'm-1', originalBeat: beat, warpedBeat: beat, origin: 'user' as const, locked },
+        ];
+        mocks.warpStates.set('clip-a', {
+            enabled: true,
+            markers: markers(1, false),
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+        mocks.warpStates.set('clip-b', {
+            enabled: true,
+            markers: markers(2, false),
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+
+        toggleMarkerLock('clip-b', 'm-1');
+
+        expect(mocks.warpStates.get('clip-a')!.markers[0]!.locked).toBe(false);
+        expect(mocks.warpStates.get('clip-b')!.markers[0]!.locked).toBe(true);
+        const [, undoFn] = mocks.pushUndoEntry.mock.calls[0]!;
+        (undoFn as () => void)();
+        expect(mocks.warpStates.get('clip-a')!.markers[0]!.locked).toBe(false);
+        expect(mocks.warpStates.get('clip-b')!.markers[0]!.locked).toBe(false);
     });
 
     it('pushes an undo entry that reverts the toggle', () => {
@@ -83,7 +112,7 @@ describe('toggleMarkerLock', () => {
             stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
-        toggleMarkerLock('m-1');
+        toggleMarkerLock('clip-1', 'm-1');
         expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
         const [, undoFn] = mocks.pushUndoEntry.mock.calls[0]!;
         (undoFn as () => void)();
