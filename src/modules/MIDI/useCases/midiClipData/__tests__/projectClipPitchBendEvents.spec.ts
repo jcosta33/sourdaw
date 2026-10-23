@@ -47,6 +47,25 @@ describe('projectClipPitchBendEvents', () => {
         ]);
     });
 
+    it('says where each move was recorded on the pass that plays it, before the pass head for a carry', () => {
+        // The clip at 4 plays content [1, 3) on each two-beat pass: the bend out at content 0 is carried onto
+        // both heads, recorded a beat before each, and the return at content 1.5 is played where it was recorded.
+        const events = projectClipPitchBendEvents({
+            pitchBends: [bend('a', 0, 8_191), bend('b', 1.5, 0)],
+            clip: { startBeat: 4, endBeat: 8, midiOffsetBeats: 1, loopEnabled: true, loopLength: 2 },
+            fromBeat: 4,
+            toBeat: 8,
+        });
+
+        expect(events.map((event) => [event.beat, event.recordedBeat])).toEqual([
+            [4, 3],
+            [4.5, 4.5],
+            [6, 5],
+            [6.5, 6.5],
+        ]);
+        expect(events.every((event) => !('recordedContentBeat' in event))).toBe(true);
+    });
+
     it('carries the bend of each channel on its own', () => {
         const events = projectClipPitchBendEvents({
             pitchBends: [bend('a', 0, 100, 0), bend('b', 0.5, 200, 1), bend('c', 1, 300, 0)],

@@ -32,8 +32,8 @@ type ProjectedNoteExpressionCurves = {
  * change that lands on the start frame replaces the note-on's expression (`atStart`), and changes that share
  * a later frame collapse to the last, so no frame receives two.
  *
- * The track's channel bend (`channelBend`) adds the moves of its own. At the start the note's own bend wins
- * when it holds one, and otherwise the bend in force there is the note's; after it, whichever of a channel
+ * The track's channel bend (`channelBend`) adds the moves of its own. At the start the later of the note's
+ * own last bend and the channel move in force there holds the bend (`startNoteExpression`); after it, whichever of a channel
  * move and the note's own bend point comes later holds the bend and its range, and the note's pressure and
  * slide stay its own, because an engine takes the three together. A move on the release frame is dropped with
  * the voice, and one on the start frame is the note-on's own expression, so a bend struck with a note sounds
