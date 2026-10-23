@@ -84,15 +84,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
-// The persistence legs a branch switch kicks off are the one CrdtDocument
-// surface this spec stands in for: the no-op keeps the storage port's real
-// backends out of the jsdom run, while the document functions the cases drive
-// (the root replacement seam, the witness) stay real through the spread.
-vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-    compactProject: vi.fn(() => Promise.resolve()),
-    runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
-}));
 
 const noActionHistoryMetadataPort = {
     record: () => [],
