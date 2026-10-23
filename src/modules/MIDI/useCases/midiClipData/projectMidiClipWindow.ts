@@ -1,4 +1,4 @@
-import { isSwitchControllerRelease } from '#/utils/pianoPedalController';
+import { isPedalControllerLift } from '#/utils/pianoPedalController';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
@@ -11,7 +11,7 @@ type MidiClipWindow = {
     visibleStartBeat: number;
     visibleEndBeat: number;
     /**
-     * Where a switch-controller release on the closing line (`visibleEndBeat`) plays, on the
+     * Where a pedal lift on the closing line (`visibleEndBeat`) plays, on the
      * destination timeline, when the window ends where the clip does. Absent, the window ends on a
      * loop seam or a cut and the closing line belongs to whatever plays next: the row is dropped.
      */
@@ -125,18 +125,18 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
 }
 
 /**
- * Of the controller rows on a closing line, only the release of an on/off switch (a pedal
- * lift) plays: it ends what the clip held. A press there would hold past the clip end with
- * nothing of the clip left to hold, and a continuous controller there would leave its value
- * set for whatever follows, so every other row stays dropped.
+ * Of the controller rows on a closing line, only a true pedal lift plays: it ends what
+ * the clip held. A press there would hold past the clip end with nothing of the clip left
+ * to hold, and any other row there would leave its value set for whatever follows — a
+ * partial sustain among them, which lifts nothing — so every other row stays dropped.
  */
 function playsOnClosingLine(row: MidiCC): boolean {
-    return isSwitchControllerRelease(row.controller, row.value);
+    return isPedalControllerLift(row.controller, row.value);
 }
 
 /**
  * What a MIDI clip plays for one pass through `window`: notes clipped to it, controllers
- * carried into it, and the switch-controller releases on its closing line when it has one.
+ * carried into it, and the pedal lifts on its closing line when it has one.
  * Pitch-bend rows on the closing line are always dropped; no route plays a stored bend lane.
  */
 export function projectMidiClipWindow({ notes, controlChanges, pitchBends, window }: ProjectMidiClipWindowInput): {

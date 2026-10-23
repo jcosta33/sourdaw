@@ -1,9 +1,13 @@
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
+import { type projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
 
 import { projectOfflineYeastClipNotes } from './projectOfflineYeastClipNotes';
 import { projectOfflineYeastNotes } from './projectOfflineYeastNotes';
+
+/** The recorded curves a note carries, in the shape the shared projection reads. */
+type OfflineYeastNoteExpression = NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
 
 type OfflineYeastClipNote = {
     id: string;
@@ -15,6 +19,7 @@ type OfflineYeastClipNote = {
     slide?: number;
     pitchBend?: number;
     pitchBendRangeSemitones?: number;
+    expression?: OfflineYeastNoteExpression;
 };
 
 type OfflineYeastClipIteration = {
@@ -52,11 +57,14 @@ type ScheduledOfflineYeastNote = {
     endSamples: number;
     toasterPadIndex: number;
     startBeat: number;
+    /** How far into the note `startBeat` is when a clip cut took its head off; absent when the note begins there. */
+    beatsIntoNote?: number;
     endBeat: number;
     pressure?: number;
     slide?: number;
     pitchBend?: number;
     pitchBendRangeSemitones?: number;
+    expression?: OfflineYeastNoteExpression;
     clipGain: number;
 };
 
@@ -137,13 +145,17 @@ export function projectOfflineYeastTrackNotes({
                 projectPitch,
             });
             for (const projectedNote of projectedNotes) {
-                const sourceNote = sourceNotesByEventId.get(projectedNote.id) ?? iteration.sourceNotes[0];
+                const identifiedNote = sourceNotesByEventId.get(projectedNote.id);
+                const sourceNote = identifiedNote ?? iteration.sourceNotes[0];
+                // A generated note borrows the first source note's scalars, never its recorded curves, which
+                // would replay on a pitch they were not played on.
                 scheduledNotes.push({
                     ...projectedNote,
                     pressure: sourceNote?.pressure,
                     slide: sourceNote?.slide,
                     pitchBend: sourceNote?.pitchBend,
                     pitchBendRangeSemitones: sourceNote?.pitchBendRangeSemitones,
+                    expression: identifiedNote?.expression,
                     clipGain: iteration.clipGain ?? 1,
                 });
             }

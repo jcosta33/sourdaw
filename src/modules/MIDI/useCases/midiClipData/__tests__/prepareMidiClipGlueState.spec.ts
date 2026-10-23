@@ -173,8 +173,8 @@ describe('prepareMidiClipGlueState', () => {
             },
             pitchBendByClipId: {
                 'source-a': [
-                    { id: 'z-down', value: -0.5, beat: 3, channel: 0 },
-                    { id: 'a-up', value: 0.5, beat: 3, channel: 0 },
+                    { id: 'z-down', value: -4096, beat: 3, channel: 0 },
+                    { id: 'a-up', value: 4096, beat: 3, channel: 0 },
                 ],
             },
         };
@@ -189,8 +189,8 @@ describe('prepareMidiClipGlueState', () => {
             ['b-press', 5, 127],
         ]);
         expect(target?.data.pitchBends.value.map(({ id, value }) => [id, value])).toEqual([
-            ['z-down', -0.5],
-            ['a-up', 0.5],
+            ['z-down', -4096],
+            ['a-up', 4096],
         ]);
     });
 
@@ -332,8 +332,8 @@ describe('prepareMidiClipGlueState', () => {
             },
             pitchBendByClipId: {
                 'source-b': [
-                    { id: 'bend-hidden', value: 0.25, beat: 1, channel: 2 },
-                    { id: 'bend-late', value: 0.75, beat: 5, channel: 2 },
+                    { id: 'bend-hidden', value: 2048, beat: 1, channel: 2 },
+                    { id: 'bend-late', value: 6144, beat: 5, channel: 2 },
                 ],
             },
         };
@@ -350,8 +350,8 @@ describe('prepareMidiClipGlueState', () => {
             ['at-start', 6, 40],
         ]);
         expect(target?.data.pitchBends.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
-            ['bend-hidden', 6, 0.25],
-            ['bend-late', 9, 0.75],
+            ['bend-hidden', 6, 2048],
+            ['bend-late', 9, 6144],
         ]);
     });
 });
