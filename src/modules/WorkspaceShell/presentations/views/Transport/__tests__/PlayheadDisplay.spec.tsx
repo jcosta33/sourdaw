@@ -46,7 +46,8 @@ const { transportState, timeSignatureState } = vi.hoisted(() => {
 });
 const toggleTimeDisplayMode = vi.hoisted(() => vi.fn());
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: transportState,
     timeSignatureMapStore: timeSignatureState,
     playheadPositionRef: playheadPosition,
