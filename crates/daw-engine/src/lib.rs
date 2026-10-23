@@ -1,5 +1,7 @@
 pub mod audio_thread;
 pub mod capture;
+mod capture_clock;
+pub use capture_clock::{CaptureClockQuality, CaptureClockSnapshot};
 pub(crate) mod device;
 pub mod retrospective;
 /// Why an engine has no capture side. The device seam itself stays internal;
@@ -168,6 +170,7 @@ pub struct EngineHandle {
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
+    capture_clock: capture_clock::CaptureClock,
     /// What the capture ring published as its settled latency, in frames, or
     /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
@@ -313,6 +316,7 @@ impl EngineHandle {
             engine_events: engine_event_rx,
             capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
+            capture_clock: spawned.capture_clock,
             input_latency_frames: spawned.input_latency_frames,
             capture_refusal: spawned.capture_refusal,
             rendering: spawned.liveness.rendering,
@@ -676,6 +680,11 @@ impl EngineHandle {
     /// position it predicts.
     pub fn transport_position_snapshot(&mut self) -> TransportPositionSnapshot {
         self.transport_position.snapshot()
+    }
+
+    /// Same monotonic epoch as the callback date, for a caller's query bracket.
+    pub fn capture_clock_now(&self) -> (u64, f64) {
+        self.capture_clock.now()
     }
 
     /// Read what the engine's master output, and every timeline track's own
@@ -1480,6 +1489,7 @@ fn engine_handle_fixture(
         engine_events,
         capture_events,
         sample_rate: 48_000.0,
+        capture_clock: capture_clock::CaptureClock::new(),
         input_latency_frames: audio_thread::new_input_latency_slot(),
         capture_refusal,
         rendering,

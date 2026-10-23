@@ -15,6 +15,8 @@ vi.mock('#/utils/desktopBridge', () => ({
  * because the mirror type is hand-maintained on both sides.
  */
 const NATIVE_PAYLOAD = {
+    captureClock: null,
+    captureClockQuery: null,
     running: true,
     playing: true,
     positionSeconds: 1.5,
@@ -43,6 +45,102 @@ describe('getEngineTransportPosition', () => {
     beforeEach(() => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockReset();
+    });
+
+    it.each(['estimated', 'degraded'] as const)(
+        'retains a %s callback presentation date independently of a later query bracket',
+        async (quality) => {
+            const captureClock = {
+                epoch: 7,
+                streamEpoch: 2,
+                sampleRate: 48000,
+                presentationSeconds: 12.25,
+                quality,
+                uncertaintySeconds: null,
+            };
+            const captureClockQuery = { epoch: 7, enteredSeconds: 12.3, leavingSeconds: 12.35 };
+            vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, captureClock, captureClockQuery });
+
+            const position = await getEngineTransportPosition();
+
+            expect(position).toMatchObject({ captureClock, captureClockQuery });
+        }
+    );
+
+    it.each([
+        { captureClock: undefined, captureClockQuery: undefined },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 0,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: Number.NaN,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'exact',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: -1,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 2, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 3, leavingSeconds: 2 },
+        },
+    ])('keeps unusable capture timing unavailable without changing cursor fields (%#)', async (timing) => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, ...timing });
+        const position = await getEngineTransportPosition();
+        expect(position.captureClock).toBeNull();
+        expect(position.positionSeconds).toBe(NATIVE_PAYLOAD.positionSeconds);
+        expect(position.batchesApplied).toBe(NATIVE_PAYLOAD.batchesApplied);
     });
 
     it('reads the native payload onto its own fields', async () => {
