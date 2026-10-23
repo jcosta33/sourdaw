@@ -9,6 +9,7 @@
  */
 import { type ReactElement } from 'react';
 
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { Fader } from '#/components/daw/Fader';
@@ -20,6 +21,8 @@ import { type MicPositionState } from '../../models/LevainPatch';
 type MicBlendSliderProps = {
     micPositions: (MicPositionState | null)[];
     showFull?: boolean;
+    selectedMicIndex?: number | null;
+    onSelectMic?: (index: number) => void;
     /** Forward mic param changes to the audio engine. Provided by the parent view. */
     onSendMicParam: (micIndex: number, param: string, value: number) => void;
     /** Update mic position state. Provided by the parent view. */
@@ -31,6 +34,8 @@ const FullMicMixer = ({
     micPositions,
     onSendMicParam,
     onUpdateMicPosition,
+    selectedMicIndex,
+    onSelectMic,
 }: Omit<MicBlendSliderProps, 'showFull'>): ReactElement => (
     <Stack gap={3} className="max-w-[400px]">
         <DawPluginSectionHeader title="Mic Positions" titleClassName="text-muted-foreground" />
@@ -82,9 +87,22 @@ const FullMicMixer = ({
                                 size="sm"
                                 tone="amber"
                             />
-                            <span className="text-nano text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
-                                {mic.name}
-                            </span>
+                            {onSelectMic ? (
+                                <DawPluginChip
+                                    active={selectedMicIndex === i}
+                                    aria-pressed={selectedMicIndex === i}
+                                    aria-label={`Select ${mic.name} mic`}
+                                    tone="amber"
+                                    size="sm"
+                                    onClick={() => onSelectMic(i)}
+                                >
+                                    {mic.name}
+                                </DawPluginChip>
+                            ) : (
+                                <span className="text-nano text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
+                                    {mic.name}
+                                </span>
+                            )}
                         </Stack>
                     )
             )}
@@ -97,6 +115,8 @@ export const MicBlendSlider = ({
     showFull,
     onSendMicParam,
     onUpdateMicPosition,
+    selectedMicIndex,
+    onSelectMic,
 }: MicBlendSliderProps): ReactElement => {
     if (showFull) {
         return (
@@ -104,6 +124,8 @@ export const MicBlendSlider = ({
                 micPositions={micPositions}
                 onSendMicParam={onSendMicParam}
                 onUpdateMicPosition={onUpdateMicPosition}
+                selectedMicIndex={selectedMicIndex}
+                onSelectMic={onSelectMic}
             />
         );
     }

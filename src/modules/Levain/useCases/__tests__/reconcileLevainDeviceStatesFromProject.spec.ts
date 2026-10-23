@@ -149,3 +149,26 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
         expect(commit?.payload.state.data.currentArticulation).toBe('spiccato');
     });
 });
+
+it('projects a peer-only tier without engine, sample or persistence writes', () => {
+    vi.clearAllMocks();
+    levainStore.set({
+        [DEVICE_ID]: { ...defaultLevainState, patch: createDefaultPatch('violin-1') },
+        sibling: structuredClone(defaultLevainState),
+    });
+    expect(levainStore.value?.sibling?.patch).not.toBe(levainStore.value?.[DEVICE_ID]?.patch);
+    const stop = initLevainDeviceStatePersistence();
+    projectWith(
+        levainDevice({ ...VIOLIN_SUSTAIN_CHUNK, data: { ...VIOLIN_SUSTAIN_CHUNK.data, disclosureTier: 'expert' } })
+    );
+    const patch = levainStore.value?.[DEVICE_ID]?.patch;
+    reconcileLevainDeviceStatesFromProject();
+    expect(levainStore.value?.[DEVICE_ID]?.uiLevel).toBe(6);
+    expect(levainStore.value?.sibling?.uiLevel).toBe(1);
+    expect(levainStore.value?.[DEVICE_ID]?.patch).toBe(patch);
+    expect(mocks.applyPatchToEngine).not.toHaveBeenCalled();
+    expect(mocks.loadSamplesForInstrument).not.toHaveBeenCalled();
+    expect(mocks.setLevainParamWithAudio).not.toHaveBeenCalled();
+    expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    stop();
+});
