@@ -190,11 +190,37 @@ type CarriedBendRangeMessages = {
     afterHead: ChannelRegisteredParameterMessage[];
 };
 
+type PlayedRow = { channel: number; beat: number };
+
+/** Where the edited clip's head plays, and the rows of its own the clip plays from there, its carries excluded. */
+export type EditedClipHead = {
+    beat: number;
+    bends: readonly PlayedRow[];
+    controlChanges: readonly (PlayedRow & { controller: number })[];
+};
+
+/**
+ * The channels whose state a row of the edited clip's own reads or writes on its head: a bend or a
+ * registered-parameter message within the same-beat tolerance of it, which `createStoredBendRangeReader` reads
+ * with the rows on the head. The carried bend is replaced, or the state it would be read under rewritten, at the
+ * instant it starts, so the channel keeps the state at the cut, as a lane starting at the head does.
+ */
+function channelsAddressedOnHead(head: EditedClipHead): Set<number> {
+    const onHead = (row: PlayedRow) => row.beat <= head.beat + SAME_BEAT_TOLERANCE;
+    return new Set(
+        [
+            ...head.bends.filter(onHead),
+            ...head.controlChanges.filter((row) => onHead(row) && isRegisteredParameterController(row.controller)),
+        ].map(({ channel }) => channel)
+    );
+}
+
 /**
  * The messages that keep a bend carried onto a cut at the range its row was recorded under. Before the cut the
  * row is a carry, read at the beat it was recorded at (`projectChannelBend`); on the edited clip's head it is an
  * ordinary row, read under the state in force there, which is the state at the cut. A channel whose carried row
- * was recorded under the state at the cut gets nothing.
+ * was recorded under the state at the cut gets nothing, and neither does one the clip's own rows address on its
+ * head (`channelsAddressedOnHead`).
  *
  * The recorded state is the one `createStoredBendRangeReader` reads at the recorded beat: every message up to it,
  * within the same-beat tolerance.
@@ -203,15 +229,21 @@ export function reconcileCarriedBendRanges({
     opening,
     before,
     carried,
+    head,
 }: {
     /** The messages the edited clip reads up to and on its head, the declaration that opens it included, in order. */
     opening: readonly ChannelRegisteredParameterMessage[];
     /** The source's messages before the cut, at their beats on the source, in the order the machine reads them. */
     before: readonly BeatRegisteredParameterMessage[];
     carried: readonly CarriedBendRecording[];
+    head: EditedClipHead;
 }): CarriedBendRangeMessages {
     const messages: CarriedBendRangeMessages = { onHead: [], afterHead: [] };
+    const addressedOnHead = channelsAddressedOnHead(head);
     for (const { channel, recordedBeat } of carried) {
+        if (addressedOnHead.has(channel)) {
+            continue;
+        }
         const openingOnChannel = opening.filter((message) => message.channel === channel);
         const beforeOnChannel = before.filter((message) => message.channel === channel);
         const toRecorded = reconcileRegisteredParameterMessages({
@@ -237,10 +269,10 @@ export function reconcileCarriedBendRanges({
  * at, controller or bend, so every such row reads the state at the cut. None when the clip plays nothing after its
  * head, because then no row reads the state they return to.
  */
-export function firstBeatAfterHead(headBeat: number, rowBeats: readonly number[]): number | undefined {
+export function firstBeatAfterHead(head: EditedClipHead): number | undefined {
     let first: number | undefined;
-    for (const beat of rowBeats) {
-        if (beat > headBeat + SAME_BEAT_TOLERANCE && (first === undefined || beat < first)) {
+    for (const { beat } of [...head.bends, ...head.controlChanges]) {
+        if (beat > head.beat + SAME_BEAT_TOLERANCE && (first === undefined || beat < first)) {
             first = beat;
         }
     }

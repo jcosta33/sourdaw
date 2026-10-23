@@ -7,6 +7,7 @@ import {
     reconcileRegisteredParameterMessages,
     type CarriedBendRecording,
     type ChannelRegisteredParameterMessage,
+    type EditedClipHead,
 } from './registeredParameterState';
 import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 
@@ -525,12 +526,14 @@ type SplitEventsResult<TRow extends SplitEventRow> =
           right: TRow[];
           /** The source rows before the cut whose values the right clip opens with, as the source holds them. */
           carriedFromBefore: TRow[];
+          /** The rows after the cut, rebased onto the right clip's origin. */
+          moved: TRow[];
       };
 
-/** What the right clip's bend lane takes from the cut: the rows it carries onto its origin, and every row's beat. */
+/** What the right clip's bend lane takes from the cut: the rows it carries onto its origin, and the rows after it. */
 type RightClipBends = {
     carried: readonly CarriedBendRecording[];
-    rowBeats: readonly number[];
+    moved: readonly MidiPitchBend[];
 };
 
 function placeDeclaration(
@@ -555,7 +558,7 @@ function placeDeclaration(
  * A bend carried onto the origin was read, in the source, under the state it was recorded in; on the right clip
  * it is an ordinary row at the origin. Its channel is therefore brought to that state on the origin, after the
  * declaration, and back to the state at the cut before the right clip's next own row
- * (`reconcileCarriedBendRanges`).
+ * (`reconcileCarriedBendRanges`), unless a row of the right clip's own addresses the channel on its origin.
  */
 function declareRegisteredParameterRows(
     { before, existingRightEvents, moved, createId }: Parameters<StateMessageCarry<MidiCC>['declare']>[0],
@@ -568,10 +571,12 @@ function declareRegisteredParameterRows(
     );
     const target = before.filter((event) => !owned.has(event.channel));
     const declaration = reconcileRegisteredParameterMessages({ current: [], target });
+    const head: EditedClipHead = { beat: 0, bends: bends.moved, controlChanges: moved };
     const carried = reconcileCarriedBendRanges({
         opening: declaration,
         before: target,
         carried: bends.carried.filter(({ channel }) => !owned.has(channel)),
+        head,
     });
     const rows: DeclaredStateRows<MidiCC> = {
         origin: [
@@ -580,7 +585,7 @@ function declareRegisteredParameterRows(
         ],
         beforeMoved: [],
     };
-    const afterOriginBeat = firstBeatAfterHead(0, [...moved.map(({ beat }) => beat), ...bends.rowBeats]);
+    const afterOriginBeat = firstBeatAfterHead(head);
     if (afterOriginBeat !== undefined) {
         rows.beforeMoved = placeDeclaration(carried.afterHead, afterOriginBeat, (index) =>
             createId(`rpn-after-carried-${index}`)
@@ -684,6 +689,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         left: left.length === events.length ? events : left,
         right: [...declared.origin, ...carried, ...declared.beforeMoved, ...moved],
         carriedFromBefore,
+        moved,
     };
 }
 
@@ -768,7 +774,7 @@ function transformSplit(
             idPrefix: 'cc-split',
             stateMessages: registeredParameterCarry({
                 carried: pitchBends.carriedFromBefore.map(({ channel, beat }) => ({ channel, recordedBeat: beat })),
-                rowBeats: pitchBends.right.map(({ beat }) => beat),
+                moved: pitchBends.moved,
             }),
         });
         if (controlChanges.status === 'rejected') {

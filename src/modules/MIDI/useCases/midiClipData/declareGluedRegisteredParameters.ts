@@ -5,6 +5,7 @@ import {
     reconcileRegisteredParameterMessages,
     type CarriedBendRecording,
     type ChannelRegisteredParameterMessage,
+    type EditedClipHead,
 } from '../../services/registeredParameterState';
 
 type DeclareGluedRegisteredParametersInput = {
@@ -18,8 +19,10 @@ type DeclareGluedRegisteredParametersInput = {
     glueBeat: number;
     /** The bends the window carries onto its start, each with the beat its row was recorded at on the source. */
     carriedBends: readonly CarriedBendRecording[];
-    /** Where the window's own controller and bend rows play in the glued clip. */
-    windowRowBeats: readonly number[];
+    /** The window's own bends, its carries excluded, where they play in the glued clip. */
+    windowBends: EditedClipHead['bends'];
+    /** The window's controller rows, where they play in the glued clip. */
+    windowControlChanges: readonly MidiCC[];
     createId: (key: string) => string;
 };
 
@@ -52,7 +55,8 @@ function placeMessages(
  * A bend the window carries onto its start was read, in the source, under the state it was recorded in; in the
  * glued clip it is an ordinary row at the window start. Its channel is therefore brought to that state on the
  * window start, after the opening declaration, and back to the opening state before the window's next own row
- * (`reconcileCarriedBendRanges`). In the order returned, which the caller keeps among rows on one beat.
+ * (`reconcileCarriedBendRanges`), unless a row of the window's own addresses the channel on its start. In the
+ * order returned, which the caller keeps among rows on one beat.
  */
 export function declareGluedRegisteredParameters({
     gluedSoFar,
@@ -60,18 +64,25 @@ export function declareGluedRegisteredParameters({
     visibleStartBeat,
     glueBeat,
     carriedBends,
-    windowRowBeats,
+    windowBends,
+    windowControlChanges,
     createId,
 }: DeclareGluedRegisteredParametersInput): MidiCC[] {
     const current = rowsBefore(gluedSoFar, Number.POSITIVE_INFINITY);
     const before = rowsBefore(sourceControlChanges, visibleStartBeat);
     const opening = reconcileRegisteredParameterMessages({ current, target: before });
-    const carried = reconcileCarriedBendRanges({ opening: [...current, ...opening], before, carried: carriedBends });
+    const head: EditedClipHead = { beat: glueBeat, bends: windowBends, controlChanges: windowControlChanges };
+    const carried = reconcileCarriedBendRanges({
+        opening: [...current, ...opening],
+        before,
+        carried: carriedBends,
+        head,
+    });
     const rows = [
         ...placeMessages(opening, glueBeat, (index) => createId(`rpn-${index}`)),
         ...placeMessages(carried.onHead, glueBeat, (index) => createId(`rpn-carried-${index}`)),
     ];
-    const afterHeadBeat = firstBeatAfterHead(glueBeat, windowRowBeats);
+    const afterHeadBeat = firstBeatAfterHead(head);
     if (afterHeadBeat !== undefined) {
         rows.push(
             ...placeMessages(carried.afterHead, afterHeadBeat, (index) => createId(`rpn-after-carried-${index}`))

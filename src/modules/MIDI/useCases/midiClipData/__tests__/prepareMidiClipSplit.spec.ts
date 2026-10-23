@@ -256,6 +256,58 @@ describe('prepareMidiClipSplit bend range', () => {
             ]);
         });
 
+        it('returns to the state at the cut ahead of a Data Entry of its own on the beat the return takes', () => {
+            const controlChanges = [...recordedUnderTwelve, controller('data-entry-first', 2.5, 6, 5)];
+            const bends = [carried, { id: 'after-data-entry', value: 4096, beat: 3, channel: 0 }];
+            const plan = splitAtTwo(controlChanges, bends);
+
+            expect(rangesPlayed({ startBeat: 0, endBeat: 4 }, controlChanges, bends)).toEqual([
+                { beat: 1.2, rangeSemitones: 12 },
+                { beat: 3, rangeSemitones: 5 },
+            ]);
+            expect(
+                rangesPlayed(
+                    { startBeat: 2, endBeat: 4 },
+                    plan.nextRight.controlChanges.value,
+                    plan.nextRight.pitchBends.value
+                )
+            ).toEqual([
+                { beat: 2, rangeSemitones: 12 },
+                { beat: 3, rangeSemitones: 5 },
+            ]);
+        });
+
+        it.each([
+            {
+                name: 'a bend',
+                controlChanges: recordedUnderTwelve,
+                pitchBends: [carried, { id: 'own', value: 4096, beat: 2 + 1e-12, channel: 0 }],
+                range: 2,
+            },
+            {
+                name: 'a Data Entry',
+                controlChanges: [...recordedUnderTwelve, controller('own-data-entry', 2 + 1e-12, 6, 5)],
+                pitchBends: [carried, { id: 'later', value: 4096, beat: 3, channel: 0 }],
+                range: 5,
+            },
+        ])(
+            'reads the state in force at the cut for $name of its own within the same-beat tolerance of the cut',
+            ({ controlChanges, pitchBends, range }) => {
+                const plan = splitAtTwo(controlChanges, pitchBends);
+
+                expect(
+                    rangesPlayed({ startBeat: 0, endBeat: 4 }, controlChanges, pitchBends).at(-1)?.rangeSemitones
+                ).toBe(range);
+                expect(
+                    rangesPlayed(
+                        { startBeat: 2, endBeat: 4 },
+                        plan.nextRight.controlChanges.value,
+                        plan.nextRight.pitchBends.value
+                    ).at(-1)?.rangeSemitones
+                ).toBe(range);
+            }
+        );
+
         it('adds nothing for a carried bend recorded under the state in force at the cut', () => {
             const rangeTwelve = rangeAt('twelve', 0.1, 12);
             const withoutBend = splitAtTwo(rangeTwelve, []);

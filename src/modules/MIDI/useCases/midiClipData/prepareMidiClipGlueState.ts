@@ -139,7 +139,8 @@ export function prepareMidiClipGlueState({
             visibleStartBeat: source.visibleStartBeat,
             glueBeat,
             carriedBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat < source.visibleStartBeat),
-            windowRowBeats: [...projected.controlChanges, ...projected.pitchBends].map(({ beat }) => beat),
+            windowBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat >= source.visibleStartBeat),
+            windowControlChanges: projected.controlChanges,
             createId: (key) => `cc-glue:${targetClipId}:${sourceIndex}:${key}`,
         });
         mergedNotes.push(...projected.notes);
