@@ -1,0 +1,20 @@
+src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts
+  s_59e31a5c6f3e31::t_3c5dc38c042d6d 1,6,17-26,28-31,37-39,65-66,69,78-87,104,122-143
+  s_59e31a5c6f3e31::t_e0ba4081016924 16,27,32-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6eaf1b4bec328f676d661e7844955a93505bc7c6",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
