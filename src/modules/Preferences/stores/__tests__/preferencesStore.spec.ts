@@ -104,6 +104,19 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         });
     });
 
+    it('loads the last Elastic transient sensitivity from the existing preferences key', async () => {
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+        fresh.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+
+        vi.resetModules();
+        const reloaded = (await import('../preferencesStore')).preferencesStore;
+        expect(reloaded.value?.elasticTransientSensitivity).toBe(0.82);
+        expect(parse(window.localStorage.getItem(STORAGE_KEY) as string)).toMatchObject({
+            elasticTransientSensitivity: 0.82,
+        });
+    });
+
     it('seeds a visible 28px minimap under the current preferences schema', async () => {
         vi.resetModules();
         const fresh = (await import('../preferencesStore')).preferencesStore;

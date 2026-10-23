@@ -10,7 +10,7 @@ Application-wide user preferences (audio settings, MIDI configuration, appearanc
 
 ## Key Subsystems
 
-- **Preferences Store & Validation**: `stores/preferencesStore.ts` provides reactive Zustand access backed by `localStorage` persistence, validated by `stores/validateStoredPreferences.ts`.
+- **Preferences Store & Validation**: `stores/preferencesStore.ts` uses `createStore` for reactive access backed by the client-local `sourdaw-preferences` key. The same file validates persisted fields, including the last-used Elastic transient sensitivity, and supplies defaults for absent or corrupt values.
 - **Preferences Dialog**: Tabbed configuration view (`presentations/views/PreferencesDialog.tsx`) aggregating `GeneralSection`, `AppearanceSection`, `LayoutSection`, `MidiSection`, `AiSection`, `PerformanceSection`, and `ShortcutsSection`.
 
 ## Invariants & Traps

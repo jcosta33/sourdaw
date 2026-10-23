@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { setElasticTool } from '../setElasticTool';
 
@@ -16,15 +19,15 @@ describe('setElasticTool', () => {
     });
 
     it('does not mutate other fields', () => {
+        preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.75 });
         elasticAudioStore.set({
             ...defaultElasticAudioState,
             openClipId: 'clip-1',
-            sensitivity: 0.75,
         });
         setElasticTool('lock-marker');
         const state = elasticAudioStore.value;
         expect(state?.openClipId).toBe('clip-1');
-        expect(state?.sensitivity).toBe(0.75);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.75);
         expect(state?.tool).toBe('lock-marker');
     });
 });

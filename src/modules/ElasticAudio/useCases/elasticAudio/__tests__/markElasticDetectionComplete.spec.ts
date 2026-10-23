@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { markElasticDetectionComplete } from '../markElasticDetectionComplete';
 
@@ -14,11 +17,11 @@ describe('markElasticDetectionComplete', () => {
     });
 
     it('preserves the current editor state', () => {
+        preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.72 });
         elasticAudioStore.set({
             ...defaultElasticAudioState,
             openClipId: 'clip-1',
             tool: 'lock-marker',
-            sensitivity: 0.72,
             selectedMarkerIds: ['marker-1'],
         });
 
@@ -28,9 +31,9 @@ describe('markElasticDetectionComplete', () => {
             ...defaultElasticAudioState,
             openClipId: 'clip-1',
             tool: 'lock-marker',
-            sensitivity: 0.72,
             selectedMarkerIds: ['marker-1'],
             detected: true,
         });
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.72);
     });
 });

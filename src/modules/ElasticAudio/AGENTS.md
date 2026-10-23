@@ -16,7 +16,7 @@ Owns transient marker detection, warp marker editing/quantization, warp algorith
 
 ## Key Subsystems
 
-- **`stores/elasticAudio.ts`**: Active clip transient markers, detection lifecycle state, sensitivity threshold, marker selection/lock states, active editor tool (`warp`, `pencil`, `eraser`).
+- **`stores/elasticAudio.ts`**: Open clip, detection lifecycle state, marker selection, and active editor tool. Last-used detection sensitivity belongs to the client-local Preferences store, not this session store.
 - **`stores/audioWarp.ts`**: Per-clip warp settings (algorithm, pitch shift semitones/cents, warp enabled, transient sensitivity).
 - **`presentations/views/`**: `ElasticEditorPanel.tsx` interactive transient visualizer and marker manipulation surface.
 - **`useCases/`**: Transient detection (`detectTransients.ts`, `detectTransientsForClip.ts`), marker manipulation (`addManualMarker.ts`, `removeMarker.ts`, `toggleMarkerLock.ts`, `quantizeTransients.ts`), and warp configuration (`enableWarping.ts`, `setWarpAlgorithm.ts`, `setPitchShift.ts`).
@@ -25,7 +25,7 @@ Owns transient marker detection, warp marker editing/quantization, warp algorith
 
 - **Non-destructive transient metadata**: Transient markers and warp points are metadata projections on audio clips; original PCM audio in `audioBufferCache` is never mutated.
 - **Locked marker protection**: Locked warp markers cannot be moved or auto-quantized; transient quantization operations must respect marker lock flags.
-- **Dynamic sensitivity filtering**: Transient detection adjusts displayed and active markers dynamically according to sensitivity (0–100%) without re-executing raw onset detection.
+- **Sensitivity re-detection**: Changing sensitivity writes the canonical user preference and re-runs transient detection for an open clip after a 150 ms debounce. The first user-triggered detection for another clip reads that preference; selecting a clip alone does not detect.
 
 ## Verification
 

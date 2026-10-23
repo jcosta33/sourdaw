@@ -42,6 +42,22 @@ describe('updatePreferences', () => {
         expect(setSoloMode).not.toHaveBeenCalled();
     });
 
+    it.each([
+        [0.82, 0.82],
+        [-0.3, 0],
+        [1.7, 1],
+        [Number.NaN, 0.5],
+        [Number.POSITIVE_INFINITY, 0.5],
+    ])('normalizes Elastic transient sensitivity %s before writing %s', (input, expected) => {
+        updatePreferences({ patch: { elasticTransientSensitivity: input } });
+        expect(preferencesStore.trySet).toHaveBeenCalledWith({
+            ...defaultPreferences,
+            theme: 'dark',
+            soloMode: 'sip',
+            elasticTransientSensitivity: expected,
+        });
+    });
+
     it('should synchronize Workspace soloMode when the patch changes soloMode', () => {
         updatePreferences({ patch: { soloMode: 'pfl' } });
 

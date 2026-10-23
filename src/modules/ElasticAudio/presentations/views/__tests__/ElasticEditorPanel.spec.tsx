@@ -1,5 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
 
@@ -24,13 +27,11 @@ const mocks = vi.hoisted(() => {
     const elasticStoreValue: {
         openClipId: string | null;
         tool: 'select';
-        sensitivity: number;
         selectedMarkerIds: unknown[];
         detected: boolean;
     } = {
         openClipId: 'c1',
         tool: 'select' as const,
-        sensitivity: 0.5,
         selectedMarkerIds: [],
         detected: true,
     };
@@ -89,24 +90,30 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: (store: unknown, fallback?: unknown) => {
-        const marker = (store as { __kind?: string }).__kind;
-        if (marker === 'elastic') {
-            return mocks.elasticStoreValue;
-        }
-        if (marker === 'track') {
-            return mocks.trackStoreValue;
-        }
-        if (marker === 'workspace') {
-            return mocks.workspaceStoreValue;
-        }
-        if (marker === 'warp') {
-            return { clipSettings: new Map(), defaultAlgorithm: 'repitch', globalPitchShift: 0 };
-        }
-        return fallback ?? null;
-    },
-}));
+vi.mock('#/infra/store/useStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/store/useStore')>();
+    return {
+        useStore: (store: unknown, fallback?: unknown) => {
+            if (store === preferencesStore) {
+                return actual.useStore(preferencesStore, defaultPreferences);
+            }
+            const marker = (store as { __kind?: string }).__kind;
+            if (marker === 'elastic') {
+                return mocks.elasticStoreValue;
+            }
+            if (marker === 'track') {
+                return mocks.trackStoreValue;
+            }
+            if (marker === 'workspace') {
+                return mocks.workspaceStoreValue;
+            }
+            if (marker === 'warp') {
+                return { clipSettings: new Map(), defaultAlgorithm: 'repitch', globalPitchShift: 0 };
+            }
+            return fallback ?? null;
+        },
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
@@ -168,7 +175,6 @@ vi.mock('../../../stores/elasticAudio', () => ({
     defaultElasticAudioState: {
         openClipId: null,
         tool: 'select',
-        sensitivity: 0.5,
         selectedMarkerIds: [],
         detected: false,
     },
@@ -238,6 +244,7 @@ import { ElasticEditorPanel } from '../ElasticEditorPanel';
 describe('ElasticEditorPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        preferencesStore.trySet(defaultPreferences);
         mocks.callOrder.length = 0;
         mocks.trackStoreValue = {
             tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }] }],
@@ -247,13 +254,13 @@ describe('ElasticEditorPanel', () => {
         mocks.elasticStoreValue = {
             openClipId: 'c1',
             tool: 'select',
-            sensitivity: 0.5,
             selectedMarkerIds: [],
             detected: true,
         };
     });
 
     afterEach(() => {
+        preferencesStore.trySet(defaultPreferences);
         vi.clearAllMocks();
     });
 
@@ -308,6 +315,33 @@ describe('ElasticEditorPanel', () => {
         expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('c1', 0.5);
         expect(mocks.markElasticDetectionComplete).toHaveBeenCalledTimes(1);
         expect(mocks.callOrder).toEqual(['detect', 'mark']);
+    });
+
+    it('uses the saved sensitivity for the first Detect on a newly opened clip', () => {
+        preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+        mocks.trackStoreValue.tracks[0]?.clips.push({ id: 'c2', type: 'audio', audioBufferId: 'buf-2' });
+        mocks.elasticStoreValue.openClipId = 'c2';
+
+        render(<ElasticEditorPanel />);
+
+        expect(screen.getByText('82')).toBeInTheDocument();
+        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByTestId('elastic-detect-button'));
+        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('c2', 0.82);
+    });
+
+    it('reacts to Reset Preferences while the editor stays open', async () => {
+        preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+        render(<ElasticEditorPanel />);
+        expect(screen.getByText('82')).toBeInTheDocument();
+
+        await act(async () => {
+            resetPreferences();
+        });
+
+        expect(screen.getByText('50')).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('elastic-detect-button'));
+        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('c1', 0.5);
     });
 
     it('selects an existing marker through the elastic selection use case', () => {
@@ -430,7 +464,6 @@ describe('ElasticEditorPanel', () => {
         mocks.elasticStoreValue = {
             openClipId: 'c1',
             tool: 'select',
-            sensitivity: 0.5,
             selectedMarkerIds: [],
             detected: false,
         };
@@ -443,7 +476,6 @@ describe('ElasticEditorPanel', () => {
         mocks.elasticStoreValue = {
             openClipId: null,
             tool: 'select',
-            sensitivity: 0.5,
             selectedMarkerIds: [],
             detected: false,
         };
@@ -467,7 +499,6 @@ describe('ElasticEditorPanel', () => {
         mocks.elasticStoreValue = {
             openClipId: null,
             tool: 'select',
-            sensitivity: 0.5,
             selectedMarkerIds: [],
             detected: false,
         };
