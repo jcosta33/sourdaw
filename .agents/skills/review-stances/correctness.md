@@ -613,3 +613,11 @@ pending seam. Pair the unchanged projection control with a real base-tempo
 Command while a seam remains future: a 120-to-60 BPM edit must postpone its
 sounding time, even when the map is a fresh equal-valued empty array. A
 sounded seam still survives semantically unchanged deferred projection.
+
+### 2026-10-11 — the validated head was not the merged tree (introduced by PR #5243)
+
+PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — its validated head held zero references. Between its last validation and the merge, another PR landed modulator work in the same file on `main`; the squash merge took the three-way merge result against the advanced base, which combined the head-side removals with base-side additions and re-introduced `defaultTempo`/`projectBeat` references whose bindings no longer existed. `main` stopped typechecking (TS18004/TS2304 in `automationScheduling.ts`) although every validated tree was green: the required Gate ran on the earlier merge ref, and GitHub created the squash from the never-validated new one.
+
+Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
+
+Probe: before merging, when the base tip has moved since the head's last Gate, verify the actual merge ref (base tip + head) compiles — `pnpm typecheck` and `typecheck:e2e` — not just the head. Reverting the base-side hunk or the head-side removal must each fail to compile in the combined tree when the other side stays, which is what no validated run observed here.

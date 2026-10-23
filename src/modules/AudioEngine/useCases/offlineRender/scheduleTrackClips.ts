@@ -12,6 +12,7 @@ import {
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
+import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -29,6 +30,7 @@ import {
     type OfflineMidiEventProjector,
     type OfflineMidiArticulationResolver,
     type OfflineAutomationValueEvaluator,
+    type OfflineChannelBendProjector,
     type OfflineChordPitchProjector,
     type OfflineClipControllerProjector,
     type OfflineMidiProbabilitySelector,
@@ -88,6 +90,11 @@ type OfflineProjectionDependencies = {
      * Absent, no controller reaches an instrument; the composition root sets it.
      */
     projectClipControllers?: OfflineClipControllerProjector | null;
+    /**
+     * The projection live scheduling reads a track's stored channel pitch bend with. Absent, no
+     * stored bend reaches an instrument; the composition root sets it.
+     */
+    projectChannelBend?: OfflineChannelBendProjector | null;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -210,6 +217,7 @@ export async function scheduleTrackClips({
         processYeastMidi,
         resolveArticulationId,
         projectClipControllers,
+        projectChannelBend,
         resolveTempoAtBeat,
         selectMidiEventProbability,
     } = projections;
@@ -568,16 +576,58 @@ export async function scheduleTrackClips({
         });
     }
 
+    // Where the render places a beat on the timeline, before the region start clamps it: a beat before the
+    // region is negative.
+    function timelineSecondsAtBeat(beat: number, toasterPadIndex: number): number {
+        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
+        return startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec;
+    }
+
     // Where the render places a beat, exactly as a note's own start is placed.
     function secondsAtBeat(beat: number, toasterPadIndex: number): number {
-        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
-        return Math.max(0, startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec);
+        return Math.max(0, timelineSecondsAtBeat(beat, toasterPadIndex));
     }
 
     // The frame `schedulePendingSuspends` addresses an event at a given time to.
     function frameAtSeconds(seconds: number): number {
         return Math.floor(seconds * offlineCtx.sampleRate);
     }
+
+    // The frame the timeline gives a beat, below zero before the region start: the clock the channel bend is
+    // ordered on, and the one a note's own bend is compared with its moves on.
+    function frameOnTimelineAtBeat(beat: number): number {
+        return frameAtSeconds(timelineSecondsAtBeat(beat, -1));
+    }
+
+    // The track's stored channel pitch bend, on the clock a note at the same beat is placed on. Only an
+    // instrument with an expression surface takes any (the engines that bend a held voice), as live
+    // playback, and only the track's own MIDI clips that play (a muted clip does not, a clip with no note
+    // list does) bend its notes, whatever the region start: a clip that ended before the region still left
+    // the bend in force.
+    function projectTrackChannelBend(): ReturnType<OfflineChannelBendProjector> {
+        // A Yeast track's notes are the rack's, whichever instrument voices them: the stored controllers
+        // take the same exclusion, live and here.
+        const hasYeast = track.devices.some((device) => device.type === 'yeast');
+        if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
+            return [];
+        }
+        const clips = clipsToProcess.flatMap(({ clip }) => {
+            const pitchBends = midi.pitchBendByClipId[clip.id];
+            if (clip.type !== 'midi' || clip.muted || !pitchBends?.length) {
+                return [];
+            }
+            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
+        });
+        // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
+        // zero, rather than the clamp every note shares: the bend in force at the region start is then the last
+        // one on the timeline, not the last one of the last clip in the track's clip list.
+        return projectChannelBend({
+            clips,
+            frameAtBeat: frameOnTimelineAtBeat,
+        });
+    }
+
+    const channelBend = projectTrackChannelBend();
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         // A bypassed receiver plays nothing, as it does live; no note is handed
@@ -626,10 +676,12 @@ export async function scheduleTrackClips({
                     ? undefined
                     : projectNoteExpressionCurves({
                           note,
+                          channelBend,
                           startBeat: note.startBeat,
                           beatsIntoNote: note.beatsIntoNote,
                           releaseFrame: frameAtSeconds(endTime),
                           frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
+                          channelBendFrameAtBeat: frameOnTimelineAtBeat,
                       });
                 workletEvents.push({
                     time: startTime,
@@ -747,26 +799,47 @@ export async function scheduleTrackClips({
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const iterationCount = loopProjection.iterationCount;
+            const loopEnabled = clip.loopEnabled ?? false;
+            const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 iterations.push({
-                    sourceNotes: sourceNotes.filter((note) =>
-                        selectMidiEventProbability({
-                            projectProbabilitySeed: midi.probabilitySeed,
-                            clipId: clip.id,
-                            eventId: note.id,
-                            absoluteOccurrenceIndex,
-                            probabilityPercent: note.probability ?? 100,
-                        })
+                    // #5198 — the anchored loop window owns membership on the
+                    // row's stored figure before the rack ever sees it: a row
+                    // past the trimmed region end must stay silent, and a
+                    // generator must never be fed it as pass input. Unanchored
+                    // clips admit without the window, byte-identically to the
+                    // pre-anchor construction.
+                    sourceNotes: sourceNotes.filter(
+                        (note) =>
+                            isBeatAdmittedByAnchoredClipLoopWindow({
+                                relativeBeat: note.startBeat - midiOffsetBeats,
+                                startBeat: clip.startBeat,
+                                loopOriginBeat: clip.loopOriginBeat,
+                                loopLengthBeats: loopLength,
+                                loopEnabled,
+                            }) &&
+                            selectMidiEventProbability({
+                                projectProbabilitySeed: midi.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex,
+                                probabilityPercent: note.probability ?? 100,
+                            })
                     ),
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
                     iterationStartBeat: clip.startBeat + iteration * loopLength,
                     loopLengthBeats: loopLength,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    loopEnabled: clip.loopEnabled ?? false,
+                    midiOffsetBeats,
+                    loopEnabled,
+                    // The same anchor pair the filter above read: the Yeast
+                    // chain's own gates re-assert membership on the stored
+                    // figure downstream, and they cannot evaluate the anchored
+                    // window without it (#5198 review).
+                    loopOriginBeat: clip.loopOriginBeat,
                     toasterPadIndex: padIndex,
                     clipGain: clip.gain,
                 });
@@ -910,6 +983,7 @@ export async function scheduleTrackClips({
                     loopLengthBeats: loopLen,
                     midiOffsetBeats,
                     loopEnabled: clip.loopEnabled ?? false,
+                    loopOriginBeat: clip.loopOriginBeat,
                     phase: 'complete',
                 });
                 const scheduledNotes = notes.map((note) => {

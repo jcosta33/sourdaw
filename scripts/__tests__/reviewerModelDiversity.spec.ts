@@ -124,8 +124,9 @@ describe('assertReviewerModelDiversity', () => {
     });
 
     it('refuses when the reviewer model matches any fenced authoring model, not just the first', () => {
-        // lane:publish metadata edits are add-only, so republishing with a different --model
-        // leaves the previous fenced label on the PR; matching either fence must refuse.
+        // The check reads the live label set: a pull request last republished before the fence
+        // reconciliation (#4296), or an unconverged partial metadata write, can still wear
+        // several fences, so matching any fence present must refuse.
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,

@@ -116,8 +116,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         punchClock.start.push(ctxTime.now);
         return [] as { trackId: string; id: string }[];
     }),
+    // The real `stopRecording` is async: its promise is the take's commit, which
+    // the recording lifecycle tracks.
     stopRecording: vi.fn(() => {
         punchClock.stop.push(ctxTime.now);
+        return Promise.resolve();
     }),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -143,11 +146,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleClick: scheduleClickSpy,
     getCompensationDelay: () => 0,
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getDrumKitByIndex: () => null,
     ensureTrackStrip: () => trackStripStub,
     getTrackStrip: () => trackStripStub,
     applyNoteExpression: vi.fn(),
-    projectNoteExpressionCurves: vi.fn(),
+    startNoteExpression: vi.fn(),
+    advanceNoteExpression: vi.fn(),
+    relocateNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
     audioEngine: { setTransportInfo: vi.fn() },

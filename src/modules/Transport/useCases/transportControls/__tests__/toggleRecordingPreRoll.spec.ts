@@ -71,6 +71,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     getTrackEligibility: () => ({ acceptsRecording: true }),
     getGainEnvelopeSeries: () => undefined,
     trackStore: {

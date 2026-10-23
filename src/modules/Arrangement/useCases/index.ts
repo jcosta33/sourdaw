@@ -134,6 +134,7 @@ export { addTake } from './comping/addTake';
 export { addTakeLane } from './comping/addTakeLane';
 export { captureRetiredTakeLanes } from './comping/captureRetiredTakeLanes';
 export { flattenComp } from './comping/flattenComp';
+export { migrateTrimmedClipPassTakes } from './comping/migrateTrimmedClipPassTakes';
 export { restoreTakesForClip } from './comping/restoreTakesForClip';
 export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';

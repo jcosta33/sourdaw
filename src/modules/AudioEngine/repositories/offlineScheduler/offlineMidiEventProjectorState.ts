@@ -14,6 +14,8 @@ type OfflineClipMidiEventProjectionInput<Event extends OfflineMidiProjectableEve
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    /** The clip's loop anchor; playback callers carry it (#4988). */
+    loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
     phase?: 'clip-groove' | 'complete';
@@ -89,6 +91,27 @@ export type OfflineClipControllerProjector = (input: {
     toBeat: number;
 }) => readonly (OfflineControllerRow & { closesClip: boolean })[];
 
+/**
+ * The track's channel pitch bend over the whole timeline, in the order the instrument receives it,
+ * from the clips whose stored bend plays: the one projection live scheduling uses, handed to the
+ * offline render so both place a bend and read its range identically. `frame` is on the clock
+ * `frameAtBeat` gives, the render's own for a note at that beat.
+ */
+export type OfflineChannelBendProjector = (input: {
+    clips: readonly {
+        clip: {
+            startBeat: number;
+            endBeat: number;
+            midiOffsetBeats?: number;
+            loopEnabled?: boolean;
+            loopLength?: number;
+        };
+        controlChanges: readonly OfflineControllerRow[];
+        pitchBends: readonly { id: string; value: number; beat: number; channel: number }[];
+    }[];
+    frameAtBeat: (beat: number) => number;
+}) => readonly { beat: number; frame: number; recordedBeat: number; value: number; rangeSemitones: number }[];
+
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;
     selectProbability: OfflineMidiProbabilitySelector | null;
@@ -96,6 +119,7 @@ export const offlineMidiEventProjectorState: {
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId: OfflineMidiArticulationResolver | null;
     projectClipControllers: OfflineClipControllerProjector | null;
+    projectChannelBend: OfflineChannelBendProjector | null;
 } = {
     createProjector: null,
     selectProbability: null,
@@ -103,4 +127,5 @@ export const offlineMidiEventProjectorState: {
     evaluateAutomationValue: null,
     resolveArticulationId: null,
     projectClipControllers: null,
+    projectChannelBend: null,
 };

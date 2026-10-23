@@ -91,6 +91,72 @@ describe('revertActionGroup', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
     });
 
+    it('normalizes a keyless legacy trim inverse through the undo seam (#5198)', async () => {
+        // A persisted AI group can carry entries recorded before inverses
+        // carried anchors. The group-revert dispatch runs the same legacy
+        // normalization the undo paths run: a payload without the anchor field
+        // is a legacy entry whose pre-action clip was anchorless by
+        // construction, and dispatching it as-is would run the fresh-action
+        // mint law on replay, minting an anchor the pre-action state never
+        // carried and bricking deeper legacy restores behind the conflict.
+        const legacy: UndoEntry = {
+            kind: 'action',
+            id: 'legacy-trim',
+            label: 'Trim clip start',
+            timestamp: 0,
+            source: 'ai',
+            groupId: 'g1',
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2 } },
+        };
+        mocks.undoStoreValue.value = { past: [legacy], future: [] };
+
+        await revertActionGroup('g1');
+
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
+            { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('normalizes a keyless legacy loop inverse with an anchorless replacement (#5198)', async () => {
+        const legacy: UndoEntry = {
+            kind: 'action',
+            id: 'legacy-loop',
+            label: 'Enable clip loop',
+            timestamp: 0,
+            source: 'ai',
+            groupId: 'g1',
+            action: { type: 'setClipLoop', payload: { clipId: 'c1', enabled: false } },
+            inverseAction: {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: 'c1',
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true },
+                },
+            },
+        };
+        mocks.undoStoreValue.value = { past: [legacy], future: [] };
+
+        await revertActionGroup('g1');
+
+        // The replacement — the state put back — normalizes to the explicit
+        // anchorless form; the expected snapshot is untouched, because the
+        // compare-and-swap guard reads only presence and enabled.
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
+            {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: 'c1',
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true, loopOriginBeat: null },
+                },
+            },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
     it('leaves the store untouched when no member of the group could be undone', async () => {
         const inert: UndoEntry = {
             kind: 'action',

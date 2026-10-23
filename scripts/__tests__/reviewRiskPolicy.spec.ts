@@ -528,6 +528,19 @@ describe('planReviewRisk', () => {
         expect(reviewStanceFloor(result)).toBeGreaterThanOrEqual(2);
     });
 
+    it('should count a large non-Markdown file under docs/ toward the size budget, not skip it as docs', () => {
+        const result = planNumstat(['250\t0\tdocs/tools/gen.ts']);
+
+        expect(result.riskClasses).toEqual(['ordinary']);
+        expect(reviewStanceFloor(result)).toBe(3);
+    });
+
+    it('should not let large Markdown under docs/ push a small code change past the budget', () => {
+        const result = planNumstat(['5\t0\tsrc/x.ts', '400\t0\tdocs/06-testing.md']);
+
+        expect(result.riskClasses).toEqual(['small']);
+    });
+
     it.each(['docs/06-testing.md', 'AGENTS.md'])('should keep %s alone docs-only with a floor of one', (path) => {
         const result = reviewPlan([changed(path, 'docs', 4, 2)]);
 
@@ -611,6 +624,9 @@ describe('planReviewRisk', () => {
         [['5\t0\tvite.config.ts'], 'small-tooling', 3],
         [['5\t0\tsrc/x.ts', '5\t0\tscripts/y.ts'], 'small-tooling', 3],
         [['5\t5\tpnpm-lock.yaml'], 'small', 2],
+        [['5\t0\tsrc.bak/x.ts'], 'small-tooling', 3],
+        [['5\t0\tsrcs/x.ts'], 'small-tooling', 3],
+        [['5\t0\tdocs/tools/gen.ts'], 'small-tooling', 3],
     ] as const)('should plan %j %s with a floor of %i', (records, riskClass, floor) => {
         const result = planNumstat(records);
 
@@ -629,6 +645,8 @@ describe('planReviewRisk', () => {
         'scripts/ciApprovalAdmission.ts',
         'scripts/prepareReviewEntry.ts',
         'scripts/semanticReviewContext.ts',
+        '.github/CODEOWNERS',
+        '.github/dependabot.yml',
     ])('should plan the dependency, toolchain or review-tooling surface %s alone native-security', (path) => {
         const result = planNumstat([`5\t5\t${path}`]);
 

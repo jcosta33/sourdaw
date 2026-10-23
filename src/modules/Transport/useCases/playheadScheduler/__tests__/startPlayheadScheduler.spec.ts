@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { type stopRecording } from '#/modules/Arrangement/useCases';
 import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
-import { holdNoteExpression, takeHeldNoteExpression } from '../../../services/heldNoteExpression';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { applyAutomation } from '../../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../../scheduling/applyAutomation/applyVcaGains';
+import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { resetMetronomeBeat } from '../../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
+import { takeHeldNoteExpression } from '../../scheduling/takeHeldNoteExpression';
 import { panicYeastRuntime } from '../../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
@@ -127,7 +129,9 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 // Arrangement + Automation mock holders (same binding-split workaround).
 const arrangementMocks = {
     startRecording: vi.fn(() => [] as { trackId: string; id: string; startBeat: number }[]),
-    stopRecording: vi.fn(),
+    // The real `stopRecording` is async: its promise is the take's commit, which
+    // the recording lifecycle tracks.
+    stopRecording: vi.fn<typeof stopRecording>(() => Promise.resolve()),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
@@ -167,6 +171,11 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    // A held note that survived would still have a change due, so a test that expects none sees it.
+    advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
+        timeline,
+        changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+    }),
     getAudioContext: () => audioEngineMocks.getAudioContext(),
     getTrackStrip: vi.fn(),
     getCompensationDelay: (...args: unknown[]) =>
@@ -272,6 +281,7 @@ describe('startPlayheadScheduler', () => {
         }));
         audioEngineMocks.getCompensationDelay.mockImplementation(() => 0);
         arrangementMocks.startRecording.mockImplementation(() => []);
+        arrangementMocks.stopRecording.mockResolvedValue(undefined);
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
         transportStoreState.value = playingState();
         tempoMapStoreState.value = { changes: [] };
@@ -564,12 +574,30 @@ describe('startPlayheadScheduler', () => {
             channel: 0,
             receiverId: 'device-1',
             releaseBeat: 4,
-            changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+            followsChannelBend: false,
+            timeline: {
+                startFrame: 0,
+                releaseFrame: 192_000,
+                frameAtBeat: (beat) => beat * 48_000,
+                own: { pressure: 10 },
+                channel: undefined,
+                bendOwner: 'note',
+                advancedBeat: Number.NEGATIVE_INFINITY,
+                pending: [{ beat: 2, frame: 96_000, expression: { pressure: 80 }, claimsBend: false }],
+            },
         });
 
         startPlayheadScheduler();
 
-        expect(takeHeldNoteExpression({ trackId: 'track-1', fromBeat: 0, toBeat: 8, fromFrame: 0 })).toEqual([]);
+        expect(
+            takeHeldNoteExpression({
+                trackId: 'track-1',
+                fromBeat: 0,
+                toBeat: 8,
+                fromFrame: 0,
+                readChannelBend: () => [],
+            })
+        ).toEqual([]);
     });
 
     it('wraps the playhead at loopEnd and clears scheduling state for the next pass', async () => {
@@ -1604,6 +1632,7 @@ describe('startPlayheadScheduler', () => {
             if (clip && typeof atBeat === 'number') {
                 clip.endBeat = atBeat;
             }
+            return Promise.resolve();
         });
         let capturedOnTerminal: PunchTerminal | null = null;
         audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {

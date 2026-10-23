@@ -76,11 +76,12 @@ const COMMAND_DIGESTS = {
     measurement: '913b063f795ccfafb4da32276097196fbc169c26ad71c712fd41e37efaf4fe92',
     // The admission step carries the Grand Boule gate only. The whole-engine
     // capability gate stays on the recorded reference-machine table, enforced
-    // by `pnpm test:release-inventory` inside required Gate (ADR 0038); this
+    // by `pnpm test:release-inventory` in the nightly train and the release
+    // proof (ADR 0038); this
     // workflow measures on a shared hosted runner whose fresh numbers cannot
     // host that comparison (issue #4076: ~250% of budget on every run since
     // 2026-09-09 versus 84-88% recorded).
-    admission: 'b6189f2f045378331c3308a39441cf0bc3f1d7cadf01d82b8b1a101a222dac89',
+    admission: '2c38b515189aa00511017d87d0ff4b7d11c00121e774bc6d0c4bb6b75a029455',
     assembly: '5bded47b1e78876ed27bd63d81a47a8a6576ca5f4658ef6ef82d32c069343ea3',
 } as const;
 

@@ -43,6 +43,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getLastClipEndBeat: vi.fn(() => 0),
     getSynthParamsForTrack: vi.fn(),
     getTrackStoreState: vi.fn(),
+    migrateTrimmedClipPassTakes: vi.fn(),
     isDeviceParameterAutomatable: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     quantiseDeviceParameterValue: vi.fn(),

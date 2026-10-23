@@ -106,6 +106,8 @@ const CARGO_WORKSPACE_PATHS = ['Cargo.lock', 'Cargo.toml'] as const;
  */
 const NATIVE_SECURITY_PATHS = [
     'src/utils/desktopBridge.ts',
+    '.github/CODEOWNERS',
+    '.github/dependabot.yml',
     '.cargo/config.toml',
     '.cargo/config',
     'rust-toolchain.toml',
@@ -234,6 +236,14 @@ type PathSide = Pick<ReviewChangedPath, 'path' | 'group'>;
  */
 const ALWAYS_HANDWRITTEN_PREFIXES = ['.github/'] as const;
 
+/**
+ * A file under `docs/` that is not prose, such as a generator script or data, is grouped as docs by
+ * the diff summary but runs or feeds tooling, so it is reviewed like handwritten code.
+ */
+function isReviewedCodeSide(side: PathSide): boolean {
+    return side.group === 'handwritten' || (side.group === 'docs' && !isDocsProse(side));
+}
+
 function riskSide(side: PathSide): PathSide {
     const controlled = ALWAYS_HANDWRITTEN_PREFIXES.some((prefix) => side.path.startsWith(prefix));
     return controlled ? { path: side.path, group: 'handwritten' } : side;
@@ -318,7 +328,7 @@ function crossDomainFindings(sides: readonly PathSide[]): RiskFinding[] {
 function sizeFinding(paths: readonly ReviewChangedPath[]): RiskFinding {
     const lines = paths.reduce((total, entry) => total + entry.added + entry.deleted, 0);
     if (lines <= REVIEW_SMALL_CHANGE_LINE_BUDGET) {
-        const handwritten = paths.flatMap((entry) => sidesOf(entry).filter((side) => side.group === 'handwritten'));
+        const handwritten = paths.flatMap((entry) => sidesOf(entry).filter(isReviewedCodeSide));
         if (handwritten.every((side) => side.path.startsWith('src/'))) {
             return { riskClass: 'small', triggers: [`small:handwritten-lines<=${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
         }
@@ -360,7 +370,7 @@ function decideFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
     if (findings.length > 0) {
         return findings;
     }
-    const handwritten = paths.filter((entry) => sidesOf(entry).some((side) => side.group === 'handwritten'));
+    const handwritten = paths.filter((entry) => sidesOf(entry).some(isReviewedCodeSide));
     return [sizeFinding(handwritten)];
 }
 
@@ -372,7 +382,7 @@ function allSidesInGroup(paths: readonly ReviewChangedPath[], group: ReviewChang
  * `docs-only` is prose alone: Markdown outside `public/`, which ships to users. The docs group also
  * holds any file under `docs/`, such as scripts and data, which earn an ordinary size class.
  */
-function isDocsOnlySide(side: PathSide): boolean {
+function isDocsProse(side: PathSide): boolean {
     return /\.mdx?$/u.test(side.path) && !side.path.startsWith('public/');
 }
 
@@ -380,7 +390,7 @@ function classifyFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
     if (allSidesInGroup(paths, 'tests')) {
         return [{ riskClass: 'test-only', triggers: ['test-only:all-paths-are-tests'] }];
     }
-    if (allSidesInGroup(paths, 'docs') && paths.every((entry) => sidesOf(entry).every(isDocsOnlySide))) {
+    if (allSidesInGroup(paths, 'docs') && paths.every((entry) => sidesOf(entry).every(isDocsProse))) {
         return [{ riskClass: 'docs-only', triggers: ['docs-only:all-paths-are-docs'] }];
     }
     return decideFindings(paths);

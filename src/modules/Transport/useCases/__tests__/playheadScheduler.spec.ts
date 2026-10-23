@@ -122,6 +122,7 @@ vi.mock('../transportControls/panicYeastRuntime', () => ({
     panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    advanceNoteExpression: vi.fn(),
     cacheAudioBuffer: harness.cache_audio_buffer,
     getTrackStrip: vi.fn(),
     stopAllScheduled: vi.fn(),

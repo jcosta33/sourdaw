@@ -24,6 +24,8 @@ import {
 import { playheadClockRef, transportStore } from '#/modules/Transport/stores';
 
 import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
+import { isTransportIdle } from '../isTransportIdle';
+import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { toggleRecording } from '../toggleRecording';
 
@@ -409,6 +411,74 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             'Recording failed — the take was discarded. Try recording again.',
             'error'
         );
+    });
+
+    // The user's Stop writes an idle transport synchronously and commits the take
+    // afterwards, so a caller that reads the transport must not call it idle yet.
+    it('reads the transport as not idle until the audio take a user Stop closed has committed', async () => {
+        await startAudioRecordingGesture();
+        const release = gateNextCommit();
+
+        const stopping = stopActiveRecording();
+        expect(transportStore.value?.isRecording).toBe(false);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(isTransportIdle()).toBe(false);
+
+        release();
+        await stopping;
+        expect(committedEntryCount()).toBe(1);
+        expect(isTransportIdle()).toBe(true);
+    });
+
+    it('reads the transport as not idle until the MIDI take a user Stop closed has committed', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const release = gateNextCommit();
+
+        const stopping = stopActiveRecording();
+        expect(transportStore.value?.isRecording).toBe(false);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(isTransportIdle()).toBe(false);
+
+        release();
+        await stopping;
+        expect(committedEntryCount()).toBe(1);
+        expect(isTransportIdle()).toBe(true);
+    });
+
+    it('does not resolve a later stop before the commit of the stop that came first', async () => {
+        await startAudioRecordingGesture();
+        const release = gateNextCommit();
+        const first = stopActiveRecording();
+        let laterResolved = false;
+
+        // The recorder has nothing left to flush, so this stop's own flush is
+        // immediate; only the first stop can say that the take has landed.
+        const later = stopActiveRecording().then(() => {
+            laterResolved = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(laterResolved).toBe(false);
+
+        release();
+        await Promise.all([first, later]);
+        expect(committedEntryCount()).toBe(1);
+    });
+
+    it('counts a settled take commit for each take a stop closes, and none for a stop that closes nothing', async () => {
+        const settledBefore = recordingLifecycle.settledCommitCount;
+        await stopActiveRecording();
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        await stopActiveRecording();
+        expect(recordingLifecycle.settledCommitCount).toBeGreaterThan(settledBefore);
     });
 
     it('waits for an automatic punch-out commit before the user-facing stop resolves', async () => {

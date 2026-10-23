@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
+import { heldNotesByTrack } from '../../scheduling/heldNoteExpressionState';
+import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
@@ -93,6 +95,7 @@ const midiStoreState: {
     value: {
         notesByClipId: Record<string, unknown[]>;
         ccByClipId: Record<string, unknown[]>;
+        pitchBendByClipId: Record<string, unknown[]>;
         probabilitySeed: number;
     } | null;
 } = { value: null };
@@ -238,11 +241,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleClick: vi.fn(),
     getCompensationDelay: () => 0,
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getDrumKitByIndex: () => null,
     ensureTrackStrip: () => trackStripStub,
     getTrackStrip: () => trackStripStub,
     applyNoteExpression: vi.fn(),
-    projectNoteExpressionCurves: vi.fn(),
+    startNoteExpression: vi.fn(),
+    advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({ timeline, changes: [] }),
+    relocateNoteExpression: ({ timeline }: { timeline: unknown }) => ({ timeline, expression: undefined }),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
     audioEngine: { setTransportInfo: vi.fn() },
@@ -340,7 +346,12 @@ function loadClip(device: DeviceKind, lane: ReturnType<typeof row>[], clipEndBea
             },
         ],
     };
-    midiStoreState.value = { notesByClipId: { 'clip-1': [] }, ccByClipId: { 'clip-1': lane }, probabilitySeed: 1 };
+    midiStoreState.value = {
+        notesByClipId: { 'clip-1': [] },
+        ccByClipId: { 'clip-1': lane },
+        pitchBendByClipId: { 'clip-1': [] },
+        probabilitySeed: 1,
+    };
 }
 
 function playingState(overrides: Partial<typeof defaultTransportState> = {}): typeof defaultTransportState {
@@ -807,6 +818,96 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
                 [64, 127],
             ]);
             expect(Math.abs(levainFramed[1]!.frame - pendingSeamFrame())).toBeLessThanOrEqual(1);
+        });
+    });
+
+    // A note that follows the channel bend, held by the playback as one the instrument is still voicing. A
+    // relocation that silences the notes ends it; the scheduled seam leaves it sounding.
+    describe('a note ringing across a relocation', () => {
+        function ringNote(): void {
+            holdNoteExpression({
+                trackId: 'track-1',
+                pitch: 64,
+                channel: 0,
+                receiverId: 'dev-1',
+                releaseBeat: 100,
+                followsChannelBend: true,
+                timeline: {
+                    startFrame: 0,
+                    releaseFrame: 1_000_000_000,
+                    frameAtBeat: (beat) => beat * 24_000,
+                    own: {},
+                    channel: undefined,
+                    bendOwner: 'note',
+                    advancedBeat: Number.NEGATIVE_INFINITY,
+                    pending: [],
+                },
+            });
+        }
+        const ringing = () => heldNotesByTrack.get('track-1') ?? [];
+
+        it('is carried across a scheduled loop seam, which silences nothing', async () => {
+            loadClip('levain', []);
+            transportStoreState.value = playingState({ isLooping: true, loopStart: 2, loopEnd: 4 });
+            startPlayheadScheduler();
+            ringNote();
+
+            await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+
+            expect(ringing()).toHaveLength(1);
+        });
+
+        it('is over once a follow-action jump silences the notes', async () => {
+            loadClip('levain', []);
+            transportStoreState.value = playingState({ playheadPosition: 0.8 });
+            startPlayheadScheduler();
+            ringNote();
+            evaluateFollowActionsMock.mockImplementationOnce(() => ({
+                jumpToPosition: DESTINATION_BEAT,
+                shouldStop: false,
+            }));
+
+            await runTick();
+
+            expect(ringing()).toEqual([]);
+        });
+
+        it('is over once a late loop wrap silences the notes', async () => {
+            loadClip('levain', []);
+            transportStoreState.value = playingState({
+                playheadPosition: 3.2,
+                isLooping: true,
+                loopStart: 3.3,
+                loopEnd: 3.45,
+            });
+            startPlayheadScheduler();
+            ringNote();
+            const previous = { beat: 3.2 };
+
+            await runTicksUntil(() => {
+                const wrapped = schedulerSession.accumulatedPosition < previous.beat;
+                previous.beat = schedulerSession.accumulatedPosition;
+                return wrapped;
+            });
+
+            expect(ringing()).toEqual([]);
+        });
+
+        it('is over once a loop edit cuts the look-ahead', async () => {
+            loadClip('levain', []);
+            transportStoreState.value = playingState({ playheadPosition: 3.0 });
+            startPlayheadScheduler();
+            ringNote();
+
+            transportStoreState.value = playingState({
+                playheadPosition: 3.0,
+                isLooping: true,
+                loopStart: 0,
+                loopEnd: 3.58,
+            });
+            await runTick();
+
+            expect(ringing()).toEqual([]);
         });
     });
 });

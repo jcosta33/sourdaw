@@ -1,9 +1,9 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
-import { forgetHeldNoteExpression } from '../../services/heldNoteExpression';
 import { forgetStoredControllerEngagements } from '../../services/storedControllerEngagement';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
+import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
