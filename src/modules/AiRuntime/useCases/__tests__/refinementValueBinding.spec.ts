@@ -1280,6 +1280,38 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('a refinement never takes the referenced level fallback', () => {
+        const DRUMS_CONTEXT = projectContext([...BASE_TRACKS, projectTrack('track-drums', 'Drums')]);
+        const drumsBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-drums', deltaDb },
+        });
+        const DRUMS_CARD = {
+            prompt: 'set Drums to -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-drums', gainDb: -6 } }],
+        };
+
+        it.each([
+            ['Drums down 2 dB', -2],
+            ['Drums up 2 dB', 2],
+        ])('refuses "%s" as a change of the pending absolute Drums level', (refinement, deltaDb) => {
+            const result = refine(DRUMS_CARD, refinement, [drumsBy(deltaDb)], DRUMS_CONTEXT);
+
+            expect(result.status).toBe('rejected');
+        });
+
+        it('refuses a new track level a refinement states only as a referenced level phrase', () => {
+            const result = refine(
+                P0_CARD,
+                'Vocals down 1 dB, Drums up 2 dB',
+                [vocalsBy(-1), drumsBy(2)],
+                DRUMS_CONTEXT
+            );
+
+            expect(result.status).toBe('rejected');
+        });
+    });
+
     describe('a referenced level phrase on a device parameter, a pan or a mixed card is read as main reads it', () => {
         const toneDevice: ProjectTrack['devices'][number] = {
             id: 'device-tone',

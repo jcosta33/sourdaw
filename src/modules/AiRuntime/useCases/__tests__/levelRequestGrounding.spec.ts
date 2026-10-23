@@ -1014,6 +1014,57 @@ describe("a referenced level phrase is a fallback, read only when main's reading
         ]);
     });
 
+    it.each([
+        ['set Drums to -6 dB, then turn the Bass and the Keys down 3 dB instead of that', { gainDb: -6 }],
+        ['set Drums to -6 dB, then turn the Bass and the Keys down 3 dB instead', { gainDb: -6 }],
+        ['Drums up 2 dB, and turn the Bass and the Keys down 3 dB instead', { deltaDb: 2 }],
+        ['Drums up 2 dB, and turn the Bass and the Keys down 3 dB just kidding', { deltaDb: 2 }],
+        ['set Drums to -6 dB, and turn the Bass and the Keys down 3 dB only in the chorus', { gainDb: -6 }],
+        ['set Drums to -6 dB, and turn the Drums and the Bass down 3 dB', { gainDb: -6 }],
+    ])('counts the list in "%s" as unread when the batch answers none of its members', (prompt, value) => {
+        const result = bridge([gain(drums, value)], prompt, mixContext);
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['none', []],
+        ['only Bass', [gain(bass, { deltaDb: -3 })]],
+    ])('counts a resolved coordinated list as unread when the batch answers %s of its members', (_name, members) => {
+        const result = bridge(
+            [gain(drums, { deltaDb: 2 }), ...members],
+            'Drums up 2 dB, and turn the Bass and the Keys down 3 dB',
+            mixContext
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['Drums and Bass up 2 dB', [gain(drums, { deltaDb: 2 }), gain(bass, { deltaDb: 2 })]],
+        [
+            'set Drums, Bass and Keys to -6 dB',
+            [gain(drums, { gainDb: -6 }), gain(bass, { gainDb: -6 }), gain(keys, { gainDb: -6 })],
+        ],
+    ])('grounds the whole list in "%s" once the batch answers every member', (prompt, calls) => {
+        const result = bridge(calls, prompt, mixContext);
+
+        expect(result.actions).toHaveLength(calls.length);
+    });
+
+    it("keeps main's refusal of a referenced level clause beside a clause that is not one", () => {
+        const result = bridge(
+            [gain(drums, { deltaDb: -2 }), gain(bass, { gainDb: -6 })],
+            'turn Drums down 2 dB, set Bass to -6 dB',
+            mixContext
+        );
+
+        expect(result.rejections).not.toEqual([]);
+        expect(
+            result.actions.filter((action) => action.type === 'setTrackGain' && action.payload.trackId === bass.id)
+        ).toEqual([]);
+    });
+
     it('refuses a referenced level phrase beside a clause that grounds a call of its own', () => {
         const mute = bridge(
             [gain(drums, { gainDb: -6 }), { name: 'muteTrack', arguments: { trackId: keys.id, muted: true } }],
@@ -1194,12 +1245,22 @@ describe('the figure and clause shapes a referenced level phrase is read from', 
     it.each([
         ['could you set Drums to -6 dB', { gainDb: -6 }],
         ['Could you please set Drums to -6 dB', { gainDb: -6 }],
+        ['could you please please set Drums to -6 dB', { gainDb: -6 }],
         ['please would you Drums up 2 dB', { deltaDb: 2 }],
     ])('grounds "%s", reading the polite carrier as it reads "please"', (prompt, value) => {
         const result = bridgeDrums(prompt, value);
 
         expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: drums.id, ...value } }]);
     });
+
+    it.each(['please please set Drums to -6 dB', 'could you please please please set Drums to -6 dB'])(
+        'refuses "%s", whose polite words go past the prefix the command reader strips',
+        (prompt) => {
+            const result = bridgeDrums(prompt, { gainDb: -6 });
+
+            expect(result.actions).toEqual([]);
+        }
+    );
 
     it.each(['Drums at -6 dB', 'Drums to -6 dB', 'Drums by -6 dB', 'Drums -6 dB', 'Drums set to -6 dB'])(
         'does not read "%s", which no registered level phrase words, as a fader level',

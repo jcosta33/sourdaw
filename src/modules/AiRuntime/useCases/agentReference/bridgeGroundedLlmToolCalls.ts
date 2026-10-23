@@ -1795,6 +1795,26 @@ function resolveActionPromptScope({
 const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
 
 /**
+ * Whether a coordinated list is read: it resolves to a scope (it ends on its one figure and names no member
+ * outside it) and the batch answers every member it grounds. A list that does not may single a member out
+ * or restate the level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
+ */
+function isListAnsweredByEveryMember(
+    list: CoordinatedLevelList,
+    calls: readonly ToolCallResult[],
+    actionName: string,
+    targetArgument: string
+): boolean {
+    const memberIds = list.scope?.coordinatedTargets?.memberIds;
+    return (
+        memberIds !== undefined &&
+        memberIds.every((memberId) =>
+            calls.some((call) => call.name === actionName && call.arguments[targetArgument] === memberId)
+        )
+    );
+}
+
+/**
  * Whether every clause of the request is one a referenced level phrase ("set Drums to -6 dB", "Drums up
  * 2 dB") may stand beside: a referenced level clause, a member of a coordinated level list, the
  * continuation of a referenced level clause onto another track, or strict courtesy. A clause outside
@@ -1803,14 +1823,19 @@ const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks'
  * then names nothing and the request is read as main reads it.
  */
 function readsOnlyReferencedLevelClauses(input: {
+    calls: readonly ToolCallResult[];
     catalog: GroundingCatalog;
     context: ProjectContext;
     prompt: string;
 }): boolean {
-    const { catalog, context, prompt } = input;
+    const { calls, catalog, context, prompt } = input;
     const actionName = 'setTrackGain';
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     if (!groundingRules) {
+        return false;
+    }
+    const targetArgument = groundingRules.targetRules[0]?.argument;
+    if (targetArgument === undefined) {
         return false;
     }
     const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
@@ -1832,7 +1857,10 @@ function readsOnlyReferencedLevelClauses(input: {
         continuesReferencedLevel = false;
         if (
             coordinatedLevelLists.some(
-                (list) => clauseIndex >= list.firstClauseIndex && clauseIndex <= list.lastClauseIndex
+                (list) =>
+                    clauseIndex >= list.firstClauseIndex &&
+                    clauseIndex <= list.lastClauseIndex &&
+                    isListAnsweredByEveryMember(list, calls, actionName, targetArgument)
             )
         ) {
             return true;
@@ -6870,7 +6898,12 @@ export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInpu
     const catalog = getExecutableAppActionGroundingCatalog();
     if (
         main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
-        !readsOnlyReferencedLevelClauses({ catalog, context: input.context, prompt: input.prompt })
+        !readsOnlyReferencedLevelClauses({
+            calls: input.calls,
+            catalog,
+            context: input.context,
+            prompt: input.prompt,
+        })
     ) {
         return main;
     }

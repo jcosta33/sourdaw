@@ -18,8 +18,9 @@ const MASKED_REFERENCE = '(?:the\\s+)?(□+)';
 const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
 
 /**
- * The clause opens with at most the polite carrier `isExplicitCommandClause.ts` strips ("could you",
- * "please") and closes with at most "please" and a full stop.
+ * The clause opens with exactly the polite prefix `isExplicitCommandClause.ts` strips: the carrier
+ * ("could you", "could you please") and then at most one "please" ("could you please please set" reads,
+ * "please please set" does not). It closes with at most "please" and a full stop.
  */
 const CLAUSE_START = '^\\s*(?:(?:please\\s+)?(?:can|could|would)\\s+you(?:\\s+please)?\\s+)?(?:please\\s+)?';
 const CLAUSE_END = '(?:\\s+please)?\\s*\\.?\\s*$';
