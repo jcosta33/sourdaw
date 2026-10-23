@@ -407,10 +407,55 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(differingMember.actions).toEqual([]);
     });
 
-    it('still refuses the list worded "both Drums and Bass up 2 dB"', () => {
+    describe.each([
+        ['both Drums and Bass up 2 dB', [drums, bass], { deltaDb: 2 }],
+        ['Drums, Keys and Bass up 2 dB', [drums, keys, bass], { deltaDb: 2 }],
+        ['Drums and Bass down 3 dB', [drums, bass], { deltaDb: -3 }],
+        ['Keys and Drums up 2 dB', [keys, drums], { deltaDb: 2 }],
+        ['please Drums and Bass up 2 dB', [drums, bass], { deltaDb: 2 }],
+    ])('the up/down list "%s"', (prompt, members, value) => {
+        it('grounds a change for every member it lists', () => {
+            const result = bridge(
+                members.map((track) => gainCall(track.id, value)),
+                prompt
+            );
+
+            expect(result.actions).toEqual(members.map((track) => gainAction(track.id, value)));
+        });
+
+        it('never grounds a change for only some of its members', () => {
+            const subsets = members.map((_, omitted) => members.filter((__, index) => index !== omitted));
+            const singles = members.map((track) => [track]);
+
+            for (const subset of [...subsets, ...singles]) {
+                const result = bridge(
+                    subset.map((track) => gainCall(track.id, value)),
+                    prompt
+                );
+
+                expect(result.actions).toEqual([]);
+            }
+        });
+    });
+
+    it('grounds nothing, whole or in part, for an up/down list "both" cannot join', () => {
+        const prompt = 'both Drums, Keys and Bass up 2 dB';
+        const value = { deltaDb: 2 };
+
+        const whole = bridge(
+            [drums, keys, bass].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const lastMember = bridge([gainCall(bass.id, value)], prompt);
+
+        expect(whole.actions).toEqual([]);
+        expect(lastMember.actions).toEqual([]);
+    });
+
+    it('holds an up/down list to one figure for every member', () => {
         const result = bridge(
-            [drums, bass].map((track) => gainCall(track.id, { deltaDb: 2 })),
-            'both Drums and Bass up 2 dB'
+            [gainCall(drums.id, { deltaDb: 2 }), gainCall(bass.id, { deltaDb: 3 })],
+            'Drums and Bass up 2 dB'
         );
 
         expect(result.actions).toEqual([]);

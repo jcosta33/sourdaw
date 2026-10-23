@@ -119,6 +119,7 @@ import {
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
+import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -132,6 +133,7 @@ import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/get
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
+import { isFillerClause } from './groundingStrategies/isFillerClause';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
@@ -145,6 +147,7 @@ import { type ActionPromptScope, type PromptClause } from './groundingStrategies
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
+import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
@@ -766,6 +769,17 @@ function isExplicitDirectionalCommandClause(
     });
 }
 
+/** Whether a planned action states its command directionally ("turn the Comp off") and the clause is that command. */
+function readsAsPlannedDirectionalCommand(text: string, plannedActionNames: readonly string[]): boolean {
+    return plannedActionNames.some((plannedActionName) => {
+        const directionalIntent = getExecutableAppActionGroundingRules(plannedActionName)?.directionalIntent;
+        return (
+            directionalIntent !== undefined &&
+            isExplicitDirectionalCommandClause(text, directionalIntent, { direct: [], owners: [] })
+        );
+    });
+}
+
 type ReferenceRange = {
     end: number;
     start: number;
@@ -1318,9 +1332,13 @@ function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
     const commandLead = lead
         .trim()
         .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
-        .replace(/^please\s+/iu, '');
+        .replace(/^please(?:\s+|$)/iu, '');
     const normalizedLead = normalizePromptText(commandLead);
     const normalizedIntent = normalizePromptText(intentPhrase);
+    if (intentPhrase.startsWith(REFERENCE_PLACEHOLDER)) {
+        // "Drums and Bass up 2 dB": the phrase opens with its reference, so the list is the whole head.
+        return normalizedLead.length === 0;
+    }
     return (
         normalizedLead.length > 0 &&
         (normalizedIntent === normalizedLead ||
@@ -1529,26 +1547,27 @@ function resolveCompiledClauseGroup(input: {
     return assigned.size === assertedIds.length ? selected : null;
 }
 
-function resolveActionPromptScope({
-    actionName,
-    actionOrdinal,
-    assertedArguments,
-    catalog,
-    compilerExpandedTargets = false,
-    compilerSameActionCalls = false,
-    compilerSetArguments = [],
-    context,
-    prompt,
-    plannedActionNames,
-    sameActionAssertedArguments,
-    sameActionCallCount,
-    workflowCapabilityId,
-}: ResolveActionPromptScopeInput):
+function resolveActionPromptScope(input: ResolveActionPromptScopeInput):
     | (ActionPromptScope &
           Partial<Pick<PromptClauseScope, 'start'>> & {
               compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[];
           })
     | null {
+    const {
+        actionName,
+        actionOrdinal,
+        assertedArguments,
+        catalog,
+        compilerExpandedTargets = false,
+        compilerSameActionCalls = false,
+        compilerSetArguments = [],
+        context,
+        prompt,
+        plannedActionNames,
+        sameActionAssertedArguments,
+        sameActionCallCount,
+        workflowCapabilityId,
+    } = input;
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const hasActionCancellation = isActionCancelledByPrompt({
         actionName,
@@ -1614,6 +1633,8 @@ function resolveActionPromptScope({
         prompt,
     });
     const matchingScopes: PromptClauseScope[] = [];
+    const readClauseIndexes = new Set<number>();
+    let namesReferencedLevelPhrase = false;
     let takesContinuation = false;
     for (const [clauseIndex, clause] of clauses.entries()) {
         const continuesScope = takesContinuation;
@@ -1622,6 +1643,7 @@ function resolveActionPromptScope({
             (list) => clauseIndex >= list.firstClauseIndex && clauseIndex <= list.lastClauseIndex
         );
         if (coordinatedList) {
+            readClauseIndexes.add(clauseIndex);
             if (clauseIndex === coordinatedList.firstClauseIndex && coordinatedList.scope) {
                 matchingScopes.push(coordinatedList.scope);
             }
@@ -1635,6 +1657,9 @@ function resolveActionPromptScope({
         );
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName, proposedNames);
         if (intent) {
+            if (plannedActionNames.includes(intent.actionType)) {
+                readClauseIndexes.add(clauseIndex);
+            }
             if (intent.actionType === actionName) {
                 if (
                     hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences) &&
@@ -1648,6 +1673,7 @@ function resolveActionPromptScope({
                     takesContinuation = decibelLevelForms.length > 0;
                     continue;
                 }
+                namesReferencedLevelPhrase ||= intent.referenceSlot !== undefined;
                 matchingScopes.push({
                     ...clause,
                     directional: false,
@@ -1677,8 +1703,16 @@ function resolveActionPromptScope({
                 // action's first scope carrying only its own reference and figure.
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: '' });
             }
+            readClauseIndexes.add(clauseIndex);
             takesContinuation = true;
             continue;
+        }
+        if (isFillerClause(clause.masked)) {
+            readClauseIndexes.add(clauseIndex);
+            continue;
+        }
+        if (readsAsPlannedDirectionalCommand(clause.text, plannedActionNames)) {
+            readClauseIndexes.add(clauseIndex);
         }
         const directionalIntentPhrase =
             groundingRules.directionalIntent &&
@@ -1688,6 +1722,10 @@ function resolveActionPromptScope({
         if (directionalIntentPhrase) {
             matchingScopes.push({ ...clause, directional: true, matchedIntentPhrase: directionalIntentPhrase });
         }
+    }
+    if (namesReferencedLevelPhrase && clauses.some((_, clauseIndex) => !readClauseIndexes.has(clauseIndex))) {
+        // A clause nothing reads may restrict, qualify or redirect the level, so the phrase names nothing.
+        return resolveActionPromptScope({ ...input, catalog: withoutReferencedLevelPhrases(catalog) });
     }
     const appliesOneExplicitScopeToCompilerExpansion = compilerExpandedTargets && matchingScopes.length === 1;
     const referenceSlotCount = matchingScopes.reduce((count, scope) => count + (scope.referenceSlots ?? 1), 0);

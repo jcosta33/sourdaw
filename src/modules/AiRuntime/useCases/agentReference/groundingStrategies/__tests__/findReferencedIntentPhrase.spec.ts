@@ -36,4 +36,16 @@ describe('findReferencedIntentPhrase', () => {
         expect(findReferencedIntentPhrase(' up 2 dB', '{reference} up')).toBeNull();
         expect(findReferencedIntentPhrase('  down 2 dB', '{reference} down')).toBeNull();
     });
+
+    it('lets the clause close with a full stop, after "please" or not', () => {
+        expect(findReferencedIntentPhrase('set □□□□□ to -6 dB.', 'set {reference} to')?.index).toBe(0);
+        expect(findReferencedIntentPhrase('set □□□□□ to -6 dB please.', 'set {reference} to')?.index).toBe(0);
+        expect(findReferencedIntentPhrase('□□□□□ up 2 dB .', '{reference} up')?.index).toBe(0);
+    });
+
+    it('names nothing when anything but a full stop follows the figure', () => {
+        expect(findReferencedIntentPhrase('set □□□□□ to -6 dB,', 'set {reference} to')).toBeNull();
+        expect(findReferencedIntentPhrase('set □□□□□ to -6 dB. now', 'set {reference} to')).toBeNull();
+        expect(findReferencedIntentPhrase('set □□□□□ to -6 dB send', 'set {reference} to')).toBeNull();
+    });
 });

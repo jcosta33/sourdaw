@@ -9,7 +9,7 @@ export type ReferencedIntentPhraseMatch = {
 };
 
 /** The registry writes the project object a phrase acts on as this placeholder. */
-const REFERENCE_PLACEHOLDER = '{reference}';
+export const REFERENCE_PLACEHOLDER = '{reference}';
 
 /** `maskProjectReferences.ts` writes each project reference as one run of mask glyphs. */
 const MASKED_REFERENCE = '(?:the\\s+)?(□+)';
@@ -21,11 +21,11 @@ const DECIBEL_FIGURE = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*d\\s?b';
 const CLAUSE_START = '^\\s*(?:please\\s+)?';
 const CLAUSE_END = '(?:\\s+please)?\\s*\\.?\\s*$';
 
-/** Registry phrases bound this; each compiles once. */
-const compiledPhrases = new Map<string, RegExp>();
+/** Registry phrases bound this; each pattern is built once. */
+const phrasePatterns = new Map<string, RegExp>();
 
-function compilePhrase(phrase: string): RegExp {
-    const cached = compiledPhrases.get(phrase);
+function getPhrasePattern(phrase: string): RegExp {
+    const cached = phrasePatterns.get(phrase);
     if (cached) {
         return cached;
     }
@@ -35,7 +35,7 @@ function compilePhrase(phrase: string): RegExp {
         .map((word) => (word === REFERENCE_PLACEHOLDER ? MASKED_REFERENCE : escapeRegExp(word)))
         .join('\\s+');
     const pattern = new RegExp(`${CLAUSE_START}(${body})\\s+${DECIBEL_FIGURE}${CLAUSE_END}`, 'diu');
-    compiledPhrases.set(phrase, pattern);
+    phrasePatterns.set(phrase, pattern);
     return pattern;
 }
 
@@ -46,7 +46,7 @@ function compilePhrase(phrase: string): RegExp {
  * reference included, names nothing, so a clause that says more than the level never reads as a bare one.
  */
 export function findReferencedIntentPhrase(text: string, phrase: string): ReferencedIntentPhraseMatch | null {
-    const match = compilePhrase(phrase).exec(text);
+    const match = getPhrasePattern(phrase).exec(text);
     const phraseSpan = match?.indices?.[1];
     const slotSpan = match?.indices?.[2];
     if (!phraseSpan || !slotSpan) {

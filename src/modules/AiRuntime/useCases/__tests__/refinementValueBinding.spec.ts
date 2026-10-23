@@ -1203,7 +1203,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
-    describe('a referenced level phrase in a refinement means the pending command on its object that takes a level', () => {
+    describe('a referenced level phrase in a refinement means every pending command on its object, the value binder deciding', () => {
         const SEND_TRACKS: readonly ProjectTrack[] = [
             projectTrack('track-vocals', 'Vocals', { sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }] }),
             ...BASE_TRACKS.slice(1),
@@ -1277,6 +1277,106 @@ describe('binding a terse refinement to the pending card it refines', () => {
             const muteCard = { prompt: 'mute Drums', calls: [muteDrums] };
 
             expect(refine(muteCard, 'Drums down 2 dB', [vocalsBy(-2)], SEND_CONTEXT).status).toBe('rejected');
+        });
+    });
+
+    describe('a referenced level phrase on a device parameter, a pan or a mixed card is read as main reads it', () => {
+        const toneDevice: ProjectTrack['devices'][number] = {
+            id: 'device-tone',
+            type: 'Tone',
+            bypassed: false,
+            parameters: [{ id: 'tilt', name: 'Tilt', type: 'float', value: 0, minValue: -6, maxValue: 6, unit: 'dB' }],
+        };
+        const compDevice: ProjectTrack['devices'][number] = {
+            id: 'device-comp',
+            type: 'Comp',
+            bypassed: false,
+            parameters: [
+                {
+                    id: 'threshold',
+                    name: 'Threshold',
+                    type: 'float',
+                    value: -10,
+                    minValue: -60,
+                    maxValue: 0,
+                    unit: 'dB',
+                },
+            ],
+        };
+        const DEVICE_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-piano', 'Piano', { deviceCount: 1, devices: [toneDevice] }),
+            projectTrack('track-guitar', 'Guitar', { deviceCount: 1, devices: [compDevice] }),
+        ]);
+        const tilt = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-tone', paramId: 'tilt', value },
+        });
+        const threshold = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-comp', paramId: 'threshold', value },
+        });
+        const pianoBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-piano', deltaDb },
+        });
+        const bassPan = (pan: number): ProviderCall => ({
+            name: 'setTrackPan',
+            arguments: { trackId: 'track-bass', pan },
+        });
+        const TONE_CARD = { prompt: 'set Tone tilt to 3', calls: [tilt(3)] };
+        const COMP_CARD = { prompt: 'set Comp threshold to -20 dB', calls: [threshold(-20)] };
+        const MIXED_CARD = { prompt: 'turn Piano down 3 dB and set Tone tilt to 3', calls: [pianoBy(-3), tilt(3)] };
+        const PAN_CARD = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
+
+        it.each(['set Tilt to 5 dB', 'set the Tilt to 5 dB', 'set Tone to 5 dB'])(
+            'grounds "%s" as the pending tilt, which the device parameter takes',
+            (refinement) => {
+                const result = refine(TONE_CARD, refinement, [tilt(5)], DEVICE_CONTEXT);
+
+                expect(commandsOf(result)).toEqual([
+                    { type: 'setDeviceParameter', deviceId: 'device-tone', paramId: 'tilt', value: 5 },
+                ]);
+            }
+        );
+
+        it('grounds "set Tilt to 5 dB" as the tilt beside a fader the card also holds', () => {
+            const result = refine(MIXED_CARD, 'set Tilt to 5 dB', [pianoBy(-3), tilt(5)], DEVICE_CONTEXT);
+
+            expect(commandsOf(result)).toEqual([
+                { type: 'setTrackGain', trackId: 'track-piano', deltaDb: -3 },
+                { type: 'setDeviceParameter', deviceId: 'device-tone', paramId: 'tilt', value: 5 },
+            ]);
+        });
+
+        it.each(['Tilt up 2 dB', 'Tilt down 2 dB', 'Tone up 2 dB'])(
+            'asks about "%s", a relative figure for a device parameter',
+            (refinement) => {
+                expect(refine(TONE_CARD, refinement, [tilt(5)], DEVICE_CONTEXT).status).toBe('clarify');
+            }
+        );
+
+        it.each([
+            'set Threshold to -12 dB',
+            'set Comp to -12 dB',
+            'Threshold down 6 dB',
+            'Threshold up 6 dB',
+            'Comp down 6 dB',
+        ])('asks about "%s", a signed or relative figure for a device parameter', (refinement) => {
+            expect(refine(COMP_CARD, refinement, [threshold(-12)], DEVICE_CONTEXT).status).toBe('clarify');
+        });
+
+        it('asks about "Bass up 2 dB" on a pan card, whose pending value is in percent', () => {
+            expect(refine(PAN_CARD, 'Bass up 2 dB', [bassPan(-30)], DEVICE_CONTEXT).status).toBe('clarify');
+        });
+
+        it('asks which pending change "Piano down 2 dB" means when the card holds a fader and a device on Piano', () => {
+            const result = refine(MIXED_CARD, 'Piano down 2 dB', [pianoBy(-2), tilt(3)], DEVICE_CONTEXT);
+
+            expect(result.status).toBe('clarify');
+            expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain(
+                'Which pending change should 2 dB apply to?'
+            );
         });
     });
 
