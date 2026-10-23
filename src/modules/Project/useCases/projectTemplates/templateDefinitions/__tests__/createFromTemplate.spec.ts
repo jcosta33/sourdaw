@@ -592,7 +592,13 @@ describe('createFromTemplate', () => {
         const releaseRuntimeTransition = vi.fn();
         mocks.acquireRuntimeTransition.mockResolvedValueOnce(releaseRuntimeTransition);
         mocks.executeAppAction.mockReturnValueOnce(action.promise);
-        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
+        // Asked after the stop, after the teardown, by the reset helper before its
+        // first attempt, and last once the action has settled.
+        mocks.transactionIsCurrent
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(false);
         const creation = createFromTemplate('pop-song');
         await vi.waitFor(() => expect(mocks.executeAppAction).toHaveBeenCalledOnce());
         expect(releaseRuntimeTransition).not.toHaveBeenCalled();

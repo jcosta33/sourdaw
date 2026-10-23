@@ -334,6 +334,20 @@ describe('newProject injectable', () => {
         );
     });
 
+    it('acknowledges a take that closes while it discards the outgoing project, without saving it', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+
+        await expect(newProject('Untitled Project', { outgoingProject: 'discard' })).resolves.toBe(true);
+
+        expect(takeMocks.saveProject).not.toHaveBeenCalled();
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
+        const [, , isTransportQuiet] = vi.mocked(resetCrdtProject).mock.calls[0]!;
+        expect(isTransportQuiet?.()).toBe(true);
+    });
+
     it('resets the audio graph and unloads the plugins again before asking again after a refused reset', async () => {
         resetMocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
 

@@ -7,7 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { compactProject, resetCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { ensureTrackStrips } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback, watchClosedTakes } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson } from '../../../repositories/project/readNamedProjectJson';
@@ -18,6 +18,7 @@ import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/hel
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
+import { saveProject } from '../../projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../loadRecentProject';
 
 const { audioContext } = vi.hoisted(() => ({
@@ -40,7 +41,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
-    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
+    watchClosedTakes: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
@@ -198,6 +199,11 @@ const validProject = JSON.stringify(validProjectData);
 
 describe('loadRecentProject', () => {
     beforeEach(() => {
+        vi.mocked(watchClosedTakes)
+            .mockReset()
+            .mockReturnValue({ acknowledge: () => undefined, hasClosedTake: () => false });
+        vi.mocked(stopPlayback).mockReset();
+        vi.mocked(saveProject).mockReset();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         vi.mocked(readNamedProjectJson).mockReset();
@@ -261,6 +267,40 @@ describe('loadRecentProject', () => {
         await expect(load).resolves.toBe('aborted');
         expect(resetCrdtProject).not.toHaveBeenCalled();
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+    });
+
+    /** The take a recording stop commits into the project being replaced. */
+    function closeATakeDuringTheStop(): void {
+        let takeClosed = false;
+        vi.mocked(watchClosedTakes).mockReturnValue({
+            acknowledge: () => {
+                takeClosed = false;
+            },
+            hasClosedTake: () => takeClosed,
+        });
+        vi.mocked(stopPlayback).mockImplementation(() => {
+            takeClosed = true;
+            return Promise.resolve();
+        });
+        vi.mocked(saveProject).mockResolvedValue(true);
+    }
+
+    it('saves the outgoing project when a take closes during the stop of an ordinary load', async () => {
+        closeATakeDuringTheStop();
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await expect(loadRecentProject('ordinary-load')).resolves.toBe('committed');
+
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
+
+    it('does not save the outgoing project when a discard load stops a recording that closes a take', async () => {
+        closeATakeDuringTheStop();
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await expect(loadRecentProject('discard-load', { outgoingProject: 'discard' })).resolves.toBe('committed');
+
+        expect(saveProject).not.toHaveBeenCalled();
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {

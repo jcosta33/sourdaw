@@ -131,10 +131,14 @@ describe('resetCrdtProjectWithTransportStopped', () => {
     });
 
     it('refuses as superseded, without asking again, when the caller no longer wants the replacement', async () => {
-        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        let wanted = true;
+        mocks.resetCrdtProject.mockImplementationOnce(() => {
+            wanted = false;
+            return Promise.resolve({ status: 'transport-active' });
+        });
 
         await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => false, fakeClosedTakes())
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes())
         ).resolves.toEqual({
             status: 'refused',
             reason: 'superseded',
@@ -242,6 +246,118 @@ describe('resetCrdtProjectWithTransportStopped', () => {
             'Recording discarded — the take could not be saved to the project you are leaving.',
             'warning'
         );
+    });
+
+    it('says nothing when the reset refuses after the save failed, because the user stays in the project with the take', async () => {
+        const refused = { status: 'refused', reason: 'session-active' };
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.resetCrdtProject.mockResolvedValueOnce(refused);
+
+        await expect(
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes(true))
+        ).resolves.toBe(refused);
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('tells the user once, only after the reset replaced the project, when the save failed', async () => {
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.resetCrdtProject
+            .mockImplementationOnce(() => {
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+                return Promise.resolve({ status: 'transport-active' });
+            })
+            .mockImplementationOnce(() => {
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+                return Promise.resolve(replaced);
+            });
+
+        await expect(
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes(true))
+        ).resolves.toBe(replaced);
+
+        expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Recording discarded — the take could not be saved to the project you are leaving.',
+            'warning'
+        );
+    });
+
+    it('says nothing when the save failed but a later save of the same project succeeded before the switch', async () => {
+        const closedTakes = fakeClosedTakes(true);
+        mocks.saveProject.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mocks.stopPlayback.mockImplementationOnce(() => {
+            closedTakes.close();
+            return Promise.resolve();
+        });
+
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes);
+
+        expect(mocks.saveProject).toHaveBeenCalledTimes(2);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('says nothing when the save failed and the caller gave up before the switch', async () => {
+        let wanted = true;
+        mocks.saveProject.mockImplementation(() => {
+            wanted = false;
+            return Promise.resolve(false);
+        });
+
+        await expect(
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes(true))
+        ).resolves.toEqual({ status: 'refused', reason: 'superseded' });
+
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses as superseded, without a reset call, when the caller gave up during the first save', async () => {
+        let wanted = true;
+        mocks.saveProject.mockImplementation(() => {
+            wanted = false;
+            return Promise.resolve(true);
+        });
+
+        await expect(
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes(true))
+        ).resolves.toEqual({ status: 'refused', reason: 'superseded' });
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
+    });
+
+    it('never saves or warns for a replacement that discards the outgoing project, yet acknowledges the take so the switch is not refused', async () => {
+        const closedTakes = fakeClosedTakes(true);
+        mocks.saveProject.mockResolvedValue(false);
+
+        await expect(
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes, 'discard')
+        ).resolves.toBe(replaced);
+
+        const [, , isQuietAtSwitch] = mocks.resetCrdtProject.mock.calls[0] as [string, () => void, () => boolean];
+        expect(closedTakes.acknowledge).toHaveBeenCalledOnce();
+        expect(isQuietAtSwitch()).toBe(true);
+        expect(mocks.saveProject).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('never saves for a discarding replacement when a take closes during its own stop', async () => {
+        const closedTakes = fakeClosedTakes();
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mocks.stopPlayback.mockImplementationOnce(() => {
+            closedTakes.close();
+            return Promise.resolve();
+        });
+
+        await expect(
+            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes, 'discard')
+        ).resolves.toBe(replaced);
+
+        expect(mocks.saveProject).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(closedTakes.hasClosedTake()).toBe(false);
     });
 
     it('does not tell the user anything when the save succeeds', async () => {

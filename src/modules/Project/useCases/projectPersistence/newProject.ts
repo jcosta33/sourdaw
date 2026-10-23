@@ -21,6 +21,7 @@ import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import {
     resetCrdtProjectWithTransportStopped,
+    type OutgoingProjectDisposition,
     type ReplacedProject,
 } from './helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
@@ -31,8 +32,14 @@ import {
 } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
+type NewProjectOptions = {
+    /** `discard` when the replacement exists to drop the outgoing project's unsaved state. */
+    readonly outgoingProject?: OutgoingProjectDisposition;
+};
+
 type ActivateNewProjectInput = {
     name: string;
+    outgoingProject: OutgoingProjectDisposition;
     previousTransientState: Pick<ProjectStoreState, 'initialized' | 'loading'> | null;
     transaction: ProjectLoadTransaction;
 };
@@ -116,6 +123,7 @@ function restorePreviousProjectRuntime(): void {
  */
 async function switchToNewProject({
     name,
+    outgoingProject,
     previousTransientState,
     transaction,
 }: ActivateNewProjectInput): Promise<ReplacedProject | null> {
@@ -158,7 +166,8 @@ async function switchToNewProject({
                     authorityReplaced = true;
                 },
                 transaction.isCurrent,
-                closedTakes
+                closedTakes,
+                outgoingProject
             );
             if (reset.status === 'refused') {
                 // Decided before the switch, so nothing was replaced: the
@@ -276,7 +285,10 @@ async function activateNewProject(input: ActivateNewProjectInput): Promise<boole
     return commitNewProject({ name: input.name, finalize: replaced.finalize });
 }
 
-export function newProject(name = 'Untitled Project'): Promise<boolean> {
+export function newProject(
+    name = 'Untitled Project',
+    { outgoingProject = 'save-closed-takes' }: NewProjectOptions = {}
+): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     const currentProject = projectStore.value;
     const previousTransientState = currentProject
@@ -285,5 +297,5 @@ export function newProject(name = 'Untitled Project'): Promise<boolean> {
     if (currentProject) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
-    return activateNewProject({ name, previousTransientState, transaction });
+    return activateNewProject({ name, outgoingProject, previousTransientState, transaction });
 }
