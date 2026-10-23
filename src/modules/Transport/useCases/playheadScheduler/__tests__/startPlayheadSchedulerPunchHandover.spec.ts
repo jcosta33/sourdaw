@@ -80,6 +80,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     getGainEnvelopeSeries: () => null,
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn(),
+    updateClipInStore: vi.fn(),
+    appendClipToTrack: vi.fn(),
+    clipSelectionStore: { value: null },
 }));
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
