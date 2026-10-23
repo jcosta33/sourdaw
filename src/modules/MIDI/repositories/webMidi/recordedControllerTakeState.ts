@@ -11,8 +11,6 @@
  * the redo snapshot the commit captures before it writes names the very rows the
  * write then lands.
  */
-import { type OverdubControllerRowsSnapshot } from '#/utils/handlerContract';
-
 import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
 
 /** A controller message as the live input reports it, before it is given an id. */
@@ -73,11 +71,11 @@ type RecordedControllerTakeState = {
      */
     bendRangeSeeds: Map<string, readonly MidiCC[]>;
     /**
-     * The overdub passes whose rows are planned but not yet in the store, in the order they
-     * ended: a pass's dispatch waits behind a snapshot transaction, so a later pass into the
-     * same clip can end first. Each leaves when its dispatch settles, whether it landed or not.
+     * The tail of the overdub passes landing in the store, one after another in the order they
+     * ended. A pass plans its declarations against the rows the clip holds when its turn comes,
+     * so an earlier pass that landed is in them and one that was refused is not. It never rejects.
      */
-    pendingOverdubPasses: Set<readonly OverdubControllerRowsSnapshot[]>;
+    overdubLanding: Promise<void>;
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
@@ -87,5 +85,5 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     carriedOverClips: new Map(),
     heldPedalSeeds: new Map(),
     bendRangeSeeds: new Map(),
-    pendingOverdubPasses: new Set(),
+    overdubLanding: Promise.resolve(),
 };

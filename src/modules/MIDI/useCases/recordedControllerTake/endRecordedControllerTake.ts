@@ -1,11 +1,8 @@
-import { type OverdubControllerRowsSnapshot } from '#/utils/handlerContract';
-
 import { recordedControllerTakeState } from '../../repositories/webMidi/recordedControllerTakeState';
 
 import { declareOverdubRegisteredState } from './declareOverdubRegisteredState';
-import { dispatchOverdubControllerRows } from './dispatchOverdubControllerRows';
 import { findLiveClip } from './findLiveClip';
-import { planRecordedControllers } from './planRecordedControllers';
+import { type DetachedOverdubClip, landOverdubPass } from './landOverdubPass';
 import { readLiveClipIds } from './readLiveClipIds';
 
 /**
@@ -17,16 +14,17 @@ import { readLiveClipIds } from './readLiveClipIds';
  * carried-over clip's buffer also holds this take's rows after the earlier
  * take's, and they get their registered-parameter declarations now, ahead of
  * that commit (`declareOverdubRegisteredState`). A clip the recorder did not open
- * (an overdub into an existing clip) has no commit, so its rows land now, with
- * the same declarations against the clip's stored rows and a lift for each pedal
- * still down on the clip's closing line. Every clip the pass overdubbed lands in
- * ONE undoable action (`appendOverdubControllers`), planned here and written
- * once the returned promise settles; a pass with no rows adds no history entry.
+ * (an overdub into an existing clip) has no commit: its buffer comes off the take
+ * state now, so the next take starts empty, and the pass lands as ONE undoable
+ * action (`appendOverdubControllers`) once the returned promise settles
+ * (`landOverdubPass`), with its declarations against the clip's rows by then and
+ * a lift for each pedal still down on the clip's closing line. A pass with no
+ * rows adds no history entry.
  */
 export function endRecordedControllerTake(): Promise<void> {
     const { buffers, openedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds } = recordedControllerTakeState;
     const liveClipIds = readLiveClipIds();
-    const overdubs: OverdubControllerRowsSnapshot[] = [];
+    const pass: DetachedOverdubClip[] = [];
 
     for (const clipId of [...buffers.keys()]) {
         if (openedClipIds.has(clipId)) {
@@ -38,13 +36,10 @@ export function endRecordedControllerTake(): Promise<void> {
             continue;
         }
         const clip = findLiveClip(clipId);
-        if (clip) {
-            declareOverdubRegisteredState(clipId);
-        }
-        const rows = clip ? planRecordedControllers({ clip }) : undefined;
+        const buffer = buffers.get(clipId);
         buffers.delete(clipId);
-        if (rows) {
-            overdubs.push({ clipId, cc: rows.cc, pitchBend: rows.pitchBend });
+        if (clip && buffer) {
+            pass.push({ clip, buffer });
         }
     }
     for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
@@ -54,5 +49,5 @@ export function endRecordedControllerTake(): Promise<void> {
             }
         }
     }
-    return dispatchOverdubControllerRows(overdubs.filter((clip) => clip.cc.length > 0 || clip.pitchBend.length > 0));
+    return landOverdubPass(pass);
 }

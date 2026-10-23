@@ -784,7 +784,24 @@ describe('recorded controller take', () => {
             await expect(endRecordedControllerTake()).resolves.toBeUndefined();
 
             expect(warn).toHaveBeenCalledWith('[MIDI] Recording the overdub controllers failed:', expect.any(Error));
-            expect(recordedControllerTakeState.pendingOverdubPasses.size).toBe(0);
+            warn.mockRestore();
+        });
+
+        it('lands the next pass after one that was refused', async () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+            mocks.executeAppAction.mockRejectedValueOnce(new Error('refused'));
+            beginTake();
+            setLiveClips(CLIP, 'existing-clip');
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 10, beat: 3, channel: 0 } });
+            await endRecordedControllerTake();
+
+            beginRecordedControllerTake();
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 20, beat: 3, channel: 0 } });
+            await endRecordedControllerTake();
+
+            expect(bare(mocks.midi.value?.ccByClipId['existing-clip'])).toEqual([
+                { controller: 1, value: 20, beat: 3, channel: 0 },
+            ]);
             warn.mockRestore();
         });
 

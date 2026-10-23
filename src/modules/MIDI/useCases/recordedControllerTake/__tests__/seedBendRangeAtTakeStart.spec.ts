@@ -5,6 +5,9 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => ({
+    /** Dispatches in flight order wait on these, one each, so a spec can hold a pass and then land or refuse it. */
+    dispatchGates: [] as Promise<void>[],
+    dispatchStarts: { count: 0 },
     midi: { value: null as MidiStoreStateInput | null },
     activeRecordingRef: { current: [] as string[] },
     trackState: {
@@ -52,6 +55,8 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 // the rows the store would hold once the dispatch settles.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: async (action: AppAction): Promise<void> => {
+        mocks.dispatchStarts.count += 1;
+        await mocks.dispatchGates.shift();
         const { handleAppendOverdubControllers } =
             await import('../../../handlers/overdubControllers/handleAppendOverdubControllers');
         if (action.type === 'appendOverdubControllers') {
@@ -140,6 +145,8 @@ const rangeRows = (channel: number, semitones: number) => [
 
 describe('the bend range a keyboard declared before a take', () => {
     beforeEach(() => {
+        mocks.dispatchGates.length = 0;
+        mocks.dispatchStarts.count = 0;
         vi.mocked(midiStore.set).mockClear();
         mocks.midi.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
         mocks.activeRecordingRef.current = [];
@@ -443,6 +450,67 @@ describe('the bend range a keyboard declared before a take', () => {
             await overdubBendAtBeat(2);
 
             expect(storedRangesAt(2)).toEqual([2]);
+        });
+
+        describe('a pass that ends while an earlier pass into the clip is still landing', () => {
+            /**
+             * The clip holds a take seeded at ±2 with a bend at beat 3. Pass A, held at its dispatch,
+             * raises the range to 5 and bends at beat 1; pass B raises it to 7 and bends at beat 2.5.
+             * Each pass is declared against the rows the clip ends up holding, whether A lands or not.
+             */
+            async function playPassesWhileFirstIsHeld(settleFirst: 'lands' | 'is refused') {
+                declareRange(0, 2);
+                beginTake();
+                recordBend(CLIP, 3);
+                commitRecordedControllers({ clip: spanOf(CLIP) });
+
+                let land!: () => void;
+                let refuse!: (error: Error) => void;
+                mocks.dispatchGates.push(
+                    new Promise<void>((resolve, reject) => {
+                        land = resolve;
+                        refuse = reject;
+                    })
+                );
+
+                declareRange(0, 5);
+                beginOverdub();
+                recordBend(CLIP, 1);
+                const endingFirst = endRecordedControllerTake();
+                await vi.waitFor(() => {
+                    expect(mocks.dispatchStarts.count).toBe(1);
+                });
+
+                declareRange(0, 7);
+                beginOverdub();
+                recordBend(CLIP, 2.5);
+                const endingSecond = endRecordedControllerTake();
+
+                if (settleFirst === 'lands') {
+                    land();
+                } else {
+                    refuse(new Error('refused'));
+                }
+                await Promise.all([endingFirst, endingSecond]);
+            }
+
+            it.each([
+                ['lands', [2, 7, 2]],
+                ['is refused', [2, 7, 2]],
+            ] as const)(
+                'returns the earlier take to its own range after a pass B bend when pass A %s',
+                async (settle, expected) => {
+                    await playPassesWhileFirstIsHeld(settle);
+
+                    const [atFirstTake, atSecondPass, atTakeBend] = storedRangesAt(0.5, 2.5, 3);
+                    expect([atFirstTake, atSecondPass, atTakeBend]).toEqual(expected);
+                }
+            );
+
+            it('keeps the range pass A recorded its bend under once it lands', async () => {
+                await playPassesWhileFirstIsHeld('lands');
+                expect(storedRangesAt(1)).toEqual([5]);
+            });
         });
 
         describe('a channel that was never addressed when the overdub began, while the earlier take left RPN 1 selected', () => {

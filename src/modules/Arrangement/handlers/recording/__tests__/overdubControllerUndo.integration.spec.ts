@@ -15,6 +15,7 @@ const liveMidi = vi.hoisted(() => {
     return { input, inputs: access.inputs };
 });
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -22,6 +23,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    productionBriefAdmissionPort,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -44,6 +46,8 @@ import {
     setMidiInputTrack,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -283,6 +287,63 @@ describe('overdubbed controller rows and undo', () => {
         await started;
         return { release, settled };
     }
+
+    describe('under a production brief lock', () => {
+        /** Lock a timeline range, with the admission the app installs at bootstrap. */
+        function lockRange(startBeat: number, endBeat: number): void {
+            productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+            projectStore.set({
+                ...structuredClone(defaultProjectStoreState),
+                productionBrief: {
+                    ...structuredClone(defaultProjectStoreState.productionBrief),
+                    locks: [
+                        {
+                            id: 'lock-range',
+                            scope: { kind: 'range', startBeat, endBeat },
+                            statement: 'Keep this range',
+                            createdAt: 1,
+                        },
+                    ],
+                },
+            });
+        }
+
+        afterEach(() => {
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+            projectStore.set(structuredClone(defaultProjectStoreState));
+        });
+
+        it('lands an overdub into a clip outside every locked range, whatever beat its rows sit at', async () => {
+            const clipId = await recordFirstTake();
+            lockRange(0, 4);
+
+            playOverdubPass();
+            await endOverdub(8, 2);
+
+            expect(readRows(clipId).cc.length).toBeGreaterThan(1);
+            expect(readRows(clipId).pitchBend).toHaveLength(2);
+        });
+
+        it('refuses an overdub into a clip the lock covers and leaves its rows as the take left them', async () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+            const clipId = await recordFirstTake();
+            const takeRows = readRows(clipId);
+            lockRange(4, 12);
+
+            playOverdubPass();
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+            await vi.waitFor(() => {
+                expect(warn).toHaveBeenCalledWith(
+                    '[MIDI] Recording the overdub controllers failed:',
+                    expect.anything()
+                );
+            });
+
+            expect(readRows(clipId)).toEqual(takeRows);
+            expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
+            warn.mockRestore();
+        });
+    });
 
     describe('a pass that ends while an earlier pass into the same clip is still landing', () => {
         it('reads the earlier pass bend at the range it was recorded under, as when the earlier pass lands first', async () => {
