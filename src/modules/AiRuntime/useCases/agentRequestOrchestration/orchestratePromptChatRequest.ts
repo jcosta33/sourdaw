@@ -25,6 +25,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
+import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
 import { planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
@@ -35,6 +36,7 @@ import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { proposeNextScheduledBatch } from './proposeNextScheduledBatch';
+import { revertThreadCommit } from './revertThreadCommit';
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 import { refinedProposalSupersession } from './supersedeRefinedProposal';
 
@@ -386,6 +388,76 @@ async function completeAnsweredRun(input: {
     appendAnswerChatMessages(request.userText, outcome);
 }
 
+/**
+ * Undoes the thread's last commit as one group. Undoing changes the project, so only a mode and
+ * trust ceiling that may commit a reversible change run it; the undo itself is reversible by redo.
+ */
+async function completeRevertedRun(input: {
+    request: PromptChatRequestInput;
+    admission: PromptRequestAdmission;
+    aborter: AbortController;
+    state: PromptRequestState;
+    outcome: Extract<PlanningOutcome, { kind: 'revert' }>;
+}): Promise<void> {
+    const { request, admission, aborter, state, outcome } = input;
+    const authorityFailure = getAgentExecutionModeFailure({
+        mode: request.interactionMode,
+        operation: 'commit',
+        requiredTrustMode: 'apply-reversible',
+        trustCeiling: request.options?.trustCeiling ?? 'destructive-commit',
+    });
+    if (authorityFailure !== null) {
+        await refusePlannedRequest(
+            request,
+            admission,
+            `Undoing the last committed change changes the project: ${authorityFailure}.`,
+            'authorization',
+            []
+        );
+        return;
+    }
+    if (aborter.signal.aborted) {
+        await agentRunCancellation.cancel({
+            runId: admission.runId,
+            reason: 'User cancelled the run before planning completed.',
+        });
+        return;
+    }
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
+        role: 'user',
+        content: request.userText,
+        timestamp: Date.now(),
+        isCommandAction: true,
+    });
+    const assistantMessageId = `msg-${crypto.randomUUID()}`;
+    state.assistantMessageId = assistantMessageId;
+    appendChatMessage({
+        id: assistantMessageId,
+        role: 'assistant',
+        content: 'Undoing the last committed change...',
+        timestamp: Date.now(),
+        isCommandAction: true,
+    });
+    const reverted = await revertThreadCommit(outcome.revertGroupId);
+    if (reverted.status === 'refused') {
+        tryRecordTerminalFailure({
+            runId: admission.runId,
+            error: normalizeAgentFailure({ category: 'conflict', source: 'provider-planning', knownDomain: true }),
+            terminal: true,
+        });
+        updateChatMessage(assistantMessageId, {
+            content: `Command not executed: ${reverted.reason}`,
+            error: reverted.reason,
+        });
+        return;
+    }
+    agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
+    updateChatMessage(assistantMessageId, {
+        content: `Undid the last committed change:\n\n${reverted.labels.map((label) => `- ${label}`).join('\n')}`,
+    });
+}
+
 async function dispatchPromptPlan(input: {
     request: PromptChatRequestInput;
     admission: PromptRequestAdmission;
@@ -409,6 +481,11 @@ async function dispatchPromptPlan(input: {
             projectRevision,
             outcome: result.planningOutcome,
         });
+        return undefined;
+    }
+    // An undo of the last commit carries no batch, so it is read before the action list too.
+    if (result.planningOutcome?.kind === 'revert') {
+        await completeRevertedRun({ request, admission, aborter, state, outcome: result.planningOutcome });
         return undefined;
     }
     if (request.options?.resume && result.actions.length === 0) {
