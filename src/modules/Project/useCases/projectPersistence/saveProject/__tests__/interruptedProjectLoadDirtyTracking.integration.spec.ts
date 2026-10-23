@@ -230,7 +230,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
-    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
+    countSettledTakes: () => 0,
     defaultTransportState: { masterGain: 75, isPlaying: false },
     restoreTimelineMapSnapshot: vi.fn(),
     restoreTransportSnapshot: vi.fn(),

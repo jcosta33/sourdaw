@@ -34,7 +34,6 @@ const {
     mockSaveProject,
     mockTakesSettled,
     mockTrackStoreValue,
-    mockWatchClosedTakes,
 } = vi.hoisted(() => ({
     mockLogger: { error: vi.fn(), warn: vi.fn() },
     mockBatchStoreUpdates: vi.fn((fn: () => void) => fn()),
@@ -73,10 +72,9 @@ const {
     mockVerifyAudioBufferReferences: vi.fn(),
     mockRearmInputMonitoring: vi.fn(),
     mockSaveProject: vi.fn(),
-    /** The takes whose commit settled in the outgoing project; each watch compares it with the count at its creation. */
+    /** How many take commits have settled, as the Transport counts them. */
     mockTakesSettled: { value: 0 },
     mockTrackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
-    mockWatchClosedTakes: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
@@ -119,7 +117,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
-    watchClosedTakes: mockWatchClosedTakes,
+    countSettledTakes: () => mockTakesSettled.value,
 }));
 // The reset helper saves the outgoing project when a take closed into it.
 vi.mock('../../saveProject/saveProject', () => ({ saveProject: mockSaveProject }));
@@ -139,6 +137,7 @@ vi.mock('../verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: 
 
 import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
 import { replaceProjectData } from '../replaceProjectData';
+import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
 import type { ProjectLoadTransaction } from '../runProjectLoadTransaction';
@@ -206,15 +205,8 @@ describe('replaceProjectData', () => {
         });
         mockStopPlayback.mockResolvedValue(undefined);
         mockSaveProject.mockResolvedValue(true);
-        mockWatchClosedTakes.mockImplementation(() => {
-            let acknowledged = mockTakesSettled.value;
-            return {
-                acknowledge: () => {
-                    acknowledged = mockTakesSettled.value;
-                },
-                hasClosedTake: () => mockTakesSettled.value !== acknowledged,
-            };
-        });
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
         mockFinalizeReset.mockResolvedValue('finalized');
@@ -426,7 +418,7 @@ describe('replaceProjectData', () => {
         expect(mockForgetProjectLatchedPedals).toHaveBeenCalledOnce();
     });
 
-    it('watches for takes before its first stop, so a take that stop commits is saved before the switch', async () => {
+    it('saves a take that its own first stop commits before the switch', async () => {
         mockStopPlayback.mockImplementationOnce(() => {
             mockTakesSettled.value++;
             return Promise.resolve();
@@ -436,9 +428,6 @@ describe('replaceProjectData', () => {
             replaceProjectData({ context: 'loadRecentProject', data: makeData(), transaction: makeTransaction() })
         ).resolves.toMatchObject({ status: 'committed' });
 
-        expect(mockWatchClosedTakes.mock.invocationCallOrder[0]!).toBeLessThan(
-            mockStopPlayback.mock.invocationCallOrder[0]!
-        );
         expect(mockSaveProject).toHaveBeenCalledOnce();
         expect(mockSaveProject.mock.invocationCallOrder[0]!).toBeLessThan(
             mockResetCrdtProject.mock.invocationCallOrder[0]!

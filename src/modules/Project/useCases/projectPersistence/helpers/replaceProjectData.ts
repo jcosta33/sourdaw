@@ -13,7 +13,7 @@ import {
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
-import { ensureTrackStrips, stopPlayback, watchClosedTakes } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
@@ -43,8 +43,6 @@ type ReplaceProjectDataInput = {
     // transaction, and a rejected one must degrade the load rather than escape
     // as an unhandled rejection.
     afterCommit?: () => void | Promise<void>;
-    /** Created by a caller that awaits before this runs (a project read), so a take that closes meanwhile is kept too. */
-    closedTakes?: ReturnType<typeof watchClosedTakes>;
     context: 'applyImportedProjectData' | 'loadRecentProject';
     data: HydratableProjectData;
     /** Buffers an importer already decoded, keyed by buffer id — staged and
@@ -86,7 +84,6 @@ function restorePreviousAudioGraph(context: ReplaceProjectDataInput['context']):
 
 export async function replaceProjectData({
     afterCommit,
-    closedTakes = watchClosedTakes(),
     context,
     data,
     decodedAudioBuffers,
@@ -94,7 +91,6 @@ export async function replaceProjectData({
     shouldProceed,
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
-    // A default created here precedes any stop below, so a take that a stop commits is kept too.
     let cancelPreparedStoredCandidate: (() => void) | undefined;
     const currentProject = projectStore.value;
     // Captured before the load claims the flags, so an abort can hand the
@@ -325,7 +321,6 @@ export async function replaceProjectData({
                 authorityReplaced = true;
             },
             () => transaction.isCurrent() && (shouldProceed === undefined || shouldProceed()),
-            closedTakes,
             outgoingProject
         );
         if (reset.status === 'refused') {

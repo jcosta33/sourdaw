@@ -34,7 +34,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
-    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
+    countSettledTakes: () => 0,
 }));
 
 vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));

@@ -77,7 +77,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: vi.fn(),
     restoreTimelineMapSnapshot: vi.fn(),
-    watchClosedTakes: vi.fn(),
+    countSettledTakes: () => 0,
 }));
 
 describe('recentProjects injectables', () => {

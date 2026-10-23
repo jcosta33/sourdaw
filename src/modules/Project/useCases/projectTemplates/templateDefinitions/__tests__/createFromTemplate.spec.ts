@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectStore, type ProjectStoreState } from '../../../../stores/projectStore';
+import { unsavedClosedTakes } from '../../../projectPersistence/helpers/unsavedClosedTakes';
 import { createFromTemplate } from '../createFromTemplate';
 
 type MonitoredTrack = { id: string; inputMonitoring: 'on' | 'off' | 'auto'; inputId: string | null };
@@ -37,9 +38,8 @@ const mocks = vi.hoisted(() => ({
     transactionPrepare: vi.fn(),
     runProjectLoadTransaction: vi.fn(),
     saveProject: vi.fn(),
-    /** The takes whose commit settled in the outgoing project; each watch compares it with the count at its creation. */
+    /** How many take commits have settled, as the Transport counts them. */
     takesSettled: { value: 0 },
-    watchClosedTakes: vi.fn(),
 }));
 
 // ../helpers is mocked so this spec does not load the template catalog / Nebula Drift demo.
@@ -124,7 +124,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
     isTransportIdle: () => true,
     stopPlayback: mocks.stopPlayback,
-    watchClosedTakes: mocks.watchClosedTakes,
+    countSettledTakes: () => mocks.takesSettled.value,
     addTempoChange: vi.fn(),
     addTimeSignatureChange: vi.fn(),
     defaultTransportState: {},
@@ -188,15 +188,8 @@ describe('createFromTemplate', () => {
         mocks.newProject.mockResolvedValue(true);
         mocks.stopPlayback.mockResolvedValue(undefined);
         mocks.saveProject.mockResolvedValue(true);
-        mocks.watchClosedTakes.mockImplementation(() => {
-            let acknowledged = mocks.takesSettled.value;
-            return {
-                acknowledge: () => {
-                    acknowledged = mocks.takesSettled.value;
-                },
-                hasClosedTake: () => mocks.takesSettled.value !== acknowledged,
-            };
-        });
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.finalize.mockResolvedValue('finalized');
@@ -517,7 +510,7 @@ describe('createFromTemplate', () => {
         expect(mocks.forgetProjectLatchedPedals).toHaveBeenCalledOnce();
     });
 
-    it('watches for takes before its first stop, so a take that stop commits is saved before the switch', async () => {
+    it('saves a take that its own first stop commits before the switch', async () => {
         mocks.stopPlayback.mockImplementationOnce(() => {
             mocks.takesSettled.value++;
             return Promise.resolve();
@@ -525,9 +518,6 @@ describe('createFromTemplate', () => {
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(true);
 
-        expect(mocks.watchClosedTakes.mock.invocationCallOrder[0]!).toBeLessThan(
-            mocks.stopPlayback.mock.invocationCallOrder[0]!
-        );
         expect(mocks.saveProject).toHaveBeenCalledOnce();
         expect(mocks.saveProject.mock.invocationCallOrder[0]!).toBeLessThan(
             mocks.resetCrdtProject.mock.invocationCallOrder[0]!

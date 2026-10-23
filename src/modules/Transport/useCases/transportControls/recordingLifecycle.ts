@@ -21,8 +21,6 @@ type RecordingLifecycle = {
      * Only a stop may call it: it takes the commits it awaits away from every later caller.
      */
     waitForCommits: () => Promise<void>;
-    /** Resolve once no stop is closing and no commit is in flight, without taking either from a stop. */
-    waitUntilQuiet: () => Promise<void>;
 };
 
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
@@ -50,36 +48,14 @@ const commitsInFlight = new Set<Promise<void>>();
  */
 const closingStops = new Set<Promise<void>>();
 
-/** Callers of `waitUntilQuiet`, woken by the settlement that leaves nothing closing. */
-const quietWaiters: (() => void)[] = [];
-
-function isQuiet(): boolean {
-    return closingStops.size === 0 && commitsInFlight.size === 0;
-}
-
-function wakeQuietWaiters(): void {
-    if (!isQuiet()) {
-        return;
-    }
-    for (const wake of quietWaiters.splice(0)) {
-        wake();
-    }
-}
-
-function waitUntilQuiet(): Promise<void> {
-    if (isQuiet()) {
-        return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-        quietWaiters.push(resolve);
-    });
+function isClosingRecording(): boolean {
+    return closingStops.size > 0 || commitsInFlight.size > 0;
 }
 
 function trackCommit(commit: Promise<void>): void {
     const onSettled = (): void => {
         commitsInFlight.delete(settled);
         settledCommitCount++;
-        wakeQuietWaiters();
     };
     // Registered before any waiter can be, and reactions run in registration
     // order, so a waiter resumes only once the commit counts as settled.
@@ -102,7 +78,6 @@ async function waitForCommits(): Promise<void> {
 function trackClosing(closing: Promise<void>): void {
     const onSettled = (): void => {
         closingStops.delete(settled);
-        wakeQuietWaiters();
     };
     const settled = closing.then(onSettled, onSettled);
     closingStops.add(settled);
@@ -143,7 +118,7 @@ export const recordingLifecycle: RecordingLifecycle = {
         return true;
     },
     hasPendingRecordingStart: () => pendingRecordingStartToken !== null || countInTimerId !== null,
-    isClosingRecording: () => !isQuiet(),
+    isClosingRecording,
     ownsPendingRecordingStart: (token) => pendingRecordingStartToken === token,
     setCountInTimerId: (id) => {
         countInTimerId = id;
@@ -152,5 +127,4 @@ export const recordingLifecycle: RecordingLifecycle = {
     trackCommit,
     waitForClosing,
     waitForCommits,
-    waitUntilQuiet,
 };

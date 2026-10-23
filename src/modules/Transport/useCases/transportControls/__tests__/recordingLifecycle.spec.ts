@@ -111,32 +111,5 @@ describe('recording lifecycle', () => {
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
             expect(recordingLifecycle.settledCommitCount).toBe(before + 1);
         });
-
-        it('waits until quiet across a stop and a commit registered while waiting, and leaves that commit to a stop', async () => {
-            const stop = Promise.withResolvers<void>();
-            const commit = Promise.withResolvers<void>();
-            recordingLifecycle.trackClosing(stop.promise);
-            let quiet = false;
-
-            const waiting = recordingLifecycle.waitUntilQuiet().then(() => {
-                quiet = true;
-            });
-            recordingLifecycle.trackCommit(commit.promise);
-            stop.resolve();
-            await vi.advanceTimersByTimeAsync(10);
-            expect(quiet).toBe(false);
-
-            // A stop arriving now still finds the commit to wait for.
-            let commitsLanded = false;
-            const stopWaiting = recordingLifecycle.waitForCommits().then(() => {
-                commitsLanded = true;
-            });
-            await vi.advanceTimersByTimeAsync(10);
-            expect(commitsLanded).toBe(false);
-
-            commit.resolve();
-            await Promise.all([waiting, stopWaiting]);
-            expect(recordingLifecycle.isClosingRecording()).toBe(false);
-        });
     });
 });

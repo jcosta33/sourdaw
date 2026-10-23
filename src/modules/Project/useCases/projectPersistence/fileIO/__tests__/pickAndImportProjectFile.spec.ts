@@ -25,20 +25,8 @@ const mocks = vi.hoisted(() => {
         loggerError: vi.fn<(error: Error) => void>(),
         saveProject: vi.fn<() => Promise<boolean>>(),
         projectStoreValue,
-        // Take commits a Stop has started and that have not landed yet.
-        takesClosing: [] as Promise<void>[],
     };
 });
-
-// The Transport contract this route reads: waiting resolves once every closing
-// take has landed. The recording lifecycle itself is exercised by the
-// real-recording integration spec.
-vi.mock('#/modules/Transport/useCases', () => ({
-    waitForClosedTakes: async () => {
-        await Promise.all(mocks.takesClosing.splice(0));
-    },
-    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
-}));
 
 vi.mock('../../../fileDialog', () => ({
     pickFiles: mocks.pickFiles,
@@ -81,7 +69,6 @@ function makeFile(content: string, name = 'song.sourdaw'): File {
 describe('pickAndImportProjectFile', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.takesClosing.length = 0;
         mocks.runProjectLoadTransaction.mockReturnValue(transactionSentinel);
         mocks.saveProject.mockResolvedValue(true);
         mocks.projectStoreValue.value = null;
@@ -234,58 +221,6 @@ describe('pickAndImportProjectFile', () => {
         expect(mocks.saveProject).toHaveBeenCalledOnce();
         expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
         expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
-    });
-
-    /**
-     * A user's Stop turns the transport idle at once and lands the take's commit
-     * afterwards, so the commit can still be in flight when the chosen file has
-     * been read, after the pre-save has run. The take then lands in the open
-     * project, which the import is about to replace, and dirties it only when it
-     * does, so the import waits for it and saves before it goes on.
-     */
-    function stopLandsATakeAfterTheFileIsRead(file: File, projectJson: unknown): void {
-        vi.spyOn(file, 'text').mockImplementation(() => {
-            mocks.takesClosing.push(
-                Promise.resolve().then(() => {
-                    // The committed take is an unsaved edit of the open project.
-                    mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
-                })
-            );
-            return Promise.resolve(JSON.stringify(projectJson));
-        });
-    }
-
-    it('saves a take whose commit is still landing when the file has been read', async () => {
-        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
-        const file = makeFile(JSON.stringify(projectJson));
-        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: false };
-        stopLandsATakeAfterTheFileIsRead(file, projectJson);
-        mocks.saveProject.mockImplementation(() => {
-            mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: false };
-            return Promise.resolve(true);
-        });
-        mocks.pickFiles.mockResolvedValue([file]);
-        mocks.applyImportedProjectData.mockResolvedValue(true);
-
-        await expect(pickAndImportProjectFile()).resolves.toBe(true);
-
-        expect(mocks.saveProject).toHaveBeenCalledOnce();
-        expect(mocks.saveProject.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.applyImportedProjectData.mock.invocationCallOrder[0] ?? 0
-        );
-    });
-
-    it('keeps the open project when the save of a take closed during the file read fails', async () => {
-        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
-        const file = makeFile(JSON.stringify(projectJson));
-        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: false };
-        stopLandsATakeAfterTheFileIsRead(file, projectJson);
-        mocks.saveProject.mockResolvedValue(false);
-        mocks.pickFiles.mockResolvedValue([file]);
-
-        await expect(pickAndImportProjectFile()).resolves.toBe(false);
-
-        expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
     });
 
     it('does not pre-save when the open project has no unsaved changes', async () => {

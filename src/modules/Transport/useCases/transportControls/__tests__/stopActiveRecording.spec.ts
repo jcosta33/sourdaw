@@ -7,7 +7,6 @@ import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
-import { waitForClosedTakes } from '../waitForClosedTakes';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
@@ -133,26 +132,19 @@ describe('stopActiveRecording', () => {
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
         });
 
-        it('does not resolve before a punch-out commit in flight lands, while a wait for closed takes runs beside it', async () => {
+        it('does not resolve before a punch-out commit in flight lands', async () => {
             const punchOutCommit = Promise.withResolvers<void>();
             recordingLifecycle.trackCommit(punchOutCommit.promise);
-            let waited = false;
             let stopped = false;
 
-            // The wait is already parked on the commit when the user's Stop arrives.
-            const waiting = waitForClosedTakes().then(() => {
-                waited = true;
-            });
-            await vi.advanceTimersByTimeAsync(0);
             const stopping = stopActiveRecording().then(() => {
                 stopped = true;
             });
             await vi.advanceTimersByTimeAsync(10);
             expect(stopped).toBe(false);
-            expect(waited).toBe(false);
 
             punchOutCommit.resolve();
-            await Promise.all([waiting, stopping]);
+            await stopping;
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
         });
 

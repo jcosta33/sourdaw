@@ -15,9 +15,18 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
-import { stopPlayback, togglePlayback, toggleRecording, watchClosedTakes } from '#/modules/Transport/useCases';
+import {
+    countSettledTakes,
+    isTransportIdle,
+    stopPlayback,
+    togglePlayback,
+    toggleRecording,
+} from '#/modules/Transport/useCases';
 
+import { pickAndImportProjectFile } from '../../fileIO/pickAndImportProjectFile';
+import { saveProjectBeforeReplacement } from '../../saveProject/saveProjectBeforeReplacement';
 import { resetCrdtProjectWithTransportStopped } from '../resetCrdtProjectWithTransportStopped';
+import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 const TRACK_ID = 'track-recording';
 
@@ -34,6 +43,8 @@ const mocks = vi.hoisted(() => {
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
+        pickFiles: vi.fn<() => Promise<File[] | null>>(),
+        replaceImportedProject: vi.fn<() => Promise<boolean>>(),
         resetAudioGraph: vi.fn(),
         unloadPlugin: vi.fn<() => Promise<void>>(() => Promise.resolve()),
         saveProject: vi.fn<() => Promise<boolean>>(),
@@ -75,6 +86,9 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('../../saveProject/saveProject', () => ({ saveProject: mocks.saveProject }));
+vi.mock('../../../fileDialog', () => ({ pickFiles: mocks.pickFiles }));
+// The import's replacement, reduced to the reset helper it ends in.
+vi.mock('../../fileIO/applyImportedProjectData', () => ({ applyImportedProjectData: mocks.replaceImportedProject }));
 
 /** Holds the next `commitRecording` after its transaction has landed. */
 const commitGate = vi.hoisted(() => ({
@@ -213,10 +227,43 @@ function replaceOnlyWhenIdle(): void {
     });
 }
 
-function replace(
-    closedTakes: ReturnType<typeof watchClosedTakes> = watchClosedTakes()
-): ReturnType<typeof resetCrdtProjectWithTransportStopped> {
-    return resetCrdtProjectWithTransportStopped('Next', vi.fn(), () => true, closedTakes);
+function replace(): ReturnType<typeof resetCrdtProjectWithTransportStopped> {
+    return resetCrdtProjectWithTransportStopped('Next', vi.fn(), () => true);
+}
+
+/**
+ * The Save command's contract: the save records the takes in the project, and a
+ * successful one records the settled-take count read at its snapshot.
+ */
+function saveRecordingTakes(saved = true): Promise<boolean> {
+    const settledAtSnapshot = countSettledTakes();
+    mocks.events.push(`save:${String(committedEntryCount())}`);
+    if (saved) {
+        unsavedClosedTakes.markSavedThrough(settledAtSnapshot);
+    }
+    return Promise.resolve(saved);
+}
+
+/** The read a route makes before it replaces the project: the user's take lands meanwhile. */
+async function readWhileTheTakeLands(releaseCommit: () => void): Promise<void> {
+    releaseCommit();
+    await vi.waitFor(() => {
+        expect(isTransportIdle()).toBe(true);
+    });
+}
+
+/** The user's own Pause on a rolling transport recording a MIDI take, whose commit is held. */
+function pauseWhileTheCommitIsHeld(): () => void {
+    seedTrack('midi');
+    transportStore.set({ ...transportStore.value!, isPlaying: true });
+    startRecording(4);
+    transportStore.set({ ...transportStore.value!, isRecording: true });
+    flushAutomergeStorageWrites();
+    const release = gateNextCommit();
+    togglePlayback();
+    expect(transportStore.value?.isPlaying).toBe(false);
+    expect(transportStore.value?.isRecording).toBe(false);
+    return release;
 }
 
 describe('replacing a project while a take is recording or closing (issue #5500)', () => {
@@ -238,13 +285,14 @@ describe('replacing a project while a take is recording or closing (issue #5500)
         mocks.unloadPlugin.mockReset();
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.saveProject.mockReset();
-        mocks.saveProject.mockImplementation(() => {
-            mocks.events.push(`save:${String(committedEntryCount())}`);
-            return Promise.resolve(true);
-        });
+        mocks.saveProject.mockImplementation(() => saveRecordingTakes());
+        mocks.pickFiles.mockReset();
+        mocks.replaceImportedProject.mockReset();
         mocks.resetCrdtProject.mockReset();
         replaceOnlyWhenIdle();
         mocks.audioClock.currentTime = 0;
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
     });
 
     afterEach(async () => {
@@ -271,21 +319,115 @@ describe('replacing a project while a take is recording or closing (issue #5500)
 
     it('saves a take that a stop made before the helper ran committed, before it asks the reset at all', async () => {
         openMidiTake();
-        const closedTakes = watchClosedTakes();
         await stopPlayback();
 
-        await expect(replace(closedTakes)).resolves.toMatchObject({ status: 'replaced' });
+        await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
 
         expect(mocks.events).toEqual(['save:1', 'switch']);
     });
 
-    it('tells the user the take is discarded when the outgoing project cannot be saved, and still replaces', async () => {
+    // Open Recent: the menu's pre-save runs right after the user's Stop, before
+    // the take has landed, and the take lands while the load reads the project
+    // it is about to open.
+    it('saves a take that lands after the pre-save and during the read before a recent-project load switches', async () => {
+        const release = pauseWhileTheCommitIsHeld();
+
+        await expect(saveProjectBeforeReplacement()).resolves.toBe(true);
+        await readWhileTheTakeLands(release);
+        await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(committedEntryCount()).toBe(1);
+        expect(mocks.events).toEqual(['save:0', 'save:1', 'switch']);
+    });
+
+    it('saves a take that lands while an imported file is read before the import switches', async () => {
+        const release = pauseWhileTheCommitIsHeld();
+        const file = new File(['{}'], 'song.sourdaw');
+        vi.spyOn(file, 'text').mockImplementation(async () => {
+            await readWhileTheTakeLands(release);
+            return '{}';
+        });
+        mocks.pickFiles.mockResolvedValue([file]);
+        mocks.replaceImportedProject.mockImplementation(async () => {
+            const reset = await replace();
+            return reset.status === 'replaced';
+        });
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(true);
+
+        expect(committedEntryCount()).toBe(1);
+        expect(mocks.events.slice(-2)).toEqual(['save:1', 'switch']);
+    });
+
+    it('does not save again at a replacement for a take that a save already kept', async () => {
         openMidiTake();
-        mocks.saveProject.mockResolvedValue(false);
+        await stopPlayback();
+        // The user's Save, or the autosave, after the take landed.
+        await saveRecordingTakes();
+        mocks.events.length = 0;
 
         await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
 
-        expect(mocks.events).toEqual(['refused', 'switch']);
+        expect(mocks.saveProject).not.toHaveBeenCalled();
+        expect(mocks.events).toEqual(['switch']);
+    });
+
+    it('owes the project it switched to nothing for the takes of the project it left', async () => {
+        openMidiTake();
+        await stopPlayback();
+        mocks.saveProject.mockImplementation(() => saveRecordingTakes(false));
+        await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
+        mocks.saveProject.mockClear();
+        mocks.events.length = 0;
+
+        await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(mocks.saveProject).not.toHaveBeenCalled();
+        expect(mocks.events).toEqual(['switch']);
+    });
+
+    // Cycle punch recording: the transport rolls on and a take closes on every
+    // pass, so one lands during every save.
+    it('resolves the pre-save after one save while takes keep landing, and saves the later take before the switch', async () => {
+        openMidiTake();
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        let cyclePasses = 0;
+        mocks.saveProject.mockImplementation(async () => {
+            const saved = await saveRecordingTakes();
+            // Bounded, so a pre-save that saves again for each landed take ends
+            // and its extra saves show.
+            if (cyclePasses < 3) {
+                cyclePasses += 1;
+                // The pass ends: its take closes and the next pass opens one.
+                toggleRecording();
+                startRecording(4 + cyclePasses);
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+                flushAutomergeStorageWrites();
+            }
+            return saved;
+        });
+
+        await expect(saveProjectBeforeReplacement()).resolves.toBe(true);
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(transportStore.value?.isPlaying).toBe(true);
+        // The user stops the cycle only now, through the replacement's own stop.
+        cyclePasses = Number.POSITIVE_INFINITY;
+
+        await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(committedEntryCount()).toBe(2);
+        expect(mocks.events.at(0)).toBe('save:0');
+        expect(mocks.events.slice(-2)).toEqual(['save:2', 'switch']);
+    });
+
+    it('tells the user the take is discarded when the outgoing project cannot be saved, and still replaces', async () => {
+        openMidiTake();
+        mocks.saveProject.mockImplementation(() => saveRecordingTakes(false));
+
+        await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
             'Recording discarded — the take could not be saved to the project you are leaving.',
             'warning'
@@ -322,17 +464,9 @@ describe('replacing a project while a take is recording or closing (issue #5500)
 
     // No audio capture is open here, so the commit this stop started is the only
     // thing that says a take is still landing: the transport already reads
-    // stopped, and no commit has settled for the take watch to count.
+    // stopped, and no commit has settled for the settled-take count to show.
     it('does not switch authority while a MIDI take the user paused is still committing, then saves it', async () => {
-        seedTrack('midi');
-        transportStore.set({ ...transportStore.value!, isPlaying: true });
-        startRecording(4);
-        transportStore.set({ ...transportStore.value!, isRecording: true });
-        flushAutomergeStorageWrites();
-        const release = gateNextCommit();
-        togglePlayback();
-        expect(transportStore.value?.isPlaying).toBe(false);
-        expect(transportStore.value?.isRecording).toBe(false);
+        const release = pauseWhileTheCommitIsHeld();
 
         const replacing = replace();
         await new Promise((resolve) => setTimeout(resolve, 20));

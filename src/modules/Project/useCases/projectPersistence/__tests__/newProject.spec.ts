@@ -24,6 +24,7 @@ import { defaultProjectStoreState, projectStore } from '../../../stores/projectS
 import { getDurableProjectOwnerId } from '../../getDurableProjectOwnerId';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { newProject } from '../newProject';
 
 type Deferred<T> = {
@@ -42,25 +43,11 @@ const resetMocks = vi.hoisted(() => ({
     finalize: vi.fn(),
 }));
 
-// The take watch the replacement hands the reset helper: `settled` counts the
-// takes whose commit settled in the outgoing project, and each watch compares it
-// against the count at the moment it was created, as the real one does.
-const takeMocks = vi.hoisted(() => {
-    const state = { settled: 0 };
-    return {
-        state,
-        saveProject: vi.fn(() => Promise.resolve(true)),
-        watchClosedTakes: vi.fn(() => {
-            let acknowledged = state.settled;
-            return {
-                acknowledge: () => {
-                    acknowledged = state.settled;
-                },
-                hasClosedTake: () => state.settled !== acknowledged,
-            };
-        }),
-    };
-});
+// `settled` counts the take commits that have settled, as the Transport does.
+const takeMocks = vi.hoisted(() => ({
+    state: { settled: 0 },
+    saveProject: vi.fn(() => Promise.resolve(true)),
+}));
 
 const arrangementMocks = vi.hoisted(() => ({
     rearmInputMonitoring: vi.fn(),
@@ -76,13 +63,13 @@ function createDeferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred };
 }
 
-// newProject imports ensureTrackStrips, stopPlayback and watchClosedTakes; the reset helper hands isTransportIdle to the reset.
+// newProject imports ensureTrackStrips and stopPlayback; the reset helper hands a check built on isTransportIdle and countSettledTakes to the reset.
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
     isTransportIdle: vi.fn(() => true),
     stopPlayback: vi.fn(),
-    watchClosedTakes: takeMocks.watchClosedTakes,
+    countSettledTakes: () => takeMocks.state.settled,
 }));
 
 // The reset helper saves the outgoing project when a take closed into it.
@@ -185,6 +172,8 @@ describe('newProject injectable', () => {
         Container.clear();
         vi.clearAllMocks();
         vi.mocked(stopPlayback).mockResolvedValue(undefined);
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         takeMocks.saveProject.mockResolvedValue(true);
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
         resetMocks.finalize.mockReset();
@@ -317,7 +306,7 @@ describe('newProject injectable', () => {
         expect(forgetProjectLatchedPedals).toHaveBeenCalledOnce();
     });
 
-    it('watches for takes before its first stop, so a take that stop commits is saved before the switch', async () => {
+    it('saves a take that its own first stop commits before the switch', async () => {
         vi.mocked(stopPlayback).mockImplementationOnce(() => {
             takeMocks.state.settled++;
             return Promise.resolve();
@@ -325,9 +314,6 @@ describe('newProject injectable', () => {
 
         await expect(newProject('Quiet Project')).resolves.toBe(true);
 
-        expect(takeMocks.watchClosedTakes.mock.invocationCallOrder[0]!).toBeLessThan(
-            vi.mocked(stopPlayback).mock.invocationCallOrder[0]!
-        );
         expect(takeMocks.saveProject).toHaveBeenCalledOnce();
         expect(takeMocks.saveProject.mock.invocationCallOrder[0]!).toBeLessThan(
             vi.mocked(resetCrdtProject).mock.invocationCallOrder[0]!

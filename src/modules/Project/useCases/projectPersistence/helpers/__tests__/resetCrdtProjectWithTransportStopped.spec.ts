@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
     resetAudioGraph: vi.fn(),
     resetCrdtProject: vi.fn(),
     saveProject: vi.fn(),
+    /** How many take commits have settled, as the Transport counts them. */
+    settledTakes: { value: 0 },
     stopPlayback: vi.fn(),
     unloadPlugin: vi.fn(),
 }));
@@ -15,6 +17,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({ resetAudioGraph: mocks.resetA
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ resetCrdtProject: mocks.resetCrdtProject }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mocks.unloadPlugin }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    countSettledTakes: () => mocks.settledTakes.value,
     isTransportIdle: mocks.isTransportIdle,
     stopPlayback: mocks.stopPlayback,
 }));
@@ -22,25 +25,30 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser
 vi.mock('../../saveProject/saveProject', () => ({ saveProject: mocks.saveProject }));
 
 import { resetCrdtProjectWithTransportStopped } from '../resetCrdtProjectWithTransportStopped';
+import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 const replaced = { status: 'replaced', finalize: vi.fn() };
 
-function fakeClosedTakes(initiallyClosed = false) {
-    let closed = initiallyClosed;
-    return {
-        acknowledge: vi.fn<() => void>(() => {
-            closed = false;
-        }),
-        close: () => {
-            closed = true;
-        },
-        hasClosedTake: () => closed,
-    };
+/** A take commit settles into the open project. */
+function closeTake(): void {
+    mocks.settledTakes.value++;
+}
+
+/** The Save command's contract: a successful save records the takes settled at its snapshot. */
+function saveThroughSnapshot(saved = true): Promise<boolean> {
+    const settledAtSnapshot = mocks.settledTakes.value;
+    mocks.events.push('save');
+    if (saved) {
+        unsavedClosedTakes.markSavedThrough(settledAtSnapshot);
+    }
+    return Promise.resolve(saved);
 }
 
 describe('resetCrdtProjectWithTransportStopped', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         mocks.events.length = 0;
         mocks.isTransportIdle.mockReturnValue(true);
         mocks.stopPlayback.mockImplementation(() => {
@@ -54,32 +62,43 @@ describe('resetCrdtProjectWithTransportStopped', () => {
             mocks.events.push('unload-plugins');
             return Promise.resolve();
         });
-        mocks.saveProject.mockImplementation(() => {
-            mocks.events.push('save');
-            return Promise.resolve(true);
-        });
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot());
         mocks.resetCrdtProject.mockResolvedValue(replaced);
     });
 
     it('resets once, without stopping or saving anything, when the transport is idle and no take closed', async () => {
         const onReplaced = vi.fn();
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', onReplaced, () => true, fakeClosedTakes())
-        ).resolves.toBe(replaced);
+        await expect(resetCrdtProjectWithTransportStopped('Song', onReplaced, () => true)).resolves.toBe(replaced);
 
-        expect(mocks.resetCrdtProject).toHaveBeenCalledExactlyOnceWith('Song', onReplaced, expect.any(Function));
+        expect(mocks.resetCrdtProject).toHaveBeenCalledExactlyOnceWith(
+            'Song',
+            expect.any(Function),
+            expect.any(Function)
+        );
         expect(mocks.stopPlayback).not.toHaveBeenCalled();
         expect(mocks.saveProject).not.toHaveBeenCalled();
         expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
+    it('tells the caller once the authority is replaced', async () => {
+        const onReplaced = vi.fn();
+        mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced: () => void) => {
+            expect(onReplaced).not.toHaveBeenCalled();
+            onAuthorityReplaced();
+            return Promise.resolve(replaced);
+        });
+
+        await resetCrdtProjectWithTransportStopped('Song', onReplaced, () => true);
+
+        expect(onReplaced).toHaveBeenCalledOnce();
+    });
+
     it('hands every attempt a check that is quiet only when the transport is idle and no take closed unsaved', async () => {
-        const closedTakes = fakeClosedTakes();
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
 
-        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes);
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
 
         const [, , firstCheck] = mocks.resetCrdtProject.mock.calls[0] as [string, () => void, () => boolean];
         const [, , secondCheck] = mocks.resetCrdtProject.mock.calls[1] as [string, () => void, () => boolean];
@@ -88,7 +107,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         mocks.isTransportIdle.mockReturnValue(false);
         expect(firstCheck()).toBe(false);
         mocks.isTransportIdle.mockReturnValue(true);
-        closedTakes.close();
+        closeTake();
         expect(firstCheck()).toBe(false);
     });
 
@@ -97,7 +116,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
         mocks.stopPlayback.mockReturnValueOnce(stop.promise);
 
-        const reset = resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes());
+        const reset = resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
         await vi.waitFor(() => expect(mocks.stopPlayback).toHaveBeenCalledOnce());
         await Promise.resolve();
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
@@ -113,9 +132,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
             .mockResolvedValueOnce({ status: 'transport-active' })
             .mockResolvedValueOnce({ status: 'transport-active' });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes())
-        ).resolves.toBe(replaced);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(replaced);
 
         expect(mocks.resetCrdtProject).toHaveBeenCalledTimes(4);
         expect(mocks.stopPlayback).toHaveBeenCalledTimes(3);
@@ -125,9 +142,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         const refused = { status: 'refused', reason: 'session-active' };
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' }).mockResolvedValueOnce(refused);
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes())
-        ).resolves.toBe(refused);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(refused);
     });
 
     it('refuses as superseded, without asking again, when the caller no longer wants the replacement', async () => {
@@ -137,9 +152,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
             return Promise.resolve({ status: 'transport-active' });
         });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes())
-        ).resolves.toEqual({
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted)).resolves.toEqual({
             status: 'refused',
             reason: 'superseded',
         });
@@ -149,15 +162,17 @@ describe('resetCrdtProjectWithTransportStopped', () => {
 
     it('refuses as superseded after a stop, without tearing anything down, when the caller gave up meanwhile', async () => {
         let wanted = true;
+        closeTake();
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
         mocks.stopPlayback.mockImplementationOnce(() => {
             wanted = false;
             return Promise.resolve();
         });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes(true))
-        ).resolves.toEqual({ status: 'refused', reason: 'superseded' });
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted)).resolves.toEqual({
+            status: 'refused',
+            reason: 'superseded',
+        });
 
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
         expect(mocks.saveProject).toHaveBeenCalledOnce();
@@ -172,9 +187,10 @@ describe('resetCrdtProjectWithTransportStopped', () => {
             return Promise.resolve();
         });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes())
-        ).resolves.toEqual({ status: 'refused', reason: 'superseded' });
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted)).resolves.toEqual({
+            status: 'refused',
+            reason: 'superseded',
+        });
 
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
     });
@@ -183,26 +199,25 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
         mocks.stopPlayback.mockRejectedValueOnce(new Error('recorder flush failed'));
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes())
-        ).rejects.toThrow('recorder flush failed');
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).rejects.toThrow(
+            'recorder flush failed'
+        );
 
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
     });
 
-    it('saves a take that closed before the first attempt, then asks', async () => {
-        const closedTakes = fakeClosedTakes(true);
+    it('saves a take that closed before the replacement began, then asks', async () => {
+        closeTake();
 
-        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes);
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
 
         expect(mocks.saveProject).toHaveBeenCalledOnce();
-        expect(closedTakes.acknowledge).toHaveBeenCalledOnce();
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(false);
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
         expect(mocks.stopPlayback).not.toHaveBeenCalled();
     });
 
     it('stops, saves what closed, tears the graph and plugins down again, and only then asks again', async () => {
-        const closedTakes = fakeClosedTakes();
         mocks.resetCrdtProject.mockImplementation(() => {
             if (mocks.events.length === 0) {
                 mocks.events.push('refused');
@@ -213,34 +228,37 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         });
         mocks.stopPlayback.mockImplementation(() => {
             mocks.events.push('stop');
-            closedTakes.close();
+            closeTake();
             return Promise.resolve();
         });
 
-        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes);
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
 
         expect(mocks.events).toEqual(['refused', 'stop', 'save', 'reset-graph', 'unload-plugins', 'switch']);
     });
 
     it('saves again for a take that closes during the save itself', async () => {
-        const closedTakes = fakeClosedTakes(true);
-        mocks.saveProject.mockImplementationOnce(() => {
-            closedTakes.close();
-            return Promise.resolve(true);
+        closeTake();
+        mocks.saveProject.mockImplementationOnce(async () => {
+            const saved = await saveThroughSnapshot();
+            closeTake();
+            return saved;
         });
-        mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+        mocks.resetCrdtProject.mockImplementation((_name: string, _onReplaced: () => void, isQuiet: () => boolean) =>
+            Promise.resolve(isQuiet() ? replaced : { status: 'transport-active' })
+        );
 
-        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes);
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
 
         expect(mocks.saveProject).toHaveBeenCalledTimes(2);
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(false);
     });
 
     it('tells the user the take is discarded, and still asks, when the outgoing project cannot be saved', async () => {
-        mocks.saveProject.mockResolvedValue(false);
+        closeTake();
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot(false));
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes(true))
-        ).resolves.toBe(replaced);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(replaced);
 
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
             'Recording discarded — the take could not be saved to the project you are leaving.',
@@ -248,21 +266,35 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         );
     });
 
+    it('lets the switch through after a failed save instead of saving the same take again', async () => {
+        closeTake();
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot(false));
+        mocks.resetCrdtProject.mockImplementation((_name: string, _onReplaced: () => void, isQuiet: () => boolean) =>
+            Promise.resolve(isQuiet() ? replaced : { status: 'transport-active' })
+        );
+
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(replaced);
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
+    });
+
     it('says nothing when the reset refuses after the save failed, because the user stays in the project with the take', async () => {
         const refused = { status: 'refused', reason: 'session-active' };
-        mocks.saveProject.mockResolvedValue(false);
+        closeTake();
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot(false));
         mocks.resetCrdtProject.mockResolvedValueOnce(refused);
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes(true))
-        ).resolves.toBe(refused);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(refused);
 
         expect(mocks.saveProject).toHaveBeenCalledOnce();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(true);
     });
 
     it('tells the user once, only after the reset replaced the project, when the save failed', async () => {
-        mocks.saveProject.mockResolvedValue(false);
+        closeTake();
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot(false));
         mocks.resetCrdtProject
             .mockImplementationOnce(() => {
                 expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -273,9 +305,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
                 return Promise.resolve(replaced);
             });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes(true))
-        ).resolves.toBe(replaced);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(replaced);
 
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
             'Recording discarded — the take could not be saved to the project you are leaving.',
@@ -284,15 +314,17 @@ describe('resetCrdtProjectWithTransportStopped', () => {
     });
 
     it('says nothing when the save failed but a later save of the same project succeeded before the switch', async () => {
-        const closedTakes = fakeClosedTakes(true);
-        mocks.saveProject.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        closeTake();
+        mocks.saveProject
+            .mockImplementationOnce(() => saveThroughSnapshot(false))
+            .mockImplementationOnce(() => saveThroughSnapshot());
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
         mocks.stopPlayback.mockImplementationOnce(() => {
-            closedTakes.close();
+            closeTake();
             return Promise.resolve();
         });
 
-        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes);
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
 
         expect(mocks.saveProject).toHaveBeenCalledTimes(2);
         expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -300,68 +332,73 @@ describe('resetCrdtProjectWithTransportStopped', () => {
 
     it('says nothing when the save failed and the caller gave up before the switch', async () => {
         let wanted = true;
+        closeTake();
         mocks.saveProject.mockImplementation(() => {
             wanted = false;
-            return Promise.resolve(false);
+            return saveThroughSnapshot(false);
         });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes(true))
-        ).resolves.toEqual({ status: 'refused', reason: 'superseded' });
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted)).resolves.toEqual({
+            status: 'refused',
+            reason: 'superseded',
+        });
 
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('refuses as superseded, without a reset call, when the caller gave up during the first save', async () => {
         let wanted = true;
+        closeTake();
         mocks.saveProject.mockImplementation(() => {
             wanted = false;
-            return Promise.resolve(true);
+            return saveThroughSnapshot();
         });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted, fakeClosedTakes(true))
-        ).resolves.toEqual({ status: 'refused', reason: 'superseded' });
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => wanted)).resolves.toEqual({
+            status: 'refused',
+            reason: 'superseded',
+        });
 
         expect(mocks.saveProject).toHaveBeenCalledOnce();
         expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
     });
 
     it('never saves or warns for a replacement that discards the outgoing project, yet acknowledges the take so the switch is not refused', async () => {
-        const closedTakes = fakeClosedTakes(true);
-        mocks.saveProject.mockResolvedValue(false);
+        closeTake();
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot(false));
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes, 'discard')
-        ).resolves.toBe(replaced);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, 'discard')).resolves.toBe(
+            replaced
+        );
 
         const [, , isQuietAtSwitch] = mocks.resetCrdtProject.mock.calls[0] as [string, () => void, () => boolean];
-        expect(closedTakes.acknowledge).toHaveBeenCalledOnce();
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(false);
         expect(isQuietAtSwitch()).toBe(true);
         expect(mocks.saveProject).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('never saves for a discarding replacement when a take closes during its own stop', async () => {
-        const closedTakes = fakeClosedTakes();
-        mocks.saveProject.mockResolvedValue(false);
+        mocks.saveProject.mockImplementation(() => saveThroughSnapshot(false));
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
         mocks.stopPlayback.mockImplementationOnce(() => {
-            closedTakes.close();
+            closeTake();
             return Promise.resolve();
         });
 
-        await expect(
-            resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, closedTakes, 'discard')
-        ).resolves.toBe(replaced);
+        await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, 'discard')).resolves.toBe(
+            replaced
+        );
 
         expect(mocks.saveProject).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
-        expect(closedTakes.hasClosedTake()).toBe(false);
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(false);
     });
 
     it('does not tell the user anything when the save succeeds', async () => {
-        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true, fakeClosedTakes(true));
+        closeTake();
+
+        await resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true);
 
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });

@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { watchClosedTakes } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { writeProjectJson } from '../../repositories/project/writeProjectJson';
@@ -42,9 +41,6 @@ export async function loadRecentProject(
     { outgoingProject, requireDurable = false, shouldProceed }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
     const transaction = runProjectLoadTransaction();
-    // Before the read: a Stop pressed meanwhile commits its take into the open
-    // project, which this load is about to replace.
-    const closedTakes = watchClosedTakes();
     let raw: string | null;
     try {
         // Reads IndexedDB, the only store project content is written to. A
@@ -84,7 +80,6 @@ export async function loadRecentProject(
     try {
         result = await replaceProjectData({
             afterCommit: () => writeProjectJson(JSON.stringify(data)),
-            closedTakes,
             context: 'loadRecentProject',
             data,
             outgoingProject,

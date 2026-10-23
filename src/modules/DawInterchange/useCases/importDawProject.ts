@@ -1,9 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    applyImportedProjectData,
-    runProjectLoadTransaction,
-    saveEditedProjectBeforeReplacement,
-} from '#/modules/Project/useCases';
+import { applyImportedProjectData, runProjectLoadTransaction } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { decodeDawProjectAssets } from './decodeDawProjectAssets';
@@ -34,11 +30,6 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         shouldContinue: transaction.canActivate,
     });
     if (!transaction.canActivate()) {
-        return false;
-    }
-    // A Stop pressed while the file was read lands its take in the project this
-    // import is about to replace, after the picker's pre-save ran.
-    if (!(await saveEditedProjectBeforeReplacement())) {
         return false;
     }
     if (failedPaths.length > 0) {

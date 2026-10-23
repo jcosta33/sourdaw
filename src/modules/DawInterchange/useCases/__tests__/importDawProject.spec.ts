@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    saveEditedProjectBeforeReplacement: vi.fn(() => Promise.resolve(true)),
     runProjectLoadTransaction: vi.fn(),
     parseDawProject: vi.fn(),
     decodeDawProjectAssets: vi.fn(),
@@ -14,7 +13,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Project/useCases', () => ({
     runProjectLoadTransaction: mocks.runProjectLoadTransaction,
     applyImportedProjectData: mocks.applyImportedProjectData,
-    saveEditedProjectBeforeReplacement: mocks.saveEditedProjectBeforeReplacement,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -94,37 +92,6 @@ describe('importDawProject', () => {
         expect(result).toBe(true);
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('My Song'), 'success');
         expect(mocks.notifyUser.mock.calls[0]?.[0]).toContain('2 tracks');
-    });
-
-    // A user's Stop lands its take in the open project after the picker's
-    // pre-save ran, while the file is parsed and its audio decoded. The import is
-    // about to replace that project, so the take is saved after the read and
-    // before the replacement.
-    it('saves the open project after the file is read and before it is replaced', async () => {
-        vi.clearAllMocks();
-        setupHappyPath();
-        mocks.saveEditedProjectBeforeReplacement.mockResolvedValue(true);
-
-        await expect(importDawProject({ buffer: new ArrayBuffer(8), fileName: 'test.dawproject' })).resolves.toBe(true);
-
-        expect(mocks.saveEditedProjectBeforeReplacement).toHaveBeenCalledOnce();
-        const [decoded = 0] = mocks.decodeDawProjectAssets.mock.invocationCallOrder;
-        const [saved = 0] = mocks.saveEditedProjectBeforeReplacement.mock.invocationCallOrder;
-        const [applied = 0] = mocks.applyImportedProjectData.mock.invocationCallOrder;
-        expect(decoded).toBeLessThan(saved);
-        expect(saved).toBeLessThan(applied);
-    });
-
-    it('keeps the open project when that save refuses the replacement', async () => {
-        vi.clearAllMocks();
-        setupHappyPath();
-        mocks.saveEditedProjectBeforeReplacement.mockResolvedValueOnce(false);
-
-        await expect(importDawProject({ buffer: new ArrayBuffer(8), fileName: 'test.dawproject' })).resolves.toBe(
-            false
-        );
-
-        expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
     });
 
     it('notifies with fileName when title is empty', async () => {

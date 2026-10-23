@@ -16,7 +16,7 @@ import {
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
-import { stopPlayback, watchClosedTakes } from '#/modules/Transport/useCases';
+import { stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -24,8 +24,12 @@ import { readNamedProjectJson } from '../../../repositories/project/readNamedPro
 import { writeProjectJson } from '../../../repositories/project/writeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { discardProjectChanges } from '../discardProjectChanges';
+import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 import { saveProject } from '../saveProject/saveProject';
+
+/** How many take commits have settled, as the Transport counts them. */
+const takes = vi.hoisted(() => ({ settled: 0 }));
 
 vi.mock('../../../repositories/project/readNamedProjectJson', () => ({ readNamedProjectJson: vi.fn() }));
 vi.mock('../../../repositories/project/writeProjectJson', () => ({ writeProjectJson: vi.fn() }));
@@ -162,7 +166,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
-    watchClosedTakes: vi.fn(),
+    countSettledTakes: () => takes.settled,
 }));
 // The reset helper saves the outgoing project when a take closed into it.
 vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
@@ -193,9 +197,8 @@ const savedProject = JSON.stringify({
 
 describe('discardProjectChanges real load path', () => {
     beforeEach(() => {
-        vi.mocked(watchClosedTakes)
-            .mockReset()
-            .mockReturnValue({ acknowledge: () => undefined, hasClosedTake: () => false });
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
         vi.mocked(saveProject).mockReset();
         vi.mocked(writeProjectJson).mockReset();
         vi.mocked(notifyUser).mockReset();
@@ -252,15 +255,8 @@ describe('discardProjectChanges real load path', () => {
 
     /** The take a recording stop commits into the project being discarded. */
     function closeATakeDuringTheStop(): void {
-        let takeClosed = false;
-        vi.mocked(watchClosedTakes).mockReturnValue({
-            acknowledge: () => {
-                takeClosed = false;
-            },
-            hasClosedTake: () => takeClosed,
-        });
         vi.mocked(stopPlayback).mockImplementation(() => {
-            takeClosed = true;
+            takes.settled++;
             return Promise.resolve();
         });
         vi.mocked(saveProject).mockResolvedValue(false);

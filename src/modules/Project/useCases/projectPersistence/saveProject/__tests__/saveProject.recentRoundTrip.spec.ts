@@ -7,6 +7,7 @@ import { createDefaultProductionBrief } from '../../../../models/ProductionBrief
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { getRecentProjects } from '../../../recentProjects/helpers';
 import { loadRecentProject } from '../../../recentProjects/loadRecentProject';
+import { unsavedClosedTakes } from '../../helpers/unsavedClosedTakes';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { saveProject } from '../saveProject';
 
@@ -33,6 +34,8 @@ const mocks = vi.hoisted(() => ({
     ensureCachedAudioBuffersDurable: vi.fn(() =>
         Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
     ),
+    /** How many take commits have settled, as the Transport counts them. */
+    takes: { settled: 0 },
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -95,7 +98,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
     ensureTrackStrips: vi.fn(),
-    watchClosedTakes: () => ({ acknowledge: () => undefined, hasClosedTake: () => false }),
+    countSettledTakes: () => mocks.takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
@@ -278,6 +281,8 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
             requiredAudioBufferIds: [],
             snapshotRevision: 'saved-revision',
         });
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
     });
 
     afterEach(() => {
@@ -306,5 +311,33 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
         expect(ok).toBe('committed');
         expect(mocks.projectStoreValue.value).not.toBeNull();
         expect(mocks.projectStoreValue.value?.name).toBe(PROJECT_NAME);
+    });
+
+    // A take that a Save (or the autosave) already kept is not owed again, so
+    // opening a recent project does not save the outgoing one a second time.
+    // Every save builds exactly one snapshot, so the snapshot builds count the saves.
+    it('does not save the outgoing project again for a take that a save kept before the load', async () => {
+        mocks.takes.settled += 1;
+        await expect(saveProject()).resolves.toBe(true);
+        expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+
+        await expect(loadRecentProject(RECENT_KEY)).resolves.toBe('committed');
+
+        expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+    });
+
+    // The count is read with the save's snapshot, so a take that lands while the
+    // save writes is not in what it wrote and is saved by the load's replacement.
+    it('saves the outgoing project again for a take that landed while the earlier save was writing', async () => {
+        mocks.ensureCachedAudioBuffersDurable.mockImplementationOnce(() => {
+            mocks.takes.settled += 1;
+            return Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() });
+        });
+        await expect(saveProject()).resolves.toBe(true);
+        expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+
+        await expect(loadRecentProject(RECENT_KEY)).resolves.toBe('committed');
+
+        expect(mocks.buildProjectData).toHaveBeenCalledTimes(2);
     });
 });
