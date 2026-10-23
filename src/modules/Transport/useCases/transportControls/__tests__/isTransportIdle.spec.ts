@@ -54,4 +54,64 @@ describe('isTransportIdle', () => {
 
         expect(isTransportIdle()).toBe(false);
     });
+
+    // A user's Pause or Stop writes an idle transport at once and awaits the
+    // recorder's flush and the take's commit afterwards.
+    it('is not idle while a stop is still closing a recording, and is idle once it has settled', async () => {
+        const closing = Promise.withResolvers<void>();
+        recordingLifecycle.trackClosing(closing.promise);
+
+        expect(isTransportIdle()).toBe(false);
+
+        closing.resolve();
+        await recordingLifecycle.waitForClosing();
+        expect(isTransportIdle()).toBe(true);
+    });
+
+    it('is idle once a closing stop has settled although nobody ever waited for it', async () => {
+        const closing = Promise.withResolvers<void>();
+        recordingLifecycle.trackClosing(closing.promise);
+
+        closing.resolve();
+
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
+    });
+
+    it('is idle once a closing stop has rejected although nobody ever waited for it', async () => {
+        const closing = Promise.withResolvers<void>();
+        recordingLifecycle.trackClosing(closing.promise);
+
+        closing.reject(new Error('recorder flush failed'));
+
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
+    });
+
+    it('is idle again after a closing stop rejects', async () => {
+        const closing = Promise.withResolvers<void>();
+        recordingLifecycle.trackClosing(closing.promise);
+
+        closing.reject(new Error('recorder flush failed'));
+        await recordingLifecycle.waitForClosing();
+
+        expect(isTransportIdle()).toBe(true);
+    });
+
+    it('is not idle while a take commit started by the scheduler is in flight', async () => {
+        const commit = Promise.withResolvers<void>();
+        recordingLifecycle.trackCommit(commit.promise);
+
+        expect(isTransportIdle()).toBe(false);
+
+        commit.resolve();
+        await recordingLifecycle.waitForCommits();
+        expect(isTransportIdle()).toBe(true);
+    });
+
+    it('is idle once a take commit has settled although nobody ever waited for it', async () => {
+        const commit = Promise.withResolvers<void>();
+        recordingLifecycle.trackCommit(commit.promise);
+
+        commit.resolve();
+        await vi.waitFor(() => expect(isTransportIdle()).toBe(true));
+    });
 });

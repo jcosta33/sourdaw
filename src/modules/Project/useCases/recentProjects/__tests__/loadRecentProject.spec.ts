@@ -7,7 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { compactProject, resetCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { ensureTrackStrips } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson } from '../../../repositories/project/readNamedProjectJson';
@@ -17,7 +17,9 @@ import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
+import { unsavedClosedTakes } from '../../projectPersistence/helpers/unsavedClosedTakes';
 import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
+import { saveProject } from '../../projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../loadRecentProject';
 
 const { audioContext } = vi.hoisted(() => ({
@@ -32,11 +34,18 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
     writeProjectJson: vi.fn(),
 }));
 
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../../projectPersistence/saveProject/saveProject', () => ({ saveProject: vi.fn() }));
+
+/** How many take commits have settled, as the Transport counts them. */
+const takes = vi.hoisted(() => ({ settled: 0 }));
+
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
+    countSettledTakes: () => takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
@@ -194,6 +203,10 @@ const validProject = JSON.stringify(validProjectData);
 
 describe('loadRecentProject', () => {
     beforeEach(() => {
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
+        vi.mocked(stopPlayback).mockReset();
+        vi.mocked(saveProject).mockReset();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         vi.mocked(readNamedProjectJson).mockReset();
@@ -257,6 +270,65 @@ describe('loadRecentProject', () => {
         await expect(load).resolves.toBe('aborted');
         expect(resetCrdtProject).not.toHaveBeenCalled();
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+    });
+
+    /** The take a recording stop commits into the project being replaced. */
+    function closeATakeDuringTheStop(): void {
+        vi.mocked(stopPlayback).mockImplementation(() => {
+            takes.settled++;
+            return Promise.resolve();
+        });
+        vi.mocked(saveProject).mockResolvedValue(true);
+    }
+
+    it('saves the outgoing project when a take closes during the stop of an ordinary load', async () => {
+        closeATakeDuringTheStop();
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await expect(loadRecentProject('ordinary-load')).resolves.toBe('committed');
+
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
+
+    it('does not save the outgoing project when a discard load stops a recording that closes a take', async () => {
+        closeATakeDuringTheStop();
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await expect(loadRecentProject('discard-load', { outgoingProject: 'discard' })).resolves.toBe('committed');
+
+        expect(saveProject).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A user's Stop turns the transport idle at once and lands the take's commit
+     * afterwards, so a commit can settle while this load is still reading the
+     * project it will open. The lifecycle itself is exercised by the
+     * real-recording integration spec.
+     */
+    function settleATakeDuringTheRead(): void {
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(readNamedProjectJson).mockImplementation(() => {
+            takes.settled++;
+            return Promise.resolve(validProject);
+        });
+    }
+
+    it('saves the outgoing project when a take commit settles while the project is being read', async () => {
+        settleATakeDuringTheRead();
+
+        await expect(loadRecentProject('stop-during-read')).resolves.toBe('committed');
+
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
+
+    it('does not save the outgoing project when a take settles during the read of a discard load', async () => {
+        settleATakeDuringTheRead();
+
+        await expect(loadRecentProject('discard-during-read', { outgoingProject: 'discard' })).resolves.toBe(
+            'committed'
+        );
+
+        expect(saveProject).not.toHaveBeenCalled();
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {

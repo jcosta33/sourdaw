@@ -34,7 +34,10 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     isTransportIdle: () => true,
     stopPlayback: vi.fn(),
+    countSettledTakes: () => 0,
 }));
+
+vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),

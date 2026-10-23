@@ -104,7 +104,9 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 // Arrangement + Automation mock holders (same binding-split workaround).
 const arrangementMocks = {
     startRecording: vi.fn(() => [] as { trackId: string; id: string }[]),
-    stopRecording: vi.fn(),
+    // The real `stopRecording` is async: its promise is the take's commit, which
+    // the recording lifecycle tracks.
+    stopRecording: vi.fn((_atBeat?: number): Promise<void> => Promise.resolve()),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
@@ -1473,6 +1475,7 @@ describe('startPlayheadScheduler', () => {
             if (clip && typeof atBeat === 'number') {
                 clip.endBeat = atBeat;
             }
+            return Promise.resolve();
         });
         let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
         audioEngineMocks.startAudioRecording.mockImplementationOnce(((

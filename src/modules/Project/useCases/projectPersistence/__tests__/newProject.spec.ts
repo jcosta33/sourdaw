@@ -15,7 +15,7 @@ import {
     resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
-import { ensureTrackStrips, isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
@@ -24,6 +24,7 @@ import { defaultProjectStoreState, projectStore } from '../../../stores/projectS
 import { getDurableProjectOwnerId } from '../../getDurableProjectOwnerId';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { newProject } from '../newProject';
 
 type Deferred<T> = {
@@ -42,6 +43,12 @@ const resetMocks = vi.hoisted(() => ({
     finalize: vi.fn(),
 }));
 
+// `settled` counts the take commits that have settled, as the Transport does.
+const takeMocks = vi.hoisted(() => ({
+    state: { settled: 0 },
+    saveProject: vi.fn(() => Promise.resolve(true)),
+}));
+
 const arrangementMocks = vi.hoisted(() => ({
     rearmInputMonitoring: vi.fn(),
     trackStoreValue: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null,
@@ -56,13 +63,17 @@ function createDeferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred };
 }
 
-// newProject imports ensureTrackStrips and stopPlayback; the reset helper hands isTransportIdle to the reset.
+// newProject imports ensureTrackStrips and stopPlayback; the reset helper hands a check built on isTransportIdle and countSettledTakes to the reset.
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
     isTransportIdle: vi.fn(() => true),
     stopPlayback: vi.fn(),
+    countSettledTakes: () => takeMocks.state.settled,
 }));
+
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../saveProject/saveProject', () => ({ saveProject: takeMocks.saveProject }));
 
 // newProject imports clearRuntimeCachedAudioBuffers, forgetProjectLatchedPedals and resetAudioGraph.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -161,6 +172,9 @@ describe('newProject injectable', () => {
         Container.clear();
         vi.clearAllMocks();
         vi.mocked(stopPlayback).mockResolvedValue(undefined);
+        // Each case opens with a project that owes nothing for the takes before it.
+        unsavedClosedTakes.acknowledgeAll();
+        takeMocks.saveProject.mockResolvedValue(true);
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
         resetMocks.finalize.mockReset();
         resetMocks.finalize.mockResolvedValue('finalized');
@@ -193,7 +207,7 @@ describe('newProject injectable', () => {
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
-        expect(resetCrdtProject).toHaveBeenCalledWith('Test', expect.any(Function), isTransportIdle);
+        expect(resetCrdtProject).toHaveBeenCalledWith('Test', expect.any(Function), expect.any(Function));
         // The fresh project owns the document from that call on, so the pedals
         // latched under the project just left are forgotten here and not at the
         // earlier graph reset, which an abort can still undo.
@@ -290,6 +304,47 @@ describe('newProject injectable', () => {
         expect(vi.mocked(stopPlayback).mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
         expect(vi.mocked(stopPlayback).mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
         expect(forgetProjectLatchedPedals).toHaveBeenCalledOnce();
+    });
+
+    it('saves a take that its own first stop commits before the switch', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+
+        await expect(newProject('Quiet Project')).resolves.toBe(true);
+
+        expect(takeMocks.saveProject).toHaveBeenCalledOnce();
+        expect(takeMocks.saveProject.mock.invocationCallOrder[0]!).toBeLessThan(
+            vi.mocked(resetCrdtProject).mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('acknowledges a take that closes while it discards the outgoing project, without saving it', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+
+        await expect(newProject('Untitled Project', { outgoingProject: 'discard' })).resolves.toBe(true);
+
+        expect(takeMocks.saveProject).not.toHaveBeenCalled();
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
+        const [, , isTransportQuiet] = vi.mocked(resetCrdtProject).mock.calls[0]!;
+        expect(isTransportQuiet?.()).toBe(true);
+    });
+
+    it('resets the audio graph and unloads the plugins again before asking again after a refused reset', async () => {
+        resetMocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' });
+
+        await expect(newProject('Quiet Project')).resolves.toBe(true);
+
+        expect(resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(2);
+        const [firstReset, secondReset] = vi.mocked(resetCrdtProject).mock.invocationCallOrder;
+        expect(vi.mocked(resetAudioGraph).mock.invocationCallOrder[1]!).toBeGreaterThan(firstReset!);
+        expect(vi.mocked(resetAudioGraph).mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
+        expect(pluginHostMocks.unloadPlugin.mock.invocationCallOrder[1]!).toBeLessThan(secondReset!);
     });
 
     it('keeps stopping and asking until the reset finds the transport idle', async () => {
