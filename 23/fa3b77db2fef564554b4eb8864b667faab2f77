@@ -1,0 +1,45 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipGestureUndoGrouping.integration.spec.ts
+  s_1c08b47ac3792f::t_dc60234c0c4167 1,19,156-184
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_3e7dea5cde3f9e::t_ca10cb40550064 62,767-777,785-799,802,805-889,2038-2125
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_59e31a5c6f3e31::t_c236782eb528cd 84-89
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_59e31a5c6f3e31::t_3bdf48567a29e9 61-84,90,131,138,169
+src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts
+  s_59e31a5c6f3e31::t_0d951e0661186d 8,11
+src/modules/Arrangement/useCases/comping/reKeyedTakeLaneOwnersMatchStore.ts
+  s_59e31a5c6f3e31::t_206c103779e38b 2-4,8-11,28,35-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23fa3b77db2fef564554b4eb8864b667faab2f77",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
