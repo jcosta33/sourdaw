@@ -2,6 +2,7 @@ import { type MouseEvent, type ReactElement } from 'react';
 
 import { RotaryKnob, type RotaryKnobProps } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 
 import {
     midiLearnStore,
@@ -51,6 +52,12 @@ export const MidiLearnRotaryKnob = ({
     );
     const existingMapping = paramId ? findMappingForTarget(target) : undefined;
     const isMapped = Boolean(existingMapping);
+    const capabilities = getPlatformCapabilities();
+    let unavailableReason: string | undefined;
+    if (paramId) {
+        unavailableReason = capabilities.degradations.find((entry) => entry.feature === 'midi-input')?.message;
+    }
+    const title = [props.title, unavailableReason].filter(Boolean).join(' — ') || undefined;
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
         if (!paramId) {
@@ -74,6 +81,10 @@ export const MidiLearnRotaryKnob = ({
             return;
         }
 
+        if (!capabilities.hasMidiInput) {
+            return;
+        }
+
         startMidiLearn(target);
     };
 
@@ -83,6 +94,7 @@ export const MidiLearnRotaryKnob = ({
             paramId={paramId}
             isLearning={isLearning}
             isMapped={isMapped}
+            title={title}
             onContextMenu={paramId ? handleContextMenu : undefined}
         />
     );
