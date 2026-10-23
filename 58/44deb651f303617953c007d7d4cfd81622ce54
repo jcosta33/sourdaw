@@ -1,0 +1,25 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_e794cab079f858 46,48
+  s_59e31a5c6f3e31::t_5a4b1dadd2bb5b 535-536
+  s_59e31a5c6f3e31::t_2bd34f166b84ee 529-530,537-538,541
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_2bd34f166b84ee 1057-1058,1172-1190
+  s_59e31a5c6f3e31::t_f18f4d3f579e40 7,41,996-1056
+  s_59e31a5c6f3e31::t_a6d62e41e40f35 1059
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5844deb651f303617953c007d7d4cfd81622ce54",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
