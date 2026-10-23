@@ -1,0 +1,19 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_59e31a5c6f3e31::t_1d7ca062c2f512 1128-1133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bb3b387641632d3d95356c5f8acd80044523ee4",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
