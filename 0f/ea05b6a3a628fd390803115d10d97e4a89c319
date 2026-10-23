@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  s_59e31a5c6f3e31::t_81a024da738a0b 7,23,29,83-85,97-98,195-292
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_59e31a5c6f3e31::t_32cfa9d40b0177 4,9,78-95,117
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_59e31a5c6f3e31::t_f8f263ecabd8ae 1,3-33,105-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fea05b6a3a628fd390803115d10d97e4a89c319",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
