@@ -12,7 +12,9 @@ type RippleDeleteShift = {
     automationDelta: number;
 };
 
-type RippleDeletePlan<ClipShape extends ClipSnapshot = Clip> = {
+type RippleDeleteClip = ClipSnapshot & Pick<Clip, 'loopOriginBeat'>;
+
+type RippleDeletePlan<ClipShape extends RippleDeleteClip = Clip> = {
     removedClips: ClipShape[];
     shiftedClips: RippleDeleteShift[];
     nextClips: ClipShape[];
@@ -26,19 +28,19 @@ type PlanRippleDeleteInput = {
 
 export type PlanRippleDeleteOutput = RippleDeletePlan | null;
 
-type RippleDeleteOwnerState<ClipShape extends ClipSnapshot> = {
+type RippleDeleteOwnerState<ClipShape extends RippleDeleteClip> = {
     tracks: readonly { id: string; clips: readonly ClipShape[] }[];
 };
 
 export function planRippleDelete(input: PlanRippleDeleteInput): PlanRippleDeleteOutput;
-export function planRippleDelete<ClipShape extends ClipSnapshot>(
+export function planRippleDelete<ClipShape extends RippleDeleteClip>(
     input: PlanRippleDeleteInput,
     state: RippleDeleteOwnerState<ClipShape>
 ): RippleDeletePlan<ClipShape> | null;
 export function planRippleDelete(
     { trackId, clipIds, ripple }: PlanRippleDeleteInput,
-    state: RippleDeleteOwnerState<ClipSnapshot> | null = getTrackStoreState()
-): RippleDeletePlan<ClipSnapshot> | null {
+    state: RippleDeleteOwnerState<RippleDeleteClip> | null = getTrackStoreState()
+): RippleDeletePlan<RippleDeleteClip> | null {
     if (!state) {
         return null;
     }
@@ -68,7 +70,7 @@ export function planRippleDelete(
     const rippleEnabled = ripple ?? workspaceStore.value?.rippleEditing ?? false;
     const shiftedClips: RippleDeleteShift[] = [];
 
-    const nextClips = track.clips.reduce<ClipSnapshot[]>((accumulator, clip) => {
+    const nextClips = track.clips.reduce<RippleDeleteClip[]>((accumulator, clip) => {
         if (clipIdSet.has(clip.id)) {
             return accumulator;
         }
