@@ -160,7 +160,9 @@ const branchStoreMock = vi.hoisted(() => {
 });
 
 const trackStoreMock = vi.hoisted(() => ({
-    value: null as { tracks: { clips: { assetHash?: string; audioBufferId?: string; id: string }[] }[] } | null,
+    value: null as {
+        tracks: { id?: string; clips: { assetHash?: string; audioBufferId?: string; id: string }[] }[];
+    } | null,
 }));
 
 const transportStoreMock = vi.hoisted(() => ({
@@ -2496,6 +2498,162 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         function makeAudioBuffer(): AudioBuffer {
             return { duration: 1 } as AudioBuffer;
         }
+
+        it('keeps current PCM when an old decode finishes after the active asset association changes', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'old decode terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => {
+                    cache.set(bufferId, buffer);
+                }
+            );
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const decodeAudioData = vi.fn().mockReturnValue(decoding.promise);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'shared' }] }],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-2', audioBufferId: 'shared' }] }],
+            };
+            const currentPCM = makeAudioBuffer();
+            audioEngineMock.cacheAudioBuffer({ bufferId: 'shared', buffer: currentPCM });
+            const oldPCM = { duration: 2 } as AudioBuffer;
+            decoding.resolve(oldPCM);
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(cache.get('shared')).toBe(currentPCM);
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalledWith({ bufferId: 'shared', buffer: oldPCM });
+        });
+
+        it('leaves an empty slot empty when its active clip changes hash during decoding', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'changed hash terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const decodeAudioData = vi.fn().mockReturnValue(decoding.promise);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(undefined);
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'shared' }] }],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-2', audioBufferId: 'shared' }] }],
+            };
+            decoding.resolve(makeAudioBuffer());
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalled();
+        });
+
+        it('skips a moved clip after its blob read and still decodes another active clip', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'moved clip terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+            const reading = Promise.withResolvers<ArrayBuffer>();
+            const blob = {
+                arrayBuffer: vi.fn().mockReturnValueOnce(reading.promise).mockResolvedValue(new ArrayBuffer(8)),
+            };
+            transfer.getAsset.mockReturnValue(blob);
+            const validPCM = makeAudioBuffer();
+            const decodeAudioData = vi.fn().mockResolvedValue(validPCM);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(undefined);
+            trackStoreMock.value = {
+                tracks: [
+                    { id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] },
+                    { id: 'track-2', clips: [{ id: 'clip-2', assetHash: 'hash-1', audioBufferId: 'buf-2' }] },
+                ],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(blob.arrayBuffer).toHaveBeenCalledTimes(1));
+            trackStoreMock.value = {
+                tracks: [
+                    { id: 'track-1', clips: [] },
+                    { id: 'track-2', clips: [{ id: 'clip-2', assetHash: 'hash-1', audioBufferId: 'buf-2' }] },
+                    { id: 'track-3', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] },
+                ],
+            };
+            reading.resolve(new ArrayBuffer(8));
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(decodeAudioData).toHaveBeenCalledTimes(1);
+            expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledExactlyOnceWith({
+                bufferId: 'buf-2',
+                buffer: validPCM,
+            });
+        });
+
+        it('preserves a concurrently filled slot and caches another unchanged active alias', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'filled slot terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => {
+                    cache.set(bufferId, buffer);
+                }
+            );
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const unchangedPCM = makeAudioBuffer();
+            const decodeAudioData = vi.fn().mockReturnValueOnce(decoding.promise).mockResolvedValue(unchangedPCM);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            trackStoreMock.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        clips: [
+                            { id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' },
+                            { id: 'clip-2', assetHash: 'hash-1', audioBufferId: 'buf-2' },
+                        ],
+                    },
+                ],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+            const concurrentPCM = makeAudioBuffer();
+            audioEngineMock.cacheAudioBuffer({ bufferId: 'buf-1', buffer: concurrentPCM });
+            const stalePCM = { duration: 2 } as AudioBuffer;
+            decoding.resolve(stalePCM);
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(cache.get('buf-1')).toBe(concurrentPCM);
+            expect(cache.get('buf-2')).toBe(unchangedPCM);
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalledWith({ bufferId: 'buf-1', buffer: stalePCM });
+        });
 
         it('does nothing when the transferred asset is not yet available', async () => {
             await sessionRuntimePrimitives.initialize('project-owner-1');
