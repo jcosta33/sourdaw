@@ -1216,6 +1216,54 @@ describe('prepareTimelineMapTimeOperation', () => {
     });
 
     describe('insert carries the meter in force at the insert point past the inserted span', () => {
+        it.each([
+            {
+                name: 'a fractional carry in 3/4',
+                changes: [{ id: 'base', beat: 0, numerator: 3, denominator: 4 }],
+                atBeat: 6,
+                durationBeats: 10 / 3,
+                oldPosition: 13,
+                shiftedOrigin: 6 + 10 / 3,
+                expected: { bar: 6, beat: 2, tick: 0 },
+            },
+            {
+                name: 'a fractional shift of a 5/8 change',
+                changes: [
+                    { id: 'base', beat: 0, numerator: 3, denominator: 4 },
+                    { id: 'later', beat: 8.5, numerator: 5, denominator: 8 },
+                ],
+                atBeat: 8.5,
+                durationBeats: 1 / 3,
+                oldPosition: 16,
+                shiftedOrigin: 8.5 + 1 / 3,
+                expected: { bar: 6, beat: 1, tick: 0 },
+            },
+        ])(
+            'reads material on its beat after $name',
+            ({ changes, atBeat, durationBeats, oldPosition, shiftedOrigin, expected }) => {
+                const originalState = timeSignatureState(changes);
+                setStoreStates(tempoState([]), originalState);
+                const transaction = prepareTimelineMapTimeOperation({
+                    operation: { type: 'insert', atBeat, durationBeats },
+                });
+
+                expect(transaction.status).toBe('ready');
+                expect(transaction.apply()).toBe(true);
+                const shiftedChanges = timeSignatureMapStore.value?.changes ?? [];
+                expect(shiftedChanges.at(-1)?.beat).toBe(shiftedOrigin);
+                expect(getBarBeatAtPosition(shiftedChanges, oldPosition + durationBeats, 4, 4)).toEqual(expected);
+                const beatUnit = 4 / (changes.at(-1)?.denominator ?? 4);
+                expect(
+                    getBarBeatAtPosition(shiftedChanges, oldPosition + durationBeats + beatUnit * 0.251, 4, 4)
+                ).toEqual({
+                    ...expected,
+                    tick: 120,
+                });
+                expect(transaction.revert()).toBe(true);
+                expect(timeSignatureMapStore.value).toBe(originalState);
+            }
+        );
+
         function insertTime(atBeat: number, durationBeats: number): void {
             const transaction = prepareTimelineMapTimeOperation({
                 operation: { type: 'insert', atBeat, durationBeats },
