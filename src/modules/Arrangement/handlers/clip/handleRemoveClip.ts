@@ -47,26 +47,25 @@ function replayTargetMatches(clipId: string, expected: { owningTrackId: string; 
 }
 
 /** A saved Redo may remove only the material its own inverse restored. */
-function admittedRedoTarget(action: RemoveClipAction, context?: HandlerValidationContext): boolean {
+function admittedRedoTarget(action: RemoveClipAction, context: HandlerValidationContext): boolean {
     const paired = pairedInverseForRedo(action);
     if (paired?.type !== 'restoreClip') {
         preflightRedoTargets.delete(action);
         return true;
     }
-    const captured = { owningTrackId: paired.payload.trackId, clip: paired.payload.clipSnapshot };
-    if (!replayTargetMatches(action.payload.clipId, captured)) {
+    // Earlier group members may have shifted this target before its own removal.
+    // Compare the paired capture to that completed prefix, then pin it for execute.
+    const projected = projectClipReplayPrefix(context.actions.slice(0, context.actionIndex));
+    const target = projected?.clips.find((owner) => owner.clip.id === action.payload.clipId);
+    if (
+        !target ||
+        target.owningTrackId !== paired.payload.trackId ||
+        !valuesEqual(target.clip, paired.payload.clipSnapshot)
+    ) {
         preflightRedoTargets.delete(action);
         return false;
     }
-    if (context) {
-        const projected = projectClipReplayPrefix(context.actions.slice(0, context.actionIndex));
-        const target = projected?.clips.find((owner) => owner.clip.id === action.payload.clipId);
-        if (!target) {
-            preflightRedoTargets.delete(action);
-            return false;
-        }
-        preflightRedoTargets.set(action, target);
-    }
+    preflightRedoTargets.set(action, target);
     return true;
 }
 
