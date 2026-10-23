@@ -14,6 +14,7 @@ import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
+    configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
@@ -100,6 +101,7 @@ type TunerReadingUnderTest = {
 
 const {
     noop,
+    configureOfflineMidiProjectionMock,
     configureOfflinePpqProjectionMock,
     beatAtSecondsFromAnchorMock,
     sentinelHandlers,
@@ -189,6 +191,7 @@ const {
     const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
+        configureOfflineMidiProjectionMock: vi.fn<typeof configureOfflineMidiEventProjection>(),
         configureOfflinePpqProjectionMock: vi.fn<typeof configureOfflinePpqEndpointProjection>(),
         beatAtSecondsFromAnchorMock: vi.fn(() => -1),
         sentinelHandlers,
@@ -403,7 +406,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     commitPitchEdit: noop,
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineDeviceParameterLaw: noop,
-    configureOfflineMidiEventProjection: noop,
+    configureOfflineMidiEventProjection: configureOfflineMidiProjectionMock,
     configureOfflinePpqEndpointProjection: configureOfflinePpqProjectionMock,
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
@@ -594,6 +597,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     projectClipControllerEvents: noop,
+    projectChannelBend: noop,
     resolveMidiNoteArticulationId: () => null,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
@@ -846,6 +850,12 @@ describe('bootstrap', () => {
             resolveTempoAtBeat: noop,
             beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
         });
+    });
+
+    it('hands the offline render the MIDI module’s own stored-controller and channel-bend projections', () => {
+        expect(configureOfflineMidiProjectionMock).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ projectClipControllers: noop, projectChannelBend: noop })
+        );
     });
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {

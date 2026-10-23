@@ -117,6 +117,7 @@ export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 export { commitUndoEntry } from './commitUndoEntry';
+export { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
 // (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the
 // pitch aggregate. See ADR 0011 Wave 3.

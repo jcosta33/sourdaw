@@ -7,6 +7,7 @@ export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
 export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
+export { selectMidiNotesForLoopWindow } from './scheduling/selectMidiNotesForLoopWindow';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 export { readNativeEngineCursorBeats } from './playheadScheduler/readNativeEngineCursorBeats';
 
@@ -49,6 +50,7 @@ export { setPunchOut } from './transportControls/setPunchOut';
 export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
 export { isTransportIdle } from './transportControls/isTransportIdle';
+export { countSettledTakes } from './transportControls/countSettledTakes';
 export { rearmNativeSessionAfterEngineRetire } from './transportControls/rearmNativeSessionAfterEngineRetire';
 export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
 export { toggleCountIn } from './transportControls/toggleCountIn';

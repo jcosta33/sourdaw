@@ -1,12 +1,9 @@
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-
+import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 import { type RestoreStoredControllersInput } from './restoreStoredControllers';
-
-type TrackClips = Parameters<typeof resolveClipsWithComping>[1];
 
 type ResolveStoredControllerClipsInput = {
     trackId: string;
-    clips: TrackClips;
+    clips: Parameters<typeof resolvePlayedMidiClips>[1];
     ccByClipId: Readonly<Record<string, RestoreStoredControllersInput['clips'][number]['controlChanges']>>;
 };
 
@@ -24,12 +21,8 @@ export function resolveStoredControllerClips({
     clips,
     ccByClipId,
 }: ResolveStoredControllerClipsInput): RestoreStoredControllersInput['clips'] {
-    const midiClips = clips.filter((clip) => !clip.muted && clip.type === 'midi');
-    return resolveClipsWithComping(trackId, midiClips).flatMap((clip) => {
+    return resolvePlayedMidiClips(trackId, clips).flatMap((clip) => {
         const controlChanges = ccByClipId[clip.id];
-        if (clip.muted || clip.type !== 'midi' || !controlChanges) {
-            return [];
-        }
-        return [{ clip, controlChanges }];
+        return controlChanges ? [{ clip, controlChanges }] : [];
     });
 }

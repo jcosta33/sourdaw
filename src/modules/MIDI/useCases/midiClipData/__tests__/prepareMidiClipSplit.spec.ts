@@ -19,6 +19,7 @@ vi.mock('../../../stores/midiStore', () => ({
 }));
 
 const { prepareMidiClipSplit } = await import('../prepareMidiClipSplit');
+const { projectChannelBend } = await import('../projectChannelBend');
 const { restoreMidiClipSplitState } = await import('../restoreMidiClipSplitState');
 
 function createMidiState(): MidiStoreStateInput {
@@ -132,5 +133,59 @@ describe('prepareMidiClipSplit controllers and pitch bends', () => {
 
         expect(plan.nextSource).toEqual(plan.previousSource);
         expect(plan.nextRight).toEqual(plan.previousRight);
+    });
+});
+
+describe('prepareMidiClipSplit bend range', () => {
+    type Controller = { id: string; beat: number; controller: number; value: number; channel: number };
+    type Bend = { id: string; beat: number; value: number; channel: number };
+
+    function controller(id: string, beat: number, cc: number, value: number): Controller {
+        return { id, beat, controller: cc, value, channel: 0 };
+    }
+
+    /** RPN 0 = 12, then the Null RPN a controller sends after a data entry. */
+    const NULL_TERMINATED_RANGE = [
+        controller('rpn-msb', 0.5, 101, 0),
+        controller('rpn-lsb', 0.75, 100, 0),
+        controller('data-msb', 1, 6, 12),
+        controller('data-lsb', 1.25, 38, 0),
+        controller('null-msb', 1.5, 101, 127),
+        controller('null-lsb', 1.75, 100, 127),
+    ];
+
+    /** The depth the channel bend plays its first move under, on a clip that starts at its own origin. */
+    function rangeOfFirstBend(controlChanges: readonly Controller[], pitchBends: readonly Bend[]) {
+        const [point] = projectChannelBend({
+            clips: [{ clip: { startBeat: 0, endBeat: 16 }, controlChanges, pitchBends }],
+            frameAtBeat: (beat) => beat * 24_000,
+        });
+        return point?.rangeSemitones;
+    }
+
+    beforeEach(() => {
+        mocks.state.value = {
+            probabilitySeed: 7,
+            notesByClipId: {},
+            ccByClipId: { source: NULL_TERMINATED_RANGE },
+            pitchBendByClipId: { source: [{ id: 'bend-late', value: 6500, beat: 6, channel: 0 }] },
+        };
+    });
+
+    it('plays a bend of the right half at the range the take declared before the cut, though the Null RPN closed it', () => {
+        const plan = requirePlan(prepareMidiClipSplit(splitInput()));
+
+        expect(rangeOfFirstBend(plan.nextRight.controlChanges.value, plan.nextRight.pitchBends.value)).toBe(12);
+        // The unsplit clip plays the same bend under the same range.
+        expect(rangeOfFirstBend(NULL_TERMINATED_RANGE, [{ id: 'bend', value: 6500, beat: 6, channel: 0 }])).toBe(12);
+    });
+
+    it('plans the same declaration rows again on a replay with the ids it was planned under', () => {
+        const plan = requirePlan(prepareMidiClipSplit(splitInput()));
+
+        const replayed = requirePlan(prepareMidiClipSplit(splitInput(plan.targetNoteIds)));
+
+        expect(replayed.nextRight.controlChanges).toEqual(plan.nextRight.controlChanges);
+        expect(plan.nextRight.controlChanges.value.map((row) => row.controller)).toEqual([101, 100, 6, 38, 101, 100]);
     });
 });

@@ -20,10 +20,31 @@ const engineStub = vi.hoisted(() => ({
     nodes: [] as unknown[],
     sustain: [] as string[],
     noteOns: 0,
+    /** The per-note expression the scheduler asked the instrument for, as pitch, bend, depth and frame. */
+    expressions: [] as {
+        note: number;
+        pitchBend: number | undefined;
+        range: number | undefined;
+        frame: number | undefined;
+    }[],
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    applyNoteExpression: (input: {
+        note: number;
+        expression: { pitchBend?: number };
+        bendRangeSemitones?: number;
+        sampleFrame?: number;
+    }) => {
+        engineStub.expressions.push({
+            note: input.note,
+            pitchBend: input.expression.pitchBend,
+            range: input.bendRangeSemitones,
+            frame: input.sampleFrame,
+        });
+        return true;
+    },
     getAudioContext: () => ({ sampleRate: 48_000, createGain: () => ({ connect: () => undefined }) }),
     getCurrentTime: () => 0,
     getCompensationDelay: () => 0,
@@ -65,12 +86,12 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { destroyWebMidi, initWebMidi, setMidiInputTrack, setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { forgetHeldNoteExpression } from '../../../services/heldNoteExpression';
 import {
     forgetStoredControllerEngagements,
     noteStoredControllerPost,
 } from '../../../services/storedControllerEngagement';
 import { transportStore } from '../../../stores/transportStore';
+import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 const TRACK_ID = 'track-midi';
@@ -107,6 +128,7 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         forgetHeldNoteExpression();
         engineStub.sustain = [];
         engineStub.noteOns = 0;
+        engineStub.expressions = [];
         engineStub.nodes = [
             {
                 type: 'grand-boule',
@@ -191,6 +213,36 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         return provisional.id;
     }
 
+    /**
+     * Record a pitch-wheel bend out to full at beat 4.5 and back to centre at 5.5 on the live input into a
+     * clip spanning beats 4 to 8, then give the clip the held note the performer played over it.
+     */
+    async function recordBendTake(): Promise<string> {
+        setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+        await initWebMidi();
+        setMidiInputTrack(TRACK_ID);
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        transportStore.set({ ...transportStore.value!, isRecording: true });
+        const send = (beat: number, ...bytes: number[]): void => {
+            transportStore.set({ ...transportStore.value!, playheadPosition: beat });
+            liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
+        };
+        // 14-bit 16383 (full bend up) and 8192 (centre), least significant byte first.
+        send(4.5, 0xe0, 127, 127);
+        send(5.5, 0xe0, 0, 64);
+        await stopRecording(8);
+        transportStore.set({ ...transportStore.value!, isRecording: false });
+        flushAutomergeStorageWrites();
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: { [provisional.id]: [{ id: 'held', pitch: 60, startBeat: 0, duration: 3, velocity: 100 }] },
+        });
+        return provisional.id;
+    }
+
     const playWindow = (fromBeat: number, toBeat: number) =>
         scheduleMidiNotes(fromBeat, toBeat, 0, new Set<string>(), [], defaultTransportState, 120);
 
@@ -222,6 +274,23 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         await scheduleMidiNotes(5, 5.25, 5, new Set<string>(), [], defaultTransportState, 120, undefined, true);
 
         expect(engineStub.sustain).toEqual(['sustain 1 @0']);
+    });
+
+    it('plays the bend recorded from the pitch wheel on the note held over it, out and back', async () => {
+        const clipId = await recordBendTake();
+        expect(midiStore.value?.pitchBendByClipId[clipId]?.map(({ value, beat }) => [value, beat])).toEqual([
+            [8191, 0.5],
+            [0, 1.5],
+        ]);
+
+        await playWindow(0, 12);
+
+        expect(engineStub.expressions).toEqual([
+            // The note-on's own update: no bend is in force when the note is struck.
+            { note: 60, pitchBend: undefined, range: undefined, frame: 4 * BEAT_FRAMES },
+            { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
+            { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
+        ]);
     });
 
     it('plays the stored pedal of a duplicate of the take, which copies the rows and no note list', async () => {

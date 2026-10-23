@@ -835,6 +835,102 @@ describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
             ['straddler-right', 0, 1],
         ]);
     });
+
+    it('retains a comp-window controller event on the source beside its rebased right copy', () => {
+        const keptCc = { id: 'cc-kept', controller: 64, value: 32, beat: 1, channel: 0 };
+        const windowCc = { id: 'cc-window', controller: 64, value: 40, beat: 5, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 11, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptCc, windowCc, afterCc] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 4.5, end: 6 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        const leftEvents = result.state.ccByClipId.source ?? [];
+        // The kept-range row survives as before; the comp-window row stays whole in
+        // its own coordinates instead of living only as the rebased right copy.
+        expect(leftEvents).toEqual([keptCc, windowCc]);
+        expect(leftEvents[1]).toBe(windowCc);
+        // The right clip still receives the rebased copies, and the lane in force at
+        // the cut carries onto the origin because no moved row lands at beat 0.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...keptCc, id: 'cc-split:right:0', beat: 0 },
+            { ...windowCc, id: 'cc-split:right:1', beat: 1 },
+            { ...afterCc, id: 'cc-split:right:2', beat: 5 },
+        ]);
+    });
+
+    it('retains a comp-window pitch bend on the source and keeps an out-of-window one distributed', () => {
+        const windowBend = { id: 'pb-window', value: 0.5, beat: 4.75, channel: 1 };
+        const afterBend = { id: 'pb-after', value: -0.5, beat: 8, channel: 1 };
+        const prepared = state({ pitchBendByClipId: { source: [windowBend, afterBend] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 4.5, end: 6 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Only the in-window bend stays on the source; the one past the window keeps
+        // its stored-position distribution, with no lane carried (nothing precedes the cut).
+        expect(result.state.pitchBendByClipId.source).toEqual([windowBend]);
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...windowBend, id: 'pb-split:right:0', beat: 0.75 },
+            { ...afterBend, id: 'pb-split:right:1', beat: 4 },
+        ]);
+    });
+
+    it('pins the window bounds, the keep-zone overlap, and the carried lane of a retained in-force row', () => {
+        // The predicate is half-open [start, end) against the windows the resolver
+        // plays, and retention shares one exclusive push with the keep-zone clause:
+        // a row both retained and under keptEnd is stored once, a row exactly at a
+        // window start stays, one exactly at the end goes, and one discarded into
+        // the gap between keptEnd and a later window is not resurrected. The
+        // retained at-start row is also the lane's value in force at the cut, so
+        // the same case pins that retention does not drop the carried-at-origin
+        // lane onto the right fragment.
+        const keptOverlapCc = { id: 'cc-overlap', controller: 64, value: 32, beat: 1.5, channel: 0 };
+        const atEndCc = { id: 'cc-at-end', controller: 64, value: 36, beat: 2.25, channel: 0 };
+        const gapCc = { id: 'cc-gap', controller: 64, value: 38, beat: 2.75, channel: 0 };
+        const atStartCc = { id: 'cc-at-start', controller: 64, value: 40, beat: 3.25, channel: 0 };
+        const afterCc = { id: 'cc-after', controller: 64, value: 48, beat: 9, channel: 0 };
+        const prepared = state({
+            ccByClipId: { source: [keptOverlapCc, atEndCc, gapCc, atStartCc, afterCc] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [
+                {
+                    ...command,
+                    retainOnSourceWindows: [
+                        { start: 1, end: 2.25 },
+                        { start: 3.25, end: 3.5 },
+                    ],
+                },
+            ],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        // Exactly the rows the half-open windows cover, each stored once — the
+        // overlap row rides the single shared push, not two.
+        expect(result.state.ccByClipId.source).toEqual([keptOverlapCc, atStartCc]);
+        expect([...storedCopiesById(result.state.ccByClipId.source ?? []).values()]).toEqual([1, 1]);
+        // The retained at-start row is the value in force at the cut, so the right
+        // fragment still opens with its held value beside the rebased post-cut row;
+        // ids carry each row's source index.
+        expect(result.state.ccByClipId.right).toStrictEqual([
+            { ...atStartCc, id: 'cc-split:right:3', beat: 0 },
+            { ...afterCc, id: 'cc-split:right:4', beat: 5 },
+        ]);
+    });
 });
 
 describe('transformMidiGlobalTimeState copy and removal edge cases', () => {
@@ -1150,6 +1246,226 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
             pitchBend('pb-split:right:0', 0, 4900, 0),
             pitchBend('pb-split:right:2', 0, -3200, 1),
         ]);
+    });
+
+    describe('the bend range a registered parameter declared before the cut', () => {
+        const RPN_MSB = 101;
+        const RPN_LSB = 100;
+        const DATA_MSB = 6;
+        const DATA_LSB = 38;
+
+        /** RPN 0 = `semitones`, then the Null RPN a controller sends after a data entry, one row per beat from `beat`. */
+        function nullTerminatedRange(beat: number, semitones: number, channel = 0, idPrefix = 'range') {
+            return [
+                cc(`${idPrefix}-msb`, beat, 0, RPN_MSB, channel),
+                cc(`${idPrefix}-lsb`, beat + 0.25, 0, RPN_LSB, channel),
+                cc(`${idPrefix}-data-msb`, beat + 0.5, semitones, DATA_MSB, channel),
+                cc(`${idPrefix}-data-lsb`, beat + 0.75, 0, DATA_LSB, channel),
+                cc(`${idPrefix}-null-msb`, beat + 1, 127, RPN_MSB, channel),
+                cc(`${idPrefix}-null-lsb`, beat + 1.25, 127, RPN_LSB, channel),
+            ];
+        }
+
+        function declared(rows: readonly { controller: number; value: number }[]) {
+            return rows.map((row) => [row.controller, row.value]);
+        }
+
+        it('declares the range a Null RPN closed as one ordered declaration, not the last value of each lane', () => {
+            const prepared = state({ ccByClipId: { source: nullTerminatedRange(1, 12) } });
+
+            const result = split(prepared, 4);
+
+            // The lane-by-lane carry sent [[101,127],[100,127],[6,12],[38,0]]: the Null RPN selected first, so the
+            // data entry that followed it addressed no parameter.
+            expect(declared(result.state.ccByClipId.right ?? [])).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127],
+            ]);
+            expect(result.state.ccByClipId.right?.every((row) => row.beat === 0 && row.channel === 0)).toBe(true);
+            expect(result.state.ccByClipId.source).toEqual(nullTerminatedRange(1, 12));
+        });
+
+        it('reads the messages in beat order, whatever order the rows are stored in', () => {
+            const prepared = state({ ccByClipId: { source: nullTerminatedRange(1, 12).toReversed() } });
+
+            const result = split(prepared, 4);
+
+            expect(declared(result.state.ccByClipId.right ?? [])).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127],
+            ]);
+        });
+
+        it('declares a range that is still selected without closing it', () => {
+            const prepared = state({ ccByClipId: { source: nullTerminatedRange(1, 12).slice(0, 4) } });
+
+            const result = split(prepared, 4);
+
+            expect(declared(result.state.ccByClipId.right ?? [])).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+            ]);
+        });
+
+        it('declares the range of every channel on its own channel', () => {
+            const prepared = state({
+                ccByClipId: {
+                    source: [
+                        ...nullTerminatedRange(0, 12, 0, 'low'),
+                        ...nullTerminatedRange(0.1, 24, 3, 'high').slice(0, 4),
+                    ],
+                },
+            });
+
+            const right = split(prepared, 4).state.ccByClipId.right ?? [];
+
+            expect(declared(right.filter((row) => row.channel === 0))).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127],
+            ]);
+            expect(declared(right.filter((row) => row.channel === 3))).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 24],
+                [DATA_LSB, 0],
+            ]);
+        });
+
+        it('declares a range set inside the window a split discards, which the right clip keeps playing under', () => {
+            const prepared = state({ ccByClipId: { source: nullTerminatedRange(3, 12) } });
+
+            const result = split(prepared, 6, 2);
+
+            expect(result.state.ccByClipId.source).toEqual([]);
+            expect(declared(result.state.ccByClipId.right ?? [])).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127],
+            ]);
+        });
+
+        it('keeps the order of the declaration ahead of a message the source sends on the cut itself', () => {
+            const prepared = state({
+                ccByClipId: { source: [...nullTerminatedRange(1, 12), cc('on-the-cut', 4, 0, RPN_MSB)] },
+            });
+
+            const right = split(prepared, 4).state.ccByClipId.right ?? [];
+
+            expect(declared(right)).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127],
+                [RPN_MSB, 0],
+            ]);
+            expect(right.at(-1)).toEqual(cc('cc-split:right:6', 0, 0, RPN_MSB));
+        });
+
+        it('moves the messages after the cut onto the right clip in their order, with no declaration of their own', () => {
+            const prepared = state({ ccByClipId: { source: nullTerminatedRange(5, 12) } });
+
+            const right = split(prepared, 4).state.ccByClipId.right ?? [];
+
+            expect(right.map((row) => [row.controller, row.value, row.beat])).toEqual([
+                [RPN_MSB, 0, 1],
+                [RPN_LSB, 0, 1.25],
+                [DATA_MSB, 12, 1.5],
+                [DATA_LSB, 0, 1.75],
+                [RPN_MSB, 127, 2],
+                [RPN_LSB, 127, 2.25],
+            ]);
+        });
+
+        it('declares nothing for rows that only wrote a Data Entry no parameter was selected for', () => {
+            const prepared = state({ ccByClipId: { source: [cc('data', 1, 12, DATA_MSB)] } });
+
+            const result = split(prepared, 4);
+
+            expect(result.state.ccByClipId.right).toBeUndefined();
+        });
+
+        it('still carries the lanes beside the registered-parameter state by their last value', () => {
+            const prepared = state({
+                ccByClipId: { source: [cc('pedal', 0.5, 127, 64), ...nullTerminatedRange(1, 12), cc('mod', 2, 40, 1)] },
+            });
+
+            const right = split(prepared, 4).state.ccByClipId.right ?? [];
+
+            expect(right.slice(6)).toEqual([cc('cc-split:right:0', 0, 127, 64), cc('cc-split:right:7', 0, 40, 1)]);
+            expect(declared(right.slice(0, 6)).map(([controller]) => controller)).toEqual([
+                RPN_MSB,
+                RPN_LSB,
+                DATA_MSB,
+                DATA_LSB,
+                RPN_MSB,
+                RPN_LSB,
+            ]);
+        });
+
+        it('leaves a channel the right clip already opens a registered parameter on to the rows it holds', () => {
+            const own = cc('own', 0, 0, RPN_MSB, 0);
+            const prepared = state({
+                ccByClipId: {
+                    source: [...nullTerminatedRange(1, 12, 0, 'low'), ...nullTerminatedRange(1, 24, 1, 'high')],
+                    right: [own],
+                },
+            });
+
+            const right = split(prepared, 4).state.ccByClipId.right ?? [];
+
+            expect(right[0]).toEqual(own);
+            expect(right.filter((row) => row.channel === 0)).toEqual([own]);
+            expect(declared(right.filter((row) => row.channel === 1))).toContainEqual([DATA_MSB, 24]);
+        });
+
+        it('declares the state of a channel whose rows on the right clip are not on its origin or are not registered-parameter messages', () => {
+            const pedal = cc('pedal', 0, 127, 64, 0);
+            const later = cc('later', 3, 5, DATA_MSB, 0);
+            const prepared = state({
+                ccByClipId: { source: nullTerminatedRange(1, 12), right: [pedal, later] },
+            });
+
+            const right = split(prepared, 4).state.ccByClipId.right ?? [];
+
+            expect(right.slice(0, 2)).toEqual([pedal, later]);
+            expect(declared(right.slice(2))).toEqual([
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127],
+            ]);
+        });
+
+        it('yields the same declaration ids every time the command is applied to the same state', () => {
+            const prepared = state({ ccByClipId: { source: nullTerminatedRange(1, 12) } });
+
+            const first = split(prepared, 4).state.ccByClipId.right;
+            const second = split(prepared, 4).state.ccByClipId.right;
+
+            expect(second).toEqual(first);
+            expect(new Set(first?.map((row) => row.id)).size).toBe(first?.length);
+        });
     });
 });
 

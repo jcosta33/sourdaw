@@ -55,6 +55,7 @@ export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
 export { projectMidiClipPlayback } from './midiClipData/projectMidiClipPlayback';
 export { projectClipControllerEvents } from './midiClipData/projectClipControllerEvents';
 export { projectClipControllerRestore } from './midiClipData/projectClipControllerRestore';
+export { projectChannelBend } from './midiClipData/projectChannelBend';
 export { midiClipGlueStateMatches } from './midiClipData/midiClipGlueStateMatches';
 export { restoreMidiClipGlueState } from './midiClipData/restoreMidiClipGlueState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';

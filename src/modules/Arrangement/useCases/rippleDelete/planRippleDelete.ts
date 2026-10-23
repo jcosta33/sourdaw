@@ -1,4 +1,5 @@
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type ClipSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../../stores/trackStore';
@@ -83,6 +84,10 @@ export function planRippleDelete(
                 ...clip,
                 startBeat: clip.startBeat - gap,
                 endBeat: clip.endBeat - gap,
+                // Closing the gap relocates the clip without touching its
+                // content offset; the loop anchor moves with it so the ripple
+                // cannot re-roll which passes sound (#4988).
+                ...shiftLoopOriginEntry(clip, -gap),
             });
             return accumulator;
         }

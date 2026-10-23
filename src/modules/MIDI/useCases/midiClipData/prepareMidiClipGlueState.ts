@@ -4,6 +4,7 @@ import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { declareGluedRegisteredParameters } from './declareGluedRegisteredParameters';
 import { projectMidiClipWindow } from './projectMidiClipWindow';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
@@ -128,9 +129,21 @@ export function prepareMidiClipGlueState({
             controlChanges,
             pitchBends,
             window: { ...source, closingLineBeat: closingLineBeatOf(sources, sourceIndex) },
+            carriesRegisteredParameterLanes: false,
+        });
+        const openingRegisteredParameters = declareGluedRegisteredParameters({
+            gluedSoFar: mergedControlChanges,
+            sourceControlChanges: controlChanges,
+            visibleStartBeat: source.visibleStartBeat,
+            glueBeat: source.visibleStartBeat + source.beatOffset,
+            createId: (key) => `cc-glue:${targetClipId}:${sourceIndex}:${key}`,
         });
         mergedNotes.push(...projected.notes);
-        mergedControlChanges.push(...projected.controlChanges, ...projected.closingControlChanges);
+        mergedControlChanges.push(
+            ...openingRegisteredParameters,
+            ...projected.controlChanges,
+            ...projected.closingControlChanges
+        );
         mergedPitchBends.push(...projected.pitchBends);
     }
     if (

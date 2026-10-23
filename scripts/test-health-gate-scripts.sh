@@ -659,7 +659,7 @@ expect(
     lint?.if === "needs.decide.outputs.code == 'true'" && boundaries?.if === "needs.decide.outputs.code == 'true'",
     'lint and boundaries must skip a head that carries only prose'
 );
-expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
+expect(staticJob?.if === undefined, 'static must stay unconditional so wasm freshness and script contracts observe prose-classified changes too');
 // The four scope conditions no other pin reads. Each is the whole definition
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
