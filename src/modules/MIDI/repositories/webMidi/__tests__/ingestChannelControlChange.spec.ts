@@ -233,6 +233,16 @@ describe('ingestChannelControlChange', () => {
             expect(heldPedalState.get(5)?.get(64)).toBe(127);
         });
 
+        it('leaves the wheel to the admission step on Reset All Controllers while it lifts the pedals', () => {
+            channelPitchBendState.set(CHANNEL, 4096);
+            ingest(64, 127);
+
+            ingest(121, 0);
+
+            expect(heldPedalState.get(CHANNEL)?.size).toBe(0);
+            expect(channelPitchBendState.get(CHANNEL)).toBe(4096);
+        });
+
         it('keeps the wheel through a transport reset and drops it when the input device is reset', () => {
             channelPitchBendState.set(CHANNEL, 4096);
 

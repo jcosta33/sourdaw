@@ -918,6 +918,31 @@ describe('handleWebMidiNoteOn', () => {
             expect(apply_note_expression).not.toHaveBeenCalled();
         });
 
+        it('starts a note under the wheels captured at its admission, not the wheel it finds when it runs', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(1);
+
+            await fn(1, 64, 90, undefined, { channel: 0, master: 0 });
+            expect(apply_note_expression).not.toHaveBeenCalled();
+
+            await fn(2, 64, 90, undefined, { channel: 2048, master: 0 });
+            expect(apply_note_expression).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ channel: 2, expression: expect.objectContaining({ pitchBend: 2048 }) })
+            );
+        });
+
+        it('starts an MPE member note under the zone master wheel captured at its admission', async () => {
+            mpe_enabled.value = true;
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(0);
+
+            await fn(3, 64, 90, undefined, { channel: 0, master: -1024 });
+
+            expect(apply_note_expression).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ channel: 3, expression: expect.objectContaining({ pitchBend: -1024 }) })
+            );
+        });
+
         it('starts the built-in synth oscillator detuned by the held wheel on top of its own detune', async () => {
             const set_value_at_time = vi.fn();
             const schedule_note = vi.fn((..._args: unknown[]) => ({

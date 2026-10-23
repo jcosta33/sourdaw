@@ -72,6 +72,7 @@ describe('handleWebMidiMessage', () => {
         vi.clearAllMocks();
         audio_clock.currentTime = 2;
         activeNotes.clear();
+        channelPitchBendState.clear();
     });
 
     it('should dispatch CC bytes to the CC use case', () => {
@@ -374,8 +375,23 @@ describe('handleWebMidiMessage', () => {
             nativeBeat = 1.25;
             finishFirst();
             await queued;
-            expect(handle_note_on).toHaveBeenNthCalledWith(1, 1, 60, 100, { audioTime: 2, recordingBeat: 0.12 });
-            expect(handle_note_on).toHaveBeenNthCalledWith(2, 1, 62, 100, { audioTime: 2, recordingBeat: 0.15 });
+            const centred = { channel: 0, master: 0 };
+            expect(handle_note_on).toHaveBeenNthCalledWith(
+                1,
+                1,
+                60,
+                100,
+                { audioTime: 2, recordingBeat: 0.12 },
+                centred
+            );
+            expect(handle_note_on).toHaveBeenNthCalledWith(
+                2,
+                1,
+                62,
+                100,
+                { audioTime: 2, recordingBeat: 0.15 },
+                centred
+            );
         } finally {
             transportStore.set(previous);
             setGestureClockSource({
@@ -501,37 +517,67 @@ describe('handleWebMidiMessage', () => {
             }
         );
 
-        it('starts a queued note under the wheel received behind it, and the queued bend then agrees with that start', async () => {
+        it('starts a queued note at the wheel it was admitted under, and the bend queued behind it moves it', async () => {
             let finishFirstNoteOn!: () => void;
             const firstNoteOnInFlight = new Promise<void>((resolve) => {
                 finishFirstNoteOn = resolve;
             });
-            let secondNoteStartedUnder: number | undefined;
-            let wheelWhenBendRan: number | undefined;
+            let secondNoteStart: ReturnType<typeof resolveChannelBendAtNoteStart>;
             handle_note_on.mockImplementationOnce(() => firstNoteOnInFlight);
-            handle_note_on.mockImplementationOnce(() => {
-                secondNoteStartedUnder = startBendOnChannelOne()?.pitchBend;
-            });
-            handle_pitch_bend.mockImplementation((...args: Parameters<typeof actualHandleWebMidiPitchBend>) => {
-                wheelWhenBendRan = startBendOnChannelOne()?.pitchBend;
-                actualHandleWebMidiPitchBend(...args);
-            });
+            handle_note_on.mockImplementationOnce(
+                (_channel: number, _note: number, _velocity: number, _time: unknown, admittedWheels: unknown) => {
+                    secondNoteStart = resolveChannelBendAtNoteStart({
+                        channel: 1,
+                        mpeEnabled: false,
+                        ownPitchBend: undefined,
+                        admittedWheels: admittedWheels as Parameters<
+                            typeof resolveChannelBendAtNoteStart
+                        >[0]['admittedWheels'],
+                    });
+                }
+            );
 
             handleWebMidiMessage(midi_event([0x91, 60, 100]));
             handleWebMidiMessage(midi_event([0x91, 62, 100]));
             const queuedBend = handleWebMidiMessage(midi_event([0xe1, 0, 96]));
 
-            // Received, so held, before any queued handler has run.
+            // The bend is held from its arrival, but it arrived behind the note.
             expect(startBendOnChannelOne()?.pitchBend).toBe(4096);
             expect(handle_pitch_bend).not.toHaveBeenCalled();
 
             finishFirstNoteOn();
             await queuedBend;
 
-            expect(secondNoteStartedUnder).toBe(4096);
+            expect(secondNoteStart).toBeUndefined();
             expect(handle_pitch_bend).toHaveBeenCalledWith(1, 0, 96, { audioTime: 2 });
-            expect(wheelWhenBendRan).toBe(4096);
-            expect(startBendOnChannelOne()?.pitchBend).toBe(4096);
+        });
+
+        it('hands a note-on the wheel of its channel and the zone master as they stood when it arrived', () => {
+            handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+            handleWebMidiMessage(midi_event([0xe0, 0, 32]));
+
+            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+
+            expect(handle_note_on).toHaveBeenCalledWith(
+                1,
+                60,
+                100,
+                { audioTime: 2, recordingBeat: expect.any(Number) },
+                {
+                    channel: 4096,
+                    master: -4096,
+                }
+            );
+        });
+
+        it('keeps an MPE member-channel bend as the channel wheel for a note struck after MPE is switched off', () => {
+            setMpeEnabledInternal(true);
+            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+            expect(channelPitchBendState.get(2)).toBe(4096);
+            handleWebMidiMessage(midi_event([0xe2, 0, 64]));
+            setMpeEnabledInternal(false);
+
+            expect(channelPitchBendState.get(2)).toBe(0);
         });
 
         it('recentres a channel on Reset All Controllers when it is received, in arrival order with the bends around it', async () => {

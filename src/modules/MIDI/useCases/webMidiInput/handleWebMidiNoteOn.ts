@@ -5,6 +5,7 @@ import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/
 import { isBypassedNoteReceiver, resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
+import { type AdmittedChannelWheels } from '../../repositories/webMidi/captureAdmittedWheels';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
@@ -48,7 +49,8 @@ export const handleWebMidiNoteOn = inject({
             channel: number,
             note: number,
             velocity: number,
-            timeStamp?: number | CapturedInputEventTime
+            timeStamp?: number | CapturedInputEventTime,
+            admittedWheels?: AdmittedChannelWheels
         ): Promise<void> {
             if (velocity === 0) {
                 await handleWebMidiNoteOff(channel, note, 0, timeStamp);
@@ -146,6 +148,7 @@ export const handleWebMidiNoteOn = inject({
                 channel,
                 mpeEnabled,
                 ownPitchBend: noteData.pitchBend,
+                admittedWheels,
             });
             const postStartBend = (): void => {
                 if (!startBend) {
