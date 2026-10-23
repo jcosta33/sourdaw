@@ -1,0 +1,21 @@
+tests/e2e/crustAttackAutoTestId.spec.ts
+  s_59e31a5c6f3e31::t_32215c46a90a8b 29-37
+tests/e2e/crustReleaseAutoTestId.spec.ts
+  s_59e31a5c6f3e31::t_32215c46a90a8b 30-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88d6516efe107c24d5ef54c970aa9bbfe357b9d6",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
