@@ -303,6 +303,39 @@ describe('parseProjectXml — clip parsing', () => {
         expect(parsed.warnings).toEqual([]);
     });
 
+    it('reports direct Audio inside nested Lanes without dropping its containing Clip', () => {
+        const xml =
+            '<Project version="1.0"><Application name="Fixture" version="1"/>' +
+            '<Structure><Track id="t0" name="Keys" contentType="notes"/></Structure>' +
+            '<Arrangement><Lanes><Clips track="t0">' +
+            '<Clip name="Container" time="0" duration="8"><Lanes>' +
+            '<Audio id="a0" track="t0" duration="4" channels="2" sampleRate="48000">' +
+            '<File path="nested.wav"/></Audio></Lanes></Clip>' +
+            '</Clips></Lanes></Arrangement></Project>';
+        const parsed = parseProjectXml(xml);
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Nested audio', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'nested-audio.dawproject',
+        });
+
+        expect(mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips).toMatchObject([
+            { name: 'Container', startBeat: 0, endBeat: 8, type: 'midi' },
+        ]);
+        expect(parsed.warnings).toEqual([
+            {
+                kind: 'unsupported-clip',
+                name: 'nested.wav',
+                sourceType: 'Audio',
+                sourceId: 'a0',
+                context: 'Keys',
+                handling: 'dropped',
+                sourceOrder: expect.any(Number),
+            },
+        ]);
+        expect(parsed.warnings[0]?.sourceOrder).toBeGreaterThan(0);
+    });
+
     it('reports direct Video once and does not report its Clip wrapper twice', () => {
         const inner =
             '<Structure><Track id="t0" name="Picture" contentType="audio"/></Structure>' +
