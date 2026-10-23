@@ -140,7 +140,7 @@ function validateWarpMarker(value: unknown): WarpMarker | null {
     return validated;
 }
 
-function validateWarpState(value: unknown, markerIds: Set<string>): WarpState | null | false {
+function validateWarpState(value: unknown): WarpState | null | false {
     if (value === null) {
         return null;
     }
@@ -167,6 +167,7 @@ function validateWarpState(value: unknown, markerIds: Set<string>): WarpState | 
     }
 
     const markers: WarpMarker[] = [];
+    const markerIds = new Set<string>();
     for (const candidate of properties.markers) {
         const marker = validateWarpMarker(candidate);
         if (!marker || markerIds.has(marker.id)) {
@@ -195,7 +196,6 @@ function decodeEntries(value: unknown): ClipSatelliteEntry[] | null {
         return null;
     }
     const clipIds = new Set<string>();
-    const warpMarkerIds = new Set<string>();
     const entries: ClipSatelliteEntry[] = [];
     for (const candidate of value) {
         const entry = readDataObject(candidate, ENTRY_KEYS);
@@ -203,7 +203,7 @@ function decodeEntries(value: unknown): ClipSatelliteEntry[] | null {
             return null;
         }
         const gainEnvelope = validateGainEnvelope(entry.gainEnvelope, entry.clipId);
-        const warpState = validateWarpState(entry.warpState, warpMarkerIds);
+        const warpState = validateWarpState(entry.warpState);
         if (gainEnvelope === false || warpState === false) {
             return null;
         }

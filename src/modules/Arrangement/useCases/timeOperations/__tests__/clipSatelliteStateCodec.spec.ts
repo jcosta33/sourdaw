@@ -24,11 +24,16 @@ describe('clipSatelliteStateCodec identities', () => {
         expect(clipSatelliteStateCodec.decodeEntries([entry('clip-a', ['gain-a', 'gain-a'], [])])).toBeNull();
     });
 
-    it('rejects duplicate warp markers within or across clip entries', () => {
+    it('rejects duplicate warp markers within one clip entry', () => {
         expect(clipSatelliteStateCodec.decodeEntries([entry('clip-a', [], ['warp-a', 'warp-a'])])).toBeNull();
-        expect(
-            clipSatelliteStateCodec.decodeEntries([entry('clip-a', [], ['warp-a']), entry('clip-b', [], ['warp-a'])])
-        ).toBeNull();
+    });
+
+    it('keeps warp marker ids local to each clip', () => {
+        const entries = [entry('clip-a', [], ['shared-warp']), entry('clip-b', [], ['shared-warp'])];
+        const decoded = clipSatelliteStateCodec.decodeEntries(entries);
+        expect(decoded).toEqual(entries);
+        expect(decoded?.[0]?.warpState).not.toBe(decoded?.[1]?.warpState);
+        expect(decoded?.[0]?.warpState?.markers[0]).not.toBe(decoded?.[1]?.warpState?.markers[0]);
     });
 
     it('keeps gain point ids local to each clip envelope', () => {

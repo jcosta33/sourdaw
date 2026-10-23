@@ -694,6 +694,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         automationStore.set({ lanes: [] });
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
         hydrateProductionContracts();
+        flushAutomergeStorageWrites();
     });
 
     afterEach(() => {
