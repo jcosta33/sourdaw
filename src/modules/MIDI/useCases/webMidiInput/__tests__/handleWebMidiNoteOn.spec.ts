@@ -59,6 +59,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));
 
+const { getSynthParamsFromDevices, scheduleNote } = await import('#/modules/Synth/useCases');
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
@@ -96,6 +97,65 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
         soundsNativeNotes: (type: string) => type === 'fermenter',
         ...overrides,
     };
+}
+
+type FakeDetuneParam = {
+    value: number;
+    /** The value the param ends up at once its scheduled automation has played out. */
+    settled: number;
+    setValueAtTime: (value: number) => void;
+    setTargetAtTime: (value: number) => void;
+    linearRampToValueAtTime: () => void;
+    exponentialRampToValueAtTime: () => void;
+};
+
+function makeFakeDetuneParam(): FakeDetuneParam {
+    const param: FakeDetuneParam = {
+        settled: 0,
+        setValueAtTime: (value) => {
+            param.settled = value;
+        },
+        setTargetAtTime: (value) => {
+            param.settled = value;
+        },
+        linearRampToValueAtTime: () => {},
+        exponentialRampToValueAtTime: () => {},
+        get value() {
+            return param.settled;
+        },
+        set value(value: number) {
+            param.settled = value;
+        },
+    };
+    return param;
+}
+
+/** An audio context whose oscillators record where their detune settles, in creation order. */
+function makeOscillatorRecordingContext() {
+    const oscillators: Array<{ detune: FakeDetuneParam }> = [];
+    const node = () => ({ connect: (destination: unknown) => destination, disconnect: () => {} });
+    const ctx = {
+        sampleRate: 48_000,
+        currentTime: 0,
+        createGain: () => ({ ...node(), gain: makeFakeDetuneParam() }),
+        createBiquadFilter: () => ({
+            ...node(),
+            frequency: makeFakeDetuneParam(),
+            Q: makeFakeDetuneParam(),
+        }),
+        createOscillator: () => {
+            const oscillator = {
+                ...node(),
+                frequency: makeFakeDetuneParam(),
+                detune: makeFakeDetuneParam(),
+                start: () => {},
+                stop: () => {},
+            };
+            oscillators.push(oscillator);
+            return oscillator;
+        },
+    } as unknown as BaseAudioContext;
+    return { ctx, oscillators };
 }
 
 /**
@@ -851,7 +911,11 @@ describe('handleWebMidiNoteOn', () => {
         });
 
         it('starts the built-in synth oscillator detuned by the held wheel on top of its own detune', async () => {
-            const schedule_note = vi.fn((..._args: unknown[]) => ({ _env: { gain: {} } }));
+            const set_value_at_time = vi.fn();
+            const schedule_note = vi.fn((..._args: unknown[]) => ({
+                _env: { gain: {} },
+                detune: { setValueAtTime: set_value_at_time },
+            }));
             const fn = handleWebMidiNoteOn._factory(
                 make_dependencies({
                     getSynthParamsForTrack: () => ({ detune: 5, release: 0.3 }),
@@ -863,12 +927,18 @@ describe('handleWebMidiNoteOn', () => {
 
             await fn(1, 60, 100);
 
-            // +4096 of 8192 at the default ±2 semitones is +100 cents.
-            expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 105, release: 0.3 });
+            // +4096 of 8192 at the default ±2 semitones is +100 cents, set at the
+            // note's own start instant; the scheduled params stay unbent.
+            expect(set_value_at_time).toHaveBeenCalledExactlyOnceWith(105, LIVE_DISPATCH_FRAME / 48_000);
+            expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 5, release: 0.3 });
         });
 
         it('leaves the built-in synth detune untouched while the wheel is centred', async () => {
-            const schedule_note = vi.fn((..._args: unknown[]) => ({ _env: { gain: {} } }));
+            const set_value_at_time = vi.fn();
+            const schedule_note = vi.fn((..._args: unknown[]) => ({
+                _env: { gain: {} },
+                detune: { setValueAtTime: set_value_at_time },
+            }));
             const fn = handleWebMidiNoteOn._factory(
                 make_dependencies({
                     getSynthParamsForTrack: () => ({ detune: 5, release: 0.3 }),
@@ -879,7 +949,43 @@ describe('handleWebMidiNoteOn', () => {
 
             await fn(1, 60, 100);
 
+            expect(set_value_at_time).not.toHaveBeenCalled();
             expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 5, release: 0.3 });
+        });
+
+        it('leaves no oscillator of a two-oscillator note bent once the wheel it was struck under is centred', async () => {
+            const { ctx, oscillators } = makeOscillatorRecordingContext();
+            const twoOscillatorParams = { ...getSynthParamsFromDevices([]), osc2Mix: 0.5, osc2Detune: 7 };
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getSynthParamsForTrack: () => twoOscillatorParams,
+                    scheduleNote: (...[, ...args]: Parameters<typeof scheduleNote>) => scheduleNote(ctx, ...args),
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+            holdWheelUp(1);
+
+            await fn(1, 60, 100);
+            expect(oscillators).toHaveLength(2);
+            expect(oscillators[0]?.detune.settled).toBe(100);
+            handleWebMidiPitchBend(1, 0, 64);
+
+            // Every oscillator is back at its own unbent detune: the second one
+            // is not left holding a bend a live bend cannot move.
+            expect(oscillators.map((oscillator) => oscillator.detune.settled)).toEqual([0, 7]);
+        });
+
+        it('starts a note at the wheel a channel last held, including a bend that arrived while MPE was on', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(2);
+            mpe_enabled.value = true;
+            handleWebMidiPitchBend(2, 0, 64);
+            mpe_enabled.value = false;
+            apply_note_expression.mockClear();
+
+            await fn(2, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
         });
 
         it('starts an MPE member note under the zone master wheel', async () => {
@@ -890,8 +996,14 @@ describe('handleWebMidiNoteOn', () => {
 
             await fn(3, 64, 90);
 
+            // The master's wheel is read at the master's range (the ±2 default
+            // here), not the member default of ±48 the mocked surface reports.
             expect(apply_note_expression).toHaveBeenCalledWith(
-                expect.objectContaining({ channel: 3, expression: expect.objectContaining({ pitchBend: 4096 }) })
+                expect.objectContaining({
+                    channel: 3,
+                    expression: expect.objectContaining({ pitchBend: 4096 }),
+                    bendRangeSemitones: 2,
+                })
             );
         });
 

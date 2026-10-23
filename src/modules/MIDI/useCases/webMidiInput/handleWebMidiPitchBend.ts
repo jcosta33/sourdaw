@@ -45,6 +45,13 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
             const targetTrackId = getTargetTrackId();
             const baseDetune = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId).detune : 0;
 
+            // The wheel is channel state: notes struck on this channel from now
+            // on start under it (`resolveChannelBendAtNoteStart`). A member
+            // channel's bend is still that channel's last wheel, so it is kept
+            // too: a note struck there after MPE is switched off must start
+            // where the wheel last was, not where it stood before MPE.
+            channelPitchBendState.set(channel, bendValue);
+
             if (mpeEnabled && channel >= MPE_FIRST_MEMBER_CHANNEL) {
                 setMemberExpression(channel, { pitchBend: bendValue });
                 pendingMemberAdmission.record(channel, {
@@ -101,10 +108,6 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                 event: { kind: 'pitchBend', value: bendValue },
                 timeStamp,
             });
-
-            // The wheel is channel state: notes struck on this channel from now
-            // on start under it (`resolveChannelBendAtNoteStart`).
-            channelPitchBendState.set(channel, bendValue);
 
             for (const noteData of activeNotes.values()) {
                 // Outside MPE the bend moves only the notes on its own channel.

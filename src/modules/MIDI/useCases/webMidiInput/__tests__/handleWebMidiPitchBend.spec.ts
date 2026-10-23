@@ -404,10 +404,22 @@ describe('handleWebMidiPitchBend', () => {
             expect(channelPitchBendState.get(2)).toBe(8191);
         });
 
-        it('keeps an MPE member-channel bend per-note and out of the channel wheel state', () => {
+        it('keeps an MPE member-channel bend on its note and as that channel last wheel for a later non-MPE note', () => {
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'source-track',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+
             handleWebMidiPitchBend(2, 0, 96);
 
-            expect(channelPitchBendState.has(2)).toBe(false);
+            expect(activeNotes.get(key)?.pitchBend).toBe(4096);
+            expect(channelPitchBendState.get(2)).toBe(4096);
         });
     });
 

@@ -522,13 +522,19 @@ export const handleWebMidiNoteOn = inject({
                 dispatchTime,
                 HOLD_UNTIL_NOTE_OFF_SECONDS,
                 velocity,
-                // The oscillator is bent through its detune, so a held wheel is
-                // part of the detune it is created with.
-                startBend ? { ...synthParams, detune: synthParams.detune + startBend.detuneCents } : synthParams
+                synthParams
             );
 
             if (oscillator) {
                 noteData.osc = oscillator;
+                // A live bend moves only this returned oscillator's detune, so a
+                // held wheel starts the same oscillator and nothing a later bend
+                // cannot move: scheduling it through `synthParams.detune` would
+                // also bend the second oscillator, which stays bent after the
+                // wheel is centred.
+                if (startBend) {
+                    oscillator.detune.setValueAtTime(synthParams.detune + startBend.detuneCents, dispatchTime);
+                }
             }
         }
 );
