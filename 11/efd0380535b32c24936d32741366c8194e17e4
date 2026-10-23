@@ -1,0 +1,33 @@
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_29d8df116c5b92::t_c4a88dbf2150ab 2277-2335
+src/modules/AudioEngine/useCases/offlineRender/__tests__/buildOfflineWebAudioGraph.spec.ts
+  s_29d8df116c5b92::t_4dda754c7f56e0 1-185
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineAdjustmentLayerParity.spec.ts
+  s_29d8df116c5b92::t_807dbdf37020cd 137-160
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_29d8df116c5b92::t_809d99d34e0896 3-10,111,204-211,2224-2337,2339-2340,2375-2377,2381-2390,2393-2400,2406-2407,2411-2412,2415,2421,2434,2437-2438,2453-2456
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_29d8df116c5b92::t_f02cb0ca75c01d 150-151,158-159,179
+src/modules/AudioEngine/useCases/offlineRender/offlineAdjustmentLayers.ts
+  s_29d8df116c5b92::t_3d678c3516ee15 39-43,149,170
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_29d8df116c5b92::t_a921f75b8c54fb 302,319-320,327-328,333
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_29d8df116c5b92::t_c63be55e7bd790 257,274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11efd0380535b32c24936d32741366c8194e17e4",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
