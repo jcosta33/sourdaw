@@ -16,14 +16,18 @@ type RecordingLifecycle = {
     trackCommit: (commit: Promise<void>) => void;
     /** Resolve once every closing stop has settled, including ones registered while waiting. */
     waitForClosing: () => Promise<void>;
-    /** Resolve once every tracked commit has settled, including ones registered while waiting. */
+    /**
+     * Resolve once every tracked commit has settled, including ones registered while waiting.
+     * Only a stop may call it: it takes the commits it awaits away from every later caller.
+     */
     waitForCommits: () => Promise<void>;
+    /** Resolve once no stop is closing and no commit is in flight, without taking either from a stop. */
+    waitUntilQuiet: () => Promise<void>;
 };
 
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 let nextRecordingStartToken = 0;
 let pendingRecordingStartToken: number | null = null;
-let commitsInFlight = 0;
 let settledCommitCount = 0;
 
 /**
@@ -32,8 +36,12 @@ let settledCommitCount = 0;
  * the next Undo act on the previous history entry while this gesture's commit
  * was still in flight (#4439). The lifecycle owns them so the stop path can wait
  * for the entry — the scheduler never does, because it must not block on it.
+ * `waitForCommits` empties it, so it belongs to the stops alone.
  */
 const pendingCommits = new Set<Promise<void>>();
+
+/** Every tracked commit that has not settled yet; each one removes itself as it settles. */
+const commitsInFlight = new Set<Promise<void>>();
 
 /**
  * Stops that are still closing a recording. A user's Pause or Stop turns the
@@ -42,16 +50,41 @@ const pendingCommits = new Set<Promise<void>>();
  */
 const closingStops = new Set<Promise<void>>();
 
-function onCommitSettled(): void {
-    commitsInFlight--;
-    settledCommitCount++;
+/** Callers of `waitUntilQuiet`, woken by the settlement that leaves nothing closing. */
+const quietWaiters: (() => void)[] = [];
+
+function isQuiet(): boolean {
+    return closingStops.size === 0 && commitsInFlight.size === 0;
+}
+
+function wakeQuietWaiters(): void {
+    if (!isQuiet()) {
+        return;
+    }
+    for (const wake of quietWaiters.splice(0)) {
+        wake();
+    }
+}
+
+function waitUntilQuiet(): Promise<void> {
+    if (isQuiet()) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        quietWaiters.push(resolve);
+    });
 }
 
 function trackCommit(commit: Promise<void>): void {
-    commitsInFlight++;
+    const onSettled = (): void => {
+        commitsInFlight.delete(settled);
+        settledCommitCount++;
+        wakeQuietWaiters();
+    };
     // Registered before any waiter can be, and reactions run in registration
     // order, so a waiter resumes only once the commit counts as settled.
-    void commit.then(onCommitSettled, onCommitSettled);
+    const settled = commit.then(onSettled, onSettled);
+    commitsInFlight.add(settled);
     pendingCommits.add(commit);
 }
 
@@ -67,14 +100,11 @@ async function waitForCommits(): Promise<void> {
 }
 
 function trackClosing(closing: Promise<void>): void {
-    const settled = closing.then(
-        () => {
-            closingStops.delete(settled);
-        },
-        () => {
-            closingStops.delete(settled);
-        }
-    );
+    const onSettled = (): void => {
+        closingStops.delete(settled);
+        wakeQuietWaiters();
+    };
+    const settled = closing.then(onSettled, onSettled);
     closingStops.add(settled);
 }
 
@@ -113,7 +143,7 @@ export const recordingLifecycle: RecordingLifecycle = {
         return true;
     },
     hasPendingRecordingStart: () => pendingRecordingStartToken !== null || countInTimerId !== null,
-    isClosingRecording: () => closingStops.size > 0 || commitsInFlight > 0,
+    isClosingRecording: () => !isQuiet(),
     ownsPendingRecordingStart: (token) => pendingRecordingStartToken === token,
     setCountInTimerId: (id) => {
         countInTimerId = id;
@@ -122,4 +152,5 @@ export const recordingLifecycle: RecordingLifecycle = {
     trackCommit,
     waitForClosing,
     waitForCommits,
+    waitUntilQuiet,
 };

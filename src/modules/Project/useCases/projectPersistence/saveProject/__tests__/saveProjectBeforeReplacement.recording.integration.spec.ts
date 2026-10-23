@@ -30,8 +30,63 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getAudioContext: () => mocks.audioClock,
     getCompensationDelay: () => 0,
+    // A rolling transport schedules the armed track; the clock above is no
+    // AudioContext, so the strip it schedules into holds no device.
+    ensureTrackStrip: () => ({ deviceNodes: [] }),
+    nativeLiveGraphSessionOffered: () => false,
+    resumeEngine: () => Promise.resolve(),
     stopAudioRecording: () => Promise.resolve(),
 }));
+
+type SchedulerWorkerStub = {
+    onmessage: ((event: { data: unknown }) => void) | null;
+    generation: number;
+};
+
+/** The scheduler's clock worker: the test sends each tick the worker would. */
+const schedulerWorkers = vi.hoisted(() => ({ live: null as SchedulerWorkerStub | null, sequence: 0 }));
+
+class SchedulerWorker implements SchedulerWorkerStub {
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    generation = 0;
+
+    constructor() {
+        schedulerWorkers.live = this;
+    }
+
+    postMessage(message: { type: string; generation?: number }): void {
+        if (message.type === 'start' && message.generation !== undefined) {
+            this.generation = message.generation;
+        }
+    }
+
+    terminate(): void {
+        if (schedulerWorkers.live === this) {
+            schedulerWorkers.live = null;
+        }
+    }
+}
+
+/** Advance the audio clock and let the scheduler run the tick the worker sends then. */
+async function tickSchedulerAt(audioSeconds: number): Promise<void> {
+    mocks.audioClock.currentTime = audioSeconds;
+    const worker = schedulerWorkers.live;
+    if (!worker) {
+        throw new Error('the transport has no scheduler worker to tick');
+    }
+    schedulerWorkers.sequence += 1;
+    const sentAtMs = performance.timeOrigin + performance.now();
+    worker.onmessage?.({
+        data: {
+            type: 'tick',
+            generation: worker.generation,
+            sequence: schedulerWorkers.sequence,
+            scheduledAtMs: sentAtMs - 1,
+            sentAtMs,
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+}
 vi.mock('../saveProject', () => ({ saveProject: mocks.saveProject }));
 
 /** Holds the next `commitRecording` after its transaction has landed. */
@@ -155,6 +210,7 @@ describe('the pre-save of a replacement right after the user stops a recording (
 
     afterEach(async () => {
         await stopPlayback();
+        vi.unstubAllGlobals();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -180,5 +236,51 @@ describe('the pre-save of a replacement right after the user stops a recording (
         await expect(saving).resolves.toBe(true);
 
         expect(takesInEachSave).toEqual([1]);
+    });
+
+    it('saves the project only after the take a punch-out is still committing has landed, while the transport rolls on', async () => {
+        vi.stubGlobal('Worker', SchedulerWorker);
+        trackStore.set({ tracks: [midiRecordingTrack()], selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        transportStore.set({
+            ...transportStore.value!,
+            isPlaying: false,
+            isRecording: false,
+            isLooping: false,
+            countInEnabled: false,
+            preRollEnabled: false,
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 4.5,
+            playheadPosition: 3.9,
+            tempo: 120,
+        });
+        flushAutomergeStorageWrites();
+
+        togglePlayback();
+        // Rolls across the punch-in, then across the punch-out: the scheduler
+        // closes the take on its own, with no Stop closing it.
+        await tickSchedulerAt(0.1);
+        expect(transportStore.value?.isRecording).toBe(true);
+        const release = gateNextCommit();
+        try {
+            for (let tick = 2; tick <= 10 && transportStore.value?.isRecording; tick++) {
+                await tickSchedulerAt(tick / 10);
+            }
+            expect(transportStore.value?.isRecording).toBe(false);
+            expect(transportStore.value?.isPlaying).toBe(true);
+
+            const saving = saveProjectBeforeReplacement();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(mocks.saveProject).not.toHaveBeenCalled();
+
+            release();
+            await expect(saving).resolves.toBe(true);
+        } finally {
+            release();
+        }
+
+        expect(takesInEachSave).toEqual([1]);
+        expect(transportStore.value?.isPlaying).toBe(true);
     });
 });

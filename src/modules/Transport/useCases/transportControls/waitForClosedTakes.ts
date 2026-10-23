@@ -8,10 +8,10 @@ import { recordingLifecycle } from './recordingLifecycle';
  * write into (the save that precedes a project replacement) waits here first.
  * It never stops or starts playback: a transport that is still rolling is left
  * rolling. A stop or commit registered while this waits is waited for too.
+ *
+ * It only observes: the commits a stop is waiting for stay the stop's, so a
+ * Stop that overlaps this wait still resolves only once its take has landed.
  */
-export async function waitForClosedTakes(): Promise<void> {
-    while (recordingLifecycle.isClosingRecording()) {
-        await recordingLifecycle.waitForClosing();
-        await recordingLifecycle.waitForCommits();
-    }
+export function waitForClosedTakes(): Promise<void> {
+    return recordingLifecycle.waitUntilQuiet();
 }
