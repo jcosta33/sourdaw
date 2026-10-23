@@ -235,7 +235,7 @@ function breakpoint(stage: Stage, envelope: Envelope): { x: number; y: number } 
     }
     return { x: 194, y: 74 };
 }
-let drag: { stage: Stage; view: Envelope; canvas: HTMLCanvasElement };
+let drag: { stage: Stage; view: Envelope; startView: Envelope; startClientX: number; canvas: HTMLCanvasElement };
 function begin(
     stage: Stage = 'attack',
     type: SynthType = 'builtin-synth',
@@ -255,22 +255,31 @@ function begin(
         height: 80,
         toJSON: () => ({}),
     });
-    drag = { stage, view, canvas };
+    drag = { stage, view, startView: structuredClone(view), startClientX: point.x, canvas };
     fireEvent.pointerDown(canvas, { button: 0, pointerId: 5, clientX: point.x, clientY: point.y });
     return canvas;
 }
 function move(value: number, canvas = drag.canvas): void {
     const { stage, view } = drag;
     const total = view.attack + view.decay + 0.4 + view.release;
-    let time = value;
-    if (stage === 'decay') {
-        time += view.attack;
+    let clientX: number;
+    if (stage === 'sustain') {
+        clientX = breakpoint(stage, view).x;
     } else if (stage === 'release') {
-        time += view.attack + view.decay + 0.4;
+        clientX =
+            drag.startClientX +
+            ((value - drag.startView.release) * 188) /
+                (drag.startView.attack + drag.startView.decay + 0.4 + drag.startView.release);
+    } else {
+        let time = value;
+        if (stage === 'decay') {
+            time += view.attack;
+        }
+        clientX = 6 + (time / total) * 188;
     }
     fireEvent.pointerMove(canvas, {
         pointerId: 5,
-        clientX: stage === 'sustain' ? breakpoint(stage, view).x : 6 + (time / total) * 188,
+        clientX,
         clientY: stage === 'sustain' ? 8 + (1 - value) * 66 : breakpoint(stage, view).y,
     });
     view[stage] = value;
@@ -511,6 +520,46 @@ describe('actual registered Synth envelope through real project and history', ()
             expect(rawValues()[stage]).toBeCloseTo(finalValue, 12);
             expectStageValue(type, stage, finalValue);
             expect(writes().at(-1)?.value).toBeCloseTo(finalValue, 12);
+        }
+    );
+
+    it.each(deviceTypes)(
+        'previews increasing release samples for %s without truth writes, then commits one undoable edit',
+        async (type) => {
+            seed(type);
+            render(<Layout />);
+            begin('release', type);
+            const before = structuredClone(rawValues());
+            const revision = settlePendingProjectWritesAndCaptureRevision();
+            const samples = [0.65, 0.85, 0.75];
+
+            for (const [index, sample] of samples.entries()) {
+                move(sample);
+                expect(writes()).toHaveLength(index + 1);
+                expect(writes()[index]).toMatchObject({ paramId: 'release', value: expect.closeTo(sample, 12) });
+                expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+                expect(rawValues()).toEqual(before);
+                expect(values()).toEqual(before);
+                expect(depth()).toBe(0);
+                expectStageValue(type, 'release', sample);
+            }
+
+            end();
+            await committed(type, 'release', 0.75);
+            expect(writes()).toHaveLength(4);
+            expect(rawValues()).toEqual({ ...before, release: expect.closeTo(0.75, 12) });
+
+            await act(() => undo());
+            expect(rawValues()).toEqual(before);
+            expect(values()).toEqual(before);
+            expectStageValue(type, 'release', 0.5);
+            expect(writes().at(-1)).toMatchObject({ paramId: 'release', value: 0.5 });
+
+            await act(() => redo());
+            expect(rawValues().release).toBeCloseTo(0.75, 12);
+            expect(values().release).toBeCloseTo(0.75, 12);
+            expectStageValue(type, 'release', 0.75);
+            expect(writes().at(-1)).toMatchObject({ paramId: 'release', value: expect.closeTo(0.75, 12) });
         }
     );
 
