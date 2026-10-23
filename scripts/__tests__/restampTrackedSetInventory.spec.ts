@@ -153,18 +153,28 @@ function trackedSetLabel(entry: string): string {
     return entry.slice(entry.lastIndexOf(':') + 1);
 }
 
+function writeInventory(root: string, digestsOf: (contractDigests: string[]) => string[]): void {
+    const contract = grandBouleReleaseInventoryContract(root);
+    const surface = { id: 'grand-boule', ...contract, digests: digestsOf(contract.digests) };
+    mkdirSync(dirname(join(root, RELEASE_INVENTORY_PATH)), { recursive: true });
+    writeFileSync(join(root, RELEASE_INVENTORY_PATH), `${JSON.stringify({ surfaces: [surface] }, null, 4)}\n`, 'utf8');
+}
+
 /**
  * An inventory whose grand-boule surface carries the checker's own contract with one boundary's
  * digest staled, so a test can drive the real drift path against a fixture.
  */
 function writeDriftedInventory(root: string, staleLabel: string): void {
-    const contract = grandBouleReleaseInventoryContract(root);
-    const digests = contract.digests.map((entry) =>
-        trackedSetLabel(entry) === staleLabel ? `tracked-set-sha256:${STALE_SHA256}:${staleLabel}` : entry
+    writeInventory(root, (digests) =>
+        digests.map((entry) =>
+            trackedSetLabel(entry) === staleLabel ? `tracked-set-sha256:${STALE_SHA256}:${staleLabel}` : entry
+        )
     );
-    const surface = { id: 'grand-boule', ...contract, digests };
-    mkdirSync(dirname(join(root, RELEASE_INVENTORY_PATH)), { recursive: true });
-    writeFileSync(join(root, RELEASE_INVENTORY_PATH), `${JSON.stringify({ surfaces: [surface] }, null, 4)}\n`, 'utf8');
+}
+
+/** An inventory that already records exactly the checker's own digests for the fixture. */
+function writeCurrentInventory(root: string): void {
+    writeInventory(root, (digests) => digests);
 }
 
 function readInventory(root: string): RecordedInventory {
@@ -385,12 +395,15 @@ describe('tracked-set restamp write and refusals', () => {
         expect(filesUnder(root)).toEqual(before);
     });
 
-    it('the command reports a current inventory on a fresh committed tree', () => {
-        const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], {
-            cwd: process.cwd(),
-            encoding: 'utf8',
-        });
+    it('the command reports a current inventory on a committed fixture tree and writes nothing', () => {
+        const root = createFixture();
+        writeCurrentInventory(root);
+        const before = filesUnder(root);
+
+        const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
+
         expect(output).toContain('already current');
+        expect(filesUnder(root)).toEqual(before);
     });
 });
 

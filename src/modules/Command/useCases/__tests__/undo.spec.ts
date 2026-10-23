@@ -291,4 +291,106 @@ describe('undo', () => {
         expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [entry] });
     });
+
+    it('replays a keyless legacy trim inverse as the explicit anchorless restoration (#5198)', async () => {
+        // New trim entries always carry `loopOriginBeat` at capture time, so a
+        // payload without the field is a legacy entry whose pre-action clip
+        // was anchorless by construction. Dispatching it as-is would run the
+        // fresh-action mint law and mint an anchor the pre-action state never
+        // carried; the seam normalizes it to the explicit `null` form.
+        const entry = actionEntry({
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2 } },
+        });
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('replays a keyless legacy loop inverse with an anchorless replacement (#5198)', async () => {
+        const entry = actionEntry({
+            action: { type: 'setClipLoop', payload: { clipId: 'c1', enabled: false } },
+            inverseAction: {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: 'c1',
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true },
+                },
+            },
+        });
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+
+        await undo();
+
+        // The replacement — the state put back — normalizes to the explicit
+        // anchorless form; the expected snapshot is untouched, because the
+        // compare-and-swap guard reads only presence and enabled.
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: 'c1',
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true, loopOriginBeat: null },
+                },
+            },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('dispatches inverses that already carry the anchor field untouched (#5198)', async () => {
+        // Entries recorded after the field existed always carry it — a value
+        // or `null` — and both replay exactly what was captured. (The `null`
+        // pass-through is also asserted by the grouped batch pin above.)
+        const valued = actionEntry({
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: {
+                type: 'trimClipStart',
+                payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: 0 },
+            },
+        });
+        mocks.undoStoreValue.value = { past: [valued], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: 0 } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('normalizes grouped legacy inverses in the atomic batch too (#5198)', async () => {
+        const first = actionEntry({
+            id: 'group-1',
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2 } },
+            groupId: 'group',
+        });
+        const second = actionEntry({
+            id: 'group-2',
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 6 } },
+            inverseAction: {
+                type: 'trimClipStart',
+                payload: { clipId: 'c1', newStartBeat: 4, loopOriginBeat: null },
+            },
+            groupId: 'group',
+        });
+        mocks.undoStoreValue.value = { past: [first, second], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
+            [
+                { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4, loopOriginBeat: null } },
+                { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
+            ],
+            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
+        );
+    });
 });

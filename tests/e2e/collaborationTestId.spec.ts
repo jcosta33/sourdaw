@@ -29,9 +29,7 @@ test.describe('Collaboration panel — test-id targeted', () => {
         const panel = page.getByRole('dialog', { name: 'Collaborate' });
         await expect(panel).toBeVisible();
 
-        // The panel should show some status text (e.g. "Not connected").
-        const text = (await panel.innerText()).trim();
-        expect(text.length).toBeGreaterThan(0);
+        await expect(panel.getByRole('status')).toHaveText('Not connected');
     });
 
     test('collaboration panel can be closed by toggling again', async ({ page }) => {

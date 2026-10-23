@@ -3,16 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
-import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
 
 /**
  * A tool description that names a ceiling is a contract with the model: it
  * will not ask for a value it has been told is out of range, so a stale
  * literal makes the acceptor's real range unreachable from the tool path
- * however wide that range is. Both LLM-facing surfaces are checked — the
- * system-prompt schemas in `DAW_TOOL_SCHEMAS` and the provider schemas the
- * executable registry emits — because either one alone can drift.
+ * however wide that range is. The executable registry owns the schemas the
+ * provider and command catalog publish.
  *
  * The acceptor's ceiling is *measured* by bisection, not restated: this file
  * names no ceiling constant of its own, so it cannot agree with a wrong schema
@@ -134,14 +132,6 @@ function expectLinearGainFieldHonoured(toolFunction: ToolFunction, label: string
     expectLinearRangeHonoured(gainDescription, `${label} gain`, accepts);
 }
 
-function systemPromptSchema(actionType: string): ToolFunction {
-    const schema = DAW_TOOL_SCHEMAS.find((candidate) => candidate.function.name === actionType);
-    if (!schema) {
-        throw new Error(`no system-prompt tool schema for ${actionType}`);
-    }
-    return schema.function;
-}
-
 function registrySchema(actionType: string): ToolFunction {
     const schema = getExecutableAppActionToolSchemas().find((candidate) => candidate.function.name === actionType);
     if (!schema) {
@@ -151,23 +141,18 @@ function registrySchema(actionType: string): ToolFunction {
 }
 
 describe('advertised gain ceilings match the acceptor that honours them', () => {
-    it.each(gainSchemaCases)('$actionType system-prompt schema states the honoured range', (schemaCase) => {
-        const toolFunction = systemPromptSchema(schemaCase.actionType);
-        const accepts = acceptorFor(schemaCase);
+    it.each(gainSchemaCases)(
+        '$actionType executable registry schema states the honoured decibel range',
+        (schemaCase) => {
+            const toolFunction = registrySchema(schemaCase.actionType);
+            const gainDbDescription = descriptionOf(toolFunction, 'gainDb');
+            if (gainDbDescription === null) {
+                throw new Error(`${schemaCase.actionType} states no range for its decibel gain field`);
+            }
 
-        expectToolDescriptionHonoured(toolFunction, schemaCase.actionType, accepts);
-        expectLinearGainFieldHonoured(toolFunction, schemaCase.actionType, accepts);
-    });
-
-    it.each(gainSchemaCases)('$actionType system-prompt schema states the honoured decibel range', (schemaCase) => {
-        const toolFunction = systemPromptSchema(schemaCase.actionType);
-        const gainDbDescription = descriptionOf(toolFunction, 'gainDb');
-        if (gainDbDescription === null) {
-            throw new Error(`${schemaCase.actionType} states no range for its decibel gain field`);
+            expectDecibelRangeHonoured(gainDbDescription, `${schemaCase.actionType} gainDb`, acceptorFor(schemaCase));
         }
-
-        expectDecibelRangeHonoured(gainDbDescription, `${schemaCase.actionType} gainDb`, acceptorFor(schemaCase));
-    });
+    );
 
     it.each(gainSchemaCases)('$actionType executable registry schema states the honoured range', (schemaCase) => {
         const toolFunction = registrySchema(schemaCase.actionType);

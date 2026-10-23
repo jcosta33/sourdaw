@@ -14,6 +14,7 @@ import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
+    configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
@@ -100,6 +101,7 @@ type TunerReadingUnderTest = {
 
 const {
     noop,
+    configureOfflineMidiProjectionMock,
     configureOfflinePpqProjectionMock,
     beatAtSecondsFromAnchorMock,
     sentinelHandlers,
@@ -138,6 +140,8 @@ const {
     nativeBankKeyForLevainDeviceStateMock,
     acquireLevainNativeBankMock,
     getLevainEngineParameterNameMock,
+    buildLevainZoneTablesMock,
+    configureLevainZoneTableBuilderMock,
     initBranchStateMock,
     initGrandBouleDocumentReconciliationMock,
     recoverInterruptedAgentRunsMock,
@@ -187,6 +191,7 @@ const {
     const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
+        configureOfflineMidiProjectionMock: vi.fn<typeof configureOfflineMidiEventProjection>(),
         configureOfflinePpqProjectionMock: vi.fn<typeof configureOfflinePpqEndpointProjection>(),
         beatAtSecondsFromAnchorMock: vi.fn(() => -1),
         sentinelHandlers,
@@ -235,6 +240,10 @@ const {
         getLevainEngineParameterNameMock: vi.fn<(input: { paramId: string }) => string | null>(({ paramId }) =>
             paramId === 'masterGain' ? 'master_gain' : null
         ),
+        // Distinguishable from the shared noop: the Levain builder wiring
+        // assertion pins this exact reference.
+        buildLevainZoneTablesMock: vi.fn(),
+        configureLevainZoneTableBuilderMock: vi.fn(),
         initBranchStateMock: vi.fn(),
         initGrandBouleDocumentReconciliationMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
@@ -382,6 +391,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    buildLevainZoneTables: buildLevainZoneTablesMock,
     updateDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
@@ -396,7 +406,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     commitPitchEdit: noop,
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineDeviceParameterLaw: noop,
-    configureOfflineMidiEventProjection: noop,
+    configureOfflineMidiEventProjection: configureOfflineMidiProjectionMock,
     configureOfflinePpqEndpointProjection: configureOfflinePpqProjectionMock,
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
@@ -561,6 +571,7 @@ vi.mock('#/modules/Knead/useCases', () => ({
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
+    configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
     initLevainDeviceStatePersistence: () => noop,
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
@@ -586,6 +597,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     projectClipControllerEvents: noop,
+    projectChannelBend: noop,
     resolveMidiNoteArticulationId: () => null,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
@@ -840,6 +852,12 @@ describe('bootstrap', () => {
         });
     });
 
+    it('hands the offline render the MIDI module’s own stored-controller and channel-bend projections', () => {
+        expect(configureOfflineMidiProjectionMock).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ projectClipControllers: noop, projectChannelBend: noop })
+        );
+    });
+
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
         const registeredModuleIds = registerProductionCommandHandlersMock.mock.calls[0]?.[0].map(
             (handlerMap) => handlerMap.moduleId
@@ -1068,6 +1086,17 @@ describe('bootstrap', () => {
         expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
             collectDurableOwnedAudioBufferIdsMock
         );
+    });
+
+    /**
+     * Levain loads every bank's zone tables through a builder it is handed, not
+     * one it imports, and the composition root is the only place that can hand
+     * it AudioEngine's Worker-backed `buildLevainZoneTables`. Pinned by
+     * reference: dropping the registration leaves every bank load rejecting
+     * with "builder is not configured".
+     */
+    it("wires the Levain zone table builder to AudioEngine's off-render-thread build", () => {
+        expect(configureLevainZoneTableBuilderMock).toHaveBeenCalledExactlyOnceWith(buildLevainZoneTablesMock);
     });
 
     /**

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+
 import { type AdjustmentLayerState, type AdjustmentLayer } from '../../../stores/adjustmentLayer';
 import { type TrackStoreState, type Track, type Clip } from '../../../stores/trackStore';
 import { restoreAdjustmentLayerMutation } from '../restoreAdjustmentLayerMutation';
@@ -277,6 +279,14 @@ function createTrackFreezeSourceSignatureFor(source: {
         .sort((a, b) => a.startBeat - b.startBeat || a.id.localeCompare(b.id))
         .map((clip) => {
             const duration = clip.endBeat - clip.startBeat;
+            // The anchor slot folds through the same util the production
+            // signature folds: an absent anchor — or one the loop is off and
+            // cannot read — signs as the clip's own start.
+            const loopAnchoredStartBeat = resolveLoopAnchoredStartBeat({
+                startBeat: clip.startBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
             return [
                 clip.id,
                 clip.startBeat,
@@ -294,6 +304,7 @@ function createTrackFreezeSourceSignatureFor(source: {
                 clip.stretchRatio ?? '',
                 clip.loopEnabled ?? false,
                 clip.loopLength ?? 0,
+                loopAnchoredStartBeat,
             ].join(':');
         });
     const deviceSignatures = source.devices.map((device) => {

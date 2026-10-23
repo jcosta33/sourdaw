@@ -52,7 +52,7 @@ function cc(beat: number, id = 'cc-1'): MidiCC {
 function pitchBend(beat: number, id = 'pitch-bend-1'): MidiPitchBend {
     return {
         id,
-        value: 0.5,
+        value: 4096,
         beat,
         channel: 3,
     };
@@ -141,7 +141,7 @@ describe('prepareMidiTimeShiftTransaction', () => {
             channel: 7,
         };
         const shiftedCc = { ...cc(6), controller: 11, value: 96, channel: 4 };
-        const shiftedPitchBend = { ...pitchBend(7), value: -0.75, channel: 5 };
+        const shiftedPitchBend = { ...pitchBend(7), value: -6144, channel: 5 };
         const dormantNotes = [note(6, 'dormant-note')];
         const movedNotes = [note(20, 'moved-note')];
         const endedCcs = [cc(20, 'ended-cc')];
