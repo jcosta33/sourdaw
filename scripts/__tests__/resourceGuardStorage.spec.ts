@@ -150,17 +150,48 @@ function childReport(result: Awaited<ReturnType<typeof runGuardedCommand>>): str
     return result.output.split('\n')[0] ?? '';
 }
 
+type RunStorageDisposition = {
+    tempDirectory: string;
+    storageRoot: string;
+    tempExists: boolean;
+    retainedPath: string | undefined;
+    retainedTempExists: boolean;
+};
+
+// Release can move the payload into a claim before its proof is lost, so retained storage is the
+// run directory itself or this run's claimed payload.
+function isRunStoragePath(path: string, tempDirectory: string, storageRoot: string): boolean {
+    const runDirectory = dirname(tempDirectory);
+    const claimed =
+        dirname(dirname(path)) === join(storageRoot, '.claims') && basename(path) === basename(runDirectory);
+    return path === runDirectory || claimed;
+}
+
 // A busy host can leave the release proof transiently unproved. The guard then keeps and reports
-// the storage; only that report lets the temp directory survive the run.
+// the storage; only that report lets the run's temp outlive the run, and it must name where it is.
+function expectRunStorageDisposition(run: RunStorageDisposition): void {
+    if (run.retainedPath === undefined) {
+        expect(run.tempExists).toBe(false);
+        return;
+    }
+    expect(run.retainedTempExists).toBe(true);
+    expect(isRunStoragePath(run.retainedPath, run.tempDirectory, run.storageRoot)).toBe(true);
+}
+
 function expectReleasedUnlessTransientlyRetained(
     result: Awaited<ReturnType<typeof runGuardedCommand>>,
-    tempDirectory: string
+    tempDirectory: string,
+    storageRoot: string
 ): void {
     expect(result.reason, proofDiagnostic(result)).toBeUndefined();
-    expect(existsSync(tempDirectory)).toBe(result.retainedStorage !== undefined);
-    if (result.retainedStorage !== undefined) {
-        expect(result.retainedStorage.path).toBe(dirname(tempDirectory));
-    }
+    const retainedPath = result.retainedStorage?.path;
+    expectRunStorageDisposition({
+        tempDirectory,
+        storageRoot,
+        tempExists: existsSync(tempDirectory),
+        retainedPath,
+        retainedTempExists: retainedPath !== undefined && existsSync(join(retainedPath, 'tmp')),
+    });
 }
 
 function guarded(root: string, input: Partial<Parameters<typeof runGuardedCommand>[0]> = {}) {
@@ -422,7 +453,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             expect(paths.TMPDIR).toBe(paths.tmp);
             expect(paths.TMP).toBe(paths.tmp);
             expect(paths.TEMP).toBe(paths.tmp);
-            expectReleasedUnlessTransientlyRetained(result, paths.tmp);
+            expectReleasedUnlessTransientlyRetained(result, paths.tmp, storageRoot);
             expect(existsSync(root)).toBe(true);
         } finally {
             rmSync(root, { recursive: true, force: true });
@@ -1294,7 +1325,7 @@ ready();
             args: [
                 '--input-type=module',
                 '-e',
-                `import { tmpdir } from 'node:os'; import { existsSync } from 'node:fs'; const parent = tmpdir(); const { runGuardedCommand } = await import(${JSON.stringify(guardPath)}); const result = await runGuardedCommand(${JSON.stringify(nestedOptions)}); const nested = result.output.split('\\n')[0]; console.log(JSON.stringify({ parent, nested, nestedCode: result.code, nestedReason: result.reason ?? null, nestedRetained: result.retainedStorage?.path ?? null, parentExists: existsSync(parent), nestedExists: existsSync(nested), reserve: process.env.${DISK_RESERVE_ENV} }));`,
+                `import { tmpdir } from 'node:os'; import { existsSync } from 'node:fs'; import { join } from 'node:path'; const parent = tmpdir(); const { runGuardedCommand } = await import(${JSON.stringify(guardPath)}); const result = await runGuardedCommand(${JSON.stringify(nestedOptions)}); const nested = result.output.split('\\n')[0]; const retained = result.retainedStorage?.path; console.log(JSON.stringify({ parent, nested, nestedCode: result.code, nestedReason: result.reason ?? null, nestedRetained: retained ?? null, nestedRetainedTempExists: retained !== undefined && existsSync(join(retained, 'tmp')), parentExists: existsSync(parent), nestedExists: existsSync(nested), reserve: process.env.${DISK_RESERVE_ENV} }));`,
             ],
         });
         expect(result.code).toBe(0);
@@ -1304,6 +1335,7 @@ ready();
             nestedCode: number;
             nestedReason: string | null;
             nestedRetained: string | null;
+            nestedRetainedTempExists: boolean;
             parentExists: boolean;
             nestedExists: boolean;
             reserve: string;
@@ -1313,12 +1345,15 @@ ready();
         expect(observed.nested.startsWith(`${join(root, 'storage')}/`)).toBe(true);
         expect(observed.nested).not.toBe(observed.parent);
         expect(observed.parentExists).toBe(true);
-        expect(observed.nestedExists).toBe(observed.nestedRetained !== null);
-        if (observed.nestedRetained !== null) {
-            expect(observed.nestedRetained).toBe(dirname(observed.nested));
-        }
+        expectRunStorageDisposition({
+            tempDirectory: observed.nested,
+            storageRoot: join(root, 'storage'),
+            tempExists: observed.nestedExists,
+            retainedPath: observed.nestedRetained ?? undefined,
+            retainedTempExists: observed.nestedRetainedTempExists,
+        });
         expect(observed.reserve).toBe('123');
-        expectReleasedUnlessTransientlyRetained(result, observed.parent);
+        expectReleasedUnlessTransientlyRetained(result, observed.parent, join(root, 'storage'));
     }, 15_000);
 });
 
@@ -4383,6 +4418,21 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         recoverGuardStorage(storageRoot, deadPorts, fakeReclaimer);
         expect(claimPayloads(storageRoot)).toEqual([]);
         expect(existsSync(retained?.path ?? '')).toBe(false);
+    });
+
+    it('accepts a run whose storage is retained in its claim after the payload moved', async () => {
+        const root = fixture();
+        const { result } = await runCli(root, {
+            args: ['-e', "console.log(require('node:os').tmpdir())"],
+            storageHost: censusSequence(['dead'], ['unknown', 'lsof-missed-pid-exited:count=1:pid=11']),
+        });
+        if (result === undefined) {
+            throw new Error('the guarded run returned no result');
+        }
+        const tempDirectory = childReport(result);
+        expect(result.retainedStorage?.path).toContain('/.claims/');
+        expect(existsSync(tempDirectory)).toBe(false);
+        expectReleasedUnlessTransientlyRetained(result, tempDirectory, join(root, 'storage'));
     });
 
     it('finishes the removal on the retry when the census recovers after the payload moved', async () => {
