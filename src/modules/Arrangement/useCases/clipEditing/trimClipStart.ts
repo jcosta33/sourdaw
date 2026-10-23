@@ -76,6 +76,15 @@ export function trimClipStart(
     // derives a NaN loop window in every reader. Drop it to the absent form —
     // exactly the behavior a payload without the field gets.
     const restoreAnchorBeat = anchorBeat !== null && !Number.isFinite(anchorBeat) ? undefined : anchorBeat;
+    // A non-finite offset capture is corrupted data on the same channel as the
+    // anchor above (#5512): a persisted `1e999` decodes as Infinity, and
+    // restoring it verbatim writes Infinity into clip state and shifts every
+    // stored row by it. Drop it to the absent form — exactly the behavior a
+    // payload without the field gets.
+    const restoreMidiOffsetBeats =
+        restoredMidiOffsetBeats !== undefined && !Number.isFinite(restoredMidiOffsetBeats)
+            ? undefined
+            : restoredMidiOffsetBeats;
 
     try {
         const state = getTrackState();
@@ -126,7 +135,7 @@ export function trimClipStart(
                 delete updated.loopOriginBeat;
             }
             if (context.type === 'midi') {
-                if (restoredMidiOffsetBeats !== undefined) {
+                if (restoreMidiOffsetBeats !== undefined) {
                     // The recorded-inverse offset restore (#5512). The forward
                     // trim wrapped its raw advance against the loop length the
                     // clip plays AFTER the trim — the duration itself when
@@ -157,11 +166,11 @@ export function trimClipStart(
                     // recorded before the field existed take the re-wrapping
                     // leg below exactly as they always did.
                     const currentOffsetBeats = context.midiOffsetBeats ?? 0;
-                    const rowShiftBeats = restoredMidiOffsetBeats - delta - currentOffsetBeats;
+                    const rowShiftBeats = restoreMidiOffsetBeats - delta - currentOffsetBeats;
                     if (rowShiftBeats !== 0) {
                         shiftClipMidiNotes(clipId, rowShiftBeats);
                     }
-                    return { ...updated, midiOffsetBeats: restoredMidiOffsetBeats };
+                    return { ...updated, midiOffsetBeats: restoreMidiOffsetBeats };
                 }
                 const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
                 const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);

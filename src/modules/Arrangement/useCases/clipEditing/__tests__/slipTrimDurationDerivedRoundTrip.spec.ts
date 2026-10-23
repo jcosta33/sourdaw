@@ -9,6 +9,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { handleSlipClipContent } from '../../../handlers/clip/handleSlipClipContent';
 import { handleTrimClipStart } from '../../../handlers/clip/handleTrimClipStart';
 import { createTrack } from '../../../models/Track';
+import { trimClipStart } from '../trimClipStart';
 
 /**
  * #5512 — a slip whose undo rides the trim undo on a duration-derived loop.
@@ -202,5 +203,31 @@ describe('a slip-then-trim undo chain round-trips the stored figures (#5512)', (
         expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
         expect(storedPressBeats('c-loop')).toEqual([0]);
         expect(audibleStoredNotes(restored)).toBe(4);
+    });
+});
+
+describe('a non-finite restored offset capture drops to the absent behavior (#5512)', () => {
+    afterEach(() => {
+        trackStore.set(structuredClone(defaultTrackState));
+        midiStore.set(structuredClone(defaultMidiStoreState));
+    });
+
+    it('replays the re-wrapping leg so the stored offset and every row stay finite', () => {
+        // A persisted `1e999` decodes as Infinity; restored verbatim it stores
+        // `midiOffsetBeats: Infinity` and shifts every stored row to Infinity,
+        // and every reader then derives NaN relatives. The capture degrades to
+        // the absent form (the anchor's non-finite law above), so the replay
+        // takes the re-wrapping leg exactly as a payload without the field
+        // does: the phase of the raw advance 2 against the post-trim
+        // duration-derived length 6, and a zero row shift.
+        seed([durationDerivedLoopedClip('c-loop')]);
+
+        expect(trimClipStart('c-loop', 2, undefined, Number.POSITIVE_INFINITY)).toBe(true);
+
+        const restored = readClip('c-loop');
+        expect(Number.isFinite(restored.midiOffsetBeats)).toBe(true);
+        expect(restored.midiOffsetBeats).toBe(2);
+        expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
+        expect(storedPressBeats('c-loop')).toEqual([0]);
     });
 });
