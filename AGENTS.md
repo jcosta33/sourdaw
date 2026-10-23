@@ -590,7 +590,7 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small and merges prompt. Hold at most four live lanes at once. Lanes that do not
+Keep batches small and merges prompt. Hold at most five live lanes at once. Lanes that do not
 stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
 file or pinned digest when it feeds that file's generator or digest: an app action feeds the
 command schema and the agent evidence manifest, device guidance feeds the evidence manifest, a
