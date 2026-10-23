@@ -1,0 +1,151 @@
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_455eb091c7a687 50,388-394
+src/modules/AiRuntime/transformers/diffProposalCommands.ts
+  s_1c08b47ac3792f::t_36ec1d664da7a4 1-3,6-60,62-66,68-193
+src/modules/AiRuntime/useCases/__tests__/threadContextFixture.ts
+  s_1c08b47ac3792f::t_de20506273a74d 34-35
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_2856211da2fcb5 586-655
+  s_1c08b47ac3792f::t_d483aca394b244 281
+  s_1c08b47ac3792f::t_5d29da5caf7f9d 1-2,4-29,31-39,41-280,282-431,515-585,689-1047,1122-1162
+  s_1c08b47ac3792f::t_41d1edfb9a977b 656-688
+  s_1c08b47ac3792f::t_0e76c44ff55bd8 1048-1121
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_6aecbba70c8e9d 1-25,29-200
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_7e51a71b647888 14,276-378
+src/modules/AiRuntime/useCases/agentReference/refinementProtectionForms.ts
+  s_1c08b47ac3792f::t_d91a5f4374264d 1-200,209-218,220
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_e4a5708fc8b101 2497-2554
+  s_1c08b47ac3792f::t_d79868ff5a1c67 2605-2619
+  s_1c08b47ac3792f::t_39675f7e9b526a 1-669,688-796,834-861,867-872,875-2144,2223-2496,2558-2604,2621-2738,2797-4230,4248-4399,5109-5639
+  s_1c08b47ac3792f::t_beb2236bdb3af5 2555-2557,2620
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_1c08b47ac3792f::t_f338ddd08a46e6 225-226,239-240,595-780
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_cdca00d81d5234 9,63-74
+src/modules/AiRuntime/transformers/buildThreadContext.ts
+  s_1c08b47ac3792f::t_4eb654bac42fe6 13,31,222-227
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_1c08b47ac3792f::t_3b591bc93cb626 56,67
+src/modules/AiRuntime/useCases/agentRequestOrchestration/supersedeRefinedProposal.ts
+  s_1c08b47ac3792f::t_7836d077d5009c 1-80
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/maskProjectReferences.ts
+  s_1c08b47ac3792f::t_52c289ca54858c 6
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_8909831e73ddf0 33,44,59-60,844-872,883-884,886,890,1060-1079,1084,1104,1130-1151,1159,1174-1182
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_1c08b47ac3792f::t_ab2407c529eb3c 37-44,53-54,205-237,397
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_1c08b47ac3792f::t_97f2caded647c8 16,28-31,34-35,311-312,314-317,338-347
+src/modules/AiRuntime/useCases/agentReference/refinementActionWords.ts
+  s_1c08b47ac3792f::t_69b852c84eaf71 1-174
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_2052cb3ab8c80f 1-11,13-52,54-81,82-226,228-246,248-251,255,266-373,375-726,727-764
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_1c08b47ac3792f::t_881b2e5c268bbc 10,15,19,21-22,42-52,62-64,103-116,119,133,135-144,256-268,281-282,286-343
+src/modules/AiRuntime/transformers/fitThreadContext.ts
+  s_1c08b47ac3792f::t_2d30e953780129 42-43
+src/modules/AiRuntime/useCases/agentReference/refinementCourtesy.ts
+  s_1c08b47ac3792f::t_f3760cda6a11d9 1-76
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_1c08b47ac3792f::t_36cb19c415ff40 40-41,130
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_1c08b47ac3792f::t_92c758f4b60750 204-205
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1c08b47ac3792f::t_6fa2817bd481e7 10,128-132,335,381
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_d9d05a0c9aab76 1-11,12,13-17,20-58,59,60-61,63,66,69,71-211,216-219,273-315,333-424,426-471,475-494,497-500,503-509
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_aa208512c6d1b1 480-523
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_1c08b47ac3792f::t_b073f6bc314677 39,45,47-48,71,358-359,980-1071
+  s_1c08b47ac3792f::t_519314dba2bc97 1072-1110
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_c1207025140764 374,748
+src/modules/AiRuntime/transformers/__tests__/diffProposalCommands.spec.ts
+  s_1c08b47ac3792f::t_a45c8440b7cddc 638
+  s_1c08b47ac3792f::t_33b0c5592b95a6 650-674
+  s_1c08b47ac3792f::t_91766f02f6c844 693-710
+  s_1c08b47ac3792f::t_fad808086145fb 1-218,243-399,462-616,711
+  s_1c08b47ac3792f::t_e687d4932a612a 617-637,639-649,675-692
+src/modules/AiRuntime/useCases/agentReference/findTargetOwnerTrackIds.ts
+  s_1c08b47ac3792f::t_283df8ba3bf041 1-74
+src/modules/AiRuntime/useCases/agentReference/refinementValueUnits.ts
+  s_1c08b47ac3792f::t_9ae5a5a1151d8f 1-92
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1c08b47ac3792f::t_acf7cee86b1e55 234,774-834
+src/modules/AiRuntime/useCases/agentReference/readStoredCardRemoval.ts
+  s_1c08b47ac3792f::t_4e0d986fe39102 58-68,78-79
+  s_1c08b47ac3792f::t_cae40b69cfa7c3 1-57,69-77,80-498
+src/modules/AiRuntime/useCases/agentRequestOrchestration/retireSupersededConfirmation.ts
+  s_1c08b47ac3792f::t_df078fcda761db 1-40
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_0c17528024e06d 15,38,71,81,152-153,155,175-179,230-242,3314-3315,3324-3329,3701-3702,3720-3721,3844-3845,3868-3869,5945-6077,6105-6217,6224-6226,6228,6235-6236,6239-6409,6412-6426,6435-6505,6507-6543,6545-6573,6579-6591,6593-6597,6686-6688,6690-6735,6737,6739-6758,6759-6761,6763-6791
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_65f1e9f13fa805 22,39,268-275,280-304,307-311,314,332-361,432-437,459-462,469-474,476-479,519,521,536,542,544,548-549
+src/modules/AiRuntime/useCases/agentReference/refinementCardCommands.ts
+  s_1c08b47ac3792f::t_60f324b361aad7 1-63
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_1c08b47ac3792f::t_f31b013cf146af 9,11,75-90,108-109,315-339,377
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_1c08b47ac3792f::t_75392428f250fe 268-273,292,322
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_1c08b47ac3792f::t_9ee47cb874f2fa 32-37,64-74
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_a3a02c591bef61 42,1423-1434,1461,1463-1466,1639-1643,1645,1648,1652
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_1c08b47ac3792f::t_b653249a79f432 40,463-464,466
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_7263b3356ec46d 1-93
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_1c08b47ac3792f::t_f40b4d327e8de0 456-494
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_0232e2f53ba00f 1-53
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_1c08b47ac3792f::t_fbb2a184d2f583 1-83,85,100-137,147-277,290-291,294-295,297-308
+  s_1c08b47ac3792f::t_573f5e8c048ad0 84
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_4024e51b850c30 11,18,45,379-380,395
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_1c08b47ac3792f::t_7066e5b988e728 7
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/retireSupersededConfirmation.spec.ts
+  s_1c08b47ac3792f::t_ccc41e66eb00d9 1-2,4-13,15-45,78
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1c08b47ac3792f::t_c3f0d29604919d 283-291
+src/modules/AiRuntime/transformers/unionProtectedObjects.ts
+  s_1c08b47ac3792f::t_9a7170b3c2c551 1-12
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_1c08b47ac3792f::t_2af700ccb1f8aa 145-148
+  s_1c08b47ac3792f::t_270e6cd78d7230 106,108-137
+  s_1c08b47ac3792f::t_6996fd132833b1 1-16,18-105,138-139,143-144,149-258,261-283
+  s_1c08b47ac3792f::t_984eb0698b2675 140-142
+  s_3e7dea5cde3f9e::t_ce09fd69bfbc6c 17,107,259-260
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_1c08b47ac3792f::t_3ca80f7b9afb57 142,151-153,159,302-303,321,330-371,396-397,1070-1075,1129,1160-1161,1201-1202,1293-1298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8a04f6b4f3b6fb42f14380d6aeacf26cba4da17",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
