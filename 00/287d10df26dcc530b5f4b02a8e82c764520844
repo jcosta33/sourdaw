@@ -1,0 +1,38 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/synthEnvelopeGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_9f5c5c97f79660 240,284,528-564
+  s_59e31a5c6f3e31::t_40921c97e71f36 260,267-269,271-280,565
+  s_29d8df116c5b92::t_1db9cf422be909 566-567
+src/components/daw/visualizers/__tests__/ADSREnvelope.spec.tsx
+  s_59e31a5c6f3e31::t_5f3e9f73dae44b 313-340,342,344
+  s_59e31a5c6f3e31::t_b2706079db22a8 173-174,179-195,311-312
+  s_59e31a5c6f3e31::t_38845b36853de8 175-178,196-310
+  s_59e31a5c6f3e31::t_837ff652e86e77 341,343,345-346
+src/components/daw/visualizers/ADSREnvelope.tsx
+  s_59e31a5c6f3e31::t_40921c97e71f36 296-297,354-355
+  s_59e31a5c6f3e31::t_f4c71b1349f963 29-34,39,46-68,295,307,348-353,356
+  s_29d8df116c5b92::t_795ef49bb5dc5f 298-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00287d10df26dcc530b5f4b02a8e82c764520844",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
