@@ -1,0 +1,41 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_3e7dea5cde3f9e::t_4077affd252a44 113
+  s_3e7dea5cde3f9e::t_56ea49d22c904b 6,105-108,110-112,114-118
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_3e7dea5cde3f9e::t_5f6ea91f54544b 145
+  s_3e7dea5cde3f9e::t_2736d191e79801 3,23,142-144,146-167,396,433,449,525-527
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_3e7dea5cde3f9e::t_3a0609febf9d55 18
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_98e446df3a3fa4 26
+src/modules/MIDI/repositories/webMidi/__tests__/ingestChannelControlChange.spec.ts
+  s_3e7dea5cde3f9e::t_ac99a5fa891101 4,236-255
+src/modules/MIDI/repositories/webMidi/channelPitchBendState.ts
+  s_3e7dea5cde3f9e::t_61848ed298d24c 1-12
+src/modules/MIDI/repositories/webMidi/ingestChannelControlChange.ts
+  s_3e7dea5cde3f9e::t_9317311c9bf68e 17,177-179,181
+src/modules/MIDI/repositories/webMidi/resetInputDeviceControllerState.ts
+  s_3e7dea5cde3f9e::t_bfa66a4b44a69e 1,7,10-12,17
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_3e7dea5cde3f9e::t_d9cba709dd634f 15,39,64,66-67,115-117,756-910
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_3e7dea5cde3f9e::t_959366c34e42b7 48,81,359-413
+src/modules/MIDI/useCases/webMidiInput/resolveChannelBendAtNoteStart.ts
+  s_3e7dea5cde3f9e::t_b07cc02bb07643 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acacda943cb040007f212cc0fd2c60337b6ebbec",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
