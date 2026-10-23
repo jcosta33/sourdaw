@@ -1125,6 +1125,12 @@ const DEVICE_DATA_COUNTS = {
         // `RoleInput.track.devices` are type-only declarations. The classifier
         // reads its supplied capture and reaches no store, Automerge, or action.
         'src/modules/Project/useCases/getCanonicalTrackRole.ts': 2,
+        // Count provenance: measured 2 — the empty Strings bus `devices:` input
+        // and Hall Reverb's built-in device `devices:` input. `createBus` builds
+        // these as local track data; `finalizeTemplate` owns the later track
+        // state commit, so these are static template inputs rather than device
+        // write sinks.
+        'src/modules/Project/useCases/projectTemplates/templateFiles/stringOrchestra.ts': 2,
         'src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts': 3,
         'src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts': 3,
         'src/modules/Project/useCases/projectTemplates/templateFiles/edm.ts': 4,
