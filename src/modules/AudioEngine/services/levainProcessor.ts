@@ -335,21 +335,24 @@ class LevainProcessor extends AudioWorkletProcessor {
                     this._handleMessage(msg);
                 }
             } catch (error) {
-                // Same policy as the process() catch below, deliberately.
-                // A throw here is an OOM, a malformed message, or a wasm trap
-                // left by an earlier panic — and a trap arrives with no message
-                // at all, so the three are not distinguishable from this side.
-                // Sample-bank failures are transactional and reject only that
-                // load. Throws elsewhere mean the instance can no longer be
-                // trusted and fault it permanently.
-                console.error('LevainProcessor error:', error);
-                if (this._bankRole) {
-                    this._rejectBankLoad(error);
-                } else {
-                    this._faultWithError(error);
-                }
+                this._handleMessageError(error);
             }
         };
+    }
+
+    _handleMessageError(error: unknown): void {
+        // A throw here is an OOM, a malformed message, or a wasm trap
+        // left by an earlier panic — and a trap arrives with no message
+        // at all, so the three are not distinguishable from this side.
+        // Sample-bank failures are transactional and reject only that
+        // load. Throws elsewhere mean the instance can no longer be
+        // trusted and fault it permanently.
+        console.error('LevainProcessor error:', error);
+        if (this._bankRole) {
+            this._rejectBankLoad(error);
+        } else {
+            this._faultWithError(error);
+        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
@@ -358,10 +361,18 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._instance = new LevainInstance(sampleRate, 64);
         this._ready = true;
 
-        for (const msg of this._pendingMessages) {
-            this._handleMessage(msg);
-        }
+        const pendingMessages = this._pendingMessages;
         this._pendingMessages = [];
+        for (const msg of pendingMessages) {
+            try {
+                this._handleMessage(msg);
+            } catch (error) {
+                this._handleMessageError(error);
+            }
+            if (this._faulted) {
+                return;
+            }
+        }
 
         this.port.postMessage({ type: 'ready' });
     }

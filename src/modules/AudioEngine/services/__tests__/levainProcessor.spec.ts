@@ -292,6 +292,66 @@ describe('LevainProcessor message handling', () => {
         expect(proc.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
     });
 
+    it('continues buffered replay after a bank-local upload error and remains healthy', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'beginSampleBank', bankKey: 'replay-bank', instrumentId: 'violin', loadToken: 2 });
+        send(proc, {
+            type: 'beginSample',
+            loadToken: 2,
+            sampleId: 0,
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(proc, { type: 'releaseRetiredBank', loadToken: 2 });
+        addSampleShouldThrow = true;
+
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        expect(proc.port.postMessage.mock.calls.map(([message]) => message)).toEqual([
+            { type: 'sampleBankUploadDecision', loadToken: 2, uploadRequired: true },
+            { type: 'sampleBankError', loadToken: 2, message: 'memory allocation failed' },
+            { type: 'retiredBankReleased', loadToken: 2, done: true },
+            { type: 'ready' },
+        ]);
+
+        addSampleShouldThrow = false;
+        send(proc, { type: 'beginSampleBank', bankKey: 'fresh-bank', instrumentId: 'violin', loadToken: 3 });
+        send(proc, { type: 'noteOn', note: 60, velocity: 90 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(proc.port.postMessage).toHaveBeenLastCalledWith({
+            type: 'sampleBankUploadDecision',
+            loadToken: 3,
+            uploadRequired: true,
+        });
+        expect(method('note_on')?.args).toEqual([60, 90]);
+        expect(engineProcessCalls).toBe(1);
+    });
+
+    it('stops buffered replay on a terminal error and answers later loads with the original error', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'beginSampleBank', bankKey: 'invalid-bank', instrumentId: 'violin', loadToken: 0 });
+        send(proc, { type: 'noteOn', note: 60, velocity: 90 });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        const error = {
+            type: 'error',
+            message: 'Levain sample bank identity and load token must be valid',
+        };
+        expect(proc.port.postMessage.mock.calls.map(([message]) => message)).toEqual([error]);
+        expect(method('note_on')).toBeUndefined();
+
+        send(proc, { type: 'releaseRetiredBank', loadToken: 0 });
+        send(proc, { type: 'beginSampleBank', bankKey: 'later-bank', instrumentId: 'violin', loadToken: 1 });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(proc.port.postMessage.mock.calls.map(([message]) => message)).toEqual([error, error, error]);
+        expect(method('note_on')).toBeUndefined();
+        expect(engineProcessCalls).toBe(0);
+    });
+
     it('ignores a second init once ready', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
