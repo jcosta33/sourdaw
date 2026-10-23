@@ -367,6 +367,18 @@ describe('revertActionGroupAtomically', () => {
         mocks.undoStoreValue.value = { past: entries, future: [] };
     }
 
+    it("hands the caller's shouldExecute to the batch as its last check before it writes", async () => {
+        holdGroupOf(groupEntry('older', 'track-a'), groupEntry('newer', 'track-b'));
+        const shouldExecute = () => false;
+
+        await revertActionGroupAtomically('g1', { shouldExecute });
+
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledExactlyOnceWith(
+            expect.any(Array),
+            expect.objectContaining({ shouldExecute })
+        );
+    });
+
     it('refuses a cancelled batch as a conflict, moving nothing', async () => {
         holdGroupOf(groupEntry('older', 'track-a'), groupEntry('newer', 'track-b'));
         mocks.executeAppActionBatch.mockResolvedValue({

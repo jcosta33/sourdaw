@@ -9,7 +9,12 @@ import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedEr
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
-import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunWorkLease } from '../../models/AgentRun';
+import {
+    AGENT_RUN_TERMINAL_PHASES,
+    type AgentRunBudgets,
+    type AgentRunDecisionResume,
+    type AgentRunWorkLease,
+} from '../../models/AgentRun';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
@@ -427,6 +432,10 @@ async function completeRevertedRun(input: {
     // The group replay takes no signal and writes whole or not at all, so from here a Stop could only
     // cancel the run beneath an undo that still lands, leaving the run and reply untrue to it.
     input.releaseStop();
+    const runIsLive = () => {
+        const run = agentRunLifecycle.get(admission.runId);
+        return run !== null && !AGENT_RUN_TERMINAL_PHASES.has(run.phase);
+    };
     appendChatMessage({
         id: `msg-${crypto.randomUUID()}`,
         role: 'user',
@@ -443,7 +452,16 @@ async function completeRevertedRun(input: {
         timestamp: Date.now(),
         isCommandAction: true,
     });
-    const reverted = await revertThreadCommit(outcome.revertGroupId);
+    // A cancel from elsewhere (the run's own Cancel, a project switch) still reaches the run: the
+    // replay asks whether it is live as its last check before it writes, so one cancelled first writes
+    // nothing, and one cancelled after leaves an undo the run must record as its committed work.
+    const reverted = await revertThreadCommit(outcome.revertGroupId, runIsLive);
+    if (reverted.status === 'refused' && !runIsLive()) {
+        updateChatMessage(assistantMessageId, {
+            content: 'Undo cancelled before it wrote anything. Nothing was undone.',
+        });
+        return;
+    }
     if (reverted.status === 'refused') {
         tryRecordTerminalFailure({
             runId: admission.runId,
@@ -456,7 +474,14 @@ async function completeRevertedRun(input: {
         });
         return;
     }
-    agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
+    // A run cancelled while the replay wrote has still committed it, so it ends partially completed.
+    agentRunLifecycle.recordCommittedWork({
+        runId: admission.runId,
+        workId: `revert:${outcome.revertGroupId}`,
+        receiptIdentity: `revert:${admission.runId}:${outcome.revertGroupId}`,
+        committedRevision: captureProjectRevision(),
+        completesRun: runIsLive(),
+    });
     const undone = `Undid the last committed change:\n\n${reverted.labels.map((label) => `- ${label}`).join('\n')}`;
     updateChatMessage(assistantMessageId, {
         content: reverted.warning === null ? undone : `${undone}\n\nWarning: ${reverted.warning}`,

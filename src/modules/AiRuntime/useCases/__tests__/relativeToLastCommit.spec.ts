@@ -40,6 +40,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
+import { parsePromptToActions } from '../parsePromptToActions';
 import { planLastCommitContinuation } from '../planLastCommitContinuation';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
@@ -80,22 +81,25 @@ const runtimeMocks = vi.hoisted(() => ({
 }));
 
 type GroupRevert = Awaited<ReturnType<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>>;
+type GroupRevertOptions = Parameters<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>[1];
 
 /**
  * What the next group revert ends in, in place of the replay: a batch committing with a warning or
  * one rejected, which Command's own spec pins from the batch result, as the chat must then report it.
  */
-const revertMocks = vi.hoisted(() => ({ outcome: null as (() => Promise<GroupRevert>) | null }));
+const revertMocks = vi.hoisted(() => ({
+    outcome: null as ((options: GroupRevertOptions) => Promise<GroupRevert>) | null,
+}));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
         ...actual,
-        revertActionGroupAtomically: (groupId: string) => {
+        revertActionGroupAtomically: (groupId: string, options: GroupRevertOptions) => {
             if (revertMocks.outcome !== null) {
-                return revertMocks.outcome();
+                return revertMocks.outcome(options);
             }
-            return actual.revertActionGroupAtomically(groupId);
+            return actual.revertActionGroupAtomically(groupId, options);
         },
     };
 });
@@ -659,6 +663,72 @@ describe('relative to the last commit', () => {
                 expect(decibelsOf(trackId)).toBe(0);
                 expect(decibelsOf('track-bass')).toBe(0);
                 expect(decibelsOf('track-vocals')).toBe(-3);
+            }
+        );
+
+        /** The gain moves a proposal awaiting approval holds, by track. */
+        function proposedGainMoves(): string[] {
+            const proposed = (pendingActionConfirmationStore.value?.confirmations ?? []).filter(
+                (confirmation) => confirmation.status === 'proposed'
+            );
+            return proposed
+                .flatMap((confirmation) => confirmation.actions)
+                .flatMap((action) => (action.type === 'setTrackGain' ? [action.payload.trackId] : []));
+        }
+
+        describe.each(['a standing commit', 'no commit in the chat'])(
+            'with %s, two names side by side with no joiner are no list, so a too request is planned as any request',
+            (state) => {
+                it.each([
+                    ['Delete Bass too', 'Delete'],
+                    ['Freeze Bass too', 'Freeze'],
+                    ['Export Bass too', 'Export'],
+                    ['Remove Bass as well', 'Remove'],
+                    ['Bounce Bass too', 'Bounce'],
+                    ['the Bass guitar too', null],
+                    ['Keys Bass too', null],
+                ])('"%s"', async (prompt, verbTrack) => {
+                    if (verbTrack !== null) {
+                        addTrack(createTrack(`track-${verbTrack.toLowerCase()}`, verbTrack), 'audio');
+                    }
+                    if (state === 'a standing commit') {
+                        scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+                        await commitVocalsDown3Db();
+                    } else {
+                        scriptProvider([[MUTE_BASS]]);
+                    }
+                    const calls = providerCallCount();
+
+                    await sendChatMessage(prompt);
+
+                    expect(providerCallCount()).toBeGreaterThan(calls);
+                    expect(proposedGainMoves()).toEqual([]);
+                    expect(decibelsOf('track-bass')).toBe(0);
+                });
+            }
+        );
+
+        it.each(['do the same to Bass Keys', 'do the same to the Bass guitar'])(
+            'asks when "%s" names two tracks side by side with no joiner',
+            async (prompt) => {
+                scriptProvider([[VOCALS_DOWN_3_DB]]);
+                await commitVocalsDown3Db();
+
+                await expectAnsweredWithoutChange(prompt, 'not a list of this project');
+            }
+        );
+
+        it.each(['Bass and Keys too', 'Bass, Keys too', 'Bass & Keys too', 'do the same to both Bass and Keys'])(
+            're-targets "%s", whose joiner makes it a list',
+            async (prompt) => {
+                scriptProvider([[VOCALS_DOWN_3_DB], [REDERIVED_VOCALS_LEVEL]]);
+                await commitVocalsDown3Db();
+                const calls = providerCallCount();
+
+                await sendChatMessage(prompt);
+
+                expect(providerCallCount()).toBe(calls);
+                expect(proposedGainMoves()).toEqual(['track-bass', 'track-keys']);
             }
         );
 
@@ -1300,6 +1370,181 @@ describe('relative to the last commit', () => {
 
             expect(newestRun('undo that')?.phase).toBe('completed');
             expect(lastAssistantMessage()?.content).toBe(`Undid the last committed change:\n\n- ${label}`);
+        });
+
+        it.each([
+            ['create-branch', 'refuses', -3],
+            ['apply-reversible', 'runs', 0],
+        ] as const)('under the %s trust ceiling %s the undo', async (trustCeiling, _outcome, vocalsDb) => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            await sendChatMessage('undo that', { trustCeiling });
+
+            expect(decibelsOf('track-vocals')).toBe(vocalsDb);
+            expect(undoHistoryStore.value?.future ?? []).toHaveLength(vocalsDb === 0 ? 1 : 0);
+        });
+
+        it('records the undo as committed work and lists what it undid when the run is cancelled elsewhere after the undo wrote', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const label = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
+            const { revertActionGroupAtomically } =
+                await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+            revertMocks.outcome = async (options) => {
+                const reverted = await revertActionGroupAtomically(groupId, options);
+                await agentRunCancellation.cancel({
+                    runId: newestRun('undo that')?.runId ?? '',
+                    reason: 'user-requested',
+                });
+                return reverted;
+            };
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.phase).toBe('partially-completed');
+            expect(newestRun('undo that')?.committedWork).toHaveLength(1);
+            expect(lastAssistantMessage()?.content).toBe(`Undid the last committed change:\n\n- ${label}`);
+            expect(lastAssistantMessage()?.error).toBeUndefined();
+            expect(decibelsOf('track-vocals')).toBe(0);
+            expect(undoHistoryStore.value?.future.map((entry) => entry.groupId)).toEqual([groupId]);
+            expect(aiActionHistoryStore.value?.groups.find((group) => group.groupId === groupId)?.reverted).toBe(true);
+        });
+
+        it('writes nothing and says so when the run is cancelled elsewhere before the undo writes', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
+            const { revertActionGroupAtomically } =
+                await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+            revertMocks.outcome = async (options) => {
+                await agentRunCancellation.cancel({
+                    runId: newestRun('undo that')?.runId ?? '',
+                    reason: 'user-requested',
+                });
+                return revertActionGroupAtomically(groupId, options);
+            };
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.phase).toBe('cancelled');
+            expect(newestRun('undo that')?.committedWork).toEqual([]);
+            expect(lastAssistantMessage()?.content).toBe(
+                'Undo cancelled before it wrote anything. Nothing was undone.'
+            );
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.past.map((entry) => entry.groupId)).toEqual([groupId]);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+            expect(aiActionHistoryStore.value?.groups.find((group) => group.groupId === groupId)?.reverted).toBe(false);
+        });
+
+        it('keeps the undo request a command action in the chat', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            await sendChatMessage('undo that');
+
+            const request = chatStore.value?.messages.findLast((message) => message.role === 'user');
+            expect(request).toMatchObject({ content: 'undo that', isCommandAction: true });
+        });
+
+        it('undoes a planned revert on a decision resume, which plans no batch', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
+            const noGrants = {
+                allowedOperationPrefixes: [],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            };
+
+            await sendChatMessage('undo that', {
+                resume: {
+                    sourceRunId: 'source-run',
+                    decisionId: 'decision-1',
+                    selectedAlternativeId: 'vocals',
+                    selectedAlternative: { id: 'vocals', label: 'The Vocals', changesAuthority: false },
+                    proposalIdentity: 'proposal-1',
+                    capabilitySchemaIdentity: 'catalog-v1',
+                    revision: 'revision-1',
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    grants: noGrants,
+                    budgets: { limits: {}, consumed: {} },
+                },
+            });
+
+            expect(decibelsOf('track-vocals')).toBe(0);
+            expect(undoHistoryStore.value?.future.map((entry) => entry.groupId)).toEqual([groupId]);
+            expect(lastAssistantMessage()?.content).toContain('Undid the last committed change');
+        });
+
+        it('lists every command of an undone confirmed batch', async () => {
+            scriptProvider([[{ name: 'setTrackGain', arguments: { trackId: 'track-keys', deltaDb: -2 } }, MUTE_BASS]]);
+            await commitThroughCard('Turn Keys down 2 dB and mute Bass');
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+            const labels =
+                aiActionHistoryStore.value?.groups
+                    .find((group) => group.groupId === groupId)
+                    ?.actions.map((action) => action.label) ?? [];
+            expect(labels).toHaveLength(2);
+
+            await sendChatMessage('undo that');
+
+            expect(lastAssistantMessage()?.content).toBe(
+                `Undid the last committed change:\n\n${labels.map((label) => `- ${label}`).join('\n')}`
+            );
+        });
+
+        it('lists the commands of the newer of two committed changes it undoes', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+            await commitVocalsDown3Db();
+            const vocalsLabel = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+            await sendChatMessage('Mute Bass');
+            expect(getTrack('track-bass').muted).toBe(true);
+            const muteLabel = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+            expect(muteLabel).not.toBe(vocalsLabel);
+
+            await sendChatMessage('undo that');
+
+            expect(lastAssistantMessage()?.content).toBe(`Undid the last committed change:\n\n- ${muteLabel}`);
+            expect(getTrack('track-bass').muted).toBe(false);
+            expect(decibelsOf('track-vocals')).toBe(-3);
+        });
+
+        it('names the conflict of an undo the project refuses', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            revertMocks.outcome = () =>
+                Promise.resolve({ status: 'refused', reason: 'conflict', detail: 'Vocals moved since the change' });
+
+            await sendChatMessage('undo that');
+
+            expect(lastAssistantMessage()?.error).toContain('(Vocals moved since the change)');
+            expect(decibelsOf('track-vocals')).toBe(-3);
+        });
+
+        it('keeps a denied continuation denied when the planner returns it', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            const planned = await parsePromptToActions({
+                prompt: 'make it 0 dB more',
+                context: getProjectContext(),
+                thread: readChatThreadContext(),
+            });
+
+            expect(planned.planningOutcome).toEqual({
+                kind: 'denied',
+                reason: 'A 0 dB change leaves every committed level where it is.',
+            });
         });
     });
 

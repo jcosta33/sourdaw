@@ -1,3 +1,5 @@
+import { type ExecuteOptions } from '#/utils/handlerContract';
+
 import { AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 
@@ -45,7 +47,10 @@ export type UndoOutcome =
  * the group committed still fails the guards, the batch preflights `conflicted`
  * before any write, and the whole group stays on `past` retryable.
  */
-export async function executeActionGroupUndo(entries: readonly UndoEntry[]): Promise<UndoOutcome> {
+export async function executeActionGroupUndo(
+    entries: readonly UndoEntry[],
+    options?: Pick<ExecuteOptions, 'shouldExecute'>
+): Promise<UndoOutcome> {
     if (!entries.every(isActionEntry) || entries.some((entry) => entry.inverseAction === null)) {
         return { status: 'inert' };
     }
@@ -61,6 +66,7 @@ export async function executeActionGroupUndo(entries: readonly UndoEntry[]): Pro
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
+        ...options,
     });
     if (result.status === 'conflicted' || result.status === 'cancelled') {
         return { status: 'conflict', reason: result.reason };

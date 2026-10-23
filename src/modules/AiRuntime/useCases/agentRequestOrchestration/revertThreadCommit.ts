@@ -27,8 +27,12 @@ function describeRefusal(refusal: GroupRefusal): string {
  * reverted as the panel's revert does. The group is read again when the replay runs, so a commit
  * that an undo, a redo or a later edit moved since the plan was made, or one any inverse of which
  * conflicts with the project as it is now, is refused with nothing undone rather than partly undone.
+ * `shouldExecute` is asked last before the replay writes, so a run cancelled before then writes nothing.
  */
-export async function revertThreadCommit(revertGroupId: string): Promise<ThreadCommitRevert> {
+export async function revertThreadCommit(
+    revertGroupId: string,
+    shouldExecute?: () => boolean
+): Promise<ThreadCommitRevert> {
     const group = aiActionHistoryStore.value?.groups.find(
         (candidate) => candidate.groupId === revertGroupId && candidate.executionKind !== 'runtime'
     );
@@ -38,7 +42,7 @@ export async function revertThreadCommit(revertGroupId: string): Promise<ThreadC
             reason: 'The AI history no longer holds the last committed change, so nothing was undone.',
         };
     }
-    const reverted = await revertActionGroupAtomically(revertGroupId);
+    const reverted = await revertActionGroupAtomically(revertGroupId, { shouldExecute });
     if (reverted.status === 'refused') {
         return { status: 'refused', reason: describeRefusal(reverted) };
     }
