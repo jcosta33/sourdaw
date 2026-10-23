@@ -1,0 +1,54 @@
+.agents/skills/review-stances/project-integrity.md
+  s_3e7dea5cde3f9e::t_e6282376a62dda 268-274
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_3e7dea5cde3f9e::t_6360201db89891 128-141
+  s_3e7dea5cde3f9e::t_133c8165f48da1 14,16-17,19
+  s_3e7dea5cde3f9e::t_250a382db2039f 217-222,224-230,232-236,238-242
+  s_3e7dea5cde3f9e::t_9ef53045588b7e 250,302,344,385,440,459
+  s_3e7dea5cde3f9e::t_15b7292405ff86 223
+  s_3e7dea5cde3f9e::t_a9a69126f40824 263-268
+  s_3e7dea5cde3f9e::t_532e5049344974 391
+  s_3e7dea5cde3f9e::t_ee9f268dcc153f 167-168
+  s_3e7dea5cde3f9e::t_fdd5f1e0dc42a4 404-411,413-418,420-422,424-439,441
+  s_3e7dea5cde3f9e::t_51f765f4381861 281-283,288,292-299,303-310,321
+  s_3e7dea5cde3f9e::t_6fcb9ace6f4b79 23
+  s_3e7dea5cde3f9e::t_5d78e8533907f3 152
+  s_3e7dea5cde3f9e::t_5dae43ad28a03d 199-201
+  s_3e7dea5cde3f9e::t_8aad8bf808e279 1,3
+  s_59e31a5c6f3e31::t_16ccc7c06377ec 142-151,153-166,300-301
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts
+  s_3e7dea5cde3f9e::t_b6bf8de09da306 40
+  s_3e7dea5cde3f9e::t_e4061272dbd638 17
+  s_3e7dea5cde3f9e::t_dddec6f13f24fe 57-58
+  s_3e7dea5cde3f9e::t_288ca8d40384c2 108
+  s_3e7dea5cde3f9e::t_5ba54915cac3af 158
+  s_3e7dea5cde3f9e::t_10c698c8d95720 88
+  s_3e7dea5cde3f9e::t_b7f193327a9bab 119-121
+src/modules/Project/useCases/projectPersistence/discardProjectChanges.ts
+  s_3e7dea5cde3f9e::t_4705546b6c12c1 1
+  s_3e7dea5cde3f9e::t_8b639c8d2d8949 36-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29445639883bd10c23fee0dc1ab3f7a2e08b5824",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
