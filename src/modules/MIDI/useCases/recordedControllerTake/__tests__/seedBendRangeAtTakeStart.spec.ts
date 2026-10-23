@@ -423,6 +423,93 @@ describe('the bend range a keyboard declared before a take', () => {
         });
     });
 
+    describe('a take that overdubs more than one existing clip', () => {
+        const FIRST_CLIP = 'existing-clip-1';
+        const SECOND_CLIP = 'existing-clip-2';
+
+        function beginTakeAcrossTwoExistingClips(): void {
+            mocks.activeRecordingRef.current = [];
+            mocks.targetTrackId.value = TRACK;
+            mocks.trackState.value = {
+                tracks: [
+                    {
+                        id: TRACK,
+                        clips: [
+                            { id: FIRST_CLIP, startBeat: 0, endBeat: 4 },
+                            { id: SECOND_CLIP, startBeat: 4, endBeat: 8 },
+                        ],
+                    },
+                ],
+            };
+            beginRecordedControllerTake();
+        }
+
+        /** The keyboard's own messages as the live route handles them: decoded first, then recorded. */
+        function playAndRecord(clipId: string, beat: number, ...messages: [controller: number, value: number][]): void {
+            for (const message of messages) {
+                send(0, message);
+                recordCc(clipId, beat, message);
+            }
+        }
+
+        const rangeAt = (clipId: string, beat: number) =>
+            createStoredBendRangeReader(mocks.midi.value?.ccByClipId[clipId] ?? [])(0, beat);
+
+        it('declares a later clip at the range in force when the take first reached it', () => {
+            declareRange(0, 12);
+            beginTakeAcrossTwoExistingClips();
+            playAndRecord(
+                FIRST_CLIP,
+                1,
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 2],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127]
+            );
+            recordBend(SECOND_CLIP, 1);
+            endRecordedControllerTake();
+
+            expect(rangeAt(FIRST_CLIP, 2)).toBe(2);
+            expect(rangeAt(SECOND_CLIP, 1)).toBe(2);
+        });
+
+        it('declares a later clip at the range the take raised, not the one the keyboard began at', () => {
+            declareRange(0, 2);
+            sendNullRpn(0);
+            beginTakeAcrossTwoExistingClips();
+            playAndRecord(
+                FIRST_CLIP,
+                1,
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 12],
+                [DATA_LSB, 0],
+                [RPN_MSB, 127],
+                [RPN_LSB, 127]
+            );
+            recordBend(SECOND_CLIP, 1);
+            endRecordedControllerTake();
+
+            expect(rangeAt(FIRST_CLIP, 2)).toBe(12);
+            expect(rangeAt(SECOND_CLIP, 1)).toBe(12);
+        });
+
+        it('keeps the first clip at the range the keyboard began at before the take declared its own', () => {
+            declareRange(0, 12);
+            beginTakeAcrossTwoExistingClips();
+            recordBend(FIRST_CLIP, 0.5);
+            playAndRecord(FIRST_CLIP, 1, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 2], [DATA_LSB, 0]);
+            recordBend(SECOND_CLIP, 1);
+            endRecordedControllerTake();
+
+            expect(rangeAt(FIRST_CLIP, 0.5)).toBe(12);
+            expect(rangeAt(FIRST_CLIP, 2)).toBe(2);
+            expect(rangeAt(SECOND_CLIP, 1)).toBe(2);
+        });
+    });
+
     describe('when an earlier take is still waiting for its commit', () => {
         it('leaves the carried-over clip with its own single declaration and gives the new clip the range in force', () => {
             declareRange(0, 12);

@@ -6,7 +6,6 @@ import { recordedControllerTakeState } from '../../repositories/webMidi/recorded
 import { readBendRangeSeedRows } from './readBendRangeSeedRows';
 import { readHeldPedalRows } from './readHeldPedalRows';
 import { readLiveClipIds } from './readLiveClipIds';
-import { readLiveRegisteredStateRows } from './readLiveRegisteredStateRows';
 
 /** The clips of an earlier take that are still on the timeline and whose commit has not run yet. */
 function readClipsAwaitingCommit(): Set<string> {
@@ -45,7 +44,9 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * both are seeded whether or not the take records anything else. A take that records
  * into a clip an earlier take holds rows in (an existing clip, or a carried-over one, whose
  * buffer length now marks where the earlier take's rows end) has no seed there, so the
- * state the input held is kept for `endRecordedControllerTake` to declare there. The clips the recorder just opened are
+ * state the input held when the take first records into that clip is kept on its buffer
+ * (`captureRegisteredStateAtFirstRow`) for `endRecordedControllerTake` to declare there.
+ * A carried-over buffer forgets the previous take's. The clips the recorder just opened are
  * the ones whose commit flushes their rows; `startRecording` opens them before
  * the transport reports recording.
  */
@@ -72,6 +73,9 @@ export function beginRecordedControllerTake(): void {
         const buffer = buffers.get(clipId);
         openedClipIds.add(clipId);
         carriedOverClips.set(clipId, { cc: buffer?.cc.length ?? 0, pitchBend: buffer?.pitchBend.length ?? 0 });
+        if (buffer) {
+            buffer.registeredStateAtFirstRow = undefined;
+        }
     }
     for (const clipId of activeRecordingRef.current) {
         openedClipIds.add(clipId);
@@ -85,7 +89,6 @@ export function beginRecordedControllerTake(): void {
     }
     // A clip carried over from an earlier take already holds its own declaration,
     // with the ids its redo snapshot names; a second one would replace them.
-    recordedControllerTakeState.registeredStateAtStart = readLiveRegisteredStateRows();
     const bendRangeRows = readBendRangeSeedRows();
     if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClips.has(seededClipId)) {
         bendRangeSeeds.set(seededClipId, bendRangeRows);

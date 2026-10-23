@@ -136,7 +136,7 @@ function readOverdubChannels({ cc, pitchBend }: TakeRows): number[] {
  * A clip reads one state machine per channel across all its rows (`createStoredBendRangeReader`), so
  * without them the earlier take's state would scale the overdub's bends, and once the overdub changed the
  * state, its state would scale the earlier take's later ones. The earlier take's state is the one its own
- * rows replay to; the overdub's is the one the input held when it began (`overdubStartState`, as
+ * rows replay to; the overdub's is the one the input held when the take first recorded into this clip (`overdubStartState`, as
  * declaration rows), advanced by the overdub's own messages. At every beat where the state in force is
  * not that of the take whose rows sit there, `reconcileRegisteredParameterMessages` brings it there. A
  * channel the overdub gives no bend or parameter message, or where the two states agree at every

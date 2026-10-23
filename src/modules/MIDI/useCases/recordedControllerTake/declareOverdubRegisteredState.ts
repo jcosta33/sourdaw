@@ -10,13 +10,13 @@ import { interleaveRegisteredStateDeclarations } from './interleaveRegisteredSta
  *
  * That is an overdub into an existing clip, whose earlier rows are the clip's stored ones, and a take into
  * a clip carried over from an earlier take still waiting for its commit, whose earlier rows are the stored
- * ones, that take's seed and the start of the shared buffer. The take's own state starts from what the
- * input held at its rising edge (`registeredStateAtStart`). The declarations go into the take's buffered
+ * ones, that take's seed and the start of the shared buffer. The take's own state in this clip starts from
+ * what the input held when the take first recorded into it (`registeredStateAtFirstRow`). The declarations go into the take's buffered
  * rows, so the write, and for a carried-over clip the commit and its redo snapshot, carry them with the
  * same ids.
  */
 export function declareOverdubRegisteredState(clipId: string): void {
-    const { buffers, carriedOverClips, bendRangeSeeds, registeredStateAtStart } = recordedControllerTakeState;
+    const { buffers, carriedOverClips, bendRangeSeeds } = recordedControllerTakeState;
     const buffer = buffers.get(clipId);
     if (!buffer) {
         return;
@@ -33,6 +33,10 @@ export function declareOverdubRegisteredState(clipId: string): void {
     const overdub = { cc: buffer.cc.slice(takeStart.cc), pitchBend: buffer.pitchBend.slice(takeStart.pitchBend) };
     buffer.cc = [
         ...buffer.cc.slice(0, takeStart.cc),
-        ...interleaveRegisteredStateDeclarations({ earlier, overdub, overdubStartState: registeredStateAtStart }),
+        ...interleaveRegisteredStateDeclarations({
+            earlier,
+            overdub,
+            overdubStartState: buffer.registeredStateAtFirstRow ?? [],
+        }),
     ];
 }

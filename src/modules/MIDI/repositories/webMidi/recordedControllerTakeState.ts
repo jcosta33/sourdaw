@@ -20,6 +20,16 @@ export type RecordedPitchBendRow = Omit<MidiPitchBend, 'id'>;
 export type RecordedControllerBuffer = {
     cc: MidiCC[];
     pitchBend: MidiPitchBend[];
+    /**
+     * The registered-parameter state the live input held per channel, as declaration rows at beat 0, when
+     * the take being recorded first filed a row into this clip, before that row's own message moved it.
+     * One take can file rows into several clips, so the state it overdubs each of them under is the one
+     * live when it reached that clip, not the one at its rising edge. A take into a clip an earlier take
+     * already holds rows in (an overdub, or a carried-over clip) has no beat-0 seed there, so when it ends
+     * its rows are declared from this state onward wherever they meet the earlier take's
+     * (`declareOverdubRegisteredState`). It lives on the buffer so every path that drops the buffer drops it.
+     */
+    registeredStateAtFirstRow: readonly MidiCC[] | undefined;
 };
 
 /** How many controller and pitch-bend rows a buffer holds. */
@@ -60,14 +70,6 @@ type RecordedControllerTakeState = {
      * stands in for part of it.
      */
     bendRangeSeeds: Map<string, readonly MidiCC[]>;
-    /**
-     * The registered-parameter state the live input held per channel when the
-     * take began, as declaration rows at beat 0. A take into a clip an earlier
-     * take holds rows in (an overdub, or a carried-over clip) has no seed there,
-     * so when it ends its rows are declared from this state onward wherever they
-     * meet the earlier take's (`declareOverdubRegisteredState`).
-     */
-    registeredStateAtStart: readonly MidiCC[];
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
@@ -77,5 +79,4 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     carriedOverClips: new Map(),
     heldPedalSeeds: new Map(),
     bendRangeSeeds: new Map(),
-    registeredStateAtStart: [],
 };
