@@ -22,6 +22,9 @@ export type RecordedControllerBuffer = {
     pitchBend: MidiPitchBend[];
 };
 
+/** How many controller and pitch-bend rows a buffer holds. */
+export type RecordedRowCounts = { cc: number; pitchBend: number };
+
 type RecordedControllerTakeState = {
     /** Buffered rows, keyed by the clip the take records into. */
     buffers: Map<string, RecordedControllerBuffer>;
@@ -38,10 +41,12 @@ type RecordedControllerTakeState = {
     committedClipIds: Set<string>;
     /**
      * Clips an earlier take opened and a later take is recording into while that
-     * earlier commit still waits. Their commit lands inside the later take, which
-     * keeps recording into the clip as an overdub, so it closes nothing.
+     * earlier commit still waits, with the number of rows their buffer held when
+     * the later take began: the rows before those counts are the earlier take's.
+     * Their commit lands inside the later take, which keeps recording into the
+     * clip as an overdub, so it closes nothing.
      */
-    carriedOverClipIds: Set<string>;
+    carriedOverClips: Map<string, RecordedRowCounts>;
     /**
      * The pedals held on the live input when a take began, owed to the clip that
      * take opened on the input's track, as rows at the clip's beat 0.
@@ -57,9 +62,10 @@ type RecordedControllerTakeState = {
     bendRangeSeeds: Map<string, readonly MidiCC[]>;
     /**
      * The registered-parameter state the live input held per channel when the
-     * take began, as declaration rows at beat 0. An overdub into an existing clip
-     * opens no clip, so what the keyboard held is compared with the clip's own
-     * state where the overdub starts, when the take ends.
+     * take began, as declaration rows at beat 0. A take into a clip an earlier
+     * take holds rows in (an overdub, or a carried-over clip) has no seed there,
+     * so when it ends its rows are declared from this state onward wherever they
+     * meet the earlier take's (`declareOverdubRegisteredState`).
      */
     registeredStateAtStart: readonly MidiCC[];
 };
@@ -68,7 +74,7 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     buffers: new Map(),
     openedClipIds: new Set(),
     committedClipIds: new Set(),
-    carriedOverClipIds: new Set(),
+    carriedOverClips: new Map(),
     heldPedalSeeds: new Map(),
     bendRangeSeeds: new Map(),
     registeredStateAtStart: [],

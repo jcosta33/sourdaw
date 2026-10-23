@@ -1,74 +1,38 @@
-import { createMidiCC, type MidiCC } from '../../models/MidiNote';
-import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
-import {
-    recordedControllerTakeState,
-    type RecordedControllerBuffer,
-} from '../../repositories/webMidi/recordedControllerTakeState';
-import {
-    isRegisteredParameterController,
-    reconcileRegisteredParameterMessages,
-} from '../../services/registeredParameterState';
+import { recordedControllerTakeState } from '../../repositories/webMidi/recordedControllerTakeState';
 import { midiStore } from '../../stores/midiStore';
 
-/**
- * The first beat of the overdub's rows on each channel that read the channel's
- * registered-parameter state: its pitch bends, which a range scales, and its own
- * RPN, NRPN and Data Entry messages, which a selection changes the meaning of.
- */
-function readFirstStateBeatByChannel({ cc, pitchBend }: RecordedControllerBuffer): Map<number, number> {
-    const firstBeatByChannel = new Map<number, number>();
-    const rows = [...pitchBend, ...cc.filter((row) => isRegisteredParameterController(row.controller))];
-    for (const { channel, beat } of rows) {
-        const first = firstBeatByChannel.get(channel);
-        if (first === undefined || beat < first) {
-            firstBeatByChannel.set(channel, beat);
-        }
-    }
-    return firstBeatByChannel;
-}
-
-/** The clip's stored messages to `channel`'s state machine in force at `beat`, in the order the reader runs them. */
-function readStoredStateMessages(storedRows: readonly MidiCC[], channel: number, beat: number): MidiCC[] {
-    return storedRows
-        .filter(
-            (row) =>
-                row.channel === channel &&
-                isRegisteredParameterController(row.controller) &&
-                row.beat <= beat + SAME_BEAT_TOLERANCE
-        )
-        .sort((left, right) => left.beat - right.beat);
-}
+import { interleaveRegisteredStateDeclarations } from './interleaveRegisteredStateDeclarations';
 
 /**
- * Lead an overdub's buffered rows with the registered-parameter state the live
- * input held when the take began, wherever the clip it writes into holds another.
+ * Give the take that just ended, where it recorded into a clip an earlier take already holds rows in,
+ * the registered-parameter declarations that keep each take's bends and parameter rows under the state
+ * that was live when that take recorded them (`interleaveRegisteredStateDeclarations`).
  *
- * An overdub into an existing clip opens no clip, so nothing seeded the take. The
- * clip reads one state per channel across its rows (`createStoredBendRangeReader`),
- * and the earlier take's declaration at beat 0 would set the range of every bend
- * the overdub adds even when the keyboard was back at another range. For each
- * channel the overdub gives a bend or a parameter message, the messages that bring
- * the clip's state in force at the channel's first such row (`reconcileRegisteredParameterMessages`)
- * to the live state go into the buffer at that beat, ahead of the overdub's own rows, so
- * the write carries them with their ids. A channel whose states agree, or whose
- * overdub rows read no state, gets nothing, and a bend the earlier take recorded
- * keeps the range it was recorded at.
+ * That is an overdub into an existing clip, whose earlier rows are the clip's stored ones, and a take into
+ * a clip carried over from an earlier take still waiting for its commit, whose earlier rows are the stored
+ * ones, that take's seed and the start of the shared buffer. The take's own state starts from what the
+ * input held at its rising edge (`registeredStateAtStart`). The declarations go into the take's buffered
+ * rows, so the write, and for a carried-over clip the commit and its redo snapshot, carry them with the
+ * same ids.
  */
 export function declareOverdubRegisteredState(clipId: string): void {
-    const buffer = recordedControllerTakeState.buffers.get(clipId);
+    const { buffers, carriedOverClips, bendRangeSeeds, registeredStateAtStart } = recordedControllerTakeState;
+    const buffer = buffers.get(clipId);
     if (!buffer) {
         return;
     }
-    const storedRows = midiStore.value?.ccByClipId[clipId] ?? [];
-    const liveRows = recordedControllerTakeState.registeredStateAtStart;
-    const firstBeatByChannel = readFirstStateBeatByChannel(buffer);
-    const declarations = [...firstBeatByChannel]
-        .sort(([first], [second]) => first - second)
-        .flatMap(([channel, beat]) =>
-            reconcileRegisteredParameterMessages({
-                current: readStoredStateMessages(storedRows, channel, beat),
-                target: liveRows.filter((row) => row.channel === channel),
-            }).map(({ controller, value }) => createMidiCC(controller, value, beat, channel))
-        );
-    buffer.cc.unshift(...declarations);
+    const carriedOver = carriedOverClips.get(clipId);
+    const takeStart = carriedOver ?? { cc: 0, pitchBend: 0 };
+    const seedRows = carriedOver ? (bendRangeSeeds.get(clipId) ?? []) : [];
+    const storedCc = midiStore.value?.ccByClipId[clipId] ?? [];
+    const storedPitchBend = midiStore.value?.pitchBendByClipId[clipId] ?? [];
+    const earlier = {
+        cc: [...storedCc, ...seedRows, ...buffer.cc.slice(0, takeStart.cc)],
+        pitchBend: [...storedPitchBend, ...buffer.pitchBend.slice(0, takeStart.pitchBend)],
+    };
+    const overdub = { cc: buffer.cc.slice(takeStart.cc), pitchBend: buffer.pitchBend.slice(takeStart.pitchBend) };
+    buffer.cc = [
+        ...buffer.cc.slice(0, takeStart.cc),
+        ...interleaveRegisteredStateDeclarations({ earlier, overdub, overdubStartState: registeredStateAtStart }),
+    ];
 }

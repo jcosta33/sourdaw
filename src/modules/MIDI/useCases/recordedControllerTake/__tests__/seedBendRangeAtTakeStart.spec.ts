@@ -57,6 +57,7 @@ const { beginRecordedControllerTake } = await import('../beginRecordedController
 const { bufferRecordedMidiCC } = await import('../bufferRecordedMidiCC');
 const { bufferRecordedMidiPitchBend } = await import('../bufferRecordedMidiPitchBend');
 const { commitRecordedControllers } = await import('../commitRecordedControllers');
+const { discardRecordedControllers } = await import('../discardRecordedControllers');
 const { endRecordedControllerTake } = await import('../endRecordedControllerTake');
 const { planRecordedControllers } = await import('../planRecordedControllers');
 
@@ -89,6 +90,17 @@ function declareRange(channel: number, semitones: number, cents = 0): void {
 
 function sendNullRpn(channel: number): void {
     send(channel, [RPN_MSB, 127], [RPN_LSB, 127]);
+}
+
+/** Buffer controller messages a take records into `clipId` at `beat` on channel 0, in order. */
+function recordCc(clipId: string, beat: number, ...messages: [controller: number, value: number][]): void {
+    for (const [controller, value] of messages) {
+        bufferRecordedMidiCC({ clipId, row: { controller, value, beat, channel: 0 } });
+    }
+}
+
+function recordBend(clipId: string, beat: number): void {
+    bufferRecordedMidiPitchBend({ clipId, row: { value: 4096, beat, channel: 0 } });
 }
 
 function setLiveClips(...clipIds: string[]): void {
@@ -126,7 +138,7 @@ describe('the bend range a keyboard declared before a take', () => {
         recordedControllerTakeState.buffers.clear();
         recordedControllerTakeState.openedClipIds.clear();
         recordedControllerTakeState.committedClipIds.clear();
-        recordedControllerTakeState.carriedOverClipIds.clear();
+        recordedControllerTakeState.carriedOverClips.clear();
         recordedControllerTakeState.heldPedalSeeds.clear();
         recordedControllerTakeState.bendRangeSeeds.clear();
     });
@@ -280,19 +292,89 @@ describe('the bend range a keyboard declared before a take', () => {
     });
 
     describe('an overdub into a clip the recorder did not open', () => {
-        const recordFirstTakeAtTwelve = () => {
+        /** A first take seeded at ±12 on channel 0, with a bend at each of `bendBeats`, committed. */
+        const recordFirstTakeAtTwelve = (...bendBeats: number[]) => {
             declareRange(0, 12);
             beginTake();
+            for (const beat of bendBeats) {
+                recordBend(CLIP, beat);
+            }
             commitRecordedControllers({ clip: spanOf(CLIP) });
         };
 
-        function overdubBendAtBeat(beat: number): void {
+        function beginOverdub(): void {
             mocks.activeRecordingRef.current = [];
             setLiveClips(CLIP);
             beginRecordedControllerTake();
-            bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 4096, beat, channel: 0 } });
+        }
+
+        function overdubBendAtBeat(beat: number): void {
+            beginOverdub();
+            recordBend(CLIP, beat);
             endRecordedControllerTake();
         }
+
+        const keyboardBackAtTwo = () => {
+            declareRange(0, 2);
+            sendNullRpn(0);
+        };
+
+        const storedRangesAt = (...beats: number[]) => {
+            const rangeAt = createStoredBendRangeReader(mocks.midi.value?.ccByClipId[CLIP] ?? []);
+            return beats.map((beat) => rangeAt(0, beat));
+        };
+
+        it('returns the earlier take its own state after the overdub, so a Data Entry it recorded later still sets its range', () => {
+            beginTake();
+            recordCc(CLIP, 0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 12]);
+            recordBend(CLIP, 1);
+            recordCc(CLIP, 3, [DATA_MSB, 7]);
+            recordBend(CLIP, 3.5);
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+            keyboardBackAtTwo();
+
+            overdubBendAtBeat(2);
+
+            expect(storedRangesAt(1, 2, 3.5)).toEqual([12, 2, 7]);
+        });
+
+        it('returns the earlier take its seeded range at its first bend after the overdub', () => {
+            recordFirstTakeAtTwelve(1, 3);
+            keyboardBackAtTwo();
+
+            overdubBendAtBeat(2);
+
+            expect(storedRangesAt(1, 2, 3)).toEqual([12, 2, 12]);
+        });
+
+        it('starts from the state the keyboard held when the take began, and follows what the take itself declares', () => {
+            recordFirstTakeAtTwelve();
+            keyboardBackAtTwo();
+            beginOverdub();
+            recordBend(CLIP, 2);
+            const declaration: [number, number][] = [
+                [RPN_MSB, 0],
+                [RPN_LSB, 0],
+                [DATA_MSB, 7],
+            ];
+            send(0, ...declaration);
+            recordCc(CLIP, 3, ...declaration);
+            recordBend(CLIP, 3.5);
+            endRecordedControllerTake();
+
+            expect(storedRangesAt(1, 2, 3.5)).toEqual([12, 2, 7]);
+        });
+
+        it('lets a declaration the overdub records on its first state beat win over the state it began in', () => {
+            recordFirstTakeAtTwelve();
+            keyboardBackAtTwo();
+            beginOverdub();
+            recordCc(CLIP, 2, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 5]);
+            recordBend(CLIP, 2.5);
+            endRecordedControllerTake();
+
+            expect(storedRangesAt(1, 2, 2.5)).toEqual([12, 5, 5]);
+        });
 
         it('declares the range the keyboard is back at where the overdub starts, and leaves the earlier take its own', () => {
             recordFirstTakeAtTwelve();
@@ -316,12 +398,13 @@ describe('the bend range a keyboard declared before a take', () => {
         });
 
         it('declares nothing when the keyboard is at the range the clip already holds', () => {
-            recordFirstTakeAtTwelve();
+            recordFirstTakeAtTwelve(1, 3);
             const rowsBefore = mocks.midi.value?.ccByClipId[CLIP];
 
             overdubBendAtBeat(2);
 
             expect(mocks.midi.value?.ccByClipId[CLIP]).toEqual(rowsBefore);
+            expect(storedRangesAt(1, 2, 3)).toEqual([12, 12, 12]);
         });
 
         it('declares nothing on a channel the overdub writes no bend or parameter row to', () => {
@@ -369,10 +452,45 @@ describe('the bend range a keyboard declared before a take', () => {
             mocks.activeRecordingRef.current = [CLIP];
             beginRecordedControllerTake();
 
-            expect(recordedControllerTakeState.carriedOverClipIds.has(CLIP)).toBe(true);
+            expect(recordedControllerTakeState.carriedOverClips.has(CLIP)).toBe(true);
             expect(planRecordedControllers({ clip: spanOf(CLIP) })).toEqual(carriedPlan);
             expect(carriedPlan.cc).toHaveLength(4);
         });
+
+        it('replays each take of a carried-over clip at the state it recorded under', () => {
+            declareRange(0, 12);
+            beginTake();
+            recordBend(CLIP, 1);
+            recordBend(CLIP, 3);
+            endRecordedControllerTake();
+
+            declareRange(0, 2);
+            mocks.activeRecordingRef.current = [NEXT_CLIP];
+            setLiveClips(CLIP, NEXT_CLIP);
+            beginRecordedControllerTake();
+            recordBend(CLIP, 2);
+            endRecordedControllerTake();
+
+            const plan = planRecordedControllers({ clip: spanOf(CLIP) });
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
+            expect(rows).toEqual(plan.cc);
+            const rangeAt = createStoredBendRangeReader(rows);
+            expect([1, 2, 3].map((beat) => rangeAt(0, beat))).toEqual([12, 2, 12]);
+        });
+    });
+
+    it('is dropped with the buffer when its commit will not land', () => {
+        declareRange(0, 12);
+        beginTake();
+        expect(recordedControllerTakeState.bendRangeSeeds.has(CLIP)).toBe(true);
+
+        discardRecordedControllers(CLIP);
+
+        expect(recordedControllerTakeState.bendRangeSeeds.has(CLIP)).toBe(false);
+        commitRecordedControllers({ clip: spanOf(CLIP) });
+        expect(midiStore.set).not.toHaveBeenCalled();
     });
 
     it('is dropped with the take when its clip is discarded unwritten', () => {

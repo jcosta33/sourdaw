@@ -42,14 +42,15 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * messages move them, because a pedal pressed before the take is still down when
  * it begins and no message will say so. So is the pitch-bend range the input
  * declared, which the clip's own rows could not otherwise tell stored playback;
- * both are seeded whether or not the take records anything else. When the take
- * overdubs into an existing clip no clip is opened, so the state the input held is kept
- * for `endRecordedControllerTake` to declare there. The clips the recorder just opened are
+ * both are seeded whether or not the take records anything else. A take that records
+ * into a clip an earlier take holds rows in (an existing clip, or a carried-over one, whose
+ * buffer length now marks where the earlier take's rows end) has no seed there, so the
+ * state the input held is kept for `endRecordedControllerTake` to declare there. The clips the recorder just opened are
  * the ones whose commit flushes their rows; `startRecording` opens them before
  * the transport reports recording.
  */
 export function beginRecordedControllerTake(): void {
-    const { buffers, openedClipIds, committedClipIds, carriedOverClipIds, heldPedalSeeds, bendRangeSeeds } =
+    const { buffers, openedClipIds, committedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds } =
         recordedControllerTakeState;
     const awaitingCommit = readClipsAwaitingCommit();
     for (const clipId of [...buffers.keys()]) {
@@ -66,10 +67,11 @@ export function beginRecordedControllerTake(): void {
     }
     committedClipIds.clear();
     openedClipIds.clear();
-    carriedOverClipIds.clear();
+    carriedOverClips.clear();
     for (const clipId of awaitingCommit) {
+        const buffer = buffers.get(clipId);
         openedClipIds.add(clipId);
-        carriedOverClipIds.add(clipId);
+        carriedOverClips.set(clipId, { cc: buffer?.cc.length ?? 0, pitchBend: buffer?.pitchBend.length ?? 0 });
     }
     for (const clipId of activeRecordingRef.current) {
         openedClipIds.add(clipId);
@@ -85,7 +87,7 @@ export function beginRecordedControllerTake(): void {
     // with the ids its redo snapshot names; a second one would replace them.
     recordedControllerTakeState.registeredStateAtStart = readLiveRegisteredStateRows();
     const bendRangeRows = readBendRangeSeedRows();
-    if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClipIds.has(seededClipId)) {
+    if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClips.has(seededClipId)) {
         bendRangeSeeds.set(seededClipId, bendRangeRows);
     }
 }
