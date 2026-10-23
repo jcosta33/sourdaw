@@ -396,6 +396,7 @@ async function completeRevertedRun(input: {
     request: PromptChatRequestInput;
     admission: PromptRequestAdmission;
     aborter: AbortController;
+    releaseStop: () => void;
     state: PromptRequestState;
     outcome: Extract<PlanningOutcome, { kind: 'revert' }>;
 }): Promise<void> {
@@ -423,6 +424,9 @@ async function completeRevertedRun(input: {
         });
         return;
     }
+    // The group replay takes no signal and writes whole or not at all, so from here a Stop could only
+    // cancel the run beneath an undo that still lands, leaving the run and reply untrue to it.
+    input.releaseStop();
     appendChatMessage({
         id: `msg-${crypto.randomUUID()}`,
         role: 'user',
@@ -486,7 +490,14 @@ async function dispatchPromptPlan(input: {
     }
     // An undo of the last commit carries no batch, so it is read before the action list too.
     if (result.planningOutcome?.kind === 'revert') {
-        await completeRevertedRun({ request, admission, aborter, state, outcome: result.planningOutcome });
+        await completeRevertedRun({
+            request,
+            admission,
+            aborter,
+            releaseStop: input.releaseStop,
+            state,
+            outcome: result.planningOutcome,
+        });
         return undefined;
     }
     if (request.options?.resume && result.actions.length === 0) {

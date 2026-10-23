@@ -578,6 +578,30 @@ describe('relative to the last commit', () => {
             expect(decibelsOf('track-vocals')).toBe(-3);
         });
 
+        it('reads "&" in a too list as joining two tracks', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [REDERIVED_VOCALS_LEVEL]]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await sendChatMessage('Bass & Keys too');
+
+            expect(providerCallCount()).toBe(calls);
+            const [repeatId] = proposedIds();
+            const repeat = pendingActionConfirmationStore.value?.confirmations.find(
+                (confirmation) => confirmation.id === repeatId
+            );
+            expect(repeat?.actions.map((action) => [action.type, action.payload])).toEqual([
+                ['setTrackGain', expect.objectContaining({ trackId: 'track-bass', deltaDb: -3 })],
+                ['setTrackGain', expect.objectContaining({ trackId: 'track-keys', deltaDb: -3 })],
+            ]);
+            await expect(confirmPendingChatActions({ confirmationId: repeatId ?? '' })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(decibelsOf('track-bass')).toBe(-3);
+            expect(decibelsOf('track-keys')).toBe(-3);
+            expect(decibelsOf('track-vocals')).toBe(-3);
+        });
+
         it('repeats every command of a confirmed batch on each named track', async () => {
             scriptProvider([[VOCALS_DOWN_3_DB, MUTE_BASS]]);
             await sendChatMessage('Turn Vocals down 3 dB and mute Bass');
@@ -1180,6 +1204,28 @@ describe('relative to the last commit', () => {
             expect(newestRun('undo that')?.phase).toBe('cancelled');
             expect(decibelsOf('track-vocals')).toBe(-3);
             expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+
+        it('completes the run and lists what it undid when the user stops it while the undo writes', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const label = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
+            const { revertActionGroupAtomically } =
+                await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+            revertMocks.outcome = () => {
+                stopGenerating();
+                return revertActionGroupAtomically(groupId);
+            };
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.phase).toBe('completed');
+            expect(lastAssistantMessage()?.content).toBe(`Undid the last committed change:\n\n- ${label}`);
+            expect(lastAssistantMessage()?.error).toBeUndefined();
+            expect(decibelsOf('track-vocals')).toBe(0);
+            expect(undoHistoryStore.value?.future.map((entry) => entry.groupId)).toEqual([groupId]);
+            expect(aiActionHistoryStore.value?.groups.find((group) => group.groupId === groupId)?.reverted).toBe(true);
         });
 
         it('refuses the undo when the user undid the commit while it was being planned', async () => {
