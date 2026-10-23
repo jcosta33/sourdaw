@@ -1,0 +1,87 @@
+src/modules/MIDI/useCases/recordedControllerTake/countSettledOverdubPasses.ts
+  s_3e7dea5cde3f9e::t_dbbf7a8122283e 1-6
+src/modules/MIDI/useCases/recordedControllerTake/landOverdubPass.ts
+  s_3e7dea5cde3f9e::t_51115b64bd86cf 5
+  s_3e7dea5cde3f9e::t_c3be30956c3b4f 71
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/waitForOverdubLanding.spec.ts
+  s_3e7dea5cde3f9e::t_dc6f6be1a5788f 1-64
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_49152b8d55960d 161-163
+src/modules/MIDI/useCases/recordedControllerTake/isOverdubLanding.ts
+  s_3e7dea5cde3f9e::t_86d6073d5c861e 1-6
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_f46cfb34bcc63f 28
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_3e7dea5cde3f9e::t_f72835f32c071f 60
+  s_3e7dea5cde3f9e::t_048ea93370761f 1
+  s_3e7dea5cde3f9e::t_7f3cda3c819c4e 111
+  s_3e7dea5cde3f9e::t_59c49499d7903d 55
+src/modules/Transport/useCases/transportControls/__tests__/isTransportIdle.spec.ts
+  s_3e7dea5cde3f9e::t_a388240aee4ae9 3-24
+  s_3e7dea5cde3f9e::t_c67e5cd2a811b9 136,139,142,145
+src/modules/Transport/useCases/transportControls/__tests__/countSettledTakes.spec.ts
+  s_3e7dea5cde3f9e::t_4d234348aa00ad 55,59,61-62
+  s_3e7dea5cde3f9e::t_667468ce226bf8 1,3-24
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_3e7dea5cde3f9e::t_2c51c5f1c87662 54-59
+  s_3e7dea5cde3f9e::t_f6b09de9d32d7b 170-182
+  s_3e7dea5cde3f9e::t_abb89e9894b7ce 30
+src/modules/MIDI/useCases/index.ts
+  s_3e7dea5cde3f9e::t_68706b2e6dbdf5 30
+  s_3e7dea5cde3f9e::t_a1c06db60ff1f2 32,34
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_3e7dea5cde3f9e::t_d54d5773c26623 87-91
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_3e7dea5cde3f9e::t_ab89017316f918 54-59
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_3e7dea5cde3f9e::t_18098be119a39c 126-130
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_3e7dea5cde3f9e::t_2dfd7b56a560ad 94-98
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_3e7dea5cde3f9e::t_f636cd0cadd31a 147-151
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_3e7dea5cde3f9e::t_bf2fa1bab9f35f 233-235
+src/app/__tests__/main.spec.tsx
+  s_3e7dea5cde3f9e::t_ca9b73032edfb6 103-105
+src/modules/MIDI/repositories/webMidi/pendingOverdubLandings.ts
+  s_3e7dea5cde3f9e::t_3a7d41048c8731 1-48
+src/modules/MIDI/useCases/recordedControllerTake/waitForOverdubLanding.ts
+  s_3e7dea5cde3f9e::t_e876d2e907db55 1-6
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingTakeFromZero.spec.ts
+  s_3e7dea5cde3f9e::t_f0cc8ab51c82ed 113-118
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_3e7dea5cde3f9e::t_25f2aeaebcc938 70
+  s_3e7dea5cde3f9e::t_8e5924eb0d347e 4
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_3e7dea5cde3f9e::t_b005d47c8709e0 124-129
+src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts
+  s_3e7dea5cde3f9e::t_e00539f4dc6bf8 37-39
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_3e7dea5cde3f9e::t_c1b3750c31d4ee 133-135
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_b206f32438f066 25
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecording.spec.ts
+  s_3e7dea5cde3f9e::t_187a034588c78e 178,197
+  s_3e7dea5cde3f9e::t_c3fdb9388d5ac0 11-32
+  s_3e7dea5cde3f9e::t_e2f74ecb2f4d3e 33
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.recording.integration.spec.ts
+  s_3e7dea5cde3f9e::t_02bcc7425cb9d5 81-88
+  s_3e7dea5cde3f9e::t_e2987b5d6cbb72 42-43
+  s_3e7dea5cde3f9e::t_48463656c90620 497-501
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "749df2d7f788ecd0cccd6d2254984a327b3ba12d",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
