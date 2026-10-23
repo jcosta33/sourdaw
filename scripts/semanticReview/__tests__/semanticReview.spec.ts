@@ -9221,9 +9221,13 @@ describe('verify-path screening and identity', () => {
         expect(result.report.rulesDigest).not.toBe(computeRulesDigest());
 
         // Different questions must not share one identity, or the second run overwrites the first's
-        // sidecar while claiming the same question set.
+        // sidecar while claiming the same question set. The digest reads past the claim: the impact
+        // category reaches the state and drives escalation, so two runs differing only in it are two
+        // identities, and dropping it from the digest must fail here rather than share a sidecar.
         const otherFindings: CandidateFinding[] = [{ ...findings[0]!, claim: 'a different claim' }];
         expect(computeVerifyQuestionsDigest(otherFindings)).not.toBe(computeVerifyQuestionsDigest(findings));
+        const recategorized: CandidateFinding[] = [{ ...findings[0]!, claimedImpactCategory: 'realtime' }];
+        expect(computeVerifyQuestionsDigest(recategorized)).not.toBe(computeVerifyQuestionsDigest(findings));
     });
 
     it('covers the interpretation policy, not only the rule thresholds', () => {
@@ -9432,6 +9436,37 @@ describe('verify dry run', () => {
             )
         );
         expect(first?.estimatedInputTokens).toBe(Math.ceil((first?.bodyBytes ?? 0) / 4));
+    });
+
+    it('marks a fully withheld finding as a preview no run would send', async () => {
+        // A finding whose every named region was withheld (here: the sensitive-path screen) sends zero
+        // requests in a live run, so its export entry carries the omission cause and the sendable
+        // entries carry none — the summary counts on exactly that difference.
+        const { runVerify } = await import('../verify.ts');
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('dry-run made a provider call; this is a defect');
+            },
+        };
+        const result = await runVerify({
+            ...dryRunPorts(provider),
+            findings: [
+                dryRunFindings[0]!,
+                {
+                    ...dryRunFindings[1]!,
+                    evidenceReferences: [{ path: '.env', side: 'after', startLine: 1, endLine: 1 }],
+                },
+            ],
+            dryRun: true,
+        });
+        expect(providerCalls).toBe(0);
+        expect(result.previews).toHaveLength(2);
+        expect(result.previews[0]?.findingId).toBe('f1');
+        expect(result.previews[0]).not.toHaveProperty('omissionReason');
+        expect(result.previews[1]?.findingId).toBe('f2');
+        expect(result.previews[1]?.omissionReason).toBe('no-admissible-evidence');
     });
 });
 

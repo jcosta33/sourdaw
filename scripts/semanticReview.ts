@@ -420,9 +420,18 @@ async function handlerVerify(parsed: ParsedArgs, primaryRoot: string): Promise<n
         );
         writeFileSync(parsed.exportPayloadPath, `${JSON.stringify(result.previews, null, 4)}\n`);
     }
-    // A dry run produced no report to validate or write, exactly as scan's dry run leaves none.
+    // A dry run produced no report to validate or write, exactly as scan's dry run leaves none. The
+    // export carries an entry for every finding, including the empty ones a live run never sends, so
+    // the summary counts only what would actually leave and names the withheld rest separately.
     if (parsed.dryRun) {
-        console.log(`dry-run: ${String(result.previews.length)} request(s) would be sent; no TypeSafe call was made`);
+        const sendable = result.previews.filter((preview) => preview.omissionReason === undefined).length;
+        const withheld = result.previews.length - sendable;
+        console.log(`dry-run: ${String(sendable)} request(s) would be sent; no TypeSafe call was made`);
+        if (withheld > 0) {
+            console.log(
+                `dry-run: ${String(withheld)} finding(s) would send no request; every region they named was withheld`
+            );
+        }
         return EXIT_OK;
     }
     const reportPath = writeSidecar({

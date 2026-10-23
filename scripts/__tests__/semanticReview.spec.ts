@@ -181,6 +181,15 @@ describe('verify handler', () => {
                             { path: 'src/modules/Project/a.ts', side: 'after', startLine: 2, endLine: 2 },
                         ],
                     },
+                    {
+                        // Names only the sensitive-path screen's own file, so no request can ever
+                        // carry its evidence and a live run would send nothing for it.
+                        findingId: 'f2',
+                        headSha,
+                        claim: 'a withheld claim',
+                        expectedBehavior: 'another expected behavior',
+                        evidenceReferences: [{ path: '.env', side: 'after', startLine: 1, endLine: 1 }],
+                    },
                 ])
             );
             const exportPath = join(root, 'payload.json');
@@ -202,13 +211,22 @@ describe('verify handler', () => {
             expect(exit).toBe(0);
             const previews = JSON.parse(readFileSync(exportPath, 'utf8')) as unknown;
             expect(Array.isArray(previews)).toBe(true);
-            const preview = (previews as { findingId?: string; state?: unknown }[])[0];
+            const preview = (previews as { findingId?: string; state?: unknown; omissionReason?: string }[])[0];
             expect(preview?.findingId).toBe('f1');
+            expect(preview?.omissionReason).toBeUndefined();
             expect(JSON.stringify(preview?.state)).toContain('second line changed');
+            // The withheld finding still exports its (empty) request, but the summary counts only
+            // what a live run would send and names the withheld finding separately.
+            const withheldPreview = (previews as { findingId?: string; omissionReason?: string }[])[1];
+            expect(withheldPreview?.findingId).toBe('f2');
+            expect(withheldPreview?.omissionReason).toBe('no-admissible-evidence');
             // A dry run produced no report to validate or write.
             expect(existsSync(join(root, '.agents', SEMANTIC_SIDECAR_DIRECTORY))).toBe(false);
             expect(logSpy.mock.calls).toContainEqual([
                 'dry-run: 1 request(s) would be sent; no TypeSafe call was made',
+            ]);
+            expect(logSpy.mock.calls).toContainEqual([
+                'dry-run: 1 finding(s) would send no request; every region they named was withheld',
             ]);
         } finally {
             if (key !== undefined) {
