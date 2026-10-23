@@ -1,0 +1,25 @@
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_59e31a5c6f3e31::t_686474464ecfbf 1015-1018,1020-1022,1047-1051,1054,1062-1064,1069-1072,1075
+  s_59e31a5c6f3e31::t_613ff167dcdbba 1019
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_59e31a5c6f3e31::t_e14264dd878fca 163-165,2502-2534,2536-2541
+  s_59e31a5c6f3e31::t_a85e00cd235666 2543-2648,2650-2657
+  s_59e31a5c6f3e31::t_c4aba279b0182d 2535,2649
+  s_59e31a5c6f3e31::t_bcda4e3400ee22 2542
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2791ab91c1a0c087f5ebb8d994a54707f8865872",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
