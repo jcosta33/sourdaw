@@ -2,6 +2,8 @@ export { buildFolderTree } from './buildFolderTree';
 export { requestPermission } from './requestPermission';
 export { readNativeLibrarySampleFile } from './readNativeLibrarySampleFile';
 export { resolveDroppedSampleFile } from './resolveDroppedSampleFile';
+export { rememberLibraryAssetMapping } from './rememberLibraryAssetMapping';
+export { resolveMappedLibraryAssetCandidate } from './resolveMappedLibraryAssetCandidate';
 export { restoreLibrary } from './restoreLibrary';
 export { searchSamples } from './searchSamples';
 export { findSimilarSamples } from './findSimilarSamples';
