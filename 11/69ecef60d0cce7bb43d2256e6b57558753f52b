@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts
+  s_59e31a5c6f3e31::t_7b7b43f8f7aef9 366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1169ecef60d0cce7bb43d2256e6b57558753f52b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
