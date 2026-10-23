@@ -1,0 +1,45 @@
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_6a1fd8571496dc 26-28
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_dc27a04738d6f4 797-833,2743,2750,2763,4232,4241
+  s_1c08b47ac3792f::t_1ad5e632b3a4a5 679-680,2139-2216,2734-2735,2741,2748,2755,2757,2777,2780-2781,4228
+  s_1c08b47ac3792f::t_ad396aadcc95c7 670-678,681-687,2733,2736-2740,2742,2744-2747,2749,2751-2754,2756,2758-2762,2764-2776,2778-2779,2782-2790,4225-4227,4229-4231,4233-4240
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_721829ca2be184 44-45
+src/modules/AiRuntime/transformers/__tests__/diffProposalCommands.spec.ts
+  s_1c08b47ac3792f::t_b2d8401276bb0b 219-241,399-460
+src/modules/AiRuntime/transformers/diffProposalCommands.ts
+  s_1c08b47ac3792f::t_725c685f3211d1 4-5,67
+src/modules/AiRuntime/transformers/proposalDecibelFormat.ts
+  s_1c08b47ac3792f::t_259f16bcead3fd 1-8
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_60632ae3a5ac97 3,30,40,432-514
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_8b277891c98b7d 17-18,61,63-64,66,68,210-213,218-253,389,436-438,464
+src/modules/AiRuntime/useCases/agentReference/refinementRemovalReading.ts
+  s_1c08b47ac3792f::t_bf99f315eed6fd 1-392
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_1c08b47ac3792f::t_4af7c632060c75 255-266,269-270
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/retireSupersededConfirmation.spec.ts
+  s_1c08b47ac3792f::t_83affec120127a 3,14,46-77
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_fce6357218372c 393-394,545-547,757-760,820,829
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_1c08b47ac3792f::t_552c1c03bde27a 15,68-69,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "976891cfe7731f7ff55a2b1601be8fbfa6d776f7",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
