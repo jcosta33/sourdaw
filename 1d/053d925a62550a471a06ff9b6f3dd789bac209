@@ -1,0 +1,33 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx
+  s_59e31a5c6f3e31::t_986726ca3411b2 10,20,25,28,34-35,42,47-51,57-63
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/DistortionLayout.spec.tsx
+  s_59e31a5c6f3e31::t_e0ef2e9ede7f3e 48-52,133-134
+  s_59e31a5c6f3e31::t_cd20ed430af623 25-40,110,114-124,126-132
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/distortionCurveGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_b4522960263538 446-486,490-556,576-621,626-652
+  s_59e31a5c6f3e31::t_f3137559a66e4a 1-4,9-13,15-18,20-34,37,40-45,47-49,51-60,62-97,105-126,135-140,142,144-150,156-177,233-275,278-309,320-323,366-368,370-371,445,697
+  s_59e31a5c6f3e31::t_989f528fc4318b 5-8,14,19,35-36,38-39,46,50,61,98-104,127-134,143,178-232
+  s_59e31a5c6f3e31::t_0635a852d91529 141,155,487-489,557-575,622-625,653-696
+  s_59e31a5c6f3e31::t_07644884a43b3b 151-154
+  s_59e31a5c6f3e31::t_4a469d832f0be7 276-277,310-317,319,324-365,369,372-444
+  s_59e31a5c6f3e31::t_6df423dfc98b5c 318
+src/components/daw/visualizers/DistortionCurve.tsx
+  s_59e31a5c6f3e31::t_33709845bf796c 8,19-22,25-54,71-74,77,207,215-230,232,239-253,259-260,263-268,271-273,277-278,280-284,298-299
+  s_59e31a5c6f3e31::t_514bd8e031f448 80-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d053d925a62550a471a06ff9b6f3dd789bac209",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
