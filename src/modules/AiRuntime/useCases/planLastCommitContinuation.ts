@@ -313,10 +313,6 @@ function retargetCommittedChange(
             `Which track should take the last change: ${named.names.join(' or ')}?`
         );
     }
-    // "mute Bass too" is a request of its own, never a re-target; only the "the same" form says it repeats.
-    if (named.status === 'unread' && request.form === 'too') {
-        return NONE;
-    }
     if (named.status === 'unread') {
         return clarify(
             `"${request.targetText}" is not a list of this project's tracks.`,
@@ -363,6 +359,15 @@ export function planLastCommitContinuation(input: {
 }): LastCommitContinuation {
     const request = readLastCommitRequest(input.prompt);
     if (request.kind === 'none' || (input.thread?.pendingProposal ?? null) !== null) {
+        return NONE;
+    }
+    // "mute Bass too" is a request of its own, never a re-target, whatever the thread holds: only a
+    // `too` list of this project's tracks says it repeats the last change.
+    if (
+        request.kind === 'retarget' &&
+        request.form === 'too' &&
+        readNamedTracks(request.targetText, input.context).status === 'unread'
+    ) {
         return NONE;
     }
     const commit = input.thread?.lastCommit ?? null;

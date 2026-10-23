@@ -26,16 +26,24 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { chatStore } from '../../stores/chatStore';
+import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
 import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
+import { agentRunWorkLease } from '../agentRunWorkLease';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
+import { planLastCommitContinuation } from '../planLastCommitContinuation';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
+import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -321,6 +329,7 @@ describe('relative to the last commit', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
@@ -458,6 +467,7 @@ describe('relative to the last commit', () => {
                 status: 'executed',
             });
             expect(undoHistoryStore.value?.past ?? []).toHaveLength(3);
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId;
             const calls = providerCallCount();
 
             await sendChatMessage('Undo the last change, please.');
@@ -468,6 +478,30 @@ describe('relative to the last commit', () => {
             expect(decibelsOf('track-vocals')).toBe(-3);
             expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
             expect(undoHistoryStore.value?.future ?? []).toHaveLength(2);
+            expect(aiActionHistoryStore.value?.groups.find((group) => group.groupId === groupId)?.reverted).toBe(true);
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('undone');
+
+            await expectAnsweredWithoutChange('undo that', 'already undone');
+            expect(getTrack('track-bass').muted).toBe(false);
+        });
+
+        it('refuses the whole undo, changing nothing, when one committed command can no longer be undone', async () => {
+            scriptProvider([[{ name: 'setTrackGain', arguments: { trackId: 'track-keys', deltaDb: -2 } }, MUTE_BASS]]);
+            await commitThroughCard('Turn Keys down 2 dB and mute Bass');
+            const groupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'track-keys' } });
+            expect(trackStore.value?.tracks.some((track) => track.id === 'track-keys')).toBe(false);
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('standing');
+            const past = undoHistoryStore.value?.past.map((entry) => entry.id);
+
+            await expectAnsweredWithoutChange('undo that', 'nothing was undone');
+
+            expect(lastAssistantMessage()?.error).toContain('project has changed');
+            expect(getTrack('track-bass').muted).toBe(true);
+            expect(undoHistoryStore.value?.past.map((entry) => entry.id)).toEqual(past);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+            expect(aiActionHistoryStore.value?.groups.find((group) => group.groupId === groupId)?.reverted).toBe(false);
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('standing');
         });
 
         it('reads the group again when it runs, refusing one no longer applied whole or out of the AI history', async () => {
@@ -559,6 +593,70 @@ describe('relative to the last commit', () => {
             expect(providerCallCount()).toBeGreaterThan(calls);
             expect(getTrack('track-bass').muted).toBe(true);
             expect(getTrack('track-bass').gain).toBe(1);
+        });
+
+        /** Leaves the thread's last commit in the named state before an ordinary `too` request. */
+        async function leaveThreadIn(state: string): Promise<void> {
+            if (state === 'no commit in the chat') {
+                return;
+            }
+            await commitVocalsDown3Db();
+            if (state === 'an undone commit') {
+                await undo();
+            }
+            if (state === 'a commit of unknown standing') {
+                clearUndoHistory();
+            }
+            if (state === 'a commit the history holds partly as callbacks') {
+                const history = undoHistoryStore.value!;
+                undoHistoryStore.set({
+                    ...history,
+                    past: history.past.map((entry) => ({
+                        id: entry.id,
+                        label: entry.label,
+                        timestamp: entry.timestamp,
+                        source: entry.source,
+                        groupId: entry.groupId,
+                        kind: 'callback' as const,
+                        undo: () => undefined,
+                        redo: () => undefined,
+                    })),
+                });
+            }
+        }
+
+        describe.each([
+            'no commit in the chat',
+            'an undone commit',
+            'a commit of unknown standing',
+            'a commit the history holds partly as callbacks',
+        ])('with %s, a too or as-well request naming an action of its own is planned as any request', (state) => {
+            it.each([
+                ['mute Bass too', MUTE_BASS, () => getTrack('track-bass').muted],
+                [
+                    'mute the Keys as well',
+                    { name: 'muteTrack', arguments: { trackId: 'track-keys', muted: true } },
+                    () => getTrack('track-keys').muted,
+                ],
+                [
+                    'turn the Bass down 3 dB too',
+                    { name: 'setTrackGain', arguments: { trackId: 'track-bass', deltaDb: -3 } },
+                    () => decibelsOf('track-bass') === -3,
+                ],
+            ])('"%s"', async (prompt, call, landed) => {
+                scriptProvider([[VOCALS_DOWN_3_DB], [call]]);
+                if (state === 'no commit in the chat') {
+                    scriptProvider([[call]]);
+                }
+                await leaveThreadIn(state);
+                const calls = providerCallCount();
+
+                await sendChatMessage(prompt);
+
+                expect(providerCallCount()).toBeGreaterThan(calls);
+                expect(lastAssistantMessage()?.error).toBeUndefined();
+                expect(landed()).toBe(true);
+            });
         });
     });
 
@@ -797,6 +895,25 @@ describe('relative to the last commit', () => {
             await expectAnsweredWithoutChange('another 2 dB', 'no longer holds the last committed change as one group');
         });
 
+        it.each([
+            ['no commit in the chat', 'no committed change to repeat'],
+            ['an undone commit', 'was undone'],
+            ['a commit of unknown standing', 'no longer shows whether'],
+        ])('a too list of track names with %s', async (state, text) => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+            if (state !== 'no commit in the chat') {
+                await commitVocalsDown3Db();
+            }
+            if (state === 'an undone commit') {
+                await undo();
+            }
+            if (state === 'a commit of unknown standing') {
+                clearUndoHistory();
+            }
+
+            await expectAnsweredWithoutChange('now Guitars and Keys too', text);
+        });
+
         it('leaves a pending card to its own refinement, never continuing the commit beneath it', async () => {
             scriptProvider([[VOCALS_DOWN_3_DB], [VOCALS_DOWN_3_DB, MUTE_BASS], [REDERIVED_VOCALS_LEVEL]]);
             await commitVocalsDown3Db();
@@ -808,6 +925,287 @@ describe('relative to the last commit', () => {
 
             expect(providerCallCount()).toBeGreaterThan(calls);
             expect(decibelsOf('track-vocals')).toBe(-3);
+        });
+    });
+
+    describe('reads the whole request in one closed grammar', () => {
+        const undoRequest = { kind: 'undo' };
+        const another = (figure: number) => ({ kind: 'continue', phrasing: 'another', comparative: 'more', figure });
+        const vague = (comparative: string) => ({
+            kind: 'continue',
+            phrasing: 'comparative',
+            comparative,
+            figure: null,
+        });
+
+        it.each([
+            ['actually undo that', undoRequest],
+            ['and another 2 dB', another(2)],
+            ['undo that, thank you', undoRequest],
+            ['take it back', undoRequest],
+            ['undo what you just did', undoRequest],
+            ['revert the last edit', undoRequest],
+            ['an extra 2 dB', another(2)],
+            ['another 2 decibels', another(2)],
+            ['a touch more', vague('more')],
+            ['make it more', vague('more')],
+            ['2 dB LESS', { kind: 'continue', phrasing: 'comparative', comparative: 'less', figure: 2 }],
+            ['apply the same to the Guitars', { kind: 'retarget', form: 'same', targetText: 'the Guitars' }],
+            ['the same for Bass', { kind: 'retarget', form: 'same', targetText: 'Bass' }],
+            ['the same to Bass', { kind: 'retarget', form: 'same', targetText: 'Bass' }],
+            ['Bass as well', { kind: 'retarget', form: 'too', targetText: 'Bass' }],
+            ['  undo that', undoRequest],
+            ['take it\tback', undoRequest],
+            ['undo that?', { kind: 'none' }],
+        ])('"%s"', (prompt, request) => {
+            expect(readLastCommitRequest(prompt)).toEqual(request);
+        });
+
+        it('leaves a question about the last change to ordinary planning, never undoing it', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await sendChatMessage('undo that?');
+
+            expect(providerCallCount()).toBeGreaterThan(calls);
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+    });
+
+    describe('compiles from the committed batch at its bounds', () => {
+        it('refuses a committed batch the undo history stopped holding after the thread was read', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const thread = readChatThreadContext();
+            // A Ctrl+Z, a size cap or a cleared history between the thread read and the plan.
+            clearUndoHistory();
+
+            expect(
+                planLastCommitContinuation({ prompt: 'another 2 dB', context: getProjectContext(), thread })
+            ).toMatchObject({
+                status: 'denied',
+                reason: expect.stringContaining('no longer holds the last committed change as one group') as unknown,
+            });
+        });
+
+        it('continues a committed level by a figure the float sum would miss, landing on the stated level', async () => {
+            scriptProvider([[{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: 0.1 } }]]);
+            await sendChatMessage('Set Vocals gain to 0.1 dB');
+            expect(readChatThreadContext()?.lastCommit?.standing).toBe('standing');
+
+            await sendChatMessage('0.2 dB more');
+
+            expect(newestCommittedActions()).toEqual([
+                {
+                    type: 'setTrackGain',
+                    payload: expect.objectContaining({ trackId: 'track-vocals', gainDb: 0.3 }) as unknown,
+                },
+            ]);
+        });
+
+        it('compiles a re-target of exactly one batch', async () => {
+            const strings = Array.from({ length: MAX_LLM_ACTIONS_PER_BATCH }, (_, index) =>
+                createTrack(`track-strings-${String(index + 1)}`, `Strings ${String(index + 1)}`)
+            );
+            for (const track of strings) {
+                addTrack(track, 'audio');
+            }
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await sendChatMessage(`do the same to ${strings.map((track) => track.name).join(', ')}`);
+
+            expect(providerCallCount()).toBe(calls);
+            expect(lastAssistantMessage()?.error).toBeUndefined();
+            const [repeatId] = proposedIds();
+            const repeat = pendingActionConfirmationStore.value?.confirmations.find(
+                (confirmation) => confirmation.id === repeatId
+            );
+            expect(repeat?.actions.map((action) => [action.type, action.payload])).toEqual(
+                strings.map((track) => ['setTrackGain', expect.objectContaining({ trackId: track.id, deltaDb: -3 })])
+            );
+        });
+
+        it('refuses a continuation the action bridge rejects', async () => {
+            scriptProvider([[{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: 6 } }]]);
+            await sendChatMessage('Set Vocals gain to 6 dB');
+            expect(decibelsOf('track-vocals')).toBe(6);
+
+            await expectAnsweredWithoutChange('2 dB more', 'could not be compiled');
+        });
+
+        it('asks when a "the same" list names no track at all', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            await expectAnsweredWithoutChange('do the same to the', 'not a list of this project');
+        });
+
+        it('refuses a continuation of a committed send whose bus is gone, though its track stands', async () => {
+            addTrack(createTrack('track-reverb', 'Reverb'), 'bus');
+            scriptProvider([
+                [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'track-reverb', levelDb: -12 } }],
+            ]);
+            await commitThroughCard('Send Vocals to Reverb at -12 dB');
+            rewriteCommittedAction({
+                type: 'setSend',
+                payload: { trackId: 'track-vocals', busId: 'track-reverb', deltaDb: -3 },
+            });
+            const current = trackStore.value!;
+            trackStore.set({ ...current, tracks: current.tracks.filter((track) => track.id !== 'track-reverb') });
+
+            await expectAnsweredWithoutChange('another 2 dB', 'no longer in the project');
+        });
+    });
+
+    describe('runs the undo only where the run may commit, and reports how it ended', () => {
+        function newestRun(request: string) {
+            return agentRunStore.value?.runs.findLast((run) => run.request === request);
+        }
+
+        it('refuses the undo under an analyze-only trust ceiling, though the mode applies changes', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+
+            await sendChatMessage('undo that', { trustCeiling: 'analyze-only' });
+
+            expect(lastAssistantMessage()?.content).toContain('Undoing the last committed change changes the project');
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+
+        it('cancels the run when the user stops it before the undo runs', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            vi.spyOn(agentRunCancellation, 'bindAbortController').mockReturnValue(() => undefined);
+            const settle = agentRunWorkLease.settle.bind(agentRunWorkLease);
+            vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                stopGenerating();
+                return settle(input);
+            });
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.phase).toBe('cancelled');
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+
+        it('refuses the undo when the user undid the commit while it was being planned', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const settle = agentRunWorkLease.settle.bind(agentRunWorkLease);
+            vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                void undo();
+                return settle(input);
+            });
+
+            await sendChatMessage('undo that');
+
+            expect(lastAssistantMessage()?.content).toContain(
+                'Command not executed: The last committed change no longer stands'
+            );
+            expect(lastAssistantMessage()?.error).toContain('nothing was undone');
+            expect(newestRun('undo that')?.phase).toBe('failed');
+            expect(decibelsOf('track-vocals')).toBe(0);
+            expect(undoHistoryStore.value?.future ?? []).toHaveLength(1);
+        });
+
+        it('completes the run and lists what it undid', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const label = undoHistoryStore.value?.past.at(-1)?.label ?? '';
+            expect(label).not.toBe('');
+
+            await sendChatMessage('undo that');
+
+            expect(newestRun('undo that')?.phase).toBe('completed');
+            expect(lastAssistantMessage()?.content).toBe(`Undid the last committed change:\n\n- ${label}`);
+        });
+    });
+
+    describe('undoes only a group the undo and AI histories hold applied whole', () => {
+        async function commitTwoCommands(): Promise<string> {
+            scriptProvider([[VOCALS_DOWN_3_DB, MUTE_BASS]]);
+            await commitThroughCard('Turn Vocals down 3 dB and mute Bass');
+            return undoHistoryStore.value?.past.at(-1)?.groupId ?? '';
+        }
+
+        it('refuses a group the undo history holds nowhere', async () => {
+            const groupId = await commitTwoCommands();
+            clearUndoHistory();
+
+            await expect(revertThreadCommit(groupId)).resolves.toMatchObject({ status: 'refused' });
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(getTrack('track-bass').muted).toBe(true);
+        });
+
+        it('refuses a group the undo history holds partly undone', async () => {
+            const groupId = await commitTwoCommands();
+            const history = undoHistoryStore.value!;
+            const newest = history.past.at(-1)!;
+            undoHistoryStore.set({ ...history, past: history.past.slice(0, -1), future: [newest, ...history.future] });
+
+            await expect(revertThreadCommit(groupId)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringContaining('no longer stands') as unknown,
+            });
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(getTrack('track-bass').muted).toBe(true);
+        });
+
+        it('refuses a group the AI history holds only as a runtime group', async () => {
+            const groupId = await commitTwoCommands();
+            const ai = aiActionHistoryStore.value!;
+            aiActionHistoryStore.set({
+                ...ai,
+                groups: ai.groups.map((group) =>
+                    group.groupId === groupId ? { ...group, executionKind: 'runtime' as const } : group
+                ),
+            });
+
+            await expect(revertThreadCommit(groupId)).resolves.toMatchObject({
+                status: 'refused',
+                reason: expect.stringContaining('AI history no longer holds') as unknown,
+            });
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+    });
+
+    describe('reads the last commit only from the chat, before the fast paths', () => {
+        it('plans "undo that" from the Prompt Bar as any request, leaving the chat commit applied', async () => {
+            scriptProvider([[VOCALS_DOWN_3_DB], [MUTE_BASS]]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await submitAdmittedPromptRequest({ prompt: 'undo that', source: 'prompt-bar' });
+
+            expect(providerCallCount()).toBeGreaterThan(calls);
+            expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(undoHistoryStore.value?.future ?? []).toEqual([]);
+        });
+
+        it('re-targets a too list a parameterized fast path would read as a mute of another track', async () => {
+            addTrack(createTrack('track-mute', 'Mute'), 'audio');
+            addTrack(createTrack('track-too', 'Too'), 'audio');
+            scriptProvider([[VOCALS_DOWN_3_DB]]);
+            await commitVocalsDown3Db();
+            const calls = providerCallCount();
+
+            await sendChatMessage('mute too');
+
+            expect(providerCallCount()).toBe(calls);
+            expect(newestCommittedActions()).toEqual([
+                {
+                    type: 'setTrackGain',
+                    payload: expect.objectContaining({ trackId: 'track-mute', deltaDb: -3 }) as unknown,
+                },
+            ]);
+            expect(getTrack('track-too').muted).toBe(false);
         });
     });
 });

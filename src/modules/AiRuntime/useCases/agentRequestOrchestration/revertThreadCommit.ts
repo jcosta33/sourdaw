@@ -1,25 +1,34 @@
-import { undoHistoryStore } from '#/modules/Command/stores';
+import { revertActionGroupAtomically } from '#/modules/Command/useCases';
 
-import { aiActionHistoryStore } from '../../stores/aiActionHistoryStore';
-import { revertAiActionGroup } from '../aiHistoryActions';
+import { aiActionHistoryStore, markGroupReverted } from '../../stores/aiActionHistoryStore';
 
-type ThreadCommitRevert = { status: 'reverted'; labels: string[] } | { status: 'refused'; reason: string };
+type ThreadCommitRevert =
+    { status: 'reverted'; labels: string[]; warning: string | null } | { status: 'refused'; reason: string };
+
+type GroupRefusal = Extract<Awaited<ReturnType<typeof revertActionGroupAtomically>>, { status: 'refused' }>;
+
+function describeRefusal(refusal: GroupRefusal): string {
+    switch (refusal.reason) {
+        case 'not-applied':
+            return 'The last committed change no longer stands as it was committed, so nothing was undone.';
+        case 'not-replayable':
+            return 'Part of the last committed change has no command that undoes it, so nothing was undone.';
+        case 'conflict':
+            return `The project has changed since the last committed change, so it cannot be undone as a whole (${refusal.detail}); nothing was undone.`;
+        default: {
+            const exhaustive: never = refusal.reason;
+            throw new Error(`Unsupported group revert refusal: ${String(exhaustive)}`);
+        }
+    }
+}
 
 /**
- * Undoes a thread commit's whole revert group through the AI history's group revert, the route its
- * panel uses. The group is read again here, after planning, so a commit that an undo, a redo or a
- * later edit moved since the plan was made is refused rather than partly undone.
+ * Undoes a thread commit's whole revert group as one atomic replay, and marks its AI history group
+ * reverted as the panel's revert does. The group is read again when the replay runs, so a commit
+ * that an undo, a redo or a later edit moved since the plan was made, or one any inverse of which
+ * conflicts with the project as it is now, is refused with nothing undone rather than partly undone.
  */
 export async function revertThreadCommit(revertGroupId: string): Promise<ThreadCommitRevert> {
-    const history = undoHistoryStore.value;
-    const applied = (history?.past ?? []).some((entry) => entry.groupId === revertGroupId);
-    const redoable = (history?.future ?? []).some((entry) => entry.groupId === revertGroupId);
-    if (!applied || redoable) {
-        return {
-            status: 'refused',
-            reason: 'The last committed change no longer stands as it was committed, so nothing was undone.',
-        };
-    }
     const group = aiActionHistoryStore.value?.groups.find(
         (candidate) => candidate.groupId === revertGroupId && candidate.executionKind !== 'runtime'
     );
@@ -29,6 +38,14 @@ export async function revertThreadCommit(revertGroupId: string): Promise<ThreadC
             reason: 'The AI history no longer holds the last committed change, so nothing was undone.',
         };
     }
-    await revertAiActionGroup(group);
-    return { status: 'reverted', labels: group.actions.map((action) => action.label) };
+    const reverted = await revertActionGroupAtomically(revertGroupId);
+    if (reverted.status === 'refused') {
+        return { status: 'refused', reason: describeRefusal(reverted) };
+    }
+    markGroupReverted(revertGroupId);
+    return {
+        status: 'reverted',
+        labels: group.actions.map((action) => action.label),
+        warning: reverted.warning,
+    };
 }

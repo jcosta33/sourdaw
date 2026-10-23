@@ -453,8 +453,9 @@ async function completeRevertedRun(input: {
         return;
     }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
+    const undone = `Undid the last committed change:\n\n${reverted.labels.map((label) => `- ${label}`).join('\n')}`;
     updateChatMessage(assistantMessageId, {
-        content: `Undid the last committed change:\n\n${reverted.labels.map((label) => `- ${label}`).join('\n')}`,
+        content: reverted.warning === null ? undone : `${undone}\n\nWarning: ${reverted.warning}`,
     });
 }
 
