@@ -296,27 +296,59 @@ export function carriedBendReturnIdKey(index: number): string {
     return `${CARRIED_BEND_RETURN_ID_KEY}-${index}`;
 }
 
-/**
- * Whether a controller sets the bend range of the RPN 0 the carried rows left selected: Data Entry MSB (whole
- * semitones), Data Increment and Decrement. A select, the Null RPN and Data Entry LSB (cents) set no range of
- * their own, so a hand edit of one leaves later bends at the state at the cut.
- */
-function setsBendRange(controller: number): boolean {
+type StoredRegisteredParameterRow = { channel: number; beat: number; controller: number; value: number };
+
+/** The controllers that set or step the bend range of an RPN 0 selected when they arrive. */
+function isBendRangeDataController(controller: number): boolean {
     return controller === CC_DATA_ENTRY_MSB || controller === CC_DATA_INCREMENT || controller === CC_DATA_DECREMENT;
 }
 
 /**
- * Whether `row` is a return a split or a glue wrote for a carried bend, and `edit`, a point set by hand that
- * sets the bend range (`setsBendRange`), lands on the head it returns from: on the head itself or up to one
- * return tick after it. The return re-sends the state at the cut, so it would override the range the edit set for
- * every later bend; the edit governs them instead, and the return, which the hand edit has made obsolete, goes
- * with it.
+ * Whether `edit`, a point set by hand, changes RPN 0's bend range where it lands: it is a Data Entry MSB, Data
+ * Increment or Decrement and RPN 0 is selected when it arrives. A select, the Null RPN and Data Entry LSB (cents)
+ * set no range, and a Data Entry the state machine ignores (a Null RPN or an NRPN is selected, which is how a
+ * recorded state usually ends) changes nothing, so an edit like those leaves later bends at the state at the cut.
+ *
+ * The selection is the one `createStoredBendRangeReader` reads there: the channel's `stored` registered-parameter
+ * rows up to the edit's beat, in beat order with list order breaking ties, run through the one state machine. The
+ * edit goes last on its beat, as `addMidiCC` appends it, and the rows it replaces are left out.
  */
-export function isCarriedBendReturnSupersededByEdit(
-    row: { id: string; channel: number; beat: number },
-    edit: { channel: number; beat: number; controller: number }
+export function editSetsBendRangeWhereItLands(
+    stored: readonly StoredRegisteredParameterRow[],
+    edit: StoredRegisteredParameterRow
 ): boolean {
-    if (!setsBendRange(edit.controller) || row.channel !== edit.channel || !CARRIED_BEND_RETURN_ID.test(row.id)) {
+    if (!isBendRangeDataController(edit.controller)) {
+        return false;
+    }
+    const replacedByEdit = (row: StoredRegisteredParameterRow) =>
+        row.beat === edit.beat && row.controller === edit.controller;
+    const state = createMidiChannelControllerState();
+    const arrived = stored
+        .filter(
+            (row) =>
+                row.channel === edit.channel &&
+                row.beat <= edit.beat &&
+                isRegisteredParameterController(row.controller) &&
+                !replacedByEdit(row)
+        )
+        .toSorted((first, second) => first.beat - second.beat);
+    for (const { controller, value } of arrived) {
+        applyRegisteredParameterChange(state, controller, value);
+    }
+    return isPitchBendSensitivitySelected(state);
+}
+
+/**
+ * Whether `row` is a return a split or a glue wrote for a carried bend, from the head `edit` lands on: on the head
+ * itself or up to one return tick after it. When the edit sets the range there (`editSetsBendRangeWhereItLands`)
+ * the return would re-send the state at the cut over it for every later bend; the edit governs them instead, and
+ * the return, which the hand edit has made obsolete, goes with it.
+ */
+export function isCarriedBendReturnOnEditedHead(
+    row: { id: string; channel: number; beat: number },
+    edit: { channel: number; beat: number }
+): boolean {
+    if (row.channel !== edit.channel || !CARRIED_BEND_RETURN_ID.test(row.id)) {
         return false;
     }
     const afterEdit = row.beat - edit.beat;

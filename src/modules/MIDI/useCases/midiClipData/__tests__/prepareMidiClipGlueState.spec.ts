@@ -627,10 +627,10 @@ describe('prepareMidiClipGlueState', () => {
 
             describe('a range set by hand on the window start', () => {
                 /** The glued clip, as the store holds it before the hand edit. */
-                function storeGluedClip() {
+                function storeGluedClip(sourceRows: readonly Row[] = recordedUnderTwelve) {
                     mocks.state.value = {
                         notesByClipId: {},
-                        ccByClipId: { 'source-a': recordedUnderTwelve },
+                        ccByClipId: { 'source-a': Array.from(sourceRows) },
                         pitchBendByClipId: { 'source-a': [carried] },
                     };
                     const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
@@ -672,6 +672,40 @@ describe('prepareMidiClipGlueState', () => {
                         addMidiCC('target', controller, value, 0, 0);
 
                         expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                    }
+                );
+
+                it.each([
+                    {
+                        name: 'a Null RPN, as a keyboard leaves it after a data entry',
+                        selected: (beat: number) => [
+                            row(`null-msb-${beat}`, beat, 101, 127),
+                            row(`null-lsb-${beat}`, beat, 100, 127),
+                        ],
+                    },
+                    {
+                        name: 'an NRPN',
+                        selected: (beat: number) => [
+                            row(`nrpn-msb-${beat}`, beat, 99, 1),
+                            row(`nrpn-lsb-${beat}`, beat, 98, 1),
+                        ],
+                    },
+                ])(
+                    'keeps the state at the window start for a Data Entry on it that the state machine ignores, with $name selected there',
+                    ({ selected }) => {
+                        storeGluedClip([
+                            ...rangeAt('twelve', 0.1, 12),
+                            ...selected(0.1),
+                            ...rangeAt('two', 1.3, 2),
+                            ...selected(1.3),
+                        ]);
+                        const returns = storedRows().filter(({ id }) => id.includes('rpn-after-carried'));
+
+                        addMidiCC('target', 6, 7, 0, 0);
+
+                        expect(returns.length).toBeGreaterThan(0);
+                        expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                        expect(storedRows().filter(({ id }) => id.includes('rpn-after-carried'))).toEqual(returns);
                     }
                 );
 

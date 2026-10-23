@@ -55,12 +55,31 @@ describe('addMidiCC', () => {
             channel: 0,
         };
 
-        function seed(rows: readonly (typeof splitReturn)[]) {
-            midiStore.set({ notesByClipId: {}, ccByClipId: { c1: [...rows] }, pitchBendByClipId: {} });
+        type Row = typeof splitReturn;
+
+        /** The selection messages the carried rows left on the head, ahead of the returns. */
+        function selection(selects: readonly (readonly [controller: number, value: number])[]): Row[] {
+            return selects.map(([controller, value], index) => ({
+                id: `select-${index}`,
+                controller,
+                value,
+                beat: 0,
+                channel: 0,
+            }));
         }
 
+        const RPN_0 = selection([
+            [101, 0],
+            [100, 0],
+        ]);
+
+        function seed(rows: readonly Row[], selected: readonly Row[] = RPN_0) {
+            midiStore.set({ notesByClipId: {}, ccByClipId: { c1: [...selected, ...rows] }, pitchBendByClipId: {} });
+        }
+
+        /** The ids stored, the selection rows left out. */
         function idsAfter() {
-            return midiStore.value?.ccByClipId.c1?.map(({ id }) => id);
+            return midiStore.value?.ccByClipId.c1?.map(({ id }) => id).filter((id) => !id.startsWith('select-'));
         }
 
         it('replaces the return one tick after the beat it lands on', () => {
@@ -126,6 +145,79 @@ describe('addMidiCC', () => {
             const cc = addMidiCC('c1', 6, 7, 0, 0);
 
             expect(idsAfter()).toEqual([row.id, cc.id]);
+        });
+
+        it.each([
+            {
+                name: 'a Null RPN, as a keyboard leaves it after a data entry',
+                selected: [
+                    [101, 127],
+                    [100, 127],
+                ],
+            },
+            {
+                name: 'an NRPN',
+                selected: [
+                    [99, 1],
+                    [98, 1],
+                ],
+            },
+            {
+                name: 'RPN 0 and then a Null RPN',
+                selected: [
+                    [101, 0],
+                    [100, 0],
+                    [101, 127],
+                    [100, 127],
+                ],
+            },
+            { name: 'nothing', selected: [] },
+        ] as const)(
+            'keeps the return for a Data Entry the state machine ignores, with $name selected where it lands',
+            ({ selected }) => {
+                seed([splitReturn], selection(selected));
+
+                const cc = addMidiCC('c1', 6, 7, 0, 0);
+
+                expect(idsAfter()).toEqual([splitReturn.id, cc.id]);
+            }
+        );
+
+        it('keeps the return for a Data Entry when RPN 0 is selected only after it', () => {
+            seed(
+                [
+                    splitReturn,
+                    { id: 'select-late-0', controller: 101, value: 0, beat: 1, channel: 0 },
+                    { id: 'select-late-1', controller: 100, value: 0, beat: 1, channel: 0 },
+                ],
+                []
+            );
+
+            const cc = addMidiCC('c1', 6, 7, 0, 0);
+
+            expect(idsAfter()).toContain(splitReturn.id);
+            expect(idsAfter()).toContain(cc.id);
+        });
+
+        it('replaces the return for a Data Entry when the selection was made by rows on other channels too', () => {
+            seed([splitReturn, ...selection([[99, 1]]).map((row) => ({ ...row, id: 'other', channel: 1 }))]);
+
+            const cc = addMidiCC('c1', 6, 7, 0, 0);
+
+            expect(idsAfter()).toEqual(['other', cc.id]);
+        });
+
+        it.each([
+            { name: 'half a beat', head: 0.5 },
+            { name: 'eight beats', head: 8 },
+        ])('replaces a return on a head $name in, where the tick falls a rounding step past the sum', ({ head }) => {
+            const returnRow = { ...splitReturn, beat: head + tick };
+            expect(returnRow.beat - head).toBeGreaterThan(tick);
+            seed([returnRow]);
+
+            const cc = addMidiCC('c1', 6, 7, head, 0);
+
+            expect(idsAfter()).toEqual([cc.id]);
         });
 
         it('keeps the return when the point set is not a registered-parameter controller', () => {

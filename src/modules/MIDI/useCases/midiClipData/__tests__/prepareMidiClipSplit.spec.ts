@@ -329,6 +329,40 @@ describe('prepareMidiClipSplit bend range', () => {
                 expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
             });
 
+            it.each([
+                {
+                    name: 'a Null RPN, as a keyboard leaves it after a data entry',
+                    selected: (beat: number) => [
+                        controller(`null-msb-${beat}`, beat, 101, 127),
+                        controller(`null-lsb-${beat}`, beat, 100, 127),
+                    ],
+                },
+                {
+                    name: 'an NRPN',
+                    selected: (beat: number) => [
+                        controller(`nrpn-msb-${beat}`, beat, 99, 1),
+                        controller(`nrpn-lsb-${beat}`, beat, 98, 1),
+                    ],
+                },
+            ])(
+                'keeps the state at the cut for a Data Entry on the origin that the state machine ignores, with $name selected there',
+                ({ selected }) => {
+                    storeRightHalf([
+                        ...rangeAt('twelve', 0.1, 12),
+                        ...selected(0.1),
+                        ...rangeAt('two', 1.3, 2),
+                        ...selected(1.3),
+                    ]);
+                    const returns = storedRows().filter(({ id }) => id.includes('rpn-after-carried'));
+
+                    addMidiCC('right', 6, 7, 0, 0);
+
+                    expect(returns.length).toBeGreaterThan(0);
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                    expect(storedRows().filter(({ id }) => id.includes('rpn-after-carried'))).toEqual(returns);
+                }
+            );
+
             it('leaves the state at the cut for a bend drawn after a hand edit on another channel', () => {
                 storeRightHalf();
 

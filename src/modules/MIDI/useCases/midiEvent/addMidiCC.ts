@@ -1,6 +1,9 @@
 import { createMidiError } from '../../errors/MidiError';
 import { createMidiCC, type MidiCC } from '../../models/MidiNote';
-import { isCarriedBendReturnSupersededByEdit } from '../../services/registeredParameterState';
+import {
+    editSetsBendRangeWhereItLands,
+    isCarriedBendReturnOnEditedHead,
+} from '../../services/registeredParameterState';
 import { midiStore } from '../../stores/midiStore';
 
 export function addMidiCC(
@@ -25,13 +28,14 @@ export function addMidiCC(
     // A CC point is keyed by (beat, channel, controller). Replace any existing
     // point at the same key rather than appending a duplicate, so repeated
     // calls update the value in place instead of stacking overlapping events.
-    // A point that sets the bend range also replaces the returns a split or glue
-    // wrote just after the same head, which would re-send the state at the cut
-    // over it for every later bend.
+    // A point that changes RPN 0's bend range where it lands also replaces the
+    // returns a split or glue wrote just after the same head, which would re-send
+    // the state at the cut over it for every later bend.
+    const replacesReturns = editSetsBendRangeWhereItLands(existing, cc);
     const deduped = existing.filter(
         (event) =>
             !(event.beat === beat && event.channel === channel && event.controller === controller) &&
-            !isCarriedBendReturnSupersededByEdit(event, cc)
+            !(replacesReturns && isCarriedBendReturnOnEditedHead(event, cc))
     );
 
     midiStore.set({
