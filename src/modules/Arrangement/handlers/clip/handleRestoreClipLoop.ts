@@ -25,7 +25,12 @@ export const handleRestoreClipLoop = createHandler<'restoreClipLoop'>({
 
         const replacement = action.payload.replacement;
         const enabled = replacement.present ? replacement.enabled : undefined;
-        return toHandlerExecutionResult(setClipLoop(action.payload.clipId, enabled));
+        // The anchor state rides only in entries recorded after the field
+        // could carry it: absent decodes a legacy entry, which replays exactly
+        // the call — and the enable restamp — it always did; `null` records a
+        // captured clip that carried no anchor and removes any key the forward
+        // action minted; a value puts the captured anchor back (#5198).
+        return toHandlerExecutionResult(setClipLoop(action.payload.clipId, enabled, replacement.loopOriginBeat));
     },
     describe: () => ({ label: 'Restore clip loop state', inverseAction: null }),
     isNoop: (action) => {

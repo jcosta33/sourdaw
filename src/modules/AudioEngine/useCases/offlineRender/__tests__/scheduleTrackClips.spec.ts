@@ -2666,6 +2666,133 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
     });
 });
 
+describe('scheduleTrackClips — the anchored loop window through the real projection (#5198)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+    });
+
+    // At 120 BPM and 48 kHz a beat is 24 000 frames.
+    const BEAT_FRAMES = 24_000;
+
+    /**
+     * Schedules an anchored, trimmed clip through the projection the
+     * composition root injects (`createGrooveMidiEventProjector`), and reports
+     * the frames the instrument's own surfaces received.
+     *
+     * The clip is the state a born-looped clip (start 0, anchor 0, loop 4)
+     * carries after a start trim to 4: head 4, anchor kept at 0 (advance 4),
+     * offset wrapped to its phase 0, and the stored rows ridden by the wrap's
+     * −4 so every relative keeps the raw advance's figure — the loop head at
+     * −4 and one row of source material a beat past the region end at 0.5.
+     */
+    async function scheduleAnchoredClip(options: { yeastRouted?: boolean } = {}): Promise<string[]> {
+        const arrivals: string[] = [];
+        const strategy: DeviceNodeEntry['strategy'] = {
+            node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+            acceptsNotes: true,
+            setParam: () => {},
+            resolveOfflineAutomation: () => null,
+        };
+        const entry: DeviceNodeEntry = {
+            deviceId: 'inst-1',
+            deviceType: 'grand-boule',
+            contributesAudio: true,
+            node: strategy.node,
+            strategy,
+            instrumentControls: {
+                noteOn: ({ sampleFrame }) => arrivals.push(`noteOn @${sampleFrame}`),
+                noteOff: ({ sampleFrame }) => arrivals.push(`noteOff @${sampleFrame}`),
+            },
+        };
+        const track = makeMidiTrack();
+        if (options.yeastRouted) {
+            track.devices.push({ id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
+        }
+        track.clips = [
+            {
+                ...track.clips[0]!,
+                startBeat: 4,
+                endBeat: 12,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                midiOffsetBeats: 0,
+            },
+        ];
+        const midi = makeMidi();
+        midi.notesByClipId['clip-1'] = [
+            { id: 'n-loop-head', pitch: 60, startBeat: -4, duration: 1, velocity: 100 },
+            { id: 'n-past-region', pitch: 72, startBeat: 0.5, duration: 0.25, velocity: 100 },
+        ];
+        const events: PendingWorkletEvent[] = [];
+        const offlineCtx = makeOfflineCtx();
+
+        await scheduleTrackClips({
+            offlineCtx,
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                projectClipControllers: projectClipControllerEvents,
+            },
+            pendingWorkletEvents: events,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        schedulePendingSuspends(offlineCtx, events, 60);
+        return arrivals;
+    }
+
+    it('sounds the trimmed-in loop head at every pass placement and stays silent past the region', async () => {
+        // The anchored window [−4, 0) admits the head and the projection wraps
+        // it onto the opening of every pass — beats 4 and 8 here; the row at
+        // 0.5 reads outside that window and never renders. The unanchored
+        // [0, 4) reading admits the past-region row and drops the head, so
+        // losing the pass-through at the scheduler swaps the audible material.
+        const arrivals = await scheduleAnchoredClip();
+
+        expect(arrivals).toEqual([
+            `noteOn @${4 * BEAT_FRAMES}`,
+            `noteOff @${5 * BEAT_FRAMES}`,
+            `noteOn @${8 * BEAT_FRAMES}`,
+            `noteOff @${9 * BEAT_FRAMES}`,
+        ]);
+    });
+
+    it('sounds the trimmed-in loop head on the Yeast rack path and stays silent past the region', async () => {
+        // The same anchored clip routed to a Yeast rack: the offline
+        // construction, the routed-row projection, and the post-rack clip
+        // projection each apply the anchored window, so the past-region row
+        // never reaches the rack and both passes render exactly the head —
+        // the same material the synth twin above renders.
+        const arrivals = await scheduleAnchoredClip({ yeastRouted: true });
+
+        expect(arrivals).toEqual([
+            `noteOn @${4 * BEAT_FRAMES}`,
+            `noteOff @${5 * BEAT_FRAMES}`,
+            `noteOn @${8 * BEAT_FRAMES}`,
+            `noteOff @${9 * BEAT_FRAMES}`,
+        ]);
+    });
+});
+
 describe('scheduleTrackClips — export cancellation is caller-owned', () => {
     beforeEach(() => {
         vi.clearAllMocks();
