@@ -10,7 +10,7 @@ import { removeFromRecentProjects } from '../../../useCases/recentProjects/remov
 import { RecentProjectsMenu } from '../RecentProjectsMenu';
 
 const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: null as { dirty: boolean } | null },
+    projectStoreValue: { value: null as { dirty: boolean; createdAt?: number } | null },
 }));
 
 vi.mock('../../../stores/projectStore', async (importOriginal) => ({
@@ -39,6 +39,7 @@ vi.mock('../../../useCases/recentProjects/helpers', () => ({
     getRecentProjects: vi.fn(() => [
         { key: 'proj-1', name: 'Project One', updatedAt: Date.now() - 100000 },
         { key: 'proj-2', name: 'Project Two', updatedAt: Date.now() - 200000 },
+        { key: 'sourdaw:project:1700000000000', name: 'Open Project', updatedAt: Date.now() - 300000 },
     ]),
 }));
 
@@ -335,5 +336,24 @@ describe('RecentProjectsMenu', () => {
         await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
         expect(notifyUser).not.toHaveBeenCalled();
         expect(removeFromRecentProjects).not.toHaveBeenCalled();
+    });
+
+    // The open project's Recent entry would otherwise run the pre-save, read the
+    // named project before a closing take's own save lands, and hydrate that
+    // stale read over the session (#5536). Opening the open project is a no-op.
+    it('keeps the session untouched when the chosen entry is the project that is open', async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1_700_000_000_000 };
+        vi.mocked(saveProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Open Project'));
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(saveProject).not.toHaveBeenCalled();
+        expect(loadRecentProject).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 });

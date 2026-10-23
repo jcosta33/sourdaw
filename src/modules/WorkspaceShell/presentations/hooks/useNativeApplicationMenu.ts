@@ -12,6 +12,7 @@ import {
     discardProjectChanges,
     getRecentProjects,
     getProjectSnapshotKey,
+    isOpenProjectKey,
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
@@ -144,7 +145,11 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             return;
         }
         case 'project:open-recent':
-            if (intent.recentKey !== undefined && (await saveProjectIfClean())) {
+            // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
+            if (intent.recentKey === undefined || isOpenProjectKey(intent.recentKey)) {
+                return;
+            }
+            if (await saveProjectIfClean()) {
                 await loadRecentProject(intent.recentKey);
             }
             return;

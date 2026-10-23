@@ -59,6 +59,7 @@ const projectActions = vi.hoisted(() => ({
     exportProjectFile: vi.fn(async () => undefined),
     getRecentProjects: vi.fn<ProjectUseCases['getRecentProjects']>(() => []),
     getProjectSnapshotKey: vi.fn((createdAt: number) => `sourdaw:project:${createdAt}`),
+    isOpenProjectKey: vi.fn((key: string) => key === `sourdaw:project:${projectState.createdAt}`),
     loadRecentProject: vi.fn(async () => 'committed'),
     recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
 }));
@@ -89,6 +90,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     exportProjectFile: projectActions.exportProjectFile,
     getProjectSnapshotKey: projectActions.getProjectSnapshotKey,
     getRecentProjects: projectActions.getRecentProjects,
+    isOpenProjectKey: projectActions.isOpenProjectKey,
     loadRecentProject: projectActions.loadRecentProject,
     newProject: projectActions.newProject,
     pickAndImportProjectFile: projectActions.pickAndImportProjectFile,
@@ -1186,6 +1188,33 @@ describe('useNativeApplicationMenu', () => {
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
         expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project');
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
+    });
+
+    // Opening the open project would read its named save before a closing
+    // take's own save lands and hydrate that stale read (#5536).
+    it('leaves the session untouched when Open Recent names the open project', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+
+        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
+        expect(projectActions.loadRecentProject).not.toHaveBeenCalledWith('sourdaw:project:1');
+        expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1);
     });
 
     it('serializes native project transitions in menu delivery order', async () => {

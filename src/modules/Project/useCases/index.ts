@@ -58,6 +58,7 @@ export { runProjectLoadTransaction } from './projectPersistence/helpers/runProje
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
 export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
+export { isOpenProjectKey } from './recentProjects/isOpenProjectKey';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
 

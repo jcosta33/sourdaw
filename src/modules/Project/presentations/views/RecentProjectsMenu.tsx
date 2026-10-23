@@ -28,6 +28,7 @@ import { newProject } from '../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
 import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
 import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
+import { isOpenProjectKey } from '../../useCases/recentProjects/isOpenProjectKey';
 import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
 
@@ -115,6 +116,13 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {
+        // The project is already open: a reload would read its named save before
+        // a closing take's own save lands and replace the session with that
+        // stale read, so keep the session as it is (#5536).
+        if (isOpenProjectKey(entry.key)) {
+            setOpen(false);
+            return;
+        }
         void (async () => {
             // Await the pre-switch save (audit #568 F2) and abort on its
             // failure or on a save that resolved with the project still dirty
