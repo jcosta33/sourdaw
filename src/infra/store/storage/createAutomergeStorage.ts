@@ -1648,6 +1648,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         return decodeClonedValues(JSON.parse(JSON.stringify(incomingValues)) as unknown[]);
     };
 
+    type FieldRebaseSides = {
+        toDurable: (value: TData) => Partial<TData>;
+        pendingValue: TData & object;
+        authorityValue: TData & object;
+    };
+
     const mergePartialAuthority = (localValue: TData | null, authorityValue: TData): TData => {
         if (toCrdt && localValue !== null && typeof localValue === 'object' && typeof authorityValue === 'object') {
             return { ...localValue, ...authorityValue };
@@ -1670,13 +1676,16 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
      * A hydrate and the rebase of the pending writes behind a refused write
      * both follow this rule, and both re-anchor the write at the authority they
      * absorbed.
+     *
+     * The merge is per field, so two edits that are each valid alone can merge
+     * into a combination a store's inbound sanitizer rejects (a loop whose start
+     * one side moved past the end the other side moved). The sanitizer then
+     * rebuilds the fields from defaults, and the re-anchored write would flush
+     * those defaults over the document. `guardFieldRebase` therefore drops the
+     * field merge for the document whole whenever the guard changes a durable
+     * field, so a rebase never authors a value the sanitizer produced.
      */
-    const rebasePendingOverAuthority = (input: {
-        toDurable: (value: TData) => Partial<TData>;
-        pendingValue: TData & object;
-        trustedBaseValue: TData | null;
-        authorityValue: TData & object;
-    }): TData => {
+    const rebasePendingOverAuthority = (input: FieldRebaseSides & { trustedBaseValue: TData | null }): TData => {
         const { toDurable, pendingValue, trustedBaseValue, authorityValue } = input;
         if (trustedBaseValue === null) {
             return { ...pendingValue, ...authorityValue };
@@ -1712,6 +1721,19 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             return value;
         }
         return inboundProjector({ value, purpose });
+    };
+
+    const guardFieldRebase = (sides: FieldRebaseSides, rebasedValue: TData | null): TData | null => {
+        const { toDurable, pendingValue, authorityValue } = sides;
+        const guardedValue = guardInboundValue(rebasedValue, 'visible');
+        if (
+            rebasedValue !== null &&
+            guardedValue !== null &&
+            sameDurableValue(toDurable(guardedValue), toDurable(rebasedValue))
+        ) {
+            return guardedValue;
+        }
+        return guardInboundValue({ ...pendingValue, ...authorityValue }, 'visible');
     };
 
     const getSemanticMessage = (): string | undefined => {
@@ -1926,7 +1948,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             }
 
             let rebasedValue = successor.value;
-            let rebasedByField = false;
+            let fieldRebase: FieldRebaseSides | null = null;
             if (rebasePending && projectedValue !== null) {
                 rebasedValue = rebasePending({
                     baseValue: successor.baseValue,
@@ -1941,22 +1963,22 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 typeof projectedValue === 'object' &&
                 projectedValue !== null
             ) {
+                fieldRebase = { toDurable: toCrdt, pendingValue: successor.value, authorityValue: projectedValue };
                 rebasedValue = rebasePendingOverAuthority({
-                    toDurable: toCrdt,
-                    pendingValue: successor.value,
+                    ...fieldRebase,
                     trustedBaseValue: successor.flushBaseUnknown ? null : successor.baseValue,
-                    authorityValue: projectedValue,
                 });
-                rebasedByField = true;
             }
             if (!isCurrentSuccessor()) {
                 continue;
             }
-            const acceptedValue = guardInboundValue(rebasedValue, 'visible');
+            const acceptedValue = fieldRebase
+                ? guardFieldRebase(fieldRebase, rebasedValue)
+                : guardInboundValue(rebasedValue, 'visible');
             if (!isCurrentSuccessor()) {
                 continue;
             }
-            if (rebasePending || rebasedByField) {
+            if (rebasePending || fieldRebase) {
                 successor.baseValue = projectedValue;
                 successor.baseDocumentPresence = captureBaseDocumentPresence();
                 successor.flushBaseUnknown = false;
@@ -2621,7 +2643,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         projectionGeneration === generation && acceptedAuthorityEpoch === visibleProjectionEpoch;
                     let rebasedValue = visiblePending.value;
                     const trustedBaseValue = visiblePending.flushBaseUnknown ? null : visiblePending.baseValue;
-                    let rebasedByField = false;
+                    let fieldRebase: FieldRebaseSides | null = null;
                     if (rebasePending) {
                         rebasedValue = rebasePending({
                             baseValue: visiblePending.baseValue,
@@ -2636,13 +2658,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         typeof crdtData === 'object' &&
                         crdtData !== null
                     ) {
-                        rebasedValue = rebasePendingOverAuthority({
+                        fieldRebase = {
                             toDurable: toCrdt,
                             pendingValue: visiblePending.value,
-                            trustedBaseValue,
                             authorityValue: crdtData,
-                        });
-                        rebasedByField = true;
+                        };
+                        rebasedValue = rebasePendingOverAuthority({ ...fieldRebase, trustedBaseValue });
                     }
                     if (!isCurrentVisibleProjection()) {
                         return false;
@@ -2657,7 +2678,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         return true;
                     }
                     const acceptedVisible = keepLocalRuntimeState(
-                        guardInboundValue(rebasedValue, 'visible'),
+                        fieldRebase
+                            ? guardFieldRebase(fieldRebase, rebasedValue)
+                            : guardInboundValue(rebasedValue, 'visible'),
                         visiblePending.value,
                         options
                     );
@@ -2673,7 +2696,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         lastHydratedHeads = headsKey;
                         return true;
                     }
-                    if (rebasePending || rebasedByField) {
+                    if (rebasePending || fieldRebase) {
                         // Three-way base-advance (issue #3183): only the same
                         // visible pending that survived both projector guards
                         // may absorb the hydrated truth this rebase consumed.

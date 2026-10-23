@@ -21,7 +21,16 @@ import { setupProjectionBridge } from '../setupProjectionBridge';
 // that pending edit changed, which win until it flushes and then reach the
 // document.
 
-type TransportSlot = { tempo?: number; metronomeEnabled?: boolean };
+type TransportSlot = {
+    tempo?: number;
+    metronomeEnabled?: boolean;
+    isLooping?: boolean;
+    loopStart?: number;
+    loopEnd?: number;
+    punchInEnabled?: boolean;
+    punchInBeat?: number;
+    punchOutBeat?: number;
+};
 type RootDocument = { transport?: TransportSlot };
 
 // Sorts after the local actor, so its write wins an Automerge conflict.
@@ -150,5 +159,73 @@ describe('projecting the document into the transport store', () => {
 
         expect(transport_slot().tempo).toBe(PEER_TEMPO);
         expect(transportStore.value?.tempo).toBe(PEER_TEMPO);
+    });
+
+    // Each edit alone leaves a valid pair, but the two together are a pair the
+    // store's sanitizer would reset to defaults. The rebase must not author that
+    // reset: the write falls back to the document, which keeps the peer's edit.
+    it('keeps the document loop when a local loop end and a peer loop start only conflict together', () => {
+        transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 0, loopEnd: 16 });
+        flushAutomergeStorageWrites();
+        const base = clone(live_document());
+
+        transportStore.set({ ...defaultTransportState, ...transportStore.value, loopEnd: 12 });
+        receive(
+            peer_edit_from(base, (draft) => {
+                if (draft.transport) {
+                    draft.transport.loopStart = 14;
+                }
+            })
+        );
+        flushAutomergeStorageWrites();
+
+        const expected = { isLooping: true, loopStart: 14, loopEnd: 16 };
+        expect(transport_slot()).toMatchObject(expected);
+        expect(transportStore.value).toMatchObject(expected);
+    });
+
+    it('keeps the document punch range when a local punch out and a peer punch in only conflict together', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 16,
+        });
+        flushAutomergeStorageWrites();
+        const base = clone(live_document());
+
+        transportStore.set({ ...defaultTransportState, ...transportStore.value, punchOutBeat: 12 });
+        receive(
+            peer_edit_from(base, (draft) => {
+                if (draft.transport) {
+                    draft.transport.punchInBeat = 14;
+                }
+            })
+        );
+        flushAutomergeStorageWrites();
+
+        const expected = { punchInEnabled: true, punchInBeat: 14, punchOutBeat: 16 };
+        expect(transport_slot()).toMatchObject(expected);
+        expect(transportStore.value).toMatchObject(expected);
+    });
+
+    it('keeps a local loop end that stays valid beside a peer loop start', () => {
+        transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 0, loopEnd: 16 });
+        flushAutomergeStorageWrites();
+        const base = clone(live_document());
+
+        transportStore.set({ ...defaultTransportState, ...transportStore.value, loopEnd: 20 });
+        receive(
+            peer_edit_from(base, (draft) => {
+                if (draft.transport) {
+                    draft.transport.loopStart = 14;
+                }
+            })
+        );
+        flushAutomergeStorageWrites();
+
+        const expected = { isLooping: true, loopStart: 14, loopEnd: 20 };
+        expect(transport_slot()).toMatchObject(expected);
+        expect(transportStore.value).toMatchObject(expected);
     });
 });

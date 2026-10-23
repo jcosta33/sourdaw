@@ -17,7 +17,9 @@ type Slot = {
     playing: boolean;
 };
 
-type TestDoc = { slot?: Slot };
+type Range = { low: number; high: number; note: string };
+
+type TestDoc = { slot?: Slot; range?: Range };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
 const durableSlot: Slot = { tempo: 110, metronome: false, rows: ['a'], loopEnd: 8, playing: false };
@@ -355,6 +357,98 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
 
             expect(doc.slot).toMatchObject({ tempo: 130, metronome: true });
             expect(readSlot(storage)).toMatchObject({ tempo: 130, metronome: true });
+        });
+    });
+
+    // A store's inbound guard can enforce a rule across fields (the transport
+    // resets an inverted loop pair to defaults). Each side's edit can be valid
+    // alone while the per-field merge of both is not, and a rebase must never
+    // author what the guard rebuilt from defaults: it falls back to the document.
+    describe('rebasing a pending write whose merge the inbound guard would change', () => {
+        const durableRange: Range = { low: 0, high: 16, note: '' };
+
+        /** A fresh slot each call: the port's flush reconciles into the document slot in place. */
+        function rangeDoc(): TestDoc {
+            return { range: { low: 0, high: 16, note: '' } };
+        }
+
+        function createRangeStorage() {
+            const storage = createAutomergeStorage<Range>('root', 'range', {
+                toCrdt: ({ low, high, note }) => ({ low, high, note }),
+                hydrateMissing: () => durableRange,
+            });
+            storage.registerInboundProjector?.(({ value }) =>
+                value !== null && value.low > value.high ? { ...value, low: 0, high: 0 } : value
+            );
+            return storage;
+        }
+
+        function readRange(storage: ReturnType<typeof createRangeStorage>): Range {
+            const value = storage.get();
+            if (!value) {
+                throw new Error('Expected the store to hold a value');
+            }
+            return value;
+        }
+
+        it('keeps the document when the merged fields break the rule on a hydrate', () => {
+            const doc = rangeDoc();
+            configureAutomergeStoragePort(createTestPort(doc).port);
+            const storage = createRangeStorage();
+            storage.hydrate?.();
+
+            storage.set({ ...readRange(storage), high: 12 });
+            doc.range = { ...durableRange, low: 14 };
+            expect(storage.hydrate?.()).toBe(true);
+            flushAutomergeStorageWrites();
+
+            expect(doc.range).toMatchObject({ low: 14, high: 16 });
+            expect(readRange(storage)).toMatchObject({ low: 14, high: 16 });
+        });
+
+        it('keeps a local edit that leaves the rule satisfied beside a document change', () => {
+            const doc = rangeDoc();
+            configureAutomergeStoragePort(createTestPort(doc).port);
+            const storage = createRangeStorage();
+            storage.hydrate?.();
+
+            storage.set({ ...readRange(storage), high: 20, note: 'kept' });
+            doc.range = { ...durableRange, low: 14 };
+            storage.hydrate?.();
+            flushAutomergeStorageWrites();
+
+            expect(doc.range).toMatchObject({ low: 14, high: 20, note: 'kept' });
+            expect(readRange(storage)).toMatchObject({ low: 14, high: 20, note: 'kept' });
+        });
+
+        it('keeps the document for a later write behind a refused write', () => {
+            let refuseWrites = false;
+            const doc = rangeDoc();
+            const { port } = createTestPort(doc, ({ changeFn }) => {
+                if (refuseWrites) {
+                    throw new AutomergeStorageWriteConflictError('refused');
+                }
+                changeFn(doc);
+            });
+            configureAutomergeStoragePort(port);
+            const storage = createRangeStorage();
+            storage.hydrate?.();
+
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                storage.set({ ...readRange(storage), note: 'refused' });
+            });
+            storage.set({ ...readRange(storage), high: 12 });
+            doc.range = { ...durableRange, low: 14 };
+            refuseWrites = true;
+            expect(() => transaction.commit()).toThrow('refused');
+            transaction.abort();
+            refuseWrites = false;
+            expect(readRange(storage)).toMatchObject({ low: 14, high: 16 });
+
+            flushAutomergeStorageWrites();
+
+            expect(doc.range).toMatchObject({ low: 14, high: 16 });
+            expect(readRange(storage)).toMatchObject({ low: 14, high: 16 });
         });
     });
 });
