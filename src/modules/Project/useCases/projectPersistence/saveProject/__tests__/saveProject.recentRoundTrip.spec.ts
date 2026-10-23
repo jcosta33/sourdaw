@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
     ),
     /** How many take commits have settled, as the Transport counts them. */
     takes: { settled: 0 },
+    notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -84,6 +85,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     waitForCrdtDocumentTransition: vi.fn(),
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 
@@ -339,5 +341,27 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
         await expect(loadRecentProject(RECENT_KEY)).resolves.toBe('committed');
 
         expect(mocks.buildProjectData).toHaveBeenCalledTimes(2);
+    });
+
+    // The save reads the count before it writes, so a write that fails has kept
+    // nothing: the take is still owed, and only a save that completes pays it.
+    it('keeps a settled take owed when the save that read it fails, and clears it once a save completes', async () => {
+        mocks.takes.settled += 1;
+        // The first persist is the one-time project identity migration; the second is
+        // the save's own durable write.
+        mocks.persistCrdtProject
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new Error('durable write failed'));
+
+        await expect(saveProject()).resolves.toBe(false);
+        expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(2);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Save failed — your latest changes could not be persisted.',
+            'error'
+        );
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(true);
+
+        await expect(saveProject()).resolves.toBe(true);
+        expect(unsavedClosedTakes.hasUnsaved()).toBe(false);
     });
 });
