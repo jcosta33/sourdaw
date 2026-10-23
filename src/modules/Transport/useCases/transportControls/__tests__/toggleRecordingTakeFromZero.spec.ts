@@ -116,6 +116,11 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    // The recording terminal's root-identity witness reads one function; these
+    // specs exercise no branch machinery, so the identity never moves.
+    captureProjectRootIdentity: () => 'root-identity',
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 // Audit #4591 — a take whose latency-compensated start would fall before

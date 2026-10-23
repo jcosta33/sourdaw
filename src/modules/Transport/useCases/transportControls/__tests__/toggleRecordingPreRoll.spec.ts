@@ -110,6 +110,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionOffered: () => false,
     startNativeLiveGraphSession: mocks.startNativeLiveGraphSession,
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    // The recording terminal's root-identity witness reads one function; these
+    // specs exercise no branch machinery, so the identity never moves.
+    captureProjectRootIdentity: () => 'root-identity',
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 const audioClock: AudioClock = {
