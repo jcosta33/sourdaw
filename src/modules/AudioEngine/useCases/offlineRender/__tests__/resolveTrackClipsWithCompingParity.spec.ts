@@ -31,6 +31,7 @@ import {
     tempoMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
+import { projectPpqEndpoints } from '#/modules/Transport/useCases';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
 import { renderTempoTimeline } from '../renderTempoTimeline';
@@ -540,6 +541,70 @@ describe('captured pass source endings', () => {
     afterEach(() => {
         takeLaneStore.set({ lanes: [] });
         tempoMapStore.set({ changes: [] });
+    });
+
+    it.each([0, 0.25])('retains every captured frame through a short tempo drop when comp entry is %s', (compStart) => {
+        const changes: TempoChange[] = [
+            { id: 'fast', beat: 0, tempo: 180, curve: 'instant' },
+            { id: 'slow', beat: 0.25, tempo: 60, curve: 'instant' },
+            { id: 'fast-again', beat: 0.5, tempo: 180, curve: 'instant' },
+        ];
+        tempoMapStore.set({ changes });
+        const sampleRate = 48000;
+        const sourceEnd = readSecondsAtBeat({ beat: 0.34 });
+        // Independently integrated: .25 / 3 + (.34 - .25), exactly 8320 frames.
+        expect(Math.round(sourceEnd * sampleRate)).toBe(8320);
+        const clip = recording(0, 2);
+        const take = { ...placedPass('bounded', [0, 0.34], 0, 0), passSourceEndSeconds: sourceEnd };
+        const state = lane([take], take.id, compStart, 0.34);
+        takeLaneStore.set(state);
+        // This is the actual whole-sample placement read used by both exports.
+        const secondsAtBeat = (beat: number) =>
+            projectPpqEndpoints({
+                startPpq: beat,
+                endPpq: beat,
+                defaultTempo: 120,
+                sampleRate,
+                changes,
+            }).startSeconds;
+        const tempoAtBeat = (beat: number) => readTempoAtBeat({ beat });
+        const live = resolveClipsWithComping('t1', [clip]);
+        const offline = resolveTrackClipsWithComping(
+            't1',
+            [clip],
+            state,
+            renderTempoTimeline(secondsAtBeat, tempoAtBeat)
+        );
+        const pcm = Float32Array.from({ length: 8320 }, (_value, frame) => frame);
+        const firstFrame = compStart === 0 ? 0 : 4000;
+        for (const fragments of [live, offline]) {
+            const selected = fragments.find((fragment) => fragment.regionStartBeat === compStart)!;
+            expect(selected).toBeDefined();
+            expect(selected.regionStartBeat).toBe(compStart);
+            expect(Math.round(secondsAtBeat(selected.regionEndBeat) * sampleRate)).toBe(8320);
+            const [playback] = projectOfflineAudioClipPlaybacks({
+                clip: selected,
+                bufferDurationSeconds: 2,
+                regionStartBeat: compStart,
+                regionStartSec: secondsAtBeat(compStart),
+                durationSeconds: 2,
+                compensationDelay: 0,
+                projectBeatToSeconds: secondsAtBeat,
+                resolveTempoAtBeat: tempoAtBeat,
+            });
+            expect(playback).toBeDefined();
+            const entry = Math.round(playback!.bufferOffsetSec * sampleRate);
+            const end = Math.round(
+                (playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate) * sampleRate
+            );
+            expect(playback!.playbackRate).toBe(1);
+            expect(entry).toBe(firstFrame);
+            expect(end - entry).toBe(8320 - firstFrame);
+            expect(end).toBe(8320);
+            expect(pcm[entry]).toBe(firstFrame);
+            expect(pcm[end - 1]).toBe(8319);
+            expect(pcm[end]).toBeUndefined();
+        }
     });
 
     it.each([
