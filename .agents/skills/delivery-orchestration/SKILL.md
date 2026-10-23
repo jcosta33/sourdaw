@@ -145,10 +145,12 @@ conventional-commit type (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`,
 `agent/<issue>/<slug>` and `agent/<slug>` shapes of lanes opened earlier are
 recognized by every script exactly as typed ones are; new lanes never use
 `agent/`. `parseLaneBranch` in `scripts/prContract.ts` is the one reader: only
-the first segment is the type, a numeric middle segment is the issue (a number
-inside a slug is never an issue), and a slug is dash-joined lowercase words that
-is never purely numeric, so `fix/12-beat` is an issueless slug and `fix/12/34`
-is refused. Any other name, an unknown type included, is not a lane branch.
+the first segment is the type, a numeric middle segment without a leading zero
+is the issue (a number inside a slug is never an issue), and a slug is
+dash-joined lowercase words that is never purely numeric, so `fix/12-beat` is an
+issueless slug and `fix/12/34` is refused. A name is at most 100 characters
+(`MAX_LANE_BRANCH_LENGTH`). Any other name, an unknown type included, is not a
+lane branch.
 
 An issue number resolves its lane by that parsed issue segment, across types and
 legacy prefixes alike (two lanes carrying the same issue need `--lane`); `--lane`

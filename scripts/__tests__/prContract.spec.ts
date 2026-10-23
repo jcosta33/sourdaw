@@ -603,6 +603,29 @@ describe('pull-request contract', () => {
         expect(() => laneBranchName('fix', 12, 'a'.repeat(120))).toThrow(/not a valid lane branch/);
     });
 
+    it('accepts a branch name of exactly 100 characters and refuses 101, in the parser and the builder', () => {
+        const atBound = `fix/12/${'a'.repeat(93)}`;
+        const pastBound = `fix/12/${'a'.repeat(94)}`;
+
+        expect(atBound).toHaveLength(100);
+        expect(pastBound).toHaveLength(101);
+        expect(parseLaneBranch(atBound)).toEqual({ prefix: 'fix', issue: 12, slug: 'a'.repeat(93) });
+        expect(laneBranchName('fix', 12, 'a'.repeat(93))).toBe(atBound);
+        expect(parseLaneBranch(pastBound)).toBeUndefined();
+        expect(() => laneBranchName('fix', 12, 'a'.repeat(94))).toThrow(/not a valid lane branch/);
+    });
+
+    it('keeps the longest live legacy lane branch recognised', () => {
+        const live = 'agent/4944/nightly-secret-scan-bacteria-fingerprint';
+
+        expect(live.length).toBeGreaterThan(50);
+        expect(parseLaneBranch(live)).toEqual({
+            prefix: 'agent',
+            issue: 4944,
+            slug: 'nightly-secret-scan-bacteria-fingerprint',
+        });
+    });
+
     it('reads the issue only from the numeric middle segment and the type from the first', () => {
         expect(parseLaneBranch('fix/5573/dont-save-discards-after-load')).toEqual({
             prefix: 'fix',

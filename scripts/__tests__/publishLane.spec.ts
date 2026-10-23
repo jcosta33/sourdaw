@@ -2842,6 +2842,7 @@ describe('lane publish', () => {
             ['fix/5573/dont-save-discards-after-load', 5573],
             ['feat/12/work', 12],
             ['agent/5535/overdub-rows-are-one-undo-step', 5535],
+            ['agent/4944/nightly-secret-scan-bacteria-fingerprint', 4944],
             ['docs/five-live-lanes', undefined],
             ['agent/cleanup', undefined],
             ['fix/12-beat', undefined],

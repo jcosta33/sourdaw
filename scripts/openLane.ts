@@ -105,6 +105,19 @@ export type OpenLanePort = {
     log: (message: string) => void;
 };
 
+/** Removes `--type <type>` at `typeIndex` from `args`, validating the type and refusing a repeat. */
+function takeTypeOption(args: string[], typeIndex: number): { type: LaneChangeType; rest: string[] } {
+    const token = args[typeIndex + 1];
+    if (token === undefined || token.startsWith('--')) {
+        fail(`--type requires the conventional-commit type of the change, one of ${LANE_CHANGE_TYPES.join(', ')}`);
+    }
+    const rest = [...args.slice(0, typeIndex), ...args.slice(typeIndex + 2)];
+    if (rest.includes('--type')) {
+        fail(OPEN_LANE_USAGE);
+    }
+    return { type: assertLaneChangeType(token), rest };
+}
+
 export function parseOpenLaneArgs(args: string[]): {
     issue?: number;
     slug: string;
@@ -139,15 +152,8 @@ export function parseOpenLaneArgs(args: string[]): {
     }
     const typeIndex = args.indexOf('--type');
     if (typeIndex !== -1) {
-        const token = args[typeIndex + 1];
-        if (token === undefined || token.startsWith('--')) {
-            fail(`--type requires the conventional-commit type of the change, one of ${LANE_CHANGE_TYPES.join(', ')}`);
-        }
-        const rest = [...args.slice(0, typeIndex), ...args.slice(typeIndex + 2)];
-        if (rest.includes('--type')) {
-            fail(OPEN_LANE_USAGE);
-        }
-        return { ...parseOpenLaneArgs(rest), type: assertLaneChangeType(token) };
+        const { type, rest } = takeTypeOption(args, typeIndex);
+        return { ...parseOpenLaneArgs(rest), type };
     }
     if (args[0] === '--help') {
         if (args.length !== 1) {
