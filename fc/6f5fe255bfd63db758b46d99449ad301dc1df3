@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_1c08b47ac3792f::t_e3a80c0a7be555 620-638
+  s_1c08b47ac3792f::t_783d4415f3d5e7 1322-1323
+  s_1c08b47ac3792f::t_8cd9aa74f3872a 93-98
+  s_1c08b47ac3792f::t_ae16cb16d651d6 82-92,99-102,353,639-640,1003-1006,1011-1021,1051-1080,1205-1246
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_1c08b47ac3792f::t_7d9173770be1a7 400-401,423-424
+  s_1c08b47ac3792f::t_0ec5052b5a844a 436
+  s_1c08b47ac3792f::t_db37bdde246f47 409-411
+  s_1c08b47ac3792f::t_ea64b0b9aa95b6 365-399,402-408,412-422,425-435,437-448
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_1c08b47ac3792f::t_a289196d109b5b 3
+  s_1c08b47ac3792f::t_3be6798c568137 162-180
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_994957882040f6 46
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_1c08b47ac3792f::t_40bf5ea67dba93 4,22-23,292-309,386-387
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_1c08b47ac3792f::t_038863a2a95a49 1,14-18,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc6f5fe255bfd63db758b46d99449ad301dc1df3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
