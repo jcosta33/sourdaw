@@ -17,6 +17,7 @@ import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
+import { heldNotesByTrack } from '../heldNoteExpressionState';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 // What a stored bend becomes at a frame is the contract under test: the engine's curve projection and
@@ -452,7 +453,9 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             vi.mocked(applyNoteExpression).mockClear();
 
             // A follow-action jump lands at 3.5, inside the span: the note struck there is bent, and the
-            // long note, never started in this window, is not addressed.
+            // long note, never started in this window, is not addressed. The scheduler's jump has silenced
+            // the notes (`stopAllScheduled`) and forgotten the registry before its window opens.
+            forgetHeldNoteExpression();
             await play(3.5, 4, true);
 
             const calls = vi
@@ -640,6 +643,245 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 { sampleFrame: 5 * FRAMES_PER_BEAT, pitchBend: -1000, bendRangeSemitones: 48 },
                 { sampleFrame: 6 * FRAMES_PER_BEAT, pitchBend: 0, bendRangeSemitones: 2 },
             ]);
+        });
+    });
+
+    describe('when a scheduled loop seam opens the next pass while a note rings across it', () => {
+        // The loop is [0, 4) at 120 BPM, so the first pass ends 2 s in and the next opens there. The clip
+        // spans [0, 8), the bend is centred at beat 0 and out at beat 3, and the long note starts on beat 2
+        // and lasts 4 beats: it is still sounding when the pass ends, and its release lands 2 beats into
+        // the next pass.
+        const SEAM_SECONDS = 2;
+        const SEAM_FRAME = SEAM_SECONDS * 48_000;
+        const LONG_NOTE_PITCH = 64;
+        const DOWNBEAT_PITCH = 60;
+
+        /** A window of one pass on the audio clock, as a rolling transport gives it. */
+        async function playOnPass(
+            passStartSeconds: number,
+            fromBeat: number,
+            toBeat: number,
+            opensAtRelocation = false
+        ): Promise<void> {
+            vi.mocked(getCurrentTime).mockReturnValue(passStartSeconds + fromBeat / 2);
+            await play(fromBeat, toBeat, opensAtRelocation);
+        }
+
+        function loadSeamSong(options: {
+            notes?: Record<string, unknown>[];
+            bends?: ReturnType<typeof bend>[];
+            devices?: { id: string; type: string }[];
+        }): void {
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()], options.devices),
+                notes: {
+                    'clip-1': options.notes ?? [
+                        note('downbeat', 0, 1, DOWNBEAT_PITCH),
+                        note('long', 2, 4, LONG_NOTE_PITCH),
+                    ],
+                },
+                bends: { 'clip-1': options.bends ?? [bend('centre', 0, 0), bend('out', 3, 8191)] },
+            });
+        }
+
+        /** What the engine was asked to apply to one pitch, in the order it was asked. */
+        function appliedTo(pitch: number) {
+            return vi
+                .mocked(applyNoteExpression)
+                .mock.calls.filter(([input]) => input.note === pitch)
+                .map(([input]) => ({
+                    sampleFrame: input.sampleFrame,
+                    pitchBend: input.expression.pitchBend,
+                    bendRangeSemitones: input.bendRangeSemitones,
+                }));
+        }
+
+        beforeEach(() => {
+            stripFor(FERMENTER);
+        });
+
+        it('gives the ringing note the bend in force at the loop start, at the frame the seam window opens on', async () => {
+            loadSeamSong({});
+            await playOnPass(0, 2, 4);
+            // The long note took the bend out at beat 3 before the pass ended.
+            expect(appliedTo(LONG_NOTE_PITCH).at(-1)).toEqual({
+                sampleFrame: 72_000,
+                pitchBend: 8191,
+                bendRangeSemitones: 2,
+            });
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+            await playOnPass(SEAM_SECONDS, 1, 2);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+            // The note struck on the loop start meanwhile starts under the same bend.
+            expect(appliedTo(DOWNBEAT_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('moves the ringing note with the later moves of the new pass, and none past its release', async () => {
+            loadSeamSong({
+                bends: [bend('centre', 0, 0), bend('early', 1, 4096), bend('out', 3, 8191)],
+            });
+            await playOnPass(0, 2, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 2, true);
+            // The note was struck on beat 2 for 4 beats, so it is released 2 beats into the new pass: the
+            // move at beat 3 of the new pass lands after that and never reaches it. The window starts past
+            // beat 2, where the new pass strikes its own note.
+            await playOnPass(SEAM_SECONDS, 2.25, 4);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                { sampleFrame: SEAM_FRAME + FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('keeps the ringing note’s moves on the clock the seam window opened on, however the clock drifts later', async () => {
+            loadSeamSong({ bends: [bend('centre', 0, 0), bend('mid', 1.5, 4096)] });
+            await playOnPass(0, 2, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+            // The window comes 0.3 s late on the audio clock: the move at beat 1.5 is still 0.75 s into the
+            // pass the seam opened, 0.5 s before the release, and must not slide past it.
+            vi.mocked(getCurrentTime).mockReturnValue(SEAM_SECONDS + 1 / 2 + 0.3);
+            await play(1, 2);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+                { sampleFrame: SEAM_FRAME + 1.5 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('holds the ringing note until its release, in the beats of the loop that starts later and under a compensation delay', async () => {
+            vi.mocked(getCompensationDelay).mockReturnValue(0.1);
+            loadSeamSong({});
+            await playOnPass(0, 2, 4);
+
+            // The loop is [1, 4): the pass opens on beat 1, 2 s in, and the note is released 2 beats later.
+            await playOnPass(1.5, 1, 2, true);
+
+            const [carried] = heldNotesByTrack.get('track-1') ?? [];
+            expect(carried?.releaseBeat).toBeCloseTo(3, 6);
+            // A window past that beat finds it over and takes it out of the registry.
+            await playOnPass(1.5, 3, 3.5);
+            expect(heldNotesByTrack.get('track-1') ?? []).toEqual([]);
+        });
+
+        it('does not play the ringing note’s own curve points of the pass it left', async () => {
+            loadSeamSong({
+                notes: [
+                    {
+                        // Released 4 beats into the next pass, so the point at 2.5 would still sound there.
+                        ...note('long', 2, 6, LONG_NOTE_PITCH),
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+                    },
+                ],
+                // The note starts bent, and no bend is in force at the loop start: it returns to centre.
+                bends: [bend('out', 1, 8191)],
+            });
+            // The pressure point at beat 2.5 is parked with the note, and the pass ends before it plays.
+            await playOnPass(0, 2, 2.25);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+            await playOnPass(SEAM_SECONDS, 2.25, 3);
+
+            const applied = vi.mocked(applyNoteExpression).mock.calls.map(([input]) => ({
+                note: input.note,
+                sampleFrame: input.sampleFrame,
+                pressure: input.expression.pressure,
+                pitchBend: input.expression.pitchBend,
+            }));
+            expect(applied).toEqual([
+                { note: LONG_NOTE_PITCH, sampleFrame: SEAM_FRAME, pressure: undefined, pitchBend: 0 },
+            ]);
+        });
+
+        it('updates the ringing note ahead of a note struck on the loop start at the same pitch, which keeps its own bend', async () => {
+            loadSeamSong({
+                notes: [
+                    { ...note('again', 0, 1, LONG_NOTE_PITCH), pitchBend: 1000, pitchBendRangeSemitones: 48 },
+                    note('long', 2, 4, LONG_NOTE_PITCH),
+                ],
+                bends: [bend('mid', 0, 4096), bend('out', 3, 8191)],
+            });
+            await playOnPass(0, 2, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+            // The note the pass strikes is addressed last, so its own bend is the one the voice ends on.
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 4096, bendRangeSemitones: 2 },
+                { sampleFrame: SEAM_FRAME, pitchBend: 1000, bendRangeSemitones: 48 },
+            ]);
+        });
+
+        it('posts nothing to the ringing note when the bend in force at the loop start is the one it holds', async () => {
+            loadSeamSong({ bends: [bend('centre', 0, 0)] });
+            await playOnPass(0, 2, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+        });
+
+        it('returns the ringing note to centre when no bend is in force at the loop start', async () => {
+            loadSeamSong({ bends: [bend('out', 3, 8191)] });
+            await playOnPass(0, 2, 4);
+            expect(appliedTo(LONG_NOTE_PITCH).at(-1)?.pitchBend).toBe(8191);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+        });
+
+        it('leaves a note alone that is released before the seam frame or on it', async () => {
+            loadSeamSong({
+                notes: [note('ends-before', 1, 2, 62), note('ends-on', 1, 3, 66), note('rings', 2, 4, LONG_NOTE_PITCH)],
+                bends: [bend('out', 1, 8191)],
+            });
+            await playOnPass(0, 0, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+            expect(appliedTo(62)).toEqual([]);
+            expect(appliedTo(66)).toEqual([]);
+            expect(appliedTo(LONG_NOTE_PITCH)).toHaveLength(1);
+        });
+
+        it('leaves a ringing note alone once the instrument that voiced it is not the track’s', async () => {
+            loadSeamSong({});
+            await playOnPass(0, 2, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+            loadSeamSong({ devices: [{ id: 'device-2', type: FERMENTER.type }] });
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
+        });
+
+        it('forgets a ringing note when playback stops before the seam window', async () => {
+            loadSeamSong({});
+            await playOnPass(0, 2, 4);
+            disposePlayheadScheduler();
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([]);
         });
     });
 });

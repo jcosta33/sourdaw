@@ -376,6 +376,8 @@ export function startPlayheadScheduler(): void {
             // the device read must not map back across it (#4784).
             schedulerSession.lastLoopSeamAudioTime = null;
             stopAllScheduled();
+            // The notes it silenced are over: the re-emitted window carries none of them on.
+            forgetHeldNoteExpression();
             // The teardown stops notes, not pedals or controllers (a controller
             // is state), so the stored moves still queued for the cut look-ahead
             // would apply at their old frames after the re-emitted window: drop
@@ -550,6 +552,9 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // The notes it silenced are over: the window opening at the loop start
+            // carries none of them on.
+            forgetHeldNoteExpression();
             // Stops notes, not pedals or controllers: drop the stored moves still
             // queued for the old position, as the edit teardown above does; the
             // window opening at the loop start restores what is in force there.
@@ -659,6 +664,9 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // The notes it silenced are over: the window opening at the destination
+            // carries none of them on.
+            forgetHeldNoteExpression();
             // Stops notes, not pedals or controllers: drop the stored moves still
             // queued for the old position, as the edit teardown above does; the
             // window opening at the destination restores what is in force there.

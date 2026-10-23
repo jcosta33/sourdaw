@@ -33,7 +33,7 @@ import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midi
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
-import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
+import { BEAT_EPSILON, beatToSamples, samplesToBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import {
     forgetStoredControllersClipMuteWithheld,
@@ -48,12 +48,13 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
-import { forgetHeldNoteExpression } from './forgetHeldNoteExpression';
+import { detachSoundingNoteExpression } from './detachSoundingNoteExpression';
 import { holdNoteExpression } from './holdNoteExpression';
 import { keepHeldNoteExpressionOnReceiver } from './keepHeldNoteExpressionOnReceiver';
 import { listMutedMidiClips } from './listMutedMidiClips';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
+import { relocateHeldNoteExpression } from './relocateHeldNoteExpression';
 import { resolveChannelBendClips } from './resolveChannelBendClips';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
@@ -864,11 +865,12 @@ export async function scheduleMidiNotes(
     opensAtRelocation = false
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
-    // A relocation is not a continuation: a note sounding at the old position has no changes in the new one,
-    // and a loop pass's notes must not bend the notes the next pass starts at their pitch.
-    if (opensAtRelocation) {
-        forgetHeldNoteExpression();
-    }
+    // A relocation is not a continuation: the changes a note's own curves parked belong to the pass it
+    // leaves, and must not bend the notes the next pass starts at their pitch. A relocation that silences
+    // the notes (a late wrap, a jump, an edit) has forgotten the registry before this window; the
+    // scheduled seam leaves them sounding, so the ones that follow the channel bend are carried into the
+    // pass this window opens, on the tracks whose window runs.
+    const soundingAtRelocation = opensAtRelocation ? detachSoundingNoteExpression() : undefined;
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -919,15 +921,30 @@ export async function scheduleMidiNotes(
     // lifts only what no track restored.
     const restoredStoredControllerDevices = new Set<string>();
     // The sample frame a beat is posted at on one track's clock, for the window's own moves and for
-    // a relocation's restore alike.
-    const sampleFrameAtBeatOnTrack = (trackId: string) => (beat: number) => {
+    // a relocation's restore alike. A caller that keeps the clock past this window freezes the time it
+    // stands for (`currentTime`), as a started note does.
+    const sampleFrameAtBeatOnTrack = (trackId: string, currentTime?: number) => (beat: number) => {
         const { sampleRate } = getAudioContext();
         return placeSamplesOnClock({
             startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
             accumulatedSamples: beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate),
             sampleRate,
             compensation: getCompensationDelay(trackId),
+            currentTime,
         }).sampleFrame;
+    };
+    // The beat `sampleFrameAtBeatOnTrack` places on a frame: where a note released on that frame ends in
+    // this window's beats.
+    const beatAtFrameOnTrack = (trackId: string, currentTime: number) => (frame: number) => {
+        const { sampleRate } = getAudioContext();
+        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate);
+        const compensation = getCompensationDelay(trackId);
+        return samplesToBeat(
+            changes,
+            accumulatedSamples + frame - (currentTime + compensation) * sampleRate,
+            transport.tempo,
+            sampleRate
+        );
     };
     // What a relocation's restore sends for one track's routed device, from every clip of the track:
     // a destination inside a clip and one across a gap run the same restore.
@@ -1257,6 +1274,24 @@ export async function scheduleMidiNotes(
                 fromBeat: resumesAfterMute ? Number.NEGATIVE_INFINITY : fromBeat,
                 toBeat,
             });
+        // The notes the relocation left sounding take the bend in force at its destination before the window
+        // starts any note, so a note struck on the opening frame is not overridden by a carried one's update.
+        const soundingNotes = soundingAtRelocation?.get(track.id);
+        if (soundingNotes) {
+            const relocationClockTime = getCurrentTime();
+            const atFrame = sampleFrameAtBeatOnTrack(track.id)(fromBeat);
+            for (const { pitch, channel, expression } of relocateHeldNoteExpression({
+                trackId: track.id,
+                notes: soundingNotes,
+                receiverId: playbackReceiverId,
+                atFrame,
+                frameAtBeat: sampleFrameAtBeatOnTrack(track.id, relocationClockTime),
+                beatAtFrame: beatAtFrameOnTrack(track.id, relocationClockTime),
+                readChannelBend,
+            })) {
+                postNoteExpression({ posts, trackId: track.id, pitch, channel, sampleFrame: atFrame, expression });
+            }
+        }
         for (const clip of activeMidiClips) {
             // A clip with no note list plays no notes; its stored controllers still play.
             const notes = midiState.notesByClipId[clip.id] ?? [];

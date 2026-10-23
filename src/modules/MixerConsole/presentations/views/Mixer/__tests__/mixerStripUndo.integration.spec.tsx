@@ -299,6 +299,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),
     startNoteExpression: vi.fn(),
     advanceNoteExpression: vi.fn(),
+    relocateNoteExpression: vi.fn(),
     applyRuntimeGraphDelta: vi.fn(),
     audioEngine: vi.fn(),
     cacheAudioBuffer: vi.fn(),

@@ -58,6 +58,7 @@ export { applyNoteExpression } from './noteExpression/applyNoteExpression';
 export { getDefaultBendRangeSemitones } from './noteExpression/getDefaultBendRangeSemitones';
 export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
 export { projectNoteExpressionCurves } from './noteExpression/projectNoteExpressionCurves';
+export { relocateNoteExpression } from './noteExpression/relocateNoteExpression';
 export { startNoteExpression } from './noteExpression/startNoteExpression';
 
 export { buildDeviceChain } from './buildDeviceChain';

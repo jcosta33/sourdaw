@@ -64,9 +64,13 @@ const realNoteExpression = vi.hoisted(async () => {
     const advance = await vi.importActual<
         Pick<typeof import('#/modules/AudioEngine/useCases'), 'advanceNoteExpression'>
     >('#/modules/AudioEngine/useCases/noteExpression/advanceNoteExpression');
+    const relocate = await vi.importActual<
+        Pick<typeof import('#/modules/AudioEngine/useCases'), 'relocateNoteExpression'>
+    >('#/modules/AudioEngine/useCases/noteExpression/relocateNoteExpression');
     return {
         startNoteExpression: start.startNoteExpression,
         advanceNoteExpression: advance.advanceNoteExpression,
+        relocateNoteExpression: relocate.relocateNoteExpression,
     };
 });
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
@@ -118,6 +122,7 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
     // with only the engine surface around it doubled.
     startNoteExpression: (await realNoteExpression).startNoteExpression,
     advanceNoteExpression: (await realNoteExpression).advanceNoteExpression,
+    relocateNoteExpression: (await realNoteExpression).relocateNoteExpression,
     registerScheduledSource: registerScheduledSourceMock,
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).
