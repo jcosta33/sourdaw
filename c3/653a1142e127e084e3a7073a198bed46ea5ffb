@@ -1,0 +1,21 @@
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_59e31a5c6f3e31::t_966b0ca77bb6cc 338,343-357,364,366-375
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_59e31a5c6f3e31::t_d0b54ca64d96ef 295-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3653a1142e127e084e3a7073a198bed46ea5ffb",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
