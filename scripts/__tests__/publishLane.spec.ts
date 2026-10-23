@@ -90,7 +90,7 @@ const TEST_INSTRUCTIONS = 'Run the focused publisher specs and confirm they pass
 const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
-const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
+const LEGACY_BRANCH = 'hotfix/collab-sync-state-2039';
 /** A How-to-test value that is nothing but CI narration: exactly what the product-scope gate refuses. */
 const COMMAND_ONLY_TEST =
     '- `pnpm test:run scripts/__tests__/publishLane.spec.ts` (140 passed)\n- `pnpm typecheck` (clean)';
@@ -2832,6 +2832,164 @@ describe('lane publish', () => {
         });
     });
 
+    describe('typed lane branches', () => {
+        const TYPED_ISSUE_LANE = '/repo/.agents/worktrees/fix-5573-dont-save-discards-after-load';
+        const TYPED_ISSUELESS_LANE = '/repo/.agents/worktrees/docs--five-live-lanes';
+        const typedIssue = () => worktree({ path: TYPED_ISSUE_LANE, branch: 'fix/5573/dont-save-discards-after-load' });
+        const typedIssueless = () => worktree({ path: TYPED_ISSUELESS_LANE, branch: 'docs/five-live-lanes' });
+
+        it.each([
+            ['fix/5573/dont-save-discards-after-load', 5573],
+            ['feat/12/work', 12],
+            ['agent/5535/overdub-rows-are-one-undo-step', 5535],
+            ['docs/five-live-lanes', undefined],
+            ['agent/cleanup', undefined],
+            ['fix/12-beat', undefined],
+            ['fix/proof-metering-bs1770-2039', undefined],
+            ['hotfix/12/beat', undefined],
+            ['style/12/beat', undefined],
+        ])('binds %s to issue %s from the issue segment alone', (branch, issue) => {
+            expect(laneIssueNumber(branch)).toBe(issue);
+        });
+
+        it('resolves a supplied issue to the one typed lane carrying that issue segment', () => {
+            const trees = [...otherAuthorLanes(), typedIssue(), typedIssueless()];
+
+            expect(resolveAuthorLane(5573, trees, PRIMARY_ROOT)).toEqual({
+                path: TYPED_ISSUE_LANE,
+                branch: 'fix/5573/dont-save-discards-after-load',
+                legacy: false,
+            });
+        });
+
+        it('resolves a typed lane and an agent/ lane for the same issue as two matches, never one', () => {
+            const trees = [
+                typedIssue(),
+                worktree({ path: '/repo/.agents/worktrees/agent-5573-old', branch: 'agent/5573/old' }),
+            ];
+
+            expect(() => resolveAuthorLane(5573, trees, PRIMARY_ROOT)).toThrow(
+                /expected exactly one locked author lane for issue #5573/
+            );
+        });
+
+        it('never matches an issue by string prefix across types, digits or an issueless slug', () => {
+            const trees = [
+                worktree({ path: '/repo/.agents/worktrees/a', branch: 'fix/55730/other' }),
+                worktree({ path: '/repo/.agents/worktrees/b', branch: 'fix/5573-other' }),
+                worktree({ path: '/repo/.agents/worktrees/c', branch: 'hotfix/5573/other' }),
+                worktree({ path: '/repo/.agents/worktrees/d', branch: 'style/5573/other' }),
+            ];
+
+            expect(() => resolveAuthorLane(5573, trees, PRIMARY_ROOT)).toThrow(/expected exactly one locked author/);
+        });
+
+        it('resolves an issueless typed lane from inside it, beside typed and agent/ lanes', () => {
+            const trees = [...otherAuthorLanes(), typedIssue(), typedIssueless()];
+
+            expect(resolveAuthorLane(undefined, trees, `${TYPED_ISSUELESS_LANE}/scripts`)).toEqual({
+                path: TYPED_ISSUELESS_LANE,
+                branch: 'docs/five-live-lanes',
+                legacy: false,
+            });
+        });
+
+        it('treats a typed branch as a conforming lane, not a legacy one, even with no open pull request', () => {
+            const trees = [typedIssueless()];
+
+            expect(resolveAuthorLane(undefined, trees, TYPED_ISSUELESS_LANE, undefined, () => false)).toEqual({
+                path: TYPED_ISSUELESS_LANE,
+                branch: 'docs/five-live-lanes',
+                legacy: false,
+            });
+        });
+
+        it.each(['style/thing', 'Fix/thing', 'fix/Thing', 'fix//thing', 'fix/12/34', 'fix/a/b/c', 'fix/thing\n'])(
+            'does not resolve a locked worktree on the malformed branch %j as a conforming lane',
+            (branch) => {
+                const trees = [worktree({ path: '/repo/.agents/worktrees/odd', branch })];
+
+                expect(() => resolveAuthorLane(undefined, trees, '/repo/.agents/worktrees/odd')).toThrow(
+                    /no open pull request|not inside a locked author lane/
+                );
+            }
+        );
+
+        it('publishes a typed issue lane with Closes #<issue> taken from the issue segment', () => {
+            const { port, calls, bodies } = fakePort({
+                trees: [typedIssue()],
+                cwd: `${TYPED_ISSUE_LANE}/scripts`,
+                subject: 'fix(save): keep discards after load',
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls).toContain('issueExists:5573');
+            expect(calls).toContain('push:fix/5573/dont-save-discards-after-load');
+            expect(bodies.at(-1)).toContain('Closes #5573');
+        });
+
+        it('publishes a typed issueless lane with no issue reference', () => {
+            const { port, calls, bodies } = fakePort({
+                trees: [typedIssueless()],
+                cwd: TYPED_ISSUELESS_LANE,
+                subject: 'docs(delivery): five live lanes',
+            });
+
+            publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+
+            expect(calls).toContain('push:docs/five-live-lanes');
+            expect(calls.some((call) => call.startsWith('issueExists:'))).toBe(false);
+            expect(bodies.at(-1)).toContain('### 📌 Related issues & additional notes\nNone.');
+        });
+
+        it('warns, without refusing, when the newest commit type differs from the branch type', () => {
+            const { port, calls, logs } = fakePort({
+                trees: [typedIssueless()],
+                cwd: TYPED_ISSUELESS_LANE,
+                subject: 'chore(delivery): restamp',
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            const warning = logs.find((line) => line.startsWith('warning:'));
+            expect(warning).toMatch(/docs\/five-live-lanes/);
+            expect(warning).toMatch(/docs/);
+            expect(warning).toMatch(/chore/);
+            expect(calls).toContain('push:docs/five-live-lanes');
+            expect(calls.indexOf(`log:${warning}`)).toBeLessThan(calls.findIndex((call) => call.startsWith('push:')));
+        });
+
+        it('stays silent when the commit type matches the branch type, and for agent/ branches', () => {
+            const matching = fakePort({
+                trees: [typedIssueless()],
+                cwd: TYPED_ISSUELESS_LANE,
+                subject: 'docs(delivery): five live lanes',
+            });
+            publishLane(undefined, matching.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+            expect(matching.logs.some((line) => line.startsWith('warning:'))).toBe(false);
+
+            const legacy = fakePort({ subject: 'fix(delivery): anything' });
+            publishLane(12, legacy.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+            expect(legacy.logs.some((line) => line.startsWith('warning:'))).toBe(false);
+        });
+
+        it('compares the branch type with the frozen title of an existing pull request', () => {
+            const { port, logs } = fakePort({
+                trees: [typedIssueless()],
+                cwd: TYPED_ISSUELESS_LANE,
+                subject: 'docs(delivery): follow-up',
+                existing: 41,
+                existingTitle: 'feat(delivery): five live lanes',
+                existingBody: composePublishBody(undefined, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+            });
+
+            publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+
+            expect(logs.find((line) => line.startsWith('warning:'))).toMatch(/feat/);
+        });
+    });
+
     describe('legacy, pre-agent/ lanes', () => {
         function legacyWorktree(overrides: Partial<PublishWorktree> = {}): PublishWorktree {
             return {
@@ -2970,7 +3128,7 @@ describe('lane publish', () => {
             const outer = worktree({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
             const nestedLegacy = worktree({
                 path: '/repo/.agents/worktrees/agent--outer/legacy-nested',
-                branch: 'fix/legacy-nested',
+                branch: 'hotfix/legacy-nested',
                 lockReason: 'active:collab-lane-9',
             });
 
@@ -2999,7 +3157,7 @@ describe('lane publish', () => {
             const outer = worktree({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
             const nestedLegacy = worktree({
                 path: '/repo/.agents/worktrees/agent--outer/legacy-nested',
-                branch: 'fix/legacy-nested',
+                branch: 'hotfix/legacy-nested',
             });
 
             expect(() =>

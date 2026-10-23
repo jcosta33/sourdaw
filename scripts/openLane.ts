@@ -18,17 +18,20 @@ import {
     outsideSymlinkRefusal,
 } from './pnpmModulesPreflight.ts';
 import {
-    AUTHOR_LANE_BRANCH_PREFIX,
+    LANE_CHANGE_TYPES,
     assertIssueNumber,
+    assertLaneChangeType,
     assertLaneSlug,
     fail,
     isIssueArgument,
+    isLaneBranch,
     laneBranchName,
+    type LaneChangeType,
 } from './prContract.ts';
 import { assertStackAcyclic, readLaneStack, writeLaneStack, type LaneStack } from './stackedLanes.ts';
 
 export const OPEN_LANE_USAGE =
-    'usage: pnpm lane:open [issue-number] [slug] --model <model> [--stack-on <absolute-parent-lane>]';
+    'usage: pnpm lane:open [issue-number] [slug] --type <type> --model <model> [--stack-on <absolute-parent-lane>]';
 
 const DEFAULT_LANE_SLUG = 'work';
 
@@ -108,6 +111,7 @@ export function parseOpenLaneArgs(args: string[]): {
     help: boolean;
     stackOn?: string;
     model?: string;
+    type?: LaneChangeType;
 } {
     const selector = args.indexOf('--stack-on');
     if (selector !== -1) {
@@ -132,6 +136,18 @@ export function parseOpenLaneArgs(args: string[]): {
             fail(OPEN_LANE_USAGE);
         }
         return { ...parseOpenLaneArgs(rest), model: normalizeAuthorModel(token) };
+    }
+    const typeIndex = args.indexOf('--type');
+    if (typeIndex !== -1) {
+        const token = args[typeIndex + 1];
+        if (token === undefined || token.startsWith('--')) {
+            fail(`--type requires the conventional-commit type of the change, one of ${LANE_CHANGE_TYPES.join(', ')}`);
+        }
+        const rest = [...args.slice(0, typeIndex), ...args.slice(typeIndex + 2)];
+        if (rest.includes('--type')) {
+            fail(OPEN_LANE_USAGE);
+        }
+        return { ...parseOpenLaneArgs(rest), type: assertLaneChangeType(token) };
     }
     if (args[0] === '--help') {
         if (args.length !== 1) {
@@ -159,13 +175,15 @@ export function parseOpenLaneArgs(args: string[]): {
 }
 
 /**
- * One directory per branch, both ways. `agent/12/beat` and `agent/12-beat` are different lanes, so
- * flattening both to `agent-12-beat` would make the second `lane:open` fail as "lane already
+ * One directory per branch, both ways. `fix/12/beat` and `fix/12-beat` are different lanes, so
+ * flattening both to `fix-12-beat` would make the second `lane:open` fail as "lane already
  * exists". A slug never contains a doubled dash and the issue form always puts a digit straight
- * after `agent-`, so the doubled dash is free to mark the issueless form.
+ * after `<type>-`, so the doubled dash is free to mark the issueless form. The type leads the name
+ * because the directory follows its branch: the same slug under two types is two lanes. Lanes
+ * opened before types existed keep their `agent-` directories; nothing parses a directory name.
  */
-export function laneDirectoryName(issue: number | undefined, slug: string): string {
-    return issue === undefined ? `agent--${slug}` : `agent-${issue}-${slug}`;
+export function laneDirectoryName(type: LaneChangeType, issue: number | undefined, slug: string): string {
+    return issue === undefined ? `${type}--${slug}` : `${type}-${issue}-${slug}`;
 }
 
 function createStackWorktree(stack: LaneStack, lanePath: string, port: OpenLanePort): void {
@@ -186,14 +204,15 @@ function createStackWorktree(stack: LaneStack, lanePath: string, port: OpenLaneP
 }
 
 export function openLane(
+    type: LaneChangeType,
     issue: number | undefined,
     slug: string,
     model: string,
     port: OpenLanePort,
     stackOn?: string
 ): string {
-    const branch = laneBranchName(issue, slug);
-    const lanePath = join(port.primaryRoot(), '.agents', 'worktrees', laneDirectoryName(issue, slug));
+    const branch = laneBranchName(type, issue, slug);
+    const lanePath = join(port.primaryRoot(), '.agents', 'worktrees', laneDirectoryName(type, issue, slug));
     if (port.pathExists(lanePath)) {
         fail(`lane already exists: ${lanePath}`);
     }
@@ -308,7 +327,7 @@ export function shellPort(
             if (
                 parentPath === realpathSync(primaryRoot) ||
                 parentBranch === undefined ||
-                !parentBranch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) ||
+                !isLaneBranch(parentBranch) ||
                 !fields.includes(`locked ${AUTHOR_LOCK_REASON}`)
             ) {
                 fail('stack parent must be an exact author-locked lane in this primary repository');
@@ -377,12 +396,13 @@ export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string 
             console.log(OPEN_LANE_USAGE.replace('usage:', 'Usage:'));
             return 0;
         }
-        // Refused before the port exists, so a missing model can leave no worktree or branch behind.
+        // Refused before the port exists, so a missing type or model can leave no worktree or branch behind.
+        const type = assertLaneChangeType(parsed.type);
         if (parsed.model === undefined) {
             fail(`lane:open requires --model <model>: ${AUTHOR_MODEL_RULE}`);
         }
         cli.verifyTrustedBlob(cwd);
-        openLane(parsed.issue, parsed.slug, parsed.model, cli.createPort(cwd), parsed.stackOn);
+        openLane(type, parsed.issue, parsed.slug, parsed.model, cli.createPort(cwd), parsed.stackOn);
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
