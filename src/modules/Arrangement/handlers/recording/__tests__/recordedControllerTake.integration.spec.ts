@@ -43,6 +43,7 @@ import {
     addPitchBend,
     appendRecordedMidiNote,
     destroyWebMidi,
+    getWebMidiInputHandlers,
     initWebMidi,
     planRecordedControllers,
     projectClipControllerEvents,
@@ -86,6 +87,7 @@ describe('recorded controller take commit', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getWebMidiInputHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -234,6 +236,19 @@ describe('recorded controller take commit', () => {
                 beat,
                 channel,
             }));
+
+        /**
+         * Stop the transport's recording as an overdub pass ends and wait for its rows. They land
+         * through one app action when the transport stops, so the pass adds exactly one undo step.
+         */
+        async function endOverdubPass(): Promise<void> {
+            const entriesBefore = undoHistoryStore.value?.past.length ?? 0;
+            transportStore.set({ ...transportStore.value!, isRecording: false });
+            await vi.waitFor(() => {
+                expect(undoHistoryStore.value?.past.length ?? 0).toBe(entriesBefore + 1);
+            });
+            flushAutomergeStorageWrites();
+        }
 
         it('writes nothing to the store during a long take and lands every row, in order, at the commit', async () => {
             const MESSAGES = 6000;
@@ -484,8 +499,7 @@ describe('recorded controller take commit', () => {
                 await held.settled;
                 await stoppingFirst;
                 sendLive(7, 0xb0, 64, 0);
-                transportStore.set({ ...transportStore.value!, isRecording: false });
-                flushAutomergeStorageWrites();
+                await endOverdubPass();
 
                 // The commit that landed while the overdub's pedal was down closes it on the
                 // clip's end; the overdub's own release follows when its take ends.
@@ -941,8 +955,7 @@ describe('recorded controller take commit', () => {
                     sendLive(6.5, 0xb0, 64, 127);
 
                     await stopRecording(8);
-                    transportStore.set({ ...transportStore.value!, isRecording: false });
-                    flushAutomergeStorageWrites();
+                    await endOverdubPass();
 
                     expect(pedalsOf(clipId)).toEqual([
                         { controller: 1, value: 55, beat: 0.5, channel: 0 },
@@ -962,8 +975,7 @@ describe('recorded controller take commit', () => {
                     sendLive(6, 0xb0, 1, 60);
 
                     await stopRecording(6);
-                    transportStore.set({ ...transportStore.value!, isRecording: false });
-                    flushAutomergeStorageWrites();
+                    await endOverdubPass();
 
                     // The stop beat is the wrapped playhead, before the press: a lift there would cancel it.
                     expect(pedalsOf(clipId)).toEqual([
@@ -984,8 +996,7 @@ describe('recorded controller take commit', () => {
                     sendLive(7, 0xb0, 64, 0);
 
                     await stopRecording(8);
-                    transportStore.set({ ...transportStore.value!, isRecording: false });
-                    flushAutomergeStorageWrites();
+                    await endOverdubPass();
 
                     expect(pedalsOf(clipId)).toEqual([
                         { controller: 1, value: 55, beat: 0.5, channel: 0 },
@@ -1011,8 +1022,7 @@ describe('recorded controller take commit', () => {
                 sendLive(6.5, 0xb0, 64, 127);
                 sendLive(7, 0xb0, 64, 0);
                 await stopRecording(8);
-                transportStore.set({ ...transportStore.value!, isRecording: false });
-                flushAutomergeStorageWrites();
+                await endOverdubPass();
 
                 expect(pedalsOf(clipId)).toEqual([
                     { controller: 1, value: 55, beat: 0.5, channel: 0 },

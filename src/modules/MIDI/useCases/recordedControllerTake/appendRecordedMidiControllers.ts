@@ -27,7 +27,8 @@ function withAppendedRows<TRow>(
  * message: a burst sharing one beat, such as an RPN select, data entry and
  * null-RPN sequence, must survive whole.
  *
- * Carries no undo entry; the recording commit snapshots the rows. Rows come
+ * Carries no undo entry of its own: the recording commit snapshots the rows it
+ * writes, and an overdub pass writes through `appendOverdubControllers`. Rows come
  * with the ids they keep and were validated when they were buffered, so this
  * trusts them.
  */

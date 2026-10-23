@@ -333,6 +333,29 @@ export type MidiNoteExpressionSnapshot = {
 };
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
+/** The rows one overdub pass adds to one clip, ids included. */
+export type OverdubControllerRowsSnapshot = {
+    readonly clipId: string;
+    readonly cc: readonly {
+        readonly id: string;
+        readonly controller: number;
+        readonly value: number;
+        readonly beat: number;
+        readonly channel: number;
+    }[];
+    readonly pitchBend: readonly {
+        readonly id: string;
+        readonly value: number;
+        readonly beat: number;
+        readonly channel: number;
+    }[];
+};
+/** The ids of the rows one overdub pass added to one clip. */
+export type OverdubControllerRowIds = {
+    readonly clipId: string;
+    readonly ccIds: readonly string[];
+    readonly pitchBendIds: readonly string[];
+};
 /**
  * A global time operation's restore plan, as produced by `executeGlobalTimeOperation`.
  * Opaque here on purpose: the owning module encodes plans through its own codec, and
@@ -3089,6 +3112,23 @@ export type AppAction =
               midiCcSnapshot: MidiCcSnapshot | null;
               midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
           };
+      }
+    | {
+          /** The controller and pitch-bend rows one overdub pass recorded into
+           *  clips that already held rows (a take the recorder opened no clip
+           *  for), appended when the transport stops recording and ONE history
+           *  entry for the whole pass. The payload carries the rows with the ids
+           *  they keep, registered-parameter declarations included, so Undo
+           *  (`removeOverdubControllers`) removes exactly them and Redo replays
+           *  this action to put the same rows back. */
+          type: 'appendOverdubControllers';
+          payload: { clips: readonly OverdubControllerRowsSnapshot[] };
+      }
+    | {
+          /** Inverse of `appendOverdubControllers`. Removes the named rows by id and
+           *  leaves every other row of the clip, a peer's edit included, in place. */
+          type: 'removeOverdubControllers';
+          payload: { clips: readonly OverdubControllerRowIds[] };
       };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';

@@ -1,10 +1,12 @@
+import { type OverdubControllerRowsSnapshot } from '#/utils/handlerContract';
+
 import { recordedControllerTakeState } from '../../repositories/webMidi/recordedControllerTakeState';
 
 import { declareOverdubRegisteredState } from './declareOverdubRegisteredState';
+import { dispatchOverdubControllerRows } from './dispatchOverdubControllerRows';
 import { findLiveClip } from './findLiveClip';
 import { planRecordedControllers } from './planRecordedControllers';
 import { readLiveClipIds } from './readLiveClipIds';
-import { writeRecordedControllerRows } from './writeRecordedControllerRows';
 
 /**
  * Settle a take's buffers at the transport's recording falling edge.
@@ -17,11 +19,14 @@ import { writeRecordedControllerRows } from './writeRecordedControllerRows';
  * that commit (`declareOverdubRegisteredState`). A clip the recorder did not open
  * (an overdub into an existing clip) has no commit, so its rows land now, with
  * the same declarations against the clip's stored rows and a lift for each pedal
- * still down on the clip's closing line.
+ * still down on the clip's closing line. Every clip the pass overdubbed lands in
+ * ONE undoable action (`appendOverdubControllers`), planned here and written
+ * once the returned promise settles; a pass with no rows adds no history entry.
  */
-export function endRecordedControllerTake(): void {
+export function endRecordedControllerTake(): Promise<void> {
     const { buffers, openedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds } = recordedControllerTakeState;
     const liveClipIds = readLiveClipIds();
+    const overdubs: OverdubControllerRowsSnapshot[] = [];
 
     for (const clipId of [...buffers.keys()]) {
         if (openedClipIds.has(clipId)) {
@@ -39,7 +44,7 @@ export function endRecordedControllerTake(): void {
         const rows = clip ? planRecordedControllers({ clip }) : undefined;
         buffers.delete(clipId);
         if (rows) {
-            writeRecordedControllerRows({ clipId, cc: rows.cc, pitchBend: rows.pitchBend });
+            overdubs.push({ clipId, cc: rows.cc, pitchBend: rows.pitchBend });
         }
     }
     for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
@@ -49,4 +54,5 @@ export function endRecordedControllerTake(): void {
             }
         }
     }
+    return dispatchOverdubControllerRows(overdubs.filter((clip) => clip.cc.length > 0 || clip.pitchBend.length > 0));
 }

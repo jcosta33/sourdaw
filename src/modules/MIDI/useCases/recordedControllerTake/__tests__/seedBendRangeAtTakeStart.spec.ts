@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +46,18 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => mocks.targetTrackId.value,
+}));
+
+// An overdub pass lands through its app action; run the real handler's write so the specs read
+// the rows the store would hold once the dispatch settles.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: async (action: AppAction): Promise<void> => {
+        const { handleAppendOverdubControllers } =
+            await import('../../../handlers/overdubControllers/handleAppendOverdubControllers');
+        if (action.type === 'appendOverdubControllers') {
+            handleAppendOverdubControllers.execute(action);
+        }
+    },
 }));
 
 const { midiStore } = await import('../../../stores/midiStore');
@@ -308,10 +322,10 @@ describe('the bend range a keyboard declared before a take', () => {
             beginRecordedControllerTake();
         }
 
-        function overdubBendAtBeat(beat: number): void {
+        async function overdubBendAtBeat(beat: number): Promise<void> {
             beginOverdub();
             recordBend(CLIP, beat);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
         }
 
         const keyboardBackAtTwo = () => {
@@ -324,7 +338,7 @@ describe('the bend range a keyboard declared before a take', () => {
             return beats.map((beat) => rangeAt(0, beat));
         };
 
-        it('returns the earlier take its own state after the overdub, so a Data Entry it recorded later still sets its range', () => {
+        it('returns the earlier take its own state after the overdub, so a Data Entry it recorded later still sets its range', async () => {
             beginTake();
             recordCc(CLIP, 0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 12]);
             recordBend(CLIP, 1);
@@ -333,21 +347,21 @@ describe('the bend range a keyboard declared before a take', () => {
             commitRecordedControllers({ clip: spanOf(CLIP) });
             keyboardBackAtTwo();
 
-            overdubBendAtBeat(2);
+            await overdubBendAtBeat(2);
 
             expect(storedRangesAt(1, 2, 3.5)).toEqual([12, 2, 7]);
         });
 
-        it('returns the earlier take its seeded range at its first bend after the overdub', () => {
+        it('returns the earlier take its seeded range at its first bend after the overdub', async () => {
             recordFirstTakeAtTwelve(1, 3);
             keyboardBackAtTwo();
 
-            overdubBendAtBeat(2);
+            await overdubBendAtBeat(2);
 
             expect(storedRangesAt(1, 2, 3)).toEqual([12, 2, 12]);
         });
 
-        it('starts from the state the keyboard held when the take began, and follows what the take itself declares', () => {
+        it('starts from the state the keyboard held when the take began, and follows what the take itself declares', async () => {
             recordFirstTakeAtTwelve();
             keyboardBackAtTwo();
             beginOverdub();
@@ -360,28 +374,28 @@ describe('the bend range a keyboard declared before a take', () => {
             send(0, ...declaration);
             recordCc(CLIP, 3, ...declaration);
             recordBend(CLIP, 3.5);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(storedRangesAt(1, 2, 3.5)).toEqual([12, 2, 7]);
         });
 
-        it('lets a declaration the overdub records on its first state beat win over the state it began in', () => {
+        it('lets a declaration the overdub records on its first state beat win over the state it began in', async () => {
             recordFirstTakeAtTwelve();
             keyboardBackAtTwo();
             beginOverdub();
             recordCc(CLIP, 2, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 5]);
             recordBend(CLIP, 2.5);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(storedRangesAt(1, 2, 2.5)).toEqual([12, 5, 5]);
         });
 
-        it('declares the range the keyboard is back at where the overdub starts, and leaves the earlier take its own', () => {
+        it('declares the range the keyboard is back at where the overdub starts, and leaves the earlier take its own', async () => {
             recordFirstTakeAtTwelve();
             send(0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 2], [DATA_LSB, 0]);
             sendNullRpn(0);
 
-            overdubBendAtBeat(2);
+            await overdubBendAtBeat(2);
 
             const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
             const rangeAt = createStoredBendRangeReader(rows);
@@ -397,17 +411,17 @@ describe('the bend range a keyboard declared before a take', () => {
             ).toBe(true);
         });
 
-        it('declares nothing when the keyboard is at the range the clip already holds', () => {
+        it('declares nothing when the keyboard is at the range the clip already holds', async () => {
             recordFirstTakeAtTwelve(1, 3);
             const rowsBefore = mocks.midi.value?.ccByClipId[CLIP];
 
-            overdubBendAtBeat(2);
+            await overdubBendAtBeat(2);
 
             expect(mocks.midi.value?.ccByClipId[CLIP]).toEqual(rowsBefore);
             expect(storedRangesAt(1, 2, 3)).toEqual([12, 12, 12]);
         });
 
-        it('declares nothing on a channel the overdub writes no bend or parameter row to', () => {
+        it('declares nothing on a channel the overdub writes no bend or parameter row to', async () => {
             recordFirstTakeAtTwelve();
             send(0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 2], [DATA_LSB, 0]);
             sendNullRpn(0);
@@ -415,18 +429,18 @@ describe('the bend range a keyboard declared before a take', () => {
             setLiveClips(CLIP);
             beginRecordedControllerTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 64, beat: 2, channel: 0 } });
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             const rows = mocks.midi.value?.ccByClipId[CLIP] ?? [];
             expect(bare(rows)).toEqual([...rangeRows(0, 12), { controller: 1, value: 64, beat: 2, channel: 0 }]);
             expect(createStoredBendRangeReader(rows)(0, 3)).toBe(12);
         });
 
-        it('replays the bend at the beat the earlier take bends, the overdub and the earlier take sharing it', () => {
+        it('replays the bend at the beat the earlier take bends, the overdub and the earlier take sharing it', async () => {
             recordFirstTakeAtTwelve(2);
             keyboardBackAtTwo();
 
-            overdubBendAtBeat(2);
+            await overdubBendAtBeat(2);
 
             expect(storedRangesAt(2)).toEqual([2]);
         });
@@ -467,7 +481,7 @@ describe('the bend range a keyboard declared before a take', () => {
                 ],
             ] satisfies [string, [number, number][], number][])(
                 'replays a bend after %s at the range it had live',
-                (_name, messages, heardRange) => {
+                async (_name, messages, heardRange) => {
                     send(0, [RPN_MSB, 0], [RPN_LSB, 1]);
                     beginTake();
                     recordBend(CLIP, 1);
@@ -479,7 +493,7 @@ describe('the bend range a keyboard declared before a take', () => {
                     send(0, ...messages);
                     recordCc(CLIP, 2, ...messages);
                     const heard = channelControllerState.get(0)?.bendRangeSemitones;
-                    endRecordedControllerTake();
+                    await endRecordedControllerTake();
 
                     expect(heard).toBe(heardRange);
                     expect(storedRangesAt(2)).toEqual([heardRange]);
@@ -520,7 +534,7 @@ describe('the bend range a keyboard declared before a take', () => {
         const rangeAt = (clipId: string, beat: number) =>
             createStoredBendRangeReader(mocks.midi.value?.ccByClipId[clipId] ?? [])(0, beat);
 
-        it('declares a later clip at the range in force when the take first reached it', () => {
+        it('declares a later clip at the range in force when the take first reached it', async () => {
             declareRange(0, 12);
             beginTakeAcrossTwoExistingClips();
             playAndRecord(
@@ -534,13 +548,13 @@ describe('the bend range a keyboard declared before a take', () => {
                 [RPN_LSB, 127]
             );
             recordBend(SECOND_CLIP, 1);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(rangeAt(FIRST_CLIP, 2)).toBe(2);
             expect(rangeAt(SECOND_CLIP, 1)).toBe(2);
         });
 
-        it('declares a later clip at the range the take raised, not the one the keyboard began at', () => {
+        it('declares a later clip at the range the take raised, not the one the keyboard began at', async () => {
             declareRange(0, 2);
             sendNullRpn(0);
             beginTakeAcrossTwoExistingClips();
@@ -555,19 +569,19 @@ describe('the bend range a keyboard declared before a take', () => {
                 [RPN_LSB, 127]
             );
             recordBend(SECOND_CLIP, 1);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(rangeAt(FIRST_CLIP, 2)).toBe(12);
             expect(rangeAt(SECOND_CLIP, 1)).toBe(12);
         });
 
-        it('keeps the first clip at the range the keyboard began at before the take declared its own', () => {
+        it('keeps the first clip at the range the keyboard began at before the take declared its own', async () => {
             declareRange(0, 12);
             beginTakeAcrossTwoExistingClips();
             recordBend(FIRST_CLIP, 0.5);
             playAndRecord(FIRST_CLIP, 1, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 2], [DATA_LSB, 0]);
             recordBend(SECOND_CLIP, 1);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(rangeAt(FIRST_CLIP, 0.5)).toBe(12);
             expect(rangeAt(FIRST_CLIP, 2)).toBe(2);
@@ -576,11 +590,11 @@ describe('the bend range a keyboard declared before a take', () => {
     });
 
     describe('when an earlier take is still waiting for its commit', () => {
-        it('leaves the carried-over clip with its own single declaration and gives the new clip the range in force', () => {
+        it('leaves the carried-over clip with its own single declaration and gives the new clip the range in force', async () => {
             declareRange(0, 12);
             beginTake();
             const carriedPlan = planRecordedControllers({ clip: spanOf(CLIP) });
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             declareRange(0, 7);
             mocks.activeRecordingRef.current = [NEXT_CLIP];
@@ -594,11 +608,11 @@ describe('the bend range a keyboard declared before a take', () => {
             expect(bare(mocks.midi.value?.ccByClipId[NEXT_CLIP])).toEqual(rangeRows(0, 7));
         });
 
-        it('does not declare again into a carried-over clip the next take records into', () => {
+        it('does not declare again into a carried-over clip the next take records into', async () => {
             declareRange(0, 12);
             beginTake();
             const carriedPlan = planRecordedControllers({ clip: spanOf(CLIP) });
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             declareRange(0, 7);
             mocks.activeRecordingRef.current = [CLIP];
@@ -609,19 +623,19 @@ describe('the bend range a keyboard declared before a take', () => {
             expect(carriedPlan.cc).toHaveLength(4);
         });
 
-        it('replays each take of a carried-over clip at the state it recorded under', () => {
+        it('replays each take of a carried-over clip at the state it recorded under', async () => {
             declareRange(0, 12);
             beginTake();
             recordBend(CLIP, 1);
             recordBend(CLIP, 3);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             declareRange(0, 2);
             mocks.activeRecordingRef.current = [NEXT_CLIP];
             setLiveClips(CLIP, NEXT_CLIP);
             beginRecordedControllerTake();
             recordBend(CLIP, 2);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             const plan = planRecordedControllers({ clip: spanOf(CLIP) });
             commitRecordedControllers({ clip: spanOf(CLIP) });
@@ -632,12 +646,12 @@ describe('the bend range a keyboard declared before a take', () => {
             expect([1, 2, 3].map((beat) => rangeAt(0, beat))).toEqual([12, 2, 12]);
         });
 
-        it('replays each take of a carried-over clip at the state it recorded under when the earlier take recorded controller rows itself', () => {
+        it('replays each take of a carried-over clip at the state it recorded under when the earlier take recorded controller rows itself', async () => {
             beginTake();
             recordCc(CLIP, 0, [RPN_MSB, 0], [RPN_LSB, 0], [DATA_MSB, 12]);
             recordBend(CLIP, 1);
             recordBend(CLIP, 3);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             declareRange(0, 2);
             sendNullRpn(0);
@@ -645,7 +659,7 @@ describe('the bend range a keyboard declared before a take', () => {
             setLiveClips(CLIP, NEXT_CLIP);
             beginRecordedControllerTake();
             recordBend(CLIP, 2);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             commitRecordedControllers({ clip: spanOf(CLIP) });
 
@@ -666,13 +680,13 @@ describe('the bend range a keyboard declared before a take', () => {
         expect(midiStore.set).not.toHaveBeenCalled();
     });
 
-    it('is dropped with the take when its clip is discarded unwritten', () => {
+    it('is dropped with the take when its clip is discarded unwritten', async () => {
         declareRange(0, 12);
         beginTake();
         expect(recordedControllerTakeState.bendRangeSeeds.has(CLIP)).toBe(true);
 
         mocks.trackState.value = { tracks: [{ id: TRACK, clips: [] }] };
-        endRecordedControllerTake();
+        await endRecordedControllerTake();
 
         expect(recordedControllerTakeState.bendRangeSeeds.has(CLIP)).toBe(false);
         expect(midiStore.set).not.toHaveBeenCalled();

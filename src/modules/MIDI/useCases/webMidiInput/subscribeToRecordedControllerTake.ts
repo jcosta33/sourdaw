@@ -26,6 +26,7 @@ export function subscribeToRecordedControllerTake(): void {
             beginRecordedControllerTake();
             return;
         }
-        endRecordedControllerTake();
+        // The dispatch settles on its own and logs its failure; the edge does not wait on it.
+        void endRecordedControllerTake();
     });
 }
