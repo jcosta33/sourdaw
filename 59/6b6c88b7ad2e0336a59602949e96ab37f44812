@@ -160,6 +160,8 @@ src/utils/pianoPedalController.ts
   s_59e31a5c6f3e31::t_8423d0198e2435 17-22,26-30,37-49
 src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapStateRestore.spec.ts
   s_ba8dd89de9aac7::t_973a6b545717d7 73,77,81,461-462,466
+src/modules/BrowserAi/repositories/writeRenderCache.ts
+  s_29d8df116c5b92::t_0db504adcbd07a 28
 ---
 {
   "schema_version": "authorship/3.0.0",
