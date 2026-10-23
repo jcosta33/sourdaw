@@ -239,9 +239,12 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
 
             storage.set(slot({ metronome: true }));
             expect(storage.hydrate?.()).toBe(true);
-
-            expect(doc.slot).toMatchObject({ tempo: 150, metronome: false });
             expect(readSlot(storage)).toMatchObject({ tempo: 150, metronome: false });
+
+            doc.slot = slot({ tempo: 200 });
+            flushAutomergeStorageWrites();
+
+            expect(doc.slot).toMatchObject({ tempo: 200, metronome: false });
         });
 
         it('takes the whole document when the write was derived from a deferred baseline', () => {
@@ -253,9 +256,12 @@ describe('createAutomergeStorage hydrate after a local edit', () => {
 
             storage.set({ ...readSlot(storage), metronome: true });
             expect(storage.hydrate?.()).toBe(true);
-
-            expect(doc.slot).toMatchObject({ tempo: 150, metronome: false });
             expect(readSlot(storage)).toMatchObject({ tempo: 150, metronome: false });
+
+            doc.slot = slot({ tempo: 200 });
+            flushAutomergeStorageWrites();
+
+            expect(doc.slot).toMatchObject({ tempo: 200, metronome: false });
         });
     });
 });

@@ -2615,7 +2615,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                                       baseValue: trustedBaseValue,
                                       authorityValue: crdtData,
                                   });
-                        rebasedByField = trustedBaseValue !== null;
+                        rebasedByField = true;
                     }
                     if (!isCurrentVisibleProjection()) {
                         return false;
