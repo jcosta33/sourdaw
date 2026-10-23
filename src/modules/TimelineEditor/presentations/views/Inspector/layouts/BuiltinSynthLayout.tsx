@@ -17,6 +17,7 @@ import { Button } from '#/components/ui/button';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { useDeviceParameterGesture } from '../../../hooks/useDeviceParameterGesture';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { SectionHeader } from '../SectionHeader';
@@ -29,13 +30,15 @@ const Param = ({
     param,
     device,
     trackId,
+    previewValue,
 }: {
     param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
+    previewValue?: number;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={param} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} previewValue={previewValue} />
     </SurfaceCard>
 );
 
@@ -44,15 +47,23 @@ const Row2 = ({
     params,
     device,
     trackId,
+    previewValues,
 }: {
     ids: string[];
     params: P[];
     device: DeviceLayoutProps['device'];
     trackId: string;
+    previewValues?: Partial<Record<string, number>>;
 }): ReactElement => (
     <Grid cols={2} gap={2}>
         {filterParams(params, ids).map((param) => (
-            <Param key={param.id} param={param} device={device} trackId={trackId} />
+            <Param
+                key={param.id}
+                param={param}
+                device={device}
+                trackId={trackId}
+                previewValue={previewValues?.[param.id]}
+            />
         ))}
     </Grid>
 );
@@ -87,6 +98,84 @@ const Collapsible = ({
                 </Button>
             </DawHeaderBand>
             {open ? children : null}
+        </div>
+    );
+};
+
+const SynthEnvelopeSection = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
+    const attackGesture = useDeviceParameterGesture({
+        param: parameters.find((param) => param.id === 'attack'),
+        device,
+        trackId,
+    });
+    const decayGesture = useDeviceParameterGesture({
+        param: parameters.find((param) => param.id === 'decay'),
+        device,
+        trackId,
+    });
+    const sustainGesture = useDeviceParameterGesture({
+        param: parameters.find((param) => param.id === 'sustain'),
+        device,
+        trackId,
+    });
+    const releaseGesture = useDeviceParameterGesture({
+        param: parameters.find((param) => param.id === 'release'),
+        device,
+        trackId,
+    });
+    const envelopeGestures = {
+        attack: attackGesture,
+        decay: decayGesture,
+        sustain: sustainGesture,
+        release: releaseGesture,
+    };
+    const envelopePreviews = {
+        attack: attackGesture.previewValue,
+        decay: decayGesture.previewValue,
+        sustain: sustainGesture.previewValue,
+        release: releaseGesture.previewValue,
+    };
+    const changeEnvelope = (stage: string, value: number): void => {
+        if (stage === 'attack' || stage === 'decay' || stage === 'sustain' || stage === 'release') {
+            envelopeGestures[stage].change(value, true);
+        }
+    };
+
+    return (
+        <div>
+            <SectionHeader title="Envelope" />
+            <Row align="stretch" justify="center" className="mb-3">
+                <ADSREnvelope
+                    attack={attackGesture.value ?? 0.01}
+                    decay={decayGesture.value ?? 0.2}
+                    sustain={sustainGesture.value ?? 0.7}
+                    release={releaseGesture.value ?? 0.3}
+                    width={200}
+                    height={80}
+                    onParamChange={changeEnvelope}
+                    onGestureStart={(stage) =>
+                        envelopeGestures[stage].isGestureCurrent(envelopeGestures[stage].startGesture())
+                    }
+                    onGestureCommit={(stage) => envelopeGestures[stage].settleGesture()}
+                    onGestureCancel={(stage) => envelopeGestures[stage].cancel()}
+                />
+            </Row>
+            <Row2
+                ids={['attack', 'decay']}
+                params={parameters}
+                device={device}
+                trackId={trackId}
+                previewValues={envelopePreviews}
+            />
+            <div className="mt-2">
+                <Row2
+                    ids={['sustain', 'release']}
+                    params={parameters}
+                    device={device}
+                    trackId={trackId}
+                    previewValues={envelopePreviews}
+                />
+            </div>
         </div>
     );
 };
@@ -136,24 +225,7 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                 <Row2 ids={['filterCutoff', 'filterResonance']} params={parameters} device={device} trackId={trackId} />
             </div>
             {/* Envelope — interactive */}
-            <div>
-                <SectionHeader title="Envelope" />
-                <Row align="stretch" justify="center" className="mb-3">
-                    <ADSREnvelope
-                        attack={pv.attack ?? 0.01}
-                        decay={pv.decay ?? 0.2}
-                        sustain={pv.sustain ?? 0.7}
-                        release={pv.release ?? 0.3}
-                        width={200}
-                        height={80}
-                        onParamChange={change}
-                    />
-                </Row>
-                <Row2 ids={['attack', 'decay']} params={parameters} device={device} trackId={trackId} />
-                <div className="mt-2">
-                    <Row2 ids={['sustain', 'release']} params={parameters} device={device} trackId={trackId} />
-                </div>
-            </div>
+            <SynthEnvelopeSection device={device} trackId={trackId} parameters={parameters} />
             {/* Gain — always visible */}
             {filterParams(parameters, ['gain']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
