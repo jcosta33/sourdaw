@@ -284,4 +284,64 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(current.noteOn).toHaveBeenCalledExactlyOnceWith(2, 100);
         expect(other.noteOn).not.toHaveBeenCalled();
     });
+    it('stops a held pad fader drag from writing after Full unmounts', async () => {
+        render(<ToasterPanel deviceId={DEVICE_ID} />);
+        view('full');
+        const fader = screen.getByRole('slider', { name: 'Kick volume' });
+        vi.spyOn(fader, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 0,
+            top: 0,
+            right: 12,
+            bottom: 50,
+            left: 0,
+            width: 12,
+            height: 50,
+            toJSON: () => ({}),
+        });
+
+        fireEvent.pointerDown(fader, { clientY: 10 });
+        fireEvent.pointerMove(document, { clientY: 25 });
+        flushFrame();
+        expect(selectedState().kit.pads[0]?.volume).toBe(0.5);
+        expect(current.setPadParam).toHaveBeenCalledWith(0, 'volume', 0.5);
+        expect(engine.writeNativeBuiltinParameters).toHaveBeenCalled();
+        await waitFor(() =>
+            expect(
+                trackStore.value?.tracks[0]?.devices.find((device) => device.id === DEVICE_ID)?.deviceState?.data
+            ).toHaveProperty('kit.pads.0.volume', 0.5)
+        );
+
+        const currentState = selectedState();
+        const otherState = toasterStore.value?.[OTHER_ID];
+        const persistedState = trackStore.value?.tracks[0]?.devices.find(
+            (device) => device.id === DEVICE_ID
+        )?.deviceState;
+        const persistedOtherState = trackStore.value?.tracks[0]?.devices.find(
+            (device) => device.id === OTHER_ID
+        )?.deviceState;
+        const revision = settlePendingProjectWritesAndCaptureRevision();
+        current.setPadParam.mockClear();
+        other.setPadParam.mockClear();
+        engine.writeNativeBuiltinParameters.mockClear();
+
+        view('simple');
+        expect(screen.queryByRole('slider', { name: 'Kick volume' })).not.toBeInTheDocument();
+        fireEvent.pointerMove(document, { clientY: 40 });
+        flushFrame();
+
+        expect(selectedState()).toBe(currentState);
+        expect(selectedState().kit.pads[0]?.volume).toBe(0.5);
+        expect(toasterStore.value?.[OTHER_ID]).toBe(otherState);
+        expect(trackStore.value?.tracks[0]?.devices.find((device) => device.id === DEVICE_ID)?.deviceState).toBe(
+            persistedState
+        );
+        expect(trackStore.value?.tracks[0]?.devices.find((device) => device.id === OTHER_ID)?.deviceState).toBe(
+            persistedOtherState
+        );
+        expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+        expect(current.setPadParam).not.toHaveBeenCalled();
+        expect(other.setPadParam).not.toHaveBeenCalled();
+        expect(engine.writeNativeBuiltinParameters).not.toHaveBeenCalled();
+    });
 });
