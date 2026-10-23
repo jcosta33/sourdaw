@@ -222,6 +222,8 @@ function buildDiff(): PendingActionSemanticDiff {
 }
 
 type ProposeOverrides = {
+    actions?: AppAction[];
+    actionLabels?: string[];
     adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes'];
     measuredPreview?: Parameters<typeof proposePendingActionConfirmation>[0]['measuredPreview'];
     semanticDiff?: PendingActionSemanticDiff;
@@ -234,8 +236,8 @@ function propose(id: string, overrides: ProposeOverrides = {}) {
         runId: 'run-approval-view',
         prompt: 'Rebalance the drums',
         assistantMessageId: 'assistant-approval-view',
-        actions: [GAIN_ACTION, REMOVE_ACTION],
-        actionLabels: ['Set Kick gain', 'Remove Snare'],
+        actions: overrides.actions ?? [GAIN_ACTION, REMOVE_ACTION],
+        actionLabels: overrides.actionLabels ?? ['Set Kick gain', 'Remove Snare'],
         commandBatch,
         agentApproval: AGENT_APPROVAL,
         semanticDiff: 'semanticDiff' in overrides ? overrides.semanticDiff : buildDiff(),
@@ -587,6 +589,192 @@ describe('getAgentApprovalView', () => {
             propose('confirmation-no-recipes');
 
             expect(getAgentApprovalView({ confirmationId: 'confirmation-no-recipes' })?.recipes).toEqual([]);
+        });
+    });
+
+    describe('the changes from the proposal it replaced', () => {
+        const PAN_ACTION = {
+            type: 'setTrackPan',
+            payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0 },
+        } satisfies AppAction;
+        const BASS_ACTION = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-bass', gainDb: -3, expectedGain: 1 },
+        } satisfies AppAction;
+        const MUTE_ACTION = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-room', muted: true, expectedMuted: false },
+        } satisfies AppAction;
+
+        // Red when a value change, an added or removed command, or an unchanged count goes missing,
+        // or when commands are matched by position instead of by type and target.
+        it('lists each changed, added and removed command and counts the ones left as they were', () => {
+            propose('confirmation-previous', {
+                actions: [GAIN_ACTION, PAN_ACTION, REMOVE_ACTION, BASS_ACTION],
+                actionLabels: ['Set Kick gain to 0.8', 'Pan Guitar -20', 'Remove Snare', 'Set Bass gain to -3 dB'],
+            });
+            propose('confirmation-refined', {
+                supersedes: 'confirmation-previous',
+                actions: [
+                    MUTE_ACTION,
+                    { ...BASS_ACTION, payload: { ...BASS_ACTION.payload, gainDb: -1.5 } },
+                    PAN_ACTION,
+                    { ...GAIN_ACTION, payload: { ...GAIN_ACTION.payload, gain: 0.6 } },
+                ],
+                actionLabels: ['Mute Room', 'Set Bass gain to -1.5 dB', 'Pan Guitar -20', 'Set Kick gain to 0.6'],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-refined' })?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-previous',
+                changes: [
+                    { kind: 'added', actionType: 'muteTrack', label: 'Mute Room' },
+                    {
+                        kind: 'changed',
+                        actionType: 'setTrackGain',
+                        label: 'Set Bass gain to -1.5 dB',
+                        fields: [{ field: 'gainDb', previous: '-3 dB', next: '-1.5 dB' }],
+                    },
+                    {
+                        kind: 'changed',
+                        actionType: 'setTrackGain',
+                        label: 'Set Kick gain to 0.6',
+                        fields: [{ field: 'gain', previous: '0.8', next: '0.6' }],
+                    },
+                    { kind: 'removed', actionType: 'removeTrack', label: 'Remove Snare' },
+                ],
+                unchangedCount: 1,
+            });
+        });
+
+        it('shows Bar 2 as retained when Bar 1 is removed from two clips on one track', () => {
+            const bar1 = {
+                type: 'addClip',
+                payload: { trackId: 'midi-1', startBeat: 0, endBeat: 4, name: 'Bar 1', type: 'midi' },
+            } satisfies AppAction;
+            const bar2 = {
+                type: 'addClip',
+                payload: { trackId: 'midi-1', startBeat: 4, endBeat: 8, name: 'Bar 2', type: 'midi' },
+            } satisfies AppAction;
+            propose('confirmation-clips-before', {
+                actions: [bar1, bar2],
+                actionLabels: ['Add Bar 1', 'Add Bar 2'],
+            });
+            propose('confirmation-clips-after', {
+                supersedes: 'confirmation-clips-before',
+                actions: [bar2],
+                actionLabels: ['Add Bar 2'],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-clips-after' })?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-clips-before',
+                changes: [{ kind: 'removed', actionType: 'addClip', label: 'Add Bar 1' }],
+                unchangedCount: 1,
+            });
+        });
+
+        it('shows a moved clip by its stable identity and a replacement removal as separate commands', () => {
+            const moveFromTrackA = {
+                type: 'moveClip',
+                payload: { clipId: 'clip-a', trackId: 'track-a', startBeat: 0 },
+            } satisfies AppAction;
+            const moveToTrackB = {
+                type: 'moveClip',
+                payload: { clipId: 'clip-a', trackId: 'track-b', startBeat: 0 },
+            } satisfies AppAction;
+            const removeClipA = { type: 'removeClip', payload: { clipId: 'clip-a' } } satisfies AppAction;
+            const removeClipB = { type: 'removeClip', payload: { clipId: 'clip-b' } } satisfies AppAction;
+            const keepRename = { type: 'renameClip', payload: { clipId: 'clip-c', name: 'Intro' } } satisfies AppAction;
+
+            propose('confirmation-clips-by-identity-before', {
+                actions: [moveFromTrackA, removeClipA, keepRename],
+                actionLabels: ['Move clip', 'Remove clip A', 'Keep clip name'],
+            });
+            propose('confirmation-clips-by-identity-after', {
+                supersedes: 'confirmation-clips-by-identity-before',
+                actions: [moveToTrackB, removeClipB, keepRename],
+                actionLabels: ['Move clip', 'Remove clip B', 'Keep clip name'],
+            });
+
+            const view = getAgentApprovalView({ confirmationId: 'confirmation-clips-by-identity-after' });
+
+            expect(view?.actionLabels).toEqual(['Move clip', 'Remove clip B', 'Keep clip name']);
+            expect(view?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-clips-by-identity-before',
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'moveClip',
+                        label: 'Move clip',
+                        fields: [{ field: 'trackId', previous: 'track-a', next: 'track-b' }],
+                    },
+                    { kind: 'added', actionType: 'removeClip', label: 'Remove clip B' },
+                    { kind: 'removed', actionType: 'removeClip', label: 'Remove clip A' },
+                ],
+                unchangedCount: 1,
+            });
+        });
+
+        it('shows replacement renames of different clips as added and removed', () => {
+            const verse = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
+            const chorus = {
+                type: 'renameClip',
+                payload: { clipId: 'clip-chorus', name: 'Chorus' },
+            } satisfies AppAction;
+            propose('confirmation-rename-before', { actions: [verse], actionLabels: ['Rename Verse clip'] });
+            propose('confirmation-rename-after', {
+                supersedes: 'confirmation-rename-before',
+                actions: [chorus],
+                actionLabels: ['Rename Chorus clip'],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-rename-after' })?.previousProposalDiff).toEqual(
+                {
+                    previousConfirmationId: 'confirmation-rename-before',
+                    changes: [
+                        { kind: 'added', actionType: 'renameClip', label: 'Rename Chorus clip' },
+                        { kind: 'removed', actionType: 'renameClip', label: 'Rename Verse clip' },
+                    ],
+                    unchangedCount: 0,
+                }
+            );
+        });
+
+        it('shows a new name on the same clip as a changed field', () => {
+            const verse = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
+            const chorus = {
+                type: 'renameClip',
+                payload: { clipId: 'clip-verse', name: 'Chorus' },
+            } satisfies AppAction;
+            propose('confirmation-same-clip-before', { actions: [verse], actionLabels: ['Rename clip to Verse'] });
+            propose('confirmation-same-clip-after', {
+                supersedes: 'confirmation-same-clip-before',
+                actions: [chorus],
+                actionLabels: ['Rename clip to Chorus'],
+            });
+
+            expect(
+                getAgentApprovalView({ confirmationId: 'confirmation-same-clip-after' })?.previousProposalDiff
+            ).toEqual({
+                previousConfirmationId: 'confirmation-same-clip-before',
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'renameClip',
+                        label: 'Rename clip to Chorus',
+                        fields: [{ field: 'name', previous: 'Verse', next: 'Chorus' }],
+                    },
+                ],
+                unchangedCount: 0,
+            });
+        });
+
+        // Red when a proposal that replaced none, or one whose predecessor the store let go, is shown a diff.
+        it('shows no diff for an original proposal or one whose predecessor is no longer held', () => {
+            propose('confirmation-original');
+            propose('confirmation-orphan', { supersedes: 'confirmation-gone' });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-original' })?.previousProposalDiff).toBeNull();
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-orphan' })?.previousProposalDiff).toBeNull();
         });
     });
 
