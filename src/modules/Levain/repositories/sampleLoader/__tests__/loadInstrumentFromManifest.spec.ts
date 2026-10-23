@@ -6,6 +6,7 @@ import { LEVAIN_ZONE_TABLE_CHUNK_ENTRIES } from '#/infra/audioWorklet/levainZone
 import { decodedBankResource } from '../decodedBankResource';
 import { fetchAndDecode } from '../fetchAndDecode';
 import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
+import { isSharedBankOwnerEndedError } from '../sharedBankOwnerEnded';
 
 /**
  * The zone-table builder port, standing in for the Worker: tables of the right
@@ -1466,6 +1467,29 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
+    it('rejects as a shared-bank owner ending when the worklet fails a committed follower because its owner ended', async () => {
+        const port = makePort({ autoComplete: false });
+        const pending = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            buildZoneTables,
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+        void pending.catch(() => {});
+
+        await vi.waitFor(() => {
+            expect(postedTypes(port)).toContain('commitSampleBank');
+        });
+        const loadToken = postedMessages(port)[0]?.loadToken;
+
+        port.emit({ type: 'sampleBankError', loadToken, message: 'owner gone', ownerEnded: true });
+
+        const rejection: unknown = await pending.catch((error: unknown) => error);
+        expect(isSharedBankOwnerEndedError(rejection)).toBe(true);
+        expect(rejection).toMatchObject({ message: 'Levain sample-bank load failed: owner gone' });
+    });
+
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
         // The token is still pending on this fake port when the abort lands
         // (commitSampleBank has not committed — `autoComplete: false`), so the
@@ -2227,6 +2251,30 @@ describe('loadInstrumentFromManifest', () => {
                 await pause(20);
                 expect(postedTypes(port)).not.toContain('reserveZoneTables');
                 expect(tableChunkCount(port)).toBe(0);
+            }, 2000);
+
+            it('rejects as a shared-bank owner ending, not a failure of its own, when the worklet reports the owner it followed ended', async () => {
+                const { port, pending, loadToken } = await loadHeldAtItsBuild('owner-ended-during-build');
+
+                port.emit({
+                    type: 'sampleBankError',
+                    loadToken,
+                    message: 'Levain processor was disposed during sample loading',
+                    ownerEnded: true,
+                });
+
+                const rejection: unknown = await pending.catch((error: unknown) => error);
+                expect(isSharedBankOwnerEndedError(rejection)).toBe(true);
+            }, 2000);
+
+            it('does not mark a refusal that names no ended owner as a shared-bank owner ending', async () => {
+                const { port, pending, loadToken } = await loadHeldAtItsBuild('refusal-without-owner');
+
+                port.emit({ type: 'sampleBankError', loadToken, message: 'Levain DSP rejected the zone' });
+
+                const rejection: unknown = await pending.catch((error: unknown) => error);
+                expect(rejection).toBeInstanceOf(Error);
+                expect(isSharedBankOwnerEndedError(rejection)).toBe(false);
             }, 2000);
 
             it('returns its chunk credits when the processor ends during the build, so a later load of more chunks than the budget completes', async () => {
