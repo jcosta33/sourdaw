@@ -777,6 +777,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 }),
             ],
         });
+        flushAutomergeStorageWrites();
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
         await vi.waitFor(() => expect(persistedInverse().payload.clipIndex).toBe(0));
         const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
@@ -823,6 +824,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        flushAutomergeStorageWrites();
         await executeAppAction(
             { type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } },
             { source: 'manual' }
@@ -1212,6 +1214,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
         trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+        flushAutomergeStorageWrites();
         await executeAppAction(
             { type: 'removeClip', payload: { clipId: 'clip-a' } },
             { source: 'manual', groupId: 'fresh-remove-split' }
@@ -5672,6 +5675,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 clips: track.clips.map((clip) => (clip.id === 'clip-a' ? original : clip)),
             })),
         });
+        flushAutomergeStorageWrites();
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
         await vi.waitFor(() =>
             expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)

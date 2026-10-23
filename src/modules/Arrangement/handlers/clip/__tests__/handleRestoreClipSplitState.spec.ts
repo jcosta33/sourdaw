@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import {
     type ClipSplitActionSnapshot,
@@ -157,6 +158,7 @@ function makeTakeLaneAction(
 beforeEach(() => {
     vi.clearAllMocks();
     takeLaneStore.set({ lanes: [] });
+    flushAutomergeStorageWrites();
     mockedRestorable.mockReturnValue(true);
     mockedReplaceTrackState.mockReturnValue(true);
     mockedMidiMatches.mockReturnValue(true);

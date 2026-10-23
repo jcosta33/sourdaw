@@ -235,6 +235,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                 }),
             ],
         });
+        flushAutomergeStorageWrites();
 
         const firstGesture = `clip-menu-delete-${crypto.randomUUID()}`;
         await executeUserAppAction(
