@@ -1,0 +1,25 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/MasterVisualizationsSection.spec.tsx
+  s_59e31a5c6f3e31::t_52678a01203083 8-12,31-34,59-60,108,111,115,123,151-175,177-210
+  s_59e31a5c6f3e31::t_653bd091d457af 135-150,211
+  s_59e31a5c6f3e31::t_8af2621f8cc854 35-36,43-48,55-58
+  s_59e31a5c6f3e31::t_a5544ba10c8e30 176
+src/modules/TimelineEditor/presentations/views/Inspector/MasterVisualizationsSection.tsx
+  s_59e31a5c6f3e31::t_f915d352f27dea 33-39,48-51,54-55,57-59,65-66,70-79,86-111
+  s_59e31a5c6f3e31::t_8af2621f8cc854 60-62,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa3dc7767d6fb2dab7dac79e283ce62a82f3b639",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
