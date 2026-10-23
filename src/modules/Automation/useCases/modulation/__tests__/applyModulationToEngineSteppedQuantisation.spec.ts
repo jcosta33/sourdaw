@@ -38,6 +38,7 @@ const { mocks } = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),

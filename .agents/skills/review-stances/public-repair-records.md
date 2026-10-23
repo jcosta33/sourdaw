@@ -14,7 +14,7 @@ author reviews governed rounds.
 - Put the same malformed marker bytes under author, reviewer, foreign, and unknown identities.
   Only the authorized records may refuse reconstruction. Foreign valid markers must contribute
   no repairs, including when they answer an unknown root; authorized unknown-root records refuse.
-- Exercise fresh `publishReview` below the escalation threshold through its real admission path.
+- Exercise fresh `publishReview` below the freeze threshold through its real admission path.
   A malformed foreign reply must permit the publication POST; the same reply from either App must
   refuse before any POST or bundle write. A reconstruction-only check misses this availability
   boundary. Preserve valid historical repair order, root bindings, and review role classification.
@@ -41,7 +41,7 @@ author reviews governed rounds.
 actors and parsed every reply marker. [PR #4588](https://github.com/jcosta33/sourdaw/pull/4588),
 merged as `93dbaf0ebae4b6b79f8844749148a09ce784dceb`, put that reconstruction ahead of the fresh
 publication threshold comparison. A foreign reply containing `sourdaw-repair-v1 {not json`
-therefore refused a fresh publication even below the escalation threshold (#5007).
+therefore refused a fresh publication even below the round threshold then in force (#5007; the freeze threshold since ADR 0054).
 
 The retained final-head #4588 stance
 `the-guard-change-leaves-plan-carrying-publication-unchanged` admitted below-threshold behavior

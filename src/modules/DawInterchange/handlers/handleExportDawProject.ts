@@ -11,6 +11,7 @@ type ShowSaveFilePicker = (opts: { suggestedName: string; types?: unknown[] }) =
     createWritable: () => Promise<{
         write: (data: Uint8Array) => Promise<void>;
         close: () => Promise<void>;
+        abort: () => Promise<void>;
     }>;
 }>;
 
@@ -24,29 +25,41 @@ function getShowSaveFilePicker(): ShowSaveFilePicker | null {
     return typeof candidate === 'function' ? (candidate as ShowSaveFilePicker) : null;
 }
 
-async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void> {
+async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<'saved' | 'cancelled'> {
     if (isDesktopRuntime()) {
-        await saveDawProjectNativeFile({ bytes, suggestedName });
-        return;
+        return saveDawProjectNativeFile({ bytes, suggestedName });
     }
 
     const saveFilePicker = getShowSaveFilePicker();
 
     if (saveFilePicker) {
+        let handle: Awaited<ReturnType<ShowSaveFilePicker>> | undefined;
         try {
-            const handle = await saveFilePicker.call(window, {
+            handle = await saveFilePicker.call(window, {
                 suggestedName,
                 types: [{ accept: { 'application/zip': [DAWPROJECT_FILE_EXTENSION] } }],
             });
-            const writable = await handle.createWritable();
-            await writable.write(bytes);
-            await writable.close();
-            return;
         } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
-                return;
+            if ((error instanceof Error || error instanceof DOMException) && error.name === 'AbortError') {
+                return 'cancelled';
             }
             logger.warn('[handleExportDawProject] showSaveFilePicker failed — falling back to blob download', error);
+        }
+
+        if (handle) {
+            const writable = await handle.createWritable();
+            try {
+                await writable.write(bytes);
+                await writable.close();
+            } catch (error) {
+                try {
+                    await writable.abort();
+                } catch {
+                    // Preserve the write or close failure that prevented the save.
+                }
+                throw error;
+            }
+            return 'saved';
         }
     }
 
@@ -62,13 +75,17 @@ async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }, 1500);
+    return 'saved';
 }
 
 export const handleExportDawProject = createHandler<'exportDawProject'>({
     execute: async () => {
         try {
             const { bytes, fileName, missingAudioCount } = await exportDawProject();
-            await saveBytes(bytes, fileName);
+            const outcome = await saveBytes(bytes, fileName);
+            if (outcome !== 'saved') {
+                return;
+            }
             if (missingAudioCount > 0) {
                 // Same warning the `.sourdaw` export path already gives for the
                 // same cause (audit M-263). The clips are in the file; their

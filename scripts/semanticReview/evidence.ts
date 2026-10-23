@@ -39,9 +39,12 @@
  * changing at all. When that total binds before the context tier the document is withheld at admission,
  * no contract-context region reaches the request fitter, and the reserve that fitter takes whenever a
  * unit carries context has nothing to hold.
- * A region over the per-region ceiling
- * is never supplied: it is withheld and recorded, so a contract document larger than that ceiling is
- * never sent whatever its tier. Every withheld region is named, and that name carries the
+ * A changed side over the per-region ceiling is never supplied: it is withheld and recorded, so a
+ * fragment of a diff never reaches a question. A contract-context document over that ceiling is the
+ * one exception — admitted as leading whole lines plus a visible marker, bounded and recorded in
+ * `truncated` and `limitations` (see `contextRegion.ts`) — because at local budgets both defaults
+ * exceed it, and dropping them whole starved local scans of all contract context. Every withheld region is named, and
+ * that name carries the
  * region's own content class — contract-carrying per side, or a contract-context region — never its
  * admission tier: a tier-0 spec-covered source and a tier-1 contract-needing file read the plain side
  * qualifier, because the tier is only the order admission attempts the record in. Each side is
@@ -50,6 +53,7 @@
  * ahead of a purely bulk path.
  */
 
+import { CONTEXT_REGION_TRUNCATED_CODE, prepareContractContext, type ContextTruncation } from './contextRegion.ts';
 import {
     assertLineRange,
     semanticTextDigest,
@@ -60,7 +64,6 @@ import {
 import {
     admissionBytesBySide,
     admissionUnits,
-    chargeableRegionBytes,
     classifyContractCarryingSides,
     compareLexicographic,
     contractNeedingPaths,
@@ -72,8 +75,8 @@ import {
     type ChangedFileContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
+import { exclusionReason, isSensitivePath } from './exclusion.ts';
 import { regionFitsRequest } from './fit.ts';
-import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 import {
@@ -86,6 +89,7 @@ import {
 } from './withheldReasons.ts';
 
 import type { PathChangedLines } from './changeFacts.ts';
+import type { SemanticChangedFile } from './exclusion.ts';
 
 export { compareByPath, compareLexicographic } from './evidenceOrdering.ts';
 export type { LineRange } from './slicing.ts';
@@ -96,6 +100,8 @@ const CREDENTIAL_SHAPED_EXCLUSION_CODE = 'credential-shaped-content-excluded';
 
 export {
     CREDENTIAL_SHAPED_WITHHELD_CODE,
+    exclusionReason,
+    isSensitivePath,
     nothingSentReason,
     SENSITIVE_PATH_WITHHELD_CODE,
     withheldRegionCarriesContract,
@@ -103,19 +109,7 @@ export {
 };
 export type { WithheldRegionCause };
 
-export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
-
-export type SemanticChangedFile = {
-    /** The post-change path; for a deletion, the path that was removed. */
-    readonly path: string;
-    /** The pre-change path when the change is a rename. */
-    readonly previousPath?: string;
-    readonly kind: SemanticChangeKind;
-    readonly binary: boolean;
-    readonly generated: boolean;
-    readonly added: number;
-    readonly deleted: number;
-};
+export type { SemanticChangeKind, SemanticChangedFile } from './exclusion.ts';
 
 /**
  * The changed lines of one path, per side, with the margin the diff was taken at already applied.
@@ -182,89 +176,6 @@ export type SemanticEvidenceSet = {
         readonly context: ReadonlySet<EvidenceSide>;
     };
 };
-
-/**
- * Paths whose content must not leave the machine. Secret scanning is defense in depth, not a
- * guarantee that arbitrary source has been sanitized, so a relevant exclusion is recorded as
- * incomplete context rather than silently dropped.
- */
-const SENSITIVE_PATH_PATTERNS: readonly RegExp[] = [
-    /(?:^|\/)\.env(?:\.|$)/u,
-    /(?:^|\/)\.env\.sourdaw/u,
-    /\.(?:pem|key|p12|pfx|keystore)$/iu,
-    /(?:^|\/)id_(?:rsa|ed25519|ecdsa)$/u,
-    /(?:^|\/)\.ssh\//u,
-    /(?:^|\/)\.aws\//u,
-    /(?:^|\/)\.npmrc$/u,
-    /(?:^|\/)\.netrc$/u,
-    /(?:^|\/)credentials(?:\.|$)/iu,
-    /(?:^|\/)\.agents\/artifacts\//u,
-    /(?:^|\/)transcripts?\//iu,
-];
-
-const LOCKFILE_NAMES: ReadonlySet<string> = new Set(['Cargo.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']);
-
-export function isSensitivePath(path: string): boolean {
-    return SENSITIVE_PATH_PATTERNS.some((pattern) => pattern.test(path));
-}
-
-function baseName(path: string): string {
-    const parts = path.split('/');
-    return parts[parts.length - 1] ?? path;
-}
-
-/** The rule ids a path admits, sorted so two sets can be compared for equality. */
-function ruleIdsFor(path: string): string[] {
-    return applicableRules([path])
-        .map((rule) => rule.id)
-        .sort(compareLexicographic);
-}
-
-/** Whether two paths admit different rule sets, so a rename between them still owes an assessment. */
-function ruleSetsDiffer(left: string, right: string): boolean {
-    const leftIds = ruleIdsFor(left);
-    const rightIds = ruleIdsFor(right);
-    return leftIds.length !== rightIds.length || leftIds.some((id, index) => id !== rightIds[index]);
-}
-
-/**
- * Why a changed path contributes no evidence. Each reason is recorded in the scope manifest, so an
- * excluded path stays visible rather than vanishing from the report.
- */
-export function exclusionReason(file: SemanticChangedFile): string | undefined {
-    if (isSensitivePath(file.path) || (file.previousPath !== undefined && isSensitivePath(file.previousPath))) {
-        return 'sensitive-content-excluded';
-    }
-    if (file.binary) {
-        return 'binary';
-    }
-    if (file.generated) {
-        return 'generated';
-    }
-    if (LOCKFILE_NAMES.has(baseName(file.path))) {
-        return 'dependency-lockfile';
-    }
-    if (file.added === 0 && file.deleted === 0) {
-        // A pure rename has a zero-line diff, but a rename can still be a semantic change: it can move
-        // a file out of a rule-covered surface, or stop a runner collecting it as a test. Calling every
-        // such rename `no-text-change` excluded the path, and the skipped branch then read the change as
-        // delivered advice over the very movement the rename performed. A rename that changes neither
-        // the applicable rule set nor collection owes nothing. An exact copy shares the same zero-line
-        // numstat but is not exempt: it adds a path to the tree, and `duplicates_existing_mechanism`
-        // exists precisely to question a newly duplicated mechanism.
-        if (file.kind === 'copied') {
-            return undefined;
-        }
-        if (file.kind === 'renamed' && file.previousPath !== undefined) {
-            const collectionChanged = isCollectedSpec(file.previousPath) !== isCollectedSpec(file.path);
-            if (collectionChanged || ruleSetsDiffer(file.previousPath, file.path)) {
-                return undefined;
-            }
-        }
-        return 'no-text-change';
-    }
-    return undefined;
-}
 
 type RegionRequest = {
     readonly revisionSha: string;
@@ -592,6 +503,26 @@ function createRegionAdmission(
 }
 
 /**
+ * Discloses a prepared truncation only for a region that actually left the machine: admission can
+ * still withhold a truncated document at the total gate, and the withhold paths already record that
+ * outcome — a supply claim beside an omission record would state both.
+ */
+function discloseContextTruncations(
+    truncations: readonly ContextTruncation[],
+    admission: ReturnType<typeof createRegionAdmission>
+): void {
+    for (const truncation of truncations) {
+        const supplied = admission.references.some(
+            (reference) => reference.path === truncation.path && reference.side === 'context'
+        );
+        if (supplied) {
+            admission.truncated.push({ path: truncation.path, reason: CONTEXT_REGION_TRUNCATED_CODE });
+            admission.limitations.push(truncation.limitation);
+        }
+    }
+}
+
+/**
  * Records every screened-out path into the admission result, so an excluded path stays visible rather
  * than vanishing from the report. A withheld secret is evidence that never left the machine, not an
  * irrelevant path like a binary or a lockfile; it must reach the completion layer exactly as the
@@ -626,12 +557,14 @@ function admitUnit(
         readonly hunksByPath: ReadonlyMap<string, PathHunks>;
         readonly contents: ReadonlyMap<string, ChangedFileContents>;
         readonly contractContextContent: ReadonlyMap<string, string>;
+        /** The bounds a truncated context region keeps, so its reference names the lines it carries. */
+        readonly contractContextRanges: ReadonlyMap<string, LineRange>;
         readonly mergeBaseSha: string;
         readonly headSha: string;
         readonly contractSourceSha: string;
     }
 ): void {
-    const { admission, hunksByPath, contents, contractContextContent } = input;
+    const { admission, hunksByPath, contents, contractContextContent, contractContextRanges } = input;
     if (unit.kind === 'context') {
         const raw = contractContextContent.get(unit.path);
         if (raw === undefined) {
@@ -639,7 +572,18 @@ function admitUnit(
             admission.limitations.push(`contract ${unit.path} was unavailable at the contract source revision`);
             return;
         }
-        admission.admit({ revisionSha: input.contractSourceSha, path: unit.path, side: 'context' }, raw, 'context');
+        // The bounds name the real-file lines kept; the marker line rides beside them, disclosed by
+        // the recorded truncation and limitation.
+        const range = contractContextRanges.get(unit.path);
+        if (range === undefined) {
+            admission.admit({ revisionSha: input.contractSourceSha, path: unit.path, side: 'context' }, raw, 'context');
+        } else {
+            admission.admit(
+                { revisionSha: input.contractSourceSha, path: unit.path, side: 'context', range },
+                raw,
+                'context'
+            );
+        }
         return;
     }
     const file = unit.file;
@@ -784,21 +728,17 @@ export function collectEvidence(input: {
     for (const path of input.contractPaths ?? []) {
         contextPaths.add(path);
     }
-    // Read each contract-context region once, so its chargeable bytes rank it with the contract class
-    // and its content is admitted from that same read. A region that cannot be read still mints a unit,
-    // so its unavailability is recorded in admission order rather than after every changed-file unit.
-    const contractContextContent = new Map<string, string>();
-    const contractContexts = Array.from(contextPaths).map((path) => {
-        const raw = regionFor(input.port, input.contractSourceSha, path);
-        if (raw === undefined) {
-            return { path, admissionBytes: 0 };
-        }
-        contractContextContent.set(path, raw);
-        return {
-            path,
-            admissionBytes: chargeableRegionBytes({ path, side: 'context' }, raw, input.limits.maxRegionBytes),
-        };
+    // Read each contract-context region once, so its chargeable bytes rank it and its content is
+    // admitted from that same read; a region that cannot be read still mints a unit, so its
+    // unavailability is recorded in admission order. Over-budget documents arrive from preparation
+    // already truncated and disclosed.
+    const preparedContext = prepareContractContext({
+        read: (path) => regionFor(input.port, input.contractSourceSha, path),
+        paths: contextPaths,
+        maxRegionBytes: input.limits.maxRegionBytes,
     });
+    const contractContextContent = preparedContext.content;
+    const contractContexts = preparedContext.contexts;
     const units = admissionUnits(
         assessed,
         contractCarryingSides,
@@ -818,11 +758,15 @@ export function collectEvidence(input: {
             hunksByPath,
             contents,
             contractContextContent,
+            contractContextRanges: preparedContext.ranges,
             mergeBaseSha: input.mergeBaseSha,
             headSha: input.headSha,
             contractSourceSha: input.contractSourceSha,
         });
     }
+
+    // A truncation is disclosed only for a region that actually left the machine.
+    discloseContextTruncations(preparedContext.truncations, admission);
 
     if (admission.references.length === 0) {
         admission.limitations.push('no source region was eligible for assessment');
