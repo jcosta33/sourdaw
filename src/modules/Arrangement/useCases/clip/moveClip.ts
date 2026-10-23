@@ -1,4 +1,5 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -53,6 +54,11 @@ export function moveClip(
                 trackId: targetTrackId,
                 startBeat,
                 endBeat: startBeat + (clip.endBeat - clip.startBeat),
+                // A drag changes the placement, never the content offset: the
+                // loop anchor rides the same delta or every move re-derives
+                // the loop window and the pass count from the new placement
+                // (#4988) — a one-loop-length drag would silence the clip.
+                ...shiftLoopOriginEntry(clip, startBeat - clip.startBeat),
             };
         }
         return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };

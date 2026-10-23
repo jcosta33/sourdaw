@@ -4,6 +4,7 @@ import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomer
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { countSettledTakes } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
@@ -12,6 +13,7 @@ import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
+import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
@@ -110,6 +112,10 @@ export async function saveProject(): Promise<boolean> {
         // paid for at ~430 ms of main thread per minute of stereo and 1.333x
         // in bytes. loadRecentProject resolves the ids through the cache,
         // exactly as the boot restore path already does.
+        //
+        // Read in the same synchronous turn as the snapshot's revision, so a
+        // take that settles once the snapshot is taken still counts as unsaved.
+        const settledTakesAtSnapshot = countSettledTakes();
         const built = await buildProjectData({ includeAudioBuffers: false });
         if (!built) {
             // No snapshot means nothing under recentKey to reopen. Listing
@@ -188,6 +194,7 @@ export async function saveProject(): Promise<boolean> {
                         dirty: rejectedCapturePlugins.length > 0,
                         identityPersistencePending: false,
                     });
+                    unsavedClosedTakes.markSavedThrough(settledTakesAtSnapshot);
                     return true;
                 } finally {
                     audioDurabilityReceipt?.release();

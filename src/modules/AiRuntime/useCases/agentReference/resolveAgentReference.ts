@@ -5,15 +5,18 @@ import { maskQuotedTextContents } from '../../transformers/promptParser/promptQu
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
+import { findAgentReferenceNameSpans, type AgentReferenceNameForms } from './findAgentReferenceNameSpans';
+import { getAgentReferenceCandidates, type AgentReferenceCandidate } from './getAgentReferenceCandidates';
+import { getBestAgentReferenceNameRanges } from './getBestAgentReferenceNameRanges';
 import { LEVEL_DIRECTION_WORDS } from './groundingStrategies/classifyPromptDecibelFigures';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
-import {
-    isAgentReferenceCapabilityCandidate,
-    type AgentReferenceCapability,
-} from './isAgentReferenceCapabilityCandidate';
+import { hasExplicitClipSelection } from './hasExplicitClipSelection';
+import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { type AgentReferenceCapability } from './isAgentReferenceCapabilityCandidate';
 import { levenshteinDistance } from './levenshteinDistance';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
+import { resolveTrackOwnerReference } from './resolveTrackOwnerReference';
 
 type AppActionRisk = ReturnType<typeof getAppActionExecutionPolicy>['risk'];
 
@@ -25,13 +28,12 @@ export type ResolveAgentReferenceInput = {
     dependencyId?: string;
     excludedIds?: readonly string[];
     risk?: AppActionRisk;
-};
-
-/** One project object the prompt could be naming, drawn from the capability's collection. */
-type CapabilityCandidate = {
-    id: string;
-    name: string;
-    ownerQualified: boolean;
+    /**
+     * Read what the prompt names by literal id or whole name, taking names in these forms, instead of
+     * resolving a reference: no selection phrase narrows the candidates or stands as evidence.
+     * Resolution reads the exact forms.
+     */
+    naming?: AgentReferenceNameForms;
 };
 
 type AgentReferenceEvidence = 'literal-id' | 'exact-name' | 'selection' | 'owner-qualified' | 'fuzzy-name';
@@ -129,61 +131,20 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'lufs',
 ]);
 
-function foldReferenceMarks(value: string): string {
-    return value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '');
-}
-
-function containsExactPhrase(prompt: string, reference: string): boolean {
-    return getExactPhraseRanges(prompt, reference).length > 0;
-}
-
-function getTokenReferenceRanges(
-    prompt: string,
-    reference: string,
-    tokenJoiner: string
-): readonly { end: number; start: number }[] {
-    const tokens = normalizeAgentReferenceText(reference)
+/** Every range of the prompt that states the id as typed: its words joined by hyphens or underscores, case aside. */
+function getLiteralIdRanges(prompt: string, id: string): readonly { end: number; start: number }[] {
+    const tokens = normalizeAgentReferenceText(id)
         .split(' ')
         .filter((token) => token.length > 0);
     if (tokens.length === 0) {
         return [];
     }
-    const needle = tokens.map((token) => escapeRegExp(token)).join(tokenJoiner);
+    const needle = tokens.map((token) => escapeRegExp(token)).join('[-_]+');
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
-    return [...prompt.matchAll(pattern)].flatMap((match) => {
-        if (match.index === undefined) {
-            return [];
-        }
-        return [{ start: match.index, end: match.index + match[0].length }];
-    });
-}
-
-function getContiguousReferenceRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    return getTokenReferenceRanges(prompt, reference, '[-_]+');
-}
-
-function getExactNameOverlapRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    return getTokenReferenceRanges(foldReferenceMarks(prompt), reference, '[^\\p{L}\\p{N}]+');
-}
-
-function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    const normalizedReference = normalizeAgentReferenceText(reference);
-    if (normalizedReference.length === 0) {
-        return [];
-    }
-    const haystack = ` ${normalizeAgentReferenceText(prompt)} `;
-    const needle = ` ${normalizedReference} `;
-    const ranges: { end: number; start: number }[] = [];
-    let from = 0;
-    while (from < haystack.length) {
-        const index = haystack.indexOf(needle, from);
-        if (index < 0) {
-            break;
-        }
-        ranges.push({ start: index, end: index + needle.length });
-        from = index + 1;
-    }
-    return ranges;
+    return Array.from(prompt.matchAll(pattern), (match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+    }));
 }
 
 function containsQualifiedMasterOutputReference(prompt: string): boolean {
@@ -208,16 +169,6 @@ function containsQualifiedVcaGroupReference(prompt: string, reference: string): 
     ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
 }
 
-function hasExplicitTrackSelection(prompt: string): boolean {
-    const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
-    return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
-}
-
-function hasExplicitClipSelection(prompt: string): boolean {
-    const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
-    return /\b(?:selected|current|this) (?:audio |midi )?clip\b/u.test(normalized);
-}
-
 function containsQualifiedClipReference(prompt: string, reference: string): boolean {
     const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
     const normalizedReference = normalizeAgentReferenceText(reference);
@@ -225,39 +176,6 @@ function containsQualifiedClipReference(prompt: string, reference: string): bool
         normalizedPrompt.includes(` ${normalizedReference} clip `) ||
         normalizedPrompt.includes(` clip ${normalizedReference} `)
     );
-}
-
-type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
-
-function containsQualifiedTrackOwnerReference(prompt: string, reference: string): boolean {
-    const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
-    const normalizedReference = normalizeAgentReferenceText(reference);
-    return [
-        ` on ${normalizedReference} `,
-        ` on the ${normalizedReference} `,
-        ` in ${normalizedReference} `,
-        ` in the ${normalizedReference} `,
-        ` from ${normalizedReference} `,
-        ` from the ${normalizedReference} `,
-    ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
-}
-
-function namesTrackAsQualifiedOwner(prompt: string, track: { id: string; name: string }): boolean {
-    return (
-        containsQualifiedTrackOwnerReference(prompt, track.id) ||
-        containsQualifiedTrackOwnerReference(prompt, track.name)
-    );
-}
-
-function resolveTrackOwnerReference(prompt: string, context: ProjectContext): TrackOwnerReference {
-    const referencedTracks = context.tracks.filter((track) => namesTrackAsQualifiedOwner(prompt, track));
-    if (referencedTracks.length === 0) {
-        return { status: 'none' };
-    }
-    if (referencedTracks.length > 1) {
-        return { status: 'ambiguous' };
-    }
-    return { status: 'unique', id: referencedTracks[0]!.id };
 }
 
 function hasNonClipReferenceCollision(
@@ -277,170 +195,20 @@ function hasNonClipReferenceCollision(
     );
 }
 
-function getTrackCandidates(
-    capability: AgentReferenceCapability,
-    context: ProjectContext
-): CapabilityCandidate[] | null {
-    if (getAgentReferenceCapabilityKind(capability) === 'track') {
-        return context.tracks
-            .filter((track) => isAgentReferenceCapabilityCandidate({ capability, context, id: track.id }))
-            .map((track) => ({ id: track.id, name: track.name, ownerQualified: false }));
-    }
-    return null;
-}
-
-function getReferenceCandidates(input: ResolveAgentReferenceInput): CapabilityCandidate[] {
-    const trackCandidates = getTrackCandidates(input.capability, input.context);
-    if (trackCandidates) {
-        return trackCandidates;
-    }
-
-    if (getAgentReferenceCapabilityKind(input.capability) === 'clip') {
-        let tracks = input.context.tracks;
-        if (!hasExplicitClipSelection(input.prompt)) {
-            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
-            if (ownerReference.status === 'ambiguous') {
-                return [];
-            }
-            if (ownerReference.status === 'unique') {
-                tracks = tracks.filter((track) => track.id === ownerReference.id);
-            }
-        }
-        return tracks.flatMap((track) => {
-            const ownerQualified = namesTrackAsQualifiedOwner(input.prompt, track);
-            return track.clips.map((clip) => ({ id: clip.id, name: clip.name, ownerQualified }));
-        });
-    }
-
-    if (input.capability === 'device' || input.capability === 'sidechain-capable-device') {
-        let tracks = input.context.tracks;
-        if (input.dependencyId) {
-            tracks = tracks.filter((track) => track.id === input.dependencyId);
-        } else if (hasExplicitTrackSelection(input.prompt)) {
-            if (input.context.selectedTrackId === null) {
-                return [];
-            }
-            tracks = tracks.filter((track) => track.id === input.context.selectedTrackId);
-        } else {
-            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
-            if (ownerReference.status === 'ambiguous') {
-                return [];
-            }
-            if (ownerReference.status === 'unique') {
-                tracks = tracks.filter((track) => track.id === ownerReference.id);
-            }
-        }
-        const canonicalNamesByType = new Map(
-            (input.context.availableDeviceTypes ?? []).map((deviceType) => [deviceType.id, deviceType.name])
-        );
-        return tracks.flatMap((track) => {
-            const ownerQualified = namesTrackAsQualifiedOwner(input.prompt, track);
-            return track.devices.flatMap((device) =>
-                isAgentReferenceCapabilityCandidate({
-                    capability: input.capability,
-                    context: input.context,
-                    dependencyId: track.id,
-                    id: device.id,
-                })
-                    ? [
-                          {
-                              id: device.id,
-                              name: canonicalNamesByType.get(device.type) ?? device.type,
-                              ownerQualified,
-                          },
-                      ]
-                    : []
-            );
-        });
-    }
-
-    if (input.capability === 'device-parameter' && input.dependencyId) {
-        const device = input.context.tracks
-            .flatMap((track) => track.devices)
-            .find((candidate) => candidate.id === input.dependencyId);
-        return (device?.parameters ?? []).map((parameter) => ({
-            id: parameter.id,
-            name: parameter.name,
-            ownerQualified: false,
-        }));
-    }
-
-    if (input.capability === 'automation-lane') {
-        let lanes = input.context.automationLanes ?? [];
-        if (hasExplicitTrackSelection(input.prompt)) {
-            if (input.context.selectedTrackId === null) {
-                return [];
-            }
-            lanes = lanes.filter((lane) => lane.trackId === input.context.selectedTrackId);
-        } else {
-            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
-            if (ownerReference.status === 'ambiguous') {
-                return [];
-            }
-            if (ownerReference.status === 'unique') {
-                lanes = lanes.filter((lane) => lane.trackId === ownerReference.id);
-            }
-        }
-        return lanes.map((lane) => {
-            const owner = input.context.tracks.find((track) => track.id === lane.trackId);
-            return {
-                id: lane.id,
-                name: lane.name,
-                ownerQualified: owner !== undefined && namesTrackAsQualifiedOwner(input.prompt, owner),
-            };
-        });
-    }
-
-    if (input.capability === 'adjustment-layer') {
-        return (input.context.adjustmentLayers ?? []).map((layer) => ({
-            id: layer.id,
-            name: layer.name,
-            ownerQualified: false,
-        }));
-    }
-
-    if (input.capability === 'vca-group') {
-        return (input.context.vcaGroups ?? []).map((group) => ({
-            id: group.id,
-            name: group.name,
-            ownerQualified: false,
-        }));
-    }
-
-    return [];
-}
-
-function removeOverlappedExactNameEvidence(
+/**
+ * A name stated only where another candidate's name reads that range better names nothing: "Drum"
+ * inside "Drum Bus" states the bus, "Vocal" states Vocal and not Vocals.
+ */
+function removeOutreadExactNameEvidence(
     prompt: string,
-    candidates: readonly CapabilityCandidate[],
-    evidenceById: Map<string, AgentReferenceEvidence>
+    candidates: readonly AgentReferenceCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>,
+    forms: AgentReferenceNameForms
 ): void {
-    for (const candidate of candidates) {
-        if (evidenceById.get(candidate.id) !== 'exact-name') {
-            continue;
-        }
-        const normalizedName = normalizeAgentReferenceText(candidate.name);
-        const longerCandidates = candidates.filter((otherCandidate) => {
-            if (otherCandidate.id === candidate.id || evidenceById.get(otherCandidate.id) !== 'exact-name') {
-                return false;
-            }
-            const otherName = normalizeAgentReferenceText(otherCandidate.name);
-            return otherName.length > normalizedName.length && ` ${otherName} `.includes(` ${normalizedName} `);
-        });
-        if (longerCandidates.length === 0) {
-            continue;
-        }
-        const nameRanges = getExactNameOverlapRanges(prompt, candidate.name);
-        if (nameRanges.length === 0) {
-            continue;
-        }
-        const longerRanges = longerCandidates.flatMap((otherCandidate) => [
-            ...getExactNameOverlapRanges(prompt, otherCandidate.name),
-        ]);
-        const everyNameOccurrenceIsInsideALongerName = nameRanges.every((nameRange) =>
-            longerRanges.some((longerRange) => nameRange.start >= longerRange.start && nameRange.end <= longerRange.end)
-        );
-        if (everyNameOccurrenceIsInsideALongerName) {
+    const named = candidates.filter((candidate) => evidenceById.get(candidate.id) === 'exact-name');
+    const statedIds = new Set(getBestAgentReferenceNameRanges(prompt, named, forms).map((range) => range.id));
+    for (const candidate of named) {
+        if (!statedIds.has(candidate.id)) {
             evidenceById.delete(candidate.id);
         }
     }
@@ -448,23 +216,22 @@ function removeOverlappedExactNameEvidence(
 
 function removeExactNameEvidenceOverlappedByLiteralIds(
     prompt: string,
-    candidates: readonly CapabilityCandidate[],
-    evidenceById: Map<string, AgentReferenceEvidence>
+    candidates: readonly AgentReferenceCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>,
+    forms: AgentReferenceNameForms
 ): void {
-    const overlapPrompt = foldReferenceMarks(prompt);
     const literalIdRanges = candidates.flatMap((candidate) =>
-        evidenceById.get(candidate.id) === 'literal-id'
-            ? [...getContiguousReferenceRanges(overlapPrompt, candidate.id)]
-            : []
+        evidenceById.get(candidate.id) === 'literal-id' ? getLiteralIdRanges(prompt, candidate.id) : []
     );
     if (literalIdRanges.length === 0) {
         return;
     }
+    const candidateNames = candidates.map((candidate) => candidate.name);
     for (const candidate of candidates) {
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const nameRanges = getExactNameOverlapRanges(prompt, candidate.name);
+        const nameRanges = findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames);
         if (nameRanges.length === 0) {
             continue;
         }
@@ -495,16 +262,16 @@ function joinerCarriesListPunctuation(joiner: string): boolean {
  * name itself, so it consumes the occurrence.
  */
 function nameMatchConsumesIdOccurrence(
-    foldedPrompt: string,
+    prompt: string,
     idRange: { end: number; start: number },
     nameRange: { end: number; start: number }
 ): boolean {
-    const tail = foldedPrompt.slice(idRange.end, nameRange.end);
+    const tail = prompt.slice(idRange.end, nameRange.end);
     const joinerAfterId = /^[^\p{L}\p{N}]+/u.exec(tail)?.[0];
     if (joinerAfterId !== undefined && joinerCarriesListPunctuation(joinerAfterId)) {
         return false;
     }
-    const matchedName = foldedPrompt.slice(nameRange.start, nameRange.end);
+    const matchedName = prompt.slice(nameRange.start, nameRange.end);
     const trailingToken = normalizeAgentReferenceText(matchedName).split(' ').at(-1) ?? '';
     return !SENTENCE_MATERIAL_TOKENS.has(trailingToken) && parsePromptNumberValue(trailingToken) === null;
 }
@@ -518,12 +285,15 @@ function nameMatchConsumesIdOccurrence(
  */
 function removeLiteralIdEvidenceNestedInExactNames(
     prompt: string,
-    candidates: readonly CapabilityCandidate[],
-    evidenceById: Map<string, AgentReferenceEvidence>
+    candidates: readonly AgentReferenceCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>,
+    forms: AgentReferenceNameForms
 ): void {
-    const overlapPrompt = foldReferenceMarks(prompt);
+    const candidateNames = candidates.map((candidate) => candidate.name);
     const exactNameRanges = candidates.flatMap((candidate) =>
-        evidenceById.get(candidate.id) === 'exact-name' ? [...getExactNameOverlapRanges(prompt, candidate.name)] : []
+        evidenceById.get(candidate.id) === 'exact-name'
+            ? findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames)
+            : []
     );
     if (exactNameRanges.length === 0) {
         return;
@@ -532,7 +302,7 @@ function removeLiteralIdEvidenceNestedInExactNames(
         if (evidenceById.get(candidate.id) !== 'literal-id') {
             continue;
         }
-        const idRanges = getContiguousReferenceRanges(overlapPrompt, candidate.id);
+        const idRanges = getLiteralIdRanges(prompt, candidate.id);
         if (idRanges.length === 0) {
             continue;
         }
@@ -542,7 +312,7 @@ function removeLiteralIdEvidenceNestedInExactNames(
                     nameRange.start <= idRange.start &&
                     idRange.end <= nameRange.end &&
                     (nameRange.start < idRange.start || idRange.end < nameRange.end) &&
-                    nameMatchConsumesIdOccurrence(overlapPrompt, idRange, nameRange)
+                    nameMatchConsumesIdOccurrence(prompt, idRange, nameRange)
             )
         );
         if (everyIdOccurrenceIsInsideALongerExactName) {
@@ -572,7 +342,7 @@ function getReservedReferenceWords(capability: AgentReferenceCapability): Readon
  */
 function getFuzzyNameSimilarities(
     input: ResolveAgentReferenceInput,
-    candidates: readonly CapabilityCandidate[]
+    candidates: readonly AgentReferenceCandidate[]
 ): Map<string, number> {
     const promptTokens = normalizeAgentReferenceText(maskQuotedTextContents(input.prompt))
         .split(' ')
@@ -607,7 +377,7 @@ function isTieredEvidence(evidence: AgentReferenceEvidence | undefined): evidenc
 }
 
 function rankReferenceCandidate(
-    candidate: CapabilityCandidate,
+    candidate: AgentReferenceCandidate,
     tieredEvidence: AgentReferenceEvidence | undefined,
     isSelected: boolean,
     fuzzySimilarity: number | undefined
@@ -641,7 +411,7 @@ function rankReferenceCandidate(
 }
 
 function rankReferenceCandidates(
-    candidates: readonly CapabilityCandidate[],
+    candidates: readonly AgentReferenceCandidate[],
     evidenceById: ReadonlyMap<string, AgentReferenceEvidence>,
     selectedReferenceId: string | null | undefined,
     fuzzySimilarityById: ReadonlyMap<string, number>
@@ -667,12 +437,67 @@ function rankReferenceCandidates(
         });
 }
 
+/**
+ * The candidates the prompt names by literal id or whole name, each range of the prompt naming only
+ * the candidates whose names read it best.
+ */
+function readNameEvidence(
+    prompt: string,
+    capability: AgentReferenceCapability,
+    candidates: readonly AgentReferenceCandidate[],
+    forms: AgentReferenceNameForms
+): Map<string, AgentReferenceEvidence> {
+    const evidenceById = new Map<string, AgentReferenceEvidence>();
+    const candidateNames = candidates.map((candidate) => candidate.name);
+    for (const candidate of candidates) {
+        if (capability === 'output' && candidate.id === 'master' && !containsQualifiedMasterOutputReference(prompt)) {
+            continue;
+        }
+        const hasUnqualifiedReservedVcaId =
+            capability === 'vca-group' &&
+            reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.id)) &&
+            !containsQualifiedVcaGroupReference(prompt, candidate.id);
+        if (getLiteralIdRanges(prompt, candidate.id).length > 0 && !hasUnqualifiedReservedVcaId) {
+            evidenceById.set(candidate.id, 'literal-id');
+            continue;
+        }
+        if (findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames).length > 0) {
+            if (
+                capability === 'vca-group' &&
+                reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.name)) &&
+                !containsQualifiedVcaGroupReference(prompt, candidate.name)
+            ) {
+                continue;
+            }
+            evidenceById.set(candidate.id, 'exact-name');
+        }
+    }
+
+    if (capability === 'automation-lane' && [...evidenceById.values()].some((evidence) => evidence === 'literal-id')) {
+        for (const [candidateId, evidence] of evidenceById) {
+            if (evidence !== 'literal-id') {
+                evidenceById.delete(candidateId);
+            }
+        }
+    }
+
+    removeExactNameEvidenceOverlappedByLiteralIds(prompt, candidates, evidenceById, forms);
+    removeOutreadExactNameEvidence(prompt, candidates, evidenceById, forms);
+    removeLiteralIdEvidenceNestedInExactNames(prompt, candidates, evidenceById, forms);
+    return evidenceById;
+}
+
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
-    const trackCandidates = getTrackCandidates(input.capability, input.context);
-    const hasTrackSelection = trackCandidates !== null && hasExplicitTrackSelection(input.prompt);
+    const readsSelection = input.naming === undefined;
+    const hasTrackSelection =
+        readsSelection &&
+        getAgentReferenceCapabilityKind(input.capability) === 'track' &&
+        hasExplicitTrackSelection(input.prompt);
     const hasClipSelection =
-        getAgentReferenceCapabilityKind(input.capability) === 'clip' && hasExplicitClipSelection(input.prompt);
+        readsSelection &&
+        getAgentReferenceCapabilityKind(input.capability) === 'clip' &&
+        hasExplicitClipSelection(input.prompt);
     let selectedReferenceId: string | null | undefined;
     if (hasTrackSelection) {
         selectedReferenceId = input.context.selectedTrackId;
@@ -681,7 +506,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         selectedReferenceId = selectedClipIds.length === 1 ? selectedClipIds[0]! : null;
     }
 
-    let candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
+    let candidates = getAgentReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
     if (selectedReferenceId !== undefined) {
         if (selectedReferenceId === null) {
             candidates = [];
@@ -689,57 +514,13 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
             candidates = candidates.filter((candidate) => candidate.id === selectedReferenceId);
         }
     }
-    const evidenceById = new Map<string, AgentReferenceEvidence>();
-
-    for (const candidate of candidates) {
-        if (
-            input.capability === 'output' &&
-            candidate.id === 'master' &&
-            !containsQualifiedMasterOutputReference(input.prompt)
-        ) {
-            continue;
-        }
-        const hasUnqualifiedReservedVcaId =
-            input.capability === 'vca-group' &&
-            reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.id)) &&
-            !containsQualifiedVcaGroupReference(input.prompt, candidate.id);
-        if (getContiguousReferenceRanges(input.prompt, candidate.id).length > 0 && !hasUnqualifiedReservedVcaId) {
-            evidenceById.set(candidate.id, 'literal-id');
-            continue;
-        }
-        if (containsExactPhrase(input.prompt, candidate.name)) {
-            if (
-                input.capability === 'vca-group' &&
-                reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.name)) &&
-                !containsQualifiedVcaGroupReference(input.prompt, candidate.name)
-            ) {
-                continue;
-            }
-            evidenceById.set(candidate.id, 'exact-name');
-        }
-    }
-
+    const evidenceById = readNameEvidence(input.prompt, input.capability, candidates, input.naming ?? 'exact');
     if (selectedReferenceId !== null && selectedReferenceId !== undefined) {
         const selected = candidates.find((candidate) => candidate.id === selectedReferenceId);
         if (selected && !evidenceById.has(selected.id)) {
             evidenceById.set(selected.id, 'selection');
         }
     }
-
-    if (
-        input.capability === 'automation-lane' &&
-        [...evidenceById.values()].some((evidence) => evidence === 'literal-id')
-    ) {
-        for (const [candidateId, evidence] of evidenceById) {
-            if (evidence !== 'literal-id') {
-                evidenceById.delete(candidateId);
-            }
-        }
-    }
-
-    removeExactNameEvidenceOverlappedByLiteralIds(input.prompt, candidates, evidenceById);
-    removeOverlappedExactNameEvidence(input.prompt, candidates, evidenceById);
-    removeLiteralIdEvidenceNestedInExactNames(input.prompt, candidates, evidenceById);
 
     const gated = isGatedRisk(input.risk);
     // Every tiered evidence already clears MIN_BINDING_CONFIDENCE, so approximate names are read only

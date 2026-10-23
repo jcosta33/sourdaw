@@ -29,6 +29,12 @@ export type RunBranchTransitionInput<TResult> = {
     apply: () => { nextState?: BranchStoreState; result: TResult };
     persistenceOperation: () => Promise<void>;
     previousState: BranchStoreState;
+    /**
+     * Supplied by a transition whose rollback moves the root across lineages.
+     * It runs before the snapshots are restored, and a failure is logged without
+     * abandoning the restore.
+     */
+    stopTransportBeforeRollback?: () => Promise<void>;
     transitionOwnerId?: string;
 };
 
@@ -72,6 +78,29 @@ function getDurableBranchState(error: unknown, previousState: BranchStoreState):
     return { ...previousState, activeBranchId: durableRootLineage };
 }
 
+function wasProjectReplaced(capturedReplacement: number): boolean {
+    if (currentPersistenceReplacement() === capturedReplacement) {
+        return false;
+    }
+    // The project was replaced under this transition. The documents these
+    // snapshots describe belong to a repository that no longer exists, and
+    // the branch list the rollback would restore describes that repository
+    // too — writing either back would put the replaced project's branches
+    // over the replacement's.
+    logger.warn('[CrdtDocument] Skipped branch transition rollback: the project was replaced mid-transition.');
+    return true;
+}
+
+async function stopTransportForRollback(stopTransport: () => Promise<void>): Promise<void> {
+    try {
+        await stopTransport();
+    } catch (stopError) {
+        // The outgoing root still has to come back; a transport left running
+        // is the lesser failure than a root left on the incoming branch.
+        logger.warn('[CrdtDocument] Failed to stop the transport before the branch rollback:', stopError);
+    }
+}
+
 async function recoverFailedTransition({
     error,
     previousState,
@@ -79,6 +108,7 @@ async function recoverFailedTransition({
     snapshots,
     committedRevision,
     capturedReplacement,
+    stopTransportBeforeRollback,
 }: {
     error: unknown;
     previousState: BranchStoreState;
@@ -86,15 +116,19 @@ async function recoverFailedTransition({
     snapshots: DocumentSnapshot[];
     committedRevision: number | null;
     capturedReplacement: number;
+    stopTransportBeforeRollback?: () => Promise<void>;
 }): Promise<void> {
-    if (currentPersistenceReplacement() !== capturedReplacement) {
-        // The project was replaced under this transition. The documents these
-        // snapshots describe belong to a repository that no longer exists, and
-        // the branch list the rollback would restore describes that repository
-        // too — writing either back would put the replaced project's branches
-        // over the replacement's.
-        logger.warn('[CrdtDocument] Skipped branch transition rollback: the project was replaced mid-transition.');
+    if (wasProjectReplaced(capturedReplacement)) {
         return;
+    }
+
+    if (stopTransportBeforeRollback) {
+        await stopTransportForRollback(stopTransportBeforeRollback);
+        // The stop awaits a recording commit, and the project can be replaced
+        // while it does.
+        if (wasProjectReplaced(capturedReplacement)) {
+            return;
+        }
     }
 
     for (const snapshot of snapshots) {
@@ -143,6 +177,7 @@ export async function runBranchTransition<TResult>({
     apply,
     persistenceOperation,
     previousState,
+    stopTransportBeforeRollback,
     transitionOwnerId,
 }: RunBranchTransitionInput<TResult>): Promise<TResult> {
     if (branchTransitionInProgress || branchDocumentTransitionFence.isBlockedFor(transitionOwnerId)) {
@@ -199,6 +234,7 @@ export async function runBranchTransition<TResult>({
             snapshots,
             committedRevision,
             capturedReplacement,
+            stopTransportBeforeRollback,
         });
         throw error;
     } finally {

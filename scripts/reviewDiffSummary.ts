@@ -192,3 +192,143 @@ export function summarizeReviewDiff(root: string, numstat: Buffer): ReviewDiffSu
 export function formatReviewDiffSummary(summary: ReviewDiffSummary): string {
     return JSON.stringify(summary);
 }
+
+type PatchFile = {
+    path: string | undefined;
+    previousPath: string | undefined;
+    added: number;
+    deleted: number;
+    binary: boolean;
+    inHunk: boolean;
+};
+
+const PATCH_FILE_HEADER = 'diff --git ';
+const SIMPLE_ESCAPES: Record<string, number> = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, '"': 34, '\\': 92 };
+
+/** Git quotes a path holding control, quote, backslash or non-ASCII bytes as a C string with octal escapes. */
+function unquotePath(quoted: string): string {
+    const bytes: number[] = [];
+    const body = quoted.slice(1, -1);
+    for (let index = 0; index < body.length; index += 1) {
+        const char = body.charAt(index);
+        if (char !== '\\') {
+            bytes.push(...Buffer.from(char, 'utf8'));
+            continue;
+        }
+        const next = body.charAt(index + 1);
+        const octal = /^[0-7]{3}$/u.exec(body.slice(index + 1, index + 4));
+        if (octal !== null) {
+            bytes.push(Number.parseInt(octal[0], 8));
+            index += 3;
+            continue;
+        }
+        const simple = SIMPLE_ESCAPES[next];
+        if (simple === undefined) {
+            throw new Error(`bundle diff.patch holds an unreadable quoted path: ${quoted}`);
+        }
+        bytes.push(simple);
+        index += 1;
+    }
+    return Buffer.from(bytes).toString('utf8');
+}
+
+function readPathField(value: string): string {
+    return value.startsWith('"') && value.endsWith('"') && value.length >= 2 ? unquotePath(value) : value;
+}
+
+/** The index of the first quote after the opening one that no backslash escapes, or -1. */
+function closingQuoteIndex(quoted: string): number {
+    for (let index = 1; index < quoted.length; index += 1) {
+        const char = quoted.charAt(index);
+        if (char === '\\') {
+            index += 1;
+        } else if (char === '"') {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/**
+ * Without a rename, both sides of the header name one path, so its length fixes the split. A rename
+ * header names two paths and answers undefined; its `rename to` line supplies the destination.
+ */
+function headerPath(header: string): string | undefined {
+    const rest = header.slice(PATCH_FILE_HEADER.length);
+    if (rest.startsWith('"')) {
+        const closing = closingQuoteIndex(rest);
+        const first = closing < 0 ? rest : rest.slice(0, closing + 1);
+        return readPathField(first).slice(2);
+    }
+    const length = (rest.length - 5) / 2;
+    return Number.isInteger(length) && length > 0 ? rest.slice(2, 2 + length) : undefined;
+}
+
+function applyBodyLine(file: PatchFile, line: string): void {
+    if (line.startsWith('rename from ')) {
+        file.previousPath = readPathField(line.slice('rename from '.length));
+        return;
+    }
+    if (line.startsWith('rename to ')) {
+        file.path = readPathField(line.slice('rename to '.length));
+        return;
+    }
+    if (line.startsWith('@@')) {
+        file.inHunk = true;
+        return;
+    }
+    if (line.startsWith('GIT binary patch') || (line.startsWith('Binary files ') && line.endsWith(' differ'))) {
+        file.binary = true;
+        return;
+    }
+    if (!file.inHunk) {
+        return;
+    }
+    if (line.startsWith('+')) {
+        file.added += 1;
+    } else if (line.startsWith('-')) {
+        file.deleted += 1;
+    }
+}
+
+function parsePatchFiles(diff: string): PatchFile[] {
+    const files: PatchFile[] = [];
+    let current: PatchFile | undefined;
+    for (const line of diff.split('\n')) {
+        if (line.startsWith(PATCH_FILE_HEADER)) {
+            current = {
+                path: headerPath(line),
+                previousPath: undefined,
+                added: 0,
+                deleted: 0,
+                binary: false,
+                inHunk: false,
+            };
+            files.push(current);
+            continue;
+        }
+        if (current !== undefined) {
+            applyBodyLine(current, line);
+        }
+    }
+    return files;
+}
+
+function numstatRecord(file: PatchFile): string {
+    if (file.path === undefined) {
+        throw new Error('bundle diff.patch holds a file header without a readable path');
+    }
+    const counts = file.binary ? '-\t-' : `${file.added}\t${file.deleted}`;
+    return file.previousPath === undefined
+        ? `${counts}\t${file.path}\0`
+        : `${counts}\t\0${file.previousPath}\0${file.path}\0`;
+}
+
+/**
+ * Re-derives the NUL-delimited `git diff --numstat -z` records `review:prepare` feeds the risk
+ * planner from a bundle's own `diff.patch`, so publication can recompute the plan from the diff it
+ * is about to review instead of trusting `risk-plan.json`.
+ */
+export function numstatFromPatch(diff: string): Buffer {
+    return Buffer.from(parsePatchFiles(diff).map(numstatRecord).join(''), 'utf8');
+}
