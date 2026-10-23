@@ -1,0 +1,36 @@
+src/modules/Levain/useCases/levainParamBridge/levainBridge.ts
+  s_59e31a5c6f3e31::t_428cfde5c3cd2e 9
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_59e31a5c6f3e31::t_428cfde5c3cd2e 629
+  s_59e31a5c6f3e31::t_aaa1901081e84f 2,608-620
+src/modules/Levain/useCases/levainParamBridge/__tests__/multiInstanceIsolation.spec.ts
+  s_59e31a5c6f3e31::t_7756a4acc4a705 1-98,102-110,114-135,137-161,165-170
+  s_59e31a5c6f3e31::t_224a24b9e7137f 99-101,111-113,162-164
+  s_59e31a5c6f3e31::t_5f8158d446ec02 136
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_111acf2880a34d 9-10
+  s_59e31a5c6f3e31::t_224a24b9e7137f 130-134,139-141,151-155
+  s_59e31a5c6f3e31::t_b26ae937da95f5 1-8,11-92,94-129,135-138,142-150,156-177
+  s_59e31a5c6f3e31::t_5b3aaa29d2edc4 93
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  s_59e31a5c6f3e31::t_428cfde5c3cd2e 1
+src/modules/AudioEngine/useCases/offlineRender/__tests__/levainMultiInstancePcm.spec.ts
+  s_59e31a5c6f3e31::t_f31ba487feb75f 1-6,8-9,11,13-50,69-78,90-115,120-121,123-127,134-187,225-238,241-246,259-260,266,268,305-313,315-320,331-334,344-349,351-354,359,374,381-383,409-410,412,417-429,436-445,452-453
+  s_59e31a5c6f3e31::t_224a24b9e7137f 52-68,79,116-119,122,128-133,192,263-264,375-380,413-416,430-435,446-451
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eef7bcb1eb3413ee9dcb14fd715d4c21fd16359a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
