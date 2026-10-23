@@ -28,6 +28,8 @@ type LoadRecentProjectOptions = {
     readonly requireDurable?: boolean;
     /** A discard caller keeps this true only while its captured project authority is still current. */
     readonly shouldProceed?: () => boolean;
+    /** A caller that must claim its place in the transition order before it reads allocates the transaction itself. */
+    readonly transaction?: ProjectLoadTransaction;
 };
 
 function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProceed?: () => boolean): boolean {
@@ -38,9 +40,13 @@ function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProce
 
 export async function loadRecentProject(
     key: string,
-    { outgoingProject, requireDurable = false, shouldProceed }: LoadRecentProjectOptions = {}
+    {
+        outgoingProject,
+        requireDurable = false,
+        shouldProceed,
+        transaction = runProjectLoadTransaction(),
+    }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
-    const transaction = runProjectLoadTransaction();
     let raw: string | null;
     try {
         // Reads IndexedDB, the only store project content is written to. A
