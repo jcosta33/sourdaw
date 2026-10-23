@@ -1,0 +1,21 @@
+tests/e2e/toasterGrooveTemplateTestId.spec.ts
+  s_59e31a5c6f3e31::t_a14e36edcfe66a 11-15
+tests/e2e/toasterLevelPanTestId.spec.ts
+  s_59e31a5c6f3e31::t_3b30c94b67fb4e 11-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3bebe09325b5c6b388b3aed90d6f9b1cc147be92",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
