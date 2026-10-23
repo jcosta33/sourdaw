@@ -27,6 +27,12 @@ the separate hardware admission job; an unowned browser-AI proof stays selected 
 
 Direct edits to a collected E2E spec select that spec, alongside any browser work selected for other
 changed paths. Documentation and recognized review tooling keep their existing no-browser route.
+Every other path under `scripts/` (including `scripts/__tests__/`), `.agents/`, top-level
+`release/*.json`, and Markdown outside `src/`, `public/`, and `tests/` selects no browser suite but
+keeps the broad non-browser profile, so its unit, type, Rust, and WASM checks still run. Generator and
+build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
+select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the
+nightly full train. Configuration, dependency, workflow, and product paths keep their own routes.
 The planner retains the broad validation profile for product changes, CodeQL selection, anchored
 literal filenames at the runner boundary, and the required Gate's selected-job checks. A failed
 graph or missing dependency installation must never produce an empty or silently narrowed matrix.

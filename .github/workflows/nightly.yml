@@ -222,23 +222,39 @@ jobs:
           # implementation source through `git show <revision>:<path>`.
           # The unit matrix therefore needs the immutable source history.
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Enable Corepack
-        run: corepack enable
+      # The guard storage specs refuse cleanup while any same-UID process is
+      # uninspectable, and the hosted runner account holds such processes. The
+      # shards therefore run in the same fresh unprivileged account as the
+      # required unit suite in validation.yml, which runs the three guard specs
+      # first and alone; keep the two jobs' steps identical.
+      - name: Prepare unit tool directory
+        id: unit_tools
+        run: |
+          tool_root="/var/tmp/sourdaw-unit-tools-$(cat /proc/sys/kernel/random/uuid)"
+          mkdir -m 755 "$tool_root"
+          printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
+          dest: ${{ steps.unit_tools.outputs.root }}
           package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+
+      - name: Prepare isolated unit account
+        id: unit_isolation
+        env:
+          SOURDAW_UNIT_TOOL_ROOT: ${{ steps.unit_tools.outputs.root }}
+        run: node scripts/runIsolatedUnitShard.ts prepare
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
       # The suite is dominated by jsdom construction and module loading rather
       # than assertions, so worker count is the lever that matters. The local
@@ -247,7 +263,7 @@ jobs:
         id: run_shard
         env:
           VITEST_MAX_WORKERS: 4
-        run: pnpm run test:run --shard=${{ matrix.shard }}/4
+        run: node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4
 
       - name: Report shard failure
         if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
@@ -317,7 +333,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
+            if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
@@ -617,6 +633,11 @@ jobs:
       # downloads; it is the price of failing a genuine stall, which prints
       # nothing after `apt-get update` for an hour, within minutes.
       #
+      # Every apt run reads the runner's sources except the image's standalone
+      # Microsoft product feed, which nothing here installs from and whose 403
+      # failed `apt-get update` on all three attempts (#5359); see
+      # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
+      #
       # Limit: apt runs dpkg in its own session, which the group signal of
       # `timeout` does not reach. A cap that expires while dpkg is unpacking,
       # seconds after the downloads finish, can leave dpkg holding its lock
@@ -627,7 +648,7 @@ jobs:
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&
               timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi

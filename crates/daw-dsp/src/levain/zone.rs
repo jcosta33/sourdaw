@@ -6,6 +6,7 @@
 //! repetition.
 
 use super::types::*;
+use super::LEVAIN_ZONE_TABLE_CHUNK_ENTRIES;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -34,10 +35,282 @@ pub enum ZoneMapBuildError {
 // ---------------------------------------------------------------------------
 
 /// A reference into the zone list arena: (start_offset, count).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ZoneListRef {
     pub offset: u32,
     pub count: u16,
+}
+
+// ---------------------------------------------------------------------------
+// Zone tables — the LUT and the arena it indexes, computed from the zones
+// ---------------------------------------------------------------------------
+
+/// The part of a zone the lookup tables index: which zone it is and the
+/// (articulation, mic, key, velocity) region it covers.
+#[derive(Debug, Clone, Copy)]
+pub struct ZoneSpan {
+    pub id: ZoneId,
+    pub articulation: ArticulationId,
+    pub mic: MicId,
+    pub key: KeyRange,
+    pub vel: VelRange,
+}
+
+impl From<&Zone> for ZoneSpan {
+    fn from(zone: &Zone) -> Self {
+        Self {
+            id: zone.id,
+            articulation: zone.articulation,
+            mic: zone.mic,
+            key: zone.key,
+            vel: zone.vel,
+        }
+    }
+}
+
+/// The lookup tables for one set of zones and dimensions: one `ZoneListRef`
+/// per (articulation, mic, note, velocity bucket) slot, and the arena of zone
+/// ids those refs point into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZoneTables {
+    pub lut: Vec<ZoneListRef>,
+    pub arena: Vec<ZoneId>,
+}
+
+/// LUT slots and round-robin counters the dimensions call for, or the error
+/// `build_lut` gives for dimensions past the DSP limits.
+pub fn zone_table_sizes(
+    num_articulations: usize,
+    num_mics: usize,
+) -> Result<(usize, usize), ZoneMapBuildError> {
+    if num_articulations > MAX_ARTICULATIONS || num_mics > MAX_MICS {
+        return Err(ZoneMapBuildError::InvalidDimensions);
+    }
+    let lut_size = num_articulations
+        .checked_mul(num_mics)
+        .and_then(|size| size.checked_mul(128))
+        .and_then(|size| size.checked_mul(VEL_BUCKETS))
+        .ok_or(ZoneMapBuildError::LutSizeOverflow)?;
+    if lut_size > MAX_LUT_ENTRIES {
+        return Err(ZoneMapBuildError::InvalidDimensions);
+    }
+    let rr_counter_count = num_articulations
+        .checked_mul(128)
+        .ok_or(ZoneMapBuildError::LutSizeOverflow)?;
+    Ok((lut_size, rr_counter_count))
+}
+
+/// Compute the lookup tables for `zones`. The one table algorithm: the
+/// engine's own `ZoneMap::build_lut` and the off-thread builder the browser
+/// host runs both call it. Allocates freely, so it never runs on a render
+/// thread in the browser.
+pub fn build_zone_tables(
+    zones: impl IntoIterator<Item = ZoneSpan>,
+    num_articulations: usize,
+    num_mics: usize,
+) -> Result<ZoneTables, ZoneMapBuildError> {
+    let (lut_size, _) = zone_table_sizes(num_articulations, num_mics)?;
+    let mut lut = vec![ZoneListRef::default(); lut_size];
+
+    // Collect zone IDs per LUT slot.
+    let mut buckets: Vec<Vec<ZoneId>> = vec![Vec::new(); lut_size];
+
+    for zone in zones {
+        let art = zone.articulation as usize;
+        let mic = zone.mic as usize;
+        if art >= num_articulations || mic >= num_mics {
+            continue;
+        }
+
+        for note in zone.key.lo..=zone.key.hi {
+            let vel_lo_bucket = (zone.vel.lo / VEL_BUCKET_SIZE) as usize;
+            let vel_hi_bucket = (zone.vel.hi / VEL_BUCKET_SIZE).min(VEL_BUCKETS as u8 - 1) as usize;
+
+            for vb in vel_lo_bucket..=vel_hi_bucket {
+                let idx = ((art * num_mics + mic) * 128 + note as usize) * VEL_BUCKETS + vb;
+                if idx < buckets.len() {
+                    buckets[idx].push(zone.id);
+                }
+            }
+        }
+    }
+
+    // Flatten buckets into the arena.
+    let mut arena = Vec::new();
+    for (i, bucket) in buckets.iter().enumerate() {
+        if bucket.is_empty() {
+            lut[i] = ZoneListRef {
+                offset: 0,
+                count: 0,
+            };
+        } else {
+            let count = u16::try_from(bucket.len())
+                .map_err(|_| ZoneMapBuildError::ZoneListCapacityExceeded)?;
+            let next_arena_len = arena
+                .len()
+                .checked_add(bucket.len())
+                .ok_or(ZoneMapBuildError::ArenaCapacityExceeded)?;
+            if next_arena_len > MAX_ZONE_ARENA {
+                return Err(ZoneMapBuildError::ArenaCapacityExceeded);
+            }
+            let offset =
+                u32::try_from(arena.len()).map_err(|_| ZoneMapBuildError::ArenaCapacityExceeded)?;
+            arena.extend_from_slice(bucket);
+            lut[i] = ZoneListRef { offset, count };
+        }
+    }
+
+    Ok(ZoneTables { lut, arena })
+}
+
+/// Zone tables arriving in bounded chunks for a staged bank, into storage
+/// reserved once.
+///
+/// `reserve` is the only allocation: the LUT, the arena and the round-robin
+/// counters, at the sizes the host declares and the dimensions imply. Each
+/// chunk then appends at most `LEVAIN_ZONE_TABLE_CHUNK_ENTRIES` entries,
+/// contiguous and in order, after checking every one of them, and allocates
+/// nothing; `install_into` swaps the complete tables into a zone map in O(1).
+/// So the render thread copies tables an off-thread builder computed, a bounded
+/// chunk per host message, and never computes them itself.
+///
+/// What a chunk checks is what keeps `ZoneMap::lookup` sound with tables it
+/// did not build: a LUT ref never reaches past the declared arena, and an arena
+/// entry never names a zone the bank does not hold. A refused chunk appends
+/// nothing.
+pub struct ZoneTableStaging {
+    num_articulations: usize,
+    num_mics: usize,
+    lut: Vec<ZoneListRef>,
+    lut_entries: usize,
+    arena: Vec<ZoneId>,
+    arena_entries: usize,
+    rr_counters: Vec<u8>,
+    /// Set once the tables went into a zone map. The vectors left here are
+    /// that map's previous ones, which take no further chunk.
+    installed: bool,
+}
+
+impl ZoneTableStaging {
+    /// Reserve storage for tables of `lut_entries` LUT slots and
+    /// `arena_entries` arena entries. `None`, with nothing reserved, when the
+    /// dimensions pass the limits `build_lut` enforces, `lut_entries` is not
+    /// the size they imply, the arena would pass its capacity, or the storage
+    /// cannot be had.
+    pub fn reserve(
+        num_articulations: usize,
+        num_mics: usize,
+        lut_entries: usize,
+        arena_entries: usize,
+    ) -> Option<Self> {
+        let (lut_size, rr_counter_count) = zone_table_sizes(num_articulations, num_mics).ok()?;
+        if lut_entries != lut_size || arena_entries > MAX_ZONE_ARENA {
+            return None;
+        }
+        let mut lut = Vec::new();
+        lut.try_reserve_exact(lut_entries).ok()?;
+        let mut arena = Vec::new();
+        arena.try_reserve_exact(arena_entries).ok()?;
+        let mut rr_counters = Vec::new();
+        rr_counters.try_reserve_exact(rr_counter_count).ok()?;
+        rr_counters.resize(rr_counter_count, 0);
+        Some(Self {
+            num_articulations,
+            num_mics,
+            lut,
+            lut_entries,
+            arena,
+            arena_entries,
+            rr_counters,
+            installed: false,
+        })
+    }
+
+    /// Append LUT entries starting at slot `start`, given as interleaved
+    /// `(offset, count)` words. Refuses (false), appending nothing, once the
+    /// tables are installed, when `start` is not the next slot, the chunk is
+    /// empty, odd, longer than one chunk or past the declared LUT, or any
+    /// entry's count does not fit a `u16` or its run reaches past the declared
+    /// arena.
+    pub fn write_lut_chunk(&mut self, start: usize, words: &[u32]) -> bool {
+        if self.installed || start != self.lut.len() || words.is_empty() || words.len() % 2 != 0 {
+            return false;
+        }
+        let entries = words.len() / 2;
+        if entries > LEVAIN_ZONE_TABLE_CHUNK_ENTRIES || entries > self.lut_entries - self.lut.len()
+        {
+            return false;
+        }
+        let arena_entries = self.arena_entries;
+        let fits = |pair: &[u32]| {
+            let (offset, count) = (pair[0] as usize, pair[1] as usize);
+            count <= usize::from(u16::MAX) && offset.saturating_add(count) <= arena_entries
+        };
+        if !words.chunks_exact(2).all(fits) {
+            return false;
+        }
+        self.lut
+            .extend(words.chunks_exact(2).map(|pair| ZoneListRef {
+                offset: pair[0],
+                count: pair[1] as u16,
+            }));
+        true
+    }
+
+    /// Append arena entries starting at `start`. Refuses (false), appending
+    /// nothing, once the tables are installed, when `start` is not the next
+    /// entry, the chunk is empty, longer than one chunk or past the declared
+    /// arena, or any id is not below `zone_count`.
+    pub fn write_arena_chunk(&mut self, start: usize, ids: &[ZoneId], zone_count: usize) -> bool {
+        if self.installed || start != self.arena.len() || ids.is_empty() {
+            return false;
+        }
+        if ids.len() > LEVAIN_ZONE_TABLE_CHUNK_ENTRIES
+            || ids.len() > self.arena_entries - self.arena.len()
+        {
+            return false;
+        }
+        if !ids.iter().all(|&id| (id as usize) < zone_count) {
+            return false;
+        }
+        self.arena.extend_from_slice(ids);
+        true
+    }
+
+    /// Whether every declared LUT and arena entry has been written and the
+    /// tables are not yet installed.
+    pub fn is_complete(&self) -> bool {
+        !self.installed
+            && self.lut.len() == self.lut_entries
+            && self.arena.len() == self.arena_entries
+    }
+
+    pub fn num_articulations(&self) -> usize {
+        self.num_articulations
+    }
+
+    pub fn num_mics(&self) -> usize {
+        self.num_mics
+    }
+
+    /// Swap the complete tables into `zone_map`, keeping the map's previous
+    /// ones here so their storage is freed wherever this staging is. O(1);
+    /// allocates and frees nothing. Refuses (false), changing nothing, until
+    /// every entry is written, and once installed.
+    pub fn install_into(&mut self, zone_map: &mut ZoneMap) -> bool {
+        if !self.is_complete() {
+            return false;
+        }
+        zone_map.swap_tables(
+            self.num_articulations,
+            self.num_mics,
+            &mut self.lut,
+            &mut self.arena,
+            &mut self.rr_counters,
+        );
+        self.installed = true;
+        true
+    }
 }
 
 /// Pre-loaded sample data (in-memory for WASM, preload buffer for native).
@@ -173,85 +446,49 @@ impl ZoneMap {
     }
 
     /// Build the LUT from all added zones. Must be called before lookups.
+    /// Allocates: the browser host computes the tables off the render thread
+    /// with `build_zone_tables` and stages them through `ZoneTableStaging`
+    /// instead.
     pub fn build_lut(
         &mut self,
         num_articulations: usize,
         num_mics: usize,
     ) -> Result<(), ZoneMapBuildError> {
-        if num_articulations > MAX_ARTICULATIONS || num_mics > MAX_MICS {
-            return Err(ZoneMapBuildError::InvalidDimensions);
-        }
-
-        let lut_size = num_articulations
-            .checked_mul(num_mics)
-            .and_then(|size| size.checked_mul(128))
-            .and_then(|size| size.checked_mul(VEL_BUCKETS))
-            .ok_or(ZoneMapBuildError::LutSizeOverflow)?;
-        if lut_size > MAX_LUT_ENTRIES {
-            return Err(ZoneMapBuildError::InvalidDimensions);
-        }
-        let rr_counter_count = num_articulations
-            .checked_mul(128)
-            .ok_or(ZoneMapBuildError::LutSizeOverflow)?;
-
-        let mut lut = vec![ZoneListRef::default(); lut_size];
-        let rr_counters = vec![0u8; rr_counter_count];
-
-        // Collect zone IDs per LUT slot.
-        let mut buckets: Vec<Vec<ZoneId>> = vec![Vec::new(); lut_size];
-
-        for zone in &self.zones {
-            let art = zone.articulation as usize;
-            let mic = zone.mic as usize;
-            if art >= num_articulations || mic >= num_mics {
-                continue;
-            }
-
-            for note in zone.key.lo..=zone.key.hi {
-                let vel_lo_bucket = (zone.vel.lo / VEL_BUCKET_SIZE) as usize;
-                let vel_hi_bucket =
-                    (zone.vel.hi / VEL_BUCKET_SIZE).min(VEL_BUCKETS as u8 - 1) as usize;
-
-                for vb in vel_lo_bucket..=vel_hi_bucket {
-                    let idx = ((art * num_mics + mic) * 128 + note as usize) * VEL_BUCKETS + vb;
-                    if idx < buckets.len() {
-                        buckets[idx].push(zone.id);
-                    }
-                }
-            }
-        }
-
-        // Flatten buckets into the arena.
-        let mut arena = Vec::new();
-        for (i, bucket) in buckets.iter().enumerate() {
-            if bucket.is_empty() {
-                lut[i] = ZoneListRef {
-                    offset: 0,
-                    count: 0,
-                };
-            } else {
-                let count = u16::try_from(bucket.len())
-                    .map_err(|_| ZoneMapBuildError::ZoneListCapacityExceeded)?;
-                let next_arena_len = arena
-                    .len()
-                    .checked_add(bucket.len())
-                    .ok_or(ZoneMapBuildError::ArenaCapacityExceeded)?;
-                if next_arena_len > MAX_ZONE_ARENA {
-                    return Err(ZoneMapBuildError::ArenaCapacityExceeded);
-                }
-                let offset = u32::try_from(arena.len())
-                    .map_err(|_| ZoneMapBuildError::ArenaCapacityExceeded)?;
-                arena.extend_from_slice(bucket);
-                lut[i] = ZoneListRef { offset, count };
-            }
-        }
+        let (_, rr_counter_count) = zone_table_sizes(num_articulations, num_mics)?;
+        let tables = build_zone_tables(
+            self.zones.iter().map(ZoneSpan::from),
+            num_articulations,
+            num_mics,
+        )?;
 
         self.num_articulations = num_articulations;
         self.num_mics = num_mics;
-        self.lut = lut;
-        self.rr_counters = rr_counters;
-        self.arena = arena;
+        self.lut = tables.lut;
+        self.rr_counters = vec![0u8; rr_counter_count];
+        self.arena = tables.arena;
         Ok(())
+    }
+
+    /// Exchange this map's tables and dimensions with the given ones. Moves
+    /// vectors only, so it allocates and frees nothing.
+    fn swap_tables(
+        &mut self,
+        num_articulations: usize,
+        num_mics: usize,
+        lut: &mut Vec<ZoneListRef>,
+        arena: &mut Vec<ZoneId>,
+        rr_counters: &mut Vec<u8>,
+    ) {
+        std::mem::swap(&mut self.lut, lut);
+        std::mem::swap(&mut self.arena, arena);
+        std::mem::swap(&mut self.rr_counters, rr_counters);
+        self.num_articulations = num_articulations;
+        self.num_mics = num_mics;
+    }
+
+    /// The LUT and arena as they stand, for comparing tables built two ways.
+    pub fn tables(&self) -> (&[ZoneListRef], &[ZoneId]) {
+        (&self.lut, &self.arena)
     }
 
     /// Look up candidate zones for a note-on event.
