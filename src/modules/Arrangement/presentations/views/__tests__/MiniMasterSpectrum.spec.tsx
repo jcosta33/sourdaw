@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -191,6 +191,61 @@ describe('MiniMasterSpectrum', () => {
 
         expect(await screen.findByRole('tooltip')).toHaveTextContent(reason);
         expect(spectrum).toHaveAccessibleDescription(reason);
+    });
+
+    it('removes the freeze error description when the focused master recovers', async () => {
+        const reason = 'Master freeze failed: render timed out';
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...master, freezeState: { status: 'error', errorMessage: reason } }],
+            selectedTrackId: 'master',
+        });
+
+        const { rerender } = renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        act(() => spectrum.focus());
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(reason);
+        expect(spectrum).toHaveAccessibleDescription(reason);
+        expect(document.activeElement).toBe(spectrum);
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+
+        expect(screen.getByRole('button', { name: 'Master Track Spectrum' })).toBe(spectrum);
+        expect(document.activeElement).toBe(spectrum);
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('master-freeze-error-marker')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+        expect(spectrum).toHaveAttribute('title', 'Master Track (Click to inspect)');
+        expect(spectrum.querySelector('canvas')).toBeInTheDocument();
+
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...master, freezeState: { status: 'error', errorMessage: reason } }],
+            selectedTrackId: 'master',
+        });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(reason);
+        expect(spectrum).toHaveAccessibleDescription(reason);
+    });
+
+    it('does not create an error description when the normal master receives focus', () => {
+        renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        act(() => spectrum.focus());
+
+        expect(document.activeElement).toBe(spectrum);
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
     });
 
     it.each([

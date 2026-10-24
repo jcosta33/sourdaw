@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useId, useRef } from 'react';
+import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import { AlertCircle } from 'lucide-react';
 
@@ -14,6 +14,7 @@ import { useTracks } from '../hooks/useTracks';
 export const MiniMasterSpectrum = ({ className }: { className?: string }): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const schedulerId = useId();
+    const [isTooltipOpen, setIsTooltipOpen] = useState(false);
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((time) => time.kind === 'master');
     const isSelected = masterTrack?.id === selectedTrackId;
@@ -117,7 +118,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     }
 
     return (
-        <Tooltip>
+        <Tooltip open={Boolean(freezeErrorMessage) && isTooltipOpen} onOpenChange={setIsTooltipOpen}>
             <TooltipTrigger asChild>
                 <div
                     role="button"
