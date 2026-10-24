@@ -114,7 +114,6 @@ describe('inactive retarget capability plan', () => {
         ['always', 'User', 7],
         ['pull_request', 'User', 7],
         ['exempt', 'User', 7],
-        ['always', 'OrganizationAdmin', 0],
         ['always', 'DeployKey', null],
     ] as const)('accepts supported bypass actor semantics %s/%s', (bypass_mode, actor_type, actor_id) => {
         const input = observed();

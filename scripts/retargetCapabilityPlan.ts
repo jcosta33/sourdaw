@@ -274,7 +274,7 @@ function bypassActorIsSupported(actor: Record<string, JsonValue>): boolean {
         return false;
     }
     if (actorType === 'OrganizationAdmin') {
-        return true;
+        return false;
     }
     if (actorType === 'DeployKey') {
         return actor.actor_id === null;
