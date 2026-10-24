@@ -95,10 +95,10 @@ describe('readExplicitProtections', () => {
             // a singular kind of it
             ['leave the Ghost track alone', ['Ghost']],
             ['keep the Ghost track as is', ['Ghost']],
+            ['keep the "Ghost" track as is', ['Ghost']],
             ['leave the "Ghost" bus alone', ['Ghost']],
             ['turn Keys down 3 dB; Ghost send stays as is', ['Ghost']],
             ['leave the Backing Vocal track alone', ['Backing Vocal']],
-            ['leave the drum group alone', ['drum']],
             ['turn Keys down 3 dB; Leave the Ghost track alone', ['Ghost']],
             // a position
             ['leave the first track alone', ['first track']],
@@ -170,6 +170,10 @@ describe('readExplicitProtections', () => {
             'leave the Audio tracks alone',
             'leave the Backing tracks alone',
             'leave the audio track alone',
+            "don't touch the drum group",
+            'leave the vocal bus alone',
+            "don't change the master bus",
+            'leave the master channel alone',
             'leave the MIDI track alone',
             // quoted text and qualities
             'keep "Ghost" as is',

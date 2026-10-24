@@ -126,13 +126,21 @@ function isControl(lower: string): boolean {
     return CONTROL_WORDS.has(lower) || CONTROL_WORDS.has(lower.replace(/s$/u, ''));
 }
 
-type Token = { text: string; lower: string };
+type Token = { text: string; lower: string; quoted: boolean; capitalized: boolean };
 
-function readTokens(blanked: string, range: Range): Token[] {
-    return Array.from(blanked.slice(range.start, range.end).matchAll(/[\p{L}\p{N}□]+/gu), (match) => ({
-        text: match[0],
-        lower: match[0].toLocaleLowerCase(),
-    }));
+function readTokens(blanked: string, masked: string, range: Range): Token[] {
+    return Array.from(blanked.slice(range.start, range.end).matchAll(/[\p{L}\p{N}□]+/gu), (match) => {
+        const index = range.start + match.index;
+        const before = masked.slice(0, index).trimEnd();
+        const startsSentence = before.length === 0 || /[.!?\n]$/u.test(before);
+        return {
+            text: match[0],
+            lower: match[0].toLocaleLowerCase(),
+            quoted: masked[index] === ' ' && blanked[index] !== ' ',
+            // A capital at the start of a sentence carries no signal.
+            capitalized: /^\p{Lu}/u.test(match[0]) && !startsSentence,
+        };
+    });
 }
 
 type MemberReading =
@@ -173,7 +181,11 @@ function readObjectForm(tokens: readonly Token[], possessive: boolean): string |
     const isCategoryOrSelection = subject.every(
         (token) => TRACK_KIND_WORDS.has(token.lower) || SELECTION_WORDS.has(token.lower)
     );
-    if (isKindForm && !isCategoryOrSelection) {
+    // A description ("the drum group") names no object; only a name does, written capitalized or quoted. The
+    // master output is the project's own, whether or not it is a track.
+    const isWrittenAsName = subject.some((token) => token.capitalized || token.quoted);
+    const isMaster = subject.some((token) => token.lower === 'master');
+    if (isKindForm && !isCategoryOrSelection && isWrittenAsName && !isMaster) {
         return subject.map((token) => token.text).join(' ');
     }
     return null;
@@ -265,7 +277,7 @@ function readSlotMembers(input: {
     let namedBefore = false;
     let lastSelection: SelectionMember | null = null;
     for (const range of bounds) {
-        const raw = readTokens(blanked, range);
+        const raw = readTokens(blanked, masked, range);
         const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
         const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
         const phrase = prompt.slice(range.start, range.end).trim();

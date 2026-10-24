@@ -979,6 +979,8 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         'Piano and Ghost stay as they are',
         'leave the Vocal alone',
         'keep "Ghost" as is',
+        "don't touch the drum group",
+        'leave the vocal bus alone',
     ])('grounds the asked change over a bare word or a category in "%s"', (protection) => {
         for (const prompt of [`turn the Drums down 3 dB; ${protection}`, `Turn the Drums down 3 dB. ${protection}`]) {
             const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
@@ -1242,6 +1244,7 @@ describe('an explicit protection naming a reference that binds to nothing refuse
             ['turn the Drums down 3 dB; do not change pan, solo, and fader of Strings', 'Strings'],
             ["turn the Drums down 3 dB; leave Ghost's fader alone", 'Ghost'],
             ['turn the Drums down 3 dB; keep the Ghost track as is', 'Ghost'],
+            ['turn the Drums down 3 dB; keep the "Ghost" track as is', 'Ghost'],
             ['turn the Drums down 3 dB; the pan of Ghost stays as is', 'Ghost'],
             ['turn the Drums down 3 dB; Leave the Ghost track alone', 'Ghost'],
             ['turn the Drums down 3 dB except the Ghost track', 'Ghost'],
@@ -1249,6 +1252,26 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         ])('still refuses the unbound object in "%s"', (prompt, reference) => {
             expectRefusedNamingReference(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt), reference);
         });
+    });
+
+    describe("the master output is the project's own", () => {
+        it.each(["don't change the master bus", 'leave the master channel alone'])(
+            'grounds the asked change over "%s" with no Master track',
+            (protection) => {
+                const noMaster = {
+                    ...projectContext,
+                    tracks: projectContext.tracks.filter(({ id }) => id !== 'master'),
+                };
+                const result = bridge(
+                    [gainCall(drums.id, { deltaDb: -3 })],
+                    `turn the Drums down 3 dB; ${protection}`,
+                    noMaster
+                );
+
+                expect(result.rejections).toEqual([]);
+                expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+            }
+        );
     });
 
     describe('a track named by its exact name', () => {
