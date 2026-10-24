@@ -578,6 +578,7 @@ impl BandChain {
     /// all-pass network holds a ~5500-sample memory, so a frozen one flushes a
     /// full-scale burst on re-entry. See [`HilbertShifter::bypass`].
     fn skip_sample(&mut self) {
+        self.convolution.suspend_spring();
         self.alignment.process(0.0, 0.0);
         self.hilbert_l.bypass();
         self.hilbert_r.bypass();
@@ -600,6 +601,7 @@ impl BandChain {
     /// spectral window would have shortened the chain by that window while the
     /// report stood still.
     fn pass_through_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.convolution.suspend_spring();
         self.hilbert_l.bypass();
         self.hilbert_r.bypass();
         self.decay_meter();
@@ -630,6 +632,7 @@ impl BandChain {
     /// otherwise sit frozen on real audio and flush it the moment the count
     /// grows back over this index.
     fn clear_alignment(&mut self) {
+        self.convolution.suspend_spring();
         self.alignment.reset();
         self.hilbert_l.reset();
         self.hilbert_r.reset();
@@ -769,6 +772,8 @@ impl BandChain {
             let (cl, cr) = self.convolution.process_stereo(l, r);
             l = cl;
             r = cr;
+        } else {
+            self.convolution.suspend_spring();
         }
 
         // Apply band gain — `offsets.gain` (linear) arrives from the modulation matrix
