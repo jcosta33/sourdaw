@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     assertFindingLineage,
+    parseFindingLineage,
     parseFindingLineageDocument,
     renderFindingLineage,
     type FindingLineage,
@@ -36,11 +37,12 @@ export type SupersedePullRequestArgs = {
     oldNumber?: number;
     head?: string;
     replacementNumber?: number;
+    supersededParentNumber?: number;
     lineagePath?: string;
     help: boolean;
 };
 const usage =
-    'usage: pnpm pr:supersede <old-pr-number> --head <40-hex-sha> --replacement <merged-pr-number> --lineage <path-to-json>';
+    'usage: pnpm pr:supersede <old-pr-number> --head <40-hex-sha> --replacement <merged-pr-number> [--superseded-parent <closed-pr-number>] --lineage <path-to-json>';
 
 export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequestArgs {
     if (args[0] === '--help') {
@@ -49,32 +51,49 @@ export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequ
         }
         return { help: true };
     }
+    const carriesParent = args.length === 9;
+    const lineageFlagIndex = carriesParent ? 7 : 5;
+    const lineagePathIndex = carriesParent ? 8 : 6;
     if (
-        args.length !== 7 ||
+        (args.length !== 7 && !carriesParent) ||
         args[1] !== '--head' ||
         args[3] !== '--replacement' ||
-        args[5] !== '--lineage' ||
+        (carriesParent && args[5] !== '--superseded-parent') ||
+        args[lineageFlagIndex] !== '--lineage' ||
         args[0] === undefined ||
         args[2] === undefined ||
         args[4] === undefined ||
-        args[6] === undefined ||
-        args[6].trim() === '' ||
+        args[lineagePathIndex] === undefined ||
+        args[lineagePathIndex].trim() === '' ||
         !/^[1-9][0-9]*$/.test(args[0]) ||
         !/^[0-9a-f]{40}$/i.test(args[2]) ||
-        !/^[1-9][0-9]*$/.test(args[4])
+        !/^[1-9][0-9]*$/.test(args[4]) ||
+        (carriesParent && (args[6] === undefined || !/^[1-9][0-9]*$/.test(args[6])))
     ) {
         fail(usage);
     }
     const oldNumber = Number(args[0]);
     const replacementNumber = Number(args[4]);
+    const supersededParentNumber = carriesParent ? Number(args[6]) : undefined;
     if (
         !Number.isSafeInteger(oldNumber) ||
         !Number.isSafeInteger(replacementNumber) ||
-        oldNumber === replacementNumber
+        oldNumber === replacementNumber ||
+        (supersededParentNumber !== undefined &&
+            (!Number.isSafeInteger(supersededParentNumber) ||
+                supersededParentNumber === oldNumber ||
+                supersededParentNumber === replacementNumber))
     ) {
         fail(usage);
     }
-    return { oldNumber, head: args[2], replacementNumber, lineagePath: args[6], help: false };
+    return {
+        oldNumber,
+        head: args[2],
+        replacementNumber,
+        supersededParentNumber,
+        lineagePath: args[lineagePathIndex],
+        help: false,
+    };
 }
 
 /**
@@ -148,6 +167,149 @@ type CreatedMarker = { spec: MarkerSpec; id: string };
 type CommentTransaction = { markers: MarkerPair; attempts: number; created: CreatedMarker[] };
 const RECEIPT_LABEL = 'supersession comment marker';
 const LINEAGE_LABEL = 'finding lineage marker';
+const LINEAGE_MARKER = 'sourdaw-lineage-v1';
+const SUPERSESSION_RECEIPT_PREFIX = 'Superseded by #';
+
+type ProofMarker = Pick<IssueComment, 'id' | 'fullDatabaseId' | 'body' | 'authorNodeId' | 'authorType'>;
+type PullRequestProof = Pick<
+    SupersededPullRequest,
+    'number' | 'state' | 'head' | 'headRefName' | 'repository' | 'base' | 'merged' | 'closedAt'
+>;
+type StackedParentProof = {
+    parent: PullRequestProof;
+    replacement: PullRequestProof;
+    receipt: ProofMarker;
+    lineage: ProofMarker;
+    findingIds: string[];
+};
+
+function pullRequestProof(value: SupersededPullRequest): PullRequestProof {
+    return {
+        number: value.number,
+        state: value.state,
+        head: value.head,
+        headRefName: value.headRefName,
+        repository: value.repository,
+        base: value.base,
+        merged: value.merged,
+        closedAt: value.closedAt,
+    };
+}
+
+function proofMarker(comment: IssueComment, label: string): ProofMarker {
+    if (
+        comment.id === '' ||
+        !isDecimalId(comment.fullDatabaseId) ||
+        !isAuthorBotActor(comment.authorNodeId, comment.authorType)
+    ) {
+        fail(`${label} is not an exact author-bot marker`);
+    }
+    return {
+        id: comment.id,
+        fullDatabaseId: comment.fullDatabaseId,
+        body: comment.body,
+        authorNodeId: comment.authorNodeId,
+        authorType: comment.authorType,
+    };
+}
+
+function parentReceipt(parent: SupersededPullRequest, replacementNumber: number): ProofMarker {
+    const candidates = parent.comments.filter((comment) => comment.body.startsWith(SUPERSESSION_RECEIPT_PREFIX));
+    const expected = supersessionCommentBody(replacementNumber);
+    if (candidates.length !== 1) {
+        fail(`superseded parent PR #${parent.number} does not have exactly one supersession receipt`);
+    }
+    const [comment] = candidates;
+    if (comment === undefined || comment.body !== expected) {
+        fail(`superseded parent PR #${parent.number} receipt does not name replacement PR #${replacementNumber}`);
+    }
+    return proofMarker(comment, `superseded parent PR #${parent.number} receipt`);
+}
+
+function parentLineage(
+    parent: SupersededPullRequest,
+    replacementNumber: number,
+    port: SupersedePullRequestPort
+): { marker: ProofMarker; findingIds: string[] } {
+    const candidates = parent.comments.filter((comment) =>
+        comment.body.split('\n').some((line) => line.startsWith(LINEAGE_MARKER))
+    );
+    if (candidates.length !== 1) {
+        fail(`superseded parent PR #${parent.number} does not have exactly one finding lineage marker`);
+    }
+    const [comment] = candidates;
+    if (comment === undefined) {
+        fail(`superseded parent PR #${parent.number} has no finding lineage marker`);
+    }
+    const marker = proofMarker(comment, `superseded parent PR #${parent.number} finding lineage marker`);
+    const lineage = parseFindingLineage(comment.body);
+    if (lineage === undefined || comment.body !== renderFindingLineage(lineage)) {
+        fail(`superseded parent PR #${parent.number} finding lineage marker is not canonical`);
+    }
+    assertLineageBinding(lineage, parent.number, replacementNumber);
+    const findings = lineageFindings(parent.number, port);
+    assertFindingLineage(lineage, findings);
+    return {
+        marker,
+        findingIds: findings.map((finding) => finding.findingId).sort((left, right) => left.localeCompare(right)),
+    };
+}
+
+function inspectStackedParentProof(
+    old: SupersededPullRequest,
+    replacement: SupersededPullRequest,
+    parentNumber: number,
+    port: SupersedePullRequestPort
+): StackedParentProof {
+    if (
+        !Number.isSafeInteger(parentNumber) ||
+        parentNumber <= 0 ||
+        parentNumber === old.number ||
+        parentNumber === replacement.number
+    ) {
+        fail('superseded parent pull request must differ from the old and replacement pull requests');
+    }
+    const parent = port.inspect(parentNumber);
+    if (
+        parent.number !== parentNumber ||
+        parent.repository !== REQUIRED_REPOSITORY ||
+        parent.repository !== old.repository ||
+        parent.repository !== replacement.repository
+    ) {
+        fail(`superseded parent PR #${parentNumber} is not in the required repository`);
+    }
+    if (parent.state !== PR_STATE.CLOSED || parent.merged || parent.closedAt === null || parent.closedAt === '') {
+        fail(`superseded parent PR #${parentNumber} is not closed without merge`);
+    }
+    if (parent.headRefName !== old.base) {
+        fail(`superseded parent PR #${parentNumber} does not own old base ${old.base}`);
+    }
+    if (parent.base !== replacement.base) {
+        fail(`superseded parent PR #${parentNumber} does not target replacement base ${replacement.base}`);
+    }
+    const receipt = parentReceipt(parent, replacement.number);
+    const lineage = parentLineage(parent, replacement.number, port);
+    return {
+        parent: pullRequestProof(parent),
+        replacement: pullRequestProof(replacement),
+        receipt,
+        lineage: lineage.marker,
+        findingIds: lineage.findingIds,
+    };
+}
+
+function assertStackedParentProofUnchanged(
+    initial: StackedParentProof,
+    old: SupersededPullRequest,
+    port: SupersedePullRequestPort
+): void {
+    const replacement = port.inspect(initial.replacement.number);
+    assertReplacementIdentityAndMerge(replacement, initial.replacement.number, old);
+    const current = inspectStackedParentProof(old, replacement, initial.parent.number, port);
+    if (JSON.stringify(current) !== JSON.stringify(initial)) {
+        fail(`superseded parent PR #${initial.parent.number} proof changed during supersession; compensating`);
+    }
+}
 
 export function supersedePullRequest(
     oldNumber: number,
@@ -155,7 +317,8 @@ export function supersedePullRequest(
     replacementNumber: number,
     lineage: FindingLineage,
     authorNodeId: string,
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    supersededParentNumber?: number
 ): string {
     if (!isAuthorBotNodeId(authorNodeId)) {
         fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
@@ -169,7 +332,7 @@ export function supersedePullRequest(
     const before = port.inspect(oldNumber);
     const replacement = port.inspect(replacementNumber);
     assertOldBinding(before, oldNumber, expectedHead);
-    assertReplacement(replacement, replacementNumber, before);
+    const stackedParentProof = assertReplacement(replacement, replacementNumber, before, supersededParentNumber, port);
     const markers: MarkerPair = [
         { body: supersessionCommentBody(replacementNumber), label: RECEIPT_LABEL },
         { body: renderFindingLineage(lineage), label: LINEAGE_LABEL },
@@ -183,6 +346,9 @@ export function supersedePullRequest(
     let closeAttempted = false;
     let closeReceipt: PullRequestCloseReceipt | undefined;
     try {
+        if (stackedParentProof !== undefined) {
+            assertStackedParentProofUnchanged(stackedParentProof, before, port);
+        }
         ensureMarker(oldNumber, markers[0], before.comments, transaction, port);
         ensureMarker(oldNumber, markers[1], before.comments, transaction, port);
         const afterMarkers = port.inspect(oldNumber);
@@ -194,6 +360,9 @@ export function supersedePullRequest(
         const receiptMarker = requireOneCommentMarker(converged.comments, markers[0], markers, oldNumber);
         const lineageMarker = requireOneCommentMarker(converged.comments, markers[1], markers, oldNumber);
         assertFindingsUnchanged(oldNumber, coveredFindings, port);
+        if (stackedParentProof !== undefined) {
+            assertStackedParentProofUnchanged(stackedParentProof, before, port);
+        }
         closeAttempted = true;
         const closeResult = port.close(oldNumber);
         assertCloseReceipt(closeResult);
@@ -319,16 +488,33 @@ function assertOpen(value: SupersededPullRequest, number: number): void {
         fail(`PR #${number} is ${value.state.toLowerCase()}`);
     }
 }
-function assertReplacement(value: SupersededPullRequest, number: number, old: SupersededPullRequest): void {
+function assertReplacementIdentityAndMerge(
+    value: SupersededPullRequest,
+    number: number,
+    old: SupersededPullRequest
+): void {
     if (value.number !== number || value.repository !== REQUIRED_REPOSITORY || value.repository !== old.repository) {
         fail(`replacement PR #${number} is not in the required repository`);
     }
     if (value.state !== PR_STATE.MERGED) {
         fail(`replacement PR #${number} is not merged`);
     }
-    if (value.base !== old.base) {
+}
+function assertReplacement(
+    value: SupersededPullRequest,
+    number: number,
+    old: SupersededPullRequest,
+    supersededParentNumber: number | undefined,
+    port: SupersedePullRequestPort
+): StackedParentProof | undefined {
+    assertReplacementIdentityAndMerge(value, number, old);
+    if (value.base === old.base) {
+        return undefined;
+    }
+    if (supersededParentNumber === undefined) {
         fail(`replacement PR #${number} does not target ${old.base}`);
     }
+    return inspectStackedParentProof(old, value, supersededParentNumber, port);
 }
 function assertStableOpen(value: SupersededPullRequest, number: number, head: string, base: string): void {
     if (
@@ -581,7 +767,8 @@ async function main(): Promise<number> {
             parsed.replacementNumber,
             lineage,
             auth.minted.actorNodeId,
-            shellPort(auth.session)
+            shellPort(auth.session),
+            parsed.supersededParentNumber
         );
         return 0;
     } finally {

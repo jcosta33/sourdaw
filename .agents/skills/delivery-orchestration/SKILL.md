@@ -35,7 +35,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent>] --lineage <path-to-json>`                                                     |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
@@ -52,6 +52,16 @@ invocation, and a missing, unreadable, or malformed file refuses with the path.
 The transaction then posts the receipt plus a second lineage marker, converges
 duplicates to exactly one of each, and closes only afterwards, so a re-run after
 a partial transaction repairs rather than duplicates.
+
+The replacement normally targets the old pull request's base exactly. A child
+left behind after its stack parent was natively superseded may cross that base
+only with `--superseded-parent <pr>`. The named parent must be closed without
+merge, own the child's old base branch, target the replacement's base, and carry
+exactly one canonical author-Bot supersession receipt and one total finding
+lineage marker naming the merged replacement. The command revalidates that live
+parent proof before the first child write and again before closing; a refusal
+before writing leaves no child mutation, and a refusal after adding child
+markers compensates those markers before returning the failure.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a

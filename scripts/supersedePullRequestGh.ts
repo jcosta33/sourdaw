@@ -31,8 +31,10 @@ export type SupersededPullRequest = {
     number: number;
     state: string;
     head: string;
+    headRefName: string;
     repository: string;
     base: string;
+    merged: boolean;
     closedAt: string | null;
     comments: IssueComment[];
 };
@@ -90,7 +92,7 @@ function repositoryFields(): string[] {
 }
 function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid baseRefName closedAt}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName baseRefName merged closedAt}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -100,7 +102,9 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
                     number?: unknown;
                     state?: unknown;
                     headRefOid?: unknown;
+                    headRefName?: unknown;
                     baseRefName?: unknown;
+                    merged?: unknown;
                     closedAt?: unknown;
                 };
             };
@@ -115,7 +119,9 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         !Number.isSafeInteger(pullRequest.number) ||
         typeof pullRequest.state !== 'string' ||
         typeof pullRequest.headRefOid !== 'string' ||
+        typeof pullRequest.headRefName !== 'string' ||
         typeof pullRequest.baseRefName !== 'string' ||
+        typeof pullRequest.merged !== 'boolean' ||
         (typeof pullRequest.closedAt !== 'string' && pullRequest.closedAt !== null)
     ) {
         fail(`cannot inspect PR #${number}`);
@@ -125,8 +131,10 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         number: pullRequest.number,
         state: pullRequest.state,
         head: pullRequest.headRefOid,
+        headRefName: pullRequest.headRefName,
         repository: repository.nameWithOwner,
         base: pullRequest.baseRefName,
+        merged: pullRequest.merged,
         closedAt: pullRequest.closedAt,
         comments: inspectIssueComments(pullRequest.id, gh),
     };

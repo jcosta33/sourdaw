@@ -23,9 +23,12 @@ import {
 } from '../supersedePullRequestGh.ts';
 
 const oldNumber = 2244;
+const parentNumber = 2245;
 const replacementNumber = 2246;
 const head = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
+const parentHead = 'd'.repeat(40);
+const parentBranch = 'fix/4380/refine-pending-proposal';
 const findingA = '1001';
 const findingB = '1002';
 const databaseBase = 9223372036854775808n;
@@ -51,6 +54,33 @@ const repairedLineage: FindingLineage = {
     entries: [repairedEntry],
 };
 const receiptBody = supersessionCommentBody(replacementNumber);
+const parentLineage: FindingLineage = {
+    format: 'lineage-v1',
+    oldPr: parentNumber,
+    replacementPr: replacementNumber,
+    entries: [],
+};
+const parentLineageBody = renderFindingLineage(parentLineage);
+function markerComment(
+    id: string,
+    fullDatabaseId: string,
+    body: string,
+    authorType = 'Bot',
+    authorNodeId: string | null = AUTHOR_BOT_NODE_ID
+): IssueComment {
+    return {
+        id,
+        fullDatabaseId,
+        body,
+        authorNodeId,
+        authorLogin: authorNodeId === AUTHOR_BOT_NODE_ID ? 'renamed-author[bot]' : 'foreign[bot]',
+        authorType,
+    };
+}
+const validParentComments: [IssueComment, IssueComment] = [
+    markerComment('IC_parent_receipt', String(databaseBase + 20n), receiptBody),
+    markerComment('IC_parent_lineage', String(databaseBase + 21n), parentLineageBody),
+];
 /**
  * The canonical marker body for `repairedLineage`, pinned as literal bytes rather than through the
  * serializer under test. Sorted keys and no whitespace outside strings are the promise, so an
@@ -65,6 +95,8 @@ type Input = {
     heads?: string[];
     authorNodeId?: string;
     replacementState?: string;
+    replacementStates?: string[];
+    replacementBases?: string[];
     initialState?: string;
     throwAfterComment?: boolean;
     concurrentCommentOnThrow?: boolean;
@@ -86,6 +118,17 @@ type Input = {
     existingCommentAuthorType?: string;
     threads?: SupersededReviewThread[];
     threadsBeforeClose?: SupersededReviewThread[];
+    parentStates?: string[];
+    parentMerged?: boolean;
+    parentHeads?: string[];
+    parentHeadRefNames?: string[];
+    parentBases?: string[];
+    parentRepositories?: string[];
+    parentClosedAts?: (string | null)[];
+    parentComments?: IssueComment[];
+    parentCommentsByInspection?: IssueComment[][];
+    parentThreads?: SupersededReviewThread[];
+    parentThreadsByRead?: SupersededReviewThread[][];
 };
 
 function fakePort(input: Input = {}) {
@@ -99,16 +142,11 @@ function fakePort(input: Input = {}) {
     let closedAt: string | null = null;
     let postedCount = 0;
     let threadReads = 0;
+    let parentInspections = 0;
+    let parentThreadReads = 0;
+    let replacementInspections = 0;
     let comments: IssueComment[] = [oldComment];
     const postedIds: string[] = [];
-    const markerComment = (id: string, fullDatabaseId: string, body: string, authorType = 'Bot'): IssueComment => ({
-        id,
-        fullDatabaseId,
-        body,
-        authorNodeId: AUTHOR_BOT_NODE_ID,
-        authorLogin: 'renamed-author[bot]',
-        authorType,
-    });
     const allocate = (body: string): IssueComment => {
         postedCount += 1;
         return markerComment(
@@ -144,18 +182,37 @@ function fakePort(input: Input = {}) {
                 number,
                 state,
                 head: input.heads?.[inspection] ?? head,
+                headRefName: 'fix/old-pull-request',
                 repository: 'jcosta33/sourdaw',
                 base: input.bases?.[inspection] ?? 'main',
+                merged: false,
                 closedAt,
                 comments,
             };
         }
+        if (number === parentNumber) {
+            const inspection = parentInspections++;
+            return {
+                number,
+                state: input.parentStates?.[inspection] ?? 'CLOSED',
+                head: input.parentHeads?.[inspection] ?? parentHead,
+                headRefName: input.parentHeadRefNames?.[inspection] ?? parentBranch,
+                repository: input.parentRepositories?.[inspection] ?? 'jcosta33/sourdaw',
+                base: input.parentBases?.[inspection] ?? 'main',
+                merged: input.parentMerged ?? false,
+                closedAt: input.parentClosedAts?.[inspection] ?? '2026-08-19T12:00:00Z',
+                comments: input.parentCommentsByInspection?.[inspection] ?? input.parentComments ?? validParentComments,
+            };
+        }
+        const inspection = replacementInspections++;
         return {
             number,
-            state: input.replacementState ?? 'MERGED',
+            state: input.replacementStates?.[inspection] ?? input.replacementState ?? 'MERGED',
             head: 'c'.repeat(40),
+            headRefName: 'fix/replacement-pull-request',
             repository: 'jcosta33/sourdaw',
-            base: 'main',
+            base: input.replacementBases?.[inspection] ?? 'main',
+            merged: true,
             closedAt: '2026-08-20T12:00:00Z',
             comments: [],
         };
@@ -208,6 +265,10 @@ function fakePort(input: Input = {}) {
         },
         inspectReviewThreads: (number) => {
             calls.push(`threads:${number}`);
+            if (number === parentNumber) {
+                const inspection = parentThreadReads++;
+                return input.parentThreadsByRead?.[inspection] ?? input.parentThreads ?? [];
+            }
             threadReads += 1;
             if (threadReads > 1 && input.threadsBeforeClose !== undefined) {
                 return input.threadsBeforeClose;
@@ -268,6 +329,9 @@ const run = (
     lineage: FindingLineage = repairedLineage,
     nodeId: string = AUTHOR_BOT_NODE_ID
 ) => supersedePullRequest(oldNumber, head, replacementNumber, lineage, nodeId, port);
+
+const runWithParent = (port: SupersedePullRequestPort) =>
+    supersedePullRequest(oldNumber, head, replacementNumber, repairedLineage, AUTHOR_BOT_NODE_ID, port, parentNumber);
 
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
 
@@ -352,6 +416,7 @@ describe('pull-request supersession', () => {
         expect(source).toContain(
             'closePullRequest(input:{pullRequestId:$pullRequestId,clientMutationId:$clientMutationId})'
         );
+        expect(source).toContain('headRefOid headRefName baseRefName merged closedAt');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
     });
@@ -517,12 +582,42 @@ describe('pull-request supersession', () => {
             replacementNumber: 2246,
             lineagePath: '/tmp/lineage.json',
         });
+        expect(
+            parseSupersedePullRequestArgs([
+                '2244',
+                '--head',
+                head,
+                '--replacement',
+                '2246',
+                '--superseded-parent',
+                '2245',
+                '--lineage',
+                '/tmp/lineage.json',
+            ])
+        ).toMatchObject({
+            oldNumber: 2244,
+            head,
+            replacementNumber: 2246,
+            supersededParentNumber: 2245,
+            lineagePath: '/tmp/lineage.json',
+        });
         for (const args of [
             [],
             ['2244', '--replacement', '2246', '--head', head, '--lineage', '/tmp/lineage.json'],
             ['2244', '--head', head, '--replacement', '2244', '--lineage', '/tmp/lineage.json'],
             ['2244', '--head', head, '--replacement', '2246'],
             ['2244', '--head', head, '--replacement', '2246', '--lineage', '   '],
+            [
+                '2244',
+                '--head',
+                head,
+                '--replacement',
+                '2246',
+                '--superseded-parent',
+                '2246',
+                '--lineage',
+                '/tmp/lineage.json',
+            ],
         ]) {
             expect(() => parseSupersedePullRequestArgs(args)).toThrow(/usage/i);
         }
@@ -637,6 +732,161 @@ describe('pull-request supersession', () => {
             'inspect:2244',
             'log:pull-request-superseded:2244:2246',
         ]);
+    });
+    it('accepts a cross-base child when its closed stack parent was natively superseded by the replacement', () => {
+        const { port, calls } = fakePort({ bases: [parentBranch, parentBranch, parentBranch, parentBranch] });
+        expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('keeps the exact-base requirement when no superseded parent is named', () => {
+        const { port, calls } = fakePort({ bases: [parentBranch] });
+        expect(() => run(port)).toThrow(`replacement PR #${replacementNumber} does not target ${parentBranch}`);
+        expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+        expect(calls).not.toContain(`inspect:${parentNumber}`);
+    });
+    it.each([
+        ['parent is open', { parentStates: ['OPEN'] }, /not closed without merge/i],
+        ['parent was merged', { parentMerged: true }, /not closed without merge/i],
+        ['parent owns another head branch', { parentHeadRefNames: ['fix/other-parent'] }, /does not own old base/i],
+        ['parent targets another base', { parentBases: ['release'] }, /does not target replacement base/i],
+        ['parent is in another repository', { parentRepositories: ['other/sourdaw'] }, /required repository/i],
+        ['receipt is missing', { parentComments: [validParentComments[1]] }, /exactly one supersession receipt/i],
+        [
+            'receipt is duplicated',
+            {
+                parentComments: [
+                    ...validParentComments,
+                    markerComment('IC_parent_receipt_2', String(databaseBase + 22n), receiptBody),
+                ],
+            },
+            /exactly one supersession receipt/i,
+        ],
+        [
+            'receipt is foreign',
+            {
+                parentComments: [
+                    markerComment(
+                        'IC_parent_receipt',
+                        String(databaseBase + 20n),
+                        receiptBody,
+                        'Bot',
+                        REVIEWER_BOT_NODE_ID
+                    ),
+                    validParentComments[1],
+                ],
+            },
+            /not an exact author-bot marker/i,
+        ],
+        [
+            'receipt names another replacement',
+            {
+                parentComments: [
+                    markerComment('IC_parent_receipt', String(databaseBase + 20n), supersessionCommentBody(9999)),
+                    validParentComments[1],
+                ],
+            },
+            /does not name replacement/i,
+        ],
+        ['lineage is missing', { parentComments: [validParentComments[0]] }, /exactly one finding lineage marker/i],
+        [
+            'lineage is duplicated',
+            {
+                parentComments: [
+                    ...validParentComments,
+                    markerComment('IC_parent_lineage_2', String(databaseBase + 23n), parentLineageBody),
+                ],
+            },
+            /exactly one finding lineage marker/i,
+        ],
+        [
+            'lineage is foreign',
+            {
+                parentComments: [
+                    validParentComments[0],
+                    markerComment(
+                        'IC_parent_lineage',
+                        String(databaseBase + 21n),
+                        parentLineageBody,
+                        'Bot',
+                        REVIEWER_BOT_NODE_ID
+                    ),
+                ],
+            },
+            /not an exact author-bot marker/i,
+        ],
+        [
+            'lineage is malformed',
+            {
+                parentComments: [
+                    validParentComments[0],
+                    markerComment(
+                        'IC_parent_lineage',
+                        String(databaseBase + 21n),
+                        'Finding lineage: corrupt\nsourdaw-lineage-v1 {bad json'
+                    ),
+                ],
+            },
+            /finding lineage marker/i,
+        ],
+        [
+            'lineage names another replacement',
+            {
+                parentComments: [
+                    validParentComments[0],
+                    markerComment(
+                        'IC_parent_lineage',
+                        String(databaseBase + 21n),
+                        renderFindingLineage({ ...parentLineage, replacementPr: 9999 })
+                    ),
+                ],
+            },
+            /does not match replacement pull request/i,
+        ],
+        [
+            'lineage omits a live parent finding',
+            { parentThreads: [{ threadId: 'PRRT_parent', rootCommentId: '3001' }] },
+            /has no entry for finding 3001/i,
+        ],
+    ] satisfies [string, Input, RegExp][])(
+        'refuses cross-base proof when %s, without child writes',
+        (_case, input, expected) => {
+            const { port, calls } = fakePort({ ...input, bases: [parentBranch] });
+            expect(() => runWithParent(port)).toThrow(expected);
+            expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+        }
+    );
+    it('refuses a changed parent proof before the first child write', () => {
+        const { port, calls } = fakePort({
+            bases: [parentBranch],
+            parentHeads: [parentHead, movedHead],
+        });
+        expect(() => runWithParent(port)).toThrow(/proof changed during supersession/i);
+        expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+    });
+    it('compensates child markers when the parent proof changes before close', () => {
+        const changedParentComments = [
+            validParentComments[0],
+            markerComment('IC_parent_lineage_moved', String(databaseBase + 21n), parentLineageBody),
+        ];
+        const { port, calls, state } = fakePort({
+            bases: [parentBranch, parentBranch, parentBranch],
+            parentCommentsByInspection: [validParentComments, validParentComments, changedParentComments],
+        });
+        expect(() => runWithParent(port)).toThrow(/proof changed during supersession/i);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(state().comments).toEqual([oldComment]);
+    });
+    it('reuses existing child markers while revalidating the stacked parent before close', () => {
+        const { port, calls } = fakePort({
+            bases: [parentBranch, parentBranch, parentBranch, parentBranch],
+            existingCommentCount: 1,
+            existingLineageCount: 1,
+        });
+        expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+        expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(3);
     });
     it('posts and validates the lineage marker before the close', () => {
         const { port, calls, authorNodeId } = fakePort();
