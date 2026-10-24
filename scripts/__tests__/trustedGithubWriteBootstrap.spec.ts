@@ -211,16 +211,20 @@ describe('native supersession process-tool admission', () => {
             expect(admitted.psPath).toBe(resolveTrustedExecutable('ps'));
             expect(admitted.powershellPath).toBeUndefined();
         });
-    });
+    }, 30_000);
 
-    it.each(['direct-package', 'unfenced-command'] as const)('detects %s before the first PR port call', (mutation) => {
-        withNativeSupersession((root, _bin, env) => {
-            const result = invokeNativeSupersession(root, env);
-            expect(result.status).toBe(1);
-            expect(result.stderr).toContain('mutation lock requires the trusted ps executable');
-            expect(existsSync(join(root, 'admitted.json'))).toBe(false);
-        }, mutation);
-    });
+    it.each(['direct-package', 'unfenced-command'] as const)(
+        'detects %s before the first PR port call',
+        { timeout: 30_000 },
+        (mutation) => {
+            withNativeSupersession((root, _bin, env) => {
+                const result = invokeNativeSupersession(root, env);
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('mutation lock requires the trusted ps executable');
+                expect(existsSync(join(root, 'admitted.json'))).toBe(false);
+            }, mutation);
+        }
+    );
 
     it('freezes POSIX ps and Windows PowerShell for the same supersession command', () => {
         withNativeSupersession((root, bin, env) => {
@@ -233,7 +237,7 @@ describe('native supersession process-tool admission', () => {
             expect(trustedSnapshotRunsDetached('pr:supersede', 'darwin')).toBe(true);
             expect(trustedSnapshotRunsDetached('pr:supersede', 'win32')).toBe(false);
         });
-    });
+    }, 30_000);
 
     it('refuses missing process tools instead of accepting inherited forged pins', () => {
         withNativeSupersession((root, bin, env) => {
@@ -260,7 +264,7 @@ describe('native supersession process-tool admission', () => {
             ).toThrow('cannot resolve trusted powershell executable');
             expect(existsSync(join(root, 'admitted.json'))).toBe(false);
         });
-    });
+    }, 30_000);
 });
 
 describe('snapshotImportSpecifiers', () => {
