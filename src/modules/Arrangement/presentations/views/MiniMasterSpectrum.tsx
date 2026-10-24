@@ -19,6 +19,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     const [isTooltipOpen, setIsTooltipOpen] = useState(false);
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((time) => time.kind === 'master');
+    const hasMasterTrack = masterTrack !== undefined;
     const isSelected = masterTrack?.id === selectedTrackId;
     let freezeErrorMessage: string | null = null;
     if (masterTrack?.freezeState.status === 'error') {
@@ -27,10 +28,15 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
 
     useEffect(() => {
         const trigger = triggerRef.current;
-        if (!freezeErrorMessage && trigger?.ownerDocument.activeElement !== trigger && !isPointerOverTrigger.current) {
+        if (!hasMasterTrack || !trigger) {
+            isPointerOverTrigger.current = false;
+            setIsTooltipOpen(false);
+            return;
+        }
+        if (!freezeErrorMessage && trigger.ownerDocument.activeElement !== trigger && !isPointerOverTrigger.current) {
             setIsTooltipOpen(false);
         }
-    }, [freezeErrorMessage]);
+    }, [freezeErrorMessage, hasMasterTrack]);
 
     useEffect(() => {
         const canvas = canvasRef.current;

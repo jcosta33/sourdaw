@@ -410,6 +410,45 @@ describe('MiniMasterSpectrum', () => {
         expect(spectrum).not.toHaveAttribute('aria-describedby');
     });
 
+    it('retires hover intent when the master control disappears and later returns', async () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        const withError = (errorMessage: string) => ({
+            ...master,
+            freezeState: { status: 'error' as const, errorMessage },
+        });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('First failure')], selectedTrackId: 'master' });
+        const { rerender } = renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+
+        fireEvent.pointerMove(spectrum, { pointerType: 'mouse' });
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('First failure');
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [], selectedTrackId: null });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+        expect(screen.queryByRole('button', { name: 'Master Track Spectrum' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('Second failure')], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+        const restoredSpectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        expect(restoredSpectrum).not.toBe(spectrum);
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeVisible();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(restoredSpectrum).not.toHaveAttribute('aria-describedby');
+
+        fireEvent.pointerMove(restoredSpectrum, { pointerType: 'mouse' });
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('Second failure');
+        expect(restoredSpectrum).toHaveAccessibleDescription('Second failure');
+    });
+
     it('retires hover intent when the pointer moved into tooltip content before recovery', async () => {
         const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
         const withError = (errorMessage: string) => ({
