@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
@@ -271,36 +272,47 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             return false;
         }
         const expected = captureFreezeStateSnapshot(failedTrack);
+        const replacement: typeof previousFreeze = {
+            ...previousFreeze,
+            freezeState: { ...previousFreeze.freezeState, status: 'error', errorMessage },
+        };
+        const hasAuthorityFor = (snapshot: typeof expected): boolean => {
+            const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+            return (
+                !abortController.signal.aborted &&
+                isCurrentFreezeTask(taskIdentity) &&
+                captureProjectRevision() === sourceRevision &&
+                current !== undefined &&
+                valuesEqual(captureFreezeStateSnapshot(current), snapshot)
+            );
+        };
         // The refused Freeze aborts its captured transaction. Settle its diagnostic
         // through a separate non-undoable typed action, never as a successful Freeze.
-        // A committed edit since this render started withdraws the diagnostic's
-        // authority, including deletion/recreation with identical ids and values.
-        await executeAppAction(
-            {
-                type: 'restoreFreezeState',
-                payload: {
-                    trackId,
-                    expected,
-                    replacement: {
-                        ...previousFreeze,
-                        freezeState: { ...previousFreeze.freezeState, status: 'error', errorMessage },
-                    },
+        // Admission checks the pending aggregate; commit checks the replacement the
+        // handler staged, retaining authority through the transaction's final yield.
+        try {
+            await executeAppAction(
+                {
+                    type: 'restoreFreezeState',
+                    payload: { trackId, expected, replacement },
                 },
-            },
-            {
-                skipMacroRecording: true,
-                shouldExecute: () => {
-                    const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-                    return (
-                        !abortController.signal.aborted &&
-                        isCurrentFreezeTask(taskIdentity) &&
-                        captureProjectRevision() === sourceRevision &&
-                        current !== undefined &&
-                        valuesEqual(captureFreezeStateSnapshot(current), expected)
-                    );
-                },
-            }
-        );
+                {
+                    skipMacroRecording: true,
+                    shouldExecute: () => hasAuthorityFor(expected),
+                    shouldCommit: () => hasAuthorityFor(replacement),
+                }
+            );
+        } catch (settlementError) {
+            const settlementMessage =
+                settlementError instanceof Error ? settlementError.message : String(settlementError);
+            notifyUser(
+                `Freeze failed: ${errorMessage}. Could not save the failure diagnostic: ${settlementMessage}`,
+                'error'
+            );
+            logger.error(
+                new AggregateError([error, settlementError], 'Freeze render and failure diagnostic save failed')
+            );
+        }
         return false;
     } finally {
         clearFreezeTaskIfCurrent(trackId, abortController);

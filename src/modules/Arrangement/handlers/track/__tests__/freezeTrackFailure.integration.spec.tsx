@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
+import { logger } from '#/infra/logger/appLogger';
 import {
     AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
@@ -11,6 +12,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     executeAppAction,
+    isAppActionConflictError,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -132,9 +134,11 @@ describe('registered Freeze failure settlement', () => {
         });
         flushAutomergeStorageWrites();
         render.mockReset();
+        vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         agentProjectRepairStateStore.set(null);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
@@ -253,6 +257,27 @@ describe('registered Freeze failure settlement', () => {
         expect(render).toHaveBeenCalledTimes(1);
     });
 
+    it('recovers from a render failure with a retry whose Undo and Redo retain the original diagnostic', async () => {
+        render.mockRejectedValueOnce(new Error('Initial render refused')).mockResolvedValueOnce(buffer(0.5));
+        await freeze();
+        expectFailure('Initial render refused');
+        const failed = captureFreezeStateSnapshot(rawTrack());
+        await freeze();
+        const produced = captureFreezeStateSnapshot(rawTrack());
+        expect(produced.freezeState.status).toBe('frozen');
+        expect(captureFreezeStateSnapshot(projectedTrack())).toEqual(produced);
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(captureFreezeStateSnapshot(rawTrack())).toEqual(failed);
+        expect(captureFreezeStateSnapshot(projectedTrack())).toEqual(failed);
+        await redo();
+        expect(captureFreezeStateSnapshot(rawTrack())).toEqual(produced);
+        expect(captureFreezeStateSnapshot(projectedTrack())).toEqual(produced);
+        expect(render).toHaveBeenCalledTimes(2);
+        expect(notices).toEqual([{ message: 'Initial render refused', level: 'error' }]);
+        expect(activeFreezeTasks.size).toBe(0);
+    });
+
     it('keeps successful render authority when a non-root document is added', async () => {
         const entered = Promise.withResolvers<void>();
         const rendered = Promise.withResolvers<AudioBuffer | null>();
@@ -298,6 +323,59 @@ describe('registered Freeze failure settlement', () => {
         expect(activeFreezeTasks.size).toBe(0);
     });
 
+    it.each(['child-document', 'new-task', 'cancelled', 'changed-aggregate'] as const)(
+        'withdraws failure authority after staging when %s changes before commit',
+        async (mode) => {
+            render.mockRejectedValue(new Error('Render refused before late change'));
+            const changed = Promise.withResolvers<void>();
+            const newerTask = new AbortController();
+            const unsubscribe = trackStore.subscribe((state) => {
+                if (state?.tracks[0]?.freezeState.status !== 'error') {
+                    return;
+                }
+                unsubscribe();
+                queueMicrotask(() => {
+                    if (mode === 'child-document') {
+                        createCrdtDoc('late-unrelated-sync-document');
+                    } else if (mode === 'new-task') {
+                        activeFreezeTasks.set('freeze-track', newerTask);
+                    } else if (mode === 'cancelled') {
+                        activeFreezeTasks.get('freeze-track')?.abort();
+                    } else {
+                        trackStore.set({
+                            ...state,
+                            tracks: state.tracks.map((track) => ({
+                                ...track,
+                                freezeState: { status: 'error', errorMessage: 'Newer diagnostic' },
+                            })),
+                        });
+                    }
+                    changed.resolve();
+                });
+            });
+            try {
+                await freeze();
+                await changed.promise;
+                expect(rawTrack().freezeState.status).toBe('unfrozen');
+                if (mode === 'changed-aggregate') {
+                    expect(projectedTrack().freezeState).toEqual({ status: 'error', errorMessage: 'Newer diagnostic' });
+                } else {
+                    expect(projectedTrack().freezeState).toEqual({ status: 'unfrozen' });
+                }
+                expect(undoStore.value?.past).toHaveLength(0);
+                expect(actionHistoryStore.value?.entries).toHaveLength(0);
+                expect(
+                    getCrdtDoc<{ actionHistory: { entries: unknown[] } }>('root')?.actionHistory.entries
+                ).toHaveLength(0);
+                expect(macroStore.value?.currentRecording).toHaveLength(0);
+                expect(activeFreezeTasks.get('freeze-track')).toBe(mode === 'new-task' ? newerTask : undefined);
+                expect(notices).toEqual([{ message: 'Render refused before late change', level: 'error' }]);
+            } finally {
+                unsubscribe();
+            }
+        }
+    );
+
     it('keeps a newer render task installed while the failed task awaits settlement', async () => {
         const hold = holdFailureSettlement();
         render.mockRejectedValue(new Error('Old render refused'));
@@ -328,13 +406,11 @@ describe('registered Freeze failure settlement', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it('rejects settlement when project repair withdraws mutation admission', async () => {
+    it('reports both failures when project repair withdraws settlement admission', async () => {
         const hold = holdFailureSettlement();
-        render.mockRejectedValue(new Error('Unsettled render refused'));
+        const renderFailure = new Error('Unsettled render refused');
+        render.mockRejectedValue(renderFailure);
         const pending = freeze();
-        const rejected = expect(pending).rejects.toThrow(
-            'Action conflicts with current project state: restoreFreezeState'
-        );
         await hold.entered;
         agentProjectRepairStateStore.set({
             audioGraphValid: false,
@@ -346,7 +422,25 @@ describe('registered Freeze failure settlement', () => {
             status: 'repair-required',
         });
         await hold.finish();
-        await rejected;
+        await expect(pending).resolves.toBeUndefined();
+        expect(notices).toEqual([
+            { message: 'Unsettled render refused', level: 'error' },
+            {
+                message:
+                    'Freeze failed: Unsettled render refused. Could not save the failure diagnostic: Action conflicts with current project state: restoreFreezeState',
+                level: 'error',
+            },
+        ]);
+        const aggregates = vi
+            .mocked(logger.error)
+            .mock.calls.map(([error]) => error)
+            .filter((error) => error instanceof AggregateError);
+        expect(aggregates).toHaveLength(1);
+        expect(aggregates[0]?.errors[0]).toBe(renderFailure);
+        expect(isAppActionConflictError(aggregates[0]?.errors[1])).toBe(true);
+        expect(actionHistoryStore.value?.entries).toHaveLength(0);
+        expect(getCrdtDoc<{ actionHistory: { entries: unknown[] } }>('root')?.actionHistory.entries).toHaveLength(0);
+        expect(macroStore.value?.currentRecording).toHaveLength(0);
         expect(rawTrack().freezeState.status).toBe('unfrozen');
         expect(projectedTrack().freezeState.status).toBe('unfrozen');
         expect(undoStore.value?.past).toHaveLength(0);
@@ -439,7 +533,7 @@ describe('registered Freeze failure settlement', () => {
     });
 
     it.each(['commit-error', 'write-conflict'] as const)(
-        'rejects an error settlement %s without claiming successful Freeze',
+        'handles an error settlement %s and reports both faults without successful Freeze',
         async (mode) => {
             // Inject only the storage port's commit fault; reads still use the actual
             // CRDT repository and the transaction/abort path remains production code.
@@ -458,11 +552,34 @@ describe('registered Freeze failure settlement', () => {
                     },
                 });
             };
-            render.mockRejectedValue(new Error('Render refused'));
-            await expect(freeze()).rejects.toThrow(
+            const renderFailure = new Error('Render refused');
+            render.mockRejectedValue(renderFailure);
+            await expect(freeze()).resolves.toBeUndefined();
+            const settlementMessage =
                 mode === 'commit-error'
-                    ? 'Failure settlement commit refused'
-                    : 'Action conflicts with current project state'
+                    ? failure.message
+                    : 'Action conflicts with current project state: restoreFreezeState';
+            expect(notices).toEqual([
+                { message: 'Render refused', level: 'error' },
+                {
+                    message: `Freeze failed: Render refused. Could not save the failure diagnostic: ${settlementMessage}`,
+                    level: 'error',
+                },
+            ]);
+            const aggregates = vi
+                .mocked(logger.error)
+                .mock.calls.map(([error]) => error)
+                .filter((error) => error instanceof AggregateError);
+            expect(aggregates).toHaveLength(1);
+            expect(aggregates[0]?.errors[0]).toBe(renderFailure);
+            if (mode === 'commit-error') {
+                expect(aggregates[0]?.errors[1]).toBe(failure);
+            } else {
+                expect(isAppActionConflictError(aggregates[0]?.errors[1])).toBe(true);
+            }
+            expect(actionHistoryStore.value?.entries).toHaveLength(0);
+            expect(getCrdtDoc<{ actionHistory: { entries: unknown[] } }>('root')?.actionHistory.entries).toHaveLength(
+                0
             );
             registerCrdtStorageRuntime();
             expect(rawTrack().freezeState.status).toBe('unfrozen');

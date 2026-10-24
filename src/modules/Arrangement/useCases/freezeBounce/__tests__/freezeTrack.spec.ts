@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -460,6 +461,44 @@ describe('freezeTrack', () => {
         );
         expect(notifyUser).toHaveBeenCalledWith('Render crashed', 'error');
         expect(didWrite).toBe(false);
+    });
+
+    it('awaits and handles a failed diagnostic save with the exact render and settlement errors', async () => {
+        trackStore.set({ tracks: [createTrack({ id: 't1', kind: 'audio', name: 'Track' })], selectedTrackId: null });
+        const renderFailure = new Error('Render refused');
+        const settlementFailure = new Error('Diagnostic save refused');
+        const entered = Promise.withResolvers<void>();
+        const settlement = Promise.withResolvers<void>();
+        vi.mocked(renderTrackOffline).mockRejectedValue(renderFailure);
+        vi.mocked(executeAppAction).mockImplementationOnce(() => {
+            entered.resolve();
+            return settlement.promise;
+        });
+        const log = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        try {
+            const pending = freezeTrack('t1');
+            await entered.promise;
+            expect(activeFreezeTasks.has('t1')).toBe(true);
+            settlement.reject(settlementFailure);
+            await expect(pending).resolves.toBe(false);
+            expect(notifyUser).toHaveBeenCalledWith('Render refused', 'error');
+            expect(notifyUser).toHaveBeenCalledWith(
+                'Freeze failed: Render refused. Could not save the failure diagnostic: Diagnostic save refused',
+                'error'
+            );
+            expect(log).toHaveBeenCalledTimes(1);
+            const aggregate = log.mock.calls[0]?.[0];
+            expect(aggregate).toBeInstanceOf(AggregateError);
+            if (!(aggregate instanceof AggregateError)) {
+                throw new Error('Expected the combined Freeze failure');
+            }
+            expect(aggregate.errors).toEqual([renderFailure, settlementFailure]);
+            expect(aggregate.errors[0]).toBe(renderFailure);
+            expect(aggregate.errors[1]).toBe(settlementFailure);
+            expect(activeFreezeTasks.has('t1')).toBe(false);
+        } finally {
+            log.mockRestore();
+        }
     });
 
     it('keeps failure admission when only freeze metadata key order changes', async () => {

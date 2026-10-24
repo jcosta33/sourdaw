@@ -9,6 +9,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executeAppAction } from '../executeAppAction';
@@ -138,6 +139,179 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
         expect(mutations).toEqual([{ tool: 'draw' }]);
         expect(doc.editingTool).toEqual({ tool: 'draw' });
         expect(storage.get()).toEqual({ tool: 'draw' });
+    });
+
+    it.each(['sync', 'async'] as const)(
+        'vetoes a staged %s write at its own commit without history or observers',
+        async (mode) => {
+            const { doc, mutations, storage } = createHarness();
+            const staged = Promise.withResolvers<void>();
+            const authorityLost = Promise.withResolvers<void>();
+            let authorized = true;
+            registerExecute(() => {
+                const scope = captureAutomergeStorageTransactionScope();
+                const stage = () => {
+                    storage.set({ tool: 'draw' });
+                    staged.resolve();
+                    queueMicrotask(() => {
+                        authorized = false;
+                        authorityLost.resolve();
+                    });
+                };
+                if (mode === 'sync') {
+                    stage();
+                    return undefined;
+                }
+                return Promise.resolve().then(() => scope(stage));
+            });
+            const onCommitted = vi.fn();
+            const shouldCommit = vi.fn(() => authorized);
+
+            const execution = executeAppAction(action, { shouldCommit, onCommitted });
+            await staged.promise;
+            await authorityLost.promise;
+            await execution;
+
+            expect(shouldCommit).toHaveBeenCalledTimes(1);
+            expect(mutations).toEqual([]);
+            expect(doc.editingTool).toEqual({ tool: 'select' });
+            expect(storage.get()).toEqual({ tool: 'select' });
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.clearSemanticContext).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it.each([true, undefined])('commits a project write with commit authority %s', async (allowed) => {
+        const { doc, mutations, storage } = createHarness();
+        registerExecute(() => storage.set({ tool: 'draw' }));
+        const onCommitted = vi.fn();
+        await executeAppAction(action, {
+            shouldCommit: allowed === undefined ? undefined : () => allowed,
+            onCommitted,
+        });
+        expect(doc.editingTool).toEqual({ tool: 'draw' });
+        expect(mutations).toEqual([{ tool: 'draw' }]);
+        expect(onCommitted).toHaveBeenCalledTimes(1);
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(1);
+        expect(mocks.recordAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates a commit predicate exception after aborting its staged write', async () => {
+        const { doc, mutations, storage } = createHarness();
+        const failure = new Error('Commit predicate crashed');
+        registerExecute(() => storage.set({ tool: 'draw' }));
+        await expect(
+            executeAppAction(action, {
+                shouldCommit: () => {
+                    throw failure;
+                },
+            })
+        ).rejects.toBe(failure);
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(storage.get()).toEqual({ tool: 'select' });
+        expect(mutations).toEqual([]);
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+    });
+
+    it('propagates failed abort cleanup instead of treating a commit veto as no-write', async () => {
+        const { doc, storage } = createHarness();
+        const rollback = vi.fn(() => {
+            throw new Error('Runtime rollback refused');
+        });
+        registerHandlerMap({
+            [action.type]: {
+                undoable: false,
+                describe: () => ({ label: 'Set editing tool' }),
+                prepareAbort: () => rollback,
+                execute: () => storage.set({ tool: 'draw' }),
+            } satisfies ActionHandler<SetEditingToolAction>,
+        });
+        await expect(executeAppAction(action, { shouldCommit: () => false })).rejects.toThrow(
+            'Runtime rollback refused'
+        );
+        expect(rollback).toHaveBeenCalledTimes(1);
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(storage.get()).toEqual({ tool: 'select' });
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+    });
+
+    it('propagates semantic cleanup failure after a clean commit veto', async () => {
+        const { doc, storage } = createHarness();
+        const failure = new Error('Semantic cleanup refused');
+        registerExecute(() => storage.set({ tool: 'draw' }));
+        mocks.clearSemanticContext.mockImplementationOnce(() => {
+            throw failure;
+        });
+        await expect(executeAppAction(action, { shouldCommit: () => false })).rejects.toBe(failure);
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(storage.get()).toEqual({ tool: 'select' });
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+    });
+
+    it.each(['before-write', 'after-first-document'] as const)(
+        'preserves a genuine commit failure %s when the commit predicate allows it',
+        async (mode) => {
+            const firstDoc: Record<string, unknown> = { editingTool: { tool: 'select' } };
+            const secondDoc: Record<string, unknown> = { editingTool: { tool: 'select' } };
+            const failure = new Error('Document commit refused');
+            configureAutomergeStoragePort({
+                getDoc: (id) => (id === 'root' ? firstDoc : secondDoc),
+                hasDoc: () => true,
+                getSemanticMessage: () => undefined,
+                mutateDoc: ({ docId, changeFn }) => {
+                    if (mode === 'before-write' || docId !== 'root') {
+                        throw failure;
+                    }
+                    changeFn(firstDoc);
+                },
+            });
+            const first = createAutomergeStorage<StorageValue>('root', 'editingTool');
+            const second = createAutomergeStorage<StorageValue>('child', 'editingTool');
+            first.hydrate?.();
+            second.hydrate?.();
+            const afterAmbiguousCommit = vi.fn();
+            registerExecute(() => {
+                first.set({ tool: 'draw' });
+                second.set({ tool: 'marquee' });
+                return { status: 'written', afterAmbiguousCommit };
+            });
+            const onCommitted = vi.fn();
+            const execution = executeAppAction(action, { shouldCommit: () => true, onCommitted });
+            if (mode === 'before-write') {
+                await expect(execution).rejects.toBe(failure);
+                expect(firstDoc.editingTool).toEqual({ tool: 'select' });
+                expect(afterAmbiguousCommit).not.toHaveBeenCalled();
+            } else {
+                const received = await execution.catch((error: unknown) => error);
+                expect(received).toBeInstanceOf(AppActionCommittedError);
+                expect(received).toHaveProperty('cause', failure);
+                expect(firstDoc.editingTool).toEqual({ tool: 'draw' });
+                expect(afterAmbiguousCommit).toHaveBeenCalledTimes(1);
+            }
+            expect(secondDoc.editingTool).toEqual({ tool: 'select' });
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        }
+    );
+
+    it('leaves runtime-only handlers outside the project commit predicate', async () => {
+        const execute = vi.fn();
+        const shouldCommit = vi.fn(() => false);
+        registerHandlerMap({
+            [action.type]: {
+                executionKind: 'runtime',
+                undoable: false,
+                describe: () => ({ label: 'Runtime editing tool' }),
+                execute,
+            } satisfies ActionHandler<SetEditingToolAction>,
+        });
+        await executeAppAction(action, { shouldCommit });
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(shouldCommit).not.toHaveBeenCalled();
     });
 
     it('should abort a captured post-await write when repair becomes required before commit', async () => {
