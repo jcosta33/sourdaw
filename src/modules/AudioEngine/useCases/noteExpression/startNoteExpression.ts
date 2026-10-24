@@ -176,7 +176,7 @@ function findOwnBendFrame({
  * (`recordedBeat`), not where it plays: a trimmed clip head carries its rows onto the head the cut note
  * starts on, though they may precede the note's own bend. A tie on one frame stays with the note. A note
  * with no bend sounds under the channel bend in force, the last move at or before the start frame that
- * reaches its channel: one recorded on that channel, or a zone-wide one. From then on the later event wins
+ * reaches it: one recorded on its channel, or any move that is not channel-scoped. From then on the later event wins
  * (`advanceNoteExpression`).
  */
 export function startNoteExpression({

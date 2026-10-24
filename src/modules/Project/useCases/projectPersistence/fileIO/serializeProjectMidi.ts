@@ -15,8 +15,8 @@ function serializeProjectMidiCC(cc: RuntimeCC): ProjectMidiCC {
 
 function serializeProjectMidiPitchBend(pb: RuntimePitchBend): ProjectMidiPitchBend {
     const serialized: ProjectMidiPitchBend = { beat: pb.beat, value: pb.value, channel: pb.channel };
-    if (pb.zoneMaster === true) {
-        serialized.zoneMaster = true;
+    if (pb.channelScoped === true) {
+        serialized.channelScoped = true;
     }
     return serialized;
 }

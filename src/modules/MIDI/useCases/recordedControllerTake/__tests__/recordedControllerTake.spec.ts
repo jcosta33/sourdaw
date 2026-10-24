@@ -140,14 +140,17 @@ describe('recorded controller take', () => {
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
-        it('keeps the zone-master mark of a bend row, and writes no mark on one without it', () => {
+        it('keeps the channel-scoped mark of a bend row, and writes no mark on one without it', () => {
             beginTake();
-            bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 100, beat: 0.5, channel: 0, zoneMaster: true } });
-            bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 200, beat: 0.75, channel: 1 } });
+            bufferRecordedMidiPitchBend({
+                clipId: CLIP,
+                row: { value: 100, beat: 0.5, channel: 1, channelScoped: true },
+            });
+            bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 200, beat: 0.75, channel: 0 } });
 
             expect(bare(recordedControllerTakeState.buffers.get(CLIP)?.pitchBend)).toEqual([
-                { value: 100, beat: 0.5, channel: 0, zoneMaster: true },
-                { value: 200, beat: 0.75, channel: 1 },
+                { value: 100, beat: 0.5, channel: 1, channelScoped: true },
+                { value: 200, beat: 0.75, channel: 0 },
             ]);
         });
 

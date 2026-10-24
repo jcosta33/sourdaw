@@ -64,8 +64,8 @@ function hydrateProjectMidiPitchBend({
         beat: pb.beat,
         channel: pb.channel,
     };
-    if (pb.zoneMaster === true) {
-        hydrated.zoneMaster = true;
+    if (pb.channelScoped === true) {
+        hydrated.channelScoped = true;
     }
     return hydrated;
 }

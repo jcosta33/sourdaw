@@ -327,7 +327,7 @@ export type ProjectMidiPitchBend = {
     value: number;
     beat: number;
     channel: number;
-    zoneMaster?: boolean;
+    channelScoped?: boolean;
 };
 
 export type ProjectMidiState = {

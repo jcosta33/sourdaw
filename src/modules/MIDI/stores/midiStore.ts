@@ -234,7 +234,7 @@ function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
         isFiniteNumber(value.beat) &&
         'channel' in value &&
         isFiniteNumber(value.channel) &&
-        (!('zoneMaster' in value) || typeof value.zoneMaster === 'boolean')
+        (!('channelScoped' in value) || typeof value.channelScoped === 'boolean')
     );
 }
 
@@ -256,8 +256,8 @@ function normalizeMidiPitchBend(event: MidiPitchBend): MidiPitchBend {
         beat: event.beat,
         channel: event.channel,
     };
-    if (event.zoneMaster !== undefined) {
-        normalized.zoneMaster = event.zoneMaster;
+    if (event.channelScoped !== undefined) {
+        normalized.channelScoped = event.channelScoped;
     }
     return normalized;
 }

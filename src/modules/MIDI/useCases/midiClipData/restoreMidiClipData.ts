@@ -119,7 +119,7 @@ function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
         isFiniteNumber(value.value) &&
         isFiniteNumber(value.beat) &&
         isFiniteNumber(value.channel) &&
-        (!Object.hasOwn(value, 'zoneMaster') || typeof value.zoneMaster === 'boolean')
+        (!Object.hasOwn(value, 'channelScoped') || typeof value.channelScoped === 'boolean')
     );
 }
 

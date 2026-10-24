@@ -107,7 +107,7 @@ export type OfflineChannelBendProjector = (input: {
             loopLength?: number;
         };
         controlChanges: readonly OfflineControllerRow[];
-        pitchBends: readonly { id: string; value: number; beat: number; channel: number; zoneMaster?: boolean }[];
+        pitchBends: readonly { id: string; value: number; beat: number; channel: number; channelScoped?: boolean }[];
     }[];
     frameAtBeat: (beat: number) => number;
 }) => readonly {
@@ -117,7 +117,7 @@ export type OfflineChannelBendProjector = (input: {
     value: number;
     rangeSemitones: number;
     channel: number;
-    zoneWide: boolean;
+    channelScoped: boolean;
 }[];
 
 export const offlineMidiEventProjectorState: {

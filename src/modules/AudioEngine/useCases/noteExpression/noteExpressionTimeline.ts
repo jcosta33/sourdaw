@@ -26,10 +26,11 @@ export type ChannelBendPoint = {
     /** The zero-based MIDI channel the move was recorded on. */
     channel: number;
     /**
-     * Whether the move is the MPE zone master's, which reaches the notes of every channel and not only its own.
-     * The caller decides it from the data it holds, because the stored rows do not say whether MPE was on.
+     * Whether the move bends only the notes of its own channel. A row the recorder captured from a channel's
+     * wheel is scoped; every other row (drawn, imported, saved before rows were scoped, or an MPE zone
+     * master's) bends every note of the track.
      */
-    zoneWide: boolean;
+    channelScoped: boolean;
 };
 
 export type ProjectedNoteExpressionChange = {

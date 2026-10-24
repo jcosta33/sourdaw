@@ -172,40 +172,44 @@ describe('midiStore', () => {
         });
     });
 
-    it('should drop a pitch-bend row whose zone-master mark is not a boolean', () => {
+    it('should drop a pitch-bend row whose channel-scoped mark is not a boolean and keep a marked row beside it', () => {
+        const scoped = { id: 'scoped', value: 100, beat: 1, channel: 1, channelScoped: true };
         const plain = { id: 'plain', value: 100, beat: 2, channel: 1 };
         fake_doc.midi = {
             notesByClipId: {},
             ccByClipId: {},
-            pitchBendByClipId: { 'clip-pitch': [plain, { ...plain, id: 'malformed', zoneMaster: 'yes' }] },
+            pitchBendByClipId: {
+                'clip-pitch': [scoped, plain, { ...plain, id: 'malformed', channelScoped: 'yes' }],
+            },
         };
 
         midiStore.hydrate();
 
-        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([plain]);
+        // The malformed row sends the list through normalisation, which must carry the mark of the valid ones.
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([scoped, plain]);
     });
 
-    it('should keep the zone-master mark of a pitch-bend row through the CRDT and a store write', async () => {
-        const master = { id: 'master', value: 100, beat: 1, channel: 0, zoneMaster: true };
+    it('should keep the channel-scoped mark of a pitch-bend row through the CRDT and a store write', async () => {
+        const scoped = { id: 'scoped', value: 100, beat: 1, channel: 1, channelScoped: true };
         const plain = { id: 'plain', value: 100, beat: 2, channel: 1 };
         fake_doc.midi = {
             notesByClipId: {},
             ccByClipId: {},
-            pitchBendByClipId: { 'clip-pitch': [master, plain] },
+            pitchBendByClipId: { 'clip-pitch': [scoped, plain] },
         };
 
         midiStore.hydrate();
-        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([master, plain]);
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([scoped, plain]);
 
-        const second = { ...master, id: 'master-2', beat: 3 };
+        const second = { ...scoped, id: 'scoped-2', beat: 3 };
         midiStore.set({
             notesByClipId: {},
             ccByClipId: {},
-            pitchBendByClipId: { 'clip-pitch': [master, plain, second] },
+            pitchBendByClipId: { 'clip-pitch': [scoped, plain, second] },
         });
         await flush_pending_frame();
-        expect(fake_doc.midi).toMatchObject({ pitchBendByClipId: { 'clip-pitch': [master, plain, second] } });
-        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([master, plain, second]);
+        expect(fake_doc.midi).toMatchObject({ pitchBendByClipId: { 'clip-pitch': [scoped, plain, second] } });
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([scoped, plain, second]);
     });
 
     it('should admit only integer pitch-bend rows inside the signed 14-bit wire range', () => {

@@ -32,14 +32,14 @@ const bendChange = (beat: number, pitchBend: number, pressure = 10) => ({
     expression: { pressure, pitchBend, pitchBendRangeSemitones: 2 },
 });
 
-const move = (beat: number, value: number, channel = 0, zoneWide = false) => ({
+const move = (beat: number, value: number, channel = 0, channelScoped = false) => ({
     beat,
     frame: beat * 1000,
     recordedBeat: beat,
     value,
     rangeSemitones: 2,
     channel,
-    zoneWide,
+    channelScoped,
 });
 
 /**
@@ -221,7 +221,7 @@ describe('heldNoteExpression', () => {
             hold({ pitch: 60, channel: 1, points: [], followsChannelBend: true });
             hold({ pitch: 64, channel: 2, points: [], followsChannelBend: true });
 
-            const due = take(0, 5, 'track-1', [move(1, 8_191, 1), move(3, 0, 1)]);
+            const due = take(0, 5, 'track-1', [move(1, 8_191, 1, true), move(3, 0, 1, true)]);
 
             expect(due.map(({ pitch, channel, change }) => [pitch, channel, change.beat])).toEqual([
                 [60, 1, 1],
@@ -233,16 +233,16 @@ describe('heldNoteExpression', () => {
             hold({ pitch: 60, channel: 1, points: [], followsChannelBend: true });
             hold({ pitch: 64, channel: 2, points: [], followsChannelBend: true });
 
-            const due = take(4, 6, 'track-1', [move(1, 8_191, 1)]);
+            const due = take(4, 6, 'track-1', [move(1, 8_191, 1, true)]);
 
             expect(due.map(({ pitch, channel, change }) => [pitch, channel, change.frame])).toEqual([[60, 1, 4_007]]);
         });
 
-        it('hands a zone-wide move to the notes of every channel', () => {
+        it('hands an unscoped move to the notes of every channel', () => {
             hold({ pitch: 60, channel: 1, points: [], followsChannelBend: true });
             hold({ pitch: 64, channel: 2, points: [], followsChannelBend: true });
 
-            const due = take(0, 5, 'track-1', [move(1, 8_191, 0, true)]);
+            const due = take(0, 5, 'track-1', [move(1, 8_191, 0)]);
 
             expect(due.map(({ pitch }) => pitch)).toEqual([60, 64]);
         });

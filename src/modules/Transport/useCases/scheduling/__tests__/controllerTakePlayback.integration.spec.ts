@@ -268,10 +268,15 @@ describe('a recorded controller-only take, played by the window scheduler', () =
      */
     async function recordChannelTake(input: { noteChannel: number; wheelChannel: number }): Promise<string> {
         // The live input voices a recorded note through the engine singleton: only its track strip is doubled.
-        const strip = { gainNode: {}, preFaderTap: { connect: () => undefined }, deviceNodes: engineStub.nodes };
+        // `vi.fn()` answers with whatever it was given, so the double needs no cast to stand for the engine's strip.
+        const stripOfInstruments = vi.fn().mockReturnValue({
+            gainNode: {},
+            preFaderTap: { connect: () => undefined },
+            deviceNodes: engineStub.nodes,
+        });
         engineSpies.push(
-            vi.spyOn(audioEngine, 'ensureTrackStrip').mockReturnValue(strip as never),
-            vi.spyOn(audioEngine, 'getTrackStrip').mockReturnValue(strip as never)
+            vi.spyOn(audioEngine, 'ensureTrackStrip').mockImplementation(stripOfInstruments),
+            vi.spyOn(audioEngine, 'getTrackStrip').mockImplementation(stripOfInstruments)
         );
         // The audio clock follows the playhead at 120 BPM, so a note's length is the beats between its keys.
         const noopContext = audioEngine.context;
@@ -319,7 +324,12 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         expect(midiStore.value?.notesByClipId[clipId]?.map(({ pitch, channel }) => [pitch, channel])).toEqual([
             [60, 1],
         ]);
-        expect(midiStore.value?.pitchBendByClipId[clipId]?.map(({ channel }) => channel)).toEqual([1, 1]);
+        expect(
+            midiStore.value?.pitchBendByClipId[clipId]?.map(({ channel, channelScoped }) => [channel, channelScoped])
+        ).toEqual([
+            [1, true],
+            [1, true],
+        ]);
 
         await playWindow(0, 12);
 
@@ -327,6 +337,19 @@ describe('a recorded controller-only take, played by the window scheduler', () =
             { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
             { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
         ]);
+    });
+
+    it('bends a channel-2 note by a bend drawn in the pitch-bend lane over a recorded take', async () => {
+        const clipId = await recordChannelTake({ noteChannel: 2, wheelChannel: 1 });
+        // The lane draws on channel 0 and marks nothing.
+        midiStore.set({
+            ...midiStore.value!,
+            pitchBendByClipId: { [clipId]: [{ id: 'drawn', value: 4096, beat: 2, channel: 0 }] },
+        });
+
+        await playWindow(0, 12);
+
+        expect(bendsPlayed()).toEqual([{ note: 60, pitchBend: 4096, range: 2, frame: 6 * BEAT_FRAMES }]);
     });
 
     it('leaves a channel-2 note in tune under a channel-1 wheel, as it was played', async () => {
@@ -343,11 +366,15 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         await executeAppAction({ type: 'enableMpe' });
         try {
             const clipId = await recordChannelTake({ noteChannel: 2, wheelChannel: 0 });
+            // Recorded under a zone master, the master-channel rows are not scoped to a channel.
             expect(
-                midiStore.value?.pitchBendByClipId[clipId]?.map(({ channel, zoneMaster }) => [channel, zoneMaster])
+                midiStore.value?.pitchBendByClipId[clipId]?.map((row) => [
+                    row.channel,
+                    Object.hasOwn(row, 'channelScoped'),
+                ])
             ).toEqual([
-                [0, true],
-                [0, true],
+                [0, false],
+                [0, false],
             ]);
 
             await playWindow(0, 12);

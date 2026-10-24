@@ -83,7 +83,7 @@ function listChannelEvents(
  * expression in force at `fromFrame`.
  *
  * Channel moves come with the window, not the note: a move the clips hold now reaches every note of its
- * channel (every note of the track, when it is zone-wide) that sounds at its frame, on the note's own clock.
+ * channel (every note of the track, when it is not channel-scoped) that sounds at its frame, on the note's own clock.
  */
 export function advanceNoteExpression({
     timeline,

@@ -17,5 +17,5 @@ export function bufferRecordedMidiPitchBend({ clipId, row }: BufferRecordedMidiP
         return;
     }
     captureRegisteredStateAtFirstRow({ buffer });
-    buffer.pitchBend.push(createMidiPitchBend(row.value, row.beat, row.channel, row.zoneMaster));
+    buffer.pitchBend.push(createMidiPitchBend(row.value, row.beat, row.channel, row.channelScoped));
 }

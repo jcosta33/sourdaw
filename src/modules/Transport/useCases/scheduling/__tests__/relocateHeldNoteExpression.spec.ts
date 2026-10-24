@@ -34,7 +34,7 @@ function ringingNote(overrides: Partial<HeldNote> = {}): HeldNote {
     const { timeline } = startNoteExpression({
         note: { pressure: 10 },
         channelBend: [
-            { beat: 0, frame: 0, recordedBeat: 0, value: 8191, rangeSemitones: 2, channel: 0, zoneWide: false },
+            { beat: 0, frame: 0, recordedBeat: 0, value: 8191, rangeSemitones: 2, channel: 0, channelScoped: false },
         ],
         startBeat: 0,
         releaseFrame: 80_000,
@@ -135,7 +135,7 @@ describe('relocateHeldNoteExpression', () => {
                     value: 8191,
                     rangeSemitones: 2,
                     channel: 0,
-                    zoneWide: false,
+                    channelScoped: false,
                 },
             ],
         });

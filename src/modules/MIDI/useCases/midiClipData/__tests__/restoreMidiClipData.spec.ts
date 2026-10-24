@@ -158,9 +158,9 @@ const INVALID_SNAPSHOT_CASES = [
         snapshots: createSnapshots({ pitchBendSnapshot: [{ ...createPitchBend('pitch-invalid'), extra: true }] }),
     },
     {
-        label: 'pitch-bend zone-master mark that is not a boolean',
+        label: 'pitch-bend channel-scoped mark that is not a boolean',
         snapshots: createSnapshots({
-            pitchBendSnapshot: [{ ...createPitchBend('pitch-invalid'), zoneMaster: 'yes' }],
+            pitchBendSnapshot: [{ ...createPitchBend('pitch-invalid'), channelScoped: 'yes' }],
         }),
     },
     {
@@ -233,8 +233,8 @@ describe('restoreMidiClipData', () => {
         expect(nextState.pitchBendByClipId['clip-keep']).toBe(previousState.pitchBendByClipId['clip-keep']);
     });
 
-    it('restores a pitch-bend row with the zone-master mark it was recorded with', () => {
-        const pitchBendSnapshot = [{ ...createPitchBend('pitch-master'), zoneMaster: true }];
+    it('restores a pitch-bend row with the channel-scoped mark it was recorded with', () => {
+        const pitchBendSnapshot = [{ ...createPitchBend('pitch-recorded'), channelScoped: true }];
 
         restoreMidiClipData({
             clipId: 'clip-restore',

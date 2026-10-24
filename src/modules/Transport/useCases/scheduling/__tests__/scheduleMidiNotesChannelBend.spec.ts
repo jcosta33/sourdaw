@@ -160,6 +160,11 @@ function bend(id: string, beat: number, value: number, channel = 0) {
     return { id, beat, value, channel };
 }
 
+/** A bend the recorder captured from a channel's wheel with MPE off: it moves that channel's notes only. */
+function recorded(id: string, beat: number, value: number, channel: number) {
+    return { ...bend(id, beat, value, channel), channelScoped: true };
+}
+
 function controller(id: string, beat: number, cc: number, value: number, channel = 0) {
     return { id, beat, controller: cc, value, channel };
 }
@@ -569,7 +574,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 notes: {
                     'clip-1': [onChannel(1, note('left', 0, 6, 60)), onChannel(2, note('right', 0, 6, 64))],
                 },
-                bends: { 'clip-1': [bend('out', 3, 8191, 1), bend('return', 4, 0, 1)] },
+                bends: { 'clip-1': [recorded('out', 3, 8191, 1), recorded('return', 4, 0, 1)] },
             });
 
             await play(0, 8);
@@ -581,6 +586,23 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             expect(bendsOnChannel(2)).toEqual([]);
         });
 
+        it('bends every channel’s note by a drawn row, as a project saved before rows were scoped plays it', async () => {
+            stripFor(FERMENTER);
+            // The shape a `.mid` import leaves: a channel on every note. The lane draws its bend on channel 0.
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: {
+                    'clip-1': [onChannel(1, note('left', 0, 6, 60)), onChannel(2, note('right', 0, 6, 64))],
+                },
+                bends: { 'clip-1': [bend('drawn', 3, 8191, 0)] },
+            });
+
+            await play(0, 8);
+
+            expect(bendsOnChannel(1).map(({ pitchBend }) => pitchBend)).toEqual([8191]);
+            expect(bendsOnChannel(2).map(({ pitchBend }) => pitchBend)).toEqual([8191]);
+        });
+
         it('starts a note struck after another channel’s bend unbent, and one on that channel bent', async () => {
             stripFor(FERMENTER);
             setProject({
@@ -588,7 +610,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 notes: {
                     'clip-1': [onChannel(1, note('left', 2, 1, 60)), onChannel(2, note('right', 2, 1, 64))],
                 },
-                bends: { 'clip-1': [bend('out', 1, 8191, 1)] },
+                bends: { 'clip-1': [recorded('out', 1, 8191, 1)] },
             });
 
             await play(0, 8);
@@ -614,7 +636,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                     'clip-1': [onChannel(1, note('left', 0, 6, 60)), onChannel(2, note('right', 0, 6, 64))],
                 },
                 controllers: { 'clip-1': [...declare(1, 12), ...declare(2, 24)] },
-                bends: { 'clip-1': [bend('left-out', 1, 4096, 1), bend('right-out', 1, -4096, 2)] },
+                bends: { 'clip-1': [recorded('left-out', 1, 4096, 1), recorded('right-out', 1, -4096, 2)] },
             });
 
             await play(0, 8);
@@ -634,7 +656,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 notes: {
                     'clip-1': [onChannel(1, note('left', 5, 1, 60)), onChannel(2, note('right', 5, 1, 64))],
                 },
-                bends: { 'clip-1': [bend('out', 3, 8191, 1)] },
+                bends: { 'clip-1': [recorded('out', 3, 8191, 1)] },
             });
 
             await play(5, 6, true);
@@ -650,7 +672,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 notes: {
                     'clip-1': [onChannel(0, note('low', 0, 6, 48)), onChannel(1, note('high', 0, 6, 72))],
                 },
-                bends: { 'clip-1': [bend('wheel', 3, 8191, 0)] },
+                bends: { 'clip-1': [recorded('wheel', 3, 8191, 0)] },
             });
 
             await play(0, 8);
@@ -666,7 +688,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             setProject({
                 track: midiTrack(FERMENTER, [midiClip()]),
                 notes: { 'clip-1': [onChannel(1, note('only', 0, 6, 72))] },
-                bends: { 'clip-1': [bend('wheel', 3, 8191, 0)] },
+                bends: { 'clip-1': [recorded('wheel', 3, 8191, 0)] },
             });
 
             await play(0, 8);
@@ -675,10 +697,8 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         });
 
         describe('on the MPE master channel', () => {
-            const master = (id: string, beat: number, value: number) => ({
-                ...bend(id, beat, value, 0),
-                zoneMaster: true,
-            });
+            // Recorded while MPE was on, a master-channel bend is not scoped: it carries no mark.
+            const master = (id: string, beat: number, value: number) => bend(id, beat, value, 0);
 
             it('moves the notes of every member channel for a row recorded while MPE was on', async () => {
                 stripFor(FERMENTER);
@@ -700,7 +720,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 ]);
             });
 
-            it('starts a member note struck under a master bend bent, and keeps it so when a channel-0 note is drawn in', async () => {
+            it('starts a member note struck under a master bend bent, whatever else the track holds', async () => {
                 stripFor(FERMENTER);
                 setProject({
                     track: midiTrack(FERMENTER, [midiClip()]),
@@ -718,12 +738,12 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             });
         });
 
-        it('lets a note with no stored channel hear the moves of every channel', async () => {
+        it('lets a note with no stored channel hear the moves of every channel, scoped or not', async () => {
             stripFor(FERMENTER);
             setProject({
                 track: midiTrack(FERMENTER, [midiClip()]),
                 notes: { 'clip-1': [note('drawn', 0, 6, 60)] },
-                bends: { 'clip-1': [bend('out', 3, 8191, 2), bend('back', 4, 0, 5)] },
+                bends: { 'clip-1': [recorded('out', 3, 8191, 2), bend('back', 4, 0, 5)] },
             });
 
             await play(0, 8);
@@ -952,7 +972,7 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                     { ...note('left', 2, 4, LONG_NOTE_PITCH), channel: 1 },
                     { ...note('right', 2, 4, OTHER_CHANNEL_PITCH), channel: 2 },
                 ],
-                bends: [bend('centre', 0, 0, 1), bend('out', 3, 8191, 1)],
+                bends: [recorded('centre', 0, 0, 1), recorded('out', 3, 8191, 1)],
             });
             await playOnPass(0, 2, 4);
             vi.mocked(applyNoteExpression).mockClear();

@@ -595,19 +595,7 @@ describe('handleWebMidiPitchBend', () => {
             expect(recorded_rows()).toEqual([{ value: 4096, beat: 2, channel: 0 }]);
         });
 
-        it('marks the master-channel bend recorded while MPE is on as the zone master’s', () => {
-            mpe_enabled.value = true;
-            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
-
-            fn(0, 127, 127, at_beat(6));
-
-            expect(recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend[0]).toMatchObject({
-                channel: 0,
-                zoneMaster: true,
-            });
-        });
-
-        it('leaves the mark off a bend recorded while MPE is off, whatever channel it arrived on', () => {
+        it('scopes a bend recorded while MPE is off to its channel, whatever channel it arrived on', () => {
             mpe_enabled.value = false;
             const fn = handleWebMidiPitchBend._factory(recording_dependencies());
 
@@ -615,7 +603,21 @@ describe('handleWebMidiPitchBend', () => {
             fn(1, 127, 127, at_beat(7));
 
             const rows = recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? [];
-            expect(rows.map((row) => Object.hasOwn(row, 'zoneMaster'))).toEqual([false, false]);
+            expect(rows.map(({ channel, channelScoped }) => [channel, channelScoped])).toEqual([
+                [0, true],
+                [1, true],
+            ]);
+        });
+
+        it('leaves the master-channel bend recorded while MPE is on unscoped, so it reaches every member channel', () => {
+            mpe_enabled.value = true;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(0, 127, 127, at_beat(6));
+
+            const rows = recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? [];
+            expect(rows).toHaveLength(1);
+            expect(Object.hasOwn(rows[0]!, 'channelScoped')).toBe(false);
         });
 
         // The controller route shares the placement helper, so a bend row that

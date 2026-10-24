@@ -2061,7 +2061,13 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         // The live scheduler's case: scheduleMidiNotesChannelBend.spec.ts, "per MIDI channel, as the live input plays
         // it": the note sounds on channel 3.
         describe('per MIDI channel', () => {
-            it('moves and starts a note only by the bends recorded on its own channel', async () => {
+            /** A bend the recorder captured from a channel's wheel with MPE off. */
+            const recordedRow = (id: string, beat: number, value: number, channel: number): MidiPitchBendRow => ({
+                ...bendRow(id, beat, value, channel),
+                channelScoped: true,
+            });
+
+            it('moves and starts a note only by the recorded bends of its own channel', async () => {
                 const arrivals = await dispatchOneNote(
                     { startBeat: 2, duration: 3 },
                     {
@@ -2069,10 +2075,10 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                         clip: { startBeat: 0, endBeat: 8 },
                         lanes: {
                             bends: [
-                                bendRow('before-start-other', 1, -8_192, 1),
-                                bendRow('before-start-own', 1.5, 4_096, 3),
-                                bendRow('while-sounding-other', 3, 8_191, 1),
-                                bendRow('while-sounding-own', 4, 0, 3),
+                                recordedRow('before-start-other', 1, -8_192, 1),
+                                recordedRow('before-start-own', 1.5, 4_096, 3),
+                                recordedRow('while-sounding-other', 3, 8_191, 1),
+                                recordedRow('while-sounding-own', 4, 0, 3),
                             ],
                         },
                     }
@@ -2088,28 +2094,34 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             it('lets the master channel bend a member-channel note for a row recorded while MPE was on', async () => {
                 const arrivals = await dispatchOneNote(
                     { startBeat: 1, duration: 2 },
-                    {
-                        productionProjection: true,
-                        lanes: { bends: [{ ...bendRow('master', 2, 8_191, 0), zoneMaster: true }] },
-                    }
+                    { productionProjection: true, lanes: { bends: [bendRow('master', 2, 8_191, 0)] } }
                 );
 
                 expect(bends(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([48_000]);
             });
 
-            it('keeps an unmarked channel-0 wheel off a channel-3 note, however the track’s other notes sound', async () => {
+            it('bends a channel-3 note by a drawn channel-0 row, as a project saved before rows were scoped plays it', async () => {
                 const arrivals = await dispatchOneNote(
                     { startBeat: 1, duration: 2 },
-                    { productionProjection: true, lanes: { bends: [bendRow('wheel', 2, 8_191, 0)] } }
+                    { productionProjection: true, lanes: { bends: [bendRow('drawn', 2, 8_191, 0)] } }
+                );
+
+                expect(bends(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([48_000]);
+            });
+
+            it('keeps a recorded channel-0 wheel off a channel-3 note', async () => {
+                const arrivals = await dispatchOneNote(
+                    { startBeat: 1, duration: 2 },
+                    { productionProjection: true, lanes: { bends: [recordedRow('wheel', 2, 8_191, 0)] } }
                 );
 
                 expect(arrivals.expression).toEqual([]);
             });
 
-            it('lets a note with no stored channel hear a move on any channel', async () => {
+            it('lets a note with no stored channel hear a recorded move on any channel', async () => {
                 const arrivals = await dispatchOneNote(
                     { startBeat: 1, duration: 2, channel: undefined },
-                    { productionProjection: true, lanes: { bends: [bendRow('wheel', 2, 8_191, 5)] } }
+                    { productionProjection: true, lanes: { bends: [recordedRow('wheel', 2, 8_191, 5)] } }
                 );
 
                 expect(bends(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([48_000]);

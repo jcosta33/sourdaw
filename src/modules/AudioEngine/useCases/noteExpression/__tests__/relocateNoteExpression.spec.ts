@@ -6,27 +6,27 @@ import { startNoteExpression } from '../startNoteExpression';
 const frameAtBeat = (beat: number) => beat * 1000;
 const newPassFrameAtBeat = (beat: number) => 50_000 + beat * 1000;
 
-const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, zoneWide = false) => ({
+const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, channelScoped = false) => ({
     beat,
     frame: beat * 1000,
     recordedBeat: beat,
     value,
     rangeSemitones,
     channel,
-    zoneWide,
+    channelScoped,
 });
 
 /** The destination of the relocation, 50 000 frames on: a new pass whose beat 0 lands there. */
 const AT_FRAME = 50_000;
 /** A move of the new pass, placed on the new clock. */
-const newPassMove = (beat: number, value: number, rangeSemitones = 2, channel = 0, zoneWide = false) => ({
+const newPassMove = (beat: number, value: number, rangeSemitones = 2, channel = 0, channelScoped = false) => ({
     beat,
     frame: newPassFrameAtBeat(beat),
     recordedBeat: beat,
     value,
     rangeSemitones,
     channel,
-    zoneWide,
+    channelScoped,
 });
 
 function startNote(
@@ -67,7 +67,7 @@ describe('relocateNoteExpression', () => {
 
             const relocated = relocateNoteExpression({
                 timeline,
-                channelBend: [newPassMove(0, 300, 12, 2), newPassMove(0, 8191, 2, 1)],
+                channelBend: [newPassMove(0, 300, 12, 2, true), newPassMove(0, 8191, 2, 1, true)],
                 atFrame: AT_FRAME,
                 frameAtBeat: newPassFrameAtBeat,
             });
@@ -80,7 +80,7 @@ describe('relocateNoteExpression', () => {
 
             const relocated = relocateNoteExpression({
                 timeline,
-                channelBend: [newPassMove(0, 8191, 2, 1)],
+                channelBend: [newPassMove(0, 8191, 2, 1, true)],
                 atFrame: AT_FRAME,
                 frameAtBeat: newPassFrameAtBeat,
             });
@@ -94,7 +94,7 @@ describe('relocateNoteExpression', () => {
 
             const relocated = relocateNoteExpression({
                 timeline,
-                channelBend: [newPassMove(0, 300, 12, 2)],
+                channelBend: [newPassMove(0, 300, 12, 2, true)],
                 atFrame: AT_FRAME,
                 frameAtBeat: newPassFrameAtBeat,
             });
@@ -102,12 +102,12 @@ describe('relocateNoteExpression', () => {
             expect(relocated.expression).toEqual({ pressure: 10, pitchBend: 300, pitchBendRangeSemitones: 12 });
         });
 
-        it('gives a zone-wide move to a note on any channel', () => {
+        it('gives an unscoped move (drawn, imported or an MPE master’s) to a note on any channel', () => {
             const timeline = startNote({ note: { pressure: 10, channel: 4 } });
 
             const relocated = relocateNoteExpression({
                 timeline,
-                channelBend: [newPassMove(0, 700, 48, 0, true)],
+                channelBend: [newPassMove(0, 700, 48, 0)],
                 atFrame: AT_FRAME,
                 frameAtBeat: newPassFrameAtBeat,
             });

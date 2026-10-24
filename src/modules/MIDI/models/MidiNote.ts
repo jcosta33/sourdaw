@@ -95,21 +95,21 @@ export type MidiCC = {
  * that scalar it carries no depth of its own: the semitone range is the
  * channel's, declared through RPN 0.
  *
- * A bend moves the notes of its own channel, as the live wheel does. The one
- * exception is an MPE zone master's, which reaches every member channel; no
- * stored row otherwise says whether MPE was on, so the recorder marks the
- * master-channel bends it records while MPE is on with `zoneMaster`. Absent
- * means an ordinary channel bend.
+ * A bend the recorder captured from a channel's wheel moves the notes of that
+ * channel only, as the live wheel does, and says so with `channelScoped`. Every
+ * other row (drawn in the lane, imported, saved before rows were scoped, or the
+ * MPE zone master's, which reaches every member channel) leaves it absent and
+ * bends every note of the track.
  */
 export type MidiPitchBend = {
     id: string;
     value: number;
     beat: number;
     channel: number;
-    zoneMaster?: boolean;
+    channelScoped?: boolean;
 };
 
-export const MIDI_PITCH_BEND_OPTIONAL_KEYS = ['zoneMaster'] as const;
+export const MIDI_PITCH_BEND_OPTIONAL_KEYS = ['channelScoped'] as const;
 
 export function isValidMidiArticulation(value: unknown): value is string {
     if (typeof value !== 'string' || value.length === 0 || value.length > 128 || value !== value.trim()) {
@@ -234,10 +234,10 @@ export function createMidiCC(controller: number, value: number, beat: number, ch
     };
 }
 
-export function createMidiPitchBend(value: number, beat: number, channel = 0, zoneMaster = false): MidiPitchBend {
+export function createMidiPitchBend(value: number, beat: number, channel = 0, channelScoped = false): MidiPitchBend {
     const created: MidiPitchBend = { id: `pb-${crypto.randomUUID()}`, value, beat, channel };
-    if (zoneMaster) {
-        created.zoneMaster = true;
+    if (channelScoped) {
+        created.channelScoped = true;
     }
     return created;
 }

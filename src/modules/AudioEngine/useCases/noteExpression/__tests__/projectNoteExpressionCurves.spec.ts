@@ -321,14 +321,14 @@ describe('projectNoteExpressionCurves', () => {
     });
 
     describe('with the track channel pitch bend', () => {
-        const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, zoneWide = false) => ({
+        const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, channelScoped = false) => ({
             beat,
             frame: frameAtBeat(beat),
             recordedBeat: beat,
             value,
             rangeSemitones,
             channel,
-            zoneWide,
+            channelScoped,
         });
         /** A move a pass head plays at `beat`, carried from the row recorded at `recordedBeat` before it. */
         const carried = (beat: number, recordedBeat: number, value: number) => ({
@@ -368,7 +368,7 @@ describe('projectNoteExpressionCurves', () => {
             it('moves a sounding note only by the moves recorded on its own channel', () => {
                 const { atStart, changes } = projectNoteExpressionCurves({
                     note: channelTwoNote,
-                    channelBend: [move(1, 8_191, 2, 1), move(1.5, 100, 12, 2), move(2, 0, 2, 1)],
+                    channelBend: [move(1, 8_191, 2, 1, true), move(1.5, 100, 12, 2, true), move(2, 0, 2, 1, true)],
                     startBeat: 0,
                     releaseFrame: frameAtBeat(3),
                     frameAtBeat,
@@ -382,7 +382,7 @@ describe('projectNoteExpressionCurves', () => {
             it('starts a note under its own channel’s bend in force, not another channel’s later one', () => {
                 const { atStart } = projectNoteExpressionCurves({
                     note: channelTwoNote,
-                    channelBend: [move(0.2, 300, 12, 2), move(0.5, 8_191, 2, 1)],
+                    channelBend: [move(0.2, 300, 12, 2, true), move(0.5, 8_191, 2, 1, true)],
                     startBeat: 1,
                     releaseFrame: frameAtBeat(3),
                     frameAtBeat,
@@ -394,7 +394,7 @@ describe('projectNoteExpressionCurves', () => {
             it('starts a note unbent when only another channel bent', () => {
                 const { atStart, changes } = projectNoteExpressionCurves({
                     note: channelTwoNote,
-                    channelBend: [move(0.5, 8_191, 2, 1)],
+                    channelBend: [move(0.5, 8_191, 2, 1, true)],
                     startBeat: 1,
                     releaseFrame: frameAtBeat(3),
                     frameAtBeat,
@@ -403,10 +403,10 @@ describe('projectNoteExpressionCurves', () => {
                 expect({ atStart, changes }).toEqual({ atStart: undefined, changes: [] });
             });
 
-            it('gives a zone-wide move to a note on any channel, at the move’s own range', () => {
+            it('gives an unscoped move (drawn, imported or an MPE master’s) to a note on any channel, at the move’s own range', () => {
                 const { atStart, changes } = projectNoteExpressionCurves({
                     note: { pressure: 10, slide: 64, channel: 5 },
-                    channelBend: [move(0.5, 1_000, 48, 0, true), move(2, 2_000, 48, 0, true)],
+                    channelBend: [move(0.5, 1_000, 48, 0), move(2, 2_000, 48, 0)],
                     startBeat: 1,
                     releaseFrame: frameAtBeat(3),
                     frameAtBeat,
@@ -416,10 +416,25 @@ describe('projectNoteExpressionCurves', () => {
                 expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[2, 2_000]]);
             });
 
-            it('lets a note with no stored channel hear the moves of every channel', () => {
+            it('finds the bend in force among many moves of other channels', () => {
+                const others = Array.from({ length: 5_000 }, (_, index) =>
+                    move(0.5 + index / 10_000, index, 2, 1 + (index % 3), true)
+                );
+                const { atStart } = projectNoteExpressionCurves({
+                    note: { ...channelTwoNote, channel: 9 },
+                    channelBend: [move(0.1, 77, 2, 9, true), ...others],
+                    startBeat: 2,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart?.pitchBend).toBe(77);
+            });
+
+            it('lets a note with no stored channel hear the moves of every channel, scoped or not', () => {
                 const { atStart, changes } = projectNoteExpressionCurves({
                     note: plainNote,
-                    channelBend: [move(0.5, 300, 2, 3), move(1, 500, 2, 0), move(1.5, 700, 2, 1)],
+                    channelBend: [move(0.5, 300, 2, 3, true), move(1, 500, 2, 0, true), move(1.5, 700, 2, 1)],
                     startBeat: 0.75,
                     releaseFrame: frameAtBeat(3),
                     frameAtBeat,

@@ -519,7 +519,7 @@ function isMidiPitchBend(value: unknown): boolean {
     return (
         isRecord(value) &&
         hasType({ record: value, keys: ['beat', 'value', 'channel'], type: 'number' }) &&
-        (value.zoneMaster === undefined || typeof value.zoneMaster === 'boolean')
+        (value.channelScoped === undefined || typeof value.channelScoped === 'boolean')
     );
 }
 

@@ -723,7 +723,7 @@ describe('renderTrackSubgraphOffline', () => {
                     value: 4_096,
                     rangeSemitones: 12,
                     channel: 0,
-                    zoneWide: false,
+                    channelScoped: false,
                 },
             ],
         });
