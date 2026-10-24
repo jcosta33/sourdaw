@@ -28,6 +28,7 @@ const GC_CHILD_MARKER = 'SOURDAW_EXPORT_STREAMING_GC_CHILD';
 const GC_CHILD_DEADLINE_MS = 150_000;
 const GC_CHILD_OUTPUT_LIMIT = 1024 * 1024;
 const GC_CHILD_OUTPUT_TAIL_LIMIT = 8 * 1024;
+const GC_ATTRIBUTION_LINE_LIMIT = 4096;
 const GC_CASE_TIMEOUT_MS =
     process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function' ? 120_000 : 180_000;
 
@@ -999,12 +1000,15 @@ describe('connected stem export output ownership', () => {
                         eightKiBStacks: topBufferBuckets(sample.byEightKiBStack, 8),
                     };
                     const line = `GC_ATTRIBUTION ${JSON.stringify(payload)}`;
-                    if (Buffer.byteLength(line, 'utf8') <= 8191) {
+                    if (Buffer.byteLength(line, 'utf8') < GC_ATTRIBUTION_LINE_LIMIT) {
                         process.stdout.write(`${line}\n`);
                         return;
                     }
+                    const eightKiBStacks = topBufferBuckets(sample.byEightKiBStack, 2).map(
+                        ([stack, bucket]) => [stack.slice(0, 160), bucket] as const
+                    );
                     process.stdout.write(
-                        `GC_ATTRIBUTION ${JSON.stringify({ phase, sample: samples, live: sample.live, bySize: topBufferBuckets(sample.bySize, 8), byOrigin: topBufferBuckets(sample.byOrigin, 8), truncated: true })}\n`
+                        `GC_ATTRIBUTION ${JSON.stringify({ phase, sample: samples, live: sample.live, bySize: topBufferBuckets(sample.bySize, 6), byOrigin: topBufferBuckets(sample.byOrigin, 6), byGeneration: topBufferBuckets(sample.byGeneration, 4), eightKiBStacks, truncated: true })}\n`
                     );
                 } finally {
                     collecting = wasCollecting;
