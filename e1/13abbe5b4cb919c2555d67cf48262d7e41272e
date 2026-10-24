@@ -1,0 +1,22 @@
+src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx
+  s_59e31a5c6f3e31::t_ffe1eebe0b5a78 17,30,137-141,146,148
+  s_59e31a5c6f3e31::t_98994fffcdb4e3 142-145
+src/modules/Arrangement/presentations/views/__tests__/MiniMasterSpectrum.spec.tsx
+  s_59e31a5c6f3e31::t_423f14878f0db0 362-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e113abbe5b4cb919c2555d67cf48262d7e41272e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
