@@ -144,7 +144,30 @@ export type LiveAutomationWriterTarget = {
  * arm, because the seam arrives on an animation frame and re-reading the stores
  * there would put a projection on the tick that has to send writes.
  */
+type AutomationSpan = Readonly<{ startSeconds: number; endSeconds: number; clipsAtEnd: boolean }>;
+type StripValues = Readonly<{ multiplier: number; gain: number; muted: boolean; soloGated: boolean }>;
+type InputProjection = Readonly<{
+    revision: number;
+    reference: LiveAutomationWriterTarget[];
+    loop: LiveAutomationWriterTarget[] | null;
+    strips: ReadonlyMap<string, StripValues>;
+}>;
+
 export type LiveAutomationWriterPass = {
+    /** Disposable source observations and accepted canonical projections belong to this pass alone. */
+    inputs: {
+        revision: number;
+        acceptedRevision: number;
+        referenceSpan: AutomationSpan;
+        loopSpan: AutomationSpan | null;
+        reference: LiveAutomationWriterTarget[];
+        strips: ReadonlyMap<string, StripValues>;
+        readTargets: (span: AutomationSpan) => LiveAutomationWriterTarget[];
+        readStrips: () => ReadonlyMap<string, StripValues>;
+        pending: InputProjection | null;
+        inheritedHolds: readonly AudioGraphParameterTarget[];
+        observers: (() => void)[];
+    };
     /**
      * The strips the session's topology actually built.
      *

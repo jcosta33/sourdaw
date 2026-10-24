@@ -92,12 +92,14 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { NATIVE_ADDON_FILE } from '../../../../../../electron/native';
 import {
     type AudioGraphApplyResult,
+    type AudioGraphCommand,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
     type AudioGraphWriteParameterCommand,
 } from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import { serializeAudioGraphCommandBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommandBatch';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { armNativeLiveAutomationWriter } from '../../livePlayback/armNativeLiveAutomationWriter';
 import { disarmNativeLiveAutomationWriter } from '../../livePlayback/disarmNativeLiveAutomationWriter';
@@ -185,7 +187,7 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
     return {
         ...actual,
-        automationStore: { value: { lanes: mocks.lanes } },
+        automationStore: { value: { lanes: mocks.lanes }, subscribe: actual.automationStore.subscribe },
     };
 });
 
@@ -763,6 +765,89 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         () => {
             expect(nativeAddonPresent).toBe(false);
         }
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'renders canceled device A identically to its replacement reference while VCA and B remain active',
+        async () => {
+            const host = requireNativeHost();
+            const material = Float32Array.from({ length: 16_384 }, (_, index) => 0.2 * Math.sin(index * 0.07));
+            await host.registerTimelineSample('hold-vca-source', SAMPLE_RATE, 1, NodeBuffer.from(material.buffer));
+            const base: AudioGraphCommand[] = [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 'hold-track',
+                    name: 'Hold',
+                    state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 0 },
+                    devices: [
+                        { id: 'hold-device', name: 'Knead', type: 'knead', bypassed: false, parameterValues: {} },
+                    ],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'schedule-clip',
+                    playback: {
+                        trackId: 'hold-track',
+                        source: { sourceId: 'hold-vca-source' },
+                        startTime: 0,
+                        sourceOffsetSeconds: 0,
+                        durationSeconds: material.length / SAMPLE_RATE,
+                        playbackRate: 1,
+                        gain: 1,
+                        fade: { microFadeSeconds: 0 },
+                    },
+                },
+                { kind: 'set-strip-vca-multiplier', trackId: 'hold-track', multiplier: 0.5 },
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 'hold-track' },
+                    write: { shape: 'step', time: 0, value: 1 },
+                },
+            ];
+            const target = {
+                kind: 'device-parameter',
+                trackId: 'hold-track',
+                deviceId: 'hold-device',
+                parameterId: 'shift_semitones',
+            } as const;
+            const stale: AudioGraphCommand = {
+                kind: 'write-device-parameter',
+                target,
+                write: { shape: 'step', time: 0.04, value: 9 },
+            };
+            const replacement: AudioGraphCommand[] = [
+                { kind: 'write-device-parameter', target, write: { shape: 'step', time: 0.02, value: 0 } },
+                {
+                    kind: 'write-device-parameter',
+                    target: { ...target, parameterId: 'retune_speed_ms' },
+                    write: { shape: 'step', time: 0.05, value: 25 },
+                },
+            ];
+            const render = (commands: readonly AudioGraphCommand[]) =>
+                host.renderGraphOffline(
+                    serializeAudioGraphCommandBatch({ schemaVersion: 1, commands }),
+                    material.length,
+                    SAMPLE_RATE
+                );
+            const canceled = await render([
+                ...base,
+                stale,
+                { kind: 'write-device-parameter', target, write: { shape: 'hold', time: 0.02 } },
+                ...replacement,
+            ]);
+            const reference = await render([...base, ...replacement]);
+            const uncanceled = await render([...base, stale, ...replacement]);
+            expect(canceled).toEqual(reference);
+            expect(canceled).not.toEqual(uncanceled);
+            const bytes = new DataView(canceled.buffer, canceled.byteOffset, canceled.byteLength);
+            expect(
+                Array.from({ length: canceled.byteLength / 4 }, (_, index) => bytes.getFloat32(index * 4, true)).some(
+                    (value) => Math.abs(value) > 0.001
+                )
+            ).toBe(true);
+        },
+        30_000
     );
 
     it.runIf(nativeAddonPresent)(

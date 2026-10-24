@@ -75,6 +75,7 @@ function sessionCarries(input: {
 
 describe('the native engine playhead feed', () => {
     beforeEach(() => {
+        disarmNativeLiveAutomationWriter();
         stopNativeEnginePlayheadFeed();
         nativeEnginePlayheadFeed.inFlightEpoch = null;
         nativeLiveGraphSession.audibleCarrier = true;
@@ -93,6 +94,7 @@ describe('the native engine playhead feed', () => {
     });
 
     afterEach(() => {
+        disarmNativeLiveAutomationWriter();
         setAudioDeviceRuntimeSink({});
         sessionCarries({ audible: false, carried: [], chains: {} });
     });
