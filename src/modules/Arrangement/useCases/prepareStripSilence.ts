@@ -1,5 +1,6 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
@@ -374,12 +375,28 @@ export function prepareStripSilence({
         const endBeat =
             targetClip.startBeat + (regionEndBeats - playedWindow.audioOffsetBeats) / playedWindow.stretchRatio;
         const shift = startBeat - targetClip.startBeat;
+        // The segment's loop anchor follows its media basis (#4988), the same
+        // law `prepareClipSplit`'s `fragmentLoopOriginEntry` applies to the
+        // audio fragment: the offset advances by the stretched media delta
+        // `regionStartBeats - audioOffsetBeats` while the start advances by
+        // the raw timeline delta, so the carried anchor shifts by
+        // `timelineDelta - contentDelta` — zero at stretch 1 — and the region
+        // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the source's
+        // own at any ratio. Carried verbatim through the spread, a stretched
+        // strip displaces the derived region by
+        // `timelineDelta * (stretch - 1)` source beats and each segment cycles
+        // material the loop never covered. An unanchored source keeps the key
+        // absent.
         newClips.push({
             ...targetClip,
             id: newClipId,
             startBeat,
             endBeat,
             audioOffsetBeats: regionStartBeats,
+            ...shiftLoopOriginEntry(
+                targetClip,
+                startBeat - targetClip.startBeat - (regionStartBeats - playedWindow.audioOffsetBeats)
+            ),
         });
         newClipSatellites.push({
             clipId: newClipId,

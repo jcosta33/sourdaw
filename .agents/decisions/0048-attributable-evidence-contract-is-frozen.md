@@ -2,7 +2,7 @@
 type: adr
 id: 0048
 title: The attributable review-evidence contract is frozen
-status: accepted
+status: partially superseded by 0054 (the dossier-input-v1 and stances.json schemas only)
 date: 2026-09-21
 owner: The Sourdaw team
 sources:

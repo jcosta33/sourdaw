@@ -22,6 +22,62 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-24 — supersession bypassed its trusted process-tool launcher (introduced by PR #5639)
+
+PR #5639 added a process-fenced supersession owner without routing its native package command
+through the trusted write bootstrap. Its injected-fence lock tests passed while the real command
+had no trusted `ps` pin and refused before PR I/O. Strongest-tier review was present; native CLI
+and platform-tool admission was the missed stance.
+
+Require the command registry, static source closure, risk-classification union and fenced-command
+set to cover the actual package route. Drive its default process-fence consumer with a launcher-
+resolved POSIX `ps`; verify Windows PowerShell selection independently. Inherited forged pins
+must not survive snapshot isolation, and a missing platform tool must refuse rather than fall
+back to ambient execution. A direct-script route and removal from the fenced set must each break
+the real admission probe before any remote port call.
+
+### 2026-10-24 — Linux cleanup proof went stale across process arrival, exit settlement, and output attribution (introduced by PR #5274, retained by PR #5443)
+
+PR #5274 introduced two Linux whole-account observations, terminal file release only after an
+ENOENT inspection, and immediate emission of the first unavailable-proof diagnostic. Its final
+review did probe one unrelated newborn under `unrelated-process-churn-prevents-safe-reclamation`,
+but not successive arrivals beyond that replacement. The retained review records contain no
+EACCES-during-exit probe; the exact blind prompt and tier for that gap are unestablished. PR #5443
+retained eager diagnostic output while adding final warning/leak classification. Its review
+measured those outcomes and explicitly noted that a first-attempt diagnostic remained, but did not
+require byte-exact parseable child output after startup recovery or a superseding release proof;
+the exact blind prompt for that output path is unestablished.
+
+Probe: run `bounds complete Linux replacement proof` with one new same-UID PID in each fresh
+catalog; require reclamation when arrivals settle and bounded retention when they do not. Run
+`counts a denied same-UID process as released only once it is gone or a zombie` with an EACCES FD
+list progressing through live, reaped, and multithreaded-to-single-thread-zombie states; persistent
+live and cwd denials stay unknown. Run `never proves Linux release from an observation that waited
+on an exit` and require a new complete process observation after any wait, including retention when
+a previously inspected process becomes a borrower. Run `keeps storage proof evidence out of the
+child output unless it explains retention`; startup, superseded, and successful proofs leave
+byte-exact parseable child output, while a retained run emits only its own final obstruction.
+
+### 2026-10-21 — a capped catalog count could not converge on a busy Mac (introduced by PR #5274, retained by PR #5331)
+
+PR #5274 allowed two Darwin `lsof` observations and PR #5331 three, within one five-second
+deadline. `lsof` intermittently omits live same-UID processes, newborn or already listed, so under
+real load every allowed catalog could miss one: guarded runs whose own work succeeded ended
+`FAILED (leak)` and stopped their lanes (issue #5337). Both reviews accepted a fixed catalog count
+as the conservative bound; no stance measured availability under natural process churn. This
+supersedes the three-observation limit in the 2026-10-12 Darwin lesson below.
+
+Probe: omit a listed live same-UID process from one whole catalog and require reclamation from a
+fresh one; omit it from every catalog and require retention naming it at the deadline; alternate
+the omission of two processes and require retention, never pooled coverage. For a missed holder
+that forks into storage and exits before its liveness check, state sample, or scoped read, require
+a fresh whole observation that finds the heir; one that forks after the closing process list and
+stays an unreaped zombie must still reach the closing parent listing. Require a missed process gone
+before the closing list to cost no fresh observation. Require the closing parent listing to catch a
+heir handed storage by a live missed holder, including one reparented to launchd, and to ignore an
+unrelated newcomer and another account's launchd children. Measure convergence with repeated
+guarded real specs beside the base guard.
+
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 
 PR #5345 excused an uninspectable same-UID process only when it predated the run's live

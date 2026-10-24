@@ -13,6 +13,7 @@ import { getMidiInputTrackOwnerId } from './getMidiInputTrackOwnerId';
 import { handleWebMidiMessage } from './handleWebMidiMessage';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { setMidiInputTrack } from './setMidiInputTrack';
+import { subscribeToRecordedControllerTake } from './subscribeToRecordedControllerTake';
 import { webMidiSubscriptionState } from './webMidiSubscriptionState';
 
 function subscribeToTrackSelection(): void {
@@ -104,6 +105,7 @@ function subscribeToYeastNotesOff(): void {
 export function initWebMidi(): ReturnType<typeof initializeWebMidi> {
     subscribeToTrackSelection();
     subscribeToYeastNotesOff();
+    subscribeToRecordedControllerTake();
     return initializeWebMidi({
         onMidiMessage: (event) => {
             void handleWebMidiMessage(event);

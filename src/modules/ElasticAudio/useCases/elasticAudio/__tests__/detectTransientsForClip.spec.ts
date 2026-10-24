@@ -179,4 +179,57 @@ describe('detectTransientsForClip', () => {
         expect(after.markers.some((m) => m.id === 'auto1')).toBe(false);
         expect(after.markers.some((m) => m.origin === 'transient-auto')).toBe(true);
     });
+
+    it('keeps locked automatic, user, grid and legacy rows intact with exact replacement counts', () => {
+        const samples = new Float32Array(SAMPLE_RATE);
+        mocks.bufferCacheGet.mockReturnValue({
+            length: samples.length,
+            numberOfChannels: 1,
+            sampleRate: SAMPLE_RATE,
+            getChannelData: () => samples,
+        });
+        mocks.trackStoreValue = {
+            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'b1' }] }],
+        };
+        const preserved = [
+            {
+                id: 'locked-auto',
+                originalBeat: 0.8,
+                warpedBeat: 1.1,
+                origin: 'transient-auto',
+                locked: true,
+                confidence: 0.73,
+            },
+            { id: 'user', originalBeat: 1.3, warpedBeat: 1.5, origin: 'user' },
+            { id: 'grid', originalBeat: 0.5, warpedBeat: 0.4, origin: 'grid-snap', locked: false },
+            { id: 'legacy', originalBeat: 0.1, warpedBeat: 0.2 },
+        ];
+        const otherState = {
+            enabled: true,
+            markers: [{ id: 'other-auto', originalBeat: 2, warpedBeat: 2.5, origin: 'transient-auto' }],
+            stretchMode: 'repitch',
+            originalTempo: 90,
+        };
+        mocks.warpStates.set('other-clip', otherState);
+        mocks.warpStates.set('c1', {
+            enabled: true,
+            markers: [
+                ...preserved,
+                { id: 'unlocked-auto', originalBeat: 0.3, warpedBeat: 0.6, origin: 'transient-auto', locked: false },
+            ],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+
+        expect(detectTransientsForClip('c1', 0.5)).toEqual({ ok: true, added: 0, kept: 4, removed: 1 });
+        expect(mocks.warpStates.get('c1')).toEqual({
+            enabled: true,
+            markers: [...preserved].sort((a, b) => a.originalBeat - b.originalBeat),
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        expect(mocks.warpStates.get('other-clip')).toEqual(otherState);
+        expect(mocks.addWarpMarkerCalls).toEqual([]);
+        expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
+    });
 });

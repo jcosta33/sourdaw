@@ -35,7 +35,8 @@ const mocks = vi.hoisted(() => ({
     verifyAudioBufferReferences: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     stopTrackInputMonitoring: vi.fn(),
 
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
@@ -91,6 +92,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(),
     captureProjectRevision: vi.fn(),
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
     DOC_BRANCHES: '__branches__',
@@ -116,7 +118,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     waitForCrdtDocumentTransition: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     reconcileSessionUndoForProject: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     executeAppActionBatch: vi.fn(),
@@ -127,7 +130,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     appendMidiNotes: vi.fn(),
     arpeggiate: vi.fn(),
     canPrepareMidiClipGlueState: vi.fn(),

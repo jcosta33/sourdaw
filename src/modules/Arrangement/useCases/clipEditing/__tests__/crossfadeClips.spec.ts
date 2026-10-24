@@ -16,6 +16,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip, type Track } from '../../../models/Track';
 import { crossfadeClips } from '../crossfadeClips';
+import { restoreCrossfadeClips } from '../restoreCrossfadeClips';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as mapAllTracksRepo from '../../../repositories/track/mapAllTracks';
@@ -403,5 +404,163 @@ describe('crossfadeClips', () => {
         const clipB = result.clips.find((context) => context.id === 'b');
         expect(clipB).toMatchObject({ startBeat: 3.5, fadeInBeats: 1.0, audioOffsetBeats: 1.5 });
         expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 1.0 });
+    });
+
+    it('shifts a looped stretched clip B anchor so the crossfade keeps the loop region', () => {
+        // The finding's figures: clipA [0,8), clipB [8,16) looped at 8 with
+        // offset 4 — region [4,8), advance 0 — and ratio 2. A 1-beat
+        // crossfade retreats the start by the raw −0.5 and the offset by the
+        // stretched −1: carried unshifted, the anchor 8 derives advance −0.5
+        // and the region reads 3.5 at entry phase 3.5, displaced by
+        // −0.5 × (2 − 1) source beats. The anchor therefore shifts by
+        // clipBDelta − contentDelta = +0.5 to 8.5: advance −1 recovers the
+        // region 3 − (−1) = 4, and the head's entry phase −1 mod 4 = 3 is the
+        // region tail the pre-roll plays cyclically before the seam — at the
+        // overlap beat 8 the read is 3 + 0.5 × 2 = 4, the source's own head
+        // entry, unbroken under the fade.
+        const clips = [
+            makeClip('a', 0, 8),
+            makeClip('b', 8, 16, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2.0,
+                audioOffsetBeats: 4,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        if (!clipB) {
+            throw new Error('expected clip B in the mapper result');
+        }
+        expect(clipB.startBeat).toBe(7.5);
+        expect(clipB.audioOffsetBeats).toBe(3);
+        expect(clipB.loopOriginBeat).toBe(8.5);
+        const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
+        expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
+        // The seam continuity: at the old boundary beat 8 the stretched read
+        // is the source's own entry into the region.
+        expect((clipB.audioOffsetBeats ?? 0) + (8 - clipB.startBeat) * 2.0).toBe(4);
+    });
+
+    it('keeps an unstretched looped clip B anchor and region exactly', () => {
+        // Stretch off ignores the dormant ratio: contentDelta equals
+        // clipBDelta, the anchor shift is zero, and the carried anchor keeps
+        // the advance at −0.5 so the region stays the source's own.
+        const clips = [
+            makeClip('a', 0, 8),
+            makeClip('b', 8, 16, {
+                audioOffsetBeats: 4,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        if (!clipB) {
+            throw new Error('expected clip B in the mapper result');
+        }
+        expect(clipB.startBeat).toBe(7.5);
+        expect(clipB.audioOffsetBeats).toBe(3.5);
+        expect(clipB.loopOriginBeat).toBe(8);
+        const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
+        expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
+    });
+
+    it('leaves a looped MIDI clip B anchor untouched as its offset retreats by the raw delta', () => {
+        // The MIDI offset retreats by the raw clipBDelta, so the carried
+        // anchor derives the same advance as before the crossfade: shifting
+        // it would slide the region. The anchor rides unchanged.
+        const clips = [
+            makeClip('a', 0, 8, { type: 'midi' }),
+            makeClip('b', 8, 16, {
+                type: 'midi',
+                midiOffsetBeats: 4,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 7.5, midiOffsetBeats: 3.5, loopOriginBeat: 8 });
+    });
+});
+
+describe('restoreCrossfadeClips — the undo leg restores the captured anchor (#5198)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+    });
+
+    function postCrossfadeClips(): Clip[] {
+        // What the forward leg left: start 7.5, offset 3, anchor shifted to
+        // 8.5 (advance -0.5, region still 4).
+        return [
+            makeClip('a', 0, 8.5, { fadeOutBeats: 1 }),
+            makeClip('b', 7.5, 16, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2.0,
+                audioOffsetBeats: 3,
+                fadeInBeats: 1,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8.5,
+            }),
+        ];
+    }
+
+    it('round-trips the anchor and region of a stretched crossfade to the pre-crossfade values', () => {
+        const replacement = {
+            clipAEndBeat: 8,
+            clipAFadeOutBeats: 0,
+            clipBStartBeat: 8,
+            clipBFadeInBeats: 0,
+            clipBAudioOffsetBeats: 4,
+            clipBLoopOriginBeat: 8,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(postCrossfadeClips())], selectedTrackId: 't1' });
+
+        expect(restoreCrossfadeClips({ clipAId: 'a', clipBId: 'b', replacement })).toBe(true);
+
+        const result = capturedMapper()(makeTrack(postCrossfadeClips()));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        if (!clipB) {
+            throw new Error('expected clip B in the mapper result');
+        }
+        expect(clipB).toMatchObject({ startBeat: 8, audioOffsetBeats: 4, loopOriginBeat: 8 });
+        const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
+        expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
+    });
+
+    it('decodes a legacy replacement without the anchor and leaves the live anchor untouched', () => {
+        const replacement = {
+            clipAEndBeat: 8,
+            clipAFadeOutBeats: 0,
+            clipBStartBeat: 8,
+            clipBFadeInBeats: 0,
+            clipBAudioOffsetBeats: 4,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(postCrossfadeClips())], selectedTrackId: 't1' });
+
+        expect(restoreCrossfadeClips({ clipAId: 'a', clipBId: 'b', replacement })).toBe(true);
+
+        const result = capturedMapper()(makeTrack(postCrossfadeClips()));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 8, audioOffsetBeats: 4, loopOriginBeat: 8.5 });
     });
 });
