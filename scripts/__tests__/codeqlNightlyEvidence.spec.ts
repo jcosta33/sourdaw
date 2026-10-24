@@ -109,6 +109,7 @@ describe('trusted nightly evidence consumer', () => {
         const workflow = parse(
             readFileSync(join(process.cwd(), '.github/workflows/nightly-evidence-report.yml'), 'utf8')
         );
+        expect(workflow.on).toEqual({ workflow_run: { workflows: ['Nightly'], types: ['completed'] } });
         expect(workflow.permissions).toEqual({});
         expect(workflow.jobs.validate.permissions).toEqual({
             actions: 'read',
@@ -116,13 +117,17 @@ describe('trusted nightly evidence consumer', () => {
             'security-events': 'read',
         });
         expect(workflow.jobs.publish.permissions).toEqual({ contents: 'read', issues: 'write' });
-        expect(workflow.jobs.publish.if).toContain("needs.validate.outputs.supported == 'true'");
+        expect(workflow.jobs.publish.needs).toBe('validate');
+        expect(workflow.jobs.publish.if).toBe(
+            "${{ needs.validate.outputs.supported == 'true' && needs.validate.outputs.failed_legs != '' }}"
+        );
         expect(workflow.jobs.validate.steps.at(-1).env).toEqual({ GH_TOKEN: '${{ github.token }}' });
         for (const job of Object.values(workflow.jobs) as Array<{
-            steps: Array<{ uses?: string; with?: { ref?: string } }>;
+            steps: Array<{ uses?: string; with?: { ref?: string; 'persist-credentials'?: boolean } }>;
         }>) {
             const checkout = job.steps.find((step) => step.uses?.startsWith('actions/checkout@'));
             expect(checkout?.with?.ref).toBe('${{ github.sha }}');
+            expect(checkout?.with?.['persist-credentials']).toBe(false);
         }
     });
 

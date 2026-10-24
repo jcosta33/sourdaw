@@ -37,6 +37,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
+    'nightly-evidence-report.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
     'semantic-review.yml',
@@ -118,6 +119,14 @@ const NIGHTLY_STATIC_SUITE_STEPS = [
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
+    'nightly-evidence-report.yml': {
+        validate: [
+            'Checkout trusted default-branch reporter',
+            'Set up Node',
+            'Validate independent run, artifact, jobs and CodeQL analysis',
+        ],
+        publish: ['Checkout trusted default-branch repository context', 'Open or update nightly failure issue'],
+    },
     'cargo-dependency-seed.yml': {
         rust: [
             'Checkout',

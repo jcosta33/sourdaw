@@ -3,6 +3,7 @@
     "cargo-dependency-seed.yml",
     "health-gates.yml",
     "heavy-gates.yml",
+    "nightly-evidence-report.yml",
     "nightly.yml",
     "pr-checks.yml",
     "quantum-measurements.yml",
@@ -2397,6 +2398,96 @@
               "RESULTS": "${{ toJSON(needs) }}"
             },
             "run": "set -euo pipefail\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[] | select(.value.result == \"failure\") | .key' | paste -sd ', ' -)\ntitle=\"ci(nightly): health gates red on main\"\nbody=$(printf 'The nightly run against `main` failed.\\n\\nFailing jobs: %s\\n\\n%s\\n' \\\n  \"$failed\" \"$RUN_URL\")\nexisting=$(gh issue list --repo \"$GITHUB_REPOSITORY\" --state open --search \"\\\"$title\\\" in:title\" \\\n  --json number --jq '.[0].number // empty')\nif [ -n \"$existing\" ]; then\n  gh issue comment \"$existing\" --repo \"$GITHUB_REPOSITORY\" --body \"$body\"\nelse\n  gh issue create --repo \"$GITHUB_REPOSITORY\" --title \"$title\" --body \"$body\" --label bug --label status:ready --label priority:P1\nfi\n"
+          }
+        ]
+      }
+    }
+  },
+  "nightly-evidence-report.yml": {
+    "name": "Nightly evidence report",
+    "on": {
+      "workflow_run": {
+        "workflows": [
+          "Nightly"
+        ],
+        "types": [
+          "completed"
+        ]
+      }
+    },
+    "permissions": {},
+    "jobs": {
+      "validate": {
+        "name": "Validate nightly evidence",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "permissions": {
+          "actions": "read",
+          "contents": "read",
+          "security-events": "read"
+        },
+        "outputs": {
+          "supported": "${{ steps.evidence.outputs.supported }}",
+          "run_id": "${{ steps.evidence.outputs.run_id }}",
+          "failed_legs": "${{ steps.evidence.outputs.failed_legs }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted default-branch reporter",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false,
+              "sparse-checkout": "scripts/codeqlNightlyEvidence.ts\nscripts/hostedWasmZip.ts\n",
+              "sparse-checkout-cone-mode": false
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Validate independent run, artifact, jobs and CodeQL analysis",
+            "id": "evidence",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}"
+            },
+            "run": "node scripts/codeqlNightlyEvidence.ts"
+          }
+        ]
+      },
+      "publish": {
+        "name": "Publish validated nightly failure",
+        "needs": "validate",
+        "if": "${{ needs.validate.outputs.supported == 'true' && needs.validate.outputs.failed_legs != '' }}",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "permissions": {
+          "contents": "read",
+          "issues": "write"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted default-branch repository context",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false,
+              "sparse-checkout": ".github",
+              "sparse-checkout-cone-mode": false
+            }
+          },
+          {
+            "name": "Open or update nightly failure issue",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}",
+              "RUN_ID": "${{ needs.validate.outputs.run_id }}",
+              "FAILED_LEGS": "${{ needs.validate.outputs.failed_legs }}"
+            },
+            "run": "set -euo pipefail\n[[ \"$RUN_ID\" =~ ^[1-9][0-9]*$ ]]\n[[ \"$FAILED_LEGS\" =~ ^[A-Za-z0-9\\ \\(\\)/.,-]+$ ]]\ntitle='ci(nightly): health gates red on main'\nbody=$(printf 'The validated scheduled run against `main` failed.\\n\\nFailing jobs: %s\\n\\nhttps://github.com/jcosta33/sourdaw/actions/runs/%s\\n' \"$FAILED_LEGS\" \"$RUN_ID\")\nexisting=$(gh issue list --repo jcosta33/sourdaw --state open --search '\"ci(nightly): health gates red on main\" in:title' --json number --jq '.[0].number // empty')\nif [ -n \"$existing\" ]; then\n  gh issue comment \"$existing\" --repo jcosta33/sourdaw --body \"$body\"\nelse\n  gh issue create --repo jcosta33/sourdaw --title \"$title\" --body \"$body\" --label bug --label status:ready --label priority:P1\nfi\n"
           }
         ]
       }

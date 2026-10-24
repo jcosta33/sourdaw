@@ -1169,6 +1169,7 @@ expect(
 );
 
 const workflowsByFile = {
+    'nightly-evidence-report.yml': parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/nightly-evidence-report.yml`, 'utf8')),
     'health-gates.yml': workflow,
     'pr-checks.yml': prChecks,
     'validation.yml': validationWorkflow,

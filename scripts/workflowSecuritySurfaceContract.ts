@@ -25,6 +25,10 @@ const CODEQL_PERMISSIONS = { contents: 'read', 'security-events': 'write', actio
 export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
     'health-gates.yml': { codeql: CODEQL_PERMISSIONS },
     'nightly.yml': { codeql: CODEQL_PERMISSIONS, 'nightly-report': { contents: 'read', issues: 'write' } },
+    'nightly-evidence-report.yml': {
+        validate: { actions: 'read', contents: 'read', 'security-events': 'read' },
+        publish: { contents: 'read', issues: 'write' },
+    },
     'semantic-review.yml': { coverage: { contents: 'read' } },
 };
 
@@ -34,6 +38,7 @@ export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
 // condition, or `secrets: inherit` into a reusable workflow — hands a credential
 // to code that never needed one, and on a pull-request trigger to the head's code.
 export const SECRET_REFERENCE_PINS: JobPins<readonly string[]> = {
+    'nightly-evidence-report.yml': { validate: ['GITHUB_TOKEN'], publish: ['GITHUB_TOKEN'] },
     'health-gates.yml': { admission: ['GITHUB_TOKEN'] },
     'nightly.yml': {
         'deploy-web': ['GITHUB_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
@@ -52,6 +57,10 @@ export const JOB_ENVIRONMENT_PINS: JobPins<string> = {
 // config, where every later step — including the head's own scripts — can read
 // it. Dropping the key restores the action's default, which persists it.
 export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
+    'nightly-evidence-report.yml': {
+        validate: ['Checkout trusted default-branch reporter'],
+        publish: ['Checkout trusted default-branch repository context'],
+    },
     'health-gates.yml': { admission: ['Checkout trusted admission'], scope: ['Checkout'] },
     'nightly.yml': {
         unit: ['Checkout'],

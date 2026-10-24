@@ -475,6 +475,7 @@ const { parsed: prChecksWorkflow } = loadWorkflow('pr-checks.yml');
 const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
+const { parsed: nightlyEvidenceReporter } = loadWorkflow('nightly-evidence-report.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
 const { parsed: semanticReviewWorkflow } = loadWorkflow('semantic-review.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
@@ -1484,6 +1485,7 @@ type WorkflowSet = {
     cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
     nightly: UnknownRecord;
+    nightlyEvidenceReporter: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
     semanticReview: UnknownRecord;
@@ -1497,6 +1499,7 @@ function workflowSet(): WorkflowSet {
         cargoDependencySeed,
         heavy: heavyWorkflow,
         nightly,
+        nightlyEvidenceReporter,
         hostedQuantumMeasurement,
         hostedWasm,
         semanticReview: semanticReviewWorkflow,
@@ -1512,6 +1515,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
+        nightlyEvidenceReporter: asRecord(clone.nightlyEvidenceReporter, `${label} nightly evidence reporter`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
         semanticReview: asRecord(clone.semanticReview, `${label} semantic review`),
@@ -1543,6 +1547,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
+        ['nightly-evidence-report.yml', set.nightlyEvidenceReporter],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
         ['semantic-review.yml', set.semanticReview],
@@ -5019,6 +5024,53 @@ export -f sudo timeout sleep apt-get
         const secondGate = cloneWorkflows('second Gate in health gates');
         jobAt(secondGate.health, 'admission').name = 'Gate';
         expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
+    });
+
+    it('pins the trusted nightly evidence reporter before granting issue writes', () => {
+        expect(HEALTH_GATE_WORKFLOW_FILES).toContain('nightly-evidence-report.yml');
+        const surface = (set: WorkflowSet) => () =>
+            assertWorkflowSecuritySurface(Object.fromEntries(workflowFiles(set)));
+        expect(surface(workflowSet())).not.toThrow();
+
+        for (const job of ['validate', 'publish']) {
+            const widened = cloneWorkflows(`nightly evidence ${job} permissions`);
+            recordAt(jobAt(widened.nightlyEvidenceReporter, job), 'permissions').contents = 'write';
+            expect(surface(widened)).toThrow(
+                `nightly-evidence-report.yml job ${job} must keep exactly its pinned permissions`
+            );
+
+            const extraSecret = cloneWorkflows(`nightly evidence ${job} secret`);
+            jobAt(extraSecret.nightlyEvidenceReporter, job).env = { TOKEN: '${{ secrets.JEV_KEY }}' };
+            expect(surface(extraSecret)).toThrow(
+                `nightly-evidence-report.yml job ${job} must read exactly its pinned secrets: GITHUB_TOKEN`
+            );
+        }
+
+        for (const [job, step] of [
+            ['validate', 'Checkout trusted default-branch reporter'],
+            ['publish', 'Checkout trusted default-branch repository context'],
+        ] as const) {
+            const persisted = cloneWorkflows(`nightly evidence ${job} persisted token`);
+            delete recordAt(stepNamed(jobAt(persisted.nightlyEvidenceReporter, job), step), 'with')[
+                'persist-credentials'
+            ];
+            expect(surface(persisted)).toThrow(
+                `nightly-evidence-report.yml job ${job} step ${step} must check out with persist-credentials: false`
+            );
+        }
+
+        const bypassedValidation = cloneWorkflows('nightly evidence validation removed');
+        removeStepNamed(
+            jobAt(bypassedValidation.nightlyEvidenceReporter, 'validate'),
+            'Validate independent run, artifact, jobs and CodeQL analysis'
+        );
+        expect(() => assertStepInventory(bypassedValidation)).toThrow(
+            'nightly-evidence-report.yml job validate steps drifted from the pinned inventory'
+        );
+
+        const counterfeitGate = cloneWorkflows('nightly evidence Gate name');
+        jobAt(counterfeitGate.nightlyEvidenceReporter, 'publish').name = 'Gate';
+        expect(surface(counterfeitGate)).toThrow('nightly-evidence-report.yml job publish must not be named Gate');
     });
 
     it('refuses a workflows directory that drifts from the recorded file inventory', () => {
