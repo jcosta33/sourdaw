@@ -1,0 +1,24 @@
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_86945d2c8b9516 84,117-129,191-196,211,257-263,373
+  s_59e31a5c6f3e31::t_57b2e5fc5365d5 256
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.modulationSubscription.spec.tsx
+  s_59e31a5c6f3e31::t_599dfa800acf25 252-257,262,268
+  s_59e31a5c6f3e31::t_5acd1f471bf7f7 3,205-251,258-261,263-267,269-275
+  s_59e31a5c6f3e31::t_4ff10b93abee45 276-277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c58fd3f327fa1d98728ec752f46658198a4e7f1",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
