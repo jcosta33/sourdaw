@@ -10,17 +10,27 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
+async function selectEffectTier(
+    page: import('@playwright/test').Page,
+    tier: 'shape' | 'build' | 'route'
+): Promise<void> {
+    const detail = page.getByRole('group', { name: 'Effect control detail' });
+    const button = detail.getByRole('button', { name: tier, exact: true });
+    await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+}
+
 // The last uncovered interactive surfaces of the Crust panel, all inside
 // CrustControlZone's level sub-panels plus the metering strip's TP reset:
-//   L1  style tiles (patch.style)
-//   L2  algorithm pills (patch.algorithm)
-//   L3  saturation section (satEnabled / satAlgorithm / satDrive / satMix)
-//       + the L3 DELTA / A=B switches (the footer *chips* are covered by
+//   Play  style tiles (patch.style)
+//   Shape algorithm pills (patch.algorithm)
+//   Build saturation section (satEnabled / satAlgorithm / satDrive / satMix)
+//       + the Build DELTA / A=B switches (the footer *chips* are covered by
 //       crustUnityDeltaTestId.spec.ts; these role="switch" duplicates were not)
-//   L4  multi-band + stereo chips, SC HPF switch + knob, dither select and
+//   Route multi-band + stereo chips, SC HPF switch + knob, dither select and
 //       output bit-depth chips
 //   *   the metering strip's "Reset true peak indicator" button
-// (uiLevel L1/L2 chips are covered by crustLevelChipsTestId.spec.ts; L5 adds
+// (named detail tiers are covered by crustLevelChipsTestId.spec.ts; Lab adds
 // only a read-only statistics group.)
 //
 // Same verified interaction hazards as the sibling crust specs: Space is the
@@ -40,14 +50,11 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await page.getByRole('menuitem', { name: /^Crust$/ }).click();
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
-        // The uiLevel chip row (L1..L5) is always mounted once CrustPanel
-        // expands, independent of the currently selected level.
-        await expect(page.getByRole('button', { name: 'L1', exact: true })).toBeVisible();
+        const detail = inspector.getByRole('group', { name: 'Effect control detail' });
+        await expect(detail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
-    test('L1 style tiles — selecting PUNCHY flips aria-pressed', async ({ page }) => {
-        await page.getByRole('button', { name: 'L1', exact: true }).click();
-
+    test('Play style tiles — selecting PUNCHY flips aria-pressed', async ({ page }) => {
         // Default patch.style is 'transparent' (CrustPatch.ts).
         const transparent = page.getByRole('button', { name: /TRANSPARENT/ });
         const punchy = page.getByRole('button', { name: /PUNCHY/ });
@@ -60,7 +67,8 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(transparent).toHaveAttribute('aria-pressed', 'false');
     });
 
-    test('L2 algorithm pills — selecting Dynamic flips aria-pressed and the description', async ({ page }) => {
+    test('Shape algorithm pills — selecting Dynamic flips aria-pressed and the description', async ({ page }) => {
+        await selectEffectTier(page, 'shape');
         const transparent = page.getByRole('button', { name: 'Transparent', exact: true });
         const dynamic = page.getByRole('button', { name: 'Dynamic', exact: true });
 
@@ -75,8 +83,8 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(page.getByText('Enhances transients')).toBeVisible();
     });
 
-    test('L3 saturation — enable switch unblocks algorithm chips and updates the curve', async ({ page }) => {
-        await page.getByRole('button', { name: 'L3', exact: true }).click();
+    test('Build saturation — enable switch unblocks algorithm chips and updates the curve', async ({ page }) => {
+        await selectEffectTier(page, 'build');
 
         // Default satEnabled is false: the switch rests off and the sat
         // algorithm chips are natively disabled.
@@ -107,7 +115,7 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
             'Saturation transfer curve: tape'
         );
 
-        // The L3 DELTA switch (role="switch", distinct from the covered footer
+        // The Build DELTA switch (role="switch", distinct from the covered footer
         // chip) round-trips aria-checked.
         const deltaSwitch = page.getByRole('switch', { name: 'DELTA', exact: true });
         await expect(deltaSwitch).toHaveAttribute('aria-checked', 'false');
@@ -115,8 +123,8 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(deltaSwitch).toHaveAttribute('aria-checked', 'true');
     });
 
-    test('L3 saturation knobs — ArrowUp moves Drive and Mix aria-valuenow', async ({ page }) => {
-        await page.getByRole('button', { name: 'L3', exact: true }).click();
+    test('Build saturation knobs — ArrowUp moves Drive and Mix aria-valuenow', async ({ page }) => {
+        await selectEffectTier(page, 'build');
 
         const satSwitch = page.locator('#crust-sat-enabled');
         await satSwitch.dispatchEvent('click');
@@ -139,8 +147,8 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect.poll(async () => Number(await mixSlider.getAttribute('aria-valuenow'))).toBeGreaterThan(0);
     });
 
-    test('L4 route row — multiband, stereo, SC HPF, dither and bit depth', async ({ page }) => {
-        await page.getByRole('button', { name: 'L4', exact: true }).click();
+    test('Route controls — multiband, stereo, SC HPF, dither and bit depth', async ({ page }) => {
+        await selectEffectTier(page, 'route');
 
         // Multi-band: default 'wideband'.
         const wide = page.getByRole('button', { name: 'Wide', exact: true });
