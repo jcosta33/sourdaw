@@ -22,7 +22,8 @@ import { readLiveClipIds } from './readLiveClipIds';
  * rows adds no history entry.
  */
 export function endRecordedControllerTake(): Promise<void> {
-    const { buffers, openedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds } = recordedControllerTakeState;
+    const { buffers, openedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds, pitchBendSeeds } =
+        recordedControllerTakeState;
     const liveClipIds = readLiveClipIds();
     const pass: DetachedOverdubClip[] = [];
 
@@ -42,7 +43,7 @@ export function endRecordedControllerTake(): Promise<void> {
             pass.push({ clip, buffer });
         }
     }
-    for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
+    for (const seeds of [heldPedalSeeds, bendRangeSeeds, pitchBendSeeds]) {
         for (const clipId of [...seeds.keys()]) {
             if (!liveClipIds.has(clipId)) {
                 seeds.delete(clipId);

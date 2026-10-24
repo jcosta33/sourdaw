@@ -71,6 +71,13 @@ type RecordedControllerTakeState = {
      */
     bendRangeSeeds: Map<string, readonly MidiCC[]>;
     /**
+     * The pitch wheel each channel of the live input held off centre when a take began, owed to
+     * the clip that take opened on the input's track, as bend rows at the clip's beat 0. A note
+     * struck before the wheel next moves sounds under it live, and the take records a bend only
+     * when a message arrives.
+     */
+    pitchBendSeeds: Map<string, readonly MidiPitchBend[]>;
+    /**
      * The tail of the overdub passes landing in the store, one after another in the order they
      * ended. A pass plans its declarations against the rows the clip holds when its turn comes,
      * so an earlier pass that landed is in them and one that was refused is not. It never rejects.
@@ -85,5 +92,6 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     carriedOverClips: new Map(),
     heldPedalSeeds: new Map(),
     bendRangeSeeds: new Map(),
+    pitchBendSeeds: new Map(),
     overdubLanding: Promise.resolve(),
 };

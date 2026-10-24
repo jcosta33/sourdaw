@@ -5,6 +5,7 @@ import { recordedControllerTakeState } from '../../repositories/webMidi/recorded
 
 import { readBendRangeSeedRows } from './readBendRangeSeedRows';
 import { readHeldPedalRows } from './readHeldPedalRows';
+import { readHeldWheelRows } from './readHeldWheelRows';
 import { readLiveClipIds } from './readLiveClipIds';
 
 /** The clips of an earlier take that are still on the timeline and whose commit has not run yet. */
@@ -41,7 +42,9 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * messages move them, because a pedal pressed before the take is still down when
  * it begins and no message will say so. So is the pitch-bend range the input
  * declared, which the clip's own rows could not otherwise tell stored playback;
- * both are seeded whether or not the take records anything else. A take that records
+ * both are seeded whether or not the take records anything else. So is the pitch wheel held
+ * off centre, because a note struck before the wheel next moves sounds bent live and the
+ * take records a bend only when a message arrives. A take that records
  * into a clip an earlier take holds rows in (an existing clip, or a carried-over one, whose
  * buffer length now marks where the earlier take's rows end) has no seed there, so the
  * state the input held when the take first records into that clip is kept on its buffer
@@ -51,15 +54,22 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * the transport reports recording.
  */
 export function beginRecordedControllerTake(): void {
-    const { buffers, openedClipIds, committedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds } =
-        recordedControllerTakeState;
+    const {
+        buffers,
+        openedClipIds,
+        committedClipIds,
+        carriedOverClips,
+        heldPedalSeeds,
+        bendRangeSeeds,
+        pitchBendSeeds,
+    } = recordedControllerTakeState;
     const awaitingCommit = readClipsAwaitingCommit();
     for (const clipId of [...buffers.keys()]) {
         if (!awaitingCommit.has(clipId)) {
             buffers.delete(clipId);
         }
     }
-    for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
+    for (const seeds of [heldPedalSeeds, bendRangeSeeds, pitchBendSeeds]) {
         for (const clipId of [...seeds.keys()]) {
             if (!awaitingCommit.has(clipId)) {
                 seeds.delete(clipId);
@@ -83,14 +93,31 @@ export function beginRecordedControllerTake(): void {
 
     const trackId = getTargetTrackId();
     const seededClipId = trackId === null ? undefined : findOpenedClipOnTrack(trackId);
-    const pedalRows = readHeldPedalRows();
-    if (seededClipId !== undefined && pedalRows.length > 0) {
-        heldPedalSeeds.set(seededClipId, pedalRows);
+    if (seededClipId !== undefined) {
+        seedClipWithLiveInputState(seededClipId);
     }
-    // A clip carried over from an earlier take already holds its own declaration,
-    // with the ids its redo snapshot names; a second one would replace them.
+}
+
+/**
+ * Owe `clipId` the live input's pedals, declared bend range and held wheel. A clip carried
+ * over from an earlier take already holds its own declaration, with the ids its redo snapshot
+ * names, and its own wheel: a second one would replace them, and a loop pass is no new take.
+ */
+function seedClipWithLiveInputState(clipId: string): void {
+    const { carriedOverClips, heldPedalSeeds, bendRangeSeeds, pitchBendSeeds } = recordedControllerTakeState;
+    const pedalRows = readHeldPedalRows();
+    if (pedalRows.length > 0) {
+        heldPedalSeeds.set(clipId, pedalRows);
+    }
+    if (carriedOverClips.has(clipId)) {
+        return;
+    }
     const bendRangeRows = readBendRangeSeedRows();
-    if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClips.has(seededClipId)) {
-        bendRangeSeeds.set(seededClipId, bendRangeRows);
+    if (bendRangeRows.length > 0) {
+        bendRangeSeeds.set(clipId, bendRangeRows);
+    }
+    const wheelRows = readHeldWheelRows();
+    if (wheelRows.length > 0) {
+        pitchBendSeeds.set(clipId, wheelRows);
     }
 }
