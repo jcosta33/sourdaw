@@ -1,0 +1,35 @@
+src/modules/Arrangement/handlers/track/__tests__/freezeTrackFailure.integration.spec.tsx
+  s_29d8df116c5b92::t_d09c2386d4dd6f 4,15,137,141,260-280,326-378,409,411-412,425-443,536,555-558,560-582
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_29d8df116c5b92::t_e780fcd6b7504a 3,466-503
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_29d8df116c5b92::t_db0fd4a32b4921 1,275-288,291-297,299-315
+src/modules/Command/useCases/__tests__/executeAppActionAsyncTransaction.spec.ts
+  s_29d8df116c5b92::t_291c72149a221f 12,144-316
+src/modules/Command/useCases/executeAppAction.ts
+  s_59e31a5c6f3e31::t_83d40af39e1412 42-48,352-359,407,411,433-442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dea744f44fe9af2e4c6a5e4009112af0169c8c99",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
