@@ -142,8 +142,8 @@ transcript with exit zero; widening admission to 101 or zero must fail that case
 The immutable event base can precede both synthetic integration parents when main advances. Drive
 the native job's configured checkout depth through a tiny real Git fetch topology; require the
 event base, candidate head and integration commit to resolve. A literal depth assertion alone does
-not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
-and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+not prove object availability. Require PR CI typecheck evidence to cover the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type. Preserve recognition of coded ESRCH from a foreign Error realm.
 
 Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
 termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
@@ -719,11 +719,11 @@ Blind spot: the stance proves specs discriminate by running them; vitest's pass 
 the strict `tsc` contracts the pipeline enforces, so a PR adding TypeScript files can carry type
 errors no spec-level probe surfaces.
 
-Probe that would have caught it: when a diff adds or edits TypeScript files, compile a narrow `tsc`
-program inside the review worktree defined in the Reviewer isolation section (extend the lane
-tsconfig with strict options, include the changed files plus the ambient types the import closure
-needs) and require exit 0; reproduce the failure pre-fix when validating a posted type finding. (PR
-#3136's dispatch already carried this probe and produced clean heads.)
+Probe that would have caught it: when a diff adds or edits TypeScript files, require the pull
+request's CI TypeScript typecheck to cover the changed files and inspect its result; a focused
+Vitest pass is not type evidence. Reproduce a posted type finding by identifying the CI diagnostic
+and the source change that removes it. PR #3136 historically used an isolated compiler probe; the
+current evidence path is the pull request's CI typecheck.
 
 ### 2026-08-30 — a new device type string that is a classified third-party mark (escaped via PR #3127, caught by the release-inventory job)
 
