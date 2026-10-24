@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
         runtimeRevision: 8,
     })),
     getRuntimeGraphRevision: vi.fn(() => 7),
+    getTrackStrip: vi.fn<() => unknown>(() => undefined),
     matchesRuntimeDeviceChainTopology: vi.fn(() => false),
     captureProjectRevision: vi.fn(() => 'project-1'),
     /**
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
     getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+    getTrackStrip: mocks.getTrackStrip,
     matchesRuntimeDeviceChainTopology: mocks.matchesRuntimeDeviceChainTopology,
     createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
     mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
@@ -64,6 +66,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
             runtimeRevision: 8,
         });
         mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(false);
+        mocks.getTrackStrip.mockReturnValue(undefined);
         mocks.mirrorDeviceChainDelta.mockResolvedValue({ outcome: 'skipped', reason: 'no session' });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
@@ -452,5 +455,148 @@ describe('applyDeviceChainRuntimeDelta', () => {
 
         expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('unreadable native answer'));
+    });
+    it.each(['builtin-synth', 'drum-kit'])(
+        'compiles %s plus node-backed add/remove/reorder without changing native snapshots',
+        (type) => {
+            const base = seedTrack();
+            const instrument = { id: 'instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} };
+            const eq = base.devices[0]!;
+            const crust = {
+                id: 'crust',
+                type: 'crust',
+                name: 'Crust',
+                bypassed: false,
+                parameterValues: { ceiling: -1 },
+            };
+            const before = { ...base, devices: [instrument, eq] };
+            const after = { ...base, devices: [instrument, eq, crust] };
+            trackStore.set({ tracks: [after], selectedTrackId: after.id });
+            applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' });
+            expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    before: expect.objectContaining({
+                        devices: [{ id: eq.id, type: eq.type, parameterIds: ['frequency'] }],
+                    }),
+                    after: expect.objectContaining({
+                        devices: [
+                            { id: eq.id, type: eq.type, parameterIds: ['frequency'] },
+                            { id: crust.id, type: 'crust', parameterIds: ['ceiling'] },
+                        ],
+                    }),
+                })
+            );
+            expect(mocks.mirrorDeviceChainDelta).toHaveBeenLastCalledWith({ before, after });
+            const reordered = { ...after, devices: [crust, instrument, eq] };
+            trackStore.set({ tracks: [reordered], selectedTrackId: reordered.id });
+            applyDeviceChainRuntimeDelta({ before: after, after: reordered, operation: 'reorder-device' });
+            expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    operation: 'reorder-device',
+                    after: expect.objectContaining({
+                        devices: [expect.objectContaining({ id: crust.id }), expect.objectContaining({ id: eq.id })],
+                    }),
+                })
+            );
+            trackStore.set({ tracks: [before], selectedTrackId: before.id });
+            applyDeviceChainRuntimeDelta({ before: after, after: before, operation: 'remove-device' });
+            expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    operation: 'remove-device',
+                    after: expect.objectContaining({ devices: [expect.objectContaining({ id: eq.id })] }),
+                })
+            );
+        }
+    );
+
+    it.each([false, true])(
+        'discharges an instrument-only change with live strip %s and mirrors full native truth',
+        (warm) => {
+            const before = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
+            const drum = { id: 'drum', type: 'drum-kit', name: 'Drum', bypassed: false, parameterValues: { kit: 1 } };
+            const after = { ...before, devices: [...before.devices, drum] };
+            trackStore.set({ tracks: [after], selectedTrackId: after.id });
+            mocks.getTrackStrip.mockReturnValue(warm ? {} : undefined);
+            mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(warm);
+            expect(applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' })).toMatchObject({
+                acceptance: 'superseded',
+                application: 'discharged',
+            });
+            expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+            expect(mocks.mirrorDeviceChainDelta).toHaveBeenCalledWith({ before, after });
+        }
+    );
+
+    it('discharges a nodeless-only reorder beside a matching effect and still mirrors native order', () => {
+        const base = seedTrack();
+        const synth = { id: 'synth', type: 'builtin-synth', name: 'Synth', bypassed: false, parameterValues: {} };
+        const before = { ...base, devices: [synth, ...base.devices] };
+        const after = { ...base, devices: [...base.devices, synth] };
+        trackStore.set({ tracks: [after], selectedTrackId: after.id });
+        mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(true);
+        expect(applyDeviceChainRuntimeDelta({ before, after, operation: 'reorder-device' })).toMatchObject({
+            application: 'discharged',
+        });
+        expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+        expect(mocks.mirrorDeviceChainDelta).toHaveBeenCalledWith({ before, after });
+    });
+
+    it('does not discharge an instrument-only change when the live node chain differs', () => {
+        const before = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
+        const after = {
+            ...before,
+            devices: [
+                ...before.devices,
+                { id: 'drum', type: 'drum-kit', name: 'Drum', bypassed: false, parameterValues: {} },
+            ],
+        };
+        trackStore.set({ tracks: [after], selectedTrackId: after.id });
+        mocks.getTrackStrip.mockReturnValue({});
+        mocks.applyRuntimeGraphDelta.mockReturnValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Live chain mismatch',
+        });
+        expect(applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' })).toMatchObject({
+            acceptance: 'rejected',
+        });
+        expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+        expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
+    });
+
+    it('composes and discharges grouped final topology through the Web Audio projection while preserving native instruments', () => {
+        const before = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
+        const crust = { id: 'crust', type: 'crust', name: 'Crust', bypassed: false, parameterValues: { ceiling: -1 } };
+        const drum = { id: 'drum', type: 'drum-kit', name: 'Drum', bypassed: false, parameterValues: {} };
+        const intermediate = { ...before, devices: [...before.devices, crust] };
+        const finalTrack = { ...intermediate, devices: [...intermediate.devices, drum] };
+        trackStore.set({ tracks: [finalTrack], selectedTrackId: finalTrack.id });
+        const batchContext = {
+            actions: [
+                { type: 'addDevice' as const, payload: { trackId: before.id, deviceType: 'crust' } },
+                { type: 'addDevice' as const, payload: { trackId: before.id, deviceType: 'drum-kit' } },
+            ],
+            actionIndex: 0,
+        };
+        applyDeviceChainRuntimeDelta({ before, after: intermediate, operation: 'add-device', batchContext });
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                operation: 'replace-device-chain',
+                before: expect.objectContaining({ devices: [] }),
+                after: expect.objectContaining({
+                    devices: [{ id: 'crust', type: 'crust', parameterIds: ['ceiling'] }],
+                }),
+            })
+        );
+        expect(mocks.mirrorDeviceChainDelta).toHaveBeenLastCalledWith({ before, after: finalTrack });
+        mocks.applyRuntimeGraphDelta.mockClear();
+        mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(true);
+        expect(
+            applyDeviceChainRuntimeDelta({ before, after: intermediate, operation: 'add-device', batchContext })
+        ).toMatchObject({ application: 'discharged' });
+        expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+        expect(mocks.matchesRuntimeDeviceChainTopology).toHaveBeenLastCalledWith(
+            expect.objectContaining({ devices: [{ id: 'crust', type: 'crust', parameterIds: ['ceiling'] }] })
+        );
     });
 });

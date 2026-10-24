@@ -12,7 +12,7 @@ import {
     type DeviceChainRuntimeDeltaDischarged,
     type DeviceChainRuntimeDeltaSuperseded,
 } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
-import { handleLoadPreset } from '../handleLoadPreset';
+import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handleLoadPreset';
 
 const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn<typeof applyDeviceChainRuntimeDelta>(),
@@ -247,7 +247,7 @@ describe('handleLoadPreset', () => {
                 nodes: [
                     expect.objectContaining({
                         id: 'track-1',
-                        devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                        devices: [],
                     }),
                 ],
             })
@@ -585,5 +585,39 @@ describe('handleLoadPreset', () => {
 
         expect(undoStore.value?.past).toHaveLength(1);
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+    });
+    it('restores the full instrument identity through the guarded inverse and initializes only Web Audio nodes', async () => {
+        const description = handleLoadPreset.describe(action());
+        const inverse = description.inverseAction;
+        if (inverse?.type !== 'restorePresetDeviceChain') {
+            throw new Error('Missing guarded preset inverse');
+        }
+        expect(inverse.payload.expectedBefore.devices).toEqual([
+            { id: newDevice.id, type: newDevice.type, parameterIds: ['cutoff'] },
+        ]);
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.hasLiveProjectHostTrack.mockReturnValue(true);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [newDevice] }],
+        });
+        expect(handleRestorePresetDeviceChain.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+        mocks.updateTrack.mockImplementation(
+            (_id: string, update: (track: { devices: readonly DeviceSnapshot[] }) => { devices: DeviceSnapshot[] }) => {
+                expect(update({ devices: [newDevice] }).devices).toEqual([oldDevice]);
+            }
+        );
+        const result = await handleRestorePresetDeviceChain.execute(inverse);
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Missing inverse runtime effect');
+        }
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }],
+        });
+        await result.afterCommit();
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({ nodes: [{ id: 'track-1', kind: 'midi', devices: [] }] })
+        );
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).toHaveBeenCalledOnce();
     });
 });

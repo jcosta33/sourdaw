@@ -12,7 +12,7 @@ import { runtimeGraphTopology } from './runtimeGraphTopology';
  * to create a missing strip.
  */
 export function compileTrackStripInitializationSnapshot(track: Track, tracks: readonly Track[]) {
-    const source = runtimeGraphTopology.createNode(track);
+    const source = runtimeGraphTopology.createWebAudioNode(track);
     const targets =
         track.outputId === 'master' || track.outputId === 'hw_out'
             ? []
@@ -29,7 +29,7 @@ export function compileTrackStripInitializationSnapshot(track: Track, tracks: re
             appRevision: getRuntimeGraphRevision(),
             projectRevision: captureProjectRevision(),
         },
-        nodes: target ? [source, runtimeGraphTopology.createNode(target)] : [source],
+        nodes: target ? [source, runtimeGraphTopology.createWebAudioNode(target)] : [source],
         output: {
             kind: 'output',
             sourceId: track.id,
