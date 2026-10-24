@@ -28,7 +28,6 @@ import {
     linuxStorageFileState,
     linuxStorageFileCensus,
     linuxFilePorts,
-    LINUX_CENSUS_OBSERVATIONS,
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
     startTimeExcuseSupervisor,
@@ -53,6 +52,7 @@ import {
 const roots: string[] = [];
 const childPids = new Set<number>();
 const abundantMemoryBytes = 128 * 1024 ** 3;
+const linuxCensusObservationLimit = 32;
 const guardPath = resolve('scripts/resourceGuard.ts');
 const storagePath = resolve('scripts/resourceGuardStorage.ts');
 
@@ -1541,7 +1541,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             arrivals = 2;
         }
         if (scenario === 'repeated process arrival') {
-            arrivals = LINUX_CENSUS_OBSERVATIONS;
+            arrivals = linuxCensusObservationLimit;
         }
         const ports: StorageRecoveryPorts = {
             identityState: () => 'dead',
@@ -1609,7 +1609,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 );
                 states.push(observed);
                 inspections.push(inspected);
-                expect(lists).toBeLessThanOrEqual(Math.min(arrivals + 1, LINUX_CENSUS_OBSERVATIONS));
+                expect(lists).toBeLessThanOrEqual(Math.min(arrivals + 1, linuxCensusObservationLimit));
                 return observed;
             },
         };
@@ -1619,7 +1619,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         expect(states.every((observed) => observed === state)).toBe(true);
         expect(inspections).not.toHaveLength(0);
         // Every observation inspects the whole list the previous re-list returned.
-        let expectedInspection = Array.from({ length: Math.min(arrivals + 1, LINUX_CENSUS_OBSERVATIONS) }, (_, round) =>
+        let expectedInspection = Array.from({ length: Math.min(arrivals + 1, linuxCensusObservationLimit) }, (_, round) =>
             Array.from({ length: round + 1 }, (_, index) => 123 + index)
         ).flat();
         if (scenario === 'expired first census') {
@@ -1636,7 +1636,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         }
         if (scenario === 'repeated process arrival') {
             expect(new Set(reports)).toEqual(
-                new Set([`proc-live-pid-uninspected:pid=${123 + LINUX_CENSUS_OBSERVATIONS}`])
+                new Set([`proc-live-pid-uninspected:pid=${123 + linuxCensusObservationLimit}`])
             );
         }
     });
@@ -1971,8 +1971,8 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             if (recurring) {
                 expect(observed).toBe('unknown');
                 expect(reports).toEqual(['proc-exit-resample-unsettled']);
-                expect(waits).toBe(LINUX_CENSUS_OBSERVATIONS);
-                expect(inspected).toEqual(Array.from({ length: LINUX_CENSUS_OBSERVATIONS }, () => [100, 123]).flat());
+                expect(waits).toBe(linuxCensusObservationLimit);
+                expect(inspected).toEqual(Array.from({ length: linuxCensusObservationLimit }, () => [100, 123]).flat());
                 return;
             }
             expect(waits).toBe(3);
