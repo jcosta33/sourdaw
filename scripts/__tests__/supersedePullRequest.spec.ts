@@ -587,6 +587,39 @@ function nativeSupersessionFixture(
             const old = number === oldNumber;
             const parent = number === parentNumber;
             const parentReplacement = number === parentReplacementNumber;
+            let pullRequestState = state;
+            let pullRequestHead = currentHead;
+            let pullRequestBranch = currentHeadRefName;
+            if (!old) {
+                pullRequestState = 'MERGED';
+                pullRequestHead = replacementHead;
+                pullRequestBranch = 'fix/replacement';
+                if (parent) {
+                    pullRequestState = 'CLOSED';
+                    pullRequestHead = parentHead;
+                    pullRequestBranch = parentBranch;
+                }
+            }
+            let baseRef: {
+                name: string;
+                repository: { nameWithOwner: string };
+                target: { oid: string };
+            } | null = null;
+            if (old && distinctParent) {
+                baseRef = {
+                    name: parentBranch,
+                    repository: { nameWithOwner: 'jcosta33/sourdaw' },
+                    target: { oid: parentHead },
+                };
+            }
+            let mergeCommit: { oid: string } | null = null;
+            if (!old && !parent) {
+                let mergeCommitOid = childMerge;
+                if (parentReplacement) {
+                    mergeCommitOid = parentMerge;
+                }
+                mergeCommit = { oid: mergeCommitOid };
+            }
             return JSON.stringify({
                 data: {
                     repository: {
@@ -594,21 +627,14 @@ function nativeSupersessionFixture(
                         pullRequest: {
                             id: old ? 'PR_old' : `PR_${number}`,
                             number,
-                            state: old ? state : parent ? 'CLOSED' : 'MERGED',
-                            headRefOid: old ? currentHead : parent ? parentHead : replacementHead,
-                            headRefName: old ? currentHeadRefName : parent ? parentBranch : 'fix/replacement',
+                            state: pullRequestState,
+                            headRefOid: pullRequestHead,
+                            headRefName: pullRequestBranch,
                             headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
                             baseRefName: old && distinctParent ? parentBranch : 'main',
-                            baseRef:
-                                old && distinctParent
-                                    ? {
-                                          name: parentBranch,
-                                          repository: { nameWithOwner: 'jcosta33/sourdaw' },
-                                          target: { oid: parentHead },
-                                      }
-                                    : null,
+                            baseRef,
                             merged: !old && !parent,
-                            mergeCommit: old || parent ? null : { oid: parentReplacement ? parentMerge : childMerge },
+                            mergeCommit,
                             closedAt: old ? closedAt : '2026-10-24T00:00:00Z',
                         },
                     },
