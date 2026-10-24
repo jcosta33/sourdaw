@@ -6087,22 +6087,52 @@ function getRefinementProtectedObjects(input: {
     );
 }
 
+/** The protected objects, and the member tracks of every VCA group among them, which a group protects. */
+function withVcaGroupMembers(
+    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
+    context: ProjectContext
+): Array<{ id: string; name: string }> {
+    const groups = new Map((context.vcaGroups ?? []).map((group) => [group.id, group]));
+    return protectedObjects.flatMap((object) => [
+        object,
+        ...(groups.get(object.id)?.trackIds ?? []).map((id) => ({ id, name: object.name })),
+    ]);
+}
+
+/** The first protected object an action touches, or only through the given action types when any are given. */
+function findChangedObject(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
+    context: ProjectContext,
+    onlyActionTypes?: readonly string[]
+): { id: string; name: string } | null {
+    if (onlyActionTypes?.length === 0) {
+        return null;
+    }
+    const objects = withVcaGroupMembers(protectedObjects, context);
+    for (const action of actions) {
+        if (onlyActionTypes !== undefined && !onlyActionTypes.includes(action.type)) {
+            continue;
+        }
+        const payload: unknown = 'payload' in action ? action.payload : undefined;
+        const payloadRecord =
+            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
+        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
+        const hit = objects.find((object) => touched.has(object.id));
+        if (hit !== undefined) {
+            return hit;
+        }
+    }
+    return null;
+}
+
 function findProtectedChange(
     actions: BridgeGroundedLlmToolCallsResult['actions'],
     protectedObjects: ReadonlyArray<{ id: string; name: string }>,
     context: ProjectContext
 ): string | null {
-    for (const action of actions) {
-        const payload: unknown = 'payload' in action ? action.payload : undefined;
-        const payloadRecord =
-            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
-        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
-        const hit = protectedObjects.find((object) => touched.has(object.id));
-        if (hit !== undefined) {
-            return `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
-        }
-    }
-    return null;
+    const hit = findChangedObject(actions, protectedObjects, context);
+    return hit === null ? null : `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
 }
 
 /** The pending commands of one type and full target tuple. */
@@ -6892,11 +6922,12 @@ export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInpu
 }
 
 /**
- * An explicit protection naming a reference that resolves to no protectable target cannot be
+ * An explicit protection holding a concrete reference that binds to no object (a quoted or
+ * capitalized name nothing carries, a position, a selection phrase with nothing selected) cannot be
  * enforced, so a request holding one grounds nothing: an incomplete protection is a rejection, never
- * an empty permission set. A protection that resolves through the selected track binds that track
- * like a name does. A refinement reads its protections in its own closed grammar, which asks about
- * any it cannot bind.
+ * an empty permission set. A protection that names a VCA group keeps its member tracks, and one that
+ * resolves through the selected track keeps that track, or only the control it names. A refinement
+ * reads its protections in its own closed grammar, which asks about any it cannot bind.
  */
 function refuseWhenProtectionIsUnresolved(
     input: BridgeGroundedLlmToolCallsInput,
@@ -6906,24 +6937,26 @@ function refuseWhenProtectionIsUnresolved(
         return grounded;
     }
     const { context } = input;
-    const { unresolved, protectsSelectedTrack } = readExplicitProtections(input.prompt, context);
+    const protections = readExplicitProtections(input.prompt, context);
+    if (protections.unresolved.length > 0) {
+        const references = protections.unresolved.map((reference) => `"${reference}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+        );
+    }
     const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId);
-    const changesProtectedSelection =
-        protectsSelectedTrack &&
-        selectedTrack !== undefined &&
-        findProtectedChange(grounded.actions, [selectedTrack], context) !== null;
-    if (unresolved.length > 0) {
-        const references = unresolved.map((reference) => `"${reference}"`).join(', ');
-        return refuseProtectedRequest(
-            `Protection names ${references}, which resolves to no track, clip or device parameter, so the request is refused`
-        );
-    }
-    if (changesProtectedSelection) {
-        return refuseProtectedRequest(
-            `Request changes the selected track "${selectedTrack?.name ?? ''}", which its own protection leaves alone`
-        );
-    }
-    return grounded;
+    const vcaTracks = context.tracks.filter((track) => protections.protectedVcaTrackIds.includes(track.id));
+    const changedTrack =
+        findChangedObject(grounded.actions, vcaTracks, context) ??
+        (protections.protectsSelectedTrack && selectedTrack !== undefined
+            ? findChangedObject(grounded.actions, [selectedTrack], context)
+            : null) ??
+        (selectedTrack === undefined
+            ? null
+            : findChangedObject(grounded.actions, [selectedTrack], context, protections.selectedTrackControlActions));
+    return changedTrack === null
+        ? grounded
+        : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
 }
 
 function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {

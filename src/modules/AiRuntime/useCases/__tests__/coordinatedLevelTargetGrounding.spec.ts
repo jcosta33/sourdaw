@@ -822,23 +822,30 @@ describe('a coordinated level list keeps the protections of tracks outside it', 
 });
 
 /**
- * An explicit protection is only as good as the references it resolves. One naming a reference that
- * resolves to no track, clip or device parameter (a VCA group, a missing name, a position, a pronoun)
- * cannot be enforced, so the request grounds nothing: an incomplete protection is a rejection, never an
- * empty permission set, for one target, a coordinated list and every route alike.
+ * An explicit protection is only as good as the references it binds. One holding a concrete reference
+ * that binds to nothing (a quoted or capitalized name no object carries, a position, a selection phrase
+ * with nothing selected) cannot be enforced, so the request grounds nothing: an incomplete protection
+ * is a rejection, never an empty permission set, for one target, a coordinated list and every route
+ * alike. Anything else a protection holds is no target and never refuses: a quality, the rest of the
+ * mix, a project setting, filler, a kind noun beside a name, or the selected clip.
  */
-describe('an explicit protection naming a reference that resolves to no target refuses the request', () => {
+describe('an explicit protection naming a reference that binds to nothing refuses the request', () => {
     const unresolvedProtections: Array<[string, string, ProjectContext]> = [
-        ['do not change pan, solo, and fader of Strings', 'Strings', projectWithStringsGroup],
         ['do not change pan, solo, and fader of Strings', 'Strings', projectContext],
         ['leave Keys as well as the first track alone', 'first track', projectContext],
         ['leave Keys along with the second track alone', 'second track', projectContext],
         ['leave Keys plus it alone', 'it', projectContext],
         ['leave Keys as well as the last one alone', 'last one', projectContext],
         ['leave the Keys alone except the second one', 'second one', projectContext],
-        ['leave Keys and Strings alone', 'Strings', projectWithStringsGroup],
+        ['leave Keys and Ghost alone', 'Ghost', projectContext],
         ['leave Ghost alone', 'Ghost', projectContext],
         ['keep "Ghost" as is', 'Ghost', projectContext],
+        ['leave Ghost and keep Keys alone', 'Ghost', projectContext],
+        ['leave Ghost then Keys alone', 'Ghost', projectContext],
+        ['leave Ghost; keep Keys alone', 'Ghost', projectContext],
+        ['without touching Ghost', 'Ghost', projectContext],
+        ['leave Ghost be', 'Ghost', projectContext],
+        ['leave track 3 alone', 'track 3', projectContext],
     ];
 
     function expectRefusedNamingReference(result: ReturnType<typeof bridge>, reference: string) {
@@ -849,7 +856,7 @@ describe('an explicit protection naming a reference that resolves to no target r
     }
 
     it.each(unresolvedProtections)(
-        'refuses one target when the protection "%s" cannot resolve %s',
+        'refuses one target when the protection "%s" cannot bind %s',
         (protection, reference, context) => {
             const prompt = `turn the Drums down 3 dB; ${protection}`;
 
@@ -858,7 +865,7 @@ describe('an explicit protection naming a reference that resolves to no target r
     );
 
     it.each(unresolvedProtections.map(([protection, , context]) => ({ protection, context })))(
-        'refuses a coordinated list when the protection "$protection" cannot resolve',
+        'refuses a coordinated list when the protection "$protection" cannot bind',
         ({ protection, context }) => {
             const prompt = `turn the Drums and the Bass down 3 dB and ${protection}`;
             const result = bridge(
@@ -885,18 +892,14 @@ describe('an explicit protection naming a reference that resolves to no target r
         expect(groundGainList(prompt, tracks, projectContext, true).status).toBe('rejected');
     });
 
-    it('names every unresolved reference of the request', () => {
+    it('names every unbound reference of the request', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 })],
             'turn the Drums down 3 dB and leave Ghost alone; do not change the fader of the second one'
         );
 
         expect(result.rejections).toEqual([
-            {
-                index: 0,
-                name: '<batch>',
-                reason: expect.stringMatching(/"Ghost", "second one"/u),
-            },
+            { index: 0, name: '<batch>', reason: expect.stringMatching(/"Ghost", "second one"/u) },
         ]);
     });
 
@@ -905,11 +908,63 @@ describe('an explicit protection naming a reference that resolves to no target r
         'turn the Drums down 3 dB and leave Keys, Vocals and the Drum Bus alone',
         'turn the Drums down 3 dB; do not change pan, solo, and fader of Keys',
         'turn the Drums down 3 dB and leave "Bass DI" and Keys unchanged',
-        'turn the Drums down 3 dB and keep the rest alone',
-        'turn the Drums down 3 dB, keep everything else unchanged except the Keys',
-        'turn the Drums down 3 dB and keep the tempo as is',
-    ])('still grounds the asked change when every protected reference resolves in "%s"', (prompt) => {
+        'turn the Drums down 3 dB; with Keys unchanged',
+        'turn the Drums down 3 dB and Keys stays as is',
+        'turn the Drums down 3 dB, no changes to Keys',
+        'turn the Drums down 3 dB; without touching Keys',
+        'turn the Drums down 3 dB and leave Keys untouched',
+        'turn the Drums down 3 dB and leave Keys be',
+        'turn the Drums down 3 dB; Keys should not change',
+        'turn the Drums down 3 dB but not the Keys',
+        'turn the Drums down 3 dB and leave Keys and keep Vocals alone',
+    ])('still grounds the asked change when every protected reference binds in "%s"', (prompt) => {
         const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
+        // qualities and aesthetics
+        'keep it warm',
+        'keep the groove intact',
+        "don't change the vibe",
+        'leave the Tone alone',
+        // the rest of the mix
+        'keep the rest alone',
+        'leave anything else alone',
+        'leave the rest of the song alone',
+        'keep everything else unchanged except the Keys',
+        // project settings
+        'keep the tempo as is',
+        'keep the BPM the same',
+        // filler and kind nouns around a bound name
+        'leave my Keys alone',
+        'leave the Keys track and the Vocals channel alone',
+        'keep the Keys at the same level',
+        'leave the Drum Bus alone',
+        // notes, markers and the selected clip
+        "don't edit the Keys MIDI",
+        'keep the selected clip as is',
+        // the keep, leave and alone words outside any protection
+        'keep going',
+        'keep it simple',
+        'leave it at that',
+        'leave room for the Keys',
+        'rename Vocals to "leave Ghost alone"',
+    ])('does not refuse the asked change over "%s", which names no target', (extra) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], `turn the Drums down 3 dB; ${extra}`);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
+        'turn the Drums down 3 dB and leave Rock and Roll alone',
+        'turn the Drums down 3 dB and leave "Rock and Roll" unchanged',
+        'turn the Drums down 3 dB, leave Keys and Rock and Roll alone',
+    ])('binds a name that holds a stop word whole in "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, projectWithQuotedOverlap);
 
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
@@ -919,7 +974,7 @@ describe('an explicit protection naming a reference that resolves to no target r
         ['turn the Drums down 3 dB and leave Keys as well as the Vocals alone', vocals],
         ['turn the Drums down 3 dB and leave Keys along with the Bass alone', bass],
         ['turn the Drums down 3 dB; do not change pan, solo, and fader of Keys', keys],
-    ])('still refuses an extra call on a track the resolved protection names in "%s"', (prompt, protectedTrack) => {
+    ])('still refuses an extra call on a track the bound protection names in "%s"', (prompt, protectedTrack) => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 }), gainCall(protectedTrack.id, { deltaDb: -3 })],
             prompt
@@ -928,7 +983,7 @@ describe('an explicit protection naming a reference that resolves to no target r
         expect(result.actions).not.toContainEqual(gainAction(protectedTrack.id, { deltaDb: -3 }));
     });
 
-    it('resolves a selection phrase through the selected track, and protects that track', () => {
+    it('binds a selection phrase through the selected track, and protects that track', () => {
         const prompt = 'turn the Drums down 3 dB and leave this track alone';
         const bassSelected = { ...projectContext, selectedTrackId: bass.id };
         const drumsSelected = { ...projectContext, selectedTrackId: drums.id };
@@ -940,23 +995,39 @@ describe('an explicit protection naming a reference that resolves to no target r
         expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, drumsSelected).actions).toEqual([]);
     });
 
-    it('refuses a selection phrase when nothing is selected', () => {
-        expectRefusedNamingReference(
-            bridge([gainCall(drums.id, { deltaDb: -3 })], 'turn the Drums down 3 dB and leave this track alone'),
-            'this track'
-        );
+    it.each(['leave this track alone', 'leave the selected track alone', 'leave it alone', "don't touch it"])(
+        'refuses a selection phrase when nothing is selected in "%s"',
+        (protection) => {
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 })], `turn the Drums down 3 dB; ${protection}`);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('resolves to no') },
+            ]);
+        }
+    );
+
+    it('protects only the control a protection names on the selected track', () => {
+        const drumsSelected = { ...projectContext, selectedTrackId: drums.id };
+        const prompt = 'turn the Drums down 3 dB; keep its pan as is';
+        const faderProtected = 'turn the Drums down 3 dB; keep its fader as is';
+
+        const gainChange = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, drumsSelected);
+        expect(gainChange.rejections).toEqual([]);
+        expect(gainChange.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], faderProtected, drumsSelected).actions).toEqual([]);
     });
 
-    it.each([
-        'turn the Drums down 3 dB and keep going',
-        'turn the Drums down 3 dB, keep it simple',
-        'turn the Drums down 3 dB and leave it at that',
-        'turn the Drums down 3 dB and rename Vocals to "leave Ghost alone"',
-    ])('does not read a protection into "%s"', (prompt) => {
-        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+    it('protects the member tracks of a VCA group a protection names, and only those', () => {
+        const prompt = (track: string) => `turn ${track} down 3 dB; do not change pan, solo, and fader of Strings`;
 
-        expect(result.rejections).toEqual([]);
-        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        const member = bridge([gainCall(keys.id, { deltaDb: -3 })], prompt('Keys'), projectWithStringsGroup);
+        expect(member.actions).toEqual([]);
+        expect(member.rejections).toEqual([{ index: 0, name: '<batch>', reason: expect.stringContaining('"Keys"') }]);
+
+        const outsider = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt('Drums'), projectWithStringsGroup);
+        expect(outsider.rejections).toEqual([]);
+        expect(outsider.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
     });
 });
 

@@ -1534,6 +1534,34 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     vcaGroupStore.set(defaultVcaGroupState);
                 }
             });
+
+            it('protects the member tracks of a VCA group the refinement leaves unchanged', () => {
+                const kit = { id: 'vca-kit', name: 'Kit', gain: 1, muted: false, trackIds: ['track-snare'] };
+                const kitContext: ProjectContext = {
+                    ...projectContext([projectTrack('track-vocals', 'Vocals'), projectTrack('track-snare', 'Snare')]),
+                    vcaGroups: [kit],
+                };
+                const card = { prompt: P0, calls: [vocalsBy(-3)] };
+
+                const kept = refine(
+                    card,
+                    'make the vocals 1.5 dB, leaving Kit unchanged',
+                    [vocalsBy(-1.5)],
+                    kitContext
+                );
+                expect(kept.status).toBe('grounded');
+
+                const member = refine(
+                    card,
+                    'make the vocals 1.5 dB and turn Snare down 2 dB, leaving Kit unchanged',
+                    [vocalsBy(-1.5), snareBy(-2)],
+                    kitContext
+                );
+                expect(member).toMatchObject({
+                    status: 'rejected',
+                    rejectionReason: expect.stringContaining('"Snare", which the request chain leaves unchanged'),
+                });
+            });
         });
     });
 
