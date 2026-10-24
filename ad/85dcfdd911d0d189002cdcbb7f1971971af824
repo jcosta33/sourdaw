@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_6fadbb347bd721 5860-5956
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_59e31a5c6f3e31::t_a45acd1bfee6a7 1,38-46,129-133,156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad85dcfdd911d0d189002cdcbb7f1971971af824",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
