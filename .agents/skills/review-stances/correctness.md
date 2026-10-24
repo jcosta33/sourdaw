@@ -68,6 +68,18 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
+
+PR #5639 serialized supersession with the shared fenced owner, but its package command still
+called the transaction script directly. The actual command refused before PR I/O because the
+default fence had no launcher-pinned `ps`. Strongest-tier review was present; the missing stance
+was actual native CLI and platform-tool admission, while lock fixtures injected owner fences.
+
+Trace a newly required capability from the package command through the protected launcher to
+its real consumer. Invoke that route with controlled remote ports and the default owner fence;
+observe the acquired process identity before the first PR read. Restoring a direct package route
+or omitting the command from the launcher's fenced set must fail that probe before remote I/O.
+
 ### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
 
 PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
