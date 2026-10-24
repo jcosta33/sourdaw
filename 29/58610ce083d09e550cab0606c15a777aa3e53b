@@ -1,0 +1,33 @@
+src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 51
+src/modules/Levain/useCases/setLevainPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 3
+src/modules/CrdtDocument/stores/documentIdentityEpoch.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 1-15
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 3
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 25,248-250,1131
+src/modules/CrdtDocument/useCases/captureProjectIdentity.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 1,14
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 65
+src/modules/CrdtDocument/stores/index.ts
+  s_59e31a5c6f3e31::t_4e16f975752c60 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2958610ce083d09e550cab0606c15a777aa3e53b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
