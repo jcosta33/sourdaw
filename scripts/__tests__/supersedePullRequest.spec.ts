@@ -878,8 +878,8 @@ describe('pull-request supersession', () => {
             /finding set changed after finding lineage: added 1002, removed none/i
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
-        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
-        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
+        expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
     });
     it('refuses a finding removed during the transaction before the close', () => {
         const { port, calls, authorNodeId, state } = fakePort({ threadsBeforeClose: [] });
@@ -887,8 +887,8 @@ describe('pull-request supersession', () => {
             /finding set changed after finding lineage: added none, removed 1001/i
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
-        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
-        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
+        expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
     });
 
     it('refuses a wrong-body comment receipt before checking stability or closing', () => {
@@ -991,11 +991,44 @@ describe('pull-request supersession', () => {
             `comment:2244:${lineageBody}`,
         ]);
     });
-    it('rolls back both markers after a post-comment head move', () => {
+    it('retains canonical intent after a post-comment head move and adopts it on rerun', () => {
         const { port, authorNodeId, state, calls } = fakePort({ heads: [head, movedHead] });
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(/head moved/i);
-        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+        expect(state().state).toBe('OPEN');
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
+        expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
+
+        expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(state().state).toBe('CLOSED');
+        expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
+        const completedCalls = [...calls];
+        expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.slice(completedCalls.length)).toEqual([
+            'threads:2244',
+            'inspect:2244',
+            'inspect:2246',
+            'log:pull-request-superseded:2244:2246',
+        ]);
+        expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([
+            `comment:2244:${receiptBody}`,
+            `comment:2244:${lineageBody}`,
+        ]);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('removes only owned noncanonical duplicates on an OPEN refusal', () => {
+        const { port, calls, state } = fakePort({
+            heads: [head, movedHead],
+            foreignLowerCommentBeforeConvergence: true,
+        });
+        expect(() => run(port)).toThrow(/head moved/i);
+        expect(state().state).toBe('OPEN');
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([
+            oldComment.id,
+            'IC_foreign',
+            'IC_foreign_lineage',
+        ]);
+        expect(calls.filter((call) => call.startsWith('close:') || call.startsWith('log:'))).toEqual([]);
     });
     it('posts only the missing lineage marker when a crash left the receipt behind', () => {
         const { port, calls, authorNodeId } = fakePort({ existingCommentCount: 1 });
@@ -1022,6 +1055,37 @@ describe('pull-request supersession', () => {
         expect(state().comments.filter((comment) => comment.body === receiptBody)).toEqual([
             expect.objectContaining({ id: 'IC_post_1' }),
         ]);
+    });
+    it('retains canonical markers adopted by a concurrent close after the compensation snapshot', () => {
+        const { port, calls, state } = fakePort();
+        const originalInspect = port.inspect;
+        let oldInspections = 0;
+        let competing = false;
+        let competingResult: string | undefined;
+        port.inspect = (number) => {
+            if (number !== oldNumber || competing) {
+                return originalInspect(number);
+            }
+            const inspection = oldInspections++;
+            if (inspection === 2) {
+                port.comment(number, receiptBody);
+            }
+            const snapshot = originalInspect(number);
+            if (inspection === 3) {
+                expect(snapshot.state).toBe('OPEN');
+                competing = true;
+                competingResult = run(port);
+            }
+            return snapshot;
+        };
+
+        expect(() => run(port)).toThrow(/exactly one valid supersession comment marker/i);
+        expect(competingResult).toBe('pull-request-superseded:2244:2246');
+        expect(state().state).toBe('CLOSED');
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual(['log:pull-request-superseded:2244:2246']);
+        expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_3']);
     });
     it("deletes only this invocation's noncanonical markers when another invocation closes first", () => {
         const { port, calls, authorNodeId, state } = fakePort({
@@ -1068,12 +1132,23 @@ describe('pull-request supersession', () => {
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(/exact author-bot/i);
         expect(calls.filter((call) => !call.startsWith('inspect') && !call.startsWith('threads:'))).toEqual([]);
     });
-    it('surfaces compensation failure', () => {
-        const { port, authorNodeId, state, calls } = fakePort({ heads: [head, movedHead], failDelete: true });
+    it('surfaces failure to delete an owned noncanonical marker', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [head, movedHead],
+            foreignLowerCommentBeforeConvergence: true,
+            failDelete: true,
+        });
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(
             /head moved[\s\S]*compensation failed[\s\S]*delete denied/i
         );
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
-        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([
+            oldComment.id,
+            'IC_post_1',
+            'IC_post_2',
+            'IC_foreign',
+            'IC_foreign_lineage',
+        ]);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
     });
 });

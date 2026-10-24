@@ -6,6 +6,21 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — rollback fixtures omitted adoption after their OPEN snapshot (PRs #2357 and #4420)
+
+The compensation snapshot from PR #2357 and two-marker rollback from PR #4420 were tested as one
+invocation's cleanup. They did not interleave another real supersession after that snapshot, so a
+successful close could lose both canonical proofs. Historical exact review stance and tier are
+unestablished; serial rollback assertions did not establish concurrent ownership.
+
+Capture an OPEN compensation response, let a second invocation adopt the exact receipt and
+lineage IDs, close and verify success, then deliver the stale response to the first invocation.
+Assert retained marker bodies and IDs, one success log, and no canonical deletion. Put the
+interleaving at the response boundary, not inside DELETE: safe retention removes that DELETE, so
+such a callback would stop exercising the competitor after repair. Restoring canonical rollback
+must fail this case. Also prove an OPEN refusal's retained intent is adopted on an ordinary rerun
+without reposting, while only owned noncanonical duplicates can be removed.
+
 ### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
 
 The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load

@@ -498,6 +498,20 @@ reported a successful write to that follower. Review point mutations against the
 decibel forms must refuse follower, dangling, and cyclic targets without redirecting or detaching them, while a source
 write must still change the follower's sampled value.
 
+### 2026-10-24 — OPEN compensation erased markers another supersession had adopted (PRs #2357 and #4420)
+
+PR #2357 introduced the compensation snapshot; PR #4420 extended rollback to receipt and lineage
+markers. An invocation could read OPEN during compensation, then delete its verified canonical
+markers after another invocation adopted them, closed the pull request, and verified success.
+Historical exact review stance and tier are unestablished. Checking OPEN again before DELETE
+leaves the same gap; canonical markers are shared recoverable intent, not disposable private work.
+
+Pause one invocation after its OPEN compensation snapshot, run a second real supersession to
+completion, then resume the first. Require the closed pull request to retain exactly one receipt
+and lineage marker, and only the successful invocation to log success. On an OPEN refusal, retain
+canonical intent for a rerun; cleanup may delete only verified markers this invocation created
+that have an independent canonical marker. Preserve prior, altered, foreign and ambiguous comments.
+
 ### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
 
 PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane

@@ -266,25 +266,10 @@ function compensateSupersession(
         } else if (unverified) {
             failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
         } else if (transaction.created.length > 0 && !stateMayHaveMutated && current.state === before.state) {
-            deleteCreatedComments(current.comments, transaction, port, failures);
+            deleteCreatedNoncanonicalComments(current.comments, transaction, port, failures);
         }
     }
-    if (current !== undefined && current.state === before.state && closeReceipt === undefined) {
-        attempt(failures, 'verify supersession compensation', () => {
-            const verified = port.inspect(number);
-            if (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments)) {
-                fail(`PR #${number} compensation was not verified`);
-            }
-        });
-    }
     throwWithCompensation(original, failures);
-}
-function sameCommentIds(left: IssueComment[], right: IssueComment[]): boolean {
-    if (left.length !== right.length) {
-        return false;
-    }
-    const ids = new Set(left.map((comment) => comment.id));
-    return ids.size === right.length && right.every((comment) => ids.has(comment.id));
 }
 function throwWithCompensation(original: unknown, failures: string[]): never {
     const message = errorMessage(original);
@@ -426,7 +411,7 @@ function convergeCommentMarkers(
         }
     }
 }
-/** Deletes this invocation's noncanonical markers once another invocation has closed the pull request. */
+/** Canonical markers can already be another invocation's recovery intent, even after an OPEN snapshot. */
 function deleteCreatedNoncanonicalComments(
     comments: IssueComment[],
     transaction: CommentTransaction,
@@ -441,33 +426,14 @@ function deleteCreatedNoncanonicalComments(
             failures.push(`inspect concurrent supersession markers: ${errorMessage(error)}`);
             return;
         }
-        if (canonical.id === created.id || !hasExpectedComment(comments, created.id, created.spec.body)) {
-            failures.push("concurrent closure retained this invocation's canonical or unverified supersession comment");
+        if (canonical.id === created.id) {
+            continue;
+        }
+        if (!hasExpectedComment(comments, created.id, created.spec.body)) {
+            failures.push("retained this invocation's unverified supersession comment");
             return;
         }
         attempt(failures, 'delete noncanonical supersession comment', () => port.deleteComment(created.id));
-    }
-}
-/** Rolls this invocation's verified markers back, refusing as a whole when any of them was altered. */
-function deleteCreatedComments(
-    comments: IssueComment[],
-    transaction: CommentTransaction,
-    port: SupersedePullRequestPort,
-    failures: string[]
-): void {
-    const altered = transaction.created.filter(
-        (created) =>
-            comments.some((comment) => comment.id === created.id) &&
-            !hasExpectedComment(comments, created.id, created.spec.body)
-    );
-    if (altered.length > 0) {
-        failures.push(`${altered.length} created supersession marker(s) are no longer exact; refusing to roll back`);
-        return;
-    }
-    for (const created of transaction.created) {
-        if (hasExpectedComment(comments, created.id, created.spec.body)) {
-            attempt(failures, 'delete supersession comment', () => port.deleteComment(created.id));
-        }
     }
 }
 function findReusableComment(
