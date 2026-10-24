@@ -67,7 +67,6 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         'deploy-web': ['Checkout the validated revision'],
         'nightly-report': ['Checkout'],
     },
-    'pr-checks.yml': { scope: ['Checkout'] },
     'quantum-measurements.yml': { measure: ['Checkout source head'] },
     'semantic-review.yml': { assess: ['Checkout the trusted revision'] },
     'validation.yml': {

@@ -6,7 +6,7 @@ name: Hosted WASM artifacts
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - .cargo/config.toml
       - .github/workflows/wasm-artifacts.yml
@@ -45,6 +45,7 @@ concurrency:
 
 jobs:
   build-artifacts:
+    if: ${{ !github.event.pull_request.draft }}
     name: Build WASM artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 45

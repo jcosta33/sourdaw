@@ -471,7 +471,6 @@ const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLA
 
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
-const { parsed: prChecksWorkflow } = loadWorkflow('pr-checks.yml');
 const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
@@ -1480,7 +1479,6 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
 
 type WorkflowSet = {
     health: UnknownRecord;
-    prChecks: UnknownRecord;
     validation: UnknownRecord;
     cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
@@ -1494,7 +1492,6 @@ type WorkflowSet = {
 function workflowSet(): WorkflowSet {
     return {
         health: workflow,
-        prChecks: prChecksWorkflow,
         validation: validationWorkflow,
         cargoDependencySeed,
         heavy: heavyWorkflow,
@@ -1510,7 +1507,6 @@ function cloneWorkflows(label: string): WorkflowSet {
     const clone = structuredClone(workflowSet());
     return {
         health: asRecord(clone.health, `${label} health`),
-        prChecks: asRecord(clone.prChecks, `${label} PR checks`),
         validation: asRecord(clone.validation, `${label} validation`),
         cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
@@ -1542,7 +1538,6 @@ function assertBlockingSuites(set: WorkflowSet): void {
 function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, UnknownRecord]> {
     return [
         ['health-gates.yml', set.health],
-        ['pr-checks.yml', set.prChecks],
         ['validation.yml', set.validation],
         ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
@@ -1863,18 +1858,6 @@ function assertJobGraph(set: WorkflowSet): void {
     assertNightlyReportCoverage(set);
     assertDeviceWriteBoundaryCensus(set);
     assertSummaryMembership(set);
-    assertRequiredScopePlan(set.prChecks);
-    if (JSON.stringify(Object.keys(recordAt(set.prChecks, 'jobs'))) !== JSON.stringify(['scope', 'validation'])) {
-        throw new Error('pr-checks.yml must run only the scope plan and the validation lane');
-    }
-    const pushValidation = jobAt(set.prChecks, 'validation');
-    if (
-        pushValidation.uses !== VALIDATION_CALL ||
-        pushValidation.needs !== 'scope' ||
-        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
-    ) {
-        throw new Error('push validation must consume the affected scope exactly as the required lane does');
-    }
 }
 
 // Both trains run the census once, in their static contract job, and a
@@ -3164,8 +3147,45 @@ describe('health gates workflow contract', () => {
     // required `Gate` on a head whose earlier `Gate` had failed. A required
     // check cannot be defended by a job condition — only by keeping the events
     // that can skip it out of the file that mints it.
+    it('starts every supplemental hosted producer only when the PR is ready', () => {
+        for (const [candidate, job] of [
+            [hostedQuantumMeasurement, 'measure'],
+            [hostedWasm, 'build-artifacts'],
+        ] as const) {
+            expect(recordAt(recordAt(candidate, 'on'), 'pull_request').types).toContain('ready_for_review');
+            expect(jobAt(candidate, job).if).toBe('${{ !github.event.pull_request.draft }}');
+        }
+    });
+
+    it('rejects supplemental producers that execute drafts or miss ready transitions', () => {
+        for (const [candidate, job, assertContract] of [
+            [hostedQuantumMeasurement, 'measure', assertHostedQuantumMeasurementWorkflow],
+            [hostedWasm, 'build-artifacts', assertHostedWasmWorkflow],
+        ] as const) {
+            const draftProducer = asRecord(structuredClone(candidate), 'draft producer');
+            delete jobAt(draftProducer, job).if;
+            expect(() => assertContract(draftProducer)).toThrow('non-draft job admission');
+            const neverReady = asRecord(structuredClone(candidate), 'never-ready producer');
+            recordAt(recordAt(neverReady, 'on'), 'pull_request').types = ['opened', 'synchronize', 'reopened'];
+            expect(() => assertContract(neverReady)).toThrow('trigger');
+        }
+    });
+
+    it('runs the full validation workflow once per PR event', () => {
+        const routes = Object.entries(parseHealthGateWorkflows(repositoryRoot)).flatMap(([file, candidate]) => {
+            const parsed = asRecord(candidate, file);
+            if (!Object.hasOwn(recordAt(parsed, 'on'), 'pull_request')) {
+                return [];
+            }
+            return Object.values(recordAt(parsed, 'jobs'))
+                .filter((job) => asRecord(job, file).uses === VALIDATION_CALL)
+                .map(() => file);
+        });
+        expect(routes).toEqual(['health-gates.yml']);
+    });
+
     it('leaves draft PR heads idle until they are ready for review', () => {
-        for (const candidate of [workflow, workflowSet().prChecks]) {
+        for (const candidate of [workflow]) {
             expect(jobAt(candidate, 'scope').if).toBe('${{ !github.event.pull_request.draft }}');
             expect(recordAt(recordAt(candidate, 'on'), 'pull_request').types).toContain('ready_for_review');
         }
@@ -3236,11 +3256,6 @@ describe('health gates workflow contract', () => {
                 'required check planning must run on every non-draft pull-request head event'
             );
         }
-        const draftChecks = cloneWorkflows('draft cheap checks');
-        delete jobAt(draftChecks.prChecks, 'scope').if;
-        expect(() => assertRequiredCheckIsolation(draftChecks)).toThrow(
-            'cheap check planning must run on every non-draft pull-request head event'
-        );
         const skippedReadyGate = cloneWorkflows('draft-only gate');
         jobAt(skippedReadyGate.health, 'gate').if = '${{ always() && github.event.pull_request.draft }}';
         expect(() => assertRequiredCheckIsolation(skippedReadyGate)).toThrow('Gate must run after cancellation');
@@ -3257,20 +3272,13 @@ describe('health gates workflow contract', () => {
             'health-gates.yml job codeql must wait for scope'
         );
 
-        const mintingPushChecks = cloneWorkflows('minting push checks');
-        recordAt(mintingPushChecks.prChecks, 'jobs').gate = jobAt(workflow, 'gate');
-        expect(() => assertRequiredCheckIsolation(mintingPushChecks)).toThrow('pr-checks.yml must not name a job Gate');
-
-        const renamedPushValidation = cloneWorkflows('renamed push validation');
-        jobAt(renamedPushValidation.prChecks, 'validation').name = REQUIRED_CHECK_NAME;
-        expect(() => assertRequiredCheckIsolation(renamedPushValidation)).toThrow(
-            'pr-checks.yml must not name a job Gate'
-        );
-
-        const labeledPushChecks = cloneWorkflows('labeled push checks');
-        labeledPushChecks.prChecks.on = { pull_request: { types: ['opened', 'synchronize', 'labeled'] } };
-        expect(() => assertRequiredCheckIsolation(labeledPushChecks)).toThrow(
-            'pr-checks.yml must answer to pull-request pushes alone'
+        const duplicateValidation = parseHealthGateWorkflows(repositoryRoot);
+        duplicateValidation['duplicate.yml'] = {
+            on: { pull_request: { types: ['opened'] } },
+            jobs: { validation: { uses: VALIDATION_CALL } },
+        };
+        expect(() => assertPullRequestRequiredCheck(duplicateValidation)).toThrow(
+            'only health-gates.yml may run full validation on pull-request events'
         );
 
         const shadowedGate = cloneWorkflows('shadowed gate');
@@ -3341,12 +3349,6 @@ describe('health gates workflow contract', () => {
         );
 
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
-        expect(() => assertWorkflowPermissions(prChecksWorkflow)).not.toThrow();
-        expect(prChecksWorkflow.concurrency).toEqual({
-            group: 'pr-checks-${{ github.event.pull_request.number }}',
-            'cancel-in-progress': true,
-        });
-        expect(() => assertNoJobLevelConcurrency(prChecksWorkflow, 'pr-checks.yml')).not.toThrow();
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
@@ -4643,7 +4645,6 @@ export -f sudo timeout sleep apt-get
         expect(stepNamed(jobAt(nightly, 'static'), 'Release inventory').if).toBeUndefined();
         for (const workflowText of [
             readFileSync(join(repositoryRoot, '.github/workflows/validation.yml'), 'utf8'),
-            readFileSync(join(repositoryRoot, '.github/workflows/pr-checks.yml'), 'utf8'),
             readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8'),
         ]) {
             expect(workflowText).not.toMatch(/^\s+run: .*test:release-inventory/mu);
@@ -4962,9 +4963,9 @@ export -f sudo timeout sleep apt-get
         expect(surface(extraDeploySecret)).toThrow('nightly.yml job deploy-web must read exactly its pinned secrets');
 
         const inheritedSecrets = cloneWorkflows('secrets inherited by validation');
-        jobAt(inheritedSecrets.prChecks, 'validation').secrets = 'inherit';
+        jobAt(inheritedSecrets.health, 'validation').secrets = 'inherit';
         expect(surface(inheritedSecrets)).toThrow(
-            'pr-checks.yml job validation must not pass secrets to a reusable workflow'
+            'health-gates.yml job validation must not pass secrets to a reusable workflow'
         );
 
         const environment = cloneWorkflows('environment on a validation leg');
@@ -4992,10 +4993,10 @@ export -f sudo timeout sleep apt-get
             'validation.yml job lint must pin "./../../evil" to a full commit SHA or a ./ path inside the repository'
         );
 
-        const computedGate = cloneWorkflows('computed Gate name on push checks');
-        jobAt(computedGate.prChecks, 'scope').name = "${{ 'Ga' }}te";
+        const computedGate = cloneWorkflows('computed Gate name on required checks');
+        jobAt(computedGate.health, 'scope').name = "${{ 'Ga' }}te";
         expect(surface(computedGate)).toThrow(
-            'pr-checks.yml job scope must not compute its check name from an expression'
+            'health-gates.yml job scope must not compute its check name from an expression'
         );
 
         const computedShardName = cloneWorkflows('matrix-driven name change');

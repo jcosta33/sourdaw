@@ -904,11 +904,12 @@ Do not:
 ## Required pull-request scope and nightly coverage
 
 `Gate` requires validation, the affected browser plan, its selected E2E workflows and hardware
-proof, and applicable CodeQL execution. The aggregate and its assertion step always run, including
-after cancellation, and reject cancelled or unexpectedly skipped dependencies. Every push runs only
-the scope plan and validation (`pr-checks.yml`); the heavy run and `Gate` start when the reviewer App
-labels its approval of the exact head, so concurrent agent pushes no longer queue the browser and
-security train, and any other label event fails `Gate` with the admission reason.
+proof, and applicable CodeQL execution. Every non-draft opened, synchronize, reopened or
+ready_for_review event starts that one required validation route automatically. Drafts run no
+check planner, hosted WASM producer or quantum measurement until ready for review. The aggregate
+and its assertion step always run for a non-draft PR, including after cancellation, and reject
+cancelled or unexpectedly skipped dependencies. Review and label events do not start or replace
+`Gate`; independent reviewer approval still authorizes delivery.
 
 The deterministic selector in `scripts/prValidationScope.ts` reads the complete Git diff between
 immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`

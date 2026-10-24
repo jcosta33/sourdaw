@@ -6,7 +6,6 @@ export const REQUIRED_CHECK_NAME = 'Gate';
 export const HEALTH_GATES_EVENTS = {
     pull_request: { types: ['opened', 'synchronize', 'reopened', 'ready_for_review'] },
 } as const;
-export const PR_CHECKS_EVENTS = HEALTH_GATES_EVENTS;
 export const GATE_CONDITION = '${{ always() && !github.event.pull_request.draft }}';
 export const GATE_STEP_CONDITION = '${{ always() }}';
 export const NON_DRAFT_CONDITION = '${{ !github.event.pull_request.draft }}';
@@ -82,13 +81,17 @@ export function assertPullRequestRequiredCheck(workflows: Readonly<Record<string
             throw new Error(`health-gates.yml job ${jobId} must wait for scope`);
         }
     }
-    const checks = asWorkflowRecord(workflows['pr-checks.yml'], 'pr-checks.yml');
-    if (!sameValue(checks.on, PR_CHECKS_EVENTS)) {
-        throw new Error('pr-checks.yml must answer to pull-request pushes alone');
-    }
-    const pushScope = asWorkflowRecord(workflowJobs(checks, 'pr-checks.yml').scope, 'push scope');
-    if (pushScope.needs !== undefined || pushScope.if !== NON_DRAFT_CONDITION) {
-        throw new Error('cheap check planning must run on every non-draft pull-request head event');
+    const validationRoutes = Object.entries(workflows).flatMap(([file, workflow]) => {
+        const events = asWorkflowRecord(asWorkflowRecord(workflow, file).on, `${file} events`);
+        if (!Object.hasOwn(events, 'pull_request')) {
+            return [];
+        }
+        return Object.values(workflowJobs(workflow, file))
+            .filter((job) => asWorkflowRecord(job, file).uses === './.github/workflows/validation.yml')
+            .map(() => file);
+    });
+    if (!sameValue(validationRoutes, ['health-gates.yml'])) {
+        throw new Error('only health-gates.yml may run full validation on pull-request events');
     }
     for (const [file, workflow] of Object.entries(workflows)) {
         if (file === 'health-gates.yml') {

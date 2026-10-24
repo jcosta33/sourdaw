@@ -314,7 +314,7 @@ export function assertHostedQuantumMeasurementWorkflow(value: unknown): void {
     const trigger = {
         pull_request: {
             branches: ['main'],
-            types: ['opened', 'synchronize', 'reopened'],
+            types: ['opened', 'synchronize', 'reopened', 'ready_for_review'],
             paths: HOSTED_QUANTUM_MEASUREMENT_TRIGGER_PATHS,
         },
     };
@@ -335,7 +335,8 @@ export function assertHostedQuantumMeasurementWorkflow(value: unknown): void {
     requireEqual(job.name, 'Measure browser audio quanta', 'a distinct non-Gate check name');
     requireEqual(job['runs-on'], 'ubuntu-latest', 'the standard Ubuntu runner');
     assertMeasurementJobLimit(job['timeout-minutes']);
-    for (const key of ['permissions', 'if', 'continue-on-error', 'environment', 'uses', 'secrets']) {
+    requireEqual(job.if, '${{ !github.event.pull_request.draft }}', 'non-draft job admission');
+    for (const key of ['permissions', 'continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[key], undefined, `no job-level ${key}`);
     }
     requireEqual(

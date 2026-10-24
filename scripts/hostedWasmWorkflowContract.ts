@@ -40,6 +40,13 @@ function requireHostedWasmEqual(actual: unknown, expected: unknown, label: strin
     }
 }
 
+function assertHostedJobAdmission(job: Record<string, unknown>): void {
+    requireHostedWasmEqual(job.if, '${{ !github.event.pull_request.draft }}', 'non-draft job admission');
+    for (const forbidden of ['permissions', 'continue-on-error', 'environment', 'uses', 'secrets']) {
+        requireHostedWasmEqual(job[forbidden], undefined, `no job ${forbidden}`);
+    }
+}
+
 function assertHostedCheckout(
     named: (name: string) => Record<string, unknown>,
     name: string,
@@ -79,7 +86,7 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         {
             pull_request: {
                 branches: ['main'],
-                types: ['opened', 'synchronize', 'reopened'],
+                types: ['opened', 'synchronize', 'reopened', 'ready_for_review'],
                 paths: hostedWasmTriggerPaths(),
             },
         },
@@ -97,9 +104,7 @@ export function assertHostedWasmWorkflow(value: unknown): void {
     requireHostedWasmEqual(job.name, 'Build WASM artifacts', 'its distinct check name');
     requireHostedWasmEqual(job['runs-on'], 'ubuntu-latest', 'a standard hosted runner');
     requireHostedWasmEqual(job['timeout-minutes'], 45, 'its timeout');
-    for (const forbidden of ['permissions', 'if', 'continue-on-error', 'environment', 'uses', 'secrets']) {
-        requireHostedWasmEqual(job[forbidden], undefined, `no job ${forbidden}`);
-    }
+    assertHostedJobAdmission(job);
     if (!Array.isArray(job.steps)) {
         throw new TypeError('Hosted WASM workflow has no steps');
     }

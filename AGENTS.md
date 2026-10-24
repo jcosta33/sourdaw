@@ -462,15 +462,13 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
 
 - `.github/workflows/health-gates.yml` answers to `pull_request` opened, synchronize, reopened and
   ready_for_review events and mints `Gate` for every non-draft head, without a label or review
-  prerequisite. Drafts skip both check planners and `Gate` until ready_for_review.
+  prerequisite. Drafts skip check planning and `Gate` until ready_for_review. The required workflow owns the
+  only full validation route for pull-request events.
   Its `gate` job carries `always() && !draft` and its assertion step carries `always()` so
   cancellation cannot skip a non-draft verdict.
   Its assertion requires successful scope, validation and affected checks, plus the exact
   selected CodeQL result; cancelled or unexpectedly skipped checks fail. Keep review, label,
   schedule and dispatch events out of this file, and do not rename `gate`.
-- `.github/workflows/pr-checks.yml` runs the scope plan and validation on the same non-draft
-  pull-request head events, mints no `Gate`, and is never required. Its concurrency group stays separate from
-  the required workflow, so neither run cancels the other's checks.
 - `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
   `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
   reviewed head as Git objects and never checks out or executes it, and it mints the non-required
@@ -485,6 +483,9 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
   on every pull-request head event. CodeQL has a separately permissioned required
   job in `health-gates.yml`; full-history secret scanning remains in the nightly.
+- Hosted WASM generation and quantum measurements start on their selected non-draft pull-request
+  heads, including ready_for_review. Their existing path filters, unprivileged execution and
+  head-bound artifact qualification stay in force.
 - `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
   nightly failure report. It is the only production web deploy — `vercel.json` disables the Git
   integration, so reaching `main` deploys nothing by itself.

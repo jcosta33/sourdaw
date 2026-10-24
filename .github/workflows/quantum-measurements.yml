@@ -3,7 +3,7 @@ name: Hosted quantum measurements
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - .github/workflows/quantum-measurements.yml
       - crates/daw-dsp/benches/quantum.rs
@@ -54,6 +54,7 @@ concurrency:
 
 jobs:
   measure:
+    if: ${{ !github.event.pull_request.draft }}
     name: Measure browser audio quanta
     runs-on: ubuntu-latest
     timeout-minutes: 30

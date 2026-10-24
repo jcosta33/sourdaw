@@ -213,7 +213,6 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
-const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
 const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
@@ -446,7 +445,7 @@ expect(workflow.name === 'Health gates', 'workflow name must stay Health gates')
 // mints a passing `Gate` over a red head. A `pull_request_review` trigger did
 // exactly that in production. Ordinary non-draft PR head events run the checks
 // and a non-skipping Gate. Drafts run no checks until ready_for_review. The shared
-// contract holds the boundary, including the cheap workflow's lack of Gate.
+// contract holds the boundary and refuses duplicate pull-request validation.
 expect(
     JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
@@ -455,7 +454,6 @@ let pullRequestGateError;
 try {
     assertPullRequestRequiredCheck({
         'health-gates.yml': workflow,
-        'pr-checks.yml': prChecks,
         'validation.yml': validationWorkflow,
         'heavy-gates.yml': heavyWorkflow,
         'nightly.yml': nightly,
@@ -502,7 +500,6 @@ function gateNameViolations(file, jobs) {
     return violations;
 }
 for (const [file, parsed] of [
-    ['pr-checks.yml', prChecks],
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
@@ -1170,7 +1167,6 @@ expect(
 const workflowsByFile = {
     'nightly-evidence-report.yml': parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/nightly-evidence-report.yml`, 'utf8')),
     'health-gates.yml': workflow,
-    'pr-checks.yml': prChecks,
     'validation.yml': validationWorkflow,
     'heavy-gates.yml': heavyWorkflow,
     'nightly.yml': nightly,

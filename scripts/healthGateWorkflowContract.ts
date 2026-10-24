@@ -33,7 +33,6 @@ import { parseDocument } from 'yaml';
 
 export const HEALTH_GATE_WORKFLOW_FILES = [
     'health-gates.yml',
-    'pr-checks.yml',
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
@@ -175,10 +174,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         gate: ['Require selected checks to succeed'],
-    },
-    'pr-checks.yml': {
-        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
-        validation: null,
     },
     'validation.yml': {
         decide: [

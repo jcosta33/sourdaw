@@ -127,7 +127,8 @@ The delivery sequence, in order:
 1. `lane:publish` — push the lane and open or update the PR (mechanics below).
    It pushes without `--force` and refuses uncommitted changes: the publishing
    session commits the work itself with a conventional subject first.
-2. Every published non-draft head starts required `Gate` and cheap `PR checks` automatically.
+2. Every published non-draft head starts required `Gate` automatically through one full
+   validation route.
    Drafts wait for `ready_for_review`; no label or reviewer approval starts CI.
    Run `review:prepare <pr>` — write the bundle (below) and dispatch blind
    reviewers against it under the root Review rules.
