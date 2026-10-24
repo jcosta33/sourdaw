@@ -135,11 +135,10 @@ Modes print with the hyphen dropped: **soft clip**, **hard clip**, **foldback**,
 | **Bits**     | 1 to 24   | 16      | Bit depth. Visible on **bitcrush** only           |
 | **Rate div** | 1 to 64   | 1       | Sample-rate divider. Visible on **bitcrush** only |
 | **Bias**     | 0 to 1    | 0.5     | Tube bias. Visible on **tube** only               |
-| **Depth**    | 0 to 4 st | 1 st    | Breakdown depth. Visible on **breakdown** only    |
 
 > [!WARNING]
-> **Not yet active.** **breakdown** is on the chip row and remembers **Depth**, but it still sounds
-> like **soft clip**.
+> **Not yet active.** **breakdown** is on the chip row but still sounds like **soft clip**. Existing
+> projects keep their saved breakdown depth values, though the inert control is no longer shown.
 > [#2392](https://github.com/jcosta33/sourdaw/issues/2392)
 
 > [!WARNING]
@@ -388,7 +387,7 @@ culture search stay with this session.
 These names appear as automation lanes. They save with the project.
 
 Mix, Input, Output, Bands, XOver 1–5, Slope, XOver Mode, Dist Mode, Drive, Asymmetry, Fold Thresh,
-Bit Depth, SR Reduce, Breakdown, Filter Mode, Cutoff, Resonance, Env Amount, Chorus Rate, Chorus
+Bit Depth, SR Reduce, Filter Mode, Cutoff, Resonance, Env Amount, Chorus Rate, Chorus
 Depth, Chorus FB, Chorus Mix, Phaser Rate, Phaser Depth, Phaser FB, Phaser Mix, Grain Size,
 Density, Position, Grain Pitch, Grain Mix, Spec Blur, Spec Mix, Freq Shift, Shift Mix, Lo-Fi,
 Codec, Body Mix, Separation, Macro 1–8, Morph X, Morph Y, LFO 1 Rate, LFO 1 Shape, LFO 1 Amt, LFO 2

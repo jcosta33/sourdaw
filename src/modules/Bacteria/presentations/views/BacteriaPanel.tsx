@@ -986,19 +986,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     onBandChange={setBandParam}
                                 />
                             ) : null}
-                            {band.distortionMode === 'breakdown' ? (
-                                <K
-                                    v={band.breakdownDepth}
-                                    k="breakdownDepth"
-                                    label="Depth"
-                                    min={0}
-                                    max={4}
-                                    step={0.1}
-                                    def={1}
-                                    unit="st"
-                                    onBandChange={setBandParam}
-                                />
-                            ) : null}
                         </Row>
                     </Stack>
                 ) : null}
