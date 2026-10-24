@@ -834,12 +834,15 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         ['do not change pan, solo, and fader of Strings', 'Strings', projectContext],
         ['leave Keys as well as the first track alone', 'first track', projectContext],
         ['leave Keys along with the second track alone', 'second track', projectContext],
-        ['leave Keys plus it alone', 'it', projectContext],
         ['leave Keys as well as the last one alone', 'last one', projectContext],
         ['leave the Keys alone except the second one', 'second one', projectContext],
         ['leave Keys and Ghost alone', 'Ghost', projectContext],
         ['leave Ghost alone', 'Ghost', projectContext],
-        ['keep "Ghost" as is', 'Ghost', projectContext],
+        ['leave the Kick alone', 'Kick', projectContext],
+        ['leave the Lead Vocal alone', 'Lead Vocal', projectContext],
+        ['leave the Vocal alone', 'Vocal', projectContext],
+        ['leave the Drum alone', 'Drum', projectContext],
+        ["leave Ghost's fader alone", 'Ghost', projectContext],
         ['leave Ghost and keep Keys alone', 'Ghost', projectContext],
         ['leave Ghost then Keys alone', 'Ghost', projectContext],
         ['leave Ghost; keep Keys alone', 'Ghost', projectContext],
@@ -995,7 +998,7 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, drumsSelected).actions).toEqual([]);
     });
 
-    it.each(['leave this track alone', 'leave the selected track alone', 'leave it alone', "don't touch it"])(
+    it.each(['leave this track alone', 'leave the selected track alone'])(
         'refuses a selection phrase when nothing is selected in "%s"',
         (protection) => {
             const result = bridge([gainCall(drums.id, { deltaDb: -3 })], `turn the Drums down 3 dB; ${protection}`);
@@ -1028,6 +1031,215 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         const outsider = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt('Drums'), projectWithStringsGroup);
         expect(outsider.rejections).toEqual([]);
         expect(outsider.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
+        ['turn the Drums down 3 dB except for the Intro', 'Intro'],
+        ['turn the Drums down 3 dB but not in the Bridge', 'Bridge'],
+        ['turn the Drums down 3 dB; Ghost stays as is', 'Ghost'],
+        ['turn the Drums down 3 dB. Ghost stays as is.', 'Ghost'],
+        ['Ghost stays as is, turn the Drums down 3 dB', 'Ghost'],
+        ['turn the Drums down 3 dB; Piano and Ghost stay as they are', 'Piano'],
+        ['turn the Drums down 3 dB with Ghost unchanged', 'Ghost'],
+    ])('refuses the protection form in "%s" naming %s', (prompt, reference) => {
+        expectRefusedNamingReference(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt), reference);
+    });
+
+    it('refuses a subject after a colon whose protection names no object', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 })],
+            'turn the Drums down 3 dB: Ghost should not change'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('does not refuse an unrelated name beside a change to another track', () => {
+        const result = bridge(
+            [gainCall(vocals.id, { deltaDb: -2 })],
+            'lower the Vocals by 2 dB and Sarah likes the Keys as is'
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(vocals.id, { deltaDb: -2 })]);
+    });
+
+    it.each([
+        'turn the Drums down 3 dB; keep Spotify loudness in mind',
+        'turn the Drums down 3 dB; and keep Mike happy',
+        "turn the Drums down 3 dB; don't change the Keys until Friday",
+        "turn the Drums down 3 dB; don't touch the Keys, Sam is still editing them",
+        'turn the Drums down 3 dB and Sarah likes the Keys as is',
+        'turn the Drums down 3 dB; Leave The Keys Alone',
+        'turn the Drums down 3 dB; Keep Everything Else The Same',
+        'turn the Drums down 3 dB; keep the Low End intact',
+        'turn the Drums down 3 dB; keep the Abbey Road vibe intact',
+        'turn the Drums down 3 dB; keep the Bass Mono as is',
+        'turn the Drums down 3 dB; keep the "warm" sound as is',
+        "turn the Drums down 3 dB; don't change the 'vibe'",
+        'turn the Drums down 3 dB; keep "Ghost" as is',
+        'turn the Drums down 3 dB; Drums stays punchy',
+    ])('does not refuse the asked change over a name that is no object in "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    describe('"it" and "its" point at the request\'s one named target', () => {
+        it.each([
+            'turn the Drums down 3 dB but keep its pan as is',
+            'turn the Drums down 3 dB, then leave it alone',
+            "turn the Drums down 3 dB and don't touch it",
+        ])('grounds the asked change with nothing selected in "%s"', (prompt) => {
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        });
+
+        it('keeps the pan of that target, so a pan change in the batch refuses', () => {
+            const pan = { name: 'setTrackPan', arguments: { trackId: drums.id, pan: -20 } };
+            const unprotected = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), pan],
+                'turn the Drums down 3 dB and pan the Drums 20% left'
+            );
+            expect(unprotected.rejections).toEqual([]);
+
+            const protectedPan = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), pan],
+                'turn the Drums down 3 dB and pan the Drums 20% left but keep its pan as is'
+            );
+            expect(protectedPan.actions).toEqual([]);
+            expect(protectedPan.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Drums"') },
+            ]);
+        });
+
+        it('leaves the pronoun to the selection only when the request names no target', () => {
+            const selected = { ...projectContext, selectedTrackId: bass.id };
+            const named = bridge(
+                [gainCall(drums.id, { deltaDb: -3 })],
+                'turn the Drums down 3 dB; keep its fader as is',
+                selected
+            );
+            expect(named.actions).toEqual([]);
+            expect(named.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Drums"') },
+            ]);
+        });
+    });
+
+    describe('forms that protect the selected track', () => {
+        const drumsSelected = { ...projectContext, selectedTrackId: drums.id };
+
+        it.each([
+            "turn the Drums down 3 dB; leave the selected track's fader alone",
+            'turn the Drums down 3 dB; leave the selected track’s fader alone',
+            "turn the Drums down 3 dB; keep this track's volume as is",
+            'turn the Drums down 3 dB; keep the selected track settings as is',
+            'turn the Drums down 3 dB; leave the selected track sends and fader alone',
+            'turn the Drums down 3 dB with the selected track unchanged',
+            'turn the Drums down 3 dB except the selected track',
+        ])('refuses a change to the selected track in "%s"', (prompt) => {
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, drumsSelected);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Drums"') },
+            ]);
+        });
+
+        it.each([
+            "turn the Drums down 3 dB; leave the selected track's fader alone",
+            'turn the Drums down 3 dB; keep the selected track settings as is',
+            'turn the Drums down 3 dB with the selected track unchanged',
+            'turn the Drums down 3 dB except the selected track',
+        ])('refuses the form as unbound with nothing selected in "%s"', (prompt) => {
+            expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt).actions).toEqual([]);
+        });
+
+        it('keeps a selected track a send protection names, not its fader', () => {
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 })],
+                'turn the Drums down 3 dB; leave the selected track sends alone',
+                drumsSelected
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        });
+
+        it('reads an "along with" list that names the selected track', () => {
+            const keysSelected = { ...projectContext, selectedTrackId: keys.id };
+            const result = bridge(
+                [gainCall(keys.id, { deltaDb: -3 })],
+                'turn the Keys down 3 dB and leave Drums along with this track alone',
+                keysSelected
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Keys"') },
+            ]);
+        });
+
+        it('lets a carve-out exempt the selected track from the protection it follows', () => {
+            const keysSelected = { ...projectContext, selectedTrackId: keys.id };
+            const result = bridge(
+                [gainCall(keys.id, { deltaDb: -3 })],
+                'turn the Keys down 3 dB and leave Bass alone except this track',
+                keysSelected
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(keys.id, { deltaDb: -3 })]);
+        });
+    });
+
+    describe('a VCA group an exclusion names', () => {
+        const refusesMember = (result: ReturnType<typeof bridge>) => {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Keys"') },
+            ]);
+        };
+
+        it.each(['turn the Keys down 3 dB except Strings', 'turn the Keys down 3 dB but not Strings'])(
+            'refuses a change to a member track on the bridge route in "%s"',
+            (prompt) => {
+                refusesMember(bridge([gainCall(keys.id, { deltaDb: -3 })], prompt, projectWithStringsGroup));
+            }
+        );
+
+        it.each(['turn the Keys down 3 dB except Strings', 'turn the Keys down 3 dB but not Strings'])(
+            'refuses a change to a member track on the atomic route in "%s"',
+            (prompt) => {
+                expect(groundGainList(prompt, [keys], projectWithStringsGroup).status).toBe('rejected');
+                expect(groundGainList(prompt, [keys], projectWithStringsGroup, true).status).toBe('rejected');
+            }
+        );
+
+        it('grounds a change to a track outside the excluded group', () => {
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 })],
+                'turn the Drums down 3 dB except Strings',
+                projectWithStringsGroup
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        });
+
+        it('does not protect a group a carve-out exempts from a protection it follows', () => {
+            const result = bridge(
+                [gainCall(keys.id, { deltaDb: -3 })],
+                'turn the Keys down 3 dB and leave Bass alone except Strings',
+                projectWithStringsGroup
+            );
+
+            expect(result.rejections).toEqual([]);
+        });
     });
 });
 

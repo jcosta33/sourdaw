@@ -6087,18 +6087,6 @@ function getRefinementProtectedObjects(input: {
     );
 }
 
-/** The protected objects, and the member tracks of every VCA group among them, which a group protects. */
-function withVcaGroupMembers(
-    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
-    context: ProjectContext
-): Array<{ id: string; name: string }> {
-    const groups = new Map((context.vcaGroups ?? []).map((group) => [group.id, group]));
-    return protectedObjects.flatMap((object) => [
-        object,
-        ...(groups.get(object.id)?.trackIds ?? []).map((id) => ({ id, name: object.name })),
-    ]);
-}
-
 /** The first protected object an action touches, or only through the given action types when any are given. */
 function findChangedObject(
     actions: BridgeGroundedLlmToolCallsResult['actions'],
@@ -6106,10 +6094,6 @@ function findChangedObject(
     context: ProjectContext,
     onlyActionTypes?: readonly string[]
 ): { id: string; name: string } | null {
-    if (onlyActionTypes?.length === 0) {
-        return null;
-    }
-    const objects = withVcaGroupMembers(protectedObjects, context);
     for (const action of actions) {
         if (onlyActionTypes !== undefined && !onlyActionTypes.includes(action.type)) {
             continue;
@@ -6118,12 +6102,39 @@ function findChangedObject(
         const payloadRecord =
             typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
         const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
-        const hit = objects.find((object) => touched.has(object.id));
+        const hit = protectedObjects.find((object) => touched.has(object.id));
         if (hit !== undefined) {
             return hit;
         }
     }
     return null;
+}
+
+/** The first track whose protected operations an action performs. */
+function findChangedControl(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    controls: ReadonlyArray<{ trackId: string; actionTypes: readonly string[] }>,
+    context: ProjectContext
+): { id: string; name: string } | null {
+    for (const { trackId, actionTypes } of controls) {
+        const track = context.tracks.find((candidate) => candidate.id === trackId);
+        const hit = track === undefined ? null : findChangedObject(actions, [track], context, actionTypes);
+        if (hit !== null) {
+            return hit;
+        }
+    }
+    return null;
+}
+
+/** Every track operation the chain's request texts leave alone, each read against the live project. */
+function getRefinementControlProtections(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext,
+    prompt: string
+): Array<{ trackId: string; actionTypes: string[] }> {
+    return [...basis.sources.map((source) => source.text), prompt].flatMap(
+        (text) => readExplicitProtections(text, context).protectedControls
+    );
 }
 
 function findProtectedChange(
@@ -6653,7 +6664,19 @@ function bridgeRefinedLlmToolCalls(
         return comparativeOutcome;
     }
     const protectedChange = findProtectedChange(routed.actions, protectedObjects, context);
-    return protectedChange === null ? routed : refuseRefinement(protectedChange);
+    if (protectedChange !== null) {
+        return refuseRefinement(protectedChange);
+    }
+    const changedControl = findChangedControl(
+        routed.actions,
+        getRefinementControlProtections(basis, context, prompt),
+        context
+    );
+    return changedControl === null
+        ? routed
+        : refuseRefinement(
+              `Refined proposal changes "${changedControl.name}", which the request chain leaves unchanged`
+          );
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
@@ -6944,16 +6967,10 @@ function refuseWhenProtectionIsUnresolved(
             `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
         );
     }
-    const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId);
-    const vcaTracks = context.tracks.filter((track) => protections.protectedVcaTrackIds.includes(track.id));
+    const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
     const changedTrack =
-        findChangedObject(grounded.actions, vcaTracks, context) ??
-        (protections.protectsSelectedTrack && selectedTrack !== undefined
-            ? findChangedObject(grounded.actions, [selectedTrack], context)
-            : null) ??
-        (selectedTrack === undefined
-            ? null
-            : findChangedObject(grounded.actions, [selectedTrack], context, protections.selectedTrackControlActions));
+        findChangedObject(grounded.actions, wholeTracks, context) ??
+        findChangedControl(grounded.actions, protections.protectedControls, context);
     return changedTrack === null
         ? grounded
         : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
