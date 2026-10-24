@@ -23,6 +23,8 @@ in addition; a stance matching no file dispatches without one. An escape attache
 whose probes participate in what would have caught it, or mints a new file for a defect class
 none covers.
 
+Release tracked-set drift lessons live in `test-validity.md`.
+
 ## Reviewer isolation
 
 A reviewer holds no author tree. It reads the head with `git show <sha>:<path>` from the primary checkout and the bundle under `.agents/review-bundles/<pr>-<sha>/`. It never edits, installs, or runs a check in a live lane. Findings go to the orchestrator, never to GitHub.
