@@ -272,23 +272,26 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
             const second = createAutomergeStorage<StorageValue>('child', 'editingTool');
             first.hydrate?.();
             second.hydrate?.();
+            const afterCommit = vi.fn();
             const afterAmbiguousCommit = vi.fn();
             registerExecute(() => {
                 first.set({ tool: 'draw' });
                 second.set({ tool: 'marquee' });
-                return { status: 'written', afterAmbiguousCommit };
+                return { status: 'written', afterCommit, afterAmbiguousCommit };
             });
             const onCommitted = vi.fn();
             const execution = executeAppAction(action, { shouldCommit: () => true, onCommitted });
             if (mode === 'before-write') {
                 await expect(execution).rejects.toBe(failure);
                 expect(firstDoc.editingTool).toEqual({ tool: 'select' });
+                expect(afterCommit).not.toHaveBeenCalled();
                 expect(afterAmbiguousCommit).not.toHaveBeenCalled();
             } else {
                 const received = await execution.catch((error: unknown) => error);
                 expect(received).toBeInstanceOf(AppActionCommittedError);
                 expect(received).toHaveProperty('cause', failure);
                 expect(firstDoc.editingTool).toEqual({ tool: 'draw' });
+                expect(afterCommit).not.toHaveBeenCalled();
                 expect(afterAmbiguousCommit).toHaveBeenCalledTimes(1);
             }
             expect(secondDoc.editingTool).toEqual({ tool: 'select' });
