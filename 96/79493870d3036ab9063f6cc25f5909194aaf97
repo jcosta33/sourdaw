@@ -1,0 +1,29 @@
+src/modules/Collaboration/repositories/__tests__/assetBitmapLifecycle.spec.ts
+  s_59e31a5c6f3e31::t_44d1a84789d939 136-138,145-147
+src/modules/Collaboration/repositories/__tests__/assetTransferResumeRepository.spec.ts
+  s_59e31a5c6f3e31::t_561b0bf15d38a6 57-59,70-72,409,411,420-422,427-431
+src/modules/Collaboration/repositories/assetTransferResumeRepository.ts
+  s_59e31a5c6f3e31::t_d0497c5feda91c 221
+src/modules/Collaboration/useCases/__tests__/assetTransferIntegrity.spec.ts
+  s_59e31a5c6f3e31::t_2d31ad493854ee 113-115
+src/modules/Collaboration/useCases/__tests__/assetTransferRestart.spec.ts
+  s_59e31a5c6f3e31::t_0eadbbda8a9e1f 398-406,431-433,515-517,543-545,580-582,584-587,589,591,593
+src/modules/Collaboration/useCases/__tests__/assetTransferResume.spec.ts
+  s_59e31a5c6f3e31::t_73c2f7d631bae8 4,14-15,17-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9679493870d3036ab9063f6cc25f5909194aaf97",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
