@@ -1,37 +1,28 @@
-import { getStoredWarpState, setWarpState, warpStateStore } from '#/modules/Arrangement/stores';
+import { getStoredWarpState, setWarpState } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
-function findOwningClip(markerId: string): string | null {
-    for (const [clipId, state] of Object.entries(warpStateStore.value?.states ?? {})) {
-        if (state.markers.some((m) => m.id === markerId)) {
-            return clipId;
-        }
-    }
-    return null;
-}
-
-export function removeMarker(markerId: string): void {
-    const clipId = findOwningClip(markerId);
-    if (clipId === null) {
-        return;
-    }
-    const before = getStoredWarpState(clipId);
-    if (!before) {
+export function removeMarker(ownerClipId: string, markerId: string): void {
+    // Warp-marker identity is clip-local: duplication, paste and Strip Silence
+    // deliberately copy marker ids into independent states, so the edit targets
+    // the clip it was opened on and never scans for the first matching id
+    // across the store (#5570).
+    const before = getStoredWarpState(ownerClipId);
+    if (!before || !before.markers.some((m) => m.id === markerId)) {
         return;
     }
     const beforeSnapshot = { ...before, markers: [...before.markers] };
 
     const nextMarkers = before.markers.filter((m) => m.id !== markerId);
     const nextState = { ...before, markers: nextMarkers };
-    setWarpState(clipId, nextState);
+    setWarpState(ownerClipId, nextState);
 
     pushUndoEntry(
         'Remove elastic marker',
         () => {
-            setWarpState(clipId, beforeSnapshot);
+            setWarpState(ownerClipId, beforeSnapshot);
         },
         () => {
-            setWarpState(clipId, { ...nextState, markers: [...nextMarkers] });
+            setWarpState(ownerClipId, { ...nextState, markers: [...nextMarkers] });
         }
     );
 }

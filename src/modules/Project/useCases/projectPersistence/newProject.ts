@@ -8,12 +8,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import {
-    compactProject,
-    projectActionHistoryToStore,
-    resetCrdtProject,
-    startCrdtAutoSave,
-} from '#/modules/CrdtDocument/useCases';
+import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
@@ -24,6 +19,12 @@ import { projectStore, type ProjectStoreState } from '../../stores/projectStore'
 import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
+import { markOutgoingProjectDirtyAfterAbort } from './helpers/markOutgoingProjectDirtyAfterAbort';
+import {
+    resetCrdtProjectWithTransportStopped,
+    type OutgoingProjectDisposition,
+    type ReplacedProject,
+} from './helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import {
     projectLoadEpoch,
@@ -32,14 +33,20 @@ import {
 } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
-type ActivateNewProjectInput = {
-    name: string;
-    previousTransientState: Pick<ProjectStoreState, 'initialized' | 'loading'> | null;
-    transaction: ProjectLoadTransaction;
+type NewProjectOptions = {
+    /** `discard` when the replacement exists to drop the outgoing project's unsaved state. */
+    readonly outgoingProject?: OutgoingProjectDisposition;
+    /** The caller keeps this true only while the user still wants this replacement. */
+    readonly shouldProceed?: () => boolean;
 };
 
-/** The replacement branch of the reset contract, derived from its callable shape. */
-type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
+type ActivateNewProjectInput = {
+    name: string;
+    outgoingProject: OutgoingProjectDisposition;
+    previousTransientState: Pick<ProjectStoreState, 'initialized' | 'loading'> | null;
+    shouldProceed: () => boolean;
+    transaction: ProjectLoadTransaction;
+};
 
 function failNewProjectActivation({
     previousTransientState,
@@ -49,6 +56,9 @@ function failNewProjectActivation({
         const project = projectStore.value;
         if (project && previousTransientState) {
             projectStore.set({ ...project, ...previousTransientState });
+            // A take the replacement's stop committed while `loading` hid it
+            // from `markDirty` belongs to the project that stays open.
+            markOutgoingProjectDirtyAfterAbort();
         }
     }
 }
@@ -120,7 +130,9 @@ function restorePreviousProjectRuntime(): void {
  */
 async function switchToNewProject({
     name,
+    outgoingProject,
     previousTransientState,
+    shouldProceed,
     transaction,
 }: ActivateNewProjectInput): Promise<ReplacedProject | null> {
     let graphTeardownStarted = false;
@@ -129,8 +141,11 @@ async function switchToNewProject({
     // Hoisted out of the try: a throw past the switch has to be able to settle
     // the reset this activation began.
     let replaced: ReplacedProject | null = null;
+    // A caller's withdrawal starts no transaction, so it never supersedes this
+    // one: every check before the switch asks the caller as well.
+    const shouldContinue = (): boolean => transaction.isCurrent() && shouldProceed();
     try {
-        if (!(await transaction.prepare()) || !transaction.activate()) {
+        if (!(await transaction.prepare()) || !shouldProceed() || !transaction.activate()) {
             failNewProjectActivation({ previousTransientState, transaction });
             return null;
         }
@@ -138,7 +153,7 @@ async function switchToNewProject({
         const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
         try {
             await stopPlayback();
-            if (!transaction.isCurrent()) {
+            if (!shouldContinue()) {
                 failNewProjectActivation({ previousTransientState, transaction });
                 return null;
             }
@@ -147,14 +162,21 @@ async function switchToNewProject({
             graphTeardownStarted = true;
             resetAudioGraph();
             await unloadLoadedExternalPlugins();
-            if (!transaction.isCurrent()) {
+            if (!shouldContinue()) {
                 restorePreviousProjectRuntime();
                 failNewProjectActivation({ previousTransientState, transaction });
                 return null;
             }
-            const reset = await resetCrdtProject(name, () => {
-                authorityReplaced = true;
-            });
+            // The reset refuses a transport rolling at the switch itself, and
+            // this stops it and asks again; see `resetCrdtProjectWithTransportStopped`.
+            const reset = await resetCrdtProjectWithTransportStopped(
+                name,
+                () => {
+                    authorityReplaced = true;
+                },
+                shouldContinue,
+                outgoingProject
+            );
             if (reset.status === 'refused') {
                 // Decided before the switch, so nothing was replaced: the
                 // previous project is intact and this is an ordinary abort.
@@ -271,7 +293,10 @@ async function activateNewProject(input: ActivateNewProjectInput): Promise<boole
     return commitNewProject({ name: input.name, finalize: replaced.finalize });
 }
 
-export function newProject(name = 'Untitled Project'): Promise<boolean> {
+export function newProject(
+    name = 'Untitled Project',
+    { outgoingProject = 'save-closed-takes', shouldProceed = () => true }: NewProjectOptions = {}
+): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     const currentProject = projectStore.value;
     const previousTransientState = currentProject
@@ -280,5 +305,5 @@ export function newProject(name = 'Untitled Project'): Promise<boolean> {
     if (currentProject) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
-    return activateNewProject({ name, previousTransientState, transaction });
+    return activateNewProject({ name, outgoingProject, previousTransientState, shouldProceed, transaction });
 }

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -42,7 +43,8 @@ test.describe('Inspector — Track Properties', () => {
         await expect(track_list.getByRole('button', { name: /^Unsolo/ })).toBeVisible({ timeout: 5000 });
     });
 
-    test('Track gain slider has a numeric value and is interactive', async ({ page }) => {
+    // inspectorTestId owns the gain step; this case checks only the displayed value.
+    test('Track gain slider shows a numeric value', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const gain = inspector.getByRole('slider', { name: /gain/i });
         await expect(gain).toBeVisible();
@@ -75,7 +77,8 @@ test.describe('Inspector — Track Properties', () => {
         await expect(vca_select).toBeVisible();
     });
 
-    test('Can add an automation lane', async ({ page }) => {
+    // inspectorAndRouting owns lane creation and removal; this case checks the add menu.
+    test('Add automation lane opens a nonempty menu', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: /Add automation lane/i }).click();
 

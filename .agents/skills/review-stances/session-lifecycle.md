@@ -36,6 +36,26 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-10-22 — a store hydrate on a sync reset the runtime-only fields (introduced by PR #171)
+
+PR #171 (commit `d764229f1`) gave `transportStore` a `fromCrdt` that expands the partial document slot to a
+full state seeded from defaults, and rewrote the hydrate spec to expect the cached `isPlaying`,
+`isRecording` and `playheadPosition` to be dropped ("without preserving stale cached fields"). The adapter's
+hydrate merge, `{ ...localValue, ...authorityValue }`, then overwrote those runtime keys on every
+projection that was not a project load. A collaborator's tempo edit, or any remote change after a local
+transport edit, stopped playback and recording and left the open take uncommitted. Only the local-commit
+path restored the keys (`projectCommittedLocalState`).
+
+Blind spot: the stance walked the project-load gesture, for which "start from defaults" is the contract,
+and took the spec asserting it as proof it was right for a sync. A store hydrate has two callers with
+opposite contracts: a load starts every field from the document, a re-projection of the open project
+(sync, merge, branch switch) must leave the fields the store never persists alone. Drive the real
+repository, `setupProjectionBridge`, the store and `replaceCrdtDocInLineage` with the runtime fields set
+(playing, recording, playhead at a nonzero beat), apply a remote change to that store's own slot and one
+to an unrelated slot after a local edit, and require the runtime fields to survive while the durable field
+takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
+fingerprint: ask which caller it speaks for.
+
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 
 The native CI failure on PR #5064 occurred after the plugin's stop and destroy assertions passed;

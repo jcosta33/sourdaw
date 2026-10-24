@@ -13,6 +13,11 @@ export async function createCrdtProject(name: string): Promise<void> {
     if (reset.status === 'refused') {
         throw new Error(`[createCrdtProject] Project reset refused (${reset.reason})`);
     }
+    if (reset.status === 'transport-active') {
+        // The bootstrap runs before any transport gesture can exist, so a rolling
+        // transport here is a broken precondition rather than a retry to make.
+        throw new Error('[createCrdtProject] Project reset refused (transport-active)');
+    }
     await compactProject();
     const outcome = await reset.finalize();
     if (outcome !== 'finalized') {

@@ -194,6 +194,11 @@ const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
     stretchRatio: (live, expected) => live.stretchRatio === expected.stretchRatio,
     loopEnabled: (live, expected) => live.loopEnabled === expected.loopEnabled,
     loopLength: (live, expected) => live.loopLength === expected.loopLength,
+    // Authored loop truth like `loopEnabled`: the anchor `setClipLoop` and a
+    // looped clip's first start trim stamp, so a restore that reverted one
+    // without the other would leave the loop window reading from the wrong
+    // placement (#4988).
+    loopOriginBeat: (live, expected) => live.loopOriginBeat === expected.loopOriginBeat,
     followAction: (live, expected) => live.followAction === expected.followAction,
     generating: (live, expected) => live.generating === expected.generating,
     isGhost: (live, expected) => live.isGhost === expected.isGhost,

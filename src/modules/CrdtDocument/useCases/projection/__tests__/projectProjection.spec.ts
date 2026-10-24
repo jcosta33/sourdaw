@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach, type MockInstance } from 'vitest';
 
+import { type StorageHydrateOptions } from '#/infra/store/storage/types';
+
 import { projectChangedCrdtSlots } from '../projectChangedCrdtSlots';
 import { projectCrdtToStores } from '../projectProjection';
 import { projectSlotProjections } from '../projectSlotProjections';
@@ -13,21 +15,25 @@ import { projectSlotProjections } from '../projectSlotProjections';
 
 type DispatchRecord = {
     slots: string[];
+    hydrateOptions: (StorageHydrateOptions | undefined)[];
     restore: () => void;
 };
 
 function spyOnProjections(): DispatchRecord {
     const slots: string[] = [];
+    const hydrateOptions: (StorageHydrateOptions | undefined)[] = [];
     const spies: MockInstance[] = [];
     for (const projection of projectSlotProjections) {
         const spy = vi.spyOn(projection, 'hydrate');
-        spy.mockImplementation(() => {
+        spy.mockImplementation((options?: StorageHydrateOptions) => {
             slots.push(projection.slot);
+            hydrateOptions.push(options);
         });
         spies.push(spy);
     }
     return {
         slots,
+        hydrateOptions,
         restore: () => {
             for (const spy of spies) {
                 spy.mockRestore();
@@ -50,6 +56,22 @@ describe('projectCrdtToStores', () => {
         projectCrdtToStores();
 
         expect(dispatched.slots).toEqual(projectSlotProjections.map((projection) => projection.slot));
+    });
+
+    it('tells every projection to keep its local runtime state unless the project is loading', () => {
+        dispatched = spyOnProjections();
+
+        projectCrdtToStores();
+
+        expect(dispatched.hydrateOptions).toEqual(projectSlotProjections.map(() => ({ keepLocalRuntimeState: true })));
+    });
+
+    it('tells every projection to start from defaults when the project is loading', () => {
+        dispatched = spyOnProjections();
+
+        projectCrdtToStores({ resetProjections: true });
+
+        expect(dispatched.hydrateOptions).toEqual(projectSlotProjections.map(() => ({ keepLocalRuntimeState: false })));
     });
 });
 

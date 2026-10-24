@@ -46,6 +46,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     addTimeSignatureChange: vi.fn(),
     defaultTransportState: {},
     ensureTrackStrips: vi.fn(),
+    isTransportIdle: vi.fn(),
     preferencesSeededTransportState: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
     replaceTempoMap: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     restoreTimelineMapSnapshot: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
     stopPlayback: vi.fn(),
+    countSettledTakes: vi.fn(),
 }));
 
 /**

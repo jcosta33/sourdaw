@@ -1,15 +1,23 @@
 import type { ReactNode } from 'react';
 
-import { act, render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, type Track, clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
+import {
+    clearClipSelection,
+    hydrateTracksForProject,
+    setMarqueeSelection,
+    setTrackState,
+} from '#/modules/Arrangement/useCases';
 import { togglePlayback } from '#/modules/Transport/useCases';
 import { selectorDeclaring } from '#/styles/testing/mainStylesheetRules';
 
+import { defaultWorkspaceState } from '../../../models/WorkspaceState';
+import { workspaceStore } from '../../../stores/workspaceStore';
 import { TransportBar } from '../TransportBar';
 
 const voiceRuntimeMocks = vi.hoisted(() => ({
@@ -195,6 +203,57 @@ const setViewportWidth = (width: number): void => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
 };
 
+const makeBrowseTrack = (id: string, name: string, clipId: string, clipName: string): Track => {
+    const clip: Clip = {
+        id: clipId,
+        trackId: id,
+        name: clipName,
+        type: 'midi',
+        startBeat: 0,
+        endBeat: 4,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+    return {
+        id,
+        name,
+        kind: 'midi',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#ffffff',
+        clips: [clip],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 64,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: `${id}-alternative`,
+        alternatives: [{ id: `${id}-alternative`, name: 'Main', clips: [clip] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
+};
+
 describe('TransportBar', () => {
     beforeEach(() => {
         voiceStatus = { isListening: false, transcribing: false };
@@ -235,6 +294,216 @@ describe('TransportBar', () => {
                 <TransportBar onReviewRun={() => undefined} />
             </TooltipProvider>
         );
+
+    describe('timeline clip browsing', () => {
+        let restoreBrowseFixture: (() => void) | null = null;
+
+        beforeEach(() => {
+            const originalTracks = trackStore.value;
+            const originalSelection = clipSelectionStore.value;
+            const originalWorkspace = workspaceStore.value;
+            if (originalTracks === null || originalSelection === null) {
+                throw new Error('Browse fixtures require initialized Arrangement stores');
+            }
+            expect(originalSelection.selectedClipId).toBeNull();
+            expect(originalSelection.selectedClipIds).toEqual([]);
+            restoreBrowseFixture = () => {
+                setTrackState(originalTracks);
+                clearClipSelection();
+                setMarqueeSelection(originalSelection.marqueeSelection);
+                workspaceStore.set(originalWorkspace);
+            };
+            hydrateTracksForProject({
+                tracks: [
+                    makeBrowseTrack('voice', 'Voice', 'verse', 'Verse'),
+                    makeBrowseTrack('drums', 'Drums', 'fill', 'Fill'),
+                ],
+            });
+            clearClipSelection();
+            setMarqueeSelection(null);
+            workspaceStore.set({ ...defaultWorkspaceState, mode: 'arrange', trackListOpen: true });
+            vi.mocked(useStore).mockImplementation((store, defaultValue) => {
+                if (store === trackStore) {
+                    return trackStore.value;
+                }
+                if (store === workspaceStore) {
+                    return workspaceStore.value;
+                }
+                if (store === voiceStatusStore) {
+                    return voiceStatus;
+                }
+                if (store === voiceInputAvailabilityStore) {
+                    return { hasVerifiedLocalModel: voiceInputAvailable };
+                }
+                return defaultValue ?? {};
+            });
+        });
+
+        afterEach(() => {
+            cleanup();
+            restoreBrowseFixture?.();
+            restoreBrowseFixture = null;
+        });
+
+        it.each([VIEWPORT_FULL_WIDTH, VIEWPORT_COMPACT_WIDTH])(
+            'opens a real clip listbox for named clips on distinct visible tracks at width %s',
+            async (width) => {
+                setViewportWidth(width);
+                workspaceStore.set({ ...defaultWorkspaceState, trackListOpen: false });
+                renderTransportBar();
+                const browse = screen.getByRole('button', { name: 'Browse timeline clips' });
+                expect(browse).toBeVisible();
+                expect(screen.getAllByRole('button', { name: 'Browse timeline clips' })).toHaveLength(1);
+                expect(browse.closest('.transport-bar__action-right')).toBeInTheDocument();
+                fireEvent.click(browse);
+
+                const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
+                expect(listbox).toBeVisible();
+                expect(within(listbox).getByRole('option', { name: /Verse, Voice/ })).toBeInTheDocument();
+                expect(within(listbox).getByRole('option', { name: /Fill, Drums/ })).toBeInTheDocument();
+                await waitFor(() => expect(listbox).toHaveFocus());
+                fireEvent.keyDown(listbox, { key: ' ' });
+                expect(clipSelectionStore.value?.selectedClipIds).toEqual(['verse']);
+                expect(within(listbox).getByRole('option', { name: /Verse, Voice/ })).toHaveAttribute(
+                    'aria-selected',
+                    'true'
+                );
+                const selectedClipStatuses = screen
+                    .getAllByRole('status')
+                    .filter((status) => status.textContent?.startsWith('Selected Verse, Voice'));
+                expect(selectedClipStatuses).toHaveLength(1);
+                expect(selectedClipStatuses[0]).toHaveTextContent('Selected Verse, Voice');
+                fireEvent.keyDown(listbox, { key: 'Escape' });
+                await waitFor(() =>
+                    expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument()
+                );
+                expect(browse).toHaveFocus();
+            }
+        );
+
+        it('keeps the same Browse trigger, active option and focused listbox across compact mode changes', async () => {
+            renderTransportBar();
+            const browse = screen.getByRole('button', { name: 'Browse timeline clips' });
+            fireEvent.click(browse);
+            const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
+            await waitFor(() => expect(listbox).toHaveFocus());
+            fireEvent.keyDown(listbox, { key: 'End' });
+            fireEvent.keyDown(listbox, { key: ' ' });
+            const activeId = listbox.getAttribute('aria-activedescendant');
+            expect(activeId).toBeTruthy();
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['fill']);
+
+            setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+            act(() => window.dispatchEvent(new Event('resize')));
+            expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toBe(browse);
+            expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toBe(listbox);
+            expect(listbox).toHaveAttribute('aria-activedescendant', activeId);
+            expect(listbox).toHaveFocus();
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['fill']);
+            expect(screen.getByRole('button', { name: 'More transport controls' })).toHaveAttribute(
+                'aria-expanded',
+                'false'
+            );
+            fireEvent.keyDown(listbox, { key: 'Escape' });
+            await waitFor(() => expect(browse).toHaveFocus());
+            setViewportWidth(VIEWPORT_FULL_WIDTH);
+            act(() => window.dispatchEvent(new Event('resize')));
+            expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toBe(browse);
+            expect(browse).toHaveFocus();
+            expect(screen.getAllByRole('button', { name: 'Browse timeline clips' })).toHaveLength(1);
+        });
+
+        it('claims Browse activation keys locally while leaving native activation and other keys intact', () => {
+            renderTransportBar();
+            const browse = screen.getByRole('button', { name: 'Browse timeline clips' });
+            const windowKeydown = vi.fn<(event: KeyboardEvent) => void>();
+            window.addEventListener('keydown', windowKeydown);
+            try {
+                expect(fireEvent.keyDown(browse, { key: 'Enter' })).toBe(true);
+                expect(fireEvent.keyDown(browse, { key: ' ' })).toBe(true);
+                expect(windowKeydown).not.toHaveBeenCalled();
+                fireEvent.keyDown(browse, { key: 'Tab' });
+                expect(windowKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key: 'Tab' }));
+            } finally {
+                window.removeEventListener('keydown', windowKeydown);
+            }
+        });
+
+        it('keeps Browse and More as sibling disclosures with their own Escape focus return', async () => {
+            setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+            renderTransportBar();
+            const browse = screen.getByRole('button', { name: 'Browse timeline clips' });
+            const more = screen.getByRole('button', { name: 'More transport controls' });
+            fireEvent.click(more);
+            expect(screen.getByRole('dialog', { name: 'More transport controls' })).toBeInTheDocument();
+            fireEvent.click(browse);
+            const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
+            await waitFor(() => expect(listbox).toHaveFocus());
+            expect(more).toHaveAttribute('aria-expanded', 'false');
+            expect(screen.queryByRole('dialog', { name: 'More transport controls' })).not.toBeInTheDocument();
+            fireEvent.keyDown(listbox, { key: 'Escape' });
+            await waitFor(() => expect(browse).toHaveFocus());
+
+            fireEvent.click(browse);
+            await waitFor(() => expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toHaveFocus());
+            fireEvent.click(more);
+            expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
+            const moreDialog = screen.getByRole('dialog', { name: 'More transport controls' });
+            await waitFor(() => expect(moreDialog.contains(document.activeElement)).toBe(true));
+            fireEvent.keyDown(moreDialog, { key: 'Escape' });
+            await waitFor(() => expect(more).toHaveFocus());
+            expect(browse).toHaveAttribute('aria-expanded', 'false');
+        });
+
+        it('preserves outside focus when the Browse disclosure dismisses', async () => {
+            renderTransportBar();
+            fireEvent.click(screen.getByRole('button', { name: 'Browse timeline clips' }));
+            await waitFor(() => expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toHaveFocus());
+            const outside = document.createElement('button');
+            outside.textContent = 'Outside action';
+            document.body.appendChild(outside);
+            try {
+                act(() => outside.focus());
+                await waitFor(() =>
+                    expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument()
+                );
+                expect(outside).toHaveFocus();
+            } finally {
+                outside.remove();
+            }
+        });
+
+        it('disposes Browse when the actual timeline becomes unavailable rather than reopening stale state', async () => {
+            const rendered = renderTransportBar();
+            fireEvent.click(screen.getByRole('button', { name: 'Browse timeline clips' }));
+            await waitFor(() => expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toHaveFocus());
+            workspaceStore.set({ ...defaultWorkspaceState, mode: 'automation' });
+            rendered.rerender(
+                <TooltipProvider>
+                    <TransportBar onReviewRun={() => undefined} />
+                </TooltipProvider>
+            );
+            expect(screen.queryByRole('button', { name: 'Browse timeline clips' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
+            workspaceStore.set({ ...defaultWorkspaceState, mode: 'clip' });
+            rendered.rerender(
+                <TooltipProvider>
+                    <TransportBar onReviewRun={() => undefined} />
+                </TooltipProvider>
+            );
+            expect(screen.getByRole('button', { name: 'Browse timeline clips' })).toHaveAttribute(
+                'aria-expanded',
+                'false'
+            );
+            hydrateTracksForProject({ tracks: [] });
+            rendered.rerender(
+                <TooltipProvider>
+                    <TransportBar onReviewRun={() => undefined} />
+                </TooltipProvider>
+            );
+            expect(screen.queryByRole('button', { name: 'Browse timeline clips' })).not.toBeInTheDocument();
+        });
+    });
 
     it('should render correctly', () => {
         const { container } = render(<TransportBar onReviewRun={() => undefined} />);

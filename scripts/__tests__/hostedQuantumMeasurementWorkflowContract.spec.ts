@@ -391,8 +391,8 @@ describe('hosted quantum measurement workflow contract', () => {
     });
 
     it('refuses removal of any bound on the Google Chrome install', () => {
-        const rootCommand =
-            'sudo env "PATH=$PATH" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome';
+        const aptFeedFilter = 'bash scripts/aptWithoutMicrosoftFeed.sh';
+        const rootCommand = `sudo env "PATH=$PATH" timeout --kill-after=15s 5m ${aptFeedFilter} node_modules/.bin/playwright install --force chrome`;
         const installRun = (candidate: UnknownRecord): string => {
             const run = namedStep(candidate, 'Install Google Chrome').run;
             if (typeof run !== 'string') {
@@ -409,6 +409,7 @@ describe('hosted quantum measurement workflow contract', () => {
         const attempts = 'three Google Chrome install attempts that fail after the third';
         const rootTimeout = 'Google Chrome install under a root-side sudo timeout';
         const forced = 'the forced Google Chrome install';
+        const feedFilter = 'Google Chrome install through the Microsoft apt feed filter';
         const stepLimit = 'above its three timed-out attempts';
         const jobLimit = 'a job limit that holds three timed-out Google Chrome install attempts';
 
@@ -422,12 +423,21 @@ describe('hosted quantum measurement workflow contract', () => {
             )
         ).toThrow(forced);
 
+        // Playwright's Chrome script runs its own apt-get update, which the
+        // image's Microsoft product feed fails with a 403 (#5359).
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(rewriteInstall((run) => run.replace(`${aptFeedFilter} `, '')))
+        ).toThrow(feedFilter);
+
         // The bound must be root-side: a timeout owned by the runner user cannot
         // signal the sudo'd apt and curl tree.
         expect(() =>
             assertHostedQuantumMeasurementWorkflow(
                 rewriteInstall((run) =>
-                    run.replace(rootCommand, 'sudo node_modules/.bin/playwright install --force chrome')
+                    run.replace(
+                        rootCommand,
+                        `sudo ${aptFeedFilter} node_modules/.bin/playwright install --force chrome`
+                    )
                 )
             )
         ).toThrow(rootTimeout);
@@ -436,7 +446,7 @@ describe('hosted quantum measurement workflow contract', () => {
                 rewriteInstall((run) =>
                     run.replace(
                         rootCommand,
-                        'timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome'
+                        `timeout --kill-after=15s 5m ${aptFeedFilter} node_modules/.bin/playwright install --force chrome`
                     )
                 )
             )
@@ -521,6 +531,7 @@ describe('hosted quantum measurement workflow contract', () => {
                 'src/modules/AudioEngine/wasm/proof_chamber.js',
                 'src/modules/AudioEngine/wasm/scoring.js',
                 '.github/workflows/quantum-measurements.yml',
+                'scripts/aptWithoutMicrosoftFeed.sh',
                 'scripts/hostedQuantumMeasurementWorkflowContract.ts',
                 'scripts/quantumMeasurementCalibration.ts',
             ])
