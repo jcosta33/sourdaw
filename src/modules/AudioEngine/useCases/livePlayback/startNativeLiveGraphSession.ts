@@ -769,16 +769,16 @@ async function rollSessionTransport(input: {
     // must not render a frame the region does not govern. Before the feed
     // too, because a position read against no maps reports the engine's
     // default tempo rather than the arrangement's.
-    const captureMutation = nativeRecordingCaptureClockState.beginMutation('start', input.recordingOwner);
+    const capture = nativeRecordingCaptureClockState.beginStart(input.recordingGeometry, input.recordingOwner);
     let maps: Awaited<ReturnType<typeof setEngineTransportMaps>>;
     try {
         maps = await setEngineTransportMaps(input.transportMaps);
     } catch (error) {
-        nativeRecordingCaptureClockState.settleMutation(captureMutation, 'unknown');
+        capture.mapsFailed('unknown');
         throw error;
     }
     if (maps.outcome === 'declined') {
-        nativeRecordingCaptureClockState.settleMutation(captureMutation, 'rejected');
+        capture.mapsFailed('rejected');
         // The engine keeps whatever pair the *previous* session installed:
         // nothing between sessions clears its maps or its loop region, and the
         // install that would have replaced them is the one that just failed.
@@ -797,13 +797,7 @@ async function rollSessionTransport(input: {
     // engine can say which this one is.
     nativeLiveGraphSession.loopRegion = input.transportMaps.loopRegion;
     nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
-    nativeRecordingCaptureClockState.retainAdmission(
-        input.recordingGeometry && { ...input.recordingGeometry, isLooping: maps.applied.loopEnabled },
-        maps.applied.admittedBatch,
-        false,
-        undefined,
-        input.recordingOwner
-    );
+    capture.mapsApplied(maps.applied.loopEnabled, maps.applied.admittedBatch);
     // Before the roll, and awaited — the opposite order to the automation
     // writer's, for a reason that belongs to the note store rather than to
     // preference. `apply_due_midi_notes` delivers nothing while the transport
@@ -863,13 +857,7 @@ async function rollSessionTransport(input: {
         rollPositionSeconds !== input.positionSeconds
     );
     nativeLiveGraphSession.rolling = rolled.rolling;
-    nativeRecordingCaptureClockState.settleMutation(captureMutation, rolled.rolling ? 'applied' : 'unknown');
-    nativeRecordingCaptureClockState.retainAdmission(
-        input.recordingGeometry && { ...input.recordingGeometry, isLooping: maps.applied.loopEnabled },
-        rolled.provenAfterBatch,
-        true,
-        captureMutation
-    );
+    capture.rollSettled(rolled.rolling, rolled.provenAfterBatch);
     if (!rolled.rolling) {
         // The notes went out ahead of a roll that never happened. A parked
         // engine delivers none of them, and the next play arms afresh; leaving

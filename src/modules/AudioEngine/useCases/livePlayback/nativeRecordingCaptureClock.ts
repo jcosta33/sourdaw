@@ -200,13 +200,34 @@ function retainNativeRecordingAdmission(
     nativeLiveGraphSession.captureAdmissions.sort((left, right) => left.admittedBatch - right.admittedBatch);
 }
 
+/** A start admits maps before MIDI arm, then admits the distinct roll fence. */
+function beginNativeRecordingStart(
+    geometry: NativeRecordingGeometry | undefined,
+    owner: NativeRecordingRootWitness | undefined
+) {
+    const mutation = beginCaptureMutation('start', owner);
+    let installedGeometry: NativeRecordingGeometry | undefined;
+    return {
+        mapsFailed: (outcome: 'rejected' | 'unknown'): void => {
+            settleCaptureMutation(mutation, outcome);
+        },
+        mapsApplied: (loopEnabled: boolean, admittedBatch: number | null): void => {
+            installedGeometry = geometry && { ...geometry, isLooping: loopEnabled };
+            retainNativeRecordingAdmission(installedGeometry, admittedBatch, false, undefined, owner);
+        },
+        rollSettled: (rolling: boolean, admittedBatch: number | null): void => {
+            settleCaptureMutation(mutation, rolling ? 'applied' : 'unknown');
+            retainNativeRecordingAdmission(installedGeometry, admittedBatch, true, mutation);
+        },
+    };
+}
+
 function admittedGeometry(batchesApplied: number, rootIdentity: string): NativeRecordingAdmission | null {
     const admissions = nativeLiveGraphSession.captureAdmissions;
     let index = admissions.length - 1;
     while (
         index >= 0 &&
-        (admissions[index]!.admittedBatch > batchesApplied ||
-            admissions[index]!.rootIdentity !== rootIdentity)
+        (admissions[index]!.admittedBatch > batchesApplied || admissions[index]!.rootIdentity !== rootIdentity)
     ) {
         index--;
     }
@@ -246,6 +267,7 @@ export const nativeRecordingCaptureClockState = {
     reset: resetNativeRecordingCaptureClock,
     observe: observeNativeRecordingCaptureClock,
     retainAdmission: retainNativeRecordingAdmission,
+    beginStart: beginNativeRecordingStart,
     beginMutation: beginCaptureMutation,
     settleMutation: settleCaptureMutation,
 };
