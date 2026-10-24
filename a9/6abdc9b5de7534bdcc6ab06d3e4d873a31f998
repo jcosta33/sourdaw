@@ -1,0 +1,49 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 68
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 96
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 81
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 125
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 98
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 72,76
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 63,69,143,337
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 38,117,209-212,218
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_29d8df116c5b92::t_743ce9ed5b90bf 28
+  s_29d8df116c5b92::t_69a0d6331aa2a1 60,67,281
+  s_29d8df116c5b92::t_6e506f212b8f51 29
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 80,82
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 36-37,200,473,484,828
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 112
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_69a0d6331aa2a1 25-26,53,156,325
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_29d8df116c5b92::t_743ce9ed5b90bf 25
+  s_29d8df116c5b92::t_69a0d6331aa2a1 141,145,215
+  s_29d8df116c5b92::t_b1d5015d457acc 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a96abdc9b5de7534bdcc6ab06d3e4d873a31f998",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
