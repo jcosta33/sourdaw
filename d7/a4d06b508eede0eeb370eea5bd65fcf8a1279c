@@ -1,0 +1,23 @@
+scripts/__tests__/prValidationScope.spec.ts
+  s_29d8df116c5b92::t_b5599b12d52fad 187,189,564-870,979,1089-1097,1154,1161
+scripts/prValidationScope.ts
+  s_29d8df116c5b92::t_5082091c8ab8be 9,68,534-535,550,554,583,585-587
+scripts/prValidationScopeCheckout.ts
+  s_29d8df116c5b92::t_5556eb1448910d 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7a4d06b508eede0eeb370eea5bd65fcf8a1279c",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

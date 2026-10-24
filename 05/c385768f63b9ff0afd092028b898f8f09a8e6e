@@ -27,7 +27,20 @@ src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
   "git_ai_version": "1.7.5",
   "base_commit_sha": "05c385768f63b9ff0afd092028b898f8f09a8e6e",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_59e31a5c6f3e31": {
       "agent_id": {
         "tool": "codex",
