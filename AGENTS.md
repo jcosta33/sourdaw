@@ -174,6 +174,12 @@ unresolved threads remain resolvable. `review:prepare` logs
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, and `review:repair` logs it
 only at or above the threshold.
 
+An obsolete pull request with no truthful merged replacement may use `pr:retire` only when every
+live review root is resolved by an author-App repair and reviewer-App confirmation on the named
+head, and every `REQUEST_CHANGES` review maps to those roots. Its public `retirement-v1` record
+attests the reason and evidence; the command verifies native review and closure facts, not semantic
+obsolescence. This route does not approve or deliver the PR.
+
 Every recorded value — draws, discards, and approval claims — is single-line, trimmed and bounded,
 and refused when it carries a credential-shaped value, a private-key header, a JWT, a bearer token,
 or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
@@ -221,12 +227,13 @@ convention unless Sourdaw deliberately differs.
 All lanes share this machine. Run costly verification in the pipeline's per-job runners, not
 locally at other lanes' expense.
 
-- Locally, run only what is cheap and narrow: the spec you wrote or changed, lint on the files you
-  touched. Push for everything else.
+- Run focused tests and formatting locally when the changed files can fail those checks. CI owns
+  lint and every TypeScript typecheck; do not run lint or typecheck commands locally. Use the
+  pull request's CI results as their verification evidence.
 - Run repository commands sequentially within your lane. Other lanes may validate concurrently only
   when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
-  (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
+  (tests, builds, Cargo, Playwright, WASM, measurements) with
   `pnpm guard --profile <focused|broad|extended> [--max-rss-mib <estimate>] [--require-target] --
 <command>`. Estimate peak RAM from the latest observed guard peak or the nearest command; without
   an estimate the guard applies the profile ceiling, raised to the measured budget it records for
@@ -245,12 +252,7 @@ locally at other lanes' expense.
 | ------------------------- | -------------------------------------------- |
 | Focused tests             | `pnpm test:run <file-or-narrow-directory>`   |
 | Focused E2E               | `pnpm test:e2e <spec>`                       |
-| Focused lint              | `pnpm lint <changed-files>`                  |
 | Focused format            | `pnpm format <changed-files>`                |
-| App types                 | `pnpm typecheck`                             |
-| Test types                | `pnpm typecheck:test`                        |
-| Script types              | `pnpm typecheck:scripts`                     |
-| E2E types                 | `pnpm typecheck:e2e`                         |
 | Focused Rust tests        | `pnpm cargo:test --package <crate> <filter>` |
 | Focused Rust format       | `pnpm cargo:fmt --package <crate>`           |
 | Module boundaries         | `pnpm deps:validate`                         |
