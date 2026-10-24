@@ -1154,3 +1154,38 @@ it('keeps only live observed export buffers after sampling', () => {
     expect(collected.deref).toHaveBeenCalledTimes(1);
     expect(second.deref).toHaveBeenCalledTimes(1);
 });
+
+it('attributes a live 8192-byte export buffer without retaining dead references', () => {
+    const codecBuffer = new ArrayBuffer(8192);
+    const sinkBuffer = new ArrayBuffer(13);
+    const codec = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => codecBuffer) } as const;
+    const collected = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => undefined) } as const;
+    const sink = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => sinkBuffer) } as const;
+    const allocations: WeakRef<ArrayBufferLike>[] = [codec, collected, sink];
+    const observations = new WeakMap<ArrayBufferLike, BufferObservation>([
+        [
+            codecBuffer,
+            {
+                origin: 'ctor:Uint8Array',
+                allocationBytes: 8192,
+                format: 'mp3',
+                renderGeneration: 56,
+                producerStack: 'mp3Encoder.ts:45',
+            },
+        ],
+        [sinkBuffer, { origin: 'sink-write', allocationBytes: 13, format: 'mp3', renderGeneration: 56 }],
+    ]);
+
+    const sample = sampleLiveExportBytes(allocations, observations);
+    expect(sample.live).toBe(8192 + 13);
+    expect([...sample.bySize]).toEqual([
+        [8192, { count: 1, bytes: 8192 }],
+        [13, { count: 1, bytes: 13 }],
+    ]);
+    expect([...sample.byEightKiBStack]).toEqual([['mp3Encoder.ts:45', { count: 1, bytes: 8192 }]]);
+    expect([...sample.bySize.values()].reduce((sum, bucket) => sum + bucket.bytes, 0)).toBe(sample.live);
+    expect(allocations).toEqual([codec, sink]);
+    expect(codec.deref).toHaveBeenCalledTimes(1);
+    expect(collected.deref).toHaveBeenCalledTimes(1);
+    expect(sink.deref).toHaveBeenCalledTimes(1);
+});
