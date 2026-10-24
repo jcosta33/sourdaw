@@ -1,0 +1,94 @@
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_3e7dea5cde3f9e::t_4baef5ff797773 1122
+src/modules/AudioEngine/useCases/noteExpression/__tests__/relocateNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_bb65857d8295d3 22,28-29
+  s_3e7dea5cde3f9e::t_e038b0ef53e78b 64-105
+  s_3e7dea5cde3f9e::t_06d664e29b8f52 9,15-16
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_1c7d6ac732fa7d 32
+src/modules/AudioEngine/useCases/noteExpression/noteExpressionTimeline.ts
+  s_3e7dea5cde3f9e::t_cbbcc1285af6f3 26-32
+  s_3e7dea5cde3f9e::t_866e7e18bb33da 60-61
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_3e7dea5cde3f9e::t_4319721072f19e 614-615,617-619,622
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_3e7dea5cde3f9e::t_0ceec4f358247f 557
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_3e7dea5cde3f9e::t_e26bd3d19848eb 835
+src/modules/AudioEngine/AGENTS.md
+  s_3e7dea5cde3f9e::t_a3e423ef71368d 32
+src/modules/Transport/useCases/scheduling/__tests__/resolveChannelBendClips.spec.ts
+  s_3e7dea5cde3f9e::t_48098927c864bf 24,27-28,33,41,48,56,60-74,86,98
+src/modules/AudioEngine/useCases/noteExpression/findChannelBendInForce.ts
+  s_3e7dea5cde3f9e::t_66a0b7ec7e2bcc 2,4,7-8,20-26
+src/modules/MIDI/useCases/midiClipData/projectChannelBend.ts
+  s_3e7dea5cde3f9e::t_3e1fe152220297 50-53
+  s_3e7dea5cde3f9e::t_5581eecb9d08f5 1,13-17
+  s_3e7dea5cde3f9e::t_7c1d56767ada05 104,111,119-125
+  s_3e7dea5cde3f9e::t_d8648a6b54e134 103
+  s_3e7dea5cde3f9e::t_091cf5ac25150b 63-77
+  s_3e7dea5cde3f9e::t_f8913b6761b32b 126
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_3e7dea5cde3f9e::t_204be3ec22c120 111-112,115-123
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  s_3e7dea5cde3f9e::t_3cb158bcf77bff 549-686
+  s_3e7dea5cde3f9e::t_dcc9f492e0459e 892-913
+src/modules/AudioEngine/useCases/noteExpression/advanceNoteExpression.ts
+  s_3e7dea5cde3f9e::t_504199976d8c05 57
+  s_3e7dea5cde3f9e::t_c1a73da32d8eb7 47-50
+  s_3e7dea5cde3f9e::t_3bdd3a31748877 85-86
+  s_3e7dea5cde3f9e::t_74bd7a763a92ea 7
+src/modules/AudioEngine/useCases/noteExpression/relocateNoteExpression.ts
+  s_3e7dea5cde3f9e::t_550c3da3590bec 41-42
+  s_3e7dea5cde3f9e::t_d25ac8513d7c40 52
+src/modules/Transport/useCases/scheduling/resolveChannelBendClips.ts
+  s_3e7dea5cde3f9e::t_f587c6df33465a 8,21-24,29,34-36,39
+src/modules/AudioEngine/useCases/noteExpression/reachesChannel.ts
+  s_3e7dea5cde3f9e::t_94d33ee13f02de 1-9
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_3e7dea5cde3f9e::t_1a31cc5031ddc1 719-727
+src/modules/MIDI/useCases/midiClipData/__tests__/projectChannelBend.spec.ts
+  s_3e7dea5cde3f9e::t_fbd4e755b083f0 54-55
+  s_3e7dea5cde3f9e::t_7692e30907dc0b 447-508
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_25a2bfe0f850fc 25
+src/modules/AudioEngine/useCases/noteExpression/startNoteExpression.ts
+  s_3e7dea5cde3f9e::t_29c85b42fd645d 175-177
+  s_3e7dea5cde3f9e::t_127be79457aaf7 29-30
+  s_3e7dea5cde3f9e::t_4c51b4479cc948 212
+  s_3e7dea5cde3f9e::t_8d0ee2080c2d8b 38-39
+  s_3e7dea5cde3f9e::t_7c626b322bee2b 198-199
+src/modules/Transport/useCases/scheduling/__tests__/relocateHeldNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_dc7405fed0034e 130-132
+  s_3e7dea5cde3f9e::t_c4398ae560f6f9 36-38
+  s_3e7dea5cde3f9e::t_bc116b5741e104 133-140
+src/modules/Transport/useCases/scheduling/__tests__/takeHeldNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_0a7bb9e78b2b30 35,41-42,45-49,53
+  s_3e7dea5cde3f9e::t_7d9379c8d098b0 82
+  s_3e7dea5cde3f9e::t_bc03146e2753c8 220-249
+  s_3e7dea5cde3f9e::t_b16756ecb0c4ad 281,392,413-414
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_3e7dea5cde3f9e::t_94b71be93862e1 2058-2065,2067-2110,2113-2115
+  s_3e7dea5cde3f9e::t_bdc82dde4ccbfe 2066
+  s_3e7dea5cde3f9e::t_88d8be551359e7 2111-2112
+src/modules/Transport/useCases/playheadScheduler/__tests__/stopPlayheadScheduler.spec.ts
+  s_3e7dea5cde3f9e::t_f81fb7a3ac7964 164
+src/modules/AudioEngine/useCases/noteExpression/__tests__/projectNoteExpressionCurves.spec.ts
+  s_3e7dea5cde3f9e::t_385a69192f5090 324,330-331,365-431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fdf5f7b30152959be4407d3b3a51653965f75923",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
