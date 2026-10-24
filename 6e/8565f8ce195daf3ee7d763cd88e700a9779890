@@ -1,0 +1,48 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_1c08b47ac3792f::t_072ac256845f92 2,4,24-25,31,36-44,55
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_1c08b47ac3792f::t_bc6d89d26cb58a 265,267-282
+  s_1c08b47ac3792f::t_a55e3145dd6a40 465-467,469-488
+  s_1c08b47ac3792f::t_e8c42ee9c34908 13-28,31,33-36,38,41,45-46,48-82,107-264,283-285,288-293,295-356,359-372,374-400,402-411,413-431,434-435,439-464,489-495,497-506,531-537,539-584,609-646,798-848,944-956
+  s_1c08b47ac3792f::t_cd9f91e5e7ce37 438,849-943
+  s_1c08b47ac3792f::t_1d5025064ca365 1-12,266,286-287,294,373,401,412,432-433,436-437,468,538,957-1034,1054-1066,1634
+src/modules/AiRuntime/models/PlanningOutcome.ts
+  s_1c08b47ac3792f::t_0d6aa95cb3ca4b 20-23
+  s_1c08b47ac3792f::t_8b736c09279a04 19
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_1c08b47ac3792f::t_ae36cb4f282014 1-3,5-21,24-59,63-190,192-246,248-249,251-255,264-265,269-284,286-297,299-303,322-348,349,354,364-371,373-378,380-396,402-423
+  s_1c08b47ac3792f::t_45c7265705afa8 350-353
+  s_1c08b47ac3792f::t_a25e6ce7688a55 247,285,355-363,372
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  s_1c08b47ac3792f::t_1801cc9bfd3f4a 42-44
+src/modules/AiRuntime/transformers/readLastCommitRequest.ts
+  s_1c08b47ac3792f::t_c0ff5e90dd59cc 1-78
+  s_1c08b47ac3792f::t_58b240bcb22d77 79-80
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_f25eb7dbd7ae49 44
+  s_1c08b47ac3792f::t_4352f27646aee7 33
+  s_1c08b47ac3792f::t_0f5d984475464c 396-403,405-431,439-454,465-476,486,489-490
+  s_1c08b47ac3792f::t_7cbbcf6172ab97 516-517,527
+  s_1c08b47ac3792f::t_3df7d59b8ac13a 488,526
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_37fa6c066ac6a2 92
+  s_1c08b47ac3792f::t_b40ee9a7611408 432-478
+  s_1c08b47ac3792f::t_5c5384a6398786 516-524
+  s_1c08b47ac3792f::t_9fad2051a852e7 431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e8565f8ce195daf3ee7d763cd88e700a9779890",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
