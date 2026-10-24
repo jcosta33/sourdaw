@@ -20,6 +20,7 @@ import { getApplicationProtectedObjects } from './agentReference/getApplicationP
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalGroundingBasis } from './agentReference/proposalGroundingBasis';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
@@ -320,11 +321,23 @@ function composeGroundingBasis(
     ) {
         return undefined;
     }
-    const promptProtections = getApplicationProtectedObjects({
-        actions: guarded.actions,
-        context: input.context,
-        prompt: input.prompt,
-    });
+    const readProtections = readExplicitProtections(input.prompt, input.context);
+    // The tracks and operations the request protects are recorded as they resolve now, so a later
+    // refinement never reads this request's selection phrases against a selection that has since moved.
+    const promptProtections = unionProtectedObjects(
+        getApplicationProtectedObjects({
+            actions: guarded.actions,
+            context: input.context,
+            prompt: input.prompt,
+        }),
+        input.context.tracks
+            .filter((track) => readProtections.protectedTrackIds.includes(track.id))
+            .map(({ id, name }) => ({ id, name }))
+    );
+    const protectedControls = readProtections.protectedControls.map(({ trackId, actionTypes }) => ({
+        trackId,
+        operations: actionTypes,
+    }));
     if (input.refinementBasis !== undefined && bridged.refinement !== undefined) {
         return proposalGroundingBasis.extend({
             previous: input.refinementBasis,
@@ -332,12 +345,14 @@ function composeGroundingBasis(
             calls: input.toolCalls,
             inheritedCommandIndexes: bridged.refinement.inheritedCommandIndexes,
             protectedUnchanged: unionProtectedObjects(promptProtections, bridged.refinement.protectedObjects),
+            protectedControls,
         });
     }
     return proposalGroundingBasis.create({
         prompt: input.prompt,
         calls: input.toolCalls,
         protectedUnchanged: promptProtections,
+        protectedControls,
     });
 }
 

@@ -124,7 +124,7 @@ export function getApplicationProtectedObjects(input: {
     const explicitClipProtection = getExplicitClipProtection(prompt, context);
     const readProtections = readExplicitProtections(prompt, context);
     const readProtectedTracks = new Set(
-        readProtections.protectedTrackIds.filter((id) => !readProtections.variantTrackIds.includes(id))
+        readProtections.protectedTrackIds.filter((id) => !readProtections.namedTrackIds.includes(id))
     );
     const protections = [
         ...(actions.some((action) => action.type === 'importStemSet')

@@ -6079,9 +6079,17 @@ function getRefinementProtectedObjects(input: {
     removed: ReadonlyArray<{ id: string; name: string }>;
 }): Array<{ id: string; name: string }> {
     const { basis, context, prompt } = input;
+    // A basis that records its protections keeps what each request protected when it was grounded; one
+    // that predates the record reads its sources against the live project, as it always did.
+    const sourceProtections =
+        basis.protectedControls === undefined
+            ? basis.sources.map((source) =>
+                  getApplicationProtectedObjects({ actions: [], context, prompt: source.text })
+              )
+            : [];
     return unionProtectedObjects(
         basis.protectedUnchanged,
-        ...basis.sources.map((source) => getApplicationProtectedObjects({ actions: [], context, prompt: source.text })),
+        ...sourceProtections,
         getApplicationProtectedObjects({ actions: [], context, prompt }),
         input.removed
     );
@@ -6126,19 +6134,23 @@ function findChangedControl(
     return null;
 }
 
-/** What the chain's request texts leave alone beyond the protected objects, each read against the live project. */
+/**
+ * What the chain leaves alone beyond the protected objects: the operations each earlier request kept,
+ * as recorded when it was grounded, and the tracks and operations this refinement's own text keeps, read
+ * against the live project.
+ */
 function getRefinementReadProtections(
     basis: ProposalGroundingBasis,
     context: ProjectContext,
     prompt: string
-): { controls: Array<{ trackId: string; actionTypes: string[] }>; variantTracks: Array<{ id: string; name: string }> } {
-    const readings = [...basis.sources.map((source) => source.text), prompt].map((text) =>
-        readExplicitProtections(text, context)
-    );
-    const variantIds = new Set(readings.flatMap((reading) => reading.variantTrackIds));
+): { controls: Array<{ trackId: string; actionTypes: string[] }>; namedTracks: Array<{ id: string; name: string }> } {
+    const current = readExplicitProtections(prompt, context);
+    const earlier =
+        basis.protectedControls?.map(({ trackId, operations }) => ({ trackId, actionTypes: operations })) ??
+        basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls);
     return {
-        controls: readings.flatMap((reading) => reading.protectedControls),
-        variantTracks: context.tracks.filter((track) => variantIds.has(track.id)),
+        controls: [...earlier, ...current.protectedControls],
+        namedTracks: context.tracks.filter((track) => current.namedTrackIds.includes(track.id)),
     };
 }
 
@@ -6674,7 +6686,7 @@ function bridgeRefinedLlmToolCalls(
     }
     const readProtections = getRefinementReadProtections(basis, context, prompt);
     const changedRead =
-        findChangedObject(routed.actions, readProtections.variantTracks, context) ??
+        findChangedObject(routed.actions, readProtections.namedTracks, context) ??
         findChangedControl(routed.actions, readProtections.controls, context);
     return changedRead === null
         ? routed

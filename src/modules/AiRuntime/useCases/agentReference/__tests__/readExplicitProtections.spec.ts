@@ -73,52 +73,42 @@ const context: ProjectContext = {
 const drumsSelected: ProjectContext = { ...context, selectedTrackId: drums.id };
 const keysSelected: ProjectContext = { ...context, selectedTrackId: keys.id };
 const noVcaProject: ProjectContext = { ...context, vcaGroups: [] };
-const eqDevice = { id: 'device-eq', type: 'builtin-eq', name: 'EQ', bypassed: false, parameters: [] };
-const eqProject: ProjectContext = {
-    ...context,
-    tracks: [...context.tracks.filter((track) => track.id !== guitar.id), { ...guitar, devices: [eqDevice] }],
-};
-
 function unresolvedIn(prompt: string, project: ProjectContext = context): string[] {
     return readExplicitProtections(prompt, project).unresolved;
 }
 
 const SEND_ACTIONS = ['addSend', 'removeSend', 'setSend'];
+const NOTHING = { unresolved: [], protectedTrackIds: [], namedTrackIds: [], protectedControls: [] };
 
 describe('readExplicitProtections', () => {
-    describe('refuses a reference clearly meant as an object that binds to nothing', () => {
+    describe('refuses only an object form that names a project object and binds to none', () => {
         it.each([
+            // a control of it
             ['do not change pan, solo, and fader of Ghost', ['Ghost']],
             ["don't change the pan of Ghost", ['Ghost']],
+            ['turn Keys down 3 dB; the pan of Ghost stays as is', ['Ghost']],
+            ['leave the volume or the fader of the Kick alone', ['Kick']],
+            // a possessive control
             ["leave Ghost's fader alone", ['Ghost']],
+            ['leave Ghost’s fader alone', ['Ghost']],
+            ["don't touch Ghost's pan", ['Ghost']],
+            // a singular kind of it
             ['leave the Ghost track alone', ['Ghost']],
+            ['keep the Ghost track as is', ['Ghost']],
             ['leave the "Ghost" bus alone', ['Ghost']],
-            ['leave Ghost alone', ['Ghost']],
-            ['leave the Kick alone', ['Kick']],
-            ['leave the Backing Singer alone', ['Backing Singer']],
-            ['leave the Vocal alone', ['Vocal']],
-            ['leave Keys and Ghost alone', ['Ghost']],
-            ['with Ghost unchanged', ['Ghost']],
-            ['no changes to Ghost', ['Ghost']],
-            ['without touching Ghost', ['Ghost']],
-            ['leave Ghost be', ['Ghost']],
-            ['leave Ghost untouched', ['Ghost']],
-            ['leave Keys alone except for the Intro', ['Intro']],
-            ['leave Keys alone but not in the Bridge', ['Bridge']],
-            ['turn Keys down 3 dB except the Intro', ['Intro']],
-            ['leave Ghost and keep Keys alone', ['Ghost']],
-            ['leave Ghost then Keys alone', ['Ghost']],
-            ['leave Ghost; keep Keys alone', ['Ghost']],
-            ['turn Keys down 3 dB; Ghost stays as is', ['Ghost']],
-            ['turn Keys down 3 dB: Ghost should not change', ['Ghost']],
-            ['turn Keys down 3 dB; Piano and Ghost stay as they are', ['Piano', 'Ghost']],
-            ['turn Keys down 3 dB; Ghost remains unchanged', ['Ghost']],
+            ['turn Keys down 3 dB; Ghost send stays as is', ['Ghost']],
+            ['leave the Backing Vocal track alone', ['Backing Vocal']],
+            ['leave the drum group alone', ['drum']],
+            ['turn Keys down 3 dB; Leave the Ghost track alone', ['Ghost']],
+            // a position
             ['leave the first track alone', ['first track']],
             ['leave Keys as well as the first track alone', ['first track']],
             ['leave Keys along with the second track alone', ['second track']],
             ['leave Keys as well as the last one alone', ['last one']],
             ['leave the Keys alone except the second one', ['second one']],
+            ['leave the next one alone', ['next one']],
             ["don't touch track 2", ['track 2']],
+            // a selection phrase
             ['leave Keys plus it alone', ['it']],
             ['leave this track alone', ['this track']],
             ['leave the selected track alone', ['the selected track']],
@@ -139,175 +129,164 @@ describe('readExplicitProtections', () => {
         it('reports a pronoun beside two named targets, which could be either', () => {
             expect(unresolvedIn('turn Keys and Bass down 3 dB, then keep its pan as is')).toEqual(['its pan']);
         });
-    });
 
-    describe('reads project names whole before cutting at punctuation or a stop word', () => {
-        it.each([
-            'leave "Rock and Roll" alone',
-            'leave Rock and Roll alone',
-            'leave Sub Boost alone',
-            'keep Home Alone unchanged',
-            "don't touch Dr. Beat",
-            'leave "Dr. Beat" alone',
-            'leave Dr. Beat alone, thanks',
-            'leave Keys, Rock and Roll as well as Dr. Beat alone',
-            'with Home Alone unchanged',
-            'leave the Chorus marker alone',
-            'leave the Verse alone',
-            'keep Lead and Glue as is',
-            'Home Alone stays as is, turn Keys down 3 dB',
-        ])('finds nothing unresolved in "%s"', (prompt) => {
-            expect(unresolvedIn(prompt)).toEqual([]);
+        it('reports a position when the project has no tracks', () => {
+            expect(unresolvedIn('leave the first track alone', { ...context, tracks: [] })).toEqual(['first track']);
+        });
+
+        it('refuses the #5339 reproduction when Strings is absent', () => {
+            expect(
+                unresolvedIn('turn the Drums down 3 dB; do not change pan, solo, and fader of Strings', noVcaProject)
+            ).toEqual(['Strings']);
         });
     });
 
-    describe('treats everything else as no target', () => {
+    describe('grounds everything else as main does', () => {
         it.each([
-            // qualities and aesthetics
+            // a bare name, whatever it may be, and any capitalization
+            'leave the Kick alone',
+            'Ghost stays as is',
+            'leave Keys and Ghost alone',
+            'with Ghost unchanged',
+            'no changes to Ghost',
+            'without touching Ghost',
+            'leave Ghost be',
+            'leave Keys alone except Ghost',
+            'leave the Vocal alone',
+            'leave the Drum alone',
+            'leave the Drum Buss alone',
+            'keep the Attack as is',
+            "don't touch the Tuning",
+            'Swing stays the same',
+            'Inputs unchanged',
+            'Leave The Keys Alone',
+            'Keep Everything Else The Same',
+            'keep Spotify loudness in mind',
+            'and keep Mike happy',
+            'keep the Abbey Road vibe intact',
+            'keep the Low End as is',
+            'leave the Equalizer alone',
+            // plural categories and kinds of track
+            'leave the Audio tracks alone',
+            'leave the Backing tracks alone',
+            'leave the audio track alone',
+            'leave the MIDI track alone',
+            // quoted text and qualities
+            'keep "Ghost" as is',
+            'keep the "warm" sound as is',
+            "don't change the 'vibe'",
+            'keep the drum pattern as is',
+            'leave the drum fills alone',
+            'keep the vocal chain intact',
             'keep it warm',
             'keep the groove intact',
-            'keep the vibe the same',
-            'leave the tone alone',
             "don't change the feel",
             'keep the mix balanced',
-            'keep the dynamics unchanged',
-            'leave the Groove alone',
-            "don't change the Vibe",
-            // the rest of the mix
+            // the rest of the mix and project settings
             'keep everything else unchanged',
-            'leave anything else alone',
             'leave the rest of the song alone',
-            'leave all the other tracks alone',
             "don't touch the others",
-            // project settings
             'do not change the tempo',
             'keep the BPM the same',
-            "don't change the Key",
             'keep the time signature as is',
-            "don't touch the metronome",
-            // filler, possessives and prepositions around a resolved name
+            'do not change the Time Signature',
+            'keep the Meter as is',
+            // filler, possessives, kind nouns beside a bound name
             'leave my Keys alone',
             'keep the Keys at the same level',
             "keep Bass's pan unchanged",
             "leave the Keys' fader alone",
             'leave the Keys and its sends alone',
             'please leave Keys alone',
-            // kind nouns beside a name
-            'leave the Reverb return alone',
+            'leave the Drum Bus return alone',
             'leave the Keys track and the Bass bus alone',
             "don't change the Glue compressor",
-            "don't touch the plugins",
-            "don't change the Guitar inserts",
-            // notes, midi, markers, sections and the selected clip
+            // notes, markers, sections, the selected clip
             "don't edit the Keys MIDI",
-            "don't change the Keys notes",
             'keep the selected clip as is',
             "don't move the Chorus marker",
-            // non-protective senses
+            'leave the Chorus marker alone',
+            'leave the Verse alone',
+            // controls alone and non-protective senses
+            'leave the Levels alone',
+            'leave pan alone',
             'keep going',
             'leave it at that',
             'keep it simple',
             'leave room for the Keys',
-            'leave some headroom',
-            'keep the Keys the same as the Bass',
             'rename Keys to "leave Ghost alone"',
             'rename Guitar to Keep Them Separate',
-            'leave headroom, the master should stay untouched',
-            // brand names, people, days and trailing clauses
-            'keep Spotify loudness in mind',
-            'and keep Mike happy',
             "don't change the Keys until Friday",
             "don't touch the Keys, Sam is still editing them",
             'Sarah likes the Keys as is',
-            'Leave The Keys Alone',
-            'Keep Everything Else The Same',
-            'keep the Low End intact',
-            'keep the Abbey Road vibe intact',
-            'keep the Bass Mono as is',
-            // quoted text and title case never refuse by themselves
-            'keep the "warm" sound as is',
-            "don't change the 'vibe'",
-            'keep "Ghost" as is',
-            'Drums stays punchy',
+            // names with stop words and punctuation read whole
+            'leave "Rock and Roll" alone',
+            'leave Rock and Roll alone',
+            'leave Sub Boost alone',
+            'keep Home Alone unchanged',
+            "don't touch Dr. Beat",
+            'leave "Dr. Beat" alone',
+            'leave Keys, Rock and Roll as well as Dr. Beat alone',
         ])('finds nothing unresolved in "%s"', (prompt) => {
             expect(unresolvedIn(`turn Keys down 3 dB; ${prompt}`)).toEqual([]);
-        });
-
-        it('reads a capitalized protection verb inside a sentence as a title, and after a semicolon or colon as a request', () => {
-            expect(unresolvedIn('turn Keys down 3 dB and Keep Them Separate')).toEqual([]);
-            expect(unresolvedIn('turn Keys down 3 dB; Leave The Ghost Alone')).toEqual(['Ghost']);
-            expect(unresolvedIn('turn Keys down 3 dB; Leave Ghost alone')).toEqual(['Ghost']);
-            expect(unresolvedIn('turn Keys down 3 dB: Keep Ghost unchanged')).toEqual(['Ghost']);
-            expect(unresolvedIn('turn Keys down 3 dB; Leave The Keys Alone')).toEqual([]);
-            expect(unresolvedIn('turn Keys down 3 dB. Keep Everything Else The Same')).toEqual([]);
-        });
-
-        it('reads a capital at a sentence start as no signal, outside an object form', () => {
-            expect(unresolvedIn('turn Keys down 3 dB. Ghost stays as is.')).toEqual([]);
-            expect(unresolvedIn('Ghost stays as is, turn Keys down 3 dB')).toEqual([]);
-            expect(unresolvedIn('turn Keys down 3 dB. The Ghost track stays as is.')).toEqual(['Ghost']);
-            expect(unresolvedIn("turn Keys down 3 dB. Ghost's fader stays as is.")).toEqual(['Ghost']);
-        });
-
-        it.each([
-            'Turn the Drums down 3 dB. Levels unchanged.',
-            'Turn the Drums down 3 dB. Width stays as is.',
-            'Turn the Drums down 3 dB. Rest as is.',
-            'Turn the Drums down 3 dB. Others unchanged.',
-            'Turn the Drums down 3 dB. Automation stays as is.',
-            'turn the Drums down 3 dB; leave the Levels alone',
-            'turn the Drums down 3 dB; leave the Pans and Mutes alone',
-            'turn the Drums down 3 dB; keep the Volumes and Faders as is',
-            'turn the Drums down 3 dB; keep the Solos unchanged',
-            'turn the Drums down 3 dB; keep the Fx as is',
-            'turn the Drums down 3 dB; keep the Effects as is',
-            'turn the Drums down 3 dB; keep the Low End as is',
-            'turn the Drums down 3 dB; keep the Stereo Image the same',
-            'turn the Drums down 3 dB; keep the Sidechain unchanged',
-            "turn the Drums down 3 dB; don't touch the Equalizer",
-            "turn the Drums down 3 dB; don't touch the EQ",
-            "turn the Drums down 3 dB; don't touch the Compressor",
-            'turn the Drums down 3 dB; keep the Meter as is',
-            'turn the Drums down 3 dB; do not change the Time Signature',
-            'turn the Drums down 3 dB; keep Rest as is',
-            'turn the Drums down 3 dB; keep Others unchanged',
-            'lower the Vocals by 2 dB and Keep Everything Else The Same',
-        ])('finds nothing unresolved in "%s"', (prompt) => {
             expect(unresolvedIn(prompt)).toEqual([]);
-            expect(unresolvedIn(prompt, eqProject)).toEqual([]);
+            expect(unresolvedIn(`turn Keys down 3 dB. ${prompt}.`)).toEqual([]);
+        });
+
+        it('reads a capitalized protection verb inside a clause as a title, and after a semicolon or colon as a request', () => {
+            expect(unresolvedIn('turn Keys down 3 dB and Keep Them Separate')).toEqual([]);
+            expect(unresolvedIn('turn Keys down 3 dB; Leave the Ghost track alone')).toEqual(['Ghost']);
+            expect(unresolvedIn('turn Keys down 3 dB: Keep the Ghost track unchanged')).toEqual(['Ghost']);
+            expect(unresolvedIn('turn Keys down 3 dB; Leave The Keys Alone')).toEqual([]);
+        });
+    });
+
+    describe('a track named by its exact name', () => {
+        it.each([
+            ['leave Keys alone'],
+            ['keep Keys as is'],
+            ['do not change Keys'],
+            ['turn Drums down 3 dB; Keys stays as is'],
+            ['turn Drums down 3 dB and Keys stays as is'],
+            ['with Keys unchanged'],
+            ['leave the Keys track alone'],
+            ['Leave The Keys Alone'],
+        ])('protects it as a whole in "%s"', (protection) => {
+            const prompt = protection.startsWith('turn') ? protection : `turn Drums down 3 dB; ${protection}`;
+
+            expect(readExplicitProtections(prompt, context)).toEqual({
+                ...NOTHING,
+                protectedTrackIds: [keys.id],
+                namedTrackIds: [keys.id],
+            });
+        });
+
+        it('protects only the controls a protection names beside it', () => {
+            expect(readExplicitProtections('turn Drums down 3 dB; leave the Keys fader alone', context)).toEqual({
+                ...NOTHING,
+                protectedControls: [{ trackId: keys.id, actionTypes: ['setTrackGain'] }],
+            });
+            expect(readExplicitProtections("turn Drums down 3 dB; keep Bass's pan unchanged", context)).toEqual({
+                ...NOTHING,
+                protectedControls: [{ trackId: bass.id, actionTypes: ['setTrackPan'] }],
+            });
         });
 
         it.each([
-            ['turn the Drums down 3 dB; do not change pan, solo, and fader of Strings', ['Strings']],
-            ['turn the Drums down 3 dB and leave the Kick alone', ['Kick']],
-            ['turn the Drums down 3 dB; Leave Ghost alone', ['Ghost']],
-            ['keep the Ghost track as is', ['Ghost']],
-        ])('still refuses "%s" with no such object', (prompt, expected) => {
-            expect(unresolvedIn(prompt, noVcaProject)).toEqual(expected);
+            'turn Drums down 3 dB and keep Keys happy',
+            'turn Drums down 3 dB and leave room for the Keys',
+            'turn Drums down 3 dB and keep the Keys the same as the Bass',
+            'turn Drums down 3 dB; keep the Bass Mono as is',
+            'turn Drums down 3 dB; leave the Guitar compressor alone',
+            'turn Drums down 3 dB; leave the Glue alone',
+            'turn Drums down 3 dB except the Keys into the Bass',
+        ])('protects nothing it only mentions in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([]);
         });
 
-        it('reports a position when the project has no tracks', () => {
-            expect(unresolvedIn('leave the first track alone', { ...context, tracks: [] })).toEqual(['first track']);
-        });
-
-        it('binds a singular or plural variant of an object name and protects that object', () => {
-            expect(readExplicitProtections('turn Keys down 3 dB; leave the Drum alone', context)).toEqual({
-                unresolved: [],
-                protectedTrackIds: [drums.id],
-                variantTrackIds: [drums.id],
-                protectedControls: [],
-            });
-            expect(readExplicitProtections('turn Keys down 3 dB; keep the Guitars as is', context)).toMatchObject({
-                unresolved: [],
-                protectedTrackIds: [guitar.id],
-            });
-            expect(readExplicitProtections('turn Keys down 3 dB; leave the Drum pan alone', context)).toMatchObject({
-                unresolved: [],
-                protectedTrackIds: [],
-            });
-            expect(readExplicitProtections('turn Drums down 3 dB; keep the key the same', context)).toMatchObject({
-                unresolved: [],
-                protectedTrackIds: [],
+        it('names a track an exclusion carves out of an instruction', () => {
+            expect(readExplicitProtections('turn Drums down 3 dB except Bass', context)).toMatchObject({
+                protectedTrackIds: [bass.id],
             });
         });
     });
@@ -315,14 +294,12 @@ describe('readExplicitProtections', () => {
     describe('selection', () => {
         it('protects the whole selected track through a selection phrase', () => {
             expect(readExplicitProtections('leave this track alone', keysSelected)).toEqual({
-                unresolved: [],
+                ...NOTHING,
                 protectedTrackIds: [keys.id],
-                variantTrackIds: [],
-                protectedControls: [],
             });
             expect(readExplicitProtections('leave Drums along with this track alone', keysSelected)).toMatchObject({
                 unresolved: [],
-                protectedTrackIds: [keys.id],
+                protectedTrackIds: expect.arrayContaining([keys.id, drums.id]),
             });
         });
 
@@ -334,9 +311,7 @@ describe('readExplicitProtections', () => {
             ['leave the selected track sends and fader alone', [...SEND_ACTIONS, 'setTrackGain']],
         ])('protects only the controls "%s" names on the selected track', (prompt, actionTypes) => {
             expect(readExplicitProtections(prompt, drumsSelected)).toEqual({
-                unresolved: [],
-                protectedTrackIds: [],
-                variantTrackIds: [],
+                ...NOTHING,
                 protectedControls: [{ trackId: drums.id, actionTypes }],
             });
         });
@@ -347,11 +322,9 @@ describe('readExplicitProtections', () => {
             'turn Keys down 3 dB with the selected track unchanged',
             'turn Keys down 3 dB except the selected track',
         ])('protects the whole selected track in "%s"', (prompt) => {
-            expect(readExplicitProtections(prompt, drumsSelected)).toEqual({
+            expect(readExplicitProtections(prompt, drumsSelected)).toMatchObject({
                 unresolved: [],
                 protectedTrackIds: [drums.id],
-                variantTrackIds: [],
-                protectedControls: [],
             });
         });
 
@@ -366,26 +339,17 @@ describe('readExplicitProtections', () => {
 
         it('binds "it" and "its" to the request\'s one named target, protecting only the control named', () => {
             expect(readExplicitProtections('turn Keys down 3 dB but keep its pan as is', context)).toEqual({
-                unresolved: [],
-                protectedTrackIds: [],
-                variantTrackIds: [],
+                ...NOTHING,
                 protectedControls: [{ trackId: keys.id, actionTypes: ['setTrackPan'] }],
             });
-            expect(readExplicitProtections('turn Keys down 3 dB, then leave it alone', context)).toEqual({
-                unresolved: [],
-                protectedTrackIds: [],
-                variantTrackIds: [],
-                protectedControls: [],
-            });
+            expect(readExplicitProtections('turn Keys down 3 dB, then leave it alone', context)).toEqual(NOTHING);
         });
 
         it('uses the selection for "it" only when the request names no target', () => {
             expect(readExplicitProtections('turn Keys down 3 dB but keep its pan as is', drumsSelected)).toMatchObject({
-                variantTrackIds: [],
                 protectedControls: [{ trackId: keys.id, actionTypes: ['setTrackPan'] }],
             });
             expect(readExplicitProtections('keep its pan as is', drumsSelected)).toMatchObject({
-                variantTrackIds: [],
                 protectedControls: [{ trackId: drums.id, actionTypes: ['setTrackPan'] }],
             });
         });
@@ -393,7 +357,7 @@ describe('readExplicitProtections', () => {
         it('only exempts the selected track from a protection it is carved out of', () => {
             expect(
                 readExplicitProtections('turn Keys down 3 dB and leave Bass alone except this track', keysSelected)
-            ).toEqual({ unresolved: [], protectedTrackIds: [], variantTrackIds: [], protectedControls: [] });
+            ).toMatchObject({ unresolved: [], protectedTrackIds: [bass.id] });
             expect(unresolvedIn('turn Keys down 3 dB and leave Bass alone except this track')).toEqual(['this track']);
         });
     });
@@ -412,16 +376,10 @@ describe('readExplicitProtections', () => {
         });
 
         it('does not protect a VCA group an exception carves out of a protection', () => {
-            expect(readExplicitProtections('leave everything alone except Strings', context)).toMatchObject({
-                unresolved: [],
-                protectedTrackIds: [],
-            });
+            expect(readExplicitProtections('leave everything alone except Strings', context)).toEqual(NOTHING);
             expect(
                 readExplicitProtections('turn Drums down 3 dB and leave Bass alone except Strings', context)
-            ).toMatchObject({
-                unresolved: [],
-                protectedTrackIds: [],
-            });
+            ).toMatchObject({ unresolved: [], protectedTrackIds: [bass.id] });
         });
     });
 
@@ -431,8 +389,9 @@ describe('readExplicitProtections', () => {
             ['Strings stays intact', [keys.id, bass.id], context],
             ['keep the selected track intact', [drums.id], drumsSelected],
             ['keep this track intact', [drums.id], drumsSelected],
+            ['keep Keys intact', [keys.id], context],
         ])('still protects what "%s" binds', (protection, trackIds, project) => {
-            const reading = readExplicitProtections(`turn Keys down 3 dB; ${protection}`, project);
+            const reading = readExplicitProtections(`turn Bass down 3 dB; ${protection}`, project);
 
             expect(reading.unresolved).toEqual([]);
             expect(reading.protectedTrackIds).toEqual(trackIds);
@@ -445,12 +404,7 @@ describe('readExplicitProtections', () => {
         it.each(['keep the Low End intact', 'keep the groove intact', 'keep the Ghost intact'])(
             'protects nothing and refuses nothing in "%s"',
             (protection) => {
-                expect(readExplicitProtections(`turn Keys down 3 dB; ${protection}`, context)).toEqual({
-                    unresolved: [],
-                    protectedTrackIds: [],
-                    variantTrackIds: [],
-                    protectedControls: [],
-                });
+                expect(readExplicitProtections(`turn Keys down 3 dB; ${protection}`, context)).toEqual(NOTHING);
             }
         );
     });
@@ -460,10 +414,8 @@ describe('readExplicitProtections', () => {
             'protects the group in "%s"',
             (prompt) => {
                 expect(readExplicitProtections(prompt, context)).toEqual({
-                    unresolved: [],
+                    ...NOTHING,
                     protectedTrackIds: [keys.id, bass.id],
-                    variantTrackIds: [],
-                    protectedControls: [],
                 });
             }
         );
@@ -474,41 +426,32 @@ describe('readExplicitProtections', () => {
             expect(
                 readExplicitProtections('turn Bass down 3 dB; Leave the selected track alone', bassSelected)
             ).toEqual({
-                unresolved: [],
+                ...NOTHING,
                 protectedTrackIds: [bass.id],
-                variantTrackIds: [],
-                protectedControls: [],
             });
         });
     });
 
     describe('rules the closed forms leave unpinned', () => {
         it('reads a selection phrase only in a closed form, so "leave this track" with no closer binds nothing', () => {
-            expect(readExplicitProtections('turn Keys down 3 dB and leave this track', keysSelected)).toEqual({
-                unresolved: [],
-                protectedTrackIds: [],
-                variantTrackIds: [],
-                protectedControls: [],
-            });
+            expect(readExplicitProtections('turn Keys down 3 dB and leave this track', keysSelected)).toEqual(NOTHING);
             expect(unresolvedIn('turn Keys down 3 dB and leave this track')).toEqual([]);
         });
 
         it('maps "faders" to the gain control of the selected track', () => {
             expect(readExplicitProtections("keep the selected track's faders as is", drumsSelected)).toEqual({
-                unresolved: [],
-                protectedTrackIds: [],
-                variantTrackIds: [],
+                ...NOTHING,
                 protectedControls: [{ trackId: drums.id, actionTypes: ['setTrackGain'] }],
             });
         });
 
-        it('lets a carve-out name a control of the target without protecting anything', () => {
+        it('lets a carve-out name a control of the target without protecting anything but what it follows', () => {
             expect(
                 readExplicitProtections(
                     'turn Drums down 3 dB, pan Drums left 20% and leave Bass alone except its pan',
                     context
                 )
-            ).toEqual({ unresolved: [], protectedTrackIds: [], variantTrackIds: [], protectedControls: [] });
+            ).toEqual({ ...NOTHING, protectedTrackIds: [bass.id], namedTrackIds: [bass.id] });
         });
     });
 });
