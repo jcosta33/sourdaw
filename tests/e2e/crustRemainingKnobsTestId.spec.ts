@@ -14,7 +14,9 @@ async function selectEffectTier(
     page: import('@playwright/test').Page,
     tier: 'shape' | 'build' | 'route'
 ): Promise<void> {
-    const detail = page.getByRole('group', { name: 'Effect control detail' });
+    const detail = page
+        .getByTestId('instrument-bottom-panel-body')
+        .getByRole('group', { name: 'Effect control detail' });
     const button = detail.getByRole('button', { name: tier, exact: true });
     await button.click();
     await expect(button).toHaveAttribute('aria-pressed', 'true');
@@ -50,7 +52,9 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await page.getByRole('menuitem', { name: /^Crust$/ }).click();
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
-        const detail = inspector.getByRole('group', { name: 'Effect control detail' });
+        const detail = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('group', { name: 'Effect control detail' });
         await expect(detail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 

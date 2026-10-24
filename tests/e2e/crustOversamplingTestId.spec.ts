@@ -27,7 +27,9 @@ test.describe('Crust oversampling — selecting a factor flips aria-pressed', ()
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
         await page.waitForTimeout(800);
-        const detail = inspector.getByRole('group', { name: 'Effect control detail' });
+        const detail = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('group', { name: 'Effect control detail' });
         await expect(detail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
         const shape = detail.getByRole('button', { name: 'shape', exact: true });
         await shape.click();

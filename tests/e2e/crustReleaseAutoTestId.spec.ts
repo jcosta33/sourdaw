@@ -28,7 +28,9 @@ test.describe('Crust release-auto toggle — aria-pressed round-trip', () => {
         await inspector.getByText('Crust', { exact: false }).first().click();
         await page.waitForTimeout(800);
 
-        const effectControlDetail = inspector.getByRole('group', { name: 'Effect control detail' });
+        const effectControlDetail = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('group', { name: 'Effect control detail' });
         await expect(effectControlDetail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
             'aria-pressed',
             'true'

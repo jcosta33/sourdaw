@@ -29,12 +29,16 @@ test.describe('Crust level chips — switching detail level flips aria-pressed',
         // Open the panel.
         await inspector.getByText('Crust', { exact: false }).first().click();
         await page.waitForTimeout(800);
-        const detail = inspector.getByRole('group', { name: 'Effect control detail' });
+        const detail = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('group', { name: 'Effect control detail' });
         await expect(detail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('selecting named detail tiers flips the active aria-pressed state', async ({ page }) => {
-        const detail = page.getByRole('group', { name: 'Effect control detail' });
+        const detail = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('group', { name: 'Effect control detail' });
         const play = detail.getByRole('button', { name: 'play', exact: true });
         const shape = detail.getByRole('button', { name: 'shape', exact: true });
         const build = detail.getByRole('button', { name: 'build', exact: true });

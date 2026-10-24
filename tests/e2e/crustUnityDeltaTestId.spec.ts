@@ -26,7 +26,9 @@ test.describe('Crust A=B + Delta toggles — aria-pressed round-trip', () => {
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
         await page.waitForTimeout(800);
-        const detail = inspector.getByRole('group', { name: 'Effect control detail' });
+        const detail = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('group', { name: 'Effect control detail' });
         await expect(detail.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
         const build = detail.getByRole('button', { name: 'build', exact: true });
         await build.click();
