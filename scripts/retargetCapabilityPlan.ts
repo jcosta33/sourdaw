@@ -261,6 +261,27 @@ function ruleLimitations(rule: JsonValue): string[] {
     return [];
 }
 
+function bypassActorIsSupported(actor: Record<string, JsonValue>): boolean {
+    const actorType = actor.actor_type;
+    const bypassMode = actor.bypass_mode;
+    if (
+        typeof actorType !== 'string' ||
+        !['Integration', 'OrganizationAdmin', 'RepositoryRole', 'Team', 'DeployKey', 'User'].includes(actorType) ||
+        typeof bypassMode !== 'string' ||
+        !['always', 'pull_request', 'exempt'].includes(bypassMode) ||
+        (actorType === 'DeployKey' && bypassMode === 'pull_request')
+    ) {
+        return false;
+    }
+    if (actorType === 'OrganizationAdmin') {
+        return true;
+    }
+    if (actorType === 'DeployKey') {
+        return actor.actor_id === null;
+    }
+    return typeof actor.actor_id === 'number' && Number.isSafeInteger(actor.actor_id) && actor.actor_id > 0;
+}
+
 function effectivePolicyLimitations(effectiveBranches: CapabilityObservation['effectiveBranches']): string[] {
     const limitations: string[] = [];
     if (!jsonArray(effectiveBranches.main)) {
@@ -316,12 +337,8 @@ function policyLimitations(observation: CapabilityObservation, mainApplicability
         }
         for (const bypass of ruleset.bypass_actors) {
             const actor = record(bypass, 'ruleset bypass actor');
-            if (
-                !Number.isSafeInteger(actor.actor_id) ||
-                typeof actor.actor_type !== 'string' ||
-                typeof actor.bypass_mode !== 'string'
-            ) {
-                limitations.push('ruleset bypass actor identity is incomplete');
+            if (!bypassActorIsSupported(actor)) {
+                limitations.push('ruleset bypass actor semantics or identity are unsupported');
             }
         }
         for (const rule of ruleset.rules) {

@@ -856,6 +856,42 @@ describe('bounded capability capture', () => {
         expect(capture.disposed).toHaveBeenCalledOnce();
     });
 
+    it.each([
+        ['unknown actor type', { actor_id: 7, actor_type: 'UnknownActor', bypass_mode: 'always' }],
+        ['unknown bypass mode', { actor_id: 7, actor_type: 'User', bypass_mode: 'unknown-mode' }],
+        ['negative user ID', { actor_id: -1, actor_type: 'User', bypass_mode: 'always' }],
+    ] as const)('emits an incomplete inactive plan for a stable ruleset with %s', (_description, actor) => {
+        const { port } = fakePort();
+        let rulesetReads = 0;
+        const invalidRuleset = { ...RULE, bypass_actors: [actor] };
+        const capture = runStableClassicCli({
+            ...port,
+            ruleset: () => {
+                rulesetReads += 1;
+                return invalidRuleset;
+            },
+        });
+
+        expect(capture.run()).toBe(0);
+        expect(rulesetReads).toBe(2);
+        expect(capture.printed).toHaveLength(1);
+        const output = capture.printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const emitted = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+        expect(emitted).toMatchObject({
+            completeObservedInventory: false,
+            limitations: ['ruleset bypass actor semantics or identity are unsupported'],
+            activationEligible: false,
+            datedGrantEvidence: { currentGrantClaim: false },
+            claims: { atomicServerSnapshot: false, repairedDestinationBoundary: false, operatorGrantPresent: false },
+        });
+        expect(requiredRecord(emitted.baseline, 'captured baseline').rulesets).toEqual([invalidRuleset]);
+        expect(output).toBe(canonicalJson(emitted));
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
     const allowanceActors = (['User', 'Team', 'App'] as const).flatMap((typename) =>
         [42, null].map((databaseId) => ({ typename, databaseId }))
     );

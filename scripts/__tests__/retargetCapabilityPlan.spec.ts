@@ -110,6 +110,22 @@ describe('inactive retarget capability plan', () => {
         expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
     });
 
+    it.each([
+        ['always', 'User', 7],
+        ['pull_request', 'User', 7],
+        ['exempt', 'User', 7],
+        ['always', 'OrganizationAdmin', 0],
+        ['always', 'DeployKey', null],
+    ] as const)('accepts supported bypass actor semantics %s/%s', (bypass_mode, actor_type, actor_id) => {
+        const input = observed();
+        requiredRuleset(input).bypass_actors = [{ actor_id, actor_type, bypass_mode }];
+
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+    });
+
     it('changes the semantic digest when observed main protection changes', () => {
         const first = observed();
         const changed = observed();
