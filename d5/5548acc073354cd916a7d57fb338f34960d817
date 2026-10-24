@@ -1,0 +1,123 @@
+.agents/skills/review-stances/README.md
+  s_3e7dea5cde3f9e::t_45f0297f67444a 26-27
+.agents/skills/review-stances/security-and-platform.md
+  s_3e7dea5cde3f9e::t_c8eb26729aaead 25-46
+.agents/skills/review-stances/test-validity.md
+  s_3e7dea5cde3f9e::t_df3686918d0170 647-675
+evidence/agent-campaign/manifest.json
+  s_3e7dea5cde3f9e::t_37c1db030b4d35 816
+release/open-source-inventory.json
+  s_3e7dea5cde3f9e::t_76c3cbab236fee 1212
+scripts/__tests__/prValidationScope.spec.ts
+  s_3e7dea5cde3f9e::t_8491041727d480 32-33,187,189,206-222,224-225,227-250,252-350,564-875,877-880,882-886,979,1052-1089,1093,1096-1268,1271-1284,1417-1464,1466-1517,1761-1844,1955-1984,1986-2020,2022-2052,2101-2118,2120-2137,2139-2152
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_3e7dea5cde3f9e::t_d56f5dfc98f832 55,1366-1470,1525,1538-1545,1573,1612,1621-1625,1638-1642,1816-1986
+scripts/prValidationScope.ts
+  s_3e7dea5cde3f9e::t_23de5f3bbdbfd2 9,68,534-535,550,554,583,585-587
+scripts/prValidationScopeCheckout.ts
+  s_3e7dea5cde3f9e::t_ef34ea38256e29 1-59
+scripts/resourceGuard.ts
+  s_3e7dea5cde3f9e::t_1d35e74c58a385 1375,1378-1386,1485-1498,1543-1553,1555-1557,1559,1571-1575,1594-1608,1620,1623-1626,1628,1989-1990,2007-2009,2341-2343
+src/modules/AiRuntime/AGENTS.md
+  s_3e7dea5cde3f9e::t_708935098b7f48 46
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_3e7dea5cde3f9e::t_0cc6cd729b7352 543-546
+src/modules/AiRuntime/models/PlanningOutcome.ts
+  s_3e7dea5cde3f9e::t_4269b5b6a0c075 19-23
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  s_3e7dea5cde3f9e::t_bda56b26b4e1a6 42-44
+src/modules/AiRuntime/transformers/readLastCommitRequest.ts
+  s_3e7dea5cde3f9e::t_1e6cde21a4cac6 1-80
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_3e7dea5cde3f9e::t_6879713d80a0a5 1-1634
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_3e7dea5cde3f9e::t_95bbedd77043cf 12-17,33,44,396-490,516-527
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_3e7dea5cde3f9e::t_0a22aeeb034e1b 1-55
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3e7dea5cde3f9e::t_a1a1952ec807e7 92,431-478,516-524
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_3e7dea5cde3f9e::t_1bbf95b998e22b 1-423
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  s_3e7dea5cde3f9e::t_8e2fb5350262e1 1-210
+src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx
+  s_3e7dea5cde3f9e::t_9349e35dae562a 1-372
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_3e7dea5cde3f9e::t_5c665d7820f2b1 291-298
+src/modules/Arrangement/presentations/views/index.ts
+  s_3e7dea5cde3f9e::t_ee4b5d56563853 10
+src/modules/Arrangement/useCases/getTimelineClipNavigationSnapshot.ts
+  s_3e7dea5cde3f9e::t_4fb55e627818d1 1-24
+src/modules/AudioEngine/engine/AdjustmentLayerRuntime.ts
+  s_3e7dea5cde3f9e::t_416e4373e04e62 2,224-240
+src/modules/AudioEngine/engine/__tests__/AdjustmentLayerRuntime.spec.ts
+  s_3e7dea5cde3f9e::t_e0fb0c50fb7a34 9,105-178
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_3e7dea5cde3f9e::t_6bf61dda2077d8 7,103-104,373,1877-2284
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_3e7dea5cde3f9e::t_66c02b747fbc13 12,2655-2718,2748-2779
+src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.monitorTeardown.spec.ts
+  s_3e7dea5cde3f9e::t_6f567da14ebdbf 3,7,61-64,66,93-145
+src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.spec.ts
+  s_3e7dea5cde3f9e::t_3396d047b451f7 40-51
+src/modules/AudioEngine/useCases/engineAccess/resetAudioGraph.ts
+  s_3e7dea5cde3f9e::t_9ac8a3d3063453 1-2,7
+src/modules/Command/AGENTS.md
+  s_3e7dea5cde3f9e::t_0db73a7560ffe8 9
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_3e7dea5cde3f9e::t_25a490b1509b74 6,19,35-38,267-461
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_3e7dea5cde3f9e::t_6a7762c651b81c 3-5,164-199
+src/modules/Command/useCases/commitRevertedEntries.ts
+  s_3e7dea5cde3f9e::t_d19c6571ecc160 1-20
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_3e7dea5cde3f9e::t_eaf7cb98162b85 1-90
+src/modules/Command/useCases/index.ts
+  s_3e7dea5cde3f9e::t_32318409ad6a08 107
+src/modules/Command/useCases/revertActionGroup.ts
+  s_3e7dea5cde3f9e::t_79d3dc99b6cc2f 4
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3e7dea5cde3f9e::t_3ed5ba186fab73 1-76
+src/modules/Command/useCases/undo.ts
+  s_3e7dea5cde3f9e::t_1a7dbdec136b65 7
+src/modules/Project/useCases/arrangement/__tests__/createArrangement.spec.ts
+  s_3e7dea5cde3f9e::t_28bc475d15c725 1-4,8,13-25,34,43,64-112
+src/modules/Project/useCases/arrangement/__tests__/duplicateArrangement.spec.ts
+  s_3e7dea5cde3f9e::t_f98c9c1a61f960 1-4,13-25,34,43,65-111
+src/modules/Project/useCases/arrangement/createArrangement.ts
+  s_3e7dea5cde3f9e::t_d8a50dcf053c7c 19,30
+src/modules/Project/useCases/arrangement/duplicateArrangement.ts
+  s_3e7dea5cde3f9e::t_aec3b728d64d60 17,19,30
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_3e7dea5cde3f9e::t_ed06fc0106fcb4 4-5,517-631
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenuFocus.integration.spec.tsx
+  s_3e7dea5cde3f9e::t_7aeda32fa5650e 1-234
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_3e7dea5cde3f9e::t_cf5f0c4ac89b64 46-47,120-122
+src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx
+  s_3e7dea5cde3f9e::t_dc3a327a7ed47a 1,48-96,111-184
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_3e7dea5cde3f9e::t_87d787ef8a1879 3,8,12,65-66,69,73,91-100,182-185,190-202,379-440,442-446,448-460,462-466
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_3e7dea5cde3f9e::t_1bcdcc1ebc40c8 3-4,9-15,19-20,206-256,298-507
+tests/e2e/timelineClipAccessibility.spec.ts
+  s_3e7dea5cde3f9e::t_6fdc7f8e8d3faa 1-130
+tests/e2e/tooltipPopoverPointer.spec.ts
+  s_3e7dea5cde3f9e::t_06b086a9cccac9 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d55548acc073354cd916a7d57fb338f34960d817",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
