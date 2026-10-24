@@ -1872,6 +1872,69 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings[0]?.sourceId).toBeUndefined();
     });
 
+    it('keeps an accepted Notes phrase when an unplaceable child timeline is added', () => {
+        function importPhrase(nestedClips: string) {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                        '<Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes><Clips track="keys">' +
+                        '<Clip name="Parent Phrase" time="8" playStart="1" enable="false"><Lanes track="drums">' +
+                        `<Notes><Note time="1" duration=".25" channel="0" key="60"/></Notes>${nestedClips}</Lanes></Clip>` +
+                        '<Clip name="Independent Keys" time="20" duration="1"><Notes>' +
+                        '<Note time="0" duration="1" channel="0" key="72"/></Notes></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Nested', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map(),
+                fileName: 'nested.dawproject',
+            });
+            const keys = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+            const drums = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+            const phrase = drums?.[0];
+            return {
+                parsed,
+                keys: keys?.map((clip) => [clip.name, clip.startBeat, clip.endBeat]),
+                drums: drums?.map((clip) => [
+                    clip.name,
+                    clip.startBeat,
+                    clip.endBeat,
+                    clip.midiOffsetBeats,
+                    clip.muted,
+                ]),
+                notes:
+                    phrase &&
+                    mapped.midi.notesByClipId[phrase.id]?.map((note) => [note.pitch, note.startBeat, note.duration]),
+            };
+        }
+
+        const control = importPhrase('');
+        expect(control.keys).toEqual([['Independent Keys', 20, 21]]);
+        expect(control.drums).toEqual([['Parent Phrase', 8, 8.25, 1, true]]);
+        expect(control.notes).toEqual([[60, 1, 0.25]]);
+        expect(control.parsed.warnings).toEqual([]);
+
+        const withChild = importPhrase(
+            '<Clips><Clip name="Nested Branch" time="1" duration="1"><Notes>' +
+                '<Note time="0" duration="1" channel="0" key="64"/></Notes></Clip></Clips>'
+        );
+        expect(withChild.keys).toEqual(control.keys);
+        expect(withChild.drums).toEqual(control.drums);
+        expect(withChild.notes).toEqual(control.notes);
+        expect(withChild.parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                name: 'Nested Branch',
+                context: 'Drums',
+                handling: 'dropped',
+            },
+        ]);
+        expect(withChild.parsed.warnings).toHaveLength(1);
+    });
+
     it.each([
         { time: 'not-a-number', unit: 'beats' },
         { time: '1e309', unit: 'beats' },

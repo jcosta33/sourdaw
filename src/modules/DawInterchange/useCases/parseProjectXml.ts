@@ -855,10 +855,11 @@ function parseArrangementClips(
                 const loopStartBeat = toBeats(node.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
                 const loopEndBeat = toBeats(node.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
                 if (
-                    timing.visibleEndBeat === null ||
+                    (timing.visibleEndBeat === null && clipNotesContent(node) === null) ||
                     node.attr('reference') !== null ||
                     ((loopStart !== null || loopEnd !== null) &&
-                        (loopStart === null ||
+                        (timing.visibleEndBeat === null ||
+                            loopStart === null ||
                             loopEnd === null ||
                             loopEndBeat <= loopStartBeat ||
                             timing.playStartBeat + (timing.visibleEndBeat - timing.startBeat) > loopEndBeat))
