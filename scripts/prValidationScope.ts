@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
+import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 import type { AffectedSelection } from './e2eAffectedGraph.ts';
@@ -64,6 +65,7 @@ const REVIEW_TOOLING = new Set([
     'pullRequestReviewState',
     'pullRequestMutationLock',
     'prValidationScope',
+    'prValidationScopeCheckout',
     'pruneLane',
     'removeLane',
     'retargetCapabilityPlan',
@@ -527,34 +529,10 @@ async function affectedFromCheckout(
     base: string,
     head: string,
     diff: string,
-    candidatePaths: readonly string[],
     specs: readonly string[]
 ): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
-    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-    const integrated =
-        checkout === head ||
-        (spawnSync('git', ['merge-base', '--is-ancestor', base, checkout]).status === 0 &&
-            spawnSync('git', ['merge-base', '--is-ancestor', head, checkout]).status === 0);
-    let integrationDiff = '';
-    if (integrated && checkout !== head) {
-        integrationDiff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', base, checkout, '--'], {
-            encoding: 'utf8',
-            maxBuffer: 16 * 1024 * 1024,
-        });
-    }
-    const allPaths = new Set(candidatePaths);
-    if (integrationDiff !== '') {
-        for (const path of parseChangedPaths(integrationDiff)) {
-            allPaths.add(path);
-        }
-    }
-    const paths = [...allPaths].sort();
-    const packageUnchangedAtCheckout =
-        checkout === head || spawnSync('git', ['diff', '--quiet', head, checkout, '--', 'package.json']).status === 0;
-    const packageScriptOnly =
-        paths.includes('package.json') &&
-        packageUnchangedAtCheckout &&
-        isOperationalPackageScriptChange(diff, base, head);
+    const paths = parseChangedPaths(diff);
+    const packageScriptOnly = paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head);
     const productPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
@@ -569,11 +547,11 @@ async function affectedFromCheckout(
             'scripts/e2eAffectedGraph.ts',
             'tsconfig.json',
         ],
-        { encoding: 'utf8' }
+        { cwd: root, encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
     let affected: AffectedSelection | undefined;
-    if (integrated && cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff })) {
+    if (cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff: '' })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
             affected = await loadAffectedE2e(root, productPaths, specs);
@@ -602,19 +580,11 @@ async function main(): Promise<void> {
     if (!base || !head || !/^[a-f0-9]{40}$/.test(base) || !/^[a-f0-9]{40}$/.test(head) || !output) {
         throw new Error('Plan requires immutable base/head SHAs and GITHUB_OUTPUT');
     }
-    const diff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], {
-        encoding: 'utf8',
-        maxBuffer: 16 * 1024 * 1024,
-    });
-    const candidatePaths = parseChangedPaths(diff);
+    const { checkout, firstParent, diff } = readCheckoutDiff(root, base, head);
     const specs = listSpecs(root);
-    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(
-        root,
-        base,
-        head,
-        diff,
-        candidatePaths,
-        specs
+    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(root, firstParent, checkout, diff, specs);
+    console.log(
+        JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
     );
     const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
     if (affected?.kind === 'full') {
