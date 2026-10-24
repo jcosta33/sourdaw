@@ -1,0 +1,29 @@
+.github/workflows/validation.yml
+  s_993e8cd4f5fad8::t_9032a685b590a7 308-310
+  s_993e8cd4f5fad8::t_d6d876544600a0 363-364
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_993e8cd4f5fad8::t_a138f5115cf264 1986-1991,4663,4681-4683
+  s_993e8cd4f5fad8::t_b59b5059f29792 4691
+  s_993e8cd4f5fad8::t_2b3edd48601553 1966-1969,4654,4657-4662,4664-4665,4667-4669,4671-4680,4684-4690,4692-4693
+  s_993e8cd4f5fad8::t_becd8463c8de9b 5410
+scripts/healthGateWorkflowContract.ts
+  s_993e8cd4f5fad8::t_762d40eed75ec0 101,109
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_993e8cd4f5fad8::t_ea440e26371474 685-688,746-749
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5fc76464177f9b2cca15cccbb2985bf79973750d",
+  "prompts": {},
+  "sessions": {
+    "s_993e8cd4f5fad8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffd-2641-7f40-9221-3bd2de725b9b",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
