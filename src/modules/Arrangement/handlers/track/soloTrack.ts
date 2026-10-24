@@ -10,6 +10,10 @@ function liveSoloed(trackId: string): boolean | undefined {
 
 export const handleSoloTrack = createHandler<'soloTrack'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedSoloed !== undefined,
+    // Conflicts when `expectedSoloed` no longer matches the live track, as muteTrack
+    // does; undo step-over (#2881) relies on it, because a plain-click exclusive
+    // solo rewrites solo flags without an undo entry.
+    canReportConflict: true,
     validate: (action, context) => {
         const currentSoloed = getPlannedTrackState(context, action.payload.trackId)?.soloed;
         return action.payload.expectedSoloed === undefined || currentSoloed === action.payload.expectedSoloed;
@@ -39,20 +43,28 @@ export const handleSoloTrack = createHandler<'soloTrack'>({
         const track = context
             ? getPlannedTrackState(context, action.payload.trackId)
             : getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        // The inverse expects the solo state this action writes, so undo refuses
-        // rather than overwriting a solo someone changed afterwards.
+        // A guarded change gets a guarded inverse and redo, so an agent group's
+        // undo refuses rather than overwriting a solo someone changed afterwards.
+        // A manual solo stays unguarded: a plain-click exclusive solo rewrites
+        // every solo flag without an undo entry, and a guarded inverse would then
+        // refuse every undo and redo of the solos recorded before it.
+        const guarded = action.payload.expectedSoloed !== undefined;
         return {
             label: action.payload.soloed ? 'Solo track' : 'Unsolo track',
             inverseAction: track
                 ? {
                       type: 'soloTrack',
-                      payload: { trackId: track.id, soloed: track.soloed, expectedSoloed: action.payload.soloed },
+                      payload: guarded
+                          ? { trackId: track.id, soloed: track.soloed, expectedSoloed: action.payload.soloed }
+                          : { trackId: track.id, soloed: track.soloed },
                   }
                 : null,
             redoAction: track
                 ? {
                       type: 'soloTrack',
-                      payload: { trackId: track.id, soloed: action.payload.soloed, expectedSoloed: track.soloed },
+                      payload: guarded
+                          ? { trackId: track.id, soloed: action.payload.soloed, expectedSoloed: track.soloed }
+                          : { trackId: track.id, soloed: action.payload.soloed },
                   }
                 : undefined,
         };

@@ -44,11 +44,11 @@ describe('handleSoloTrack', () => {
         expect(desc1.label).toBe('Solo track');
         expect(desc1.inverseAction).toEqual({
             type: 'soloTrack',
-            payload: { trackId: 't1', soloed: false, expectedSoloed: true },
+            payload: { trackId: 't1', soloed: false },
         });
         expect(desc1.redoAction).toEqual({
             type: 'soloTrack',
-            payload: { trackId: 't1', soloed: true, expectedSoloed: false },
+            payload: { trackId: 't1', soloed: true },
         });
 
         mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
@@ -59,8 +59,41 @@ describe('handleSoloTrack', () => {
         expect(desc2.label).toBe('Unsolo track');
         expect(desc2.inverseAction).toEqual({
             type: 'soloTrack',
+            payload: { trackId: 't1', soloed: true },
+        });
+    });
+
+    it('guards the inverse and redo of a change that states its expected solo state', () => {
+        const desc = handleSoloTrack.describe({
+            type: 'soloTrack',
             payload: { trackId: 't1', soloed: true, expectedSoloed: false },
         });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'soloTrack',
+            payload: { trackId: 't1', soloed: false, expectedSoloed: true },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'soloTrack',
+            payload: { trackId: 't1', soloed: true, expectedSoloed: false },
+        });
+    });
+
+    it('is not a no-op when the track already holds the target but the expectation differs', () => {
+        mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
+
+        expect(
+            handleSoloTrack.isNoop?.({
+                type: 'soloTrack',
+                payload: { trackId: 't1', soloed: true, expectedSoloed: false },
+            })
+        ).toBe(false);
+        expect(
+            handleSoloTrack.isNoop?.({
+                type: 'soloTrack',
+                payload: { trackId: 't1', soloed: true },
+            })
+        ).toBe(true);
     });
 
     it('refuses to write over a solo state that diverged from the expected one', () => {

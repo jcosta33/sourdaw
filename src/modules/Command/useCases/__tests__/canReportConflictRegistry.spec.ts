@@ -119,6 +119,12 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         divergedAction: { type: 'muteTrack', payload: { trackId: 'track-live', muted: true, expectedMuted: true } },
     },
     {
+        // Live track soloed=false; the guard expects soloed=true.
+        title: 'soloTrack refuses to write against a diverged document',
+        actionType: 'soloTrack',
+        divergedAction: { type: 'soloTrack', payload: { trackId: 'track-live', soloed: false, expectedSoloed: true } },
+    },
+    {
         // Live clip color '#ff0000'; the guard expects '#0000ff'.
         title: 'setClipColor refuses to write against a diverged document',
         actionType: 'setClipColor',

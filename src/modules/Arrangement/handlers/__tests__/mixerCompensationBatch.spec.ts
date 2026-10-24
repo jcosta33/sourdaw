@@ -10,6 +10,7 @@ import {
     clearUndoHistory,
     executeAppAction,
     executeAppActionBatch,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -27,6 +28,7 @@ import { trackStore } from '../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
+import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
 
 const notifyUserMock = vi.hoisted(() => vi.fn());
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
@@ -193,13 +195,85 @@ describe('agent mixer batches with required compensation', () => {
         expect(vocals()?.soloed).toBe(false);
     });
 
-    it('guards the solo inverse even when the forward change states no expected solo state', async () => {
+    it('refuses a solo change that states no expected solo state, since its inverse is unguarded', async () => {
         const result = await commitAgentBatch([{ type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true } }]);
 
+        expect(result).not.toMatchObject({ status: 'committed' });
+        expect(vocals()?.soloed).toBe(false);
+    });
+
+    it('commits two solo changes on one track and undoes the group back to the start', async () => {
+        const result = await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: false, expectedSoloed: true } },
+        ]);
+
         expect(result).toMatchObject({ status: 'committed' });
-        expect(vocals()?.soloed).toBe(true);
+        expect(vocals()?.soloed).toBe(false);
 
         await expect(undo()).resolves.toEqual({ headConsumed: true });
         expect(vocals()?.soloed).toBe(false);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * A plain-click exclusive solo rewrites every solo flag without an undo entry,
+ * so manual solo history must keep undoing and redoing around it.
+ */
+describe('manual solo history around an unrecorded exclusive solo', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setArrangementEventBus(new NoopArrangementEventBus());
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        const reverb = createTrack({ id: REVERB_ID, name: 'Reverb', kind: 'bus' });
+        const vocalTrack = createTrack({ id: VOCALS_ID, name: 'Vocals', kind: 'audio' });
+        trackStore.set({ tracks: [vocalTrack, reverb], selectedTrackId: VOCALS_ID, ghostClips: [] });
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    function reverb() {
+        return trackStore.value?.tracks.find((track) => track.id === REVERB_ID);
+    }
+
+    it('undoes recorded solos after an exclusive solo without a conflict', async () => {
+        await executeAppAction({ type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true } });
+        await executeAppAction({ type: 'soloTrack', payload: { trackId: REVERB_ID, soloed: true } });
+        soloTrackExclusive(VOCALS_ID);
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+
+        expect(vocals()?.soloed).toBe(false);
+        expect(reverb()?.soloed).toBe(false);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('redoes a recorded solo after an exclusive solo without a conflict', async () => {
+        await executeAppAction({ type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true } });
+        await undo();
+        soloTrackExclusive(VOCALS_ID);
+
+        await redo();
+
+        expect(vocals()?.soloed).toBe(true);
+        expect(notifyUserMock).not.toHaveBeenCalled();
     });
 });
