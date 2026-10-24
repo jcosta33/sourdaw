@@ -1087,7 +1087,6 @@ export class AssetTransfer {
             badIndices: new Map(),
         };
         this.receiveAttempts.set(hash, attempt);
-        this.armStallTimer(hash);
         attempt.recovery = this.recoverAndRequest(hash, attempt).catch((error: unknown) => {
             if (this.attemptIsCurrent(hash, attempt)) {
                 this.abortTransfer(hash, `asset request failed (${describeError(error)})`, true);
@@ -1188,6 +1187,7 @@ export class AssetTransfer {
         };
 
         attempt.requestIssued = true;
+        this.armStallTimer(hash);
         this.peerManager.broadcastCrdtSync({
             type: 'crdt-sync',
             docId: DOC_ID_ASSET,

@@ -9,7 +9,7 @@ import {
 } from '../../models/AssetTransferResume';
 import { ASSET_CHUNK_SIZE, ASSET_REQUEST_RETRY_COOLDOWN_MS, type PeerMessage } from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
-import { openAssetTransferResumeDatabase } from '../../repositories/assetTransferResumeIndexedDb';
+import * as resumeIndexedDb from '../../repositories/assetTransferResumeIndexedDb';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
 
@@ -91,7 +91,7 @@ function withToken(message: PeerMessage, token: unknown): PeerMessage {
 }
 
 async function journalRows(): Promise<{ metadata: ResumeMetadata[]; chunks: ResumeChunk[] }> {
-    const database = await openAssetTransferResumeDatabase();
+    const database = await resumeIndexedDb.openAssetTransferResumeDatabase();
     return new Promise((resolve, reject) => {
         const transaction = database.transaction([ASSET_RESUME_METADATA, ASSET_RESUME_CHUNKS], 'readonly');
         const metadata = transaction.objectStore(ASSET_RESUME_METADATA).getAll();
@@ -147,6 +147,89 @@ async function finish(
 }
 
 describe('persisted asset restart over production serialized frames', () => {
+    it.each([
+        { phase: 'claim', complete: false },
+        { phase: 'stored digest', complete: false },
+        { phase: 'claim', complete: true },
+        { phase: 'stored digest', complete: true },
+    ])('keeps a held local $phase outside the peer deadline (complete: $complete)', async ({ phase, complete }) => {
+        const { sender, receiver, hash, bytes } = await partialFixture();
+        const nativeDigest = crypto.subtle.digest.bind(crypto.subtle);
+        if (complete) {
+            const assembling = Promise.withResolvers<void>();
+            const finishAssembly = Promise.withResolvers<void>();
+            const digest = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (...args) => {
+                if (args[1].byteLength === bytes.length) {
+                    assembling.resolve();
+                    await finishAssembly.promise;
+                }
+                return nativeDigest(...args);
+            });
+            await receiver.transfer.handleMessage('sender-before-reload', sender.sent[2]!);
+            await receiver.transfer.handleMessage('sender-before-reload', sender.sent[3]!);
+            await assembling.promise;
+            receiver.transfer.dispose();
+            finishAssembly.resolve();
+            digest.mockRestore();
+        } else {
+            receiver.transfer.dispose();
+        }
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        if (phase === 'claim') {
+            const open = resumeIndexedDb.openAssetTransferResumeDatabase;
+            vi.spyOn(resumeIndexedDb, 'openAssetTransferResumeDatabase').mockImplementationOnce(async () => {
+                started.resolve();
+                await release.promise;
+                return open();
+            });
+        } else {
+            let held = false;
+            vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (...args) => {
+                if (!held) {
+                    held = true;
+                    started.resolve();
+                    await release.promise;
+                }
+                return nativeDigest(...args);
+            });
+        }
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        const restarted = endpoint();
+        const requested = restarted.request(hash);
+        await started.promise;
+        try {
+            await vi.advanceTimersByTimeAsync(ASSET_TRANSFER_STALL_TIMEOUT_MS + 1);
+            restarted.transfer.requestAsset(hash);
+            expect(restarted.sent).toEqual([]);
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+            expect(restarted.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+        } finally {
+            release.resolve();
+        }
+        if (complete) {
+            await restarted.completion;
+            expect(restarted.sent).toEqual([]);
+            expect(restarted.callbacks.onAssetAvailable).toHaveBeenCalledExactlyOnceWith(hash);
+            expect(new Uint8Array(await restarted.transfer.getAsset(hash)!.arrayBuffer())).toEqual(bytes);
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+            expect(await journalRows()).toEqual({ metadata: [], chunks: [] });
+        } else {
+            expect(control(await requested).missingChunks).toEqual([1, 2]);
+            expect(restarted.sent).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(ASSET_TRANSFER_STALL_TIMEOUT_MS - 1);
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1);
+            expect(restarted.callbacks.onTransferFailed).toHaveBeenCalledExactlyOnceWith(
+                hash,
+                'the sending peer stopped responding',
+                'cooldown'
+            );
+            expect(restarted.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+            await restarted.transfer.cancelAssetRequest(hash);
+        }
+    });
+
     it('ignores premature untagged frames while restart verification precedes the actual request', async () => {
         const { sender, receiver, hash, bytes } = await partialFixture();
         receiver.transfer.dispose();
@@ -234,7 +317,7 @@ describe('persisted asset restart over production serialized frames', () => {
         const { sender, receiver, bytes, hash } = await partialFixture();
         receiver.transfer.dispose();
         const stored = (await journalRows()).chunks[0]!;
-        const database = await openAssetTransferResumeDatabase();
+        const database = await resumeIndexedDb.openAssetTransferResumeDatabase();
         await new Promise<void>((resolve, reject) => {
             const transaction = database.transaction(ASSET_RESUME_CHUNKS, 'readwrite');
             transaction
