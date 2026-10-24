@@ -44,6 +44,11 @@ const DEVICE_IDS = Array.from({ length: 5 }, (_, index) => `levain-${index}`);
 let pendingWorkletAcks: Array<() => void> = [];
 let endWorklets: Array<() => void> = [];
 let workletAckPosted: PromiseWithResolvers<void>;
+let pendingUploadDecisions: Array<(loadToken?: number) => void> = [];
+let pendingChunkAcks: Array<() => void> = [];
+let uploadDecisionPosted: PromiseWithResolvers<void>;
+let holdUploadDecision = false;
+let holdChunkAcks = false;
 
 async function waitForWorkletAcks(count: number): Promise<void> {
     while (pendingWorkletAcks.length < count) {
@@ -110,18 +115,27 @@ function createPort(): MessagePort {
             if (message.type === 'sampleChunk') {
                 // The worklet writes each chunk and says so; the loader sends no
                 // more than a few chunks ahead of these answers.
-                queueMicrotask(() =>
-                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId })
-                );
+                const acknowledge = () =>
+                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
+                if (holdChunkAcks) {
+                    pendingChunkAcks.push(acknowledge);
+                } else {
+                    queueMicrotask(acknowledge);
+                }
             }
             if (message.type === 'beginSampleBank') {
-                queueMicrotask(() =>
+                const decide = (loadToken = message.loadToken) =>
                     emit({
                         type: 'sampleBankUploadDecision',
-                        loadToken: message.loadToken,
+                        loadToken,
                         uploadRequired: true,
-                    })
-                );
+                    });
+                if (holdUploadDecision) {
+                    pendingUploadDecisions.push(decide);
+                    uploadDecisionPosted.resolve();
+                } else {
+                    queueMicrotask(decide);
+                }
             }
             if (message.type === 'commitSampleBank') {
                 pendingWorkletAcks.push(() => emit({ type: 'sampleBankLoaded', loadToken: message.loadToken }));
@@ -218,6 +232,11 @@ describe('live Levain content progress', () => {
         pendingWorkletAcks = [];
         endWorklets = [];
         workletAckPosted = Promise.withResolvers<void>();
+        pendingUploadDecisions = [];
+        pendingChunkAcks = [];
+        uploadDecisionPosted = Promise.withResolvers<void>();
+        holdUploadDecision = false;
+        holdChunkAcks = false;
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         vi.stubGlobal(
             'OfflineAudioContext',
@@ -469,6 +488,69 @@ describe('live Levain content progress', () => {
             expect(
                 engine.getDeviceReadinessDiagnostics().devices.filter((device) => device.status === 'ready')
             ).toHaveLength(5);
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('renews the actual readiness deadline when an admitted bank answers the upload decision', async () => {
+        const deviceId = DEVICE_IDS[0]!;
+        levainStore.set({
+            [deviceId]: { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'solo-violin' } },
+        });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string) => {
+                if (url.endsWith('/manifest.json')) {
+                    const source = manifest('solo-violin');
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                ...source,
+                                articulations: source.articulations.map((articulation) => ({
+                                    ...articulation,
+                                    zones: articulation.zones.slice(0, 1),
+                                })),
+                            }),
+                    });
+                }
+                return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+            })
+        );
+        holdUploadDecision = true;
+        holdChunkAcks = true;
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            await uploadDecisionPosted.promise;
+            const waiting = engine.waitForDevices();
+            const activities = () =>
+                progressEvents.filter((event) => event.deviceId === deviceId && typeof event.progress !== 'number');
+            expect(activities()).toHaveLength(1);
+            const grantAt = activities()[0]!.atMs;
+            await vi.advanceTimersByTimeAsync(9000);
+            pendingUploadDecisions[0]!(-1);
+            expect(activities()).toHaveLength(1);
+            pendingUploadDecisions[0]!();
+            await vi.waitFor(() => expect(pendingChunkAcks.length).toBeGreaterThan(0));
+            expect(activities()).toHaveLength(2);
+            const decisionAt = activities()[1]!.atMs;
+            expect(decisionAt - grantAt).toBeGreaterThanOrEqual(9000);
+            await vi.advanceTimersByTimeAsync(1020);
+            expect(Date.now() - grantAt).toBeGreaterThan(10000);
+            expect(engine.getDeviceReadinessDiagnostics().devices[0]?.status).toBe('content-pending');
+            holdChunkAcks = false;
+            for (const acknowledge of pendingChunkAcks.splice(0)) {
+                acknowledge();
+            }
+            await waitForWorkletAcks(1);
+            expect(activities().some((event) => event.atMs > grantAt + 10000)).toBe(true);
+            pendingWorkletAcks[0]!();
+            await expect(waiting).resolves.toMatchObject({ status: 'ready' });
         } finally {
             for (const end of endWorklets) {
                 end();

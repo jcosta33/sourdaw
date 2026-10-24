@@ -101,6 +101,7 @@ type FakePort = MessagePort & {
 
 type MakePortOptions = {
     uploadRequired?: boolean;
+    manualUploadDecision?: boolean;
     autoComplete?: boolean;
     commitError?: string;
     /**
@@ -215,13 +216,15 @@ function makePort(options: MakePortOptions = {}): FakePort {
         }
         if (message.type === 'beginSampleBank') {
             pendingToken = message.loadToken;
-            queueMicrotask(() => {
-                emit({
-                    type: 'sampleBankUploadDecision',
-                    loadToken: message.loadToken,
-                    uploadRequired: options.uploadRequired ?? true,
+            if (!options.manualUploadDecision) {
+                queueMicrotask(() => {
+                    emit({
+                        type: 'sampleBankUploadDecision',
+                        loadToken: message.loadToken,
+                        uploadRequired: options.uploadRequired ?? true,
+                    });
                 });
-            });
+            }
             return;
         }
         if (message.type === 'commitSampleBank') {
@@ -378,7 +381,7 @@ describe('loadInstrumentFromManifest', () => {
     });
 
     it('reports only acknowledged current shipment activity and releases decoded admission after commit', async () => {
-        const port = makePort({ chunkAnswers: 'queued', autoComplete: false });
+        const port = makePort({ chunkAnswers: 'queued', autoComplete: false, manualUploadDecision: true });
         const progress = vi.fn();
         const controller = new AbortController();
         const loading = loadInstrumentFromManifest({
@@ -393,18 +396,25 @@ describe('loadInstrumentFromManifest', () => {
         const settled = Promise.allSettled([loading]);
         const activityEvents = () => progress.mock.calls.filter(([event]) => typeof event !== 'number');
         try {
-            await vi.waitFor(() => expect(postedTypes(port)).toContain('sampleChunk'));
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('beginSampleBank'));
             const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
             expect(activityEvents()).toEqual([[{ type: 'activity' }]]);
             const grantActivities = activityEvents().length;
-            port.emit({ type: 'sampleChunkWritten', loadToken: -1 });
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: -1, uploadRequired: true });
             expect(activityEvents()).toHaveLength(grantActivities);
+            expect(postedTypes(port)).not.toContain('sampleChunk');
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: begin.loadToken, uploadRequired: true });
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('sampleChunk'));
+            expect(activityEvents()).toHaveLength(grantActivities + 1);
+            const decisionActivities = activityEvents().length;
+            port.emit({ type: 'sampleChunkWritten', loadToken: -1 });
+            expect(activityEvents()).toHaveLength(decisionActivities);
             port.drainWorklet();
             await vi.waitFor(() => {
                 port.drainWorklet();
                 expect(postedTypes(port)).toContain('commitSampleBank');
             });
-            expect(activityEvents().length).toBeGreaterThan(grantActivities);
+            expect(activityEvents().length).toBeGreaterThan(decisionActivities);
             expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
             const beforeCommit = progress.mock.calls.length;
             port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
@@ -415,6 +425,37 @@ describe('loadInstrumentFromManifest', () => {
             const afterCommit = progress.mock.calls.length;
             port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
             expect(progress).toHaveBeenCalledTimes(afterCommit);
+        } finally {
+            controller.abort();
+            port.emit({ type: 'disposed' });
+            port.drainWorklet();
+            await settled;
+        }
+    });
+
+    it('does not renew admission from a decision delivered after its load aborts', async () => {
+        const port = makePort({ manualUploadDecision: true });
+        const progress = vi.fn();
+        const controller = new AbortController();
+        const loading = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+            buildZoneTables,
+            onProgress: progress,
+            signal: controller.signal,
+        });
+        const settled = Promise.allSettled([loading]);
+        try {
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('beginSampleBank'));
+            const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
+            const activityCount = progress.mock.calls.filter(([event]) => typeof event !== 'number').length;
+            expect(activityCount).toBe(1);
+            controller.abort();
+            await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: begin.loadToken, uploadRequired: true });
+            expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(activityCount);
         } finally {
             controller.abort();
             port.emit({ type: 'disposed' });

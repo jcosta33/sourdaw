@@ -721,6 +721,7 @@ export async function loadInstrumentFromManifest({
 
         const uploadRequired = await handshake.uploadRequired;
         signal?.throwIfAborted();
+        lease.reportActivity();
         const sampleIdMap = new Map<string, number>();
         for (const [sampleId, file] of bank.files.entries()) {
             signal?.throwIfAborted();
