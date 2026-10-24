@@ -31,7 +31,8 @@ function stageBank(
     loadToken: number,
     instrumentId: string,
     constant?: number,
-    loopMode: 'forward' | 'none' = 'forward'
+    loopMode: 'forward' | 'none' = 'forward',
+    recordedTransition = true
 ): void {
     send(processor, { type: 'beginSampleBank', bankKey: `bank-${loadToken}`, instrumentId, loadToken });
     const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => constant ?? Math.sin(frame * 0.05) * 0.5);
@@ -69,24 +70,27 @@ function stageBank(
         sustain: 1,
         release: 0.3,
     });
-    send(processor, {
-        type: 'addLegatoTransition',
-        loadToken,
-        sampleId: 0,
-        interval: 2,
-        transitionType: 'slurred',
-        dynamic: 'mf',
-        crossfadeOutMs: 20,
-    });
+    if (recordedTransition) {
+        send(processor, {
+            type: 'addLegatoTransition',
+            loadToken,
+            sampleId: 0,
+            interval: 2,
+            transitionType: 'slurred',
+            dynamic: 'mf',
+            crossfadeOutMs: 20,
+        });
+    }
 }
 
 function loadBank(
     processor: LevainProcessorLike,
     loadToken: number,
     instrumentId: string,
-    loopMode: 'forward' | 'none' = 'forward'
+    loopMode: 'forward' | 'none' = 'forward',
+    recordedTransition = true
 ): void {
-    stageBank(processor, loadToken, instrumentId, undefined, loopMode);
+    stageBank(processor, loadToken, instrumentId, undefined, loopMode, recordedTransition);
     stageAndCommitBank((data) => send(processor, data), wasmModule, loadToken, {
         zones: [WIDE_ZONE],
         numArticulations: 1,
@@ -241,6 +245,60 @@ afterEach(() => {
 });
 
 describe('shipped LevainProcessor bank retirement', () => {
+    it('matches a queued humanized attack to its isolated destination', async () => {
+        async function renderDestination(isolated: boolean): Promise<{ pcm: Float32Array[]; active: number }> {
+            vi.resetModules();
+            const { registry } = installWorkletGlobals<LevainProcessorLike>();
+            await import('../levainProcessor');
+            const Processor = registry.get('levain-processor');
+            if (!Processor) {
+                throw new TypeError('Expected levain-processor registration');
+            }
+            const processor = new Processor({ processorOptions: { wasmModule } });
+            send(processor, { type: 'init' });
+            loadBank(processor, 1, 'marimba');
+            send(processor, { type: 'param', name: 'ensembleTiming', value: 0 });
+            send(processor, { type: 'param', name: 'legatoEnabled', value: 1 });
+            vi.stubGlobal('currentFrame', 0);
+            if (isolated) {
+                // Consume the first Humanizer draw before cancelling its note.
+                send(processor, { type: 'noteOn', note: 60, velocity: 100 });
+                send(processor, { type: 'allNotesOff' });
+            } else {
+                send(processor, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 0 });
+            }
+            send(processor, { type: 'noteOn', note: 64, velocity: 90, sampleFrame: 0 });
+
+            const pcm = makeChannels(2, 96 * FRAMES);
+            const output = makeChannels(2, FRAMES);
+            for (let quantum = 0; quantum < 96; quantum++) {
+                vi.stubGlobal('currentFrame', quantum * FRAMES);
+                expect(processor.process([], [output])).toBe(true);
+                for (let side = 0; side < 2; side++) {
+                    pcm[side]!.set(output[side]!, quantum * FRAMES);
+                }
+            }
+            if (!processor._instance) {
+                throw new TypeError('Expected an initialised engine');
+            }
+            expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+            return { pcm, active: processor._instance.active_voices() };
+        }
+
+        const queued = await renderDestination(false);
+        const isolated = await renderDestination(true);
+        expect(onsetFrame(isolated.pcm[0]!)).toBeGreaterThan(0);
+        for (let side = 0; side < 2; side++) {
+            const maximumDifference = queued.pcm[side]!.reduce(
+                (maximum, sample, frame) => Math.max(maximum, Math.abs(sample - isolated.pcm[side]![frame]!)),
+                0
+            );
+            expect(maximumDifference).toBe(0);
+        }
+        expect(queued.active).toBe(1);
+        expect(isolated.active).toBe(1);
+    });
+
     it('does not emit bowed realism for an unmatched note-off', async () => {
         const { registry } = installWorkletGlobals<LevainProcessorLike>();
         await import('../levainProcessor');
@@ -328,7 +386,8 @@ describe('shipped LevainProcessor bank retirement', () => {
         }
         const processor = new Processor({ processorOptions: { wasmModule } });
         send(processor, { type: 'init' });
-        loadBank(processor, 1, 'violin-1');
+        // The benchmark's looped sustain bank has no recorded transitions.
+        loadBank(processor, 1, 'violin-1', 'forward', false);
         send(processor, { type: 'param', name: 'ensembleTiming', value: 0 });
         send(processor, { type: 'param', name: 'legatoEnabled', value: 1 });
         vi.stubGlobal('currentFrame', 0);
