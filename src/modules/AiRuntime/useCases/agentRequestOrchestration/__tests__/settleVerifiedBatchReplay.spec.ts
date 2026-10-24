@@ -15,9 +15,11 @@ const mocks = vi.hoisted(() => ({
     })),
     disposition: vi.fn(),
     getReplay: vi.fn(),
+    getConfirmation: vi.fn(),
     message: vi.fn(),
     recordFailure: vi.fn(),
     recordReceipt: vi.fn(() => ({ warning: null, effectsPending: false })),
+    recordExecution: vi.fn(),
     recover: vi.fn(),
     retain: vi.fn(),
     status: vi.fn(),
@@ -26,6 +28,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.message }));
 vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
+    getPendingActionConfirmation: mocks.getConfirmation,
+    recordPendingActionExecution: mocks.recordExecution,
     updatePendingActionConfirmationStatus: mocks.status,
 }));
 vi.mock('../../getVerifiedBatchReplayDisposition', () => ({ getVerifiedBatchReplayDisposition: mocks.getReplay }));
@@ -41,6 +45,7 @@ vi.mock('../confirmedBatchOutcomeSupport', () => ({
     confirmedBatchOutcomeSupport: {
         createCommittedEffectFailureResult: mocks.createFailure,
         getVerifiedReceiptIdentity: vi.fn(() => 'receipt-identity'),
+        getApprovalLabelsByCommandId: vi.fn(() => new Map()),
         recordTrackedAgentRunReceipt: mocks.recordReceipt,
     },
 }));

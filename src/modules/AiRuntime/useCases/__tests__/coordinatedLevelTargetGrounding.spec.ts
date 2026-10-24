@@ -377,17 +377,105 @@ describe('one level change stated for a coordinated list of named tracks', () =>
     });
 
     it.each([
-        ['set Drums to -6 dB', 'set Drums, Bass and Keys to -6 dB', [drums, bass, keys], { gainDb: -6 }],
-        ['Drums up 2 dB', 'both Drums and Bass up 2 dB', [drums, bass], { deltaDb: 2 }],
-    ])('refuses a list worded as "%s" refuses its single track', (singlePrompt, listPrompt, tracks, value) => {
-        const single = bridge([gainCall(drums.id, value)], singlePrompt);
-        const list = bridge(
-            tracks.map((track) => gainCall(track.id, value)),
-            listPrompt
+        ['set Drums to -6 dB', { gainDb: -6 }],
+        ['Drums up 2 dB', { deltaDb: 2 }],
+    ])('grounds the single track worded as "%s"', (prompt, value) => {
+        const result = bridge([gainCall(drums.id, value)], prompt);
+
+        expect(result.actions).toEqual([gainAction(drums.id, value)]);
+    });
+
+    it('grounds a list worded "set ... to" as it grounds the same list worded with volume, and holds it to every member', () => {
+        const prompt = 'set Drums, Bass and Keys to -6 dB';
+        const value = { gainDb: -6 };
+
+        const complete = bridge(
+            [drums, bass, keys].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const missingMember = bridge(
+            [drums, bass].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const differingMember = bridge(
+            [gainCall(drums.id, value), gainCall(bass.id, value), gainCall(keys.id, { gainDb: -3 })],
+            prompt
         );
 
-        expect(single.actions).toEqual([]);
-        expect(list.actions).toEqual([]);
+        expect(complete.actions).toEqual([drums, bass, keys].map((track) => gainAction(track.id, value)));
+        expect(missingMember.actions).toEqual([]);
+        expect(differingMember.actions).toEqual([]);
+    });
+
+    describe.each([
+        ['both Drums and Bass up 2 dB', [drums, bass], { deltaDb: 2 }],
+        ['Drums, Keys and Bass up 2 dB', [drums, keys, bass], { deltaDb: 2 }],
+        ['Drums and Bass down 3 dB', [drums, bass], { deltaDb: -3 }],
+        ['Keys and Drums up 2 dB', [keys, drums], { deltaDb: 2 }],
+        ['please Drums and Bass up 2 dB', [drums, bass], { deltaDb: 2 }],
+    ])('the up/down list "%s"', (prompt, members, value) => {
+        it('grounds a change for every member it lists', () => {
+            const result = bridge(
+                members.map((track) => gainCall(track.id, value)),
+                prompt
+            );
+
+            expect(result.actions).toEqual(members.map((track) => gainAction(track.id, value)));
+        });
+
+        it('never grounds a change for only some of its members', () => {
+            const subsets = members.map((_, omitted) => members.filter((__, index) => index !== omitted));
+            const singles = members.map((track) => [track]);
+
+            for (const subset of [...subsets, ...singles]) {
+                const result = bridge(
+                    subset.map((track) => gainCall(track.id, value)),
+                    prompt
+                );
+
+                expect(result.actions).toEqual([]);
+            }
+        });
+    });
+
+    it('grounds nothing, whole or in part, for an up/down list "both" cannot join', () => {
+        const prompt = 'both Drums, Keys and Bass up 2 dB';
+        const value = { deltaDb: 2 };
+
+        const whole = bridge(
+            [drums, keys, bass].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const lastMember = bridge([gainCall(bass.id, value)], prompt);
+
+        expect(whole.actions).toEqual([]);
+        expect(lastMember.actions).toEqual([]);
+    });
+
+    it('never grounds the tail of a "both" list whose head clause is unread', () => {
+        const prompt = 'turn both Drums, Bass and Keys down 3 dB';
+        const value = { deltaDb: -3 };
+
+        const tail = bridge(
+            [bass, keys].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+        const whole = bridge(
+            [drums, bass, keys].map((track) => gainCall(track.id, value)),
+            prompt
+        );
+
+        expect(tail.actions).toEqual([]);
+        expect(whole.actions).toEqual([]);
+    });
+
+    it('holds an up/down list to one figure for every member', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: 2 }), gainCall(bass.id, { deltaDb: 3 })],
+            'Drums and Bass up 2 dB'
+        );
+
+        expect(result.actions).toEqual([]);
     });
 });
 

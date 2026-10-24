@@ -62,10 +62,11 @@ export function detectTransientsForClip(clipId: string, sensitivity: number): De
 
     const beatsPerSecond = tempo / 60;
     const existing = getWarpState(clipId);
-    // Snapshot of preserved markers — `addWarpMarker` mutates the underlying
-    // store entry in place, so we cannot reuse the filtered array directly to
-    // gate duplicate-beat detection or to count `kept`.
-    const preservedSnapshot = existing.markers.filter((m) => (m.origin ?? 'user') !== 'transient-auto');
+    // Keep the preserved set stable as additions replace the store state, so
+    // duplicate checks and counts refer only to markers retained from this run.
+    const preservedSnapshot = existing.markers.filter(
+        (m) => m.locked === true || (m.origin ?? 'user') !== 'transient-auto'
+    );
 
     setWarpState(clipId, {
         ...existing,

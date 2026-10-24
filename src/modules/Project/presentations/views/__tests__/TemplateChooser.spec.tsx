@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { pendingProjectReplacements } from '../../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
 import { createFromTemplate } from '../../../useCases/projectTemplates/templateDefinitions/createFromTemplate';
 import { TemplateChooser } from '../TemplateChooser';
@@ -68,7 +69,43 @@ describe('TemplateChooser', () => {
         render(<TemplateChooser open onClose={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /Guard Spec Song/ }));
 
-        await waitFor(() => expect(createFromTemplate).toHaveBeenCalledWith('guard-spec-song'));
+        await waitFor(() =>
+            expect(createFromTemplate).toHaveBeenCalledWith('guard-spec-song', { shouldProceed: expect.any(Function) })
+        );
+    });
+
+    // Choosing the open project's Recent entry while the template is pending
+    // withdraws it, so the session stays in the project the user chose last.
+    it('does not create the template once a pre-save that the open project choice outlasted finishes', async () => {
+        mocks.projectStoreValue.value = { dirty: false };
+        const save = Promise.withResolvers<boolean>();
+        vi.mocked(saveProject).mockReturnValueOnce(save.promise);
+
+        render(<TemplateChooser open onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /Guard Spec Song/ }));
+        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+        pendingProjectReplacements.withdraw();
+        save.resolve(true);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(createFromTemplate).not.toHaveBeenCalled();
+    });
+
+    it('hands the template a check that the open project choice turns false', async () => {
+        mocks.projectStoreValue.value = { dirty: false };
+        vi.mocked(saveProject).mockResolvedValue(true);
+        const creation = Promise.withResolvers<boolean>();
+        vi.mocked(createFromTemplate).mockReturnValueOnce(creation.promise);
+
+        render(<TemplateChooser open onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /Guard Spec Song/ }));
+        await waitFor(() => expect(createFromTemplate).toHaveBeenCalledOnce());
+        const shouldProceed = vi.mocked(createFromTemplate).mock.calls[0]?.[1]?.shouldProceed;
+
+        expect(shouldProceed?.()).toBe(true);
+        pendingProjectReplacements.withdraw();
+        expect(shouldProceed?.()).toBe(false);
+        creation.resolve(false);
     });
 
     // Issue 3694: a save can resolve true while the project is still dirty —

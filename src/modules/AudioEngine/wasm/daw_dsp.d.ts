@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:321b39c47eb5cff57c8724f380ee141588da51076751f4cba697a4ead3c70490
+// @wasm-bindgen-dts crate-source: sha256:ff907bfb93d42299ba99a5d3977f5c7538d478c622f5b5083dfac17dea13aaca
 /* tslint:disable */
 /* eslint-disable */
 
@@ -767,6 +767,14 @@ export class LevainInstance {
     begin_sample_bank(instrument_id: string): void;
     /**
      * Build the zone lookup table after all zones and samples are loaded.
+     *
+     * Not what the worklet calls: building the tables allocates and walks
+     * every zone, a cost that scales with the bank, so the browser host
+     * computes them off the render thread (`LevainZoneTableBuilder`) and
+     * stages them with `reserve_zone_tables`, the chunk commits and
+     * `seal_zone_tables`. The native host (which builds banks on a control
+     * thread) and the pinned wasm measurement recipes
+     * (`benches/wasm/deviceRecipes.js`) still use this one.
      */
     build_zone_map(num_articulations: number, num_mics: number): boolean;
     /**
@@ -793,6 +801,21 @@ export class LevainInstance {
      * that the host did.
      */
     commit_sample_frames(sample_id: number, float_count: number): boolean;
+    /**
+     * Append the `entries` zone ids the host wrote at `zone_table_write_ptr`
+     * to the reserved arena, starting at `start`. Allocates nothing. Refuses
+     * (false), appending nothing, for a chunk out of order, past the arena or
+     * longer than one chunk, or an id the staged bank holds no zone for.
+     */
+    commit_zone_arena_chunk(start: number, entries: number): boolean;
+    /**
+     * Append the `entries` LUT entries the host wrote at
+     * `zone_table_write_ptr` to the reserved LUT, starting at slot `start`.
+     * Allocates nothing. Refuses (false), appending nothing, for a chunk out
+     * of order, past the LUT or longer than one chunk, or an entry that would
+     * reach past the declared arena.
+     */
+    commit_zone_lut_chunk(start: number, entries: number): boolean;
     /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
@@ -861,6 +884,14 @@ export class LevainInstance {
      */
     release_retired_bank(max_entries: number): boolean;
     /**
+     * Reserve the staged bank's zone tables: `lut_entries` LUT slots, which
+     * must be the size the dimensions imply, and `arena_entries` arena
+     * entries. The staging's only allocation. Refuses (false), reserving
+     * nothing, with no staged bank, a sample open, tables already reserved or
+     * built, or sizes past the DSP limits.
+     */
+    reserve_zone_tables(num_articulations: number, num_mics: number, lut_entries: number, arena_entries: number): boolean;
+    /**
      * Move the sounding bank into the retired slot so `release_retired_bank`
      * can free it in bounded steps before the instance is freed. For a
      * disposed instance that will never render again. Frees nothing. Returns
@@ -892,6 +923,12 @@ export class LevainInstance {
      */
     seal_sample(sample_id: number): boolean;
     /**
+     * Install the staged zone tables once every entry is written, as
+     * `build_zone_map` would have built them. O(1); allocates and frees
+     * nothing. Refuses (false) while any entry is missing.
+     */
+    seal_zone_tables(): boolean;
+    /**
      * Tell the engine which instrument id is now loaded (e.g. `violin-1`,
      * `cello`, `trumpet`). The realism layer uses this to pick its body
      * resonance modes, sympathetic strings, and breath/bow noise colour.
@@ -901,6 +938,51 @@ export class LevainInstance {
      * Set a named parameter value.
      */
     set_param(name: string, value: number): void;
+    /**
+     * Address in this module's linear memory where the host writes the next
+     * zone-table chunk: a LUT chunk as interleaved (offset, count) words, an
+     * arena chunk as zone ids. At most `zone_table_write_words` words. Read
+     * the module's `memory.buffer` after this call: growing it elsewhere
+     * detaches earlier buffers.
+     */
+    zone_table_write_ptr(): number;
+    /**
+     * Words the zone-table write window holds: one full LUT chunk.
+     */
+    zone_table_write_words(): number;
+}
+
+/**
+ * Computes a bank's zone tables away from the render thread.
+ *
+ * The browser host runs this in a Worker on its own module instance, then
+ * stages the result into the worklet's `LevainInstance` in bounded chunks.
+ * It runs the same `zone::build_zone_tables` the engine's own
+ * `build_zone_map` runs, so there is one table algorithm.
+ */
+export class LevainZoneTableBuilder {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Add one zone's place in the map, with the fields `LevainInstance::add_zone`
+     * takes for it.
+     */
+    add_zone(zone_id: number, articulation_id: number, mic_id: number, lo_key: number, hi_key: number, lo_vel: number, hi_vel: number): void;
+    /**
+     * The built arena of zone ids. Empty before a successful `build`.
+     */
+    arena(): Uint32Array;
+    /**
+     * Compute the tables for the zones added so far. Returns false, keeping
+     * no tables, for the dimensions or capacities `build_zone_map` refuses.
+     */
+    build(num_articulations: number, num_mics: number): boolean;
+    /**
+     * The built LUT as interleaved (offset, count) words, the layout a LUT
+     * chunk travels in. Empty before a successful `build`.
+     */
+    lut(): Uint32Array;
+    constructor();
 }
 
 /**
@@ -1049,7 +1131,46 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
+    readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly __wbg_proofinstance_free: (a: number, b: number) => void;
+    readonly gluteninstance_get_crest: (a: number) => number;
+    readonly gluteninstance_get_gr_db: (a: number) => number;
+    readonly gluteninstance_get_input_db: (a: number) => number;
+    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_latency_samples: (a: number) => number;
+    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
+    readonly gluteninstance_get_output_db: (a: number) => number;
+    readonly gluteninstance_get_phase_corr: (a: number) => number;
+    readonly gluteninstance_get_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
+    readonly gluteninstance_new: (a: number) => number;
+    readonly gluteninstance_process: (a: number, b: number) => number;
+    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly grinderinstance_get_automation_values_ptr: (a: number) => number;
+    readonly grinderinstance_get_gate_envelope_db: (a: number) => number;
+    readonly grinderinstance_get_gate_open: (a: number) => number;
+    readonly grinderinstance_get_input_db: (a: number) => number;
+    readonly grinderinstance_get_input_left_ptr: (a: number) => number;
+    readonly grinderinstance_get_input_right_ptr: (a: number) => number;
+    readonly grinderinstance_get_latency_samples: (a: number) => number;
+    readonly grinderinstance_get_neural_cpu_percent: (a: number) => number;
+    readonly grinderinstance_get_neural_warmup_progress: (a: number) => number;
+    readonly grinderinstance_get_output_db: (a: number) => number;
+    readonly grinderinstance_get_output_left_ptr: (a: number) => number;
+    readonly grinderinstance_get_power_amp_db: (a: number) => number;
+    readonly grinderinstance_get_preamp_db: (a: number) => number;
+    readonly grinderinstance_get_right_ptr: (a: number) => number;
+    readonly grinderinstance_get_sag_voltage: (a: number) => number;
+    readonly grinderinstance_has_loaded_neural_model: (a: number) => number;
+    readonly grinderinstance_load_neural_model: (a: number, b: number, c: number) => [number, number];
+    readonly grinderinstance_new: (a: number) => number;
+    readonly grinderinstance_process: (a: number, b: number) => number;
+    readonly grinderinstance_process_automated: (a: number, b: number) => number;
+    readonly grinderinstance_reset: (a: number) => void;
+    readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly proofinstance_get_ab_gain_offset: (a: number) => number;
     readonly proofinstance_get_correlation: (a: number) => number;
     readonly proofinstance_get_dynamics_gr: (a: number, b: number) => number;
@@ -1073,6 +1194,37 @@ export interface InitOutput {
     readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly proofinstance_reset_integrated: (a: number) => void;
     readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly grinderinstance_get_nan_flush_count: (a: number) => number;
+    readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
+    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
+    readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
+    readonly bacteriainstance_clear_mod_assignments: (a: number) => void;
+    readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
+    readonly bacteriainstance_get_input_db: (a: number) => number;
+    readonly bacteriainstance_get_input_left_ptr: (a: number) => number;
+    readonly bacteriainstance_get_input_right_ptr: (a: number) => number;
+    readonly bacteriainstance_get_latency_samples: (a: number) => number;
+    readonly bacteriainstance_get_nan_flush_count: (a: number) => number;
+    readonly bacteriainstance_get_output_db: (a: number) => number;
+    readonly bacteriainstance_get_right_ptr: (a: number) => number;
+    readonly bacteriainstance_new: (a: number) => number;
+    readonly bacteriainstance_process: (a: number, b: number) => number;
+    readonly bacteriainstance_reset: (a: number) => void;
+    readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly kneadinstance_get_f0: (a: number) => number;
+    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
+    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
+    readonly kneadinstance_get_latency_samples: (a: number) => number;
+    readonly kneadinstance_get_periodicity: (a: number) => number;
+    readonly kneadinstance_get_right_ptr: (a: number) => number;
+    readonly kneadinstance_is_voiced: (a: number) => number;
+    readonly kneadinstance_new: (a: number) => number;
+    readonly kneadinstance_process: (a: number, b: number) => number;
+    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
+    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
+    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly __wbg_crustinstance_free: (a: number, b: number) => void;
     readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
     readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
@@ -1117,9 +1269,25 @@ export interface InitOutput {
     readonly grandbouleinstance_push_una_corda: (a: number, b: number, c: number) => number;
     readonly grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
+    readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
-    readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
+    readonly __wbg_levaininstance_free: (a: number, b: number) => void;
+    readonly __wbg_levainzonetablebuilder_free: (a: number, b: number) => void;
     readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
+    readonly crumbsinstance_active_voices: (a: number) => number;
+    readonly crumbsinstance_add_sample: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly crumbsinstance_all_notes_off: (a: number) => void;
+    readonly crumbsinstance_all_sound_off: (a: number) => void;
+    readonly crumbsinstance_dropped_sample_writes: (a: number) => number;
+    readonly crumbsinstance_get_nan_flush_count: (a: number) => number;
+    readonly crumbsinstance_get_right_ptr: (a: number) => number;
+    readonly crumbsinstance_new: (a: number) => number;
+    readonly crumbsinstance_note_off: (a: number, b: number) => void;
+    readonly crumbsinstance_note_on: (a: number, b: number, c: number) => void;
+    readonly crumbsinstance_process: (a: number, b: number) => number;
+    readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
+    readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
+    readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly fermenterinstance_active_voices: (a: number) => number;
     readonly fermenterinstance_advance_silence: (a: number) => void;
     readonly fermenterinstance_get_nan_flush_count: (a: number) => number;
@@ -1138,29 +1306,52 @@ export interface InitOutput {
     readonly fermenterinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly fermenterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly fermenterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly grinderinstance_get_automation_values_ptr: (a: number) => number;
-    readonly grinderinstance_get_gate_envelope_db: (a: number) => number;
-    readonly grinderinstance_get_gate_open: (a: number) => number;
-    readonly grinderinstance_get_input_db: (a: number) => number;
-    readonly grinderinstance_get_input_left_ptr: (a: number) => number;
-    readonly grinderinstance_get_input_right_ptr: (a: number) => number;
-    readonly grinderinstance_get_latency_samples: (a: number) => number;
-    readonly grinderinstance_get_nan_flush_count: (a: number) => number;
-    readonly grinderinstance_get_neural_cpu_percent: (a: number) => number;
-    readonly grinderinstance_get_neural_warmup_progress: (a: number) => number;
-    readonly grinderinstance_get_output_db: (a: number) => number;
-    readonly grinderinstance_get_output_left_ptr: (a: number) => number;
-    readonly grinderinstance_get_power_amp_db: (a: number) => number;
-    readonly grinderinstance_get_preamp_db: (a: number) => number;
-    readonly grinderinstance_get_right_ptr: (a: number) => number;
-    readonly grinderinstance_get_sag_voltage: (a: number) => number;
-    readonly grinderinstance_has_loaded_neural_model: (a: number) => number;
-    readonly grinderinstance_load_neural_model: (a: number, b: number, c: number) => [number, number];
-    readonly grinderinstance_new: (a: number) => number;
-    readonly grinderinstance_process: (a: number, b: number) => number;
-    readonly grinderinstance_process_automated: (a: number, b: number) => number;
-    readonly grinderinstance_reset: (a: number) => void;
-    readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly levaininstance_abort_sample_bank: (a: number) => number;
+    readonly levaininstance_active_voices: (a: number) => number;
+    readonly levaininstance_add_articulation_switch: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly levaininstance_add_legato_transition: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly levaininstance_add_zone: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number) => void;
+    readonly levaininstance_all_notes_off: (a: number) => void;
+    readonly levaininstance_attach_sample_bank: (a: number, b: number, c: number) => number;
+    readonly levaininstance_begin_sample: (a: number, b: number, c: number, d: number) => number;
+    readonly levaininstance_begin_sample_bank: (a: number, b: number, c: number) => void;
+    readonly levaininstance_build_zone_map: (a: number, b: number, c: number) => number;
+    readonly levaininstance_clear_zones: (a: number) => void;
+    readonly levaininstance_commit_sample_bank: (a: number) => number;
+    readonly levaininstance_commit_sample_frames: (a: number, b: number, c: number) => number;
+    readonly levaininstance_commit_zone_arena_chunk: (a: number, b: number, c: number) => number;
+    readonly levaininstance_commit_zone_lut_chunk: (a: number, b: number, c: number) => number;
+    readonly levaininstance_get_nan_flush_count: (a: number) => number;
+    readonly levaininstance_get_right_ptr: (a: number) => number;
+    readonly levaininstance_handle_cc: (a: number, b: number, c: number) => void;
+    readonly levaininstance_has_retired_bank: (a: number) => number;
+    readonly levaininstance_new: (a: number, b: number) => number;
+    readonly levaininstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly levaininstance_note_off: (a: number, b: number) => void;
+    readonly levaininstance_note_off_on_channel: (a: number, b: number, c: number) => void;
+    readonly levaininstance_note_on: (a: number, b: number, c: number) => void;
+    readonly levaininstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
+    readonly levaininstance_note_on_with_channel_and_articulation: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly levaininstance_process: (a: number, b: number) => number;
+    readonly levaininstance_publish_sample_bank: (a: number, b: number, c: number) => number;
+    readonly levaininstance_release_retired_bank: (a: number, b: number) => number;
+    readonly levaininstance_reserve_zone_tables: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly levaininstance_retire_sample_bank: (a: number) => number;
+    readonly levaininstance_sample_bank_bytes: (a: number) => number;
+    readonly levaininstance_sample_write_floats: (a: number, b: number) => number;
+    readonly levaininstance_sample_write_ptr: (a: number, b: number) => number;
+    readonly levaininstance_seal_sample: (a: number, b: number) => number;
+    readonly levaininstance_seal_zone_tables: (a: number) => number;
+    readonly levaininstance_set_instrument: (a: number, b: number, c: number) => void;
+    readonly levaininstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly levaininstance_zone_table_write_ptr: (a: number) => number;
+    readonly levaininstance_zone_table_write_words: (a: number) => number;
+    readonly levainzonetablebuilder_add_zone: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly levainzonetablebuilder_arena: (a: number) => [number, number];
+    readonly levainzonetablebuilder_build: (a: number, b: number, c: number) => number;
+    readonly levainzonetablebuilder_lut: (a: number) => [number, number];
+    readonly levainzonetablebuilder_new: () => number;
     readonly toasterinstance_advance_silence: (a: number, b: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
     readonly toasterinstance_get_right_ptr: (a: number) => number;
@@ -1176,104 +1367,7 @@ export interface InitOutput {
     readonly toasterinstance_set_pad_param_lock_by_id: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
-    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
-    readonly gluteninstance_get_crest: (a: number) => number;
-    readonly gluteninstance_get_gr_db: (a: number) => number;
-    readonly gluteninstance_get_input_db: (a: number) => number;
-    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_latency_samples: (a: number) => number;
-    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
-    readonly gluteninstance_get_output_db: (a: number) => number;
-    readonly gluteninstance_get_phase_corr: (a: number) => number;
-    readonly gluteninstance_get_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
-    readonly gluteninstance_new: (a: number) => number;
-    readonly gluteninstance_process: (a: number, b: number) => number;
-    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly kneadinstance_get_f0: (a: number) => number;
-    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
-    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
-    readonly kneadinstance_get_latency_samples: (a: number) => number;
-    readonly kneadinstance_get_periodicity: (a: number) => number;
-    readonly kneadinstance_get_right_ptr: (a: number) => number;
-    readonly kneadinstance_is_voiced: (a: number) => number;
-    readonly kneadinstance_new: (a: number) => number;
-    readonly kneadinstance_process: (a: number, b: number) => number;
-    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
-    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
-    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
-    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly init_panic_hook: () => void;
-    readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
-    readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
-    readonly __wbg_levaininstance_free: (a: number, b: number) => void;
-    readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
-    readonly bacteriainstance_clear_mod_assignments: (a: number) => void;
-    readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
-    readonly bacteriainstance_get_input_db: (a: number) => number;
-    readonly bacteriainstance_get_input_left_ptr: (a: number) => number;
-    readonly bacteriainstance_get_input_right_ptr: (a: number) => number;
-    readonly bacteriainstance_get_latency_samples: (a: number) => number;
-    readonly bacteriainstance_get_nan_flush_count: (a: number) => number;
-    readonly bacteriainstance_get_output_db: (a: number) => number;
-    readonly bacteriainstance_get_right_ptr: (a: number) => number;
-    readonly bacteriainstance_new: (a: number) => number;
-    readonly bacteriainstance_process: (a: number, b: number) => number;
-    readonly bacteriainstance_reset: (a: number) => void;
-    readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly crumbsinstance_active_voices: (a: number) => number;
-    readonly crumbsinstance_add_sample: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly crumbsinstance_all_notes_off: (a: number) => void;
-    readonly crumbsinstance_all_sound_off: (a: number) => void;
-    readonly crumbsinstance_dropped_sample_writes: (a: number) => number;
-    readonly crumbsinstance_get_nan_flush_count: (a: number) => number;
-    readonly crumbsinstance_get_right_ptr: (a: number) => number;
-    readonly crumbsinstance_new: (a: number) => number;
-    readonly crumbsinstance_note_off: (a: number, b: number) => void;
-    readonly crumbsinstance_note_on: (a: number, b: number, c: number) => void;
-    readonly crumbsinstance_process: (a: number, b: number) => number;
-    readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
-    readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
-    readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly levaininstance_abort_sample_bank: (a: number) => number;
-    readonly levaininstance_active_voices: (a: number) => number;
-    readonly levaininstance_add_articulation_switch: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly levaininstance_add_legato_transition: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly levaininstance_add_zone: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number) => void;
-    readonly levaininstance_all_notes_off: (a: number) => void;
-    readonly levaininstance_attach_sample_bank: (a: number, b: number, c: number) => number;
-    readonly levaininstance_begin_sample: (a: number, b: number, c: number, d: number) => number;
-    readonly levaininstance_begin_sample_bank: (a: number, b: number, c: number) => void;
-    readonly levaininstance_build_zone_map: (a: number, b: number, c: number) => number;
-    readonly levaininstance_clear_zones: (a: number) => void;
-    readonly levaininstance_commit_sample_bank: (a: number) => number;
-    readonly levaininstance_commit_sample_frames: (a: number, b: number, c: number) => number;
-    readonly levaininstance_get_nan_flush_count: (a: number) => number;
-    readonly levaininstance_get_right_ptr: (a: number) => number;
-    readonly levaininstance_handle_cc: (a: number, b: number, c: number) => void;
-    readonly levaininstance_has_retired_bank: (a: number) => number;
-    readonly levaininstance_new: (a: number, b: number) => number;
-    readonly levaininstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly levaininstance_note_off: (a: number, b: number) => void;
-    readonly levaininstance_note_off_on_channel: (a: number, b: number, c: number) => void;
-    readonly levaininstance_note_on: (a: number, b: number, c: number) => void;
-    readonly levaininstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
-    readonly levaininstance_note_on_with_channel_and_articulation: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly levaininstance_process: (a: number, b: number) => number;
-    readonly levaininstance_publish_sample_bank: (a: number, b: number, c: number) => number;
-    readonly levaininstance_release_retired_bank: (a: number, b: number) => number;
-    readonly levaininstance_retire_sample_bank: (a: number) => number;
-    readonly levaininstance_sample_bank_bytes: (a: number) => number;
-    readonly levaininstance_sample_write_floats: (a: number, b: number) => number;
-    readonly levaininstance_sample_write_ptr: (a: number, b: number) => number;
-    readonly levaininstance_seal_sample: (a: number, b: number) => number;
-    readonly levaininstance_set_instrument: (a: number, b: number, c: number) => void;
-    readonly levaininstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

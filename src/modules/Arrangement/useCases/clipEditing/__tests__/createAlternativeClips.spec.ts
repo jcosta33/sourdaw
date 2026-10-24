@@ -221,6 +221,43 @@ describe('createAlternativeClips', () => {
         expect(mocks.getNextClipId).toHaveBeenCalledTimes(2);
     });
 
+    it('shifts a relocated variation copy anchor by its placement delta and keeps an unanchored copy key-absent', () => {
+        // A variation is a whole-clip relocation by its placement delta, so
+        // the loop anchor rides the same delta (#4988) and the copy keeps the
+        // source's loop phase; a source with no anchor leaves the key absent
+        // on every copy — never written undefined.
+        const anchored = ClipDummy.create({
+            id: 'c1',
+            name: 'Lead',
+            startBeat: 4,
+            endBeat: 8,
+            type: 'midi',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 2,
+        });
+        const track = setState([anchored]);
+
+        expect(createAlternativeClips('c1', [[note()], [note({ pitch: 64 })]])).toBe(true);
+
+        const updated = applyTrackUpdate(track);
+        const [var1, var2] = updated.clips.slice(1);
+        // Var 1 relocates by 8 − 4 = 4, var 2 by 12 − 4 = 8.
+        expect(var1).toMatchObject({ startBeat: 8, loopOriginBeat: 6 });
+        expect(var2).toMatchObject({ startBeat: 12, loopOriginBeat: 10 });
+    });
+
+    it('leaves a variation copy of an unanchored source without an anchor key', () => {
+        const track = setState([ClipDummy.create({ id: 'c1', name: 'Lead', startBeat: 4, endBeat: 8, type: 'midi' })]);
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(true);
+
+        const updated = applyTrackUpdate(track);
+        const variation = updated.clips[1];
+        expect(variation).toBeDefined();
+        expect(Object.hasOwn(variation!, 'loopOriginBeat')).toBe(false);
+    });
+
     it('writes variation notes shifted to each variation clip start', () => {
         setState([ClipDummy.create({ id: 'c1', name: 'Lead', startBeat: 0, endBeat: 4, type: 'midi' })]);
 

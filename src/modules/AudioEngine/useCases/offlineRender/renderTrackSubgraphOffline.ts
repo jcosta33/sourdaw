@@ -299,7 +299,7 @@ export async function renderTrackSubgraphOffline({
                 layers: adjustmentLayers,
                 trackId: track.id,
                 allTrackIds,
-                spanStartBeat: startBeat,
+                spanStartBeat: renderStartBeat,
                 spanEndBeat: endBeat,
             }),
         ])
@@ -316,18 +316,21 @@ export async function renderTrackSubgraphOffline({
         // A moving blend would need per-block crossfade writes through the
         // live bus node's slewed API; until that exists, a steady layer is
         // rendered and a moving one is skipped — loudly, never silently.
-        if (!composition.constant) {
+        const steadyDsp = composition.dsp.filter((layer) => layer.constant);
+        if (steadyDsp.length !== composition.dsp.length) {
             if (!warnedMovingDsp) {
                 warnedMovingDsp = true;
                 onWarning?.(
                     'A DSP adjustment layer that fades across this bounce is skipped; only steady layers render offline.'
                 );
             }
+        }
+        if (steadyDsp.length === 0) {
             continue;
         }
         adjustmentBusesByTrackId.set(
             track.id,
-            createOfflineAdjustmentBusChain({ context: offlineCtx, layers: composition.dsp })
+            createOfflineAdjustmentBusChain({ context: offlineCtx, layers: steadyDsp })
         );
     }
 
@@ -523,6 +526,7 @@ export async function renderTrackSubgraphOffline({
                     evaluateAutomationValue: projections.evaluateAutomationValue,
                     resolveArticulationId: projections.resolveArticulationId,
                     projectClipControllers: projections.projectClipControllers,
+                    projectChannelBend: projections.projectChannelBend,
                 },
                 onWarning,
                 pendingWorkletEvents,

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -14,31 +15,7 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
 // ---------------------------------------------------------------------------
 
 test.describe('End-to-end DAW workflow', () => {
-    test('Full MIDI workflow: track → clip → editor → note → undo enabled', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible({ timeout: 5000 });
-
-        // Create a clip and open the editor.
-        const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
-        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
-        await page.waitForTimeout(500);
-        await timeline.dblclick({ position: { x: 300, y: 30 } });
-        const piano_roll = page.getByLabel('Piano roll editor');
-        await expect(piano_roll).toBeVisible({ timeout: 10000 });
-
-        // Create a note → undo becomes enabled.
-        const box = await piano_roll.boundingBox();
-        if (box) {
-            await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
-            await page.waitForTimeout(500);
-        }
-        await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
-    });
+    // midiUndoPlaybackTestId owns note creation plus undo/redo count transitions.
 
     test('Template load yields multiple tracks', async ({ page }) => {
         test.setTimeout(60000);

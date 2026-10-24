@@ -269,6 +269,7 @@ export function getProjectContext(): ProjectContext {
                 fadeOutBeats: context.fadeOutBeats,
                 loopEnabled: context.loopEnabled ?? false,
                 loopLength: context.loopLength,
+                loopOriginBeat: context.loopOriginBeat,
                 midiOffsetBeats: context.midiOffsetBeats ?? 0,
                 minimumLoopLengthBeats: projectClipLoopExpansion({
                     clipDurationBeats: context.endBeat - context.startBeat,

@@ -2007,6 +2007,86 @@ fn levain_sample_chunks_and_seal_do_not_allocate() {
     }
 }
 
+/// The worklet stages a bank's zone tables a bounded chunk per message after
+/// reserving them once; neither the chunk commits nor the seal may allocate or
+/// free, and neither may build the tables.
+#[test]
+fn levain_zone_table_chunks_and_seal_do_not_allocate() {
+    use daw_dsp::levain::{
+        LevainInstance, LevainZoneTableBuilder, LEVAIN_ZONE_TABLE_CHUNK_ENTRIES,
+    };
+
+    let chunk = LEVAIN_ZONE_TABLE_CHUNK_ENTRIES;
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    instance.begin_sample_bank("violin-1");
+    let mut builder = LevainZoneTableBuilder::new();
+    for zone_id in 0..48_u32 {
+        let key = 36 + (zone_id % 24) as u8;
+        let (articulation, mic) = ((zone_id % 4) as u16, (zone_id % 2) as u8);
+        instance.add_zone(
+            zone_id,
+            0,
+            articulation,
+            key,
+            0.0,
+            key,
+            key + 2,
+            0,
+            127,
+            0,
+            1,
+            mic,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.005,
+            0.1,
+            1.0,
+            0.3,
+        );
+        builder.add_zone(zone_id, articulation, mic, key, key + 2, 0, 127);
+    }
+    assert!(builder.build(4, 2));
+    let (lut, arena) = (builder.lut(), builder.arena());
+    assert!(instance.reserve_zone_tables(4, 2, (lut.len() / 2) as u32, arena.len() as u32));
+
+    let mut accepted = true;
+    assert_no_alloc(|| {
+        for (index, words) in lut.chunks(2 * chunk).enumerate() {
+            // SAFETY: the window holds one full LUT chunk and this one fits it.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    words.as_ptr(),
+                    instance.zone_table_write_ptr(),
+                    words.len(),
+                )
+            };
+            accepted &=
+                instance.commit_zone_lut_chunk((index * chunk) as u32, (words.len() / 2) as u32);
+        }
+        for (index, ids) in arena.chunks(chunk).enumerate() {
+            // SAFETY: as above; an arena chunk is at most half the window.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    ids.as_ptr(),
+                    instance.zone_table_write_ptr(),
+                    ids.len(),
+                )
+            };
+            accepted &= instance.commit_zone_arena_chunk((index * chunk) as u32, ids.len() as u32);
+        }
+    });
+    assert!(accepted, "every zone-table chunk should have been accepted");
+    let mut sealed = false;
+    assert_no_alloc(|| {
+        sealed = instance.seal_zone_tables();
+    });
+    assert!(sealed, "complete zone tables should seal");
+}
+
 #[test]
 fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
     use daw_dsp::proof::ProofInstance;

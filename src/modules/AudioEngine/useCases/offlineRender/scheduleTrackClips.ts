@@ -12,6 +12,7 @@ import {
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
+import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -29,6 +30,7 @@ import {
     type OfflineMidiEventProjector,
     type OfflineMidiArticulationResolver,
     type OfflineAutomationValueEvaluator,
+    type OfflineChannelBendProjector,
     type OfflineChordPitchProjector,
     type OfflineClipControllerProjector,
     type OfflineMidiProbabilitySelector,
@@ -44,6 +46,7 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
+import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
@@ -87,6 +90,11 @@ type OfflineProjectionDependencies = {
      * Absent, no controller reaches an instrument; the composition root sets it.
      */
     projectClipControllers?: OfflineClipControllerProjector | null;
+    /**
+     * The projection live scheduling reads a track's stored channel pitch bend with. Absent, no
+     * stored bend reaches an instrument; the composition root sets it.
+     */
+    projectChannelBend?: OfflineChannelBendProjector | null;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -209,6 +217,7 @@ export async function scheduleTrackClips({
         processYeastMidi,
         resolveArticulationId,
         projectClipControllers,
+        projectChannelBend,
         resolveTempoAtBeat,
         selectMidiEventProbability,
     } = projections;
@@ -453,6 +462,11 @@ export async function scheduleTrackClips({
         slide?: number;
         pitchBend?: number;
         pitchBendRangeSemitones?: number;
+        /** The note's projected start, from which its recorded expression curves are placed. */
+        startBeat: number;
+        /** How far into the note `startBeat` is when a clip cut took its head off; the curves count from the note's start. */
+        beatsIntoNote?: number;
+        expression?: NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
         clipGain: number;
     };
     /** The clamped MPE a note carries, in the wire units project truth stores. */
@@ -473,6 +487,8 @@ export async function scheduleTrackClips({
         channel?: number;
         /** Present on a note-on whose note recorded per-note expression. */
         mpe?: ScheduledMpe;
+        /** The note's recorded curve changes after its note-on, in time order. */
+        expressionChanges?: { time: number; mpe: ScheduledMpe }[];
     };
 
     function clampOptional(value: number | undefined, minimum: number, maximum: number): number | undefined {
@@ -561,6 +577,59 @@ export async function scheduleTrackClips({
         });
     }
 
+    // Where the render places a beat on the timeline, before the region start clamps it: a beat before the
+    // region is negative.
+    function timelineSecondsAtBeat(beat: number, toasterPadIndex: number): number {
+        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
+        return startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec;
+    }
+
+    // Where the render places a beat, exactly as a note's own start is placed.
+    function secondsAtBeat(beat: number, toasterPadIndex: number): number {
+        return Math.max(0, timelineSecondsAtBeat(beat, toasterPadIndex));
+    }
+
+    // The frame `schedulePendingSuspends` addresses an event at a given time to.
+    function frameAtSeconds(seconds: number): number {
+        return Math.floor(seconds * offlineCtx.sampleRate);
+    }
+
+    // The frame the timeline gives a beat, below zero before the region start: the clock the channel bend is
+    // ordered on, and the one a note's own bend is compared with its moves on.
+    function frameOnTimelineAtBeat(beat: number): number {
+        return frameAtSeconds(timelineSecondsAtBeat(beat, -1));
+    }
+
+    // The track's stored channel pitch bend, on the clock a note at the same beat is placed on. Only an
+    // instrument with an expression surface takes any (the engines that bend a held voice), as live
+    // playback, and only the track's own MIDI clips that play (a muted clip does not, a clip with no note
+    // list does) bend its notes, whatever the region start: a clip that ended before the region still left
+    // the bend in force.
+    function projectTrackChannelBend(): ReturnType<OfflineChannelBendProjector> {
+        // A Yeast track's notes are the rack's, whichever instrument voices them: the stored controllers
+        // take the same exclusion, live and here.
+        const hasYeast = track.devices.some((device) => device.type === 'yeast');
+        if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
+            return [];
+        }
+        const clips = clipsToProcess.flatMap(({ clip }) => {
+            const pitchBends = midi.pitchBendByClipId[clip.id];
+            if (clip.type !== 'midi' || clip.muted || !pitchBends?.length) {
+                return [];
+            }
+            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
+        });
+        // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
+        // zero, rather than the clamp every note shares: the bend in force at the region start is then the last
+        // one on the timeline, not the last one of the last clip in the track's clip list.
+        return projectChannelBend({
+            clips,
+            frameAtBeat: frameOnTimelineAtBeat,
+        });
+    }
+
+    const channelBend = projectTrackChannelBend();
+
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         // A bypassed receiver plays nothing, as it does live; no note is handed
         // to an instrument, so none is counted either.
@@ -601,6 +670,20 @@ export async function scheduleTrackClips({
                 // the same one. Matching that here is what keeps a bounce from
                 // releasing every voice at a pitch when the session releases one.
                 const noteChannel = note.channel ?? 0;
+                // The curves change the note after its note-on, placed as the
+                // note's own start and release are and by the same projection
+                // live playback uses. A pad has no voice to bend.
+                const curves = isToaster
+                    ? undefined
+                    : projectNoteExpressionCurves({
+                          note,
+                          channelBend,
+                          startBeat: note.startBeat,
+                          beatsIntoNote: note.beatsIntoNote,
+                          releaseFrame: frameAtSeconds(endTime),
+                          frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
+                          channelBendFrameAtBeat: frameOnTimelineAtBeat,
+                      });
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
@@ -612,7 +695,11 @@ export async function scheduleTrackClips({
                     channel: noteChannel,
                     // Toaster addresses pads rather than note instances, so it
                     // has no voice for expression to reach.
-                    mpe: isToaster ? undefined : resolveScheduledMpe(note),
+                    mpe: isToaster ? undefined : (curves?.atStart ?? resolveScheduledMpe(note)),
+                    expressionChanges: curves?.changes.map((change) => ({
+                        time: secondsAtBeat(change.beat, toasterPadIndex),
+                        mpe: change.expression,
+                    })),
                 });
                 if (!isToaster) {
                     workletEvents.push({
@@ -697,9 +784,9 @@ export async function scheduleTrackClips({
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            const sourceNotes = midi.notesByClipId[clip.id];
+            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            if (!sourceNotes || clipVisualLength <= 0) {
+            if (clipVisualLength <= 0) {
                 continue;
             }
             const loopProjection = projectClipLoopExpansion({
@@ -715,26 +802,47 @@ export async function scheduleTrackClips({
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const iterationCount = loopProjection.iterationCount;
+            const loopEnabled = clip.loopEnabled ?? false;
+            const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 iterations.push({
-                    sourceNotes: sourceNotes.filter((note) =>
-                        selectMidiEventProbability({
-                            projectProbabilitySeed: midi.probabilitySeed,
-                            clipId: clip.id,
-                            eventId: note.id,
-                            absoluteOccurrenceIndex,
-                            probabilityPercent: note.probability ?? 100,
-                        })
+                    // #5198 — the anchored loop window owns membership on the
+                    // row's stored figure before the rack ever sees it: a row
+                    // past the trimmed region end must stay silent, and a
+                    // generator must never be fed it as pass input. Unanchored
+                    // clips admit without the window, byte-identically to the
+                    // pre-anchor construction.
+                    sourceNotes: sourceNotes.filter(
+                        (note) =>
+                            isBeatAdmittedByAnchoredClipLoopWindow({
+                                relativeBeat: note.startBeat - midiOffsetBeats,
+                                startBeat: clip.startBeat,
+                                loopOriginBeat: clip.loopOriginBeat,
+                                loopLengthBeats: loopLength,
+                                loopEnabled,
+                            }) &&
+                            selectMidiEventProbability({
+                                projectProbabilitySeed: midi.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex,
+                                probabilityPercent: note.probability ?? 100,
+                            })
                     ),
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
                     iterationStartBeat: clip.startBeat + iteration * loopLength,
                     loopLengthBeats: loopLength,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    loopEnabled: clip.loopEnabled ?? false,
+                    midiOffsetBeats,
+                    loopEnabled,
+                    // The same anchor pair the filter above read: the Yeast
+                    // chain's own gates re-assert membership on the stored
+                    // figure downstream, and they cannot evaluate the anchored
+                    // window without it (#5198 review).
+                    loopOriginBeat: clip.loopOriginBeat,
                     toasterPadIndex: padIndex,
                     clipGain: clip.gain,
                 });
@@ -805,10 +913,8 @@ export async function scheduleTrackClips({
         });
 
         if (clip.type === 'midi') {
-            const sourceNotes = midi.notesByClipId[clip.id];
-            if (!sourceNotes) {
-                continue;
-            }
+            // A clip with no note list plays no notes; its stored controllers still play.
+            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
             const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
@@ -880,6 +986,7 @@ export async function scheduleTrackClips({
                     loopLengthBeats: loopLen,
                     midiOffsetBeats,
                     loopEnabled: clip.loopEnabled ?? false,
+                    loopOriginBeat: clip.loopOriginBeat,
                     phase: 'complete',
                 });
                 const scheduledNotes = notes.map((note) => {
@@ -905,6 +1012,9 @@ export async function scheduleTrackClips({
                         slide: note.slide,
                         pitchBend: note.pitchBend,
                         pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+                        startBeat: note.startBeat,
+                        beatsIntoNote: note.beatsIntoNote,
+                        expression: note.expression,
                         clipGain: clip.gain,
                     };
                 });
@@ -993,29 +1103,36 @@ export async function scheduleTrackClips({
             }
             pendingWorkletEvents.push(pendingEvent);
 
-            if (event.type !== 'on' || !event.mpe || !dispatchExpression) {
+            if (event.type !== 'on' || !dispatchExpression) {
                 continue;
             }
             // Live playback posts the note-on and then this, at one sample
             // frame, so the worklet applies it to the voice that note-on just
-            // started. The recorded bend depth — the MPE member default when the
-            // note predates RPN 0 decoding — is the range it was performed
-            // under, and `normalizeNoteExpression` owns the conversion to
-            // engine units for both paths.
-            const { bendSemitones, pressure, slide } = normalizeNoteExpression(
-                event.mpe,
-                event.mpe.pitchBendRangeSemitones
-            );
-            pendingWorkletEvents.push({
-                time: event.time,
-                type: 'expression',
-                pitch: event.pitch,
-                channel: event.channel ?? 0,
-                dispatch: dispatchExpression,
-                bendSemitones,
-                pressure,
-                slide,
-            });
+            // started; the note's curve changes follow at their own times. The
+            // recorded bend depth — the MPE member default when the note
+            // predates RPN 0 decoding — is the range it was performed under,
+            // and `normalizeNoteExpression` owns the conversion to engine
+            // units for both paths.
+            const updates: NonNullable<WorkletMidiEvent['expressionChanges']> = [];
+            if (event.mpe) {
+                updates.push({ time: event.time, mpe: event.mpe });
+            }
+            if (event.expressionChanges) {
+                updates.push(...event.expressionChanges);
+            }
+            for (const { time, mpe } of updates) {
+                const { bendSemitones, pressure, slide } = normalizeNoteExpression(mpe, mpe.pitchBendRangeSemitones);
+                pendingWorkletEvents.push({
+                    time,
+                    type: 'expression',
+                    pitch: event.pitch,
+                    channel: event.channel ?? 0,
+                    dispatch: dispatchExpression,
+                    bendSemitones,
+                    pressure,
+                    slide,
+                });
+            }
         }
     }
 }
