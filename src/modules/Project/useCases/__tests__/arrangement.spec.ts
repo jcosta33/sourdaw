@@ -18,6 +18,7 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     suspendAutoInputMonitoring: vi.fn(() => vi.fn()),
     stopTrackInputMonitoring: vi.fn(),
@@ -34,6 +35,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
+    startNoteExpression: vi.fn(),
+    advanceNoteExpression: vi.fn(),
+    relocateNoteExpression: vi.fn(),
     applyRuntimeGraphDelta: vi.fn(),
     audioEngine: vi.fn(),
     cacheAudioBuffer: vi.fn(),
@@ -54,6 +58,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getCurrentTime: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
+    getNoteExpressionDimensions: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
     getDrumKitByIndex: vi.fn(),
     getEngineState: vi.fn(),
@@ -216,11 +221,18 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     return {
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
+        projectChannelBend: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         appendMidiNotes: vi.fn(),
         arpeggiate: vi.fn(),
         canPrepareMidiClipGlueState: vi.fn(),
         downloadMidiFile: vi.fn(),
+        commitRecordedControllers: vi.fn(),
+        discardRecordedControllers: vi.fn(),
+        planRecordedControllers: vi.fn(),
+        isOverdubLanding: () => false,
+        countSettledOverdubPasses: () => 0,
+        waitForOverdubLanding: () => Promise.resolve(),
         duplicateClipNotes: vi.fn(),
         duplicateMidiClipData: vi.fn(),
         getChordAtBeat: vi.fn(),
@@ -261,6 +273,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         setMidiStoreState: actual.setMidiStoreState,
         setNotesForClip: vi.fn(),
         shouldPlayMidiEvent: vi.fn(),
+        shiftClipMidiNotes: vi.fn(),
         splitMidiNotesAtBeat: vi.fn(),
         transposeForChordTrack: vi.fn(),
     };

@@ -24,19 +24,19 @@ import {
     spawnRun,
 } from './githubAppIdentity.ts';
 import { authorIdentityExtensionArgs, authorIdentityWorktreeArgs } from './openLane.ts';
-import { AUTHOR_LANE_BRANCH_PREFIX, fail } from './prContract.ts';
+import { fail, isLaneBranch } from './prContract.ts';
 import { parseWorktrees, type Worktree } from './removeLane.ts';
 
 export const STAMP_LANE_IDENTITY_USAGE = 'usage: pnpm lane:identity';
 
-/** The lanes the App owns: worktrees locked `active:sourdaw-author` on `agent/` branches. */
+/** The lanes the App owns: worktrees locked `active:sourdaw-author` on a lane branch (typed or legacy `agent/`). */
 export function authorLanes(worktrees: Worktree[]): Worktree[] {
     return worktrees.filter(
         (lane) =>
             lane.locked &&
             lane.lockReason === AUTHOR_LOCK_REASON &&
             lane.branch !== undefined &&
-            lane.branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX)
+            isLaneBranch(lane.branch)
     );
 }
 

@@ -8,6 +8,7 @@ type ExecutableAppActionGroundingCatalogEntry = {
     decibelLevelForms?: DecibelLevelForm[];
     intentPhrases: string[];
     levelIntentPhrases?: string[];
+    referencedLevelIntentPhrases?: string[];
 };
 
 function getDecibelLevelForms(valueRules: readonly ExecutableAppActionValueRule[]): DecibelLevelForm[] {
@@ -39,6 +40,7 @@ export function getExecutableAppActionGroundingCatalog() {
             if (decibelLevelForms.length > 0) {
                 entry.decibelLevelForms = decibelLevelForms;
                 entry.levelIntentPhrases = [...registration.levelIntentPhrases];
+                entry.referencedLevelIntentPhrases = [...registration.referencedLevelIntentPhrases];
             }
             return entry;
         });

@@ -5,6 +5,10 @@ import {
     computeModulatorValue,
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
+import { secondsBetweenBeats } from '#/modules/Transport/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
+
+import { type OfflineAutomationBinding, type OfflineAutomationSegment } from '../../deviceStrategy/AudioDeviceStrategy';
 
 import { scheduleTrackAutomationFixture, SHIPPING_GRAIN_SLEW_TICK_SECONDS } from './scheduleTrackAutomationFixture';
 
@@ -107,6 +111,7 @@ describe('offline render carries modulator movement a lane cannot', () => {
         }
         expect(values[0]).toBeCloseTo(1000 + 0.5 * (20_000 - 20), 6);
         expect(Math.max(...values)).toBeGreaterThan(15_000);
+        expect(Math.max(...values)).toBeLessThanOrEqual(20_000);
 
         // Pin the modulation slew coefficient itself. The max and monotonic
         // assertions above hold for any alpha in (0, 1], so a detuned glide
@@ -119,7 +124,7 @@ describe('offline render carries modulator movement a lane cannot', () => {
         let previous: number | null = null;
         for (let index = 0; index < 8; index++) {
             // makeSecondsToBeat at a flat 120 bpm: one beat every 0.5 s.
-            const beat = ((index * tickSeconds) / 120) * 60;
+            const beat = index * tickSeconds * 2;
             const target = 1000 + makeLfoPlan().deltaAtBeat(beat);
             const expected: number = previous === null ? target : previous + (target - previous) * alpha;
             previous = expected;
@@ -182,5 +187,196 @@ describe('offline render carries modulator movement a lane cannot', () => {
         void plans;
         // The store-backed default carries no modulators in a bare harness.
         expect(plans).toEqual([]);
+    });
+});
+
+describe('modulator project phase reaches every terminal binding', () => {
+    const changes = [
+        { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+        { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+    ];
+    const tickSeconds = 4.8 * Math.log(175 / 150);
+    const anchor = 4;
+    const compensation = 0.125;
+    const sampleRate = 48_000;
+    // Independent analytic inverse for tempo(b) = 100 + 12.5*b.
+    const projectSecondsToBeat = (seconds: number) => (150 * Math.exp(seconds / 4.8) - 100) / 12.5;
+    const projectBeatToSeconds = (beat: number) => secondsBetweenBeats(changes, 0, beat, 120);
+
+    for (const family of ['audioParam', 'segments', 'curveWrite'] as const) {
+        for (const baseSource of ['persisted', 'track-lane', 'clip-lane'] as const) {
+            it(`${family} uses anchored ramp phase over the ${baseSource} on the compensated write clock`, () => {
+                const param = makeParam();
+                let segments: readonly OfflineAutomationSegment[] = [];
+                const ceiling = { gain: { value: 0 } } as GainNode;
+                const clipper = { curve: null } as WaveShaperNode;
+                const curveWrites: [number, number][] = [];
+                let binding: OfflineAutomationBinding;
+                if (family === 'audioParam') {
+                    binding = {
+                        kind: 'audioParam',
+                        targets: [{ audioParam: param as unknown as AudioParam, scale: 1, offset: 0 }],
+                    };
+                } else if (family === 'segments') {
+                    binding = {
+                        kind: 'segments',
+                        apply: (stream) => {
+                            segments = stream;
+                        },
+                    };
+                } else {
+                    binding = { kind: 'curveWrite', targets: { ceiling, clipper } };
+                }
+                const laneBase = baseSource === 'persisted' ? 0 : 2;
+                const lanes: Parameters<typeof scheduleTrackAutomationFixture>[0]['lanes'] = [];
+                if (baseSource !== 'persisted') {
+                    lanes.push({
+                        id: 'base',
+                        trackId: 'track-1',
+                        parameterId: 'dev-1:filter-cutoff',
+                        parameterName: 'Cutoff',
+                        clipId: baseSource === 'clip-lane' ? 'clip' : undefined,
+                        points: [{ beat: anchor, value: laneBase, curve: 'step', tension: 0 }],
+                        enabled: true,
+                        minValue: 0,
+                        maxValue: 100,
+                    });
+                }
+                const input = {
+                    lanes,
+                    trackId: 'track-1',
+                    trackGainNode: { gain: makeParam() } as unknown as GainNode,
+                    trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+                    deviceEntries: [
+                        {
+                            deviceId: 'dev-1',
+                            deviceType: 'builtin-filter',
+                            strategy: { resolveOfflineAutomation: () => binding },
+                        },
+                    ],
+                    durationSeconds: tickSeconds * 1.5,
+                    changes,
+                    slewTickSeconds: tickSeconds,
+                    regionStartBeat: anchor,
+                    regionStartSeconds: projectBeatToSeconds(anchor),
+                    projectBeatToSeconds,
+                    projectSecondsToBeat,
+                    sampleRate,
+                    compensationDelaySec: compensation,
+                    clipBoundsById: new Map([['clip', { startBeat: anchor, endBeat: 8 }]]),
+                    scheduleFrame: (time: number | undefined, call: () => void) => {
+                        call();
+                        curveWrites.push([ceiling.gain.value, time ?? 0]);
+                    },
+                    modulatorPlans: [
+                        {
+                            targetTrackId: 'track-1',
+                            deviceId: 'dev-1',
+                            parameterId: FILTER_PARAM,
+                            deviceType: 'builtin-filter',
+                            baseValue: 0,
+                            paramMin: 0,
+                            paramMax: 100,
+                            deltaAtBeat: (beat: number) => beat,
+                        },
+                    ],
+                };
+                scheduleTrackAutomationFixture(input);
+                // Beat 4 at the origin, beat 6 after the analytically integrated span;
+                // the second delivered target is slewed once from 4 to 6.
+                const seed = laneBase + 4;
+                const second = laneBase + 4.8;
+                if (family === 'audioParam') {
+                    expect(param.setValueAtTime).toHaveBeenCalledWith(seed, 0);
+                    expect(param.setValueAtTime).toHaveBeenCalledWith(seed, compensation);
+                    expect(param.setValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(second, 10);
+                    expect(param.setValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(tickSeconds + compensation, 10);
+                } else if (family === 'segments') {
+                    expect(segments).toHaveLength(2);
+                    expect(segments[0]?.startFrame).toBe(Math.round(compensation * sampleRate));
+                    expect(segments[0]?.startValue).toBe(seed);
+                    expect(segments[1]?.startValue).toBeCloseTo(second, 10);
+                    expect(segments[1]?.startFrame).toBe(Math.round((tickSeconds + compensation) * sampleRate));
+                } else {
+                    expect(curveWrites).toHaveLength(2);
+                    expect(curveWrites[0]?.[0]).toBeCloseTo(dbToGain(seed), 10);
+                    expect(curveWrites[1]?.[0]).toBeCloseTo(dbToGain(second), 10);
+                    expect(curveWrites[1]?.[1]).toBeCloseTo(tickSeconds + compensation, 10);
+                    expect(clipper.curve).not.toBeNull();
+                }
+            });
+        }
+    }
+
+    it('quantises delivered values while retaining the continuous modulation recurrence', () => {
+        const param = makeParam();
+        const input = {
+            lanes: [],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [{ deviceId: 'dev-1', deviceType: 'builtin-filter', strategy: makeFilterStrategy(param) }],
+            durationSeconds: 1.1,
+            changes: [],
+            slewTickSeconds: 0.5,
+            projectSecondsToBeat: (seconds: number) => seconds * 2,
+            deviceParameterLaw: {
+                acceptsAutomation: () => true,
+                clampValue: ({ value }: { value: number }) => value,
+                quantiseValue: ({ value }: { value: number }) => Math.round(value),
+            },
+            modulatorPlans: [
+                {
+                    targetTrackId: 'track-1',
+                    deviceId: 'dev-1',
+                    parameterId: FILTER_PARAM,
+                    deviceType: 'builtin-filter',
+                    baseValue: 4,
+                    paramMin: 0,
+                    paramMax: 100,
+                    deltaAtBeat: (beat: number) => beat,
+                },
+            ],
+        };
+        scheduleTrackAutomationFixture(input);
+        // The skipped rounded 4 still advances the continuous slot, so the
+        // next tick delivers 5 without re-sending the held 4.
+        expect(param.setValueAtTime.mock.calls.map(([value]) => value)).toEqual([4, 5]);
+    });
+
+    it('refuses a resolved modulator without its inverse, while lane-only scheduling needs none', () => {
+        const param = makeParam();
+        const input = {
+            lanes: [],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [{ deviceId: 'dev-1', deviceType: 'builtin-filter', strategy: makeFilterStrategy(param) }],
+            durationSeconds: 1,
+            changes: [],
+            projectSecondsToBeat: undefined,
+        };
+        const laneOnly = {
+            ...input,
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track-1',
+                    parameterId: 'dev-1:filter-cutoff',
+                    parameterName: 'Cutoff',
+                    points: [{ beat: 0, value: 10, curve: 'step' as const, tension: 0 }],
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 100,
+                },
+            ],
+        };
+        expect(() => scheduleTrackAutomationFixture(laneOnly)).not.toThrow();
+        expect(param.setValueAtTime).toHaveBeenCalledWith(10, 0);
+        param.setValueAtTime.mockClear();
+        expect(() => scheduleTrackAutomationFixture({ ...input, modulatorPlans: [makeLfoPlan()] })).toThrow(
+            'Offline seconds-to-beat projection is not configured'
+        );
+        expect(param.setValueAtTime).not.toHaveBeenCalled();
     });
 });

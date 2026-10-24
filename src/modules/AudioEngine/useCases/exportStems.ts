@@ -7,6 +7,7 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
+import { isFaustDeviceExportError, type FaustDeviceExportError } from '../errors/FaustDeviceExportError';
 import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
@@ -166,12 +167,14 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectMidiEvents,
             selectMidiEventProbability,
             projectPpqEndpoints,
+            beatAtSecondsFromAnchor,
             resolveTempoAtBeat,
             processYeastMidi,
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
             projectClipControllers,
+            projectChannelBend,
         } = renderContext;
         const stems = new Map<string, AudioBuffer>();
         // FX-9 — read once; each stem then plans only the routes that key a device
@@ -236,10 +239,10 @@ export const exportStems: ExportStemsFn = async function exportStems(
         const MAX_CONCURRENT_RENDERS =
             typeof navigator !== 'undefined' ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) : 4;
 
-        // A stem set is per-track by construction, so a per-track failure stays
-        // per-track: the pool records it and carries on rather than discarding
-        // every stem that already rendered.
+        // Ordinary per-track failures retain the existing partial-set warning.
+        // A failed audible Faust device invalidates the whole musician export.
         const failures: { trackId: string; reason: string }[] = [];
+        let faustFailure: FaustDeviceExportError | undefined;
 
         // Every read of "was this export cancelled" goes through this stem set's own scope signal
         // beside the shared flag. The export's finally lowers the flag, and a stem task still in
@@ -307,6 +310,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                         onWarning,
                         cancellationSignal,
+                        refuseFailedFaustDevices: true,
                     });
                     trackStripsById.set(groupedTrack.id, groupedStrip);
                     deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
@@ -344,6 +348,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         }),
                         onWarning,
                         cancellationSignal,
+                        refuseFailedFaustDevices: true,
                     });
                     trackStripsById.set(keySourceTrack.id, keyStrip);
                     deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
@@ -375,6 +380,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         projections: {
                             projectMidiEvents,
                             projectPpqEndpoints,
+                            beatAtSecondsFromAnchor,
                             resolveTempoAtBeat,
                             processYeastMidi,
                             selectMidiEventProbability,
@@ -382,6 +388,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             evaluateAutomationValue,
                             resolveArticulationId,
                             projectClipControllers,
+                            projectChannelBend,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -414,6 +421,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         projections: {
                             projectMidiEvents,
                             projectPpqEndpoints,
+                            beatAtSecondsFromAnchor,
                             resolveTempoAtBeat,
                             processYeastMidi,
                             selectMidiEventProbability,
@@ -421,6 +429,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             evaluateAutomationValue,
                             resolveArticulationId,
                             projectClipControllers,
+                            projectChannelBend,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -512,6 +521,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
                                 reject(failure);
                                 return;
                             }
+                            if (isFaustDeviceExportError(error)) {
+                                faustFailure ??= error;
+                            }
                             failures.push({ trackId: stemTrackId, reason: failure.message });
                             // This stem's slot is spent either way; without this
                             // the progress bar stalls short of 1 on a failure.
@@ -526,6 +538,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
             }
             next();
         });
+
+        // Settle every task and its teardown before releasing the export lock.
+        // A Faust refusal invalidates the whole requested set, including already-rendered stems.
+        if (faustFailure !== undefined) {
+            throw faustFailure;
+        }
 
         if (failures.length > 0) {
             const detail = failures.map((failure) => `${failure.trackId} (${failure.reason})`).join('; ');

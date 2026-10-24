@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Keep selection policy and verified checkout context in the same producer source. */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
@@ -6,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
-import { verifyIntegrationCheckout } from './e2eSelectionShadowIntegration.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -19,7 +17,6 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
-    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -34,13 +31,13 @@ const REVIEW_TOOLING = new Set([
     'repairReviewFinding',
     'resolveThread',
     'reviewApprovalFormat',
+    'reviewApprovalLabel',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -160,6 +157,21 @@ function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
 }
 
+/**
+ * Repository tooling and prose never select browser execution, though they keep broad non-browser
+ * validation. Generator and build scripts reach the browser only through their outputs, which land
+ * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
+ * stays classified with them.
+ */
+function isRepositoryTooling(path: string): boolean {
+    return (
+        path.startsWith('scripts/') ||
+        path.startsWith('.agents/') ||
+        /^release\/[^/]+\.json$/.test(path) ||
+        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+    );
+}
+
 function needsCodeql(path: string): boolean {
     return (
         /\.(?:[cm]?[jt]sx?)$/.test(path) ||
@@ -264,13 +276,12 @@ function packageHasModifiedStatus(diff: string): boolean {
 
 type PackageDocument = Record<string, unknown> & { scripts: Record<string, string> };
 
-function readPackageBlob(root: string, revision: string): PackageDocument | null {
-    const tree = execFileSync('git', ['ls-tree', revision, '--', 'package.json'], { cwd: root, encoding: 'utf8' });
+function readPackageBlob(revision: string): PackageDocument | null {
+    const tree = execFileSync('git', ['ls-tree', revision, '--', 'package.json'], { encoding: 'utf8' });
     if (!/^100644 blob [a-f0-9]{40}\tpackage\.json\n$/.test(tree)) {
         return null;
     }
     const source = execFileSync('git', ['show', `${revision}:package.json`], {
-        cwd: root,
         encoding: 'utf8',
         maxBuffer: 2 * 1024 * 1024,
     });
@@ -295,18 +306,18 @@ function readPackageBlob(root: string, revision: string): PackageDocument | null
     return parsed as PackageDocument;
 }
 
-function isOperationalPackageScriptChange(root: string, diff: string, base: string, head: string): boolean {
+function isOperationalPackageScriptChange(diff: string, base: string, head: string): boolean {
     if (!packageHasModifiedStatus(diff)) {
         return false;
     }
     try {
-        const mergeBase = execFileSync('git', ['merge-base', base, head], { cwd: root, encoding: 'utf8' }).trim();
+        const mergeBase = execFileSync('git', ['merge-base', base, head], { encoding: 'utf8' }).trim();
         if (!/^[a-f0-9]{40}$/.test(mergeBase)) {
             return false;
         }
-        const basePackage = readPackageBlob(root, base);
-        const before = readPackageBlob(root, mergeBase);
-        const after = readPackageBlob(root, head);
+        const basePackage = readPackageBlob(base);
+        const before = readPackageBlob(mergeBase);
+        const after = readPackageBlob(head);
         if (!basePackage || !before || !after || !isDeepStrictEqual(basePackage, before)) {
             return false;
         }
@@ -373,6 +384,13 @@ function browserPathSelection(
     };
 }
 
+function planProfile(broad: boolean, tooling: boolean): ValidationPlan['profile'] {
+    if (broad) {
+        return 'broad';
+    }
+    return tooling ? 'tooling' : 'docs';
+}
+
 export function selectValidationPlan(
     paths: readonly string[],
     availableSpecs: readonly string[],
@@ -395,6 +413,7 @@ export function selectValidationPlan(
     let browserAi = false;
     let codeql = false;
     let tooling = false;
+    let nonBrowser = false;
     for (const path of paths) {
         if (isDocumentation(path)) {
             reasons.push({ path, reason: 'documentation; no browser execution' });
@@ -405,6 +424,14 @@ export function selectValidationPlan(
         if (reason !== null) {
             tooling = true;
             reasons.push({ path, reason });
+            continue;
+        }
+        if (isRepositoryTooling(path)) {
+            nonBrowser = true;
+            reasons.push({
+                path,
+                reason: 'repository tooling; broad non-browser validation without browser execution',
+            });
             continue;
         }
         browser = true;
@@ -424,12 +451,7 @@ export function selectValidationPlan(
         throw new Error('Full browser coverage has no specs');
     }
     const matrix = browserMatrix(specs, durations);
-    let profile: ValidationPlan['profile'] = 'docs';
-    if (browser) {
-        profile = 'broad';
-    } else if (tooling) {
-        profile = 'tooling';
-    }
+    const profile = planProfile(browser || nonBrowser, tooling);
     return { version: 1, profile, browser, browserAi, codeql, matrix, reasons };
 }
 
@@ -467,103 +489,73 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-function verifiedCheckoutDiff(
-    root: string,
-    base: string,
-    head: string
-): {
-    checkout: string;
-    firstParent: string;
-    diff: string;
-} {
-    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-    let firstParent = base;
-    let left = `${base}...${head}`;
-    let right: string | undefined;
-    if (checkout !== head) {
-        verifyIntegrationCheckout(root, checkout, head, base);
-        const parents = execFileSync('git', ['rev-list', '--parents', '-n', '1', checkout], {
-            cwd: root,
-            encoding: 'utf8',
-        })
-            .trim()
-            .split(' ');
-        firstParent = parents[1] ?? '';
-        left = firstParent;
-        right = checkout;
-    }
-    const diffArgs = ['diff', '--name-status', '-z', '--find-renames', left];
-    if (right) {
-        diffArgs.push(right);
-    }
-    diffArgs.push('--');
-    const diff = execFileSync('git', diffArgs, {
-        cwd: root,
-        encoding: 'utf8',
-        maxBuffer: 16 * 1024 * 1024,
-    });
-    return { checkout, firstParent, diff };
-}
-
-function widenForUnprovenHistory(
-    plan: ValidationPlan,
+/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
+export function productPathsOf(
+    paths: readonly string[],
     specs: readonly string[],
-    durations: SpecDurations,
-    historicalChange: boolean,
-    dirtyTracked: boolean
-): void {
-    if (!historicalChange && !dirtyTracked) {
-        return;
-    }
-    const full = specs.filter((path) => path !== SMOKE_SPEC);
-    if (!specs.includes(SMOKE_SPEC) || full.length === 0) {
-        throw new Error('Unproven checkout requires a complete browser inventory');
-    }
-    plan.profile = 'broad';
-    plan.browser = true;
-    plan.browserAi = true;
-    plan.matrix = browserMatrix(full, durations);
-    plan.reasons.push({
-        path: dirtyTracked ? 'dirty checkout' : 'changed path history',
-        reason: dirtyTracked
-            ? 'tracked checkout differs from its Git commit; full browser coverage'
-            : 'deleted, renamed, or type-changed path; full browser coverage',
-    });
-}
-
-export async function resolveCheckoutSelection(
-    root: string,
-    base: string,
-    head: string,
-    specs: readonly string[],
-    durations: SpecDurations = readSpecDurations()
-): Promise<{ plan: ValidationPlan; firstParent: string; checkout: string; diff: string }> {
-    const { checkout, firstParent, diff } = verifiedCheckoutDiff(root, base, head);
-    const paths = parseChangedPaths(diff);
-    const trackedStatus = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
-        cwd: root,
-        encoding: 'utf8',
-    });
-    if (trackedStatus.status !== 0) {
-        throw new Error('Cannot verify integration checkout cleanliness');
-    }
-    const dirtyTracked = trackedStatus.stdout !== '';
-    const packageStatus = spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'package.json'], {
-        cwd: root,
-        encoding: 'utf8',
-    });
-    const packageScriptOnly =
-        paths.includes('package.json') &&
-        packageStatus.status === 0 &&
-        packageStatus.stdout === '' &&
-        isOperationalPackageScriptChange(root, diff, firstParent, checkout);
-    const productPaths = paths.filter(
+    packageScriptOnly: boolean
+): string[] {
+    return paths.filter(
         (path) =>
             !isDocumentation(path) &&
             toolingReason(path, packageScriptOnly) === null &&
+            !isRepositoryTooling(path) &&
             !(isSpec(path) && specs.includes(path))
     );
-    const historicalChange = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(diff);
+}
+
+const HISTORICAL_STATUS = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/;
+
+/** The planner narrows only live product sources under src/modules/; a deleted, renamed, copied, or retyped path widens. */
+export function canNarrow(input: {
+    productPaths: readonly string[];
+    candidateDiff: string;
+    integrationDiff: string;
+}): boolean {
+    const historicalChange = [input.candidateDiff, input.integrationDiff].some((value) =>
+        HISTORICAL_STATUS.test(value)
+    );
+    return (
+        !historicalChange &&
+        input.productPaths.length > 0 &&
+        input.productPaths.every((path) => path.startsWith('src/modules/'))
+    );
+}
+
+async function affectedFromCheckout(
+    root: string,
+    base: string,
+    head: string,
+    diff: string,
+    candidatePaths: readonly string[],
+    specs: readonly string[]
+): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
+    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const integrated =
+        checkout === head ||
+        (spawnSync('git', ['merge-base', '--is-ancestor', base, checkout]).status === 0 &&
+            spawnSync('git', ['merge-base', '--is-ancestor', head, checkout]).status === 0);
+    let integrationDiff = '';
+    if (integrated && checkout !== head) {
+        integrationDiff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', base, checkout, '--'], {
+            encoding: 'utf8',
+            maxBuffer: 16 * 1024 * 1024,
+        });
+    }
+    const allPaths = new Set(candidatePaths);
+    if (integrationDiff !== '') {
+        for (const path of parseChangedPaths(integrationDiff)) {
+            allPaths.add(path);
+        }
+    }
+    const paths = [...allPaths].sort();
+    const packageUnchangedAtCheckout =
+        checkout === head || spawnSync('git', ['diff', '--quiet', head, checkout, '--', 'package.json']).status === 0;
+    const packageScriptOnly =
+        paths.includes('package.json') &&
+        packageUnchangedAtCheckout &&
+        isOperationalPackageScriptChange(diff, base, head);
+    const productPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
         [
@@ -577,16 +569,11 @@ export async function resolveCheckoutSelection(
             'scripts/e2eAffectedGraph.ts',
             'tsconfig.json',
         ],
-        { cwd: root, encoding: 'utf8' }
+        { encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
     let affected: AffectedSelection | undefined;
-    if (
-        cleanGraphInputs &&
-        !historicalChange &&
-        productPaths.length > 0 &&
-        productPaths.every((path) => path.startsWith('src/modules/'))
-    ) {
+    if (integrated && cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
             affected = await loadAffectedE2e(root, productPaths, specs);
@@ -594,12 +581,7 @@ export async function resolveCheckoutSelection(
             affected = { kind: 'full', reason: 'dependency graph helper unavailable' };
         }
     }
-    const plan = selectValidationPlan(paths, specs, durations, packageScriptOnly, affected);
-    widenForUnprovenHistory(plan, specs, durations, historicalChange, dirtyTracked);
-    if (affected?.kind === 'full') {
-        plan.reasons.push({ path: 'affected graph', reason: affected.reason });
-    }
-    return { plan, firstParent, checkout, diff };
+    return { paths, packageScriptOnly, affected };
 }
 
 async function main(): Promise<void> {
@@ -620,11 +602,24 @@ async function main(): Promise<void> {
     if (!base || !head || !/^[a-f0-9]{40}$/.test(base) || !/^[a-f0-9]{40}$/.test(head) || !output) {
         throw new Error('Plan requires immutable base/head SHAs and GITHUB_OUTPUT');
     }
+    const diff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], {
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+    });
+    const candidatePaths = parseChangedPaths(diff);
     const specs = listSpecs(root);
-    const { plan, firstParent, checkout } = await resolveCheckoutSelection(root, base, head, specs);
-    console.log(
-        JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
+    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(
+        root,
+        base,
+        head,
+        diff,
+        candidatePaths,
+        specs
     );
+    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
+    if (affected?.kind === 'full') {
+        plan.reasons.push({ path: 'affected graph', reason: affected.reason });
+    }
     if (plan.browser) {
         assertCollectedBrowserInventory(root, specs, [
             SMOKE_SPEC,
@@ -645,4 +640,3 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         process.exitCode = 1;
     });
 }
-/* eslint-enable max-lines */

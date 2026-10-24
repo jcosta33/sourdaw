@@ -1,7 +1,8 @@
 name: Validation
 
-# Required validation called only by health-gates.yml. Browser smoke uses the
-# same deterministic affected plan as the browser matrix. Nightly owns full-load validation.
+# Validation called by pr-checks.yml on every push and by health-gates.yml for
+# the required Gate. Browser smoke uses the same deterministic affected plan as
+# the browser matrix. Nightly owns full-load validation.
 
 on:
   workflow_call:
@@ -304,13 +305,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # `test:release-inventory` proves each generated Levain manifest
-          # against the commit its provenance record pins, by `git show`-ing
-          # that blob. A shallow clone does not contain those commits, so the
-          # check cannot read them and reports every sample as unverifiable.
-          # Only this job needs the history; the others stay shallow.
-          fetch-depth: 0
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
@@ -363,8 +357,10 @@ jobs:
         if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:command-schema
 
-      - name: Release inventory
-        run: pnpm test:release-inventory
+      # Release provenance (tracked sets, licenses, trademark, asset digests)
+      # is not checked here. `test:release-inventory` runs in nightly.yml and
+      # in `release:proof:assemble`, so an ordinary pull request never needs
+      # a restamp.
 
       - name: Test collection scope
         if: needs.decide.outputs.tooling != 'true'
@@ -397,8 +393,8 @@ jobs:
     name: Lint
     needs: decide
     # Nothing here reads prose, so a documentation-only head has no way to fail
-    # it. `static` stays unconditional: its release-inventory leg answers to
-    # provenance records that a prose change can invalidate.
+    # it. `static` stays unconditional: artifact freshness and the script
+    # contract checks answer to files a prose-classified path can still touch.
     if: needs.decide.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -484,6 +480,14 @@ jobs:
           # implementation source through `git show <revision>:<path>`.
           # The unit matrix therefore needs the immutable source history.
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare unit tool directory
+        id: unit_tools
+        run: |
+          tool_root="/var/tmp/sourdaw-unit-tools-$(cat /proc/sys/kernel/random/uuid)"
+          mkdir -m 755 "$tool_root"
+          printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
@@ -493,16 +497,22 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
+          dest: ${{ steps.unit_tools.outputs.root }}
           package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+
+      - name: Prepare isolated unit account
+        id: unit_isolation
+        env:
+          SOURDAW_UNIT_TOOL_ROOT: ${{ steps.unit_tools.outputs.root }}
+        run: node scripts/runIsolatedUnitShard.ts prepare
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
       # The suite is dominated by jsdom construction and module loading rather
       # than assertions, so worker count is the lever that matters. The local
@@ -511,7 +521,7 @@ jobs:
         id: run_shard
         env:
           VITEST_MAX_WORKERS: 4
-        run: pnpm run test:run --shard=${{ matrix.shard }}/4
+        run: node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4
 
       # The shard failure is already fatal above; this only names which of the
       # four it was, in the annotation list and the run summary, so a reader
@@ -551,9 +561,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # These expensive specs run once in static, outside a pooled unit run.
+      # Release proof and agent delivery specs run once in static, outside a
+      # pooled unit run. The guard storage specs refuse cleanup while any
+      # same-UID process is uninspectable, which the hosted runner account
+      # holds, so they run only in the isolated `unit` account. A tooling
+      # profile cannot change the guard: its sources are not review tooling
+      # (scripts/prValidationScope.ts), so a head touching them takes the broad
+      # profile, whose unit shards run them isolated.
       - name: Run script suite
-        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'
+        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts' --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts' --exclude='**/resourceGuardShowOutput.spec.ts'
 
   smoke:
     name: Offline browser smoke
@@ -610,6 +626,11 @@ jobs:
       # downloads; it is the price of failing a genuine stall, which prints
       # nothing after `apt-get update` for an hour, within minutes.
       #
+      # Every apt run reads the runner's sources except the image's standalone
+      # Microsoft product feed, which nothing here installs from and whose 403
+      # failed `apt-get update` on all three attempts (#5359); see
+      # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
+      #
       # Limit: apt runs dpkg in its own session, which the group signal of
       # `timeout` does not reach. A cap that expires while dpkg is unpacking,
       # seconds after the downloads finish, can leave dpkg holding its lock
@@ -620,7 +641,7 @@ jobs:
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&
               timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
@@ -700,6 +721,9 @@ jobs:
       # retries three times with a 15s then 30s backoff; the last failure
       # still fails the step. Package list unchanged: libasound2-dev only.
       #
+      # As for the browser dependencies, apt reads every source except the
+      # image's standalone Microsoft product feed (#5359).
+      #
       # An apt run has hung until the job limit (#5072), and a hung attempt
       # never exits, so each one carries a deadline. `apt-get update` is the
       # slow part: the browser-dependency install above saw its apt phase take
@@ -716,7 +740,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
+            if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
@@ -790,6 +814,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The event base can predate both integration parents after main advances.
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install the pinned Rust toolchain
         run: rustup show
@@ -797,6 +825,10 @@ jobs:
       - name: Cache cargo build
         id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # The trusted main seed saves the graph. A candidate probe never
+          # saves its temporary compiled mutations, including on interruption.
+          save-if: 'false'
 
       # Even a full-match rust-cache restore does not keep these jobs off the
       # registry index: the restored cache carries every .crate file (no
@@ -840,6 +872,30 @@ jobs:
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package sourdaw-native
+
+      # Reuse only this job's warmed graph. The helper probes the immutable
+      # candidate head in a detached tree, then restores its source and tests.
+      - name: Set up Node for native mutation proof
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+
+      - name: Verify native transport mutation sensitivity
+        id: native-mutations
+        timeout-minutes: 20
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/verifyNativeTransportMutations.ts
+
+      - name: Upload native transport mutation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-transport-mutations-${{ github.event.pull_request.head.sha }}
+          path: .agents/artifacts/native-transport-mutations/
+          if-no-files-found: error
+          retention-days: 7
 
   native-windows:
     name: Native audio backend (Windows)

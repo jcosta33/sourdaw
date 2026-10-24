@@ -14,6 +14,25 @@ import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scri
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
 /**
+ * The bindings @grame/faustwasm re-declares in the AudioWorklet module it
+ * generates. Its stringified classes reference one another by these source
+ * names, so the minifier must not rename them.
+ */
+const FAUSTWASM_WORKLET_SCOPE_NAMES = [
+    'FaustDspInstance',
+    'FaustBaseWebAudioDsp',
+    'FaustMonoWebAudioDsp',
+    'FaustPolyWebAudioDsp',
+    'FaustWebAudioDspVoice',
+    'FaustWasmInstantiator',
+    'Soundfile',
+    'WasmAllocator',
+    'FaustSensors',
+    'FaustAudioWorkletCommunicator',
+    'FaustAudioWorkletProcessorCommunicator',
+];
+
+/**
  * E2E-only serving-identity marker. Browser verification on a shared machine
  * must prove which checkout answers before reusing a server, so every dev
  * response in `--mode e2e` carries this checkout's vite root. The plugin
@@ -50,9 +69,6 @@ export default defineConfig({
     },
     define: {
         __APP_VERSION__: JSON.stringify(version),
-    },
-    esbuild: {
-        keepNames: true, // Fixes @grame/faustwasm AudioWorkletNode mangling
     },
     plugins: [
         tanstackRouter({ routesDirectory: './src/routes' }),
@@ -145,6 +161,10 @@ export default defineConfig({
         chunkSizeWarningLimit: 600,
         rolldownOptions: {
             output: {
+                // @grame/faustwasm builds its AudioWorklet from `var ${Class.name} = ${Class.toString()}`, so minification must keep names.
+                keepNames: true,
+                // Full minification, as `true` gives, except for the bindings named above.
+                minify: { compress: true, mangle: { reserved: FAUSTWASM_WORKLET_SCOPE_NAMES }, codegen: true },
                 codeSplitting: {
                     groups: [
                         { name: 'vendor-react', test: /node_modules[\\/](react-dom|react)\//, priority: 20 },

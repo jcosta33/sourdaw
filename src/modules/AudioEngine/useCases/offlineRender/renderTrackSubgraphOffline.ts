@@ -195,10 +195,11 @@ export async function renderTrackSubgraphOffline({
         source?.project
     );
     const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks, sampleRate });
-    const { midi, defaultTempo, changes, durationSeconds, ...projections } = renderContext;
+    const { midi, defaultTempo, changes, durationSeconds, startBeat: renderStartBeat, ...projections } = renderContext;
     const {
         projectMidiEvents,
         projectPpqEndpoints,
+        beatAtSecondsFromAnchor,
         selectMidiEventProbability,
         projectChordPitch,
         resolveTempoAtBeat,
@@ -298,7 +299,7 @@ export async function renderTrackSubgraphOffline({
                 layers: adjustmentLayers,
                 trackId: track.id,
                 allTrackIds,
-                spanStartBeat: startBeat,
+                spanStartBeat: renderStartBeat,
                 spanEndBeat: endBeat,
             }),
         ])
@@ -315,18 +316,21 @@ export async function renderTrackSubgraphOffline({
         // A moving blend would need per-block crossfade writes through the
         // live bus node's slewed API; until that exists, a steady layer is
         // rendered and a moving one is skipped — loudly, never silently.
-        if (!composition.constant) {
+        const steadyDsp = composition.dsp.filter((layer) => layer.constant);
+        if (steadyDsp.length !== composition.dsp.length) {
             if (!warnedMovingDsp) {
                 warnedMovingDsp = true;
                 onWarning?.(
                     'A DSP adjustment layer that fades across this bounce is skipped; only steady layers render offline.'
                 );
             }
+        }
+        if (steadyDsp.length === 0) {
             continue;
         }
         adjustmentBusesByTrackId.set(
             track.id,
-            createOfflineAdjustmentBusChain({ context: offlineCtx, layers: composition.dsp })
+            createOfflineAdjustmentBusChain({ context: offlineCtx, layers: steadyDsp })
         );
     }
 
@@ -451,6 +455,13 @@ export async function renderTrackSubgraphOffline({
                 transportStore.value?.scheduleGrainMs ??
                 defaultTransportState.scheduleGrainMs
         );
+        let projectSecondsToBeat: ((elapsedSeconds: number) => number) | undefined;
+        if (beatAtSecondsFromAnchor) {
+            // History warmup starts before the requested crop. Sample layers
+            // on that same render clock as clips and modulation.
+            projectSecondsToBeat = (elapsedSeconds) =>
+                beatAtSecondsFromAnchor(changes, renderStartBeat, elapsedSeconds, defaultTempo);
+        }
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
             const composition = compositionsByTrackId.get(track.id);
@@ -473,10 +484,9 @@ export async function renderTrackSubgraphOffline({
                     includeTargetVca,
                 }),
                 durationSeconds,
-                regionStartBeat: startBeat,
+                regionStartBeat: renderStartBeat,
                 tickSeconds: adjustmentTickSeconds,
-                defaultTempo,
-                changes,
+                projectSecondsToBeat,
                 compensationDelaySec: getCompensationDelay(track.id),
             });
         }
@@ -508,6 +518,7 @@ export async function renderTrackSubgraphOffline({
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    beatAtSecondsFromAnchor,
                     resolveTempoAtBeat,
                     processYeastMidi: projections.processYeastMidi,
                     selectMidiEventProbability,
@@ -515,6 +526,7 @@ export async function renderTrackSubgraphOffline({
                     evaluateAutomationValue: projections.evaluateAutomationValue,
                     resolveArticulationId: projections.resolveArticulationId,
                     projectClipControllers: projections.projectClipControllers,
+                    projectChannelBend: projections.projectChannelBend,
                 },
                 onWarning,
                 pendingWorkletEvents,

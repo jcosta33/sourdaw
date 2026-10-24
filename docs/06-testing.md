@@ -719,6 +719,165 @@ kill prints the budget it applied — record a budget above the observed peak in
 free RAM covers active unused headroom, the new command, and the 2 GiB system reserve. It still
 enforces timeouts, process cleanup, host pressure, and the command RSS ceiling. Never bypass it.
 
+Each guarded command inherits `TMPDIR`, `TMP`, and `TEMP` before startup, pointing to its own
+private directory under the primary repository's `.agents/guard-storage/` on the repository's
+volume. Nested guards use separate directories and retain the shared memory admission registry.
+Normal exits, spawn errors, signals, and forced termination release storage only after the entire
+tracked process tree is proven stopped. A process that survives forced cleanup is a leak: it fails the run and records a guard-failure
+receipt that stops the lane. So is every storage verdict that names a cause rather than a lost
+proof: a census that proves a holder alive (such as a detached descendant with a working directory
+inside it), storage that is not private, denied or unusable inspection, a record the guard cannot
+read (the command deleted its own temp directory), and a release that throws. The first such census of a run is
+sticky: a later attempt that only hit the time bound never clears it, because the holder may still
+run. A leak records its final census in the receipt's `census` field, and `pnpm guard --recover`
+prints it. These never clear
+on their own and a later start cannot reclaim them, so reporting success would leave the directory
+forever. Only a census that could not finish a pass right now, with every diagnostic on the transient list
+in `areTransientProofReasons` (`scripts/resourceGuardProofReasons.ts`: a missed live process, an `lsof`
+catalog that lost a descriptor type, the census time bound, an unavailable `ps` list), after the
+tracked tree is proved exited, is retained without failing: the guard keeps the directory, prints
+one warning naming its path and the census reason, returns the command's own status, and records no
+receipt, because the lost proof says nothing about the work and keeping the files is the safe
+outcome. When the reclaim had already moved the payload under `.claims/`, the warning names that
+path and the retry resumes from the claim. Every later guarded start reclaims retained storage whose supervisor is dead once the
+census proves it free (`recoverGuardStorage`, run by `createGuardStorage`), and keeps what it still
+cannot prove. The guard never deletes old unowned system-temp caches.
+Before claiming or deleting storage, Unix command/environment census also vetoes removal when a
+process references its original temp path. This protects detached descendants that replace their
+environment and drop the session token. Argument references conservatively retain files too;
+they never grant authority to signal the matching process.
+Absence of those strings alone cannot prove storage abandoned. On macOS the guard also reads bounded
+`lsof` process/file fields; on Linux it reads same-account `/proc` cwd and file-descriptor links.
+Both the original temp path and any moved claim payload path veto reclamation while a process holds
+a working directory or open file there. An empty/unusable process census is unavailable monitoring
+evidence, and denied, malformed, truncated, or incomplete file evidence retains storage.
+On Linux, a descriptor that closes during inspection is checked with link and directory metadata.
+Reopening the descriptor directory can recreate the scanner's own closed slot and cannot prove
+that it remains open. A present slot or unavailable directory still retains storage.
+After a Linux `ENOENT` inspection failure, fresh complete status may prove file release only for
+a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
+and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
+This evidence must arrive within the existing proof deadline and never releases PID ownership
+or signaling fences. Denied inspection and unavailable or malformed status still retain storage,
+with one exception: a denied process whose `/proc` start time strictly precedes the supervisor
+that created the storage is excused. A live supervisor's start is read from `/proc`; recovery of
+an exited or crashed run, including a moved claim, compares against the `/proc` start ticks that
+supervisor recorded in its ownership record at creation. Ticks count from boot, so a record from an
+earlier boot can only excuse processes that cannot descend from it. A record without start ticks
+excuses nothing. Its start time proves only that the process inherited no working directory or
+descriptor from the run, not that it never opens the storage path later; an older same-account
+process explicitly handed that path is, like an elevated descendant, outside this proof.
+On macOS, an unreaped same-UID process positively sampled in zombie state has already released
+its file table; this exception never releases process-identity or signaling fences.
+File inspection checks same-UID process coverage again after reading files, so a process born
+during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
+permits one complete replacement inspection of the full fresh process list, within at most two
+observations. On macOS, `lsof` races the processes it reads: a descriptor that closes between field
+reads leaves an otherwise valid catalog missing only its type, and a live same-UID process,
+whether newborn or already listed, can be absent from a whole-account catalog. Other work on a busy
+host keeps starting such processes, so a fresh whole catalog may never be complete. A missed
+process found gone after the observation's closing process list was taken, whether listed there
+and gone at its first liveness check, or found alive then and gone before its state sample or by
+its scoped read, never contributes to proof of release: it may have forked a storage user after
+that list, so the census takes a fresh whole observation, whose lists include any heir. An
+observation with such an exited process spends no scoped read. A missed process listed only in the
+opening list and gone at its first liveness check exited before the closing list, which therefore
+holds any child it forked, so it needs no fresh observation. A same-UID zombie needs no coverage,
+since XNU closes its file table first, but it may have forked before it became a zombie, so an
+observation with one still takes the closing parent list below. An omitted process with another or
+unsampled UID retains storage at once. Every other omitted process, in any sampled state including
+`ps`'s undetermined `?`, is read directly in the same observation with a PID-scoped, same-UID
+`lsof`: a storage path there is a live use; an exit status other than 0 or 1, any diagnostic,
+unusable output or a process that was not requested retains storage at once; a catalog missing
+only a descriptor type, or one that does not list a missed process, leaves it uncovered. A missed
+process read clean, or a skipped zombie, may already have handed storage to a new process, so
+before such an observation can prove release the census takes one closing same-UID process list
+with parents. A process absent from the observation's earlier lists whose parent is a missed
+process, including a zombie, another such newcomer, or launchd sends the census to a fresh whole
+observation; newcomers with other parents, and every other account's processes, are ignored so
+the census converges while other work starts processes. A process already listed and
+inspected that opens storage, or starts a storage user, afterwards remains outside this sampled
+proof. Coverage counts only within one observation and is never pooled across catalogs. An
+observation left uncovered, or a catalog missing a descriptor type, is discarded for a wholly
+fresh catalog and process list until one is covered or the five-second proof deadline expires;
+expiry retains storage with the last omission as its reason.
+Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
+identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
+that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
+Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
+
+Automatic Unix reclamation covers the guard's own UID and requires private `0700` owned storage.
+Observed owned identities with another or uncertain UID retain storage. Privilege-changing or
+elevated descendants are outside this automatic proof: unrelated other-account processes cannot
+be inspected reliably without additional authority. No file-use match grants signal authority.
+
+Required hosted Linux unit shards prepare a fresh unprivileged account before installing dependencies.
+A complete process census must show its numeric UID unused. The runner checkout stays unchanged.
+An independent mirror transport preserves its actual checked-out HEAD, complete history and refs
+in a fresh physical `0700` execution root under `/var/tmp`; shared objects and alternates are refused.
+Setup changes ownership only of opened physical directories inside this fresh root, preserving
+source files and external store inodes. The unit pnpm action installs its complete tool closure into
+an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
+Install and unit verification run through `setpriv` with cleared groups and capabilities,
+`no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
+Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read
+access, and read/execute access to Node and the complete bounded pnpm closure. Escaping tool symlinks
+and unavailable access fail. Runtime admission repeats identity and private storage checks before pnpm; unavailable
+tools or authority fail the job. The account uses its own frozen-install store.
+
+Before each required unit shard starts parallel workers, the admitted helper runs the whole
+`scripts/__tests__/resourceGuardStorage.spec.ts`, `scripts/__tests__/resourceGuard.spec.ts`, and
+`scripts/__tests__/resourceGuardShowOutput.spec.ts` sequentially through the zero-assertion wrapper,
+with one worker for each command. These real guard callers share conservative complete same-UID
+file-use proof: unrelated concurrent process transitions can make a later cleanup sample unavailable.
+Each command must finish successfully before the next starts. Failed or unavailable guard verification
+blocks the remaining commands and parallel shard with the original failure status. After success,
+the shard excludes exactly those three already-run files and keeps its normal worker setting.
+All other selected specs still run once across the four shards. The global shard exclusions stay
+unchanged.
+
+No hosted Linux route runs those three files as the runner account. That account holds same-UID
+processes the guard cannot fully inspect, so the guard correctly retains the storage it creates
+there and each cleanup case reports a leak. The nightly unit shards therefore use the same
+fresh-account helper route as the required shards. The review tooling script suite excludes the
+three files: guard sources are not review tooling, so a head that changes them takes the broad
+profile and its isolated unit shards.
+
+Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
+Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
+actual storage retention, then kills and reaps the consumer and requires reclamation. Missing Python
+or uncertain cleanup fails preparation. This negative proof runs before workers because a denied
+same-account process conservatively blocks the cleanup of every guard whose supervisor started
+before it. Hosted account setup,
+tool traversal and checkout post-step compatibility require current-head Linux evidence; a local
+macOS port-controlled check cannot establish that acceptance.
+
+New guard starts recover storage only after the supervisor and its descendants are proven dead.
+Records bind UUIDs, process start identities, and directory identities. Atomic rename claims let
+concurrent scavengers serialize one payload, and a claim retains its reclamation owner's identity
+outside that payload until deletion finishes, so a second supervisor crash remains recoverable.
+Live owners, reused or uncertain PID identities, malformed records, and symlinked ownership paths
+are retained. Windows normal cleanup uses its tracked-tree proof; detached, reparented descendants
+that drop the session token while retaining temp paths remain outside that platform's detection.
+Windows cannot establish a complete command/environment/file-use census after supervisor death, so crashed
+spawned runs there retain their storage for explicit inspection.
+
+The guard samples available disk space on the system volume (`/`, or the SystemRoot drive on Windows)
+without walking its directory tree, because filling that volume freezes the machine; other volumes
+carry no reserve. It requires a 5 GiB free reserve at admission and throughout execution. Set
+`--disk-reserve-mib <positive-integer>` or `SOURDAW_GUARD_DISK_RESERVE_MIB` to configure it; nested
+guards inherit the chosen reserve. Supply the desired override again on `--recover`. Disk pressure
+during a run stops the process tree with the existing `pressure` failure receipt and a disk-specific
+diagnostic. Pressure at admission is a plain refusal with a non-zero exit and no receipt, since
+nothing ran; its message carries the cleanup guidance (delete only definite regenerable caches and agent junk, never
+anything a running process holds, report what was freed), which AGENTS.md deliberately omits.
+Unavailable or invalid disk sampling fails closed with `monitor`. Cleanup uncertainty never turns a
+stopped run into success.
+
+Existing running commands and old lane copies keep their original guard. After this change lands,
+their next verification must invoke the updated guard, or merge the fix into the owned lane when
+needed. Do not rewrite or clean another agent's lane to upgrade it.
+
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
 Spec files are excluded from the app `pnpm typecheck` (`tsconfig.app.json` excludes `src/**/*.spec.ts(x)`), so `pnpm typecheck:test` is the only gate that type-checks them. Run it whenever you touch a spec, a dummy factory, or a model shape that fixtures mirror. It must stay at zero errors — fix fixtures to the real types; never silence with `any` or `@ts-expect-error`.
@@ -745,8 +904,10 @@ Do not:
 
 `Gate` requires validation, the affected browser plan, its selected E2E workflows and hardware
 proof, and applicable CodeQL execution. The aggregate and its assertion step always run, including
-after cancellation, and reject cancelled or unexpectedly skipped dependencies. Approving reviews
-start no additional test train.
+after cancellation, and reject cancelled or unexpectedly skipped dependencies. Every push runs only
+the scope plan and validation (`pr-checks.yml`); the heavy run and `Gate` start when the reviewer App
+labels its approval of the exact head, so concurrent agent pushes no longer queue the browser and
+security train, and any other label event fails `Gate` with the admission reason.
 
 The deterministic selector in `scripts/prValidationScope.ts` reads the complete Git diff between
 immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`

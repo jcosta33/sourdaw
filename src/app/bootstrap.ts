@@ -44,6 +44,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
+    buildLevainZoneTables,
     updateDeviceParam,
     updateDevicePatch,
     getAudioContext,
@@ -140,6 +141,7 @@ import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import {
+    configureLevainZoneTableBuilder,
     initLevainDeviceStatePersistence,
     registerLevainDevice,
     unregisterLevainDevice,
@@ -149,6 +151,7 @@ import {
     prepareMidiTimeStateRestore,
     createChordPitchProjector,
     createGrooveMidiEventProjector,
+    projectChannelBend,
     projectClipControllerEvents,
     resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
@@ -189,6 +192,7 @@ import {
     createMusicalPositionProjector,
     createSamplePositionProjector,
     projectPpqEndpoints,
+    beatAtSecondsFromAnchor,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
     readNativeEngineCursorBeats,
@@ -226,6 +230,7 @@ import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
+import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -314,6 +319,7 @@ configureOfflineMidiEventProjection({
     createAutomationValueEvaluator: createOfflineAutomationEvaluator,
     resolveArticulationId: resolveMidiNoteArticulationId,
     projectClipControllers: projectClipControllerEvents,
+    projectChannelBend,
 });
 // The offline render and the native live automation producer enforce the same
 // device-parameter law the live apply path does; only the composition root sees
@@ -333,7 +339,7 @@ configureOfflineDeviceParameterLaw({
     acceptsExternalPluginParameter: acceptsExternalPluginAutomationParameter,
     clampExternalPluginValue: clampExternalPluginAutomationValue,
 });
-configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
+configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat, beatAtSecondsFromAnchor });
 configureOfflineYeastMidiProcessing({
     createProcessor: createOfflineYeastProcessor,
     racks: {
@@ -392,6 +398,7 @@ setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 setCrumbsEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
+configureLevainZoneTableBuilder(buildLevainZoneTables);
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
@@ -438,6 +445,7 @@ setProjectIdentityTransitionDependencies({
 // age/budget sweeps while it is inactive. Enumeration stays a pull from the
 // persisted snapshots — no second ownership table to drift.
 configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
+initInputMonitoringProjectAccess();
 
 function disposeYeastRealtimeBridge(): void {
     disposeWebMidiRealtimeProcessor();

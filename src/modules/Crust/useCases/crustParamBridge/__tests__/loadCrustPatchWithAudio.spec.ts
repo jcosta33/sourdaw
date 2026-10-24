@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
 const { updateDeviceParam, persistDeviceParam } = mocks;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
@@ -102,6 +103,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     readMusicalRangeInputs: vi.fn(() => []),
     trackStore: mocks.trackStore,
     adjustmentLayerStore: mocks.adjustmentLayerStore,

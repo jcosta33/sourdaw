@@ -6,6 +6,135 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
+
+The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
+path at epoch 0, where the epoch term is bypassed, and mocked `captureProjectRevision` to a
+constant with a no-op `stopPlayback`. None of them could observe the guard reading the discard's
+own load transaction, transport halt and `loading` publication as a newer transition or an edit
+(#5573). The full lesson is in `project-integrity.md`.
+
+Probe: run the real revision and identity capture over a real root document, after one real
+transition has activated, with every wait the action crosses spanning a frame so pending document
+writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
+
+### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
+
+PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
+separate storage-proof allowances. A controlled pair of complete 4.6-second proofs finished actual
+forced cleanup after 16 seconds. The historical review prompt and tier are unestablished; the
+test-validity gap is the missing composition of stage deadlines.
+
+Keep the real-census case and a slow complete-proof row with actual termination, descendant death,
+live-storage and final-removal assertions. Require both proof calls, then restore only the case's
+old deadline in a committed private probe: the unchanged slow row must fail. Simulated proof timing
+does not identify the cause of an earlier uninstrumented macOS failure or prove census convergence.
+
+### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
+
+The native mutation runner had no real-child fixture: direct-child close canceled KILL while a
+same-group descendant could close inherited pipes and resist TERM. Assertion fixtures also omitted
+exit zero with the otherwise correct expected-panic transcript, so widening the exit-101 oracle
+could stay green.
+
+Observe the real direct-child close, a live TERM-resistant descendant with closed inherited pipes,
+and a separate unaffected process. Require the runner to remain pending until group absence,
+exercise TERM/KILL deadlines with a controlled clock, and forbid signals after observed absence.
+Exhaust confirmation through injected liveness ports and require the same ownership error, retained
+mutated source and partial evidence, and no restored cases. Independently reject the correct panic
+transcript with exit zero; widening admission to 101 or zero must fail that case.
+
+The immutable event base can precede both synthetic integration parents when main advances. Drive
+the native job's configured checkout depth through a tiny real Git fetch topology; require the
+event base, candidate head and integration commit to resolve. A literal depth assertion alone does
+not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+
+Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
+termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
+and persistent EIO separately: the first still refuses mutation proof, the second retains mutated
+source and partial evidence without restoration. Never infer the first intermittent failure's cause
+from a later pass or retain raw error text in public diagnostics.
+
+Inspection EPERM is not proof of a foreign UID or group absence: Darwin's group signal traversal
+can exclude every zombie member before reap removes the group. Keep inspection EPERM provisional
+until exact ESRCH, without changing deadlines or signaling policy. A real owned-child fixture
+with injected EPERM must remain unsettled before ESRCH and recover only that provisional failure;
+persistent EPERM must exhaust the existing deadline, retain mutated source and report its typed
+diagnostic. EIO and actual termination EPERM must remain fatal after later absence. Current XNU
+main explains a possible mechanism, never the installed kernel or a historical run's zombie state.
+
+### 2026-10-12 — one near-zero tempo missed governing identity (escaped via PR #5199)
+
+PR #5199's opening-fold regression covered one positive near-zero tempo and a later distinct
+change. It never placed multiple differing values entirely inside the origin tolerance: beats
+`2e-7`, `4e-7`, `6e-7` at 90, 120, 160 BPM returned a 90 BPM tail. Public review
+`5472288669` flagged absent opening-fold coverage; final `5474617910` omitted this cluster.
+Private prompt and tier are unavailable, so the established miss is input coverage.
+
+Probe exact-zero and strictly-positive clusters with distinct values and no later boundary;
+require 160 BPM at the relocated origin. Independently observe sampled-ramp boundary integrals
+and terminal tempo so an identity repair cannot replace finite-span means. Reverting the authored
+identity binding must fail the unchanged cluster cases. A deliberate full-history workflow edit
+also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
+contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
+
+### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
+
+An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed
+the open reservation first, then gave the sealed pool the full entry budget. A single-entry
+call therefore freed both while existing large-budget disposal checks stayed green.
+
+Stage one sealed and one open sample in the actual shipped module, abort, then release with
+budgets zero and one: minimum progress is one entry, so the first call must retain the sealed
+PCM and the second must finish. Pair native PCM-allocation counts with an open-only bank and a
+shared sounding owner. Charge every PCM holder to the normalized budget; never forward zero
+remaining budget to a lower helper that independently normalizes it to one. This is an entry
+count contract, not a browser deallocation-time or audio-deadline measurement.
+
+### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
+
+Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
+that waiter followed by its own terminal error before the reservation continuation: the failed
+load posted PCM and kept a credit it had not used. Grant first, then fail, dispose or cancel in
+the same turn; require rejection, zero waiter PCM, and exact ceiling-sized reuse by the next
+bank. Reverse ordering alone does not exercise the ownership handoff.
+
+The shipped upload test compared two chunkings through the same copy path. Omitting that copy
+could leave both renders equally wrong, while nonzero allocator leftovers passed a sounding
+check. Poison the reserved PCM span, compare each acknowledged window with the independent
+input bit-for-bit, and remove only the production copy in a committed private probe. Require
+that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
+
+### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
+
+The subgraph fixture asserted that the inverse callback received the requested beat-four
+anchor and returned beat six. It never observed the strip's AudioParam writes. The
+orchestrator had prescribed that anchor without tracing history expansion to beat zero,
+so the fixture confirmed the packet while accepting incorrect output.
+
+Request beats four through eight under a 100→200 BPM linear ramp from beats zero through
+eight. Observe terminal gain and pan before and after the crop boundary against the ramp's
+independent integral and a whole render. Use a seed-sensitive history layer with positive
+compensation: sample phase stays unchanged, only write times shift, and the zero-time seed
+comes from the actual render origin. Revert each origin binding independently on a committed
+private probe and require the unchanged regression to fail.
+
+### 2026-10-11 — tempo integration checks observed an older caller population (#5243)
+
+PR #5243's first-attempt run `38050968596` genuinely checked its author head `ba10195e`
+against synthetic main `5823f7f77`, before #5209 added modulation. Its actual landing on
+`83a92c4005` contained that later caller with removed aliases. PR #5273's first-attempt
+run `38157801487` exposed the inherited missing names. Historical stance prompts and tiers
+are unavailable; an obsolete integration and absent terminal-output probe are established.
+
+Compare the checked caller population with the actual integration, then execute the new consumer
+routes at that integration. Do not reproduce a seconds-to-beat helper's own expression in its
+oracle: at 120 BPM half a second is one beat; for a 100→200 BPM ramp over eight beats, elapsed
+seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values and compensated
+times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
+subregion anchoring or the consumer's inverse must independently turn the relevant case red.
+
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
 The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
@@ -13,6 +142,28 @@ The installed affected-E2E loader case asserted full selection for opaque runtim
 Delegate to the installed cruise implementation and inspect its returned graph, rather than substituting a successful graph. Assert the exact fixture source set and root-relative alias edges for explicit, absent, and inherited `baseUrl`, together with the existing opaque-selection assertions. Reverting parsed-config forwarding or implicit-base normalization must fail the graph oracle even when selection still returns full.
 
 The first PR #5291 repair's inherited fixture supplied an explicit `baseUrl`; it could not expose the resolver's implicit inherited-path rebase. The pre-merge regression must place the declaring config and real uncurated consumer in a nested directory, add an unrelated root shadow, and use valid relative imports for surrounding composition code. Require full admission before an unproved traversal or the actual declared graph; an unrelated unresolved alias would mask the omission by selecting full for another reason.
+
+### 2026-10-11 — ALSA retry probes hid child outcomes behind Vitest's deadline (introduced by PR #5115)
+
+The validation and nightly retry probes executed the published loop through four executable command shims and an external `wc` per attempt. Retained #5240 output shows their four cases timing out at Vitest's 5-second limit after 5439–7671 ms, while the child deadline was 10 seconds; the failed run did not retain child status, signal, error, or stderr. A later diagnostic observed the same loop complete correctly, so the original child outcomes and external cause remain unknown.
+
+Probe the actual published loop with exported Bash functions loaded in its nested `bash -c`, a Bash-builtin attempt count, and a child deadline below Vitest's limit. Preserve exact three-attempt, 15/30-second backoff, early-success, and fatal-final-failure observations; remove later retries and force a successful final exit in separate mutations and require the corresponding assertions to fail. Stall a direct child deliberately and require `ETIMEDOUT`/`SIGTERM`, bounded child diagnostics, and fixture cleanup before the outer test limit. Do not infer machine load, add wall-time assertions, or raise Vitest's deadline.
+
+Drive the stalled child through the same helper and fixture boundary used by the successful retry probes. A standalone child with a separate fixture can report timeout and cleanup while the retry helper's timeout guard is deleted. On the committed head, deleting that guard and deleting its cleanup must each fail the stalled-child case.
+
+The timeout probe must also own the nested Bash process after its direct child exits. `spawnSync` can report `ETIMEDOUT` and allow fixture cleanup while that nested shell continues spinning. Record the nested shell's positive PID from Bash 3.2-compatible `$$`, then require it and the helper's detached process group to be gone before cleanup; a direct-PID-only termination mutation must fail the same case. Validate every recorded PID before probing or signaling it: an empty `BASHPID` on macOS coerced to PID 0 and killed the test runner's process group instead of observing the child.
+
+Await process-group shutdown independently of Node's `close` event: a surviving grandchild can keep the inherited stderr pipe open after the direct child dies. On macOS, a group-zero probe may briefly return `EPERM` after `SIGTERM`; only `ESRCH` establishes that the group is gone. Keep the fixture until that observation, with a bounded `SIGKILL` escalation.
+
+PR #5320's plain spinning grandchild died on the initial group `SIGTERM`, so deleting the independent group-exit wait still passed the stalled-child case. Make the nested published apt fixture ignore `TERM` and close its inherited stderr before spinning: the direct child and Node's `close` can finish while the owned grandchild remains. The unchanged case must fail separately when only the timeout path's group-exit wait is deleted and when group signaling is replaced with direct-PID signaling; its final rescue must kill and await the owned group before removing the fixture.
+
+The first #5320 stalled-case rescue signaled the recorded group and descendant again after
+its assertions observed `ESRCH`. Numeric validation bounded the identifiers but did not
+preserve ownership after absence; a reused identifier could target another process. Retire
+the owned group on its first `ESRCH`, share that ownership through helper shutdown and final
+rescue, and never signal the raw descendant PID. Intercept every nonzero signal after a real
+absence observation, model reuse without forwarding it, and require zero retired-ID signals.
+Keep live-group rescue and fixture removal after independently observed group exit.
 
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
@@ -84,6 +235,15 @@ attempts reach the final nonzero exit. Separately pin each real attempt and the 
 attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
+
+- PR #5091's head `71221839` replaced the registered event bus after earlier deletion
+  cases had cached the injected emitter. Its async-boundary case stayed green when the
+  root guard was disabled. Observe the emitter actually retained by `inject`, using a stable
+  registration across cases and a positive real removal emission. Replace with a root that
+  lacks the outgoing ID so committed-absence checks cannot mask the root-guard mutation.
+  The same named case must fail with `isCurrent = () => true` both alone and after its
+  preceding deletion family. Run that qualification on a committed head in an isolated,
+  owned probe; retain commands, patch, raw output and exit status.
 
 - An aggregation test claiming a stored report route must use the production reader's filename and
   assert that both input records were admitted. An ignored artifact can make a boundary control pass
@@ -174,6 +334,54 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
+
+PR #5331's controlled Darwin census cases asserted retention after exactly three catalogs for
+persistent descriptor omissions and PID gaps. Those expectations encoded the cap that stopped
+lanes under real load, so they would fail any convergent census while proving nothing about
+whether a later complete catalog could be reached. This supersedes the three-observation bound in
+the 2026-10-12 Darwin lesson below. Probe persistent omission through the whole simulated
+deadline: every whole and PID-scoped `lsof` call must receive the remaining deadline as its
+timeout, and expiry must name the last uncovered process. A reintroduced count cap must fail.
+
+### 2026-10-21 — final storage cleanup outlived the returned leak verdict
+
+PR #5274 (`40baa0716b`) recorded a retained-storage verdict before an existing final cleanup
+attempt. A first refusal followed by complete proof could remove the real owned payload in that
+final attempt while the guard still returned `reason: leak` and a retained message. The historical
+review stance, prompt, and tier are unestablished; the missing oracle compared the final
+filesystem state with the reported disposition.
+
+Probe the real guarded child and owned storage with one controlled proof refusal followed by
+complete direct and claimed proof. Require both physical removal and a result without a
+storage-only leak. Keep a persistently incomplete or thrown proof retained, preserve an earlier
+nonstorage failure, and retain child-authored text that resembles the guard's diagnostic.
+
+### 2026-10-12 — one omitted Darwin field did not prove a bounded omission sequence
+
+PR #5274 (`40baa0716b`) tested one missing descriptor type followed by complete proof,
+but did not exercise two omissions before a complete catalog. Live account captures
+later demonstrated transient `f,n` records without `t`; their exact historical failed-run
+descriptor identities and review dispatch are unestablished.
+
+Probe the real parser and census with two omissions then complete third proof, persistent
+three omissions, a third live borrower, a third uncovered live PID, and the unchanged
+five-second deadline. Assert observation counts and remaining command timeouts. Pair the
+controlled census with real owned release and borrower retention; a parser result alone
+does not prove deletion. Reverting the bounded admission must fail the release case.
+
+Probe two successive exclusively new, same-UID live PID gaps, then require a third wholly
+complete catalog to release real owned storage. A protected borrower in that third catalog
+must veto deletion; another new PID there must retain storage. Keep a prior missing PID
+present in the next pre-sample as a refusal, and assert the shared three-observation and
+original five-second bounds on every path.
+
+An earlier `dead` sample does not bind a later startup recovery: a new uncovered live PID
+can make that later census `unknown` while the new run itself succeeds. Require retention
+only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
+and inspect both the original run and claim payloads. Keep complete-proof deletion
+unconditional; observing a prior sample or the new run's exit code cannot prove it.
 
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 
@@ -783,6 +991,53 @@ independent beyond-hunk fallback case. Require the final unchanged fixture to fa
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
 
+PR #5091's head `1297f963` had green single-owner disconnect and direct-root retirement checks,
+but the surrounding sweep could abandon a second deleted owner and the Command tail could reach
+a replacement root. Use two owners for failure isolation and the real Command commit callbacks
+for continuation authority. Assert raw membership, actual owner maps, distinct source edges,
+stream stops and strip effects, including replacement between effects. A green owner-key check
+alone does not prove terminal release or incoming graph preservation.
+
+An already-granted Auto deletion refusal and an absent-row On permission case do not prove
+pending Auto ownership. Settle permission before aborting the real removal transaction; inspect
+retained capture and absent strip before rollback, then the original edge after rollback without
+reacquisition. Genuine denial and committed ineligibility remain separate controls. Controlled
+media and graph ports prove ownership and control flow, not audible input or physical device stop.
+
+PR #5091's head `b2e7491d` covered committed On deletion and pre-commit On admission separately,
+but missed a disarmed Auto owner deleted before the optimistic On gesture committed. Keep the
+stale On projection visible while actual CRDT truth removes that owner, settle the pending grant,
+and assert strip creation, connected edges, capture ownership and exact stream stop count. Pair
+the negative with an existing committed owner and a shared survivor; a projected-row removal
+or a gesture whose On already committed does not exercise the same admission reader.
+
+The follow-up `3b1c0ad9` deletion check covered absence but left a present owner's committed Off
+or input replacement invisible to pre-commit On settlement. Drive these separately through an
+initialized committed provider and actual CRDT mutation while the projected On selector remains
+unchanged. Require no strip/edge/capture/owner and exactly one stop, then pair unchanged committed
+Auto/Off, an unrelated committed rename, shared permission and a current selected-input owner.
+A global document revision check rejects the valid rename control; a presence-only check misses
+both supersessions. Preserve the committed On latch and actual abort controls independently.
+
+Repair `00f4b688` introduced both fixture defects; the follow-up `46caac58` passed runtime cases
+while its test source used quarantined `vca` as a
+persisted `TrackKind` and wrote through an unchecked array lookup. The original hosted test types
+rejected both. Model kind supersession with a supported non-audio kind and committed Auto; require
+that removing kind from the admission's intent comparison makes the unchanged rejection assertion
+fail. Guard the actual raw-document owner before mutation, including deletion, so a missing ID
+cannot silently splice a shared survivor. Runtime execution does not establish typed fixture
+validity; retain the original type failure and verify the repaired source without widening contracts
+or asserting away absence.
+
+PR #5091's head `e9672c7966` tested root replacement during outgoing removal and pending grants
+during same-root intent changes, but never moved the root while permission itself was pending.
+Drive both the optimistic On transaction and real Undo rearm through initialized project access,
+replace the root with an identical clone, and settle permission only after proving the runtime root
+token changed. Assert `headConsumed` before the Undo grant, zero stale strip/edge/capture ownership,
+one orphan-stream stop, then a fresh two-owner successor capture that remains live. Reverting only
+the shared admission's original-root fencing, including its retained reader, must fail both named cases; a root-cleanup case and a
+same-root intent mutation cannot carry that oracle.
+
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 
 PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
@@ -802,3 +1057,17 @@ or success output. The complete exact-hit fixture must pass the same compile
 without installation. Also copy a different nightly under the expected directory
 name and require its channel manifest date to reject setup before Cargo; a compiler
 commit date need not equal the requested channel date.
+
+### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
+
+PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
+but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
+the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
+is unverified. The missing failure mode was an admitted, audible device failing after admission.
+
+Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
+named track/device refusal with no buffer, then require the dialog to perform no encode, write or
+download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
+whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
+and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
+later runtime load failure.

@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { pickFiles } from '../../../useCases/fileDialog';
+import { applyImportedProjectData } from '../../../useCases/projectPersistence/fileIO/applyImportedProjectData';
 import { newProject } from '../../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../../../useCases/recentProjects/loadRecentProject';
@@ -10,7 +12,7 @@ import { removeFromRecentProjects } from '../../../useCases/recentProjects/remov
 import { RecentProjectsMenu } from '../RecentProjectsMenu';
 
 const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: null as { dirty: boolean } | null },
+    projectStoreValue: { value: null as { dirty: boolean; createdAt?: number } | null },
 }));
 
 vi.mock('../../../stores/projectStore', async (importOriginal) => ({
@@ -39,6 +41,7 @@ vi.mock('../../../useCases/recentProjects/helpers', () => ({
     getRecentProjects: vi.fn(() => [
         { key: 'proj-1', name: 'Project One', updatedAt: Date.now() - 100000 },
         { key: 'proj-2', name: 'Project Two', updatedAt: Date.now() - 200000 },
+        { key: 'sourdaw:project:1700000000000', name: 'Open Project', updatedAt: Date.now() - 300000 },
     ]),
 }));
 
@@ -50,8 +53,18 @@ vi.mock('../../../useCases/projectPersistence/saveProject/saveProject', () => ({
     saveProject: vi.fn(),
 }));
 
-vi.mock('../../../useCases/projectPersistence/fileIO/pickAndImportProjectFile', () => ({
-    pickAndImportProjectFile: vi.fn(),
+// The menu's import runs the real route, so a withdrawal is observed where the
+// route reads the file and hands the data over.
+vi.mock('../../../useCases/fileDialog', () => ({
+    pickFiles: vi.fn(),
+}));
+
+vi.mock('../../../useCases/projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    runProjectLoadTransaction: vi.fn(() => ({ isCurrent: () => true, canActivate: () => true })),
+}));
+
+vi.mock('../../../useCases/projectPersistence/fileIO/applyImportedProjectData', () => ({
+    applyImportedProjectData: vi.fn(),
 }));
 
 vi.mock('../../../useCases/projectPersistence/fileIO/exportProjectFile', () => ({
@@ -300,7 +313,7 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
         await waitFor(() =>
             expect(notifyUser).toHaveBeenCalledWith(
                 'Could not find "Project One" — removing it from recent projects.',
@@ -332,8 +345,167 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(screen.getByLabelText(/Project menu/i));
         fireEvent.click(screen.getByText('Project One'));
 
-        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
         expect(notifyUser).not.toHaveBeenCalled();
         expect(removeFromRecentProjects).not.toHaveBeenCalled();
+    });
+
+    // The open project's Recent entry would otherwise run the pre-save, read the
+    // named project before a closing take's own save lands, and hydrate that
+    // stale read over the session (#5536). Opening the open project is a no-op.
+    it('keeps the session untouched when the chosen entry is the project that is open', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        vi.mocked(saveProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Open Project'));
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(saveProject).not.toHaveBeenCalled();
+        expect(loadRecentProject).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    // The store still holds the open project while a replacement is pending, so
+    // choosing the open project then must withdraw the pending replacement
+    // instead of leaving the session in the project chosen first (#5536).
+    it('keeps the open project when its entry is chosen while another replacement is saving', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        const saves: ((saved: boolean) => void)[] = [];
+        vi.mocked(saveProject).mockImplementation(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    saves.push(resolve);
+                })
+        );
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+        await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Open Project'));
+        for (const resolve of saves) {
+            resolve(true);
+        }
+
+        await waitFor(() => expect(vi.mocked(saveProject).mock.results).toHaveLength(1));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(loadRecentProject).not.toHaveBeenCalled();
+        expect(saveProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('withdraws a replacement already reading its project when the open project is chosen', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('aborted');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledTimes(1));
+        const options = vi.mocked(loadRecentProject).mock.calls[0]?.[1];
+        expect(options?.shouldProceed?.()).toBe(true);
+
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Open Project'));
+
+        expect(options?.shouldProceed?.()).toBe(false);
+        expect(loadRecentProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('still opens a different project chosen while another replacement is saving', async () => {
+        mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('committed');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledTimes(1));
+        const options = vi.mocked(loadRecentProject).mock.calls[0]?.[1];
+
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project Two'));
+
+        expect(options?.shouldProceed?.()).toBe(true);
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-2', expect.anything()));
+    });
+
+    // On main a later Recent load superseded a pending New, so the last choice
+    // won; the open project's entry starts no load, so it has to withdraw every
+    // kind of pending replacement, not only Recent loads.
+    describe('when the open project is chosen while another kind of replacement is pending', () => {
+        beforeEach(() => {
+            mocks.projectStoreValue.value = { dirty: false, createdAt: 1_700_000_000_000 };
+        });
+
+        const chooseOpenProject = (): void => {
+            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            fireEvent.click(screen.getByText('Open Project'));
+        };
+
+        it('does not start New Project once its pre-save finishes', async () => {
+            const save = Promise.withResolvers<boolean>();
+            vi.mocked(saveProject).mockReturnValueOnce(save.promise);
+
+            render(<RecentProjectsMenu />);
+            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+            await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+
+            chooseOpenProject();
+            save.resolve(true);
+
+            // A macrotask turn lets the route's continuation run to its end.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(newProject).not.toHaveBeenCalled();
+            expect(loadRecentProject).not.toHaveBeenCalled();
+        });
+
+        it('hands New Project a continuation check that the choice turns false', async () => {
+            vi.mocked(saveProject).mockResolvedValue(true);
+            const creation = Promise.withResolvers<boolean>();
+            vi.mocked(newProject).mockReturnValueOnce(creation.promise);
+
+            render(<RecentProjectsMenu />);
+            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+            await waitFor(() => expect(newProject).toHaveBeenCalledOnce());
+            const options = vi.mocked(newProject).mock.calls[0]?.[1];
+            expect(options?.shouldProceed?.()).toBe(true);
+
+            chooseOpenProject();
+
+            expect(options?.shouldProceed?.()).toBe(false);
+            expect(loadRecentProject).not.toHaveBeenCalled();
+            creation.resolve(false);
+        });
+
+        it('does not hand over a file import whose read finishes after the choice', async () => {
+            vi.mocked(saveProject).mockResolvedValue(true);
+            vi.mocked(applyImportedProjectData).mockResolvedValue(false);
+            const read = Promise.withResolvers<string>();
+            const file = new File([''], 'song.sourdaw');
+            vi.spyOn(file, 'text').mockReturnValue(read.promise);
+            vi.mocked(pickFiles).mockResolvedValue([file]);
+
+            render(<RecentProjectsMenu />);
+            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            fireEvent.click(screen.getByRole('menuitem', { name: /Import Project File/i }));
+            await waitFor(() => expect(file.text).toHaveBeenCalledOnce());
+
+            chooseOpenProject();
+            read.resolve(JSON.stringify({ version: 1, meta: { name: 'Imported' } }));
+
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(applyImportedProjectData).not.toHaveBeenCalled();
+            expect(notifyUser).not.toHaveBeenCalled();
+            expect(loadRecentProject).not.toHaveBeenCalled();
+        });
     });
 });

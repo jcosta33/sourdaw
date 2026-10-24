@@ -3,6 +3,7 @@ import {
     appendFileSync,
     chmodSync,
     cpSync,
+    existsSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
@@ -13,14 +14,23 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { selectAffectedE2e } from '../e2eAffectedGraph';
-import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
+import {
+    canNarrow,
+    parseChangedPaths,
+    productPathsOf,
+    selectedSpecArguments,
+    selectValidationPlan,
+    SMOKE_SPEC,
+} from '../prValidationScope';
 
+// Synchronous Git fixture and planner child-process work can exceed Vitest's 5000 ms default on shared CI runners.
+const GIT_PLANNER_CASE_TIMEOUT_MS = 30_000;
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
 const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
@@ -116,147 +126,228 @@ describe('graph-backed browser selection', () => {
     });
 
     // Four planner invocations collect the real Playwright suite, alongside a direct list check.
-    it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
-        const root = temporaryRoot();
-        const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
-        const barrel = 'src/modules/Tuner/presentations/views/index.ts';
-        const shell = 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx';
-        const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
-        const mixed = 'tests/e2e/devicePanelAllTestId.spec.ts';
-        const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
-        const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust, mixed, ai];
-        for (const path of [source, barrel, shell, ...specs, 'scripts/e2eSuiteOwners.json', 'public/fixture.js']) {
-            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
-        }
-        writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
-        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
-        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerPanel';\n");
-        writeFileSync(
-            join(root, shell),
-            "import { TunerPanel } from '#/modules/Tuner/presentations/views';\nexport const panel = TunerPanel;\n"
-        );
-        writeFileSync(
-            join(root, 'tsconfig.json'),
-            JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
-        );
-        writeFileSync(
-            join(root, 'scripts/e2eSuiteOwners.json'),
-            JSON.stringify({
-                version: 1,
-                owners: ['BrowserAi', 'Crust', 'Tuner'],
-                entries: [
-                    { spec: TUNER_SPECS[0], owners: ['Tuner'] },
-                    { spec: crust, owners: ['Crust'] },
-                    { spec: ai, owners: ['BrowserAi'] },
-                ],
-            })
-        );
-        for (const spec of specs) {
+    it.each([
+        ['deletes', (git: (args: string[]) => string) => git(['rm', '--quiet', 'docs/retired.md'])],
+        ['renames', (git: (args: string[]) => string) => git(['mv', 'docs/retired.md', 'docs/moved.md'])],
+    ])(
+        'widens a module-only candidate when only the integration delta %s a path',
+        (_name, change) => {
+            const root = temporaryRoot();
+            const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust];
+            for (const path of [
+                source,
+                ...specs,
+                'scripts/e2eSuiteOwners.json',
+                'docs/retired.md',
+                'public/fixture.js',
+            ]) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            }
+            writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+            writeFileSync(join(root, 'docs/retired.md'), 'retired\n');
+            writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.' } }));
             writeFileSync(
-                join(root, spec),
-                `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+                join(root, 'scripts/e2eSuiteOwners.json'),
+                JSON.stringify({
+                    version: 1,
+                    owners: ['Crust', 'Tuner'],
+                    entries: [
+                        { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                        { spec: crust, owners: ['Crust'] },
+                    ],
+                })
             );
-        }
-        fixturePlaywright(root);
-        writeFileSync(
-            join(root, 'playwright.config.mjs'),
-            "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
-        );
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        git(['add', 'src', 'public', 'scripts', 'tests', 'tsconfig.json']);
-        git(['commit', '--quiet', '-m', 'base']);
-        const base = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
-        git(['add', source]);
-        git(['commit', '--quiet', '-m', 'change tuner panel']);
-        const head = git(['rev-parse', 'HEAD']);
-        const output = join(root, 'github-output');
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
-        });
-        expect(result.status, result.stderr).toBe(0);
-        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
-            typeof selectValidationPlan
-        >;
-        expect(allSelected(plan)).toEqual([TUNER_SPECS[0], mixed].sort());
-        expect(plan.browserAi).toBe(false);
-        expect(plan.reasons).toContainEqual({ path: source, reason: 'affected feature owners: Tuner' });
-        expect(readFileSync(output, 'utf8')).toContain('profile=broad\nbrowser=true\nbrowser-ai=false\n');
-
-        const playwright = spawnSync(
-            join(root, 'node_modules/.bin/playwright'),
-            [
-                'test',
-                '--list',
-                '--config',
+            for (const spec of specs) {
+                writeFileSync(
+                    join(root, spec),
+                    `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+                );
+            }
+            fixturePlaywright(root);
+            writeFileSync(
                 join(root, 'playwright.config.mjs'),
-                ...selectedSpecArguments(allSelected(plan), root),
-            ],
-            { cwd: root, encoding: 'utf8' }
-        );
-        expect(playwright.status, playwright.stderr).toBe(0);
-        expect(playwright.stdout).toContain('tuner.spec.ts:');
-        expect(playwright.stdout).toContain('devicePanelAllTestId.spec.ts:');
-        expect(playwright.stdout).not.toContain('crustCeilingTestId.spec.ts:');
-        expect(playwright.stdout).not.toContain('browserAiWebGpuAdmission.spec.ts:');
+                "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+            );
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git(['init', '--quiet', '-b', 'trunk']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', 'src', 'public', 'scripts', 'tests', 'docs', 'tsconfig.json']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', '-b', 'feature']);
+            writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+            git(['add', source]);
+            git(['commit', '--quiet', '-m', 'change tuner panel']);
+            const head = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', 'trunk']);
+            change(git);
+            git(['commit', '--quiet', '-m', 'main moves a documentation path']);
+            git(['merge', '--quiet', '--no-ff', '-m', 'integration', 'feature']);
+            const output = join(root, 'github-output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(plan)).toEqual([crust, TUNER_SPECS[0]].sort());
+            expect(plan.reasons.some((row) => row.reason.startsWith('affected feature owners'))).toBe(false);
+        },
+        60_000
+    );
 
-        writeFileSync(join(root, source), 'export const TunerPanel = "dirty";\n');
-        const dirty = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
-        });
-        expect(dirty.status, dirty.stderr).toBe(0);
-        const dirtyPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
-            typeof selectValidationPlan
-        >;
-        expect(allSelected(dirtyPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
-        expect(dirtyPlan.browserAi).toBe(true);
+    it(
+        'emits a narrowed immutable-head plan that Playwright collects as exact files',
+        () => {
+            const root = temporaryRoot();
+            const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+            const barrel = 'src/modules/Tuner/presentations/views/index.ts';
+            const shell = 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx';
+            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const mixed = 'tests/e2e/devicePanelAllTestId.spec.ts';
+            const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
+            const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust, mixed, ai];
+            for (const path of [source, barrel, shell, ...specs, 'scripts/e2eSuiteOwners.json', 'public/fixture.js']) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            }
+            writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+            writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+            writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerPanel';\n");
+            writeFileSync(
+                join(root, shell),
+                "import { TunerPanel } from '#/modules/Tuner/presentations/views';\nexport const panel = TunerPanel;\n"
+            );
+            writeFileSync(
+                join(root, 'tsconfig.json'),
+                JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+            );
+            writeFileSync(
+                join(root, 'scripts/e2eSuiteOwners.json'),
+                JSON.stringify({
+                    version: 1,
+                    owners: ['BrowserAi', 'Crust', 'Tuner'],
+                    entries: [
+                        { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                        { spec: crust, owners: ['Crust'] },
+                        { spec: ai, owners: ['BrowserAi'] },
+                    ],
+                })
+            );
+            for (const spec of specs) {
+                writeFileSync(
+                    join(root, spec),
+                    `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+                );
+            }
+            fixturePlaywright(root);
+            writeFileSync(
+                join(root, 'playwright.config.mjs'),
+                "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+            );
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', 'src', 'public', 'scripts', 'tests', 'tsconfig.json']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+            git(['add', source]);
+            git(['commit', '--quiet', '-m', 'change tuner panel']);
+            const head = git(['rev-parse', 'HEAD']);
+            const output = join(root, 'github-output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(plan)).toEqual([TUNER_SPECS[0], mixed].sort());
+            expect(plan.browserAi).toBe(false);
+            expect(plan.reasons).toContainEqual({ path: source, reason: 'affected feature owners: Tuner' });
+            expect(readFileSync(output, 'utf8')).toContain('profile=broad\nbrowser=true\nbrowser-ai=false\n');
 
-        writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
-        const renamed = 'src/modules/Tuner/presentations/views/TunerDisplayPanel.tsx';
-        git(['mv', source, renamed]);
-        git(['commit', '--quiet', '-m', 'rename tuner panel']);
-        const renamedHead = git(['rev-parse', 'HEAD']);
-        const moved = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: head, HEAD_SHA: renamedHead, GITHUB_OUTPUT: output },
-        });
-        expect(moved.status, moved.stderr).toBe(0);
-        const movedPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
-            typeof selectValidationPlan
-        >;
-        expect(allSelected(movedPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
-        expect(movedPlan.browserAi).toBe(true);
+            const playwright = spawnSync(
+                join(root, 'node_modules/.bin/playwright'),
+                [
+                    'test',
+                    '--list',
+                    '--config',
+                    join(root, 'playwright.config.mjs'),
+                    ...selectedSpecArguments(allSelected(plan), root),
+                ],
+                { cwd: root, encoding: 'utf8' }
+            );
+            expect(playwright.status, playwright.stderr).toBe(0);
+            expect(playwright.stdout).toContain('tuner.spec.ts:');
+            expect(playwright.stdout).toContain('devicePanelAllTestId.spec.ts:');
+            expect(playwright.stdout).not.toContain('crustCeilingTestId.spec.ts:');
+            expect(playwright.stdout).not.toContain('browserAiWebGpuAdmission.spec.ts:');
 
-        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerDisplayPanel';\n");
-        writeFileSync(join(root, 'public/fixture.js'), `import '../${renamed}';\n`);
-        git(['add', barrel, 'public/fixture.js']);
-        git(['commit', '--quiet', '-m', 'add public runtime consumer']);
-        const publicBase = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, renamed), 'export const TunerPanel = "public dirty";\n');
-        git(['add', renamed]);
-        git(['commit', '--quiet', '-m', 'change tuner with public runtime consumer']);
-        const publicHead = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
-        const dirtyPublic = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: publicBase, HEAD_SHA: publicHead, GITHUB_OUTPUT: output },
-        });
-        expect(dirtyPublic.status, dirtyPublic.stderr).toBe(0);
-        const dirtyPublicPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
-            typeof selectValidationPlan
-        >;
-        expect(allSelected(dirtyPublicPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
-        expect(dirtyPublicPlan.browserAi).toBe(true);
-    }, 30_000);
+            writeFileSync(join(root, source), 'export const TunerPanel = "dirty";\n');
+            const dirty = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(dirty.status, dirty.stderr).toBe(0);
+            const dirtyPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(dirtyPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+            expect(dirtyPlan.browserAi).toBe(true);
+
+            writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+            const renamed = 'src/modules/Tuner/presentations/views/TunerDisplayPanel.tsx';
+            git(['mv', source, renamed]);
+            git(['commit', '--quiet', '-m', 'rename tuner panel']);
+            const renamedHead = git(['rev-parse', 'HEAD']);
+            const moved = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: head, HEAD_SHA: renamedHead, GITHUB_OUTPUT: output },
+            });
+            expect(moved.status, moved.stderr).toBe(0);
+            const movedPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(movedPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+            expect(movedPlan.browserAi).toBe(true);
+
+            writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerDisplayPanel';\n");
+            writeFileSync(join(root, 'public/fixture.js'), `import '../${renamed}';\n`);
+            git(['add', barrel, 'public/fixture.js']);
+            git(['commit', '--quiet', '-m', 'add public runtime consumer']);
+            const publicBase = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, renamed), 'export const TunerPanel = "public dirty";\n');
+            git(['add', renamed]);
+            git(['commit', '--quiet', '-m', 'change tuner with public runtime consumer']);
+            const publicHead = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+            const dirtyPublic = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: publicBase, HEAD_SHA: publicHead, GITHUB_OUTPUT: output },
+            });
+            expect(dirtyPublic.status, dirtyPublic.stderr).toBe(0);
+            const dirtyPublicPlan = JSON.parse(
+                readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')
+            ) as ReturnType<typeof selectValidationPlan>;
+            expect(allSelected(dirtyPublicPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+            expect(dirtyPublicPlan.browserAi).toBe(true);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 });
 const PR_4890_PATHS = [
     '.agents/skills/review-stances/correctness.md',
@@ -287,8 +378,6 @@ const PR_4902_PATHS = [
     'scripts/trustedGithubWriteBootstrap.ts',
 ];
 const KNOWN_NODE_REVIEW_TOOLING = [
-    'scripts/checkStancesRecord.ts',
-    'scripts/__tests__/checkStancesRecord.spec.ts',
     'scripts/typesafeRequest.ts',
     'scripts/__tests__/typesafeRequest.spec.ts',
     'scripts/semanticReviewEvaluation.ts',
@@ -316,6 +405,7 @@ const REVIEW_REPAIR_TOOLING = [
 ];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/reviewApprovalLabel.ts',
     'scripts/reviewRiskPolicy.ts',
     'scripts/savedProjectStatePaths.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
@@ -325,7 +415,6 @@ const REVIEW_HELPER_STEMS = [
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -371,6 +460,13 @@ const SHARED_OR_BROWSER_OWNED_SCRIPTS = [
     'loopbackOpenAiProvider',
     'offlineAudioWorkletTrace',
 ];
+// The tooling unit suite excludes these specs, so they and every script they reach must plan broad.
+const RESOURCE_GUARD_SPECS = [
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+];
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport|\bvi\.mock)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -403,6 +499,41 @@ function fixtureBrowserCase(root: string, path: string): void {
     writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
 }
 
+function resolveRelativeImport(importer: string, specifier: string): string {
+    const base = posix.join(posix.dirname(importer), specifier);
+    const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`];
+    const found = candidates.find((candidate) => /\.tsx?$/.test(candidate) && existsSync(resolve(candidate)));
+    if (found === undefined) {
+        throw new Error(`${importer} imports unresolved ${specifier}`);
+    }
+    return found;
+}
+
+function relativeImportClosure(roots: readonly string[]): string[] {
+    const reached = new Set<string>();
+    const pending = [...roots];
+    for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+        if (reached.has(path)) {
+            continue;
+        }
+        reached.add(path);
+        for (const [statement, specifier] of readFileSync(resolve(path), 'utf8').matchAll(RELATIVE_IMPORT)) {
+            if (specifier === undefined) {
+                throw new Error(`${path} import ${statement} captured no specifier`);
+            }
+            pending.push(resolveRelativeImport(path, specifier));
+        }
+    }
+    return [...reached].sort();
+}
+
+const BROAD_WITHOUT_BROWSER = {
+    profile: 'broad',
+    browser: false,
+    browserAi: false,
+    matrix: { include: [] },
+} as const;
+
 function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
     return plan.matrix.include.flatMap((group) => group.specs).sort();
 }
@@ -430,252 +561,22 @@ beforeEach(() => {
 });
 
 describe('required affected verification', () => {
-    it('plans a verified integration from its first parent instead of concurrent main changes', () => {
-        const root = temporaryRoot();
-        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        mkdirSync(join(root, 'scripts'), { recursive: true });
-        mkdirSync(join(root, 'src/app'), { recursive: true });
-        fixturePlaywright(root);
-        appendFileSync(join(root, '.gitignore'), 'github-output\npr-validation-scope.json\n');
-        fixtureBrowserCase(root, SMOKE_SPEC);
-        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
-        writeFileSync(join(root, 'scripts/claimTrackerIssue.ts'), 'export const claim = 0;\n');
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 0;\n');
-        const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        git('init', '-q', '-b', 'main');
-        git('config', 'user.email', 'ci@example.invalid');
-        git('config', 'user.name', 'Scope test');
-        git('add', '.');
-        git('commit', '-q', '-m', 'base');
-        const base = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'candidate');
-        writeFileSync(join(root, 'scripts/claimTrackerIssue.ts'), 'export const claim = 1;\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'tooling candidate');
-        const head = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 1;\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'concurrent product');
-        git('merge', '-q', '--no-ff', '-m', 'integration', 'candidate');
-        const output = join(root, 'github-output');
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
-        });
-        expect(result.status, result.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'tooling',
-            browser: false,
-            browserAi: false,
-            codeql: true,
-            matrix: { include: [] },
-            reasons: [{ path: 'scripts/claimTrackerIssue.ts' }],
-        });
-        const firstIntegration = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'product-candidate');
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 2;\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'candidate product');
-        const productHead = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        mkdirSync(join(root, 'docs'), { recursive: true });
-        writeFileSync(join(root, 'docs/next.md'), '# Concurrent documentation\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'concurrent documentation');
-        git('merge', '-q', '--no-ff', '-m', 'product integration', 'product-candidate');
-        const productPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: firstIntegration, HEAD_SHA: productHead, GITHUB_OUTPUT: output },
-        });
-        expect(productPlan.status, productPlan.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'broad',
-            browser: true,
-            browserAi: true,
-            codeql: true,
-            matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
-            reasons: [{ path: 'src/app/bootstrap.ts' }],
-        });
-        const productIntegration = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'direct-candidate');
-        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
-        appendFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// direct changed spec\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'candidate direct browser spec');
-        const directHead = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 3;\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'second concurrent product');
-        git('merge', '-q', '--no-ff', '-m', 'direct integration', 'direct-candidate');
-        const directPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: productIntegration, HEAD_SHA: directHead, GITHUB_OUTPUT: output },
-        });
-        expect(directPlan.status, directPlan.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'broad',
-            browser: true,
-            browserAi: false,
-            codeql: true,
-            matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
-            reasons: [{ path: 'tests/e2e/undo.spec.ts', reason: 'changed browser spec' }],
-        });
-        const tunerSource = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
-        mkdirSync(join(root, 'src/modules/Tuner/presentations/views'), { recursive: true });
-        mkdirSync(join(root, 'public'), { recursive: true });
-        writeFileSync(join(root, 'public/fixture.js'), 'export const fixture = true;\n');
-        writeFileSync(join(root, tunerSource), 'export const panel = 0;\n');
-        fixtureBrowserCase(root, 'tests/e2e/tuner.spec.ts');
-        writeFileSync(
-            join(root, 'tsconfig.json'),
-            JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
-        );
-        writeFileSync(
-            join(root, 'scripts/e2eSuiteOwners.json'),
-            JSON.stringify({
-                version: 1,
-                owners: ['Tuner'],
-                entries: [{ spec: 'tests/e2e/tuner.spec.ts', owners: ['Tuner'] }],
-            })
-        );
-        git('add', '.');
-        git('commit', '-q', '-m', 'graph fixture baseline');
-        const graphBase = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'graph-candidate');
-        writeFileSync(join(root, tunerSource), 'export const panel = 1;\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'candidate tuner');
-        const graphHead = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        writeFileSync(join(root, 'docs/next.md'), '# Concurrent documentation again\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'third concurrent documentation');
-        git('merge', '-q', '--no-ff', '-m', 'graph integration', 'graph-candidate');
-        const graphPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: graphBase, HEAD_SHA: graphHead, GITHUB_OUTPUT: output },
-        });
-        expect(graphPlan.status, graphPlan.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'broad',
-            browser: true,
-            browserAi: false,
-            codeql: true,
-            reasons: [{ path: tunerSource, reason: 'affected feature owners: Tuner' }],
-        });
-        expect(allSelected(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')))).toEqual([
-            'tests/e2e/tuner.spec.ts',
-            'tests/e2e/undo.spec.ts',
-        ]);
-        const graphIntegration = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'rename-candidate');
-        git('mv', 'scripts/claimTrackerIssue.ts', 'scripts/checkStancesRecord.ts');
-        git('commit', '-q', '-m', 'candidate tooling rename');
-        const renameHead = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        writeFileSync(join(root, 'docs/next.md'), '# Concurrent rename documentation\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'rename concurrent documentation');
-        git('merge', '-q', '--no-ff', '-m', 'rename integration', 'rename-candidate');
-        const renamePlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: graphIntegration, HEAD_SHA: renameHead, GITHUB_OUTPUT: output },
-        });
-        expect(renamePlan.status, renamePlan.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'broad',
-            browser: true,
-            browserAi: true,
-            codeql: true,
-        });
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).reasons).toContainEqual({
-            path: 'changed path history',
-            reason: 'deleted, renamed, or type-changed path; full browser coverage',
-        });
-        const renameIntegration = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'delete-candidate');
-        git('rm', 'scripts/checkStancesRecord.ts');
-        git('commit', '-q', '-m', 'candidate tooling deletion');
-        const deleteHead = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        writeFileSync(join(root, 'docs/next.md'), '# Concurrent deletion documentation\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'deletion concurrent documentation');
-        git('merge', '-q', '--no-ff', '-m', 'deletion integration', 'delete-candidate');
-        const deletionPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: renameIntegration, HEAD_SHA: deleteHead, GITHUB_OUTPUT: output },
-        });
-        expect(deletionPlan.status, deletionPlan.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'broad',
-            browser: true,
-            browserAi: true,
-            codeql: true,
-        });
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).reasons).toContainEqual({
-            path: 'changed path history',
-            reason: 'deleted, renamed, or type-changed path; full browser coverage',
-        });
-        const deletionIntegration = git('rev-parse', 'HEAD');
-        git('checkout', '-q', '-b', 'conflict-candidate');
-        writeFileSync(join(root, 'docs/next.md'), '# Candidate conflict\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'candidate conflict');
-        const conflictHead = git('rev-parse', 'HEAD');
-        git('checkout', '-q', 'main');
-        writeFileSync(join(root, 'docs/next.md'), '# Concurrent conflict\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'main conflict');
-        const conflictMerge = spawnSync('git', ['merge', '--no-ff', 'conflict-candidate'], {
-            cwd: root,
-            encoding: 'utf8',
-        });
-        expect(conflictMerge.status).toBe(1);
-        writeFileSync(join(root, 'docs/next.md'), '# Resolved conflict\n');
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 4;\n');
-        git('add', '.');
-        git('commit', '-q', '-m', 'conflict integration with product resolution');
-        const conflictPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: deletionIntegration, HEAD_SHA: conflictHead, GITHUB_OUTPUT: output },
-        });
-        expect(conflictPlan.status, conflictPlan.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            profile: 'broad',
-            browser: true,
-            browserAi: true,
-            codeql: true,
-            reasons: [{ path: 'docs/next.md' }, { path: 'src/app/bootstrap.ts' }],
-        });
-        const invalid = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: 'a'.repeat(40), HEAD_SHA: conflictHead, GITHUB_OUTPUT: output },
-        });
-        expect(invalid.status).toBe(1);
-    }, 30_000);
-    it('disables inherited Trace2 for disposable Git fixture children', () => {
-        const root = temporaryRoot();
-        execFileSync('git', ['init', '--quiet'], { cwd: root });
+    it(
+        'disables inherited Trace2 for disposable Git fixture children',
+        () => {
+            const root = temporaryRoot();
+            execFileSync('git', ['init', '--quiet'], { cwd: root });
 
-        const result = spawnSync('git', ['-c', 'alias.trace2probe=!printf %s "$GIT_TRACE2_EVENT"', 'trace2probe'], {
-            cwd: root,
-            encoding: 'utf8',
-        });
+            const result = spawnSync('git', ['-c', 'alias.trace2probe=!printf %s "$GIT_TRACE2_EVENT"', 'trace2probe'], {
+                cwd: root,
+                encoding: 'utf8',
+            });
 
-        expect(result.status, result.stderr).toBe(0);
-        expect(result.stdout).toBe('0');
-    });
+            expect(result.status, result.stderr).toBe(0);
+            expect(result.stdout).toBe('0');
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
     it('restores the caller Trace2 setting and propagates cleanup errors', () => {
         const root = temporaryRoot();
@@ -749,12 +650,18 @@ describe('required affected verification', () => {
         for (const path of [
             'scripts/reviewStructuralAdmissionFuture.ts',
             'scripts/__tests__/reviewStructuralAdmissionFuture.spec.ts',
-            'src/modules/Arrangement/presentations/views/Timeline.tsx',
         ]) {
-            const plan = selectValidationPlan([...helperPaths, path], INVENTORY);
-            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+            expect(selectValidationPlan([...helperPaths, path], INVENTORY)).toMatchObject({
+                ...BROAD_WITHOUT_BROWSER,
+                codeql: true,
+            });
         }
+        const product = selectValidationPlan(
+            [...helperPaths, 'src/modules/Arrangement/presentations/views/Timeline.tsx'],
+            INVENTORY
+        );
+        expect(product).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+        expect(allSelected(product)).toEqual(fullInventory(INVENTORY));
     });
 
     it('keeps the planner, collector helper, and owning spec in the Node tooling suite', () => {
@@ -834,218 +741,256 @@ describe('required affected verification', () => {
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
 
-    it('admits only immutable known package script route changes', () => {
-        const root = temporaryRoot();
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        const packagePath = join(root, 'package.json');
-        const output = join(root, 'output');
-        const packageText = (scripts: Record<string, string>, fields: Record<string, unknown> = {}) =>
-            `${JSON.stringify({ name: 'scope-fixture', scripts, ...fields }, null, 4)}\n`;
-        const known = { test: 'node scripts/other.ts', 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts' };
-        const baseline = { test: 'node scripts/other.ts' };
-        const writePackage = (contents: string | null) => {
-            rmSync(packagePath, { force: true });
-            if (contents !== null) {
-                writeFileSync(packagePath, contents);
-            }
-        };
-        const commit = (message: string) => {
-            git(['add', '-A']);
-            git(['commit', '--quiet', '--allow-empty', '-m', message]);
-            return git(['rev-parse', 'HEAD']);
-        };
-        const planAt = (base: string, head: string) => {
-            writeFileSync(output, '');
-            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-                cwd: root,
-                encoding: 'utf8',
-                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
-            });
-            expect(result.status, result.stderr).toBe(0);
-            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
-            expect(readFileSync(output, 'utf8')).toContain(`profile=${plan.profile}\nbrowser=${plan.browser}\n`);
-            return plan;
-        };
-        const expectBroad = (base: string, head: string) => {
-            expect(planAt(base, head)).toMatchObject({
-                profile: 'broad',
-                browser: true,
-                browserAi: true,
-                codeql: true,
-                matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
-            });
-        };
-
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        writeFileSync(join(root, '.gitignore'), 'output\npr-validation-scope.json\n');
-        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        fixturePlaywright(root);
-        fixtureBrowserCase(root, SMOKE_SPEC);
-        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
-        writePackage(packageText(baseline));
-        const base = commit('base');
-
-        mkdirSync(join(root, 'scripts'), { recursive: true });
-        writeFileSync(join(root, 'scripts/retargetCapabilitySnapshot.ts'), 'export const fixture = true;\n');
-        mkdirSync(join(root, 'docs'), { recursive: true });
-        writeFileSync(join(root, 'docs/change.md'), '# Tooling\n');
-        writePackage(packageText(known));
-        const head = commit('known operational route and tooling');
-        expect(planAt(base, head)).toMatchObject({
-            profile: 'tooling',
-            browser: false,
-            browserAi: false,
-            codeql: true,
-            matrix: { include: [] },
-            reasons: expect.arrayContaining([
-                {
-                    path: 'package.json',
-                    reason: 'known operational script route; security/static checks without browser execution',
-                },
-            ]),
-        });
-        expect(readFileSync(output, 'utf8')).toContain(
-            'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\nmatrix={"include":[]}\n'
-        );
-        writePackage(packageText({ ...known, surprise: 'node scripts/other.ts' }, { dependencies: { new: '1.0.0' } }));
-        expect(planAt(base, head).profile).toBe('broad');
-        writePackage(packageText(baseline));
-        const removalHead = commit('remove known route');
-        expect(planAt(head, removalHead)).toMatchObject({
-            profile: 'tooling',
-            browser: false,
-            browserAi: false,
-            codeql: true,
-            matrix: { include: [] },
-        });
-        writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
-        const unsafeCandidate = commit('unsafe candidate package command');
-        writePackage(packageText(known));
-        const safeCheckout = commit('safe checkout after candidate');
-        expect(git(['rev-parse', 'HEAD'])).toBe(safeCheckout);
-        const unverifiedCheckout = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: removalHead, HEAD_SHA: unsafeCandidate, GITHUB_OUTPUT: output },
-        });
-        expect(unverifiedCheckout.status).toBe(1);
-        expect(unverifiedCheckout.stderr).toContain('Integration commit is not a two-parent merge');
-
-        const cases: { name: string; before: string; after: string | null; extra?: string }[] = [
-            {
-                name: 'unknown old route',
-                before: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
-                after: packageText(known),
-            },
-            {
-                name: 'unknown new route',
-                before: packageText(known),
-                after: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
-            },
-            {
-                name: 'unknown script key',
-                before: packageText(baseline),
-                after: packageText({ ...baseline, 'other:plan': 'node scripts/retargetCapabilitySnapshot.ts' }),
-            },
-            {
-                name: 'route flag',
-                before: packageText(baseline),
-                after: packageText({
-                    ...baseline,
-                    'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts --unsafe',
-                }),
-            },
-            {
-                name: 'dependency change',
-                before: packageText(baseline),
-                after: packageText(known, { dependencies: { new: '1.0.0' } }),
-            },
-            {
-                name: 'package manager change',
-                before: packageText(baseline),
-                after: packageText(known, { packageManager: 'pnpm@99' }),
-            },
-            {
-                name: 'unknown field change',
-                before: packageText(baseline),
-                after: packageText(known, { futurePolicy: true }),
-            },
-            {
-                name: 'product mix',
-                before: packageText(baseline),
-                after: packageText(known),
-                extra: 'src/app/bootstrap.ts',
-            },
-            {
-                name: 'shared mix',
-                before: packageText(baseline),
-                after: packageText(known),
-                extra: 'scripts/e2eServerIdentity.ts',
-            },
-            { name: 'config mix', before: packageText(baseline), after: packageText(known), extra: 'vite.config.ts' },
-            { name: 'lockfile mix', before: packageText(baseline), after: packageText(known), extra: 'pnpm-lock.yaml' },
-            { name: 'malformed JSON', before: packageText(baseline), after: '{' },
-            {
-                name: 'duplicate key',
-                before: packageText(baseline),
-                after: '{"name":"scope-fixture","scripts":{},"scripts":{"retarget:plan":"node scripts/retargetCapabilitySnapshot.ts"}}\n',
-            },
-            {
-                name: 'missing scripts',
-                before: packageText(baseline),
-                after: `${JSON.stringify({ name: 'scope-fixture' }, null, 4)}\n`,
-            },
-            {
-                name: 'non-string command',
-                before: packageText(baseline),
-                after: `${JSON.stringify({ name: 'scope-fixture', scripts: { 'retarget:plan': 1 } }, null, 4)}\n`,
-            },
-            { name: 'deleted package', before: packageText(baseline), after: null },
-        ];
-        for (const testCase of cases) {
-            writePackage(testCase.before);
-            const caseBase = commit(`${testCase.name} base`);
-            writePackage(testCase.after);
-            if (testCase.extra) {
-                const fullPath = join(root, testCase.extra);
-                mkdirSync(fullPath.slice(0, fullPath.lastIndexOf('/')), { recursive: true });
-                writeFileSync(fullPath, '// mixed change\n');
-            }
-            const caseHead = commit(testCase.name);
-            if (testCase.name === 'malformed JSON') {
+    it(
+        'admits only immutable known package script route changes',
+        () => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            const packagePath = join(root, 'package.json');
+            const output = join(root, 'output');
+            const packageText = (scripts: Record<string, string>, fields: Record<string, unknown> = {}) =>
+                `${JSON.stringify({ name: 'scope-fixture', scripts, ...fields }, null, 4)}\n`;
+            const known = {
+                test: 'node scripts/other.ts',
+                'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts',
+            };
+            const baseline = { test: 'node scripts/other.ts' };
+            const writePackage = (contents: string | null) => {
+                rmSync(packagePath, { force: true });
+                if (contents !== null) {
+                    writeFileSync(packagePath, contents);
+                }
+            };
+            const commit = (message: string) => {
+                git(['add', '-A']);
+                git(['commit', '--quiet', '--allow-empty', '-m', message]);
+                return git(['rev-parse', 'HEAD']);
+            };
+            const planAt = (base: string, head: string) => {
+                writeFileSync(output, '');
                 const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
                     cwd: root,
                     encoding: 'utf8',
-                    env: { ...process.env, BASE_SHA: caseBase, HEAD_SHA: caseHead, GITHUB_OUTPUT: output },
+                    env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
                 });
-                expect(result.status).toBe(1);
-                expect(result.stderr).toContain('Playwright collection failed');
-                continue;
+                expect(result.status, result.stderr).toBe(0);
+                const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+                expect(readFileSync(output, 'utf8')).toContain(`profile=${plan.profile}\nbrowser=${plan.browser}\n`);
+                return plan;
+            };
+            const expectBroad = (base: string, head: string) => {
+                expect(planAt(base, head)).toMatchObject({
+                    profile: 'broad',
+                    browser: true,
+                    browserAi: true,
+                    codeql: true,
+                    matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
+                });
+            };
+
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            writeFileSync(join(root, '.gitignore'), 'output\npr-validation-scope.json\n');
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            fixturePlaywright(root);
+            fixtureBrowserCase(root, SMOKE_SPEC);
+            fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
+            writePackage(packageText(baseline));
+            const base = commit('base');
+
+            mkdirSync(join(root, 'scripts'), { recursive: true });
+            writeFileSync(join(root, 'scripts/retargetCapabilitySnapshot.ts'), 'export const fixture = true;\n');
+            mkdirSync(join(root, 'docs'), { recursive: true });
+            writeFileSync(join(root, 'docs/change.md'), '# Tooling\n');
+            writePackage(packageText(known));
+            const head = commit('known operational route and tooling');
+            expect(planAt(base, head)).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: true,
+                matrix: { include: [] },
+                reasons: expect.arrayContaining([
+                    {
+                        path: 'package.json',
+                        reason: 'known operational script route; security/static checks without browser execution',
+                    },
+                ]),
+            });
+            expect(readFileSync(output, 'utf8')).toContain(
+                'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\nmatrix={"include":[]}\n'
+            );
+            writePackage(
+                packageText({ ...known, surprise: 'node scripts/other.ts' }, { dependencies: { new: '1.0.0' } })
+            );
+            expect(planAt(base, head).profile).toBe('tooling');
+            writePackage(packageText(baseline));
+            const removalHead = commit('remove known route');
+            expect(planAt(head, removalHead)).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: true,
+                matrix: { include: [] },
+            });
+            expectBroad(base, head);
+
+            writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
+            const unsafeCandidate = commit('unsafe candidate package command');
+            writePackage(packageText(known));
+            const safeCheckout = commit('safe checkout after candidate');
+            expect(git(['rev-parse', 'HEAD'])).toBe(safeCheckout);
+            expectBroad(removalHead, unsafeCandidate);
+
+            const cases: { name: string; before: string; after: string | null; extra?: string }[] = [
+                {
+                    name: 'unknown old route',
+                    before: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
+                    after: packageText(known),
+                },
+                {
+                    name: 'unknown new route',
+                    before: packageText(known),
+                    after: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
+                },
+                {
+                    name: 'unknown script key',
+                    before: packageText(baseline),
+                    after: packageText({ ...baseline, 'other:plan': 'node scripts/retargetCapabilitySnapshot.ts' }),
+                },
+                {
+                    name: 'route flag',
+                    before: packageText(baseline),
+                    after: packageText({
+                        ...baseline,
+                        'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts --unsafe',
+                    }),
+                },
+                {
+                    name: 'dependency change',
+                    before: packageText(baseline),
+                    after: packageText(known, { dependencies: { new: '1.0.0' } }),
+                },
+                {
+                    name: 'package manager change',
+                    before: packageText(baseline),
+                    after: packageText(known, { packageManager: 'pnpm@99' }),
+                },
+                {
+                    name: 'unknown field change',
+                    before: packageText(baseline),
+                    after: packageText(known, { futurePolicy: true }),
+                },
+                {
+                    name: 'product mix',
+                    before: packageText(baseline),
+                    after: packageText(known),
+                    extra: 'src/app/bootstrap.ts',
+                },
+                {
+                    name: 'shared mix',
+                    before: packageText(baseline),
+                    after: packageText(known),
+                    extra: 'scripts/e2eServerIdentity.ts',
+                },
+                {
+                    name: 'config mix',
+                    before: packageText(baseline),
+                    after: packageText(known),
+                    extra: 'vite.config.ts',
+                },
+                {
+                    name: 'lockfile mix',
+                    before: packageText(baseline),
+                    after: packageText(known),
+                    extra: 'pnpm-lock.yaml',
+                },
+                { name: 'malformed JSON', before: packageText(baseline), after: '{' },
+                {
+                    name: 'duplicate key',
+                    before: packageText(baseline),
+                    after: '{"name":"scope-fixture","scripts":{},"scripts":{"retarget:plan":"node scripts/retargetCapabilitySnapshot.ts"}}\n',
+                },
+                {
+                    name: 'missing scripts',
+                    before: packageText(baseline),
+                    after: `${JSON.stringify({ name: 'scope-fixture' }, null, 4)}\n`,
+                },
+                {
+                    name: 'non-string command',
+                    before: packageText(baseline),
+                    after: `${JSON.stringify({ name: 'scope-fixture', scripts: { 'retarget:plan': 1 } }, null, 4)}\n`,
+                },
+                { name: 'deleted package', before: packageText(baseline), after: null },
+            ];
+            for (const testCase of cases) {
+                writePackage(testCase.before);
+                const caseBase = commit(`${testCase.name} base`);
+                writePackage(testCase.after);
+                if (testCase.extra) {
+                    const fullPath = join(root, testCase.extra);
+                    mkdirSync(fullPath.slice(0, fullPath.lastIndexOf('/')), { recursive: true });
+                    writeFileSync(fullPath, '// mixed change\n');
+                }
+                const caseHead = commit(testCase.name);
+                if (testCase.name === 'malformed JSON') {
+                    const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                        cwd: root,
+                        encoding: 'utf8',
+                        env: { ...process.env, BASE_SHA: caseBase, HEAD_SHA: caseHead, GITHUB_OUTPUT: output },
+                    });
+                    expect(result.status).toBe(1);
+                    expect(result.stderr).toContain('Playwright collection failed');
+                    continue;
+                }
+                if (testCase.name === 'shared mix') {
+                    expect(planAt(caseBase, caseHead)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
+                    continue;
+                }
+                expectBroad(caseBase, caseHead);
             }
-            expectBroad(caseBase, caseHead);
-        }
 
-        writePackage(packageText(baseline));
-        const deletionBase = commit('deletion base');
-        writePackage(packageText(known));
-        chmodSync(packagePath, 0o755);
-        const executableHead = commit('executable package');
-        expectBroad(deletionBase, executableHead);
-        chmodSync(packagePath, 0o644);
-        const renameBase = commit('restore package mode');
-        renameSync(packagePath, join(root, 'renamed-package.json'));
-        const renameHead = commit('rename package');
-        expectBroad(renameBase, renameHead);
-    }, 30_000);
+            writePackage(packageText(baseline));
+            const deletionBase = commit('deletion base');
+            writePackage(packageText(known));
+            chmodSync(packagePath, 0o755);
+            const executableHead = commit('executable package');
+            expectBroad(deletionBase, executableHead);
+            chmodSync(packagePath, 0o644);
+            const renameBase = commit('restore package mode');
+            renameSync(packagePath, join(root, 'renamed-package.json'));
+            const renameHead = commit('rename package');
+            expectBroad(renameBase, renameHead);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
-    it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)('keeps shared or browser-owned script %s broad', (stem) => {
-        for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {
-            const plan = selectValidationPlan([path], INVENTORY);
-            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)(
+        'keeps shared or browser-owned script %s on broad validation without browser execution',
+        (stem) => {
+            for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {
+                expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                    ...BROAD_WITHOUT_BROWSER,
+                    codeql: true,
+                });
+            }
         }
+    );
+
+    it('keeps every resource guard spec and the scripts it reaches off the tooling profile', () => {
+        const closure = relativeImportClosure(RESOURCE_GUARD_SPECS);
+        expect(closure).toEqual(
+            expect.arrayContaining([
+                ...RESOURCE_GUARD_SPECS,
+                'scripts/resourceGuard.ts',
+                'scripts/resourceGuardStorage.ts',
+                'scripts/pnpmModulesPreflight.ts',
+            ])
+        );
+        expect(closure.every((path) => path.startsWith('scripts/'))).toBe(true);
+        const toolingPaths = closure.filter((path) => selectValidationPlan([path], INVENTORY).profile !== 'broad');
+        expect(toolingPaths).toEqual([]);
     });
 
     it.each([
@@ -1055,10 +1000,8 @@ describe('required affected verification', () => {
         'scripts/recoverPublishReviewLock5008.ts',
         'scripts/nested/reviewPublicationBinding.ts',
         'scripts/__tests__/nested/reviewPublicationBinding.spec.ts',
-    ])('keeps unclassified lookalike or nested script %s broad', (path) => {
-        const plan = selectValidationPlan([path], INVENTORY);
-        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    ])('keeps unclassified lookalike or nested script %s on broad validation without browser execution', (path) => {
+        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
     });
 
     it('keeps the exact 17 paths of PR 4890 in the tooling scope', () => {
@@ -1133,14 +1076,10 @@ describe('required affected verification', () => {
     });
 
     it('preserves unknown release and WASM, product, and config fallback when metadata changes', () => {
-        for (const path of [
-            'release/new-release-metadata.json',
-            'release/wasm-artifacts.json',
-            'public/wasm/manifest.json',
-            'src/app/bootstrap.ts',
-            'vite.config.ts',
-            'package.json',
-        ]) {
+        for (const path of ['release/new-release-metadata.json', 'release/wasm-artifacts.json']) {
+            expect(selectValidationPlan([...RELEASE_METADATA, path], INVENTORY)).toMatchObject(BROAD_WITHOUT_BROWSER);
+        }
+        for (const path of ['public/wasm/manifest.json', 'src/app/bootstrap.ts', 'vite.config.ts', 'package.json']) {
             const plan = selectValidationPlan([...RELEASE_METADATA, path], INVENTORY);
             expect(plan).toMatchObject({
                 profile: 'broad',
@@ -1158,135 +1097,135 @@ describe('required affected verification', () => {
         expect(allSelected(direct)).toEqual(['tests/e2e/undo.spec.ts']);
     });
 
-    it('plans immutable Node-only review changes without browser jobs, but widens mixed product and config changes', () => {
-        const root = temporaryRoot();
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        fixturePlaywright(root);
-        fixtureBrowserCase(root, SMOKE_SPEC);
-        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        git(['add', 'tests/e2e']);
-        git(['commit', '--quiet', '-m', 'base']);
-        const base = git(['rev-parse', 'HEAD']);
-        const metadataPaths = RELEASE_METADATA;
-        for (const path of metadataPaths) {
-            mkdirSync(join(root, 'release'), { recursive: true });
-            writeFileSync(join(root, path), '{}\n');
-        }
-        git(['add', ...metadataPaths]);
-        git(['commit', '--quiet', '-m', 'release metadata only']);
-        const output = join(root, 'output');
-        const planAt = (startingSha: string) => {
-            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-                cwd: root,
-                encoding: 'utf8',
-                env: {
-                    ...process.env,
-                    BASE_SHA: startingSha,
-                    HEAD_SHA: git(['rev-parse', 'HEAD']),
-                    GITHUB_OUTPUT: output,
-                },
+    it(
+        'plans immutable Node-only review changes without browser jobs, but widens mixed product and config changes',
+        () => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            fixturePlaywright(root);
+            fixtureBrowserCase(root, SMOKE_SPEC);
+            fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', 'tests/e2e']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            const metadataPaths = RELEASE_METADATA;
+            for (const path of metadataPaths) {
+                mkdirSync(join(root, 'release'), { recursive: true });
+                writeFileSync(join(root, path), '{}\n');
+            }
+            git(['add', ...metadataPaths]);
+            git(['commit', '--quiet', '-m', 'release metadata only']);
+            const output = join(root, 'output');
+            const planAt = (startingSha: string) => {
+                const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        BASE_SHA: startingSha,
+                        HEAD_SHA: git(['rev-parse', 'HEAD']),
+                        GITHUB_OUTPUT: output,
+                    },
+                });
+                expect(result.status, result.stderr).toBe(0);
+                const plan: unknown = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+                return plan;
+            };
+            expect(planAt(base)).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: false,
+                matrix: { include: [] },
+                reasons: [...metadataPaths].sort().map((path) => ({
+                    path,
+                    reason: 'known review tooling; security/static checks without browser execution',
+                })),
             });
-            expect(result.status, result.stderr).toBe(0);
-            const plan: unknown = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
-            return plan;
-        };
-        expect(planAt(base)).toMatchObject({
-            profile: 'tooling',
-            browser: false,
-            browserAi: false,
-            codeql: false,
-            matrix: { include: [] },
-            reasons: [...metadataPaths].sort().map((path) => ({
-                path,
-                reason: 'known review tooling; security/static checks without browser execution',
-            })),
-        });
-        const nodePaths = [
-            'scripts/checkStancesRecord.ts',
-            'scripts/typesafeRequest.ts',
-            'scripts/semanticReview/evaluation/runEvaluation.ts',
-            'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
-            'scripts/semanticReviewMeasurement/record.ts',
-            ...REVIEW_REPAIR_TOOLING,
-        ];
-        for (const path of nodePaths) {
-            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
-            writeFileSync(join(root, path), path.endsWith('.json') ? '{}\n' : 'export const fixture = true;\n');
-        }
-        git(['add', ...nodePaths]);
-        git(['commit', '--quiet', '-m', 'Node-only review tooling']);
-        const tooling = planAt(base);
-        expect(tooling).toMatchObject({
-            profile: 'tooling',
-            browser: false,
-            browserAi: false,
-            codeql: true,
-            matrix: { include: [] },
-        });
-        expect(tooling).toMatchObject({
-            reasons: [...metadataPaths, ...nodePaths].sort().map((path) => ({
-                path,
-                reason: 'known review tooling; security/static checks without browser execution',
-            })),
-        });
-        expect(readFileSync(output, 'utf8')).toContain(
-            'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\n'
-        );
-        mkdirSync(join(root, 'src/app'), { recursive: true });
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product fixture\n');
-        writeFileSync(join(root, 'vite.config.ts'), '// config fixture\n');
-        git(['add', 'src/app/bootstrap.ts', 'vite.config.ts']);
-        git(['commit', '--quiet', '-m', 'mixed product and config']);
-        const broad = planAt(base);
-        expect(broad).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
-        expect(broad).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
-        const broadHead = git(['rev-parse', 'HEAD']);
-        const unknown = 'scripts/semanticReview/newBuildStep.ts';
-        writeFileSync(join(root, unknown), 'export const fixture = true;\n');
-        git(['add', unknown]);
-        git(['commit', '--quiet', '-m', 'unknown semantic module']);
-        const unknownPlan = planAt(broadHead);
-        expect(unknownPlan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(unknownPlan).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
-        const unknownHead = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, 'scripts/e2eServerIdentity.ts'), 'export const fixture = true;\n');
-        git(['add', 'scripts/e2eServerIdentity.ts']);
-        git(['commit', '--quiet', '-m', 'browser-owned script helper']);
-        const browserOwned = planAt(unknownHead);
-        expect(browserOwned).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(browserOwned).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
-    });
+            const nodePaths = [
+                'scripts/typesafeRequest.ts',
+                'scripts/semanticReview/evaluation/runEvaluation.ts',
+                'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
+                'scripts/semanticReviewMeasurement/record.ts',
+                ...REVIEW_REPAIR_TOOLING,
+            ];
+            for (const path of nodePaths) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+                writeFileSync(join(root, path), path.endsWith('.json') ? '{}\n' : 'export const fixture = true;\n');
+            }
+            git(['add', ...nodePaths]);
+            git(['commit', '--quiet', '-m', 'Node-only review tooling']);
+            const tooling = planAt(base);
+            expect(tooling).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: true,
+                matrix: { include: [] },
+            });
+            expect(tooling).toMatchObject({
+                reasons: [...metadataPaths, ...nodePaths].sort().map((path) => ({
+                    path,
+                    reason: 'known review tooling; security/static checks without browser execution',
+                })),
+            });
+            expect(readFileSync(output, 'utf8')).toContain(
+                'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\n'
+            );
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product fixture\n');
+            writeFileSync(join(root, 'vite.config.ts'), '// config fixture\n');
+            git(['add', 'src/app/bootstrap.ts', 'vite.config.ts']);
+            git(['commit', '--quiet', '-m', 'mixed product and config']);
+            const broad = planAt(base);
+            expect(broad).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+            expect(broad).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
+            const broadHead = git(['rev-parse', 'HEAD']);
+            const unknown = 'scripts/semanticReview/newBuildStep.ts';
+            writeFileSync(join(root, unknown), 'export const fixture = true;\n');
+            git(['add', unknown]);
+            git(['commit', '--quiet', '-m', 'unknown semantic module']);
+            expect(planAt(broadHead)).toMatchObject(BROAD_WITHOUT_BROWSER);
+            const unknownHead = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, 'scripts/e2eServerIdentity.ts'), 'export const fixture = true;\n');
+            git(['add', 'scripts/e2eServerIdentity.ts']);
+            git(['commit', '--quiet', '-m', 'browser-owned script helper']);
+            expect(planAt(unknownHead)).toMatchObject(BROAD_WITHOUT_BROWSER);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
     it('uses broad scope for mixed, unknown, and build paths', () => {
-        for (const path of [
-            'src/app/bootstrap.ts',
-            'scripts/newBuildStep.ts',
-            'scripts/semanticReview/newBuildStep.ts',
-            'package.json',
-        ]) {
+        for (const path of ['src/app/bootstrap.ts', 'package.json']) {
             expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject({
                 profile: 'broad',
                 browser: true,
                 browserAi: true,
             });
         }
+        for (const path of ['scripts/newBuildStep.ts', 'scripts/semanticReview/newBuildStep.ts']) {
+            expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject(BROAD_WITHOUT_BROWSER);
+        }
     });
 
     it('keeps mixed product, unknown, and lookalike paths broad', () => {
+        expect(selectValidationPlan([...PR_4902_PATHS, 'src/app/bootstrap.ts'], INVENTORY)).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: true,
+            codeql: true,
+        });
         for (const path of [
-            'src/app/bootstrap.ts',
             'scripts/newBuildStep.ts',
             'scripts/agentDeliveryScriptsLookalike.ts',
             'scripts/__tests__/agentDeliveryScriptsLookalike.spec.ts',
         ]) {
             expect(selectValidationPlan([...PR_4902_PATHS, path], INVENTORY)).toMatchObject({
-                profile: 'broad',
-                browser: true,
-                browserAi: true,
+                ...BROAD_WITHOUT_BROWSER,
                 codeql: true,
             });
         }
@@ -1434,7 +1373,7 @@ describe('required affected verification', () => {
         'package.json',
         'pnpm-lock.yaml',
         'playwright.config.ts',
-        'scripts/newBuildStep.ts',
+        'vite.config.ts',
     ])('widens unknown/shared dependency %s to all browser proofs and hardware', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(allSelected(plan)).toEqual(INVENTORY.filter((spec) => spec !== SMOKE_SPEC).sort());
@@ -1502,80 +1441,90 @@ describe('required affected verification', () => {
         expect(allSelected(selectValidationPlan([path], INVENTORY))).toEqual(fullInventory(INVENTORY));
     });
 
-    it('plans direct default-named tests and carries the same inventory into broad coverage', () => {
-        const root = temporaryRoot();
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        mkdirSync(join(root, 'tests/e2e/nested/__tests__'), { recursive: true });
-        mkdirSync(join(root, 'tests/e2e/__TESTS__'), { recursive: true });
-        fixturePlaywright(root);
-        appendFileSync(join(root, '.gitignore'), 'pr-validation-scope.json\noutput\n');
-        fixtureBrowserCase(root, SMOKE_SPEC);
-        writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
-        writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
-        mkdirSync(join(root, 'tests/e2e/fake.spec.ts'));
-        writeFileSync(join(root, 'tests/e2e/rejected.Spec.MJS'), '// Playwright does not collect this extension\n');
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'base']);
-        const base = git(['rev-parse', 'HEAD']);
-        const added = [
-            'tests/e2e/new-default.test.ts',
-            'tests/e2e/another.spec.js',
-            'tests/e2e/nested/third.test.mtsx',
-            'tests/e2e/nested/fourth.TEST.ts',
-        ];
-        for (const spec of added) {
-            fixtureBrowserCase(root, spec);
-        }
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'add Playwright test']);
-        const output = join(root, 'output');
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
-        });
-        expect(result.status, result.stderr).toBe(0);
-        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
-        expect(allSelected(plan)).toEqual(added.sort());
-        expect(plan.reasons).toEqual([
-            { path: 'tests/e2e/another.spec.js', reason: 'changed browser spec' },
-            { path: 'tests/e2e/nested/fourth.TEST.ts', reason: 'changed browser spec' },
-            { path: 'tests/e2e/nested/third.test.mtsx', reason: 'changed browser spec' },
-            { path: 'tests/e2e/new-default.test.ts', reason: 'changed browser spec' },
-        ]);
-        mkdirSync(join(root, 'src/app'), { recursive: true });
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product change\n');
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'change product']);
-        const broad = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
-        });
-        expect(broad.status, broad.stderr).toBe(0);
-        expect(allSelected(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')))).toEqual(added);
-        const broadHead = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, 'tests/e2e/new-rejected.Spec.MJS'), '// excluded extension change\n');
-        git(['add', 'tests/e2e/new-rejected.Spec.MJS']);
-        git(['commit', '--quiet', '-m', 'add excluded extension']);
-        const fallback = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: broadHead, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
-        });
-        expect(fallback.status, fallback.stderr).toBe(0);
-        const fallbackPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
-        expect(allSelected(fallbackPlan)).toEqual(added);
-        expect(fallbackPlan.reasons).toEqual([
-            {
-                path: 'tests/e2e/new-rejected.Spec.MJS',
-                reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
-            },
-        ]);
-    });
+    it(
+        'plans direct default-named tests and carries the same inventory into broad coverage',
+        () => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            mkdirSync(join(root, 'tests/e2e/nested/__tests__'), { recursive: true });
+            mkdirSync(join(root, 'tests/e2e/__TESTS__'), { recursive: true });
+            fixturePlaywright(root);
+            fixtureBrowserCase(root, SMOKE_SPEC);
+            writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
+            writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
+            mkdirSync(join(root, 'tests/e2e/fake.spec.ts'));
+            writeFileSync(join(root, 'tests/e2e/rejected.Spec.MJS'), '// Playwright does not collect this extension\n');
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            const added = [
+                'tests/e2e/new-default.test.ts',
+                'tests/e2e/another.spec.js',
+                'tests/e2e/nested/third.test.mtsx',
+                'tests/e2e/nested/fourth.TEST.ts',
+            ];
+            for (const spec of added) {
+                fixtureBrowserCase(root, spec);
+            }
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'add Playwright test']);
+            const output = join(root, 'output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+            expect(allSelected(plan)).toEqual(added.sort());
+            expect(plan.reasons).toEqual([
+                { path: 'tests/e2e/another.spec.js', reason: 'changed browser spec' },
+                { path: 'tests/e2e/nested/fourth.TEST.ts', reason: 'changed browser spec' },
+                { path: 'tests/e2e/nested/third.test.mtsx', reason: 'changed browser spec' },
+                { path: 'tests/e2e/new-default.test.ts', reason: 'changed browser spec' },
+            ]);
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product change\n');
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'change product']);
+            const broad = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+            });
+            expect(broad.status, broad.stderr).toBe(0);
+            expect(allSelected(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')))).toEqual(
+                added
+            );
+            const broadHead = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, 'tests/e2e/new-rejected.Spec.MJS'), '// excluded extension change\n');
+            git(['add', 'tests/e2e/new-rejected.Spec.MJS']);
+            git(['commit', '--quiet', '-m', 'add excluded extension']);
+            const fallback = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    BASE_SHA: broadHead,
+                    HEAD_SHA: git(['rev-parse', 'HEAD']),
+                    GITHUB_OUTPUT: output,
+                },
+            });
+            expect(fallback.status, fallback.stderr).toBe(0);
+            const fallbackPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+            expect(allSelected(fallbackPlan)).toEqual(added);
+            expect(fallbackPlan.reasons).toEqual([
+                {
+                    path: 'tests/e2e/new-rejected.Spec.MJS',
+                    reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+                },
+            ]);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
     it('widens deleted tests and both sides of a move outside a known mapping', () => {
         const paths = parseChangedPaths(
@@ -1686,93 +1635,104 @@ describe('required affected verification', () => {
         expect(regex.test(`${join(root, spec)}extra`)).toBe(false);
     });
 
-    it('propagates a selected browser process failure without shell evaluation', () => {
-        const root = temporaryRoot();
-        const bin = join(root, 'pnpm');
-        const argsFile = join(root, 'args.json');
-        writeFileSync(
-            bin,
-            `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(process.env.ARGUMENTS_FILE, JSON.stringify(process.argv.slice(2)));process.exit(43);\n`,
-            { mode: 0o755 }
-        );
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'run'], {
-            env: {
-                ...process.env,
-                PATH: `${root}:${process.env.PATH}`,
-                E2E_SPECS: JSON.stringify([SMOKE_SPEC]),
-                ARGUMENTS_FILE: argsFile,
-            },
-            encoding: 'utf8',
-        });
-        expect(result.status, result.stderr).toBe(43);
-        expect(JSON.parse(readFileSync(argsFile, 'utf8'))).toEqual([
-            'test:e2e',
-            ...selectedSpecArguments([SMOKE_SPEC], process.cwd()),
-            '--retries=0',
-            '--reporter=blob',
-        ]);
-    });
+    it(
+        'propagates a selected browser process failure without shell evaluation',
+        () => {
+            const root = temporaryRoot();
+            const bin = join(root, 'pnpm');
+            const argsFile = join(root, 'args.json');
+            writeFileSync(
+                bin,
+                `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(process.env.ARGUMENTS_FILE, JSON.stringify(process.argv.slice(2)));process.exit(43);\n`,
+                { mode: 0o755 }
+            );
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'run'], {
+                env: {
+                    ...process.env,
+                    PATH: `${root}:${process.env.PATH}`,
+                    E2E_SPECS: JSON.stringify([SMOKE_SPEC]),
+                    ARGUMENTS_FILE: argsFile,
+                },
+                encoding: 'utf8',
+            });
+            expect(result.status, result.stderr).toBe(43);
+            expect(JSON.parse(readFileSync(argsFile, 'utf8'))).toEqual([
+                'test:e2e',
+                ...selectedSpecArguments([SMOKE_SPEC], process.cwd()),
+                '--retries=0',
+                '--reporter=blob',
+            ]);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
-    it('builds the manifest from immutable Git refs and includes rename source and destination', () => {
-        const root = temporaryRoot();
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        fixturePlaywright(root);
-        for (const spec of INVENTORY) {
-            fixtureBrowserCase(root, spec);
-        }
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'base']);
-        const base = git(['rev-parse', 'HEAD']);
-        git(['mv', 'tests/e2e/undo.spec.ts', 'tests/e2e/renamed.spec.ts']);
-        git(['commit', '--quiet', '-m', 'rename']);
-        const output = join(root, 'output');
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
-        });
-        expect(result.status, result.stderr).toBe(0);
-        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
-        expect(plan.reasons.map((entry: { path: string }) => entry.path)).toEqual([
-            'tests/e2e/renamed.spec.ts',
-            'tests/e2e/undo.spec.ts',
-            'changed path history',
-        ]);
-        expect(plan.browserAi).toBe(true);
-        expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
-    });
+    it(
+        'builds the manifest from immutable Git refs and includes rename source and destination',
+        () => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            fixturePlaywright(root);
+            for (const spec of INVENTORY) {
+                fixtureBrowserCase(root, spec);
+            }
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            git(['mv', 'tests/e2e/undo.spec.ts', 'tests/e2e/renamed.spec.ts']);
+            git(['commit', '--quiet', '-m', 'rename']);
+            const output = join(root, 'output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+            expect(plan.reasons.map((entry: { path: string }) => entry.path)).toEqual([
+                'tests/e2e/renamed.spec.ts',
+                'tests/e2e/undo.spec.ts',
+            ]);
+            expect(plan.browserAi).toBe(true);
+            expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
-    it('does not load unavailable Playwright for a browser-free plan', () => {
-        const root = temporaryRoot();
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        mkdirSync(join(root, 'scripts'), { recursive: true });
-        writeFileSync(join(root, SMOKE_SPEC), '// deliberately has no case\n');
-        writeFileSync(join(root, 'playwright.config.mjs'), "throw new Error('poison config loaded');\n");
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'base']);
-        const base = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, 'scripts/prValidationScope.ts'), 'export const changed = true;\n');
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'change planner']);
-        const output = join(root, 'output');
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
-        });
-        expect(result.status, result.stderr).toBe(0);
-        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-            browser: false,
-        });
-    });
+    it(
+        'does not load unavailable Playwright for a browser-free plan',
+        () => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            mkdirSync(join(root, 'scripts'), { recursive: true });
+            writeFileSync(join(root, SMOKE_SPEC), '// deliberately has no case\n');
+            writeFileSync(join(root, 'playwright.config.mjs'), "throw new Error('poison config loaded');\n");
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, 'scripts/prValidationScope.ts'), 'export const changed = true;\n');
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'change planner']);
+            const output = join(root, 'output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+                browser: false,
+            });
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 
     it.each([
         {
@@ -1821,49 +1781,114 @@ describe('required affected verification', () => {
             passes: false,
             diagnostic: 'Playwright collection failed',
         },
-    ])('$name is admitted only when the real collector agrees', ({ config, extra, cases, passes, diagnostic }) => {
-        const root = temporaryRoot();
-        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        mkdirSync(join(root, 'src/app'), { recursive: true });
-        fixturePlaywright(root);
-        writeFileSync(join(root, 'playwright.config.mjs'), `export default { testDir: './tests/e2e', ${config} };\n`);
-        for (const spec of [SMOKE_SPEC, 'tests/e2e/undo.spec.ts']) {
-            if (cases) {
-                fixtureBrowserCase(root, spec);
-            } else {
-                writeFileSync(join(root, spec), '// no Playwright cases\n');
+    ])(
+        '$name is admitted only when the real collector agrees',
+        ({ config, extra, cases, passes, diagnostic }) => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            fixturePlaywright(root);
+            writeFileSync(
+                join(root, 'playwright.config.mjs'),
+                `export default { testDir: './tests/e2e', ${config} };\n`
+            );
+            for (const spec of [SMOKE_SPEC, 'tests/e2e/undo.spec.ts']) {
+                if (cases) {
+                    fixtureBrowserCase(root, spec);
+                } else {
+                    writeFileSync(join(root, spec), '// no Playwright cases\n');
+                }
             }
-        }
-        if (extra) {
-            fixtureBrowserCase(root, 'tests/e2e/bonus.ts');
-        }
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const version = 1;\n');
-        git(['init', '--quiet']);
-        git(['config', 'user.email', 'ci@example.invalid']);
-        git(['config', 'user.name', 'Scope test']);
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'base']);
-        const base = git(['rev-parse', 'HEAD']);
-        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const version = 2;\n');
-        git(['add', '.']);
-        git(['commit', '--quiet', '-m', 'change product']);
-        const output = join(root, 'output');
-        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
-            cwd: root,
-            encoding: 'utf8',
-            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
-        });
-        expect(result.status === 0, result.stderr).toBe(passes);
-        if (passes) {
-            expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
-                browser: true,
+            if (extra) {
+                fixtureBrowserCase(root, 'tests/e2e/bonus.ts');
+            }
+            writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const version = 1;\n');
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const version = 2;\n');
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'change product']);
+            const output = join(root, 'output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
             });
-            expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
-        } else {
-            expect(result.stderr).toContain(diagnostic);
-            expect(() => readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).toThrow();
-            expect(() => readFileSync(output, 'utf8')).toThrow();
+            expect(result.status === 0, result.stderr).toBe(passes);
+            if (passes) {
+                expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+                    browser: true,
+                });
+                expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
+            } else {
+                expect(result.stderr).toContain(diagnostic);
+                expect(() => readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).toThrow();
+                expect(() => readFileSync(output, 'utf8')).toThrow();
+            }
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
+});
+
+describe('repository tooling selects no browser suite', () => {
+    it.each([
+        'scripts/__tests__/restampWasmInventory.spec.ts',
+        'scripts/resourceGuard.ts',
+        'scripts/gen-daw-dsp-worklet.ts',
+        'scripts/buildElectronPreload.ts',
+        'scripts/e2eServerIdentity.ts',
+        'release/web-artifact-manifest.json',
+        '.agents/skills/review-stances/stances.json',
+        'crates/daw-dsp/README.md',
+    ])('keeps %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+    });
+
+    it('keeps a deleted scripts file browser-free and either product side of a rename selected', () => {
+        expect(selectValidationPlan(parseChangedPaths('D\0scripts/oldBuildStep.ts\0'), INVENTORY)).toMatchObject(
+            BROAD_WITHOUT_BROWSER
+        );
+        for (const diff of [
+            'R100\0src/app/bootstrap.ts\0scripts/bootstrap.ts\0',
+            'R100\0scripts/bootstrap.ts\0src/app/bootstrap.ts\0',
+        ]) {
+            const plan = selectValidationPlan(parseChangedPaths(diff), INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
         }
+    });
+
+    it('lets the product path decide browser selection when scripts change beside it', () => {
+        const full = selectValidationPlan(['scripts/gen-daw-dsp-worklet.ts', 'src/app/bootstrap.ts'], INVENTORY);
+        expect(full).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
+
+        const paths = ['scripts/gen-daw-dsp-worklet.ts', TUNER];
+        const productPaths = productPathsOf(paths, INVENTORY, false);
+        expect(productPaths).toEqual([TUNER]);
+        expect(canNarrow({ productPaths, candidateDiff: `M\0${TUNER}\0`, integrationDiff: '' })).toBe(true);
+        const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
+            kind: 'narrow',
+            specs: [...TUNER_SPECS],
+            browserAi: false,
+            owners: ['Tuner'],
+        });
+        expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+        expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+    });
+
+    it('keeps Markdown inside product trees on the product route', () => {
+        const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
 });

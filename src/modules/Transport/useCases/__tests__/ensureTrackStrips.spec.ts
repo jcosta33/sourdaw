@@ -33,6 +33,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     readMusicalRangeInputs: vi.fn(() => []),
     readMusicalRange: vi.fn(),
     getTrackEligibility: (kind: string | undefined) => ({
@@ -71,6 +72,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 // Mock AudioEngine use cases
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

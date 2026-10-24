@@ -10,6 +10,7 @@ import {
 
 import {
     offlineMidiEventProjectorState,
+    type OfflineChannelBendProjector,
     type OfflineChordPitchProjector,
     type OfflineAutomationValueEvaluator,
     type OfflineClipControllerProjector,
@@ -21,6 +22,7 @@ import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
+    type OfflineBeatAtSecondsFromAnchor,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 
@@ -43,12 +45,14 @@ export type OfflineRenderContext = {
     selectMidiEventProbability: OfflineMidiProbabilitySelector | null;
     projectChordPitch: OfflineChordPitchProjector | null;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
+    beatAtSecondsFromAnchor?: OfflineBeatAtSecondsFromAnchor | null;
     /** Flat tempo at a beat — what a buffer-content offset converts through. */
     resolveTempoAtBeat: OfflineTempoAtBeatResolver | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId?: OfflineMidiArticulationResolver | null;
     projectClipControllers?: OfflineClipControllerProjector | null;
+    projectChannelBend?: OfflineChannelBendProjector | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -107,9 +111,11 @@ export function resolveRenderContext(
         tailSeconds: Math.max(0, normalized.tailSeconds),
         selectMidiEventProbability: offlineMidiEventProjectorState.selectProbability,
         projectPpqEndpoints,
+        beatAtSecondsFromAnchor: offlinePpqEndpointProjectorState.beatAtSecondsFromAnchor,
         resolveTempoAtBeat: offlinePpqEndpointProjectorState.resolveTempoAtBeat,
         ...captureOfflineMusicalProjections(tracks, source),
         resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
         projectClipControllers: offlineMidiEventProjectorState.projectClipControllers,
+        projectChannelBend: offlineMidiEventProjectorState.projectChannelBend,
     };
 }

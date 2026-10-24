@@ -538,6 +538,67 @@ describe('production brief', () => {
         expect(projectStore.value?.productionBrief).toMatchObject({ revision: 3, locks: next.locks });
     });
 
+    describe('an overdub pass of controller rows', () => {
+        const overdubOnClip = (clipId: string): AppAction => ({
+            type: 'appendOverdubControllers',
+            payload: {
+                clips: [
+                    {
+                        clipId,
+                        cc: [{ id: 'cc-1', controller: 1, value: 64, beat: 1, channel: 0 }],
+                        pitchBend: [{ id: 'bend-1', value: 100, beat: 2, channel: 0 }],
+                    },
+                ],
+            },
+        });
+
+        const lockRange = (startBeat: number, endBeat: number): void => {
+            const current = projectStore.value!;
+            projectStore.set({
+                ...current,
+                productionBrief: {
+                    ...current.productionBrief,
+                    locks: [
+                        {
+                            id: 'lock-range',
+                            scope: { kind: 'range', startBeat, endBeat },
+                            statement: 'Keep this range',
+                            createdAt: 111,
+                        },
+                    ],
+                },
+            });
+        };
+
+        it('lands in a clip outside every locked range, whatever beat its rows sit at', () => {
+            lockRange(0, 4);
+
+            expect(doesProductionBriefAllowActionBatch([overdubOnClip('clip-2')])).toBe(true);
+        });
+
+        it('is refused for a clip the locked range covers', () => {
+            lockRange(50, 60);
+
+            expect(doesProductionBriefAllowActionBatch([overdubOnClip('clip-2')])).toBe(false);
+        });
+
+        it('is refused for a clip a locked range overlaps in part', () => {
+            lockRange(55, 70);
+
+            expect(doesProductionBriefAllowActionBatch([overdubOnClip('clip-2')])).toBe(false);
+        });
+
+        it('still reads the beats of any other action against the locked range', () => {
+            lockRange(0, 4);
+
+            expect(
+                doesProductionBriefAllowActionBatch([
+                    { type: 'addChordEvent', payload: { beat: 1, root: 0, quality: 'maj7', duration: 1 } },
+                ])
+            ).toBe(false);
+        });
+    });
+
     it('rejects batches that target explicit locks, locked decisions, or nested protected ranges', () => {
         const current = projectStore.value!;
         projectStore.set({

@@ -87,6 +87,9 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         arpeggiate: vi.fn(),
         canPrepareMidiClipGlueState: vi.fn(),
         downloadMidiFile: vi.fn(),
+        commitRecordedControllers: vi.fn(),
+        discardRecordedControllers: vi.fn(),
+        planRecordedControllers: vi.fn(),
         duplicateClipNotes: vi.fn(),
         duplicateMidiClipData: vi.fn(),
         getGrooveTemplate: vi.fn(),
@@ -119,6 +122,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         serializeMidiStateForClips: vi.fn(),
         setMidiInputTrack: vi.fn(),
         setNotesForClip: vi.fn(),
+        shiftClipMidiNotes: vi.fn(),
         splitMidiNotesAtBeat: vi.fn(),
     };
 });
@@ -144,6 +148,7 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

@@ -146,10 +146,14 @@ function describeMappingForLog(value: unknown): string {
  * collaborators and persisted per project, not a per-install config blob.
  *
  * `mappings` are the only durable field — `isLearning`/`learningTarget` are
- * ephemeral UI state and are always reset here so an armed learn from a
- * previous session can never silently survive a reload/sync and capture the
- * next unrelated CC (see F-10's learn timeout for the same invariant
- * in-session).
+ * ephemeral UI state and are always reset here, so a document never carries an
+ * armed learn and a project load (which starts every field from the document)
+ * resets it: an armed learn from a previous project can never survive a load
+ * and capture the next unrelated CC. An in-session sync re-projection is not a
+ * load: the store's `projectCommittedLocalState` re-applies the learn the user
+ * armed in this session over the sanitized document value, so a collaborator's
+ * edit does not disarm it (F-10's learn timeout bounds how long it can stay
+ * armed).
  *
  * Every rejection is logged (audit A-2): a stored value that fails validation
  * disappears from the mapping table, and a silent drop gives the user no way

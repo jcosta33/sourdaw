@@ -93,6 +93,7 @@ describe('Toaster pad mute reaches the engine', () => {
 
     it('posts muted=1 to the engine when the pad is muted from the mixer', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickMute(2);
 
@@ -101,6 +102,7 @@ describe('Toaster pad mute reaches the engine', () => {
 
     it('posts muted=0 to the engine when the same pad is un-muted again', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickMute(2);
         setPadParam.mockClear();
@@ -111,6 +113,7 @@ describe('Toaster pad mute reaches the engine', () => {
 
     it('mutes only the pad that was clicked', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickMute(2);
 
@@ -120,6 +123,7 @@ describe('Toaster pad mute reaches the engine', () => {
 
     it('keeps the store flag a boolean so the persisted kit chunk still reads it', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickMute(2);
 

@@ -133,6 +133,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: vi.fn(),
     compactProject,
     createCrdtDoc: vi.fn(),
@@ -187,6 +188,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser }));
 // not what this round-trip asserts (it checks the hydrated track/transport/midi/
 // arrangement values), so stub it out to avoid pulling in every device store.
 vi.mock('../../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: vi.fn() }));
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 
@@ -360,7 +363,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.audioContext).toBe(audioContext);
         expect(call?.bufferIds).toEqual(['buf-frozen', 'buf-1', 'buf-2', 'buf-alt']);
         expect(call?.shouldContinue?.()).toBe(true);
-        expect(resetCrdtProject).toHaveBeenCalledWith('Round Trip', expect.any(Function));
+        expect(resetCrdtProject).toHaveBeenCalledWith('Round Trip', expect.any(Function), expect.any(Function));
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
             audioOffsetBeats: 1,

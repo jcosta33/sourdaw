@@ -1427,6 +1427,7 @@ const schemaDefinitions = [
             stretchRatio: 1,
             loopEnabled: 33,
             loopLength: 1,
+            loopOriginBeat: 1,
             followAction: 172,
             generating: 33,
             isGhost: 33,
@@ -1622,6 +1623,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 0,
             newStartBeat: 1,
+            loopOriginBeat: 67,
         },
         required: ['clipId', 'newStartBeat'],
         additionalProperties: false,
@@ -1641,6 +1643,7 @@ const schemaDefinitions = [
             clipId: 0,
             clipType: 162,
             offset: 1,
+            rowLiftBeats: 1,
         },
         required: ['clipId', 'clipType', 'offset'],
         additionalProperties: false,
@@ -3222,6 +3225,7 @@ const schemaDefinitions = [
             fadeInBeats: 1,
             fadeOutBeats: 1,
             audioOffsetBeats: 1,
+            loopOriginBeat: 1,
             blobs: 379,
             contour: 382,
         },
@@ -3351,6 +3355,7 @@ const schemaDefinitions = [
             clipBFadeInBeats: 1,
             clipBAudioOffsetBeats: 1,
             clipBMidiOffsetBeats: 1,
+            clipBLoopOriginBeat: 1,
         },
         required: ['clipAEndBeat', 'clipAFadeOutBeats', 'clipBStartBeat', 'clipBFadeInBeats'],
         additionalProperties: false,
@@ -3781,6 +3786,7 @@ const schemaDefinitions = [
         properties: {
             present: 42,
             enabled: 42,
+            loopOriginBeat: 67,
         },
         required: ['present', 'enabled'],
         additionalProperties: false,
@@ -5864,6 +5870,52 @@ const schemaDefinitions = [
         required: ['clip', 'retiredTakeLanes', 'midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'],
         additionalProperties: false,
     },
+    {
+        type: 'object',
+        properties: {
+            clipId: 0,
+            cc: 196,
+            pitchBend: 199,
+        },
+        required: ['clipId', 'cc', 'pitchBend'],
+        additionalProperties: false,
+    },
+    {
+        type: 'array',
+        items: 723,
+    },
+    {
+        type: 'object',
+        properties: {
+            clips: 724,
+        },
+        required: ['clips'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            clipId: 0,
+            ccIds: 20,
+            pitchBendIds: 20,
+            ccListExisted: 42,
+            pitchBendListExisted: 42,
+        },
+        required: ['clipId', 'ccIds', 'pitchBendIds', 'ccListExisted', 'pitchBendListExisted'],
+        additionalProperties: false,
+    },
+    {
+        type: 'array',
+        items: 726,
+    },
+    {
+        type: 'object',
+        properties: {
+            clips: 727,
+        },
+        required: ['clips'],
+        additionalProperties: false,
+    },
 ] as const satisfies readonly SchemaDefinition[];
 
 const schemaIdByActionType = {
@@ -6235,6 +6287,8 @@ const schemaIdByActionType = {
     commitRecording: 721,
     discardRecording: 181,
     restoreRecording: 722,
+    appendOverdubControllers: 725,
+    removeOverdubControllers: 728,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

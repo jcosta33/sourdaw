@@ -31,13 +31,16 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
-    AUTHOR_LANE_BRANCH_PREFIX,
     canonicalPath,
     composePublishBody,
     containsPath,
+    conventionalType,
     fail,
     howToTestFromBody,
+    isLaneBranch,
     issueRelationshipFromBody,
+    LEGACY_LANE_BRANCH_PREFIX,
+    parseLaneBranch,
     readGuardFailureReceipt,
     TRUSTED_COMMON_DIR_ENV,
     TRUSTED_GH_PATH_ENV,
@@ -775,7 +778,8 @@ export function parsePublishLaneArgs(args: string[]): {
 }
 
 /**
- * `legacy` marks a lane resolved through the pre-`agent/` path. It is not decoration: that lane's
+ * `legacy` marks a lane resolved through the pre-convention path (a branch `parseLaneBranch` does
+ * not recognise; `agent/...` lanes are recognised and are not this). It is not decoration: that lane's
  * pull request predates `lane:publish` and is not this script's to rewrite, so the flag has to
  * travel with the lane all the way to the publish step.
  */
@@ -795,11 +799,7 @@ export const NO_ISSUE_LANE_FAILURE =
 function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
     return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        if (
-            worktree.lockReason !== AUTHOR_LOCK_REASON ||
-            branch === undefined ||
-            !branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX)
-        ) {
+        if (worktree.lockReason !== AUTHOR_LOCK_REASON || branch === undefined || !isLaneBranch(branch)) {
             return [];
         }
         return [{ path: worktree.path, branch, legacy: false }];
@@ -809,12 +809,12 @@ function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
 export type LegacyLaneCandidate = { path: string; branch: string; lockReason: string | undefined };
 
 /**
- * Worktrees whose branch predates the `agent/` convention but are still lock-shaped (locked for
+ * Worktrees whose branch predates the lane branch convention but are still lock-shaped (locked for
  * *some* reason). Structural shape alone proves nothing: a worktree locked for an unrelated purpose
  * (a collaboration session, say) looks identical at this stage. `resolveLegacyCandidate` below is
  * the only thing allowed to turn one of these into a resolved lane or a specific refusal — it
  * requires both an open pull request for the exact branch (the fact that migrates a stranded
- * pre-`agent/` lane) and the correct lock (the fact that grants push authority); either alone falls
+ * pre-convention lane) and the correct lock (the fact that grants push authority); either alone falls
  * through to the ordinary "not a lane" refusal instead of misdirecting a worktree that was never an
  * author lane in the first place.
  *
@@ -827,12 +827,7 @@ function legacyLaneCandidates(worktrees: PublishWorktree[]): LegacyLaneCandidate
     const primaryRoot = worktrees[0]?.path;
     return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        if (
-            worktree.path === primaryRoot ||
-            branch === undefined ||
-            branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) ||
-            !worktree.locked
-        ) {
+        if (worktree.path === primaryRoot || branch === undefined || isLaneBranch(branch) || !worktree.locked) {
             return [];
         }
         return [{ path: worktree.path, branch, lockReason: worktree.lockReason }];
@@ -871,7 +866,7 @@ function legacyForeignLockMessage(candidate: LegacyLaneCandidate, owner: string)
 
 function legacyNoPullRequestMessage(candidate: LegacyLaneCandidate): string {
     return (
-        `${candidate.branch} does not match the ${AUTHOR_LANE_BRANCH_PREFIX} convention and has no open pull ` +
+        `${candidate.branch} does not match the lane branch convention (<type>/[<issue>/]<slug>, or the legacy agent/ prefix) and has no open pull ` +
         `request: an off-convention branch may only publish once the repository already has an open pull ` +
         `request for that exact branch.`
     );
@@ -918,16 +913,13 @@ function resolveLegacyCandidate(
 }
 
 /**
- * The issue a lane branch carries, or `undefined` for an issueless lane. `lane:open <issue>` is the
- * only producer of the `agent/<issue>/<slug>` shape, so the branch records the issue it tracks.
+ * The issue a lane branch carries, or `undefined` for an issueless lane or a name that is no lane
+ * branch. `lane:open <issue>` is the only producer of the `<type>/<issue>/<slug>` shape (and of the
+ * legacy `agent/<issue>/<slug>`), so the numeric middle segment records the issue the lane tracks;
+ * `parseLaneBranch` reads nothing else, never a number inside a slug.
  */
 export function laneIssueNumber(branch: string): number | undefined {
-    const captured = /^agent\/(\d+)\//.exec(branch)?.[1];
-    if (captured === undefined) {
-        return undefined;
-    }
-    const issue = Number(captured);
-    return Number.isSafeInteger(issue) && issue > 0 ? issue : undefined;
+    return parseLaneBranch(branch)?.issue;
 }
 
 export function resolveAuthorLane(
@@ -989,13 +981,13 @@ export function resolveAuthorLane(
         return fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
     }
     // Deliberately no legacy fallback here. An off-convention branch carries no issue of its own
-    // (`laneIssueNumber` requires the `agent/` prefix), so nothing ties a passed issue number to a
-    // *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
+    // (`laneIssueNumber` reads only a recognised lane branch), so nothing ties a passed issue number
+    // to a *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
     // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
     // legacy lane resolves only from an explicit lane-path selection with no issue argument — see
-    // the `issue === undefined` branch above.
-    const prefix = `${AUTHOR_LANE_BRANCH_PREFIX}${issue}/`;
-    const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
+    // the `issue === undefined` branch above. The match is on the parsed issue segment, never on a
+    // string prefix, so `fix/55730/x` and `fix/5573-x` cannot answer for issue 5573.
+    const matches = lanes.filter((lane) => laneIssueNumber(lane.branch) === issue);
     if (matches.length !== 1) {
         return fail(`expected exactly one locked author lane for issue #${issue}`);
     }
@@ -1276,6 +1268,7 @@ export function publishLane(
         testInstructions,
         summary
     );
+    warnOnBranchTypeMismatch(lane.branch, write, port);
     // Resolved before the push: every refusal it can raise (no model on record, a model token
     // colliding with an existing label, an unknown flag title or label) must land with nothing
     // written, not even the branch push.
@@ -1661,10 +1654,41 @@ type PullRequestWrite = {
 };
 
 /**
+ * A typed branch names the change type at `lane:open`; the pull-request title is a separate fact,
+ * taken from the newest non-merge commit on a first publish and frozen afterwards. When the two
+ * types disagree the reviewer reads a title the branch contradicts, so the publish says so.
+ *
+ * It warns and never refuses. A refusal has no remedy short of rewriting published history or
+ * renaming a branch that stack descriptors, receipts and the pull request all key on, while the
+ * disagreement is routinely legitimate: a `feat` lane whose newest commit is a `test:` or `chore:`
+ * follow-up. The title is compared, not the newest commit, because after the first publish the
+ * title is what the pull request actually shows. `agent/` lanes name no type, so they never warn.
+ */
+function warnOnBranchTypeMismatch(
+    branch: string,
+    write: PullRequestWrite | undefined,
+    port: Pick<PublishLanePort, 'log'>
+): void {
+    const branchType = parseLaneBranch(branch)?.prefix;
+    if (write === undefined || branchType === undefined || branchType === LEGACY_LANE_BRANCH_PREFIX) {
+        return;
+    }
+    const titleType = conventionalType(write.effectiveTitle);
+    if (titleType === undefined || titleType === branchType) {
+        return;
+    }
+    port.log(
+        `warning: ${branch} names the change type ${branchType}, but the pull-request title is ` +
+            `${JSON.stringify(write.effectiveTitle)} (type ${titleType}); publishing anyway, since the title ` +
+            `comes from the newest commit and is never retitled`
+    );
+}
+
+/**
  * The title and body to write, or `undefined` for a legacy lane, whose pull request this script must
  * not touch. `lane:publish` never authored that pull request — the branch predates the convention
  * and was unpublishable by it — and cannot reproduce it: `laneIssueNumber` reads only the
- * `agent/<issue>/` shape, so recomposing the body would put `None.` under Related tickets and sever
+ * `<type>/<issue>/` shape of a recognised lane branch, so recomposing the body would put `None.` under Related tickets and sever
  * the `Closes #<issue>` a human wrote, and retitling from HEAD would rename it too. Parsing an issue
  * out of the branch slug instead is not the fix; the slug is nobody's record, and a rename would
  * then close the wrong ticket.
@@ -2325,7 +2349,7 @@ export type OpenPullRequestRow = {
  * `hasOpenPullRequest`), so the match has to be proven client-side instead of trusted from the
  * server-side filter: only a row whose `headRefName` is exactly `branch` and whose `isCrossRepository`
  * is `false` counts. This also gates the ordinary update-vs-create path for conforming lanes, where a
- * `lane:publish` push always targets the same repository under the exact `agent/<issue>/<slug>`
+ * `lane:publish` push always targets the same repository under the exact `<type>/<issue>/<slug>`
  * branch name, so the tightened match changes nothing there — except to keep a fork's body out of
  * the relationship a flagless update carries forward.
  */
