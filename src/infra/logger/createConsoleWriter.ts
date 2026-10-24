@@ -27,6 +27,11 @@ const MAX_NESTED_ERRORS = 24;
 const MAX_ERROR_TEXT_LENGTH = 200;
 const MAX_DIAGNOSTIC_LENGTH = 2048;
 
+const isNativeError = (value: unknown): value is Error => {
+    const errorIsError: unknown = Reflect.get(Error, 'isError');
+    return typeof errorIsError === 'function' && Reflect.apply(errorIsError, Error, [value]) === true;
+};
+
 const boundedText = (value: unknown, fallback: string): string => {
     if (typeof value !== 'string') {
         return fallback;
@@ -49,7 +54,7 @@ const formatNestedErrors = (root: Error): string | undefined => {
     let visited = 0;
 
     function visitChild(child: unknown, path: string, depth: number): void {
-        if (child instanceof Error) {
+        if (isNativeError(child)) {
             visit(child, path, depth);
             return;
         }
@@ -69,6 +74,10 @@ const formatNestedErrors = (root: Error): string | undefined => {
             parts.push(`${path}: [error limit]`);
             return;
         }
+        if (!isNativeError(error)) {
+            parts.push(`${path}: [non-Error cause]`);
+            return;
+        }
 
         visited += 1;
         ancestors.add(error);
@@ -78,7 +87,7 @@ const formatNestedErrors = (root: Error): string | undefined => {
             const cause = error.cause;
             if (cause !== undefined) {
                 nested = true;
-                if (cause instanceof Error) {
+                if (isNativeError(cause)) {
                     visit(cause, `${path}.cause`, depth + 1);
                 } else {
                     parts.push(`${path}.cause: [non-Error cause]`);
@@ -89,9 +98,16 @@ const formatNestedErrors = (root: Error): string | undefined => {
             parts.push(`${path}.cause: [unreadable cause]`);
         }
 
-        if (error instanceof AggregateError) {
+        const errorsDescriptor = Object.getOwnPropertyDescriptor(error, 'errors');
+        if (errorsDescriptor !== undefined) {
             try {
-                const children: unknown = error.errors;
+                if (!('value' in errorsDescriptor)) {
+                    nested = true;
+                    parts.push(`${path}.errors: [unreadable errors]`);
+                    ancestors.delete(error);
+                    return;
+                }
+                const children: unknown = errorsDescriptor.value;
                 if (!Array.isArray(children)) {
                     nested = true;
                     parts.push(`${path}.errors: [unreadable errors]`);
@@ -117,6 +133,9 @@ const formatNestedErrors = (root: Error): string | undefined => {
     };
 
     try {
+        if (!isNativeError(root)) {
+            return undefined;
+        }
         visit(root, 'error', 0);
     } catch {
         return 'Nested errors: [unavailable]';

@@ -64,6 +64,89 @@ describe('createConsoleWriter', () => {
             expect(call?.[2]).not.toContain('private-context-marker');
         });
 
+        it('keeps native errors and causes from another realm in the diagnostic', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const iframe = document.createElement('iframe');
+            document.body.append(iframe);
+            const foreignWindow = iframe.contentWindow;
+            if (!foreignWindow) {
+                throw new Error('Missing iframe window');
+            }
+            const foreignCause = new foreignWindow.Error('foreign cause');
+            const foreignRoot = new foreignWindow.Error('foreign root', { cause: foreignCause });
+
+            writer.error(foreignRoot);
+
+            const call = vi.mocked(console.error).mock.calls[0];
+            expect(call?.[1]).toBe(foreignRoot);
+            expect(call?.[2]).toContain('foreign root');
+            expect(call?.[2]).toContain('foreign cause');
+            iframe.remove();
+        });
+
+        it('keeps native aggregate errors and children from another realm in the diagnostic', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const iframe = document.createElement('iframe');
+            document.body.append(iframe);
+            const foreignWindow = iframe.contentWindow;
+            if (!foreignWindow) {
+                throw new Error('Missing iframe window');
+            }
+            const foreignChild = new foreignWindow.Error('foreign aggregate child');
+            const foreignAggregate = new foreignWindow.AggregateError([foreignChild], 'foreign aggregate');
+            const root = new Error('local root', { cause: foreignAggregate });
+
+            writer.error(root);
+
+            const call = vi.mocked(console.error).mock.calls[0];
+            expect(call?.[1]).toBe(root);
+            expect(call?.[2]).toContain('foreign aggregate');
+            expect(call?.[2]).toContain('foreign aggregate child');
+            iframe.remove();
+        });
+
+        it('keeps an empty aggregate error on the original one-argument development call', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new AggregateError([], 'no failures');
+
+            writer.error(error);
+
+            expect(console.error).toHaveBeenCalledWith('[DEV][ERROR]', error);
+            expect(vi.mocked(console.error).mock.calls[0]).toHaveLength(2);
+        });
+
+        it('does not treat Error-shaped objects or private fields as native errors', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const prototypeFake = Object.create(Error.prototype);
+            Object.defineProperties(prototypeFake, {
+                name: { value: 'FakeError' },
+                message: { value: 'fake prototype detail' },
+                [Symbol.toStringTag]: { value: 'Error' },
+            });
+
+            class PrivateFieldFake {
+                readonly #privateContext = 'private-context-marker';
+
+                get message(): string {
+                    return this.#privateContext;
+                }
+            }
+
+            Object.setPrototypeOf(PrivateFieldFake.prototype, Error.prototype);
+            const privateFieldFake = new PrivateFieldFake();
+            const root = new Error('root', {
+                cause: new AggregateError([prototypeFake, privateFieldFake], 'fake children'),
+            });
+
+            writer.error(root);
+
+            const diagnostic = vi.mocked(console.error).mock.calls[0]?.[2];
+            expect(typeof diagnostic).toBe('string');
+            expect(diagnostic).toContain('[non-Error child]');
+            expect(diagnostic).not.toContain('fake prototype detail');
+            expect(diagnostic).not.toContain('private-context-marker');
+        });
+
         it('bounds cycles, aggregate width, depth, and long messages', () => {
             const writer = createConsoleWriter({ mode: 'development' });
             const cyclic = new Error('cyclic cause');
