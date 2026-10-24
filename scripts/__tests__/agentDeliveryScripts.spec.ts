@@ -2493,7 +2493,7 @@ describe('package scripts and gitignore', () => {
             );
 
             runGit(checkout, ['restore', 'scripts/trustedGithubWriteBootstrap.ts']);
-            runGit(checkout, ['worktree', 'add', '-b', 'agent/test/current-route', lane]);
+            runGit(checkout, ['worktree', 'add', '-b', 'agent/test-current-route', lane]);
             expect(() => runPackageRoute(lane, ['lane:publish', policyLog])).toThrow(/protected primary checkout/);
         } finally {
             removeTemporaryDirectory(fixtureRoot);
@@ -2996,7 +2996,7 @@ describe('package scripts and gitignore', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-launcher-root-');
             const lane = join(fixtureRoot, 'lane');
             try {
-                runGit(primary, ['worktree', 'add', '-b', 'agent/test/launcher', lane]);
+                runGit(primary, ['worktree', 'add', '-b', 'agent/test-launcher', lane]);
 
                 expect(resolveTrustedLauncherBinding(primary).primaryRoot).toBe(realpathSync(primary));
                 expect(() => resolveTrustedLauncherBinding(lane)).toThrow(/protected primary checkout/);
@@ -3389,7 +3389,7 @@ describe('package scripts and gitignore', () => {
         mkdirSync(primary);
         try {
             trustedReviewMutationFixture(primary, mutationLog);
-            runGit(primary, ['worktree', 'add', '-b', 'agent/test/reviewer-route', lane]);
+            runGit(primary, ['worktree', 'add', '-b', 'agent/test-reviewer-route', lane]);
             for (const entry of ['publishReview.ts', 'resolveThread.ts']) {
                 expect(readFileSync(join(lane, 'scripts', entry), 'utf8')).toBe(
                     runGit(primary, ['show', `refs/remotes/origin/main:scripts/${entry}`])

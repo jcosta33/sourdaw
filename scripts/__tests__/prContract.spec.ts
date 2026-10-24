@@ -5,10 +5,13 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    LANE_CHANGE_TYPES,
     PULL_REQUEST_BODY_BYTE_LIMIT,
     REQUIRED_BODY_HEADINGS,
     REVIEW_COMMENT_MAX_BYTES,
+    TITLE_PATTERN,
     assertConventionalSubject,
+    assertLaneChangeType,
     assertLaneSlug,
     assertPullRequestBody,
     canonicalIssueReferenceFromBody,
@@ -17,9 +20,12 @@ import {
     composePublishBody,
     composeReviewCommentBody,
     containsPath,
+    conventionalType,
     fail,
+    isLaneBranch,
     issueRelationshipFromBody,
     laneBranchName,
+    parseLaneBranch,
     parseDeliveryReceipt,
     supersessionCommentBody,
     supersessionReplacement,
@@ -552,16 +558,165 @@ describe('pull-request contract', () => {
         expect(message).not.toContain('is missing');
     });
 
-    it('builds agent branch names and rejects bad slugs', () => {
-        expect(laneBranchName(12, 'beat')).toBe('agent/12/beat');
-        expect(laneBranchName(12, 'work')).toBe('agent/12/work');
+    it('builds typed lane branch names and rejects bad slugs', () => {
+        expect(laneBranchName('fix', 12, 'beat')).toBe('fix/12/beat');
+        expect(laneBranchName('feat', 12, 'work')).toBe('feat/12/work');
         expect(() => assertLaneSlug('Work')).toThrow(/slug/);
         expect(() => assertLaneSlug('agent')).not.toThrow();
     });
 
     it('drops the issue segment from the branch name when no issue is given', () => {
-        expect(laneBranchName(undefined, 'work')).toBe('agent/work');
-        expect(laneBranchName(undefined, 'lane-issue-optional')).toBe('agent/lane-issue-optional');
+        expect(laneBranchName('docs', undefined, 'work')).toBe('docs/work');
+        expect(laneBranchName('chore', undefined, 'lane-issue-optional')).toBe('chore/lane-issue-optional');
+    });
+
+    it.each(['feat', 'fix', 'chore', 'docs', 'test', 'refactor', 'perf', 'build', 'ci'])(
+        'accepts %s as a lane change type, the same set a pull-request title may carry',
+        (type) => {
+            expect(assertLaneChangeType(type)).toBe(type);
+            expect(() => assertConventionalSubject(`${type}(scope): subject`, 'title')).not.toThrow();
+        }
+    );
+
+    it('keeps the lane change types and the title types one set', () => {
+        for (const type of LANE_CHANGE_TYPES) {
+            expect(TITLE_PATTERN.test(`${type}: x`)).toBe(true);
+        }
+        expect(LANE_CHANGE_TYPES).not.toContain('style');
+        expect(TITLE_PATTERN.test('style: x')).toBe(false);
+    });
+
+    it('refuses style, agent, an unknown type and a missing type with a message naming the allowed set', () => {
+        expect(() => assertLaneChangeType(undefined)).toThrow(/--type/);
+        expect(() => assertLaneChangeType(undefined)).toThrow(
+            /feat, fix, chore, docs, test, refactor, perf, build, ci/
+        );
+        expect(() => assertLaneChangeType('style')).toThrow(/style.*not allowed/);
+        expect(() => assertLaneChangeType('agent')).toThrow(/legacy/);
+        expect(() => assertLaneChangeType('hotfix')).toThrow(/unknown/);
+        expect(() => assertLaneChangeType('FIX')).toThrow(/unknown/);
+        expect(() => assertLaneChangeType('fix/')).toThrow(/unknown/);
+        expect(() => assertLaneChangeType('')).toThrow(/unknown/);
+    });
+
+    it('refuses a branch name past the length bound when building it', () => {
+        expect(() => laneBranchName('fix', 12, 'a'.repeat(120))).toThrow(/not a valid lane branch/);
+    });
+
+    it('accepts a branch name of exactly 100 characters and refuses 101, in the parser and the builder', () => {
+        const atBound = `fix/12/${'a'.repeat(93)}`;
+        const pastBound = `fix/12/${'a'.repeat(94)}`;
+
+        expect(atBound).toHaveLength(100);
+        expect(pastBound).toHaveLength(101);
+        expect(parseLaneBranch(atBound)).toEqual({ prefix: 'fix', issue: 12, slug: 'a'.repeat(93) });
+        expect(laneBranchName('fix', 12, 'a'.repeat(93))).toBe(atBound);
+        expect(parseLaneBranch(pastBound)).toBeUndefined();
+        expect(() => laneBranchName('fix', 12, 'a'.repeat(94))).toThrow(/not a valid lane branch/);
+    });
+
+    it('keeps the longest live legacy lane branch recognised', () => {
+        const live = 'agent/4944/nightly-secret-scan-bacteria-fingerprint';
+
+        expect(live.length).toBeGreaterThan(50);
+        expect(parseLaneBranch(live)).toEqual({
+            prefix: 'agent',
+            issue: 4944,
+            slug: 'nightly-secret-scan-bacteria-fingerprint',
+        });
+    });
+
+    it('reads the issue only from the numeric middle segment and the type from the first', () => {
+        expect(parseLaneBranch('fix/5573/dont-save-discards-after-load')).toEqual({
+            prefix: 'fix',
+            issue: 5573,
+            slug: 'dont-save-discards-after-load',
+        });
+        expect(parseLaneBranch('docs/five-live-lanes')).toEqual({ prefix: 'docs', slug: 'five-live-lanes' });
+        expect(parseLaneBranch('agent/5535/overdub-rows-are-one-undo-step')).toEqual({
+            prefix: 'agent',
+            issue: 5535,
+            slug: 'overdub-rows-are-one-undo-step',
+        });
+        expect(parseLaneBranch('agent/cleanup')).toEqual({ prefix: 'agent', slug: 'cleanup' });
+        // A slug that starts with digits or merely ends in an issue-looking number carries no issue.
+        expect(parseLaneBranch('fix/12-beat')).toEqual({ prefix: 'fix', slug: '12-beat' });
+        expect(parseLaneBranch('fix/proof-metering-bs1770-2039')).toEqual({
+            prefix: 'fix',
+            slug: 'proof-metering-bs1770-2039',
+        });
+        // A type name or `agent` as a slug is a slug: only the first segment is ever the type.
+        expect(parseLaneBranch('fix/fix')).toEqual({ prefix: 'fix', slug: 'fix' });
+        expect(parseLaneBranch('docs/12/agent')).toEqual({ prefix: 'docs', issue: 12, slug: 'agent' });
+        expect(parseLaneBranch('chore/agent/cleanup')).toBeUndefined();
+    });
+
+    it.each([
+        'main',
+        'release/1.2',
+        'hotfix/thing',
+        'style/thing',
+        'style/12/thing',
+        'Fix/thing',
+        'FIX/12/thing',
+        'fix',
+        'fix/',
+        '/thing',
+        'fix//thing',
+        'fix/12/',
+        'fix/12',
+        'fix/0/thing',
+        'fix/012/thing',
+        'fix/12/34',
+        'fix/-12/thing',
+        'fix/12/thing/extra',
+        'fix/a/b/c',
+        'fix/..',
+        'fix/../thing',
+        'fix/12/../thing',
+        'fix/-thing',
+        'fix/thing-',
+        'fix/th--ing',
+        'fix/th_ing',
+        'fix/th ing',
+        'fix/thing\n',
+        'fix/thing\nagent/other',
+        'fix/th.ing',
+        'fix/thing.lock',
+        'fix/thing@{1}',
+        'fix/th~ing',
+        'fix/th:ing',
+        'fix/th\\ing',
+        'fix/Thing',
+        'fix/12/Thing',
+        'fix/99999999999999999999/thing',
+        'agent/12',
+        'agent//thing',
+        'agent/12/thing/extra',
+        'agentx/thing',
+        'xagent/thing',
+        'refs/heads/fix/thing',
+        '-fix/thing',
+        '--upload-pack=x',
+        `fix/${'a'.repeat(120)}`,
+    ])('parses no lane out of the ambiguous or malicious name %j', (branch) => {
+        expect(parseLaneBranch(branch)).toBeUndefined();
+        expect(isLaneBranch(branch)).toBe(false);
+    });
+
+    it('recognises a lane branch only through the parser, never a bare prefix', () => {
+        expect(isLaneBranch('fix/12/beat')).toBe(true);
+        expect(isLaneBranch('agent/12/beat')).toBe(true);
+        expect(isLaneBranch('agent/not a branch')).toBe(false);
+        expect(isLaneBranch('fix/not a branch')).toBe(false);
+    });
+
+    it('reads the conventional type of a subject or title', () => {
+        expect(conventionalType('fix(tooling): name lane branches')).toBe('fix');
+        expect(conventionalType('feat!: break it')).toBe('feat');
+        expect(conventionalType('docs: five live lanes')).toBe('docs');
+        expect(conventionalType('Merge branch main')).toBeUndefined();
+        expect(conventionalType('style: spacing')).toBeUndefined();
     });
 
     it('rejects a purely numeric slug that would be read as an issue number', () => {
