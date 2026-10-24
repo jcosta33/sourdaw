@@ -202,6 +202,25 @@ class DeviceReadinessDiagnosticsCollector {
         }
     }
 
+    markContentActivity(input: { token: DeviceReadinessToken; epoch: number }): void {
+        const record = this.currentRecord(input.token);
+        if (
+            !record ||
+            !record.requiresContent ||
+            record.status !== 'content-pending' ||
+            !Number.isSafeInteger(input.epoch) ||
+            input.epoch < 0 ||
+            input.epoch < record.progressEpoch
+        ) {
+            return;
+        }
+        if (input.epoch > record.progressEpoch) {
+            record.progressEpoch = input.epoch;
+            record.contentProgress = 0;
+        }
+        record.lastActivityAtMs = Date.now();
+    }
+
     markContentProgress(input: { token: DeviceReadinessToken; epoch: number; progress: number }): void {
         const record = this.currentRecord(input.token);
         if (

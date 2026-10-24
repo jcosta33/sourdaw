@@ -43,11 +43,15 @@ export type DecodedBank = {
     decodedByteLength: number;
 };
 
+export type DecodedBankProgress = number | { type: 'activity' };
+
 export type DecodedBankLease = {
     /** The bank remains physically accounted and non-evictable until `release` is called. */
     bank: DecodedBank;
     /** Idempotently ends this consumer's ownership of the decoded PCM. */
     release: () => void;
+    /** Report a successful shipment acknowledgement before releasing admission. */
+    reportActivity: () => void;
 };
 
 export type LoadDecodedBankInput = {
@@ -55,7 +59,7 @@ export type LoadDecodedBankInput = {
     basePath: string;
     expectedInstrumentId: string;
     lod: SampleLodConfig;
-    onProgress?: (progress: number) => void;
+    onProgress?: (progress: DecodedBankProgress) => void;
     signal?: AbortSignal;
 };
 
@@ -101,7 +105,7 @@ type BankEntry = {
     activeLeases: number;
     decodedBytes: number;
     lastAccess: number;
-    listeners: Map<symbol, (progress: number) => void>;
+    listeners: Map<symbol, (progress: DecodedBankProgress) => void>;
     progress: number;
     promise: Promise<DecodedBank> | null;
     samples: Map<string, DecodedSample>;
@@ -118,6 +122,14 @@ function allocateBankPublicationKey(cacheKey: string): string {
     bankPublicationSequence += 1;
     return `${cacheKey}\u0000${bankPublicationSequence}`;
 }
+
+type BankAdmission = {
+    key: string;
+    baseKey: string;
+    controller: AbortController;
+    granted: PromiseWithResolvers<void>;
+    consumers: Map<symbol, LoadDecodedBankInput['onProgress']>;
+};
 
 type ManifestEntry = {
     controller: AbortController;
@@ -199,6 +211,9 @@ export function createDecodedBankResource({
     const baseEpochs = new Map<string, number>();
     const pendingManifestConsumers = new Map<string, Set<AbortController>>();
     const sampleQueue: SampleTask[] = [];
+    const bankQueue: BankAdmission[] = [];
+    let admittedBank: BankAdmission | null = null;
+    let clearing = false;
     let sampleQueueHead = 0;
     let clearEpoch = 0;
     let activeSampleLoads = 0;
@@ -321,8 +336,8 @@ export function createDecodedBankResource({
     function notifyListener(
         entry: BankEntry,
         token: symbol,
-        listener: (progress: number) => void,
-        progress: number
+        listener: (progress: DecodedBankProgress) => void,
+        progress: DecodedBankProgress
     ): void {
         try {
             listener(progress);
@@ -351,7 +366,118 @@ export function createDecodedBankResource({
         }
     }
 
+    function drainBankQueue(): void {
+        if (clearing || admittedBank?.consumers.size) {
+            return;
+        }
+        admittedBank = null;
+        while (bankQueue.length > 0) {
+            const next = bankQueue.shift();
+            if (!next || next.controller.signal.aborted || next.consumers.size === 0) {
+                continue;
+            }
+            admittedBank = next;
+            next.granted.resolve();
+            return;
+        }
+    }
+
+    function notifyAdmissionActivity(admission: BankAdmission, includeActive = false): void {
+        if (admittedBank !== admission || admission.controller.signal.aborted) {
+            return;
+        }
+        const cohorts = includeActive ? [admission, ...bankQueue] : bankQueue;
+        for (const cohort of cohorts) {
+            if (cohort.controller.signal.aborted) {
+                continue;
+            }
+            for (const [token, listener] of cohort.consumers) {
+                if (!listener) {
+                    continue;
+                }
+                try {
+                    listener({ type: 'activity' });
+                } catch (error) {
+                    cohort.consumers.set(token, undefined);
+                    logger.warn('Levain decoded-bank activity listener failed:', error);
+                }
+            }
+        }
+    }
+
+    async function acquireAdmission(key: string, baseKey: string, input: LoadDecodedBankInput) {
+        let admission: BankAdmission | undefined | null = admittedBank;
+        if (admission?.key !== key || admission.controller.signal.aborted) {
+            admission = bankQueue.find((queued) => queued.key === key && !queued.controller.signal.aborted);
+        }
+        if (!admission) {
+            admission = {
+                key,
+                baseKey,
+                controller: new AbortController(),
+                granted: Promise.withResolvers<void>(),
+                consumers: new Map(),
+            };
+            bankQueue.push(admission);
+        }
+        const cohort = admission;
+        const token = Symbol('Levain bank admission');
+        let listener = input.onProgress;
+        try {
+            listener?.(0);
+        } catch (error) {
+            listener = undefined;
+            logger.warn('Levain decoded-bank progress listener failed:', error);
+        }
+        cohort.consumers.set(token, listener);
+        let released = false;
+        const release = (): void => {
+            if (released) {
+                return;
+            }
+            released = true;
+            cohort.consumers.delete(token);
+            drainBankQueue();
+        };
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const finish = (error?: unknown): void => {
+                    input.signal?.removeEventListener('abort', onAbort);
+                    cohort.controller.signal.removeEventListener('abort', onAbort);
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve();
+                    }
+                };
+                const onAbort = (): void => finish(createAbortError());
+                input.signal?.addEventListener('abort', onAbort, { once: true });
+                cohort.controller.signal.addEventListener('abort', onAbort, { once: true });
+                if (input.signal?.aborted || cohort.controller.signal.aborted) {
+                    onAbort();
+                    return;
+                }
+                void cohort.granted.promise.then(() => finish());
+                drainBankQueue();
+            });
+            return {
+                release,
+                reportActivity: () => {
+                    if (!released && !input.signal?.aborted) {
+                        notifyAdmissionActivity(cohort, true);
+                    }
+                },
+            };
+        } catch (error) {
+            release();
+            throw error;
+        }
+    }
+
     function notifyProgress(entry: BankEntry, progress: number): void {
+        if (progress > entry.progress && admittedBank?.key === entry.key) {
+            notifyAdmissionActivity(admittedBank);
+        }
         entry.progress = progress;
         for (const [token, listener] of entry.listeners) {
             notifyListener(entry, token, listener, progress);
@@ -676,6 +802,7 @@ export function createDecodedBankResource({
                 let released = false;
                 return Object.freeze({
                     bank,
+                    reportActivity: () => {},
                     release(): void {
                         if (released) {
                             return;
@@ -758,31 +885,58 @@ export function createDecodedBankResource({
             }
 
             const key = createCacheKey(baseKey, manifest);
-            const previousKey = currentBankKeys.get(baseKey);
-            if (previousKey && previousKey !== key) {
-                const previousEntry = entries.get(previousKey);
-                if (previousEntry) {
-                    removeEntry({ entry: previousEntry, key: previousKey });
-                } else {
-                    currentBankKeys.delete(baseKey);
+            // Waiting cohorts own admission requests, never cached PCM that a predecessor must evict.
+            const admission = await acquireAdmission(key, baseKey, input);
+            try {
+                if (
+                    input.signal?.aborted ||
+                    clearEpoch !== expectedClearEpoch ||
+                    (baseEpochs.get(baseKey) ?? 0) !== expectedBaseEpoch
+                ) {
+                    throw createAbortError();
                 }
-            }
+                const previousKey = currentBankKeys.get(baseKey);
+                if (previousKey && previousKey !== key) {
+                    const previousEntry = entries.get(previousKey);
+                    if (previousEntry) {
+                        removeEntry({ entry: previousEntry, key: previousKey });
+                    } else {
+                        currentBankKeys.delete(baseKey);
+                    }
+                }
 
-            let entry = entries.get(key);
-            if (entry) {
-                cacheHits++;
-                entry.lastAccess = ++accessSequence;
-            } else {
-                cacheMisses++;
-                entry = createEntry(key, baseKey, input, manifest);
-                entries.set(key, entry);
+                let entry = entries.get(key);
+                if (entry) {
+                    cacheHits++;
+                    entry.lastAccess = ++accessSequence;
+                } else {
+                    cacheMisses++;
+                    entry = createEntry(key, baseKey, input, manifest);
+                    entries.set(key, entry);
+                }
+                currentBankKeys.set(baseKey, key);
+                const lease = await consumeEntry(key, entry, input);
+                return Object.freeze({
+                    bank: lease.bank,
+                    reportActivity: admission.reportActivity,
+                    release(): void {
+                        lease.release();
+                        admission.release();
+                    },
+                });
+            } catch (error) {
+                admission.release();
+                throw error;
             }
-            currentBankKeys.set(baseKey, key);
-            return consumeEntry(key, entry, input);
         },
         invalidate(input): void {
             const baseKey = createCacheBaseKey(input);
             baseEpochs.set(baseKey, (baseEpochs.get(baseKey) ?? 0) + 1);
+            for (const admission of [admittedBank, ...bankQueue]) {
+                if (admission?.baseKey === baseKey) {
+                    admission.controller.abort();
+                }
+            }
             for (const controller of pendingManifestConsumers.get(baseKey) ?? []) {
                 controller.abort();
             }
@@ -799,7 +953,12 @@ export function createDecodedBankResource({
             removeEntry({ entry, key });
         },
         clear(): void {
+            clearing = true;
             clearEpoch++;
+            for (const admission of [admittedBank, ...bankQueue]) {
+                admission?.controller.abort();
+            }
+            bankQueue.length = 0;
             for (const consumers of pendingManifestConsumers.values()) {
                 for (const controller of consumers) {
                     controller.abort();
@@ -816,6 +975,8 @@ export function createDecodedBankResource({
             manifestEntries.clear();
             baseEpochs.clear();
             pendingManifestConsumers.clear();
+            clearing = false;
+            drainBankQueue();
         },
         getDiagnostics(): DecodedBankResourceDiagnostics {
             let resolvedBanks = 0;

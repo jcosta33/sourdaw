@@ -1254,6 +1254,10 @@ export class TrackNode {
                             ) {
                                 return;
                             }
+                            if (typeof progress !== 'number') {
+                                this.deps.readinessDiagnostics.markContentActivity({ token: readinessToken, epoch });
+                                return;
+                            }
                             this.deps.readinessDiagnostics.markContentProgress({
                                 token: readinessToken,
                                 epoch,

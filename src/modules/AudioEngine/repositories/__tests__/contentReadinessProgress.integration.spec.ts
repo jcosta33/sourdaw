@@ -6,6 +6,7 @@ import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { createTrack, setTrackState } from '#/modules/Arrangement/useCases';
 import { defaultLevainState, levainStore } from '#/modules/Levain/stores';
 import {
+    acquireLevainNativeBank,
     configureLevainZoneTableBuilder,
     getDecodedBankDiagnostics,
     registerLevainDevice,
@@ -14,6 +15,7 @@ import {
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { buildLevainZoneTables } from '../../useCases/buildLevainZoneTables';
+import { registerNativeSampleBanks } from '../nativeGraph/registerNativeSampleBanks';
 
 import { createAudioEngineTopologyTestHarness as createAudioEngine } from './createAudioEngineTopologyTestHarness';
 
@@ -40,6 +42,7 @@ vi.mock('../../engine/LevainNode', async (importOriginal) => ({
 const FILE_COUNT = 161;
 const DEVICE_IDS = Array.from({ length: 5 }, (_, index) => `levain-${index}`);
 let pendingWorkletAcks: Array<() => void> = [];
+let endWorklets: Array<() => void> = [];
 
 class FakeWorkletNode {
     readonly port = { postMessage: vi.fn(), close: vi.fn() };
@@ -90,6 +93,7 @@ function createPort(): MessagePort {
             listener({ data } as MessageEvent<unknown>);
         }
     }
+    endWorklets.push(() => emit({ type: 'disposed' }));
     return {
         postMessage(message: { type: string; loadToken?: number; sampleId?: number }) {
             if (message.type === 'zoneTableChunk') {
@@ -171,13 +175,23 @@ function waitForDecodedCount(count: number): Promise<void> {
 }
 
 describe('live Levain content progress', () => {
-    let progressEvents: Array<{ deviceId: string; epoch: number; progress: number; atMs: number }>;
+    let progressEvents: Array<{
+        deviceId: string;
+        epoch: number;
+        progress: number | { type: 'activity' };
+        atMs: number;
+    }>;
     let progressChanged: PromiseWithResolvers<void>;
 
     async function waitForForwardedProgress(count: number): Promise<void> {
         while (
             !DEVICE_IDS.every((id) =>
-                progressEvents.some((event) => event.deviceId === id && event.progress >= count / FILE_COUNT)
+                progressEvents.some(
+                    (event) =>
+                        event.deviceId === id &&
+                        typeof event.progress === 'number' &&
+                        event.progress >= count / FILE_COUNT
+                )
             )
         ) {
             await progressChanged.promise;
@@ -193,6 +207,7 @@ describe('live Levain content progress', () => {
         progressEvents = [];
         progressChanged = Promise.withResolvers<void>();
         pendingWorkletAcks = [];
+        endWorklets = [];
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         vi.stubGlobal(
             'OfflineAudioContext',
@@ -244,6 +259,14 @@ describe('live Levain content progress', () => {
     });
 
     it('keeps five shared-bank live devices pending through the old cohort deadline while decoded files advance', async () => {
+        levainStore.set(
+            Object.fromEntries(
+                DEVICE_IDS.map((id) => [
+                    id,
+                    { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'solo-violin' } },
+                ])
+            )
+        );
         const pendingSamples: Array<(response: unknown) => void> = [];
         let sampleRequested = Promise.withResolvers<void>();
         const fetchSample = () =>
@@ -255,7 +278,7 @@ describe('live Levain content progress', () => {
             'fetch',
             vi.fn((url: string) => {
                 if (url.endsWith('/manifest.json')) {
-                    return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest()) });
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest('solo-violin')) });
                 }
                 return fetchSample();
             })
@@ -295,12 +318,14 @@ describe('live Levain content progress', () => {
             await waitForForwardedProgress(39);
             expect(getDecodedBankDiagnostics().decodedBytes).toBe(39 * 4);
             expect(
-                progressEvents.filter((event) => event.progress >= 39 / FILE_COUNT).map((event) => event.deviceId)
+                progressEvents
+                    .filter((event) => typeof event.progress === 'number' && event.progress >= 39 / FILE_COUNT)
+                    .map((event) => event.deviceId)
             ).toEqual(DEVICE_IDS);
             expect(progressEvents.some((event) => event.progress === 0.01)).toBe(false);
             expect(
                 progressEvents
-                    .filter((event) => event.progress >= 39 / FILE_COUNT)
+                    .filter((event) => typeof event.progress === 'number' && event.progress >= 39 / FILE_COUNT)
                     .every((event) => event.atMs <= waitStartedAt + 9_990)
             ).toBe(true);
             await vi.advanceTimersByTimeAsync(20);
@@ -340,6 +365,267 @@ describe('live Levain content progress', () => {
                 )
             ).toBe(false);
         } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('keeps five distinct queued banks pending beyond ten seconds only while predecessor work advances', async () => {
+        const fileCount = 3;
+        const instruments = ['violin-1', 'violin-2', 'viola', 'cello', 'double-bass'] as const;
+        levainStore.set(
+            Object.fromEntries(
+                DEVICE_IDS.map((id, index) => [
+                    id,
+                    {
+                        ...defaultLevainState,
+                        patch: { ...defaultLevainState.patch, instrumentId: instruments[index]! },
+                    },
+                ])
+            )
+        );
+        const samples: Array<{ url: string; resolve: (response: unknown) => void }> = [];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string, options?: RequestInit) => {
+                if (url.endsWith('/manifest.json')) {
+                    const id = instruments.find((instrument) => url.includes(`/${instrument}/`))!;
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                ...manifest(id),
+                                articulations: manifest(id).articulations.map((articulation) => ({
+                                    ...articulation,
+                                    zones: articulation.zones.slice(0, fileCount),
+                                })),
+                            }),
+                    });
+                }
+                return new Promise((resolve, reject) => {
+                    samples.push({ url, resolve });
+                    options?.signal?.addEventListener(
+                        'abort',
+                        () => reject(new DOMException('aborted', 'AbortError')),
+                        { once: true }
+                    );
+                });
+            })
+        );
+        const response = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            for (const deviceId of DEVICE_IDS) {
+                engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            }
+            await vi.waitFor(() => expect(samples).toHaveLength(fileCount));
+            const waiting = engine.waitForDevices();
+            for (let step = 0; step < 2; step++) {
+                await vi.advanceTimersByTimeAsync(9000);
+                samples.shift()!.resolve(response());
+                await vi.waitFor(() =>
+                    expect(progressEvents.filter((event) => typeof event.progress !== 'number')).toHaveLength(
+                        (step + 1) * 4
+                    )
+                );
+                expect(DEVICE_IDS.slice(1).map((id) => levainStore.value?.[id]?.sampleLoadProgress)).toEqual([
+                    0, 0, 0, 0,
+                ]);
+                expect(samples.every(({ url }) => url.includes('/violin-1/'))).toBe(true);
+            }
+            expect(Date.now()).toBeGreaterThan(10000);
+            expect(
+                engine.getDeviceReadinessDiagnostics().devices.filter((device) => device.status === 'content-pending')
+            ).toHaveLength(5);
+            for (let bank = 0; bank < instruments.length; bank++) {
+                const alreadyDecoded = bank === 0 ? 2 : 0;
+                for (let file = alreadyDecoded; file < fileCount; file++) {
+                    await vi.waitFor(() => expect(samples.length).toBeGreaterThan(0));
+                    const next = samples.shift()!;
+                    expect(next.url).toContain(`/${instruments[bank]}/`);
+                    next.resolve(response());
+                }
+                await vi.waitFor(() => expect(pendingWorkletAcks).toHaveLength(bank + 1));
+                // Shipment acknowledgements also renew queued followers, without a UI increment.
+                await vi.advanceTimersByTimeAsync(9000);
+                pendingWorkletAcks[bank]!();
+            }
+            await expect(waiting).resolves.toMatchObject({ status: 'ready' });
+            expect(
+                engine.getDeviceReadinessDiagnostics().devices.filter((device) => device.status === 'ready')
+            ).toHaveLength(5);
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('renews a live queued bank from native acknowledgements and admits it after native shipment failure', async () => {
+        const fileCount = 3;
+        const deviceId = DEVICE_IDS[0]!;
+        levainStore.set({
+            [deviceId]: { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'solo-trumpet' } },
+        });
+        const samples: Array<(value: unknown) => void> = [];
+        const response = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string, options?: RequestInit) => {
+                if (url.endsWith('/manifest.json')) {
+                    const native = url.includes('/solo-viola/');
+                    const source = manifest(native ? 'solo-viola' : 'solo-trumpet');
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                ...source,
+                                articulations: source.articulations.map((articulation) => ({
+                                    ...articulation,
+                                    zones: articulation.zones.slice(0, native ? 1 : fileCount),
+                                })),
+                            }),
+                    });
+                }
+                if (url.includes('/solo-viola/')) {
+                    return Promise.resolve(response());
+                }
+                return new Promise((resolve, reject) => {
+                    samples.push(resolve);
+                    options?.signal?.addEventListener(
+                        'abort',
+                        () => reject(new DOMException('aborted', 'AbortError')),
+                        { once: true }
+                    );
+                });
+            })
+        );
+        const begin = Promise.withResolvers<unknown>();
+        const sample = Promise.withResolvers<unknown>();
+        const commit = Promise.withResolvers<unknown>();
+        const beginCalled = vi.fn(() => begin.promise);
+        const sampleCalled = vi.fn(() => sample.promise);
+        const commitCalled = vi.fn(() => commit.promise);
+        const native = registerNativeSampleBanks({
+            backendId: 'queued-native-test',
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'native-track',
+                    index: 0,
+                    device: {
+                        id: 'native-levain',
+                        name: 'Native Levain',
+                        type: 'levain',
+                        bypassed: false,
+                        parameterValues: {},
+                        sampleBankKey: 'levain:solo-viola',
+                    },
+                },
+            ],
+            acquire: acquireLevainNativeBank,
+            transport: {
+                beginLevainBank: beginCalled,
+                registerLevainSample: sampleCalled,
+                commitLevainBank: commitCalled,
+                releaseLevainBank: () => Promise.resolve(null),
+                registerTimelineSample: () => Promise.reject(new Error('unexpected timeline sample')),
+                renderGraphOffline: () => Promise.reject(new Error('unexpected render')),
+                applyGraphCommands: () => Promise.reject(new Error('unexpected apply')),
+                mapGraphBatch: () => Promise.reject(new Error('unexpected map')),
+            },
+        });
+        await vi.waitFor(() => expect(beginCalled).toHaveBeenCalledOnce());
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            await vi.waitFor(() => expect(levainStore.value?.[deviceId]?.sampleLoadProgress).toBe(0));
+            const waiting = engine.waitForDevices();
+            await vi.advanceTimersByTimeAsync(9000);
+            begin.resolve(null);
+            await vi.waitFor(() => expect(sampleCalled).toHaveBeenCalledOnce());
+            expect(progressEvents.filter((event) => typeof event.progress !== 'number')).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(9000);
+            sample.resolve(null);
+            await vi.waitFor(() => expect(commitCalled).toHaveBeenCalledOnce());
+            expect(progressEvents.filter((event) => typeof event.progress !== 'number')).toHaveLength(2);
+            expect(engine.getDeviceReadinessDiagnostics().devices[0]?.status).toBe('content-pending');
+            expect(levainStore.value?.[deviceId]?.sampleLoadProgress).toBe(0);
+            expect(samples).toHaveLength(0);
+            commit.reject(new Error('native commit refused'));
+            await expect(native).resolves.toEqual([]);
+            for (let file = 0; file < fileCount; file++) {
+                await vi.waitFor(() => expect(samples.length).toBeGreaterThan(0));
+                samples.shift()!(response());
+            }
+            await vi.waitFor(() => expect(pendingWorkletAcks).toHaveLength(1));
+            pendingWorkletAcks[0]!();
+            await expect(waiting).resolves.toMatchObject({ status: 'ready' });
+            expect(getDecodedBankDiagnostics().activeLeases).toBe(0);
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('times out queued banks when their predecessor makes no progress for ten seconds', async () => {
+        const instruments = ['flute', 'oboe'] as const;
+        levainStore.set(
+            Object.fromEntries(
+                DEVICE_IDS.slice(0, 2).map((id, index) => [
+                    id,
+                    {
+                        ...defaultLevainState,
+                        patch: { ...defaultLevainState.patch, instrumentId: instruments[index]! },
+                    },
+                ])
+            )
+        );
+        const pending: Array<(value: unknown) => void> = [];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string, options?: RequestInit) => {
+                if (url.endsWith('/manifest.json')) {
+                    const id = instruments.find((instrument) => url.includes(`/${instrument}/`))!;
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest(id)) });
+                }
+                return new Promise((resolve, reject) => {
+                    pending.push(resolve);
+                    options?.signal?.addEventListener(
+                        'abort',
+                        () => reject(new DOMException('aborted', 'AbortError')),
+                        { once: true }
+                    );
+                });
+            })
+        );
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            for (const deviceId of DEVICE_IDS.slice(0, 2)) {
+                engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            }
+            await vi.waitFor(() => expect(pending).toHaveLength(4));
+            const waiting = engine.waitForDevices();
+            await vi.advanceTimersByTimeAsync(10000);
+            await expect(waiting).resolves.toMatchObject({
+                status: 'failed',
+                devices: [
+                    { deviceId: DEVICE_IDS[0], status: 'failed', stage: 'content' },
+                    { deviceId: DEVICE_IDS[1], status: 'failed', stage: 'content' },
+                ],
+            });
+            for (const resolve of pending) {
+                resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+            }
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
             await engine.dispose();
         }
     });
@@ -348,7 +634,7 @@ describe('live Levain content progress', () => {
         levainStore.set({
             [DEVICE_IDS[0]!]: {
                 ...defaultLevainState,
-                patch: { ...defaultLevainState.patch, instrumentId: 'cello' },
+                patch: { ...defaultLevainState.patch, instrumentId: 'solo-cello' },
             },
         });
         const pendingSamples: Array<(response: unknown) => void> = [];
@@ -357,7 +643,7 @@ describe('live Levain content progress', () => {
             'fetch',
             vi.fn((url: string) => {
                 if (url.endsWith('/manifest.json')) {
-                    return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest('cello')) });
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest('solo-cello')) });
                 }
                 return new Promise((resolve) => {
                     pendingSamples.push(resolve);
@@ -392,6 +678,9 @@ describe('live Levain content progress', () => {
                 failureStage: 'content',
             });
         } finally {
+            for (const end of endWorklets) {
+                end();
+            }
             await engine.dispose();
         }
     });

@@ -125,4 +125,6 @@ export type NativeSampleBank = NativeLevainBankLayout &
 export type NativeSampleBankLease = Readonly<{
     bank: NativeSampleBank;
     release: () => void;
+    /** A successful transport acknowledgement while the decoded lease remains held. */
+    reportActivity?: () => void;
 }>;

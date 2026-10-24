@@ -356,6 +356,40 @@ describe('loadInstrumentFromManifest', () => {
         vi.clearAllMocks();
     });
 
+    it('reports only acknowledged current shipment activity and releases decoded admission after commit', async () => {
+        const port = makePort({ chunkAnswers: 'queued', autoComplete: false });
+        const progress = vi.fn();
+        const loading = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+            buildZoneTables,
+            onProgress: progress,
+        });
+        await vi.waitFor(() => expect(postedTypes(port)).toContain('sampleChunk'));
+        const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
+        expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(0);
+        port.emit({ type: 'sampleChunkWritten', loadToken: -1 });
+        expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(0);
+        port.drainWorklet();
+        await vi.waitFor(() => {
+            port.drainWorklet();
+            expect(postedTypes(port)).toContain('commitSampleBank');
+        });
+        expect(progress).toHaveBeenCalledWith({ type: 'activity' });
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
+        const beforeCommit = progress.mock.calls.length;
+        port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
+        expect(progress).toHaveBeenCalledTimes(beforeCommit);
+        port.emit({ type: 'sampleBankLoaded', loadToken: begin.loadToken });
+        await loading;
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+        const settled = progress.mock.calls.length;
+        port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
+        expect(progress).toHaveBeenCalledTimes(settled);
+    });
+
     it('builds the zone map for a normal (un-aborted) load', async () => {
         const port = makePort();
 

@@ -456,13 +456,10 @@ describe('createDecodedBankResource', () => {
 
         await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
         await flushPromises();
-        expect(loadSample).toHaveBeenCalledTimes(1);
-        const sampleCall = loadSample.mock.calls[0];
-        if (!sampleCall) {
-            throw new Error('Expected one aborted sample load');
-        }
-        expect(sampleCall[1].aborted).toBe(true);
+        expect(loadSample).not.toHaveBeenCalled();
         expect(resource.getDiagnostics()).toMatchObject({ inFlightBanks: 0, resolvedBanks: 0 });
+        await expect(loadBank(resource)).resolves.toMatchObject({ instrumentId: 'violin-1' });
+        expect(loadSample).toHaveBeenCalledTimes(1);
     });
 
     it('isolates a throwing progress subscriber from the bank and other consumers', async () => {
@@ -761,10 +758,12 @@ describe('createDecodedBankResource', () => {
 
         const heldLease = await resource.acquire(DEFAULT_INPUT);
 
-        await expect(loadBank(resource, celloInput)).rejects.toThrow('Levain decoded-bank memory budget exceeded');
+        const queued = loadBank(resource, celloInput);
+        await vi.waitFor(() => expect(loadManifest).toHaveBeenCalledTimes(2));
         expect(heldLease.bank.samples.size).toBe(1);
         expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4, resolvedBanks: 1 });
         heldLease.release();
+        await expect(queued).resolves.toMatchObject({ instrumentId: 'cello' });
     });
 
     it('keeps retired PCM accounted until the final lease is released', async () => {
@@ -788,52 +787,198 @@ describe('createDecodedBankResource', () => {
         expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 0, decodedBytes: 0, resolvedBanks: 0 });
     });
 
-    it('keeps the newer bank when an older in-flight request resolves last', async () => {
+    it('admits a newer distinct bank only after an older decode completes and releases', async () => {
         const violinSample = createDeferred<DecodedSample>();
         const celloSample = createDeferred<DecodedSample>();
         const loadManifest = vi.fn((url: string) => {
             const instrumentId = url.includes('violin') ? 'violin-1' : 'cello';
             return Promise.resolve(createManifest({ files: [`${instrumentId}.wav`], instrumentId }));
         });
-        const loadSample = vi.fn((url: string) => {
-            if (loadSample.mock.calls.length > 2) {
-                return Promise.resolve(createSample(3));
-            }
-            return url.includes('violin') ? violinSample.promise : celloSample.promise;
+        const loadSample = vi.fn((url: string) =>
+            url.includes('violin') ? violinSample.promise : celloSample.promise
+        );
+        const resource = createDecodedBankResource({ maxDecodedBytes: 4, loadManifest, loadSample });
+        const violinLoad = loadBank(resource);
+        const celloLoad = loadBank(resource, {
+            ...DEFAULT_INPUT,
+            manifestUrl: '/cello/manifest.json',
+            basePath: '/cello',
+            expectedInstrumentId: 'cello',
         });
+        await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(1));
+        violinSample.resolve(createSample(1));
+        await expect(violinLoad).resolves.toMatchObject({ instrumentId: 'violin-1' });
+        await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(2));
+        celloSample.resolve(createSample(2));
+        await expect(celloLoad).resolves.toMatchObject({ instrumentId: 'cello' });
+        expect(resource.getDiagnostics()).toMatchObject({ evictions: 1, failedBanks: 0, resolvedBanks: 1 });
+    });
+
+    it('admits five distinct bank cohorts in order until their last leases release', async () => {
+        const instruments = ['violin-1', 'violin-2', 'viola', 'cello', 'double-bass'] as const;
+        const inputs = instruments.map((instrumentId) => ({
+            ...DEFAULT_INPUT,
+            manifestUrl: `/samples/levain/${instrumentId}/manifest.json`,
+            basePath: `/samples/levain/${instrumentId}`,
+            expectedInstrumentId: instrumentId,
+        }));
+        const loadSample = vi.fn().mockResolvedValue(createSample(1));
         const resource = createDecodedBankResource({
             maxDecodedBytes: 4,
-            maxConcurrentSampleLoads: 2,
-            loadManifest,
+            loadManifest: (url) =>
+                Promise.resolve(
+                    createManifest({
+                        instrumentId: instruments.find((id) => url.includes(`/${id}/`))!,
+                        files: ['note.wav'],
+                    })
+                ),
             loadSample,
         });
+        const loads = inputs.map((input) => resource.acquire(input));
+        // Observe every rejection even on the broken implementation.
+        const outcomes = Promise.allSettled(loads);
+        const first = await loads[0]!;
+        const sameKey = await resource.acquire(inputs[0]!);
+        expect(sameKey.bank).toBe(first.bank);
+        expect(loadSample).toHaveBeenCalledTimes(1);
+        first.release();
+        expect(resource.getDiagnostics().activeLeases).toBe(1);
+        expect(loadSample).toHaveBeenCalledTimes(1);
+        sameKey.release();
+        for (let index = 1; index < loads.length; index++) {
+            const lease = await loads[index]!;
+            expect(lease.bank.instrumentId).toBe(instruments[index]);
+            expect(loadSample).toHaveBeenCalledTimes(index + 1);
+            expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4 });
+            lease.release();
+        }
+        expect((await outcomes).every((outcome) => outcome.status === 'fulfilled')).toBe(true);
+        expect(resource.getDiagnostics()).toMatchObject({
+            activeLeases: 0,
+            decodedBytes: 4,
+            failedBanks: 0,
+            evictions: 4,
+        });
+    });
+
+    it.each(['abort', 'invalidate', 'clear'] as const)(
+        'withdraws a queued bank on %s without disturbing the held PCM',
+        async (reason) => {
+            const resource = createDecodedBankResource({
+                maxDecodedBytes: 4,
+                loadManifest: (url) =>
+                    Promise.resolve(
+                        createManifest({
+                            instrumentId: url.includes('cello') ? 'cello' : 'violin-1',
+                            files: ['note.wav'],
+                        })
+                    ),
+                loadSample: () => Promise.resolve(createSample(1)),
+            });
+            const held = await resource.acquire(DEFAULT_INPUT);
+            const controller = new AbortController();
+            const progress = vi.fn();
+            const input = {
+                ...DEFAULT_INPUT,
+                manifestUrl: '/cello/manifest.json',
+                basePath: '/cello',
+                expectedInstrumentId: 'cello',
+                signal: controller.signal,
+                onProgress: progress,
+            };
+            const queued = resource.acquire(input);
+            const rejected = expect(queued).rejects.toMatchObject({ name: 'AbortError' });
+            await vi.waitFor(() => expect(progress).toHaveBeenCalledWith(0));
+            held.reportActivity();
+            expect(progress).toHaveBeenLastCalledWith({ type: 'activity' });
+            if (reason === 'abort') {
+                controller.abort();
+            }
+            if (reason === 'invalidate') {
+                resource.invalidate(input);
+            }
+            if (reason === 'clear') {
+                resource.clear();
+            }
+            await rejected;
+            const reports = progress.mock.calls.length;
+            held.reportActivity();
+            expect(progress).toHaveBeenCalledTimes(reports);
+            expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4 });
+            const successor = resource.acquire({ ...input, signal: undefined, onProgress: undefined });
+            held.release();
+            const next = await successor;
+            expect(next.bank.instrumentId).toBe('cello');
+            next.release();
+            held.reportActivity();
+            expect(progress).toHaveBeenCalledTimes(reports);
+            expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 0, decodedBytes: 4 });
+        }
+    );
+
+    it('does not pin cached PCM for a queued cache hit while the admitted bank needs eviction', async () => {
+        const secondSample = createDeferred<DecodedSample>();
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            loadManifest: (url) =>
+                Promise.resolve(
+                    createManifest({ instrumentId: url.includes('cello') ? 'cello' : 'violin-1', files: ['note.wav'] })
+                ),
+            loadSample: (url) => (url.includes('cello') ? secondSample.promise : Promise.resolve(createSample(1))),
+        });
+        await loadBank(resource);
         const celloInput = {
             ...DEFAULT_INPUT,
-            manifestUrl: '/samples/levain/cello/manifest.json',
-            basePath: '/samples/levain/cello',
+            manifestUrl: '/cello/manifest.json',
+            basePath: '/cello',
             expectedInstrumentId: 'cello',
         };
+        const loading = resource.acquire(celloInput);
+        const queued = resource.acquire(DEFAULT_INPUT);
+        secondSample.resolve(createSample(2));
+        const cello = await loading;
+        expect(cello.bank.instrumentId).toBe('cello');
+        cello.release();
+        const violin = await queued;
+        expect(violin.bank.instrumentId).toBe('violin-1');
+        violin.release();
+        expect(resource.getDiagnostics()).toMatchObject({
+            failedBanks: 0,
+            activeLeases: 0,
+            decodedBytes: 4,
+            evictions: 2,
+        });
+    });
 
-        const violinLoad = loadBank(resource);
-        const celloLoad = loadBank(resource, celloInput);
-        await flushPromises();
-        celloSample.resolve(createSample(2));
-        await celloLoad;
-        violinSample.resolve(createSample(1));
-        await expect(violinLoad).rejects.toThrow('Levain decoded-bank memory budget exceeded');
-
-        await loadBank(resource, celloInput);
-        expect(resource.getDiagnostics()).toMatchObject({ evictions: 0, failedBanks: 1, resolvedBanks: 1 });
-
-        await loadBank(resource);
-
-        const manifestUrls = loadManifest.mock.calls.map(([url]) => url);
-        expect(manifestUrls.filter((url) => url.includes('cello'))).toHaveLength(2);
-        expect(manifestUrls.filter((url) => url.includes('violin'))).toHaveLength(2);
-        const sampleUrls = loadSample.mock.calls.map(([url]) => url);
-        expect(sampleUrls.filter((url) => url.includes('cello'))).toHaveLength(1);
-        expect(sampleUrls.filter((url) => url.includes('violin'))).toHaveLength(2);
-        expect(resource.getDiagnostics()).toMatchObject({ evictions: 1, failedBanks: 1, resolvedBanks: 1 });
+    it('drains a queued bank after its predecessor fails to decode', async () => {
+        const failing = createDeferred<DecodedSample>();
+        const sampleStarted = Promise.withResolvers<void>();
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            loadManifest: (url) =>
+                Promise.resolve(
+                    createManifest({ instrumentId: url.includes('cello') ? 'cello' : 'violin-1', files: ['note.wav'] })
+                ),
+            loadSample: (url) => {
+                sampleStarted.resolve();
+                return url.includes('cello') ? Promise.resolve(createSample(1)) : failing.promise;
+            },
+        });
+        const failed = resource.acquire(DEFAULT_INPUT);
+        const rejected = expect(failed).rejects.toThrow('decode refused');
+        const queued = resource.acquire({
+            ...DEFAULT_INPUT,
+            manifestUrl: '/cello/manifest.json',
+            basePath: '/cello',
+            expectedInstrumentId: 'cello',
+        });
+        await sampleStarted.promise;
+        failing.reject(new Error('decode refused'));
+        await rejected;
+        const lease = await queued;
+        expect(lease.bank.instrumentId).toBe('cello');
+        lease.release();
+        expect(resource.getDiagnostics()).toMatchObject({ failedBanks: 1, activeLeases: 0, decodedBytes: 4 });
     });
 
     it('rejects a bank that exceeds the decoded-memory budget', async () => {
