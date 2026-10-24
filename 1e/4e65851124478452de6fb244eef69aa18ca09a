@@ -1,0 +1,25 @@
+src/modules/AudioEngine/engine/AdjustmentLayerRuntime.ts
+  s_59e31a5c6f3e31::t_3eda5696de2250 2,224-240
+src/modules/AudioEngine/engine/__tests__/AdjustmentLayerRuntime.spec.ts
+  s_59e31a5c6f3e31::t_deb96d082b186b 9,105-178
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_59e31a5c6f3e31::t_844121dd24f208 7,103-104,2036-2276
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_59e31a5c6f3e31::t_01674e74340299 2660-2686,2688-2717
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e4e65851124478452de6fb244eef69aa18ca09a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
