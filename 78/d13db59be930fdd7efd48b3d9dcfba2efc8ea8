@@ -1,0 +1,25 @@
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_59e31a5c6f3e31::t_1ab82c6871836d 436-466
+  s_59e31a5c6f3e31::t_016d3e58330797 104,219-225,227,384,399,403,405-411,417
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_59e31a5c6f3e31::t_ae79d604601860 47-51,118-124,127,130,132-138,235-239,496-553,557
+  s_59e31a5c6f3e31::t_1e7427f66592c5 554-556,558
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_59e31a5c6f3e31::t_b9c7130d84fa70 724
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "78d13db59be930fdd7efd48b3d9dcfba2efc8ea8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
