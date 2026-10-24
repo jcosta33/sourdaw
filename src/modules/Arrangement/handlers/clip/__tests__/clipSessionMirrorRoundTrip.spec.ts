@@ -943,7 +943,11 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         await vi.waitFor(() => expect(persistedInverse().payload.clipIndex).toBe(0));
         const removedRaw = structuredClone(getCrdtDoc('root'));
         const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-        const entries = saved.past as { inverseAction: { payload: Record<string, unknown> } }[];
+        const entries = saved.past as {
+            action: unknown;
+            redoAction?: unknown;
+            inverseAction: { payload: Record<string, unknown> };
+        }[];
         expect(entries[0]!.inverseAction.payload.retiredTakeLanes).toEqual([]);
         delete entries[0]!.inverseAction.payload.clipIndex;
         delete entries[0]!.inverseAction.payload.retiredTakeLanes;
@@ -955,6 +959,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreClip') {
             throw new Error('Expected a hydrated legacy restore capture');
         }
+        expect(Object.hasOwn(entry.inverseAction.payload, 'retiredTakeLanes')).toBe(true);
+        expect(entry.inverseAction.payload.retiredTakeLanes).toEqual([]);
+        expect(entry.action).toEqual(entries[0]!.action);
+        expect(entry.redoAction).toEqual(entries[0]!.redoAction);
         for (const ripplePlan of [entry.inverseAction.payload.ripplePlan, null]) {
             const legacy = structuredClone(entry.inverseAction);
             legacy.payload.ripplePlan = ripplePlan;
@@ -982,6 +990,25 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(ownerProjections()).toEqual(removedOwners);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
         expect(undoHistoryStore.value?.future).toEqual([]);
+    });
+
+    it.each([
+        { name: 'null', capture: null },
+        { name: 'object', capture: {} },
+        { name: 'malformed array', capture: [{}] },
+    ])('rejects a present $name take-retirement capture during legacy hydration', async ({ capture }) => {
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() => expect(persistedInverse().payload.retiredTakeLanes).toEqual([]));
+        const before = structuredClone(getCrdtDoc('root'));
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entries = saved.past as { inverseAction: { payload: Record<string, unknown> } }[];
+        entries[0]!.inverseAction.payload.retiredTakeLanes = capture;
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        reloadSavedProject();
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+        await expectReplayRefused('undo');
     });
 
     it('projects a restored clip into an empty owner track between its adjacent tracks', async () => {

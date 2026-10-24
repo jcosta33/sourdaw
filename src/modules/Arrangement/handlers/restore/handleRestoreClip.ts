@@ -190,10 +190,15 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
     // preflight keeps that batch honest. Single-entry undo never calls validate.
     validate: (action, context) =>
         isRestoreClipSessionPayload(action.payload) &&
+        Object.hasOwn(action.payload, 'retiredTakeLanes') &&
         restoreStateMatches(action, context) &&
         batchMembersAreIndependent(action, context),
     execute: (alpha, context) => {
-        if (!isRestoreClipSessionPayload(alpha.payload) || !restoreStateMatches(alpha, context, true)) {
+        if (
+            !isRestoreClipSessionPayload(alpha.payload) ||
+            !Object.hasOwn(alpha.payload, 'retiredTakeLanes') ||
+            !restoreStateMatches(alpha, context, true)
+        ) {
             return { status: 'conflict' };
         }
         const {

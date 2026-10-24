@@ -261,6 +261,30 @@ describe('handleRestoreClip', () => {
         expect(mocks.restoreTakesForClip).toHaveBeenCalledWith([]);
     });
 
+    it.each([false, true])(
+        'refuses an omitted take-retirement capture at preflight and direct execution, ripple=%s',
+        (ripple) => {
+            const action = createRestoreClipAction({
+                ripplePlan: ripple
+                    ? {
+                          removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                          shiftedClips: [],
+                          clipSatellites: [],
+                          clipAutomationLanes: [],
+                      }
+                    : null,
+            });
+            delete action.payload.retiredTakeLanes;
+            expect(handleRestoreClip.validateSessionActionArguments?.(action.payload)).toBe(true);
+            expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+            expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+        }
+    );
+
     describe.each(['ripple', 'track'] as const)('%s restore MIDI admission', (path) => {
         it.each(['midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'] as const)(
             'refuses malformed or missing %s before any owner writes',

@@ -126,7 +126,18 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
 }
 
 export const handleRemoveClip = createHandler<'removeClip'>({
-    validateSessionEntry: isRemoveClipSessionEntry,
+    validateSessionEntry: (entry) => {
+        if (!isRemoveClipSessionEntry(entry)) {
+            return false;
+        }
+        const inverse = entry.inverseAction;
+        // Legacy saved removals omitted an empty take capture. Upgrade only
+        // the validated history payload before it reaches strict live replay.
+        if (inverse?.type === 'restoreClip' && !Object.hasOwn(inverse.payload, 'retiredTakeLanes')) {
+            inverse.payload = { ...inverse.payload, retiredTakeLanes: [] };
+        }
+        return true;
+    },
     validateSessionActionArguments: isRemoveClipSessionPayload,
     // Batch co-execution (grouped redo, atomic batches) preflights the state the
     // action assumes — the clip it names is still present — and refuses the whole

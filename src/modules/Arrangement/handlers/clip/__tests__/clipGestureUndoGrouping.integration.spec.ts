@@ -389,6 +389,10 @@ describe('clip gesture undo grouping (issue #3622)', () => {
 
         it('refuses a restoreClip batch action without its take-retirement capture', async () => {
             await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { skipUndo: true });
+            const before = Automerge.clone(getCrdtDoc('root')!);
+            const heads = Automerge.getHeads(getCrdtDoc('root')!);
+            const history = structuredClone(undoStore.value);
+            const owners = structuredClone({ tracks: trackStore.value, midi: midiStore.value });
 
             const result = await executeAppActionBatch([
                 {
@@ -406,6 +410,10 @@ describe('clip gesture undo grouping (issue #3622)', () => {
             ]);
 
             expect(result).toMatchObject({ status: 'conflicted' });
+            expect(getCrdtDoc('root')).toEqual(before);
+            expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+            expect({ tracks: trackStore.value, midi: midiStore.value }).toEqual(owners);
+            expect(undoStore.value).toEqual(history);
             expect(trackClips().map((clip) => clip.id)).toEqual(['clip-b']);
             expect(undoStore.value?.past).toEqual([]);
         });
