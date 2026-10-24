@@ -625,6 +625,7 @@ vi.mock('fflate', async (importOriginal) => {
 });
 
 const ownership = vi.hoisted(() => ({ rendered: 0, consumed: 0, peakRetained: 0 }));
+let reportFirstGcRender = () => {};
 const stemRender = vi.hoisted(() => ({
     frames: 44100,
     tracks: Array.from(
@@ -673,6 +674,7 @@ describe('connected stem export output ownership', () => {
         ownership.rendered = 0;
         ownership.consumed = 0;
         ownership.peakRetained = 0;
+        reportFirstGcRender = () => {};
         stemRender.frames = 44100;
         mocks.trackStore.value = { tracks: stemRender.tracks, selectedTrackId: null, ghostClips: [] };
         vi.clearAllMocks();
@@ -722,6 +724,9 @@ describe('connected stem export output ownership', () => {
                     resume: undefined,
                     async startRendering() {
                         ownership.rendered++;
+                        if (ownership.rendered === 1) {
+                            reportFirstGcRender();
+                        }
                         ownership.peakRetained = Math.max(
                             ownership.peakRetained,
                             ownership.rendered - ownership.consumed
@@ -786,7 +791,9 @@ describe('connected stem export output ownership', () => {
     it(
         GC_CASE_NAME,
         async () => {
+            const phaseStartedAt = Date.now();
             const gc: unknown = Reflect.get(globalThis, 'gc');
+            process.stdout.write(`GC_PHASE entry ms=0 gc=${typeof gc} child=${process.env[GC_CHILD_MARKER] === '1'}\n`);
             if (typeof gc !== 'function') {
                 if (process.env[GC_CHILD_MARKER] === '1') {
                     throw new TypeError('Run this ownership probe with node --expose-gc.');
@@ -857,11 +864,27 @@ describe('connected stem export output ownership', () => {
                 resolveFinished = resolve;
                 rejectFinished = reject;
             });
+            const reportGcPhase = (phase: string, live?: number) => {
+                // Diagnostic output must not enter the buffers measured by the next checkpoint.
+                const wasCollecting = collecting;
+                collecting = false;
+                try {
+                    process.stdout.write(
+                        `GC_PHASE ${phase} ms=${Date.now() - phaseStartedAt} r=${ownership.rendered} c=${ownership.consumed} w=${writes} s=${samples} refs=${allocations.length} live=${live ?? '-'} peak=${peak}\n`
+                    );
+                } finally {
+                    collecting = wasCollecting;
+                }
+            };
+            reportFirstGcRender = () => reportGcPhase('render');
             vi.stubGlobal('showSaveFilePicker', async () => ({
                 createWritable: async () => ({
                     write: async (bytes: Uint8Array) => {
                         track(bytes.buffer);
                         writes++;
+                        if (writes === 1) {
+                            reportGcPhase('first-write');
+                        }
                         // Sample at fixed ownership checkpoints. Full collections for every small MPEG
                         // packet dominated the test itself; each checkpoint still includes every observed buffer.
                         if (writes % 32 !== 1) {
@@ -875,9 +898,13 @@ describe('connected stem export output ownership', () => {
                         const live = sampleLiveExportBytes(allocations);
                         peak = Math.max(peak, live);
                         expect(live).toBeLessThanOrEqual(2 * b);
+                        if (samples % 8 === 0) {
+                            reportGcPhase('sample', live);
+                        }
                     },
                     close: async () => {
                         closed = true;
+                        reportGcPhase('close');
                         resolveFinished();
                     },
                     abort: async () => {
@@ -895,6 +922,7 @@ describe('connected stem export output ownership', () => {
                     fireEvent.click(screen.getByTestId('export-start'));
                     await finished;
                 });
+                reportGcPhase('act-resolved');
                 expect(closed).toBe(true);
                 expect(ownership.rendered).toBe(64);
                 expect(ownership.peakRetained).toBe(1);
@@ -912,6 +940,7 @@ describe('connected stem export output ownership', () => {
                 expect(peak).toBeLessThanOrEqual(2 * b);
             } finally {
                 collecting = false;
+                reportFirstGcRender = () => {};
                 zipAllocation.observe = () => {};
                 vi.unstubAllGlobals();
             }
