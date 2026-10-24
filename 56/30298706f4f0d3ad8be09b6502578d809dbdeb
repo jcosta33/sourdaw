@@ -1,0 +1,37 @@
+src/modules/Levain/useCases/__tests__/commitLevainDeviceState.spec.ts
+  s_59e31a5c6f3e31::t_59f5b8d7adeebe 72
+src/modules/Levain/useCases/__tests__/coordinateLevainDeviceState.spec.ts
+  s_59e31a5c6f3e31::t_3dfff89c8aac0d 1-158
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_4b87a00004d0aa 179-181,187-194,201-216,250-251,258,337,353,370,378-491,553,567,582,604
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_59e31a5c6f3e31::t_cf4d3e62405fc3 4,27-30,32-35
+src/modules/Levain/useCases/coordinateLevainDeviceState.ts
+  s_59e31a5c6f3e31::t_67e36d09181af9 1-100
+src/modules/Levain/useCases/setLevainPanelUiLevel.ts
+  s_29d8df116c5b92::t_ea4345b6ec49b7 7,11-13,15,18,22-30,32-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5630298706f4f0d3ad8be09b6502578d809dbdeb",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
