@@ -628,3 +628,197 @@ describe('parseProjectXml — clip routing via channel id', () => {
         expect(result.tracks[0]?.clips).toHaveLength(0);
     });
 });
+
+describe('parseProjectXml — inherited arrangement scope', () => {
+    it('maps a trackless Clips under its Lanes owner and names that owner in a sibling Video warning', () => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                '<Arrangement><Lanes track="keys"><Clips>' +
+                '<Clip name="Phrase" time="0" duration="2"><Notes><Note time="0" duration="1" key="60"/></Notes></Clip>' +
+                '</Clips><Video id="video" name="Picture" duration="2"><File path="picture.mov"/></Video></Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Scopes', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'scopes.dawproject',
+        });
+
+        expect(mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips).toMatchObject([
+            { name: 'Phrase', startBeat: 0, endBeat: 2, type: 'midi' },
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Video', name: 'Picture', context: 'Keys', sourceId: 'video' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('lets nested Lanes and Clips override the owner while invalid explicit references block inheritance', () => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                '<Track id="drums" name="Drums" contentType="notes"><Channel id="drum-channel"/></Track></Structure>' +
+                '<Arrangement><Lanes track="keys">' +
+                '<Clips><Clip name="Keys phrase" time="0" duration="1"><Notes/></Clip></Clips>' +
+                '<Lanes track="drums"><Clips><Clip name="Drums phrase" time="1" duration="1"><Notes/></Clip></Clips></Lanes>' +
+                '<Clips channel="drum-channel"><Clip name="Channel phrase" time="2" duration="1"><Notes/></Clip></Clips>' +
+                '<Clips track="missing"><Clip name="Missing phrase" time="3" duration="1"><Notes/></Clip></Clips>' +
+                '<Clips track=""><Clip name="Empty phrase" time="4" duration="1"><Notes/></Clip></Clips>' +
+                '<Clips><Clip name="Sibling phrase" time="5" duration="1"><Notes/></Clip></Clips>' +
+                '</Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+
+        expect(parsed.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)).toEqual([
+            'Keys phrase',
+            'Sibling phrase',
+        ]);
+        expect(parsed.tracks.find((track) => track.name === 'Drums')?.clips.map((clip) => clip.name)).toEqual([
+            'Drums phrase',
+            'Channel phrase',
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { name: 'Missing phrase', sourceType: 'Clip', context: 'missing', handling: 'dropped' },
+            { name: 'Empty phrase', sourceType: 'Clip', context: '', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings[0]?.sourceOrder).toBeLessThan(parsed.warnings[1]?.sourceOrder ?? 0);
+    });
+
+    it('places nested phrases at the containing clip origin across two levels without moving their notes', () => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                '<Arrangement><Lanes><Clips track="keys">' +
+                '<Clip name="Container" time="8" duration="8"><Clips>' +
+                '<Clip name="Nested" time="2" duration="4"><Clips>' +
+                '<Clip name="Deep phrase" time="1" duration="1"><Notes><Note time="0" duration="1" key="67"/></Notes></Clip>' +
+                '</Clips></Clip><Clip name="Phrase" time="2" duration="2"><Notes>' +
+                '<Note time="0" duration="1" key="60"/></Notes></Clip>' +
+                '</Clips></Clip><Clip name="Sibling" time="1" duration="1"><Notes/></Clip>' +
+                '</Clips></Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Nested', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'nested.dawproject',
+        });
+        const clips = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+
+        expect(clips?.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
+            ['Container', 8, 16],
+            ['Nested', 10, 14],
+            ['Deep phrase', 11, 12],
+            ['Phrase', 10, 12],
+            ['Sibling', 1, 2],
+        ]);
+        const phrase = clips?.find((clip) => clip.name === 'Phrase');
+        expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+            { pitch: 60, startBeat: 0, duration: 1 },
+        ]);
+        expect(parsed.warnings).toEqual([]);
+    });
+
+    it('uses the parent content unit and playStart when placing a nested seconds phrase', () => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                '<Arrangement timeUnit="beats"><Lanes><Clips track="keys">' +
+                '<Clip name="Container" time="8" duration="8" contentTimeUnit="seconds" playStart="1"><Clips>' +
+                '<Clip name="Seconds phrase" time="1.5" duration="1"><Notes>' +
+                '<Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                '</Clips></Clip></Clips></Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Seconds', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'seconds.dawproject',
+        });
+        const phrase = mapped.arrangement.tracks
+            .find((track) => track.name === 'Keys')
+            ?.clips.find((clip) => clip.name === 'Seconds phrase');
+
+        expect(phrase).toMatchObject({ startBeat: 9, endBeat: 11 });
+        expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+            { pitch: 60, startBeat: 0, duration: 1 },
+        ]);
+        expect(parsed.warnings).toEqual([]);
+    });
+
+    it('warns once and omits a nested repeat that cannot be placed without its loop transform', () => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                '<Arrangement><Lanes track="keys"><Clips>' +
+                '<Clip id="loop" name="Looped container" time="8" duration="8" loopStart="0" loopEnd="2"><Clips>' +
+                '<Clip name="Repeated phrase" time="0" duration="2"><Notes/></Clip>' +
+                '</Clips></Clip></Clips></Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+
+        expect(parsed.tracks.find((track) => track.name === 'Keys')?.clips).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Clip', sourceId: 'loop', context: 'Keys', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings[0]?.sourceOrder).toBeGreaterThan(0);
+    });
+
+    it.each([
+        {
+            name: 'cropped child',
+            attributes: 'time="8" duration="2"',
+            content: '<Clips><Clip time="2" duration="1"><Notes/></Clip></Clips>',
+        },
+        {
+            name: 'unknown visible window',
+            attributes: 'time="8"',
+            content: '<Clips><Clip time="0" duration="1"><Notes/></Clip></Clips>',
+        },
+        {
+            name: 'warped child',
+            attributes: 'time="8" duration="4"',
+            content:
+                '<Warps contentTimeUnit="beats"><Clips><Clip time="0" duration="1"><Notes/></Clip></Clips>' +
+                '<Warp time="0" contentTime="0"/><Warp time="4" contentTime="2"/></Warps>',
+        },
+        {
+            name: 'referenced child',
+            attributes: 'time="8" duration="4" reference="another-timeline"',
+            content: '<Clips><Clip time="0" duration="1"><Notes/></Clip></Clips>',
+        },
+    ])('warns once and omits a nested $name instead of inventing a placement', ({ attributes, content }) => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                `<Arrangement><Lanes track="keys"><Clips><Clip id="container" name="Container" ${attributes}>` +
+                `${content}</Clip></Clips></Lanes></Arrangement>`
+        );
+        const parsed = parseProjectXml(xml);
+
+        expect(parsed.tracks[0]?.clips).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                sourceId: 'container',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('keeps a nested phrase inside a loop range that never repeats', () => {
+        const xml = project(
+            '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                '<Arrangement><Lanes track="keys"><Clips>' +
+                '<Clip name="Container" time="8" duration="8" loopStart="0" loopEnd="8"><Clips>' +
+                '<Clip name="Phrase" time="2" duration="2"><Notes/></Clip>' +
+                '</Clips></Clip></Clips></Lanes></Arrangement>'
+        );
+        const parsed = parseProjectXml(xml);
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
+            ['Container', 8, 16],
+            ['Phrase', 10, 12],
+        ]);
+        expect(parsed.warnings).toEqual([]);
+    });
+});
