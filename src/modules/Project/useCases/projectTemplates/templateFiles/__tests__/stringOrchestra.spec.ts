@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { hydrateLevainStateFromProject, nativeBankKeyForLevainDeviceState } from '#/modules/Levain/useCases';
+import { toStereoPan } from '#/utils/audioLevelLaw';
 
 import { handleCreateProjectFromTemplate } from '../../../../handlers/projectTemplate/handleCreateProjectFromTemplate';
 import { arrangementStore } from '../../../../stores/arrangementStore';
@@ -23,14 +24,27 @@ vi.mock('../../templateHelpers/finalizeTemplate', async () => {
 });
 
 const expectedSections = [
-    { name: 'Violins I', instrumentId: 'violin-1', pan: -0.6, gain: 0.72, send: 0.38 },
-    { name: 'Violins II', instrumentId: 'violin-2', pan: -0.3, gain: 0.7, send: 0.36 },
-    { name: 'Violas', instrumentId: 'viola', pan: 0.1, gain: 0.72, send: 0.34 },
-    { name: 'Cellos', instrumentId: 'cello', pan: 0.38, gain: 0.74, send: 0.32 },
-    { name: 'Double Basses', instrumentId: 'double-bass', pan: 0.62, gain: 0.76, send: 0.28 },
+    { name: 'Violins I', instrumentId: 'violin-1', pan: -30, gain: 0.72, send: 0.38 },
+    { name: 'Violins II', instrumentId: 'violin-2', pan: -15, gain: 0.7, send: 0.36 },
+    { name: 'Violas', instrumentId: 'viola', pan: 5, gain: 0.72, send: 0.34 },
+    { name: 'Cellos', instrumentId: 'cello', pan: 19, gain: 0.74, send: 0.32 },
+    { name: 'Double Basses', instrumentId: 'double-bass', pan: 31, gain: 0.76, send: 0.28 },
 ] as const;
 
 describe('String Orchestra template', () => {
+    it('projects section pans through the shared stored-pan conversion', async () => {
+        await handleCreateProjectFromTemplate.execute({
+            type: 'createProjectFromTemplate',
+            payload: { templateId: 'string-orchestra' },
+        });
+
+        const projectedPans = (trackStore.value?.tracks ?? [])
+            .filter((track) => track.kind === 'midi')
+            .map((track) => toStereoPan(track.pan));
+
+        expect(projectedPans).toEqual([-0.6, -0.3, 0.1, 0.38, 0.62]);
+    });
+
     it('publishes five persisted Levain sections through the registered template', async () => {
         const template = getTemplates().find((entry) => entry.id === 'string-orchestra');
         expect(template).toMatchObject({ name: 'String Orchestra', category: 'film', executionBoundary: 'app-action' });

@@ -7,11 +7,11 @@ import { finalizeTemplate } from '../templateHelpers/finalizeTemplate';
 import { initProject } from '../templateHelpers/initProject';
 
 const sections = [
-    { name: 'Violins I', instrumentId: 'violin-1', pan: -0.6, gain: 0.72, send: 0.38 },
-    { name: 'Violins II', instrumentId: 'violin-2', pan: -0.3, gain: 0.7, send: 0.36 },
-    { name: 'Violas', instrumentId: 'viola', pan: 0.1, gain: 0.72, send: 0.34 },
-    { name: 'Cellos', instrumentId: 'cello', pan: 0.38, gain: 0.74, send: 0.32 },
-    { name: 'Double Basses', instrumentId: 'double-bass', pan: 0.62, gain: 0.76, send: 0.28 },
+    { name: 'Violins I', instrumentId: 'violin-1', pan: -30, gain: 0.72, send: 0.38 },
+    { name: 'Violins II', instrumentId: 'violin-2', pan: -15, gain: 0.7, send: 0.36 },
+    { name: 'Violas', instrumentId: 'viola', pan: 5, gain: 0.72, send: 0.34 },
+    { name: 'Cellos', instrumentId: 'cello', pan: 19, gain: 0.74, send: 0.32 },
+    { name: 'Double Basses', instrumentId: 'double-bass', pan: 31, gain: 0.76, send: 0.28 },
 ] as const;
 
 export async function createStringOrchestraTemplate(): Promise<void> {
