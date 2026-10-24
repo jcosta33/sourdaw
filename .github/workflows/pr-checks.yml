@@ -1,9 +1,8 @@
 name: PR checks
 
-# Cheap validation for every push, before review. It mints no Gate and is not
-# required: the required Gate, the affected browser matrix, Browser AI hardware
-# admission and CodeQL run in health-gates.yml once the reviewer App approves
-# the exact head, so pushes from many lanes no longer queue the heavy suite.
+# Cheap validation for every non-draft head, before review. It mints no Gate
+# and is not required. Required affected checks and CodeQL run automatically
+# in health-gates.yml on the same events. Drafts wait for ready_for_review.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -18,6 +17,7 @@ concurrency:
 
 jobs:
   scope:
+    if: ${{ !github.event.pull_request.draft }}
     name: Plan push checks
     runs-on: ubuntu-latest
     timeout-minutes: 10

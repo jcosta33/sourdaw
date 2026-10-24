@@ -32,7 +32,6 @@ const REVIEW_TOOLING = new Set([
     'repairReviewFinding',
     'resolveThread',
     'reviewApprovalFormat',
-    'reviewApprovalLabel',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',

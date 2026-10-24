@@ -170,7 +170,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
         scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
         validation: null,
         affected: null,

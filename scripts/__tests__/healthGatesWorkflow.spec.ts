@@ -21,7 +21,6 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
-import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
     assertWorkflowFileInventory,
@@ -36,6 +35,7 @@ import {
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
+import { assertPullRequestRequiredCheck } from '../pullRequestGateWorkflowContract';
 import {
     assertSemanticReviewWorkflow,
     SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT,
@@ -131,7 +131,7 @@ const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_reque
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // A cancelled upstream job must still reach the required assertion. GitHub
 // accepts skipped required checks, so the summary and its sole step use always().
-const GATE_CONDITION = '${{ always() }}';
+const GATE_CONDITION = '${{ always() && !github.event.pull_request.draft }}';
 const HEAVY_GATE_CONDITION = '${{ always() }}';
 const HEALTH_GATES_TRIGGERS = ['pull_request'] as const;
 const HEAVY_GATES_TRIGGERS = ['workflow_call'] as const;
@@ -241,7 +241,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['admission', 'scope', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['scope', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -1786,7 +1786,7 @@ function assertValidationScopeConditions(candidate: UnknownRecord): void {
 // run of `health-gates.yml` may mint that name, `gate` must be unable to skip,
 // and it must fail unless the reviewer App approved the exact head.
 function assertRequiredCheckIsolation(set: WorkflowSet): void {
-    assertApprovalGatedRequiredCheck(Object.fromEntries(workflowFiles(set)));
+    assertPullRequestRequiredCheck(Object.fromEntries(workflowFiles(set)));
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
         throw new Error('heavy-gates.yml must be reusable-only');
     }
@@ -3164,6 +3164,22 @@ describe('health gates workflow contract', () => {
     // required `Gate` on a head whose earlier `Gate` had failed. A required
     // check cannot be defended by a job condition — only by keeping the events
     // that can skip it out of the file that mints it.
+    it('leaves draft PR heads idle until they are ready for review', () => {
+        for (const candidate of [workflow, workflowSet().prChecks]) {
+            expect(jobAt(candidate, 'scope').if).toBe('${{ !github.event.pull_request.draft }}');
+            expect(recordAt(recordAt(candidate, 'on'), 'pull_request').types).toContain('ready_for_review');
+        }
+        expect(jobAt(workflow, 'gate').if).toBe('${{ always() && !github.event.pull_request.draft }}');
+    });
+
+    it('starts required CI on ordinary PR head events without a label or review', () => {
+        expect(recordAt(workflow, 'on')).toEqual({
+            pull_request: { types: ['opened', 'synchronize', 'reopened', 'ready_for_review'] },
+        });
+        expect(jobAt(workflow, 'scope').needs).toBeUndefined();
+        expect(jobAt(workflow, 'scope').if).toBe('${{ !github.event.pull_request.draft }}');
+    });
+
     it('lets only a pull-request run mint the required Gate', () => {
         expect(workflowDocument.errors).toEqual([]);
         expect(nightlyDocument.errors).toEqual([]);
@@ -3185,11 +3201,10 @@ describe('health gates workflow contract', () => {
         const reviewTriggered = cloneWorkflows('review-triggered');
         recordAt(reviewTriggered.health, 'on').pull_request_review = { types: ['submitted'] };
         expect(() => assertRequiredCheckIsolation(reviewTriggered)).toThrow(
-            'health-gates.yml must answer to labeled pull_request events alone'
+            'health-gates.yml must answer to ordinary pull-request head events alone'
         );
 
-        // A second event type reaches Gate on every push again, and a run-completion
-        // trigger runs outside the pull_request event entirely.
+        // Label and review events must not supersede a head's required result.
         for (const events of [
             { pull_request: { types: ['labeled', 'synchronize'] } },
             { pull_request: { types: ['labeled'] }, workflow_run: { workflows: ['PR checks'] } },
@@ -3198,7 +3213,7 @@ describe('health gates workflow contract', () => {
             const widenedTrigger = cloneWorkflows('widened trigger');
             widenedTrigger.health.on = events;
             expect(() => assertRequiredCheckIsolation(widenedTrigger)).toThrow(
-                'health-gates.yml must answer to labeled pull_request events alone'
+                'health-gates.yml must answer to ordinary pull-request head events alone'
             );
         }
 
@@ -3206,64 +3221,40 @@ describe('health gates workflow contract', () => {
         jobAt(skippableGate.health, 'gate').if = '${{ !cancelled() }}';
         expect(() => assertRequiredCheckIsolation(skippableGate)).toThrow('Gate must run after cancellation');
 
-        // Gating the Gate itself on admission would skip it on every unadmitted
-        // label event, and a skipped Gate satisfies the required check.
-        const admissionSkippedGate = cloneWorkflows('admission-skipped gate');
-        jobAt(admissionSkippedGate.health, 'gate').if = ADMITTED_CONDITION;
-        expect(() => assertRequiredCheckIsolation(admissionSkippedGate)).toThrow('Gate must run after cancellation');
+        const skippedGate = cloneWorkflows('conditional gate');
+        jobAt(skippedGate.health, 'gate').if = "github.event.action == 'labeled'";
+        expect(() => assertRequiredCheckIsolation(skippedGate)).toThrow('Gate must run after cancellation');
 
         const skippableGateStep = cloneWorkflows('skippable gate step');
-        stepNamed(jobAt(skippableGateStep.health, 'gate'), 'Require selected checks to succeed').if =
-            ADMITTED_CONDITION;
+        stepNamed(jobAt(skippableGateStep.health, 'gate'), 'Require selected checks to succeed').if = 'false';
         expect(() => assertRequiredCheckIsolation(skippableGateStep)).toThrow('Gate must run after cancellation');
 
-        const unadmittedGate = cloneWorkflows('unadmitted gate');
-        const unadmittedNeeds = arrayAt(jobAt(unadmittedGate.health, 'gate'), 'needs');
-        unadmittedNeeds.splice(unadmittedNeeds.indexOf('admission'), 1);
-        expect(() => assertRequiredCheckIsolation(unadmittedGate)).toThrow(
-            'Gate must fail unless approval admission admitted the head'
+        for (const condition of ["contains(github.event.pull_request.labels.*.name, 'ci:approved')", 'false']) {
+            const gatedScope = cloneWorkflows('conditional scope');
+            jobAt(gatedScope.health, 'scope').if = condition;
+            expect(() => assertRequiredCheckIsolation(gatedScope)).toThrow(
+                'required check planning must run on every non-draft pull-request head event'
+            );
+        }
+        const draftChecks = cloneWorkflows('draft cheap checks');
+        delete jobAt(draftChecks.prChecks, 'scope').if;
+        expect(() => assertRequiredCheckIsolation(draftChecks)).toThrow(
+            'cheap check planning must run on every non-draft pull-request head event'
         );
+        const skippedReadyGate = cloneWorkflows('draft-only gate');
+        jobAt(skippedReadyGate.health, 'gate').if = '${{ always() && github.event.pull_request.draft }}';
+        expect(() => assertRequiredCheckIsolation(skippedReadyGate)).toThrow('Gate must run after cancellation');
 
-        const ungatedHeavyRun = cloneWorkflows('ungated heavy run');
-        delete jobAt(ungatedHeavyRun.health, 'scope').if;
-        expect(() => assertRequiredCheckIsolation(ungatedHeavyRun)).toThrow(
-            'the heavy checks must start only after approval admission admits the head'
+        const dependentScope = cloneWorkflows('dependent scope');
+        jobAt(dependentScope.health, 'scope').needs = 'approval';
+        expect(() => assertRequiredCheckIsolation(dependentScope)).toThrow(
+            'required check planning must run on every non-draft pull-request head event'
         );
 
         const bypassingCodeql = cloneWorkflows('bypassing CodeQL');
-        jobAt(bypassingCodeql.health, 'codeql').needs = 'admission';
+        jobAt(bypassingCodeql.health, 'codeql').needs = [];
         expect(() => assertRequiredCheckIsolation(bypassingCodeql)).toThrow(
-            'health-gates.yml job codeql must wait for approval admission through scope'
-        );
-
-        // Candidate code deciding its own admission: the head could admit itself.
-        const candidateAdmission = cloneWorkflows('candidate admission');
-        recordAt(stepNamed(jobAt(candidateAdmission.health, 'admission'), 'Checkout trusted admission'), 'with').ref =
-            '${{ github.event.pull_request.head.sha }}';
-        expect(() => assertRequiredCheckIsolation(candidateAdmission)).toThrow(
-            'approval admission must decide from the default branch, never the candidate head'
-        );
-
-        // An older head's approval admits when the decision reads any SHA but the event head.
-        const olderHeadAdmission = cloneWorkflows('older-head admission');
-        recordAt(stepNamed(jobAt(olderHeadAdmission.health, 'admission'), 'Decide admission'), 'env').HEAD_SHA =
-            '${{ github.event.pull_request.base.sha }}';
-        expect(() => assertRequiredCheckIsolation(olderHeadAdmission)).toThrow(
-            'approval admission must decide on the event head, label and sender with the trusted script'
-        );
-
-        // Any approval admits when the decision no longer runs the reviewer-identity check.
-        const anyApproverAdmission = cloneWorkflows('any-approver admission');
-        stepNamed(jobAt(anyApproverAdmission.health, 'admission'), 'Decide admission').run =
-            'echo admitted=true >> "$GITHUB_OUTPUT"';
-        expect(() => assertRequiredCheckIsolation(anyApproverAdmission)).toThrow(
-            'approval admission must decide on the event head, label and sender with the trusted script'
-        );
-
-        const softenedAdmission = cloneWorkflows('softened admission');
-        jobAt(softenedAdmission.health, 'admission')['continue-on-error'] = true;
-        expect(() => assertRequiredCheckIsolation(softenedAdmission)).toThrow(
-            'approval admission must not declare continue-on-error'
+            'health-gates.yml job codeql must wait for scope'
         );
 
         const mintingPushChecks = cloneWorkflows('minting push checks');
@@ -5022,8 +5013,8 @@ export -f sudo timeout sleep apt-get
         expect(surface(emptyNamedGate)).toThrow('nightly.yml job Gate must not be named Gate');
 
         const secondGate = cloneWorkflows('second Gate in health gates');
-        jobAt(secondGate.health, 'admission').name = 'Gate';
-        expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
+        jobAt(secondGate.health, 'scope').name = 'Gate';
+        expect(surface(secondGate)).toThrow('health-gates.yml job scope must not be named Gate');
     });
 
     it('pins the trusted nightly evidence reporter before granting issue writes', () => {
@@ -5681,16 +5672,8 @@ export -f sudo timeout sleep apt-get
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
         const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
-        const requiredResults = (
-            codeql: 'true' | 'false',
-            overrides: Record<string, JobResult> = {},
-            admitted: 'true' | 'false' = 'true'
-        ) =>
+        const requiredResults = (codeql: 'true' | 'false', overrides: Record<string, JobResult> = {}) =>
             JSON.stringify({
-                admission: {
-                    result: overrides.admission ?? 'success',
-                    outputs: { admitted, reason: 'the reviewer App has not approved head abc' },
-                },
                 scope: {
                     result: overrides.scope ?? 'success',
                     outputs: { browser: 'true', 'browser-ai': 'false', codeql },
@@ -5701,28 +5684,19 @@ export -f sudo timeout sleep apt-get
             });
         expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
-        for (const dependency of ['admission', 'scope', 'validation', 'affected', 'codeql']) {
+        for (const dependency of ['scope', 'validation', 'affected', 'codeql']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
                 expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }
         }
-        // A refused admission skips every heavy job; Gate must fail, never pass on the skips, and say why.
-        const refused = JSON.stringify({
-            admission: {
-                result: 'success',
-                outputs: { admitted: 'false', reason: 'the reviewer App has not approved head abc' },
-            },
+        // A run with missing or skipped required work must not inherit a prior green head.
+        const skipped = JSON.stringify({
             scope: { result: 'skipped', outputs: {} },
             validation: { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         });
-        expect(runResultsGuard(gateScript, refused)).not.toBe(0);
-        expect(
-            spawnSync('bash', ['-c', gateScript], { encoding: 'utf8', env: { ...process.env, RESULTS: refused } })
-                .stdout
-        ).toMatch(/^::error title=Gate not admitted::the reviewer App has not approved head abc\n/u);
-        expect(runResultsGuard(gateScript, requiredResults('true', {}, 'false'))).not.toBe(0);
+        expect(runResultsGuard(gateScript, skipped)).not.toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false', { codeql: 'success' }))).not.toBe(0);
         expect(
             runResultsGuard(gateScript, requiredResults('true').replace('"browser":"true"', '"browser":""'))
@@ -5824,11 +5798,11 @@ export -f sudo timeout sleep apt-get
 
     it('makes the selected tooling unit job mandatory in the validation result', () => {
         const gate = jobAt(validationWorkflow, 'validation-gate');
-        expect(gate.if).toBe(GATE_CONDITION);
+        expect(gate.if).toBe('${{ always() }}');
         expect(arrayAt(gate, 'needs')).toEqual(VALIDATION_JOBS.filter((job) => job !== 'validation-gate'));
         expect(gate['continue-on-error']).toBeUndefined();
         const step = stepNamed(gate, 'Require selected validation jobs to succeed');
-        expect(step.if).toBe(GATE_CONDITION);
+        expect(step.if).toBe('${{ always() }}');
         expect(recordAt(step, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
         const script = stringAt(step, 'run');
         const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {

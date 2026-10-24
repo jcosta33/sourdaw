@@ -196,8 +196,8 @@ const { assertWorkflowSecuritySurface } = await import(
     `${process.env.REPO_ROOT}/scripts/workflowSecuritySurfaceContract.ts`
 );
 const { assertHostedWasmWorkflow } = await import(`${process.env.REPO_ROOT}/scripts/hostedWasmWorkflowContract.ts`);
-const { assertApprovalGatedRequiredCheck } = await import(
-    `${process.env.REPO_ROOT}/scripts/approvalGatedWorkflowContract.ts`
+const { assertPullRequestRequiredCheck } = await import(
+    `${process.env.REPO_ROOT}/scripts/pullRequestGateWorkflowContract.ts`
 );
 const { assertHostedQuantumMeasurementWorkflow } = await import(
     `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
@@ -400,7 +400,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['admission', 'scope', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['scope', 'validation', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -444,17 +444,16 @@ expect(workflow.name === 'Health gates', 'workflow name must stay Health gates')
 // conclusion is `skipped` as satisfying a required status check, and prefers
 // the newest run of that name, so an event that can reach `gate` and skip it
 // mints a passing `Gate` over a red head. A `pull_request_review` trigger did
-// exactly that in production. A labeled `pull_request` is the only event here,
-// it can never skip `gate`, and `gate` fails unless the trusted admission
-// admitted the reviewer App's approval of the exact head. The shared contract
-// holds the whole boundary, including the cheap per-push workflow's lack of Gate.
+// exactly that in production. Ordinary non-draft PR head events run the checks
+// and a non-skipping Gate. Drafts run no checks until ready_for_review. The shared
+// contract holds the boundary, including the cheap workflow's lack of Gate.
 expect(
     JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
 );
-let approvalGateError;
+let pullRequestGateError;
 try {
-    assertApprovalGatedRequiredCheck({
+    assertPullRequestRequiredCheck({
         'health-gates.yml': workflow,
         'pr-checks.yml': prChecks,
         'validation.yml': validationWorkflow,
@@ -465,10 +464,10 @@ try {
         'semantic-review.yml': semanticReview,
     });
 } catch (error) {
-    approvalGateError = error;
+    pullRequestGateError = error;
 }
-expect(approvalGateError === undefined, `the approval-gated Gate boundary must hold: ${approvalGateError?.message ?? ''}`);
-expect(gate?.if === '${{ always() }}', 'Gate must evaluate cancelled upstream jobs rather than become a skipped required check');
+expect(pullRequestGateError === undefined, `the pull-request Gate boundary must hold: ${pullRequestGateError?.message ?? ''}`);
+expect(gate?.if === '${{ always() && !github.event.pull_request.draft }}', 'Gate must evaluate cancelled upstream jobs rather than become a skipped required check');
 expect(gateStep?.if === '${{ always() }}', 'Gate assertion must run even after cancellation');
 // The heavy lane is reusable and only the pull-request workflow calls it.
 expect(heavyWorkflow.name === 'Heavy gates', 'heavy workflow name must stay Heavy gates');
@@ -571,7 +570,7 @@ expect(
     concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
     'pull-request validation must group by pull request'
 );
-expect(heavyWorkflow.concurrency === undefined, 'reusable browser checks must not run their own approval concurrency group');
+expect(heavyWorkflow.concurrency === undefined, 'reusable browser checks must not run their own concurrency group');
 // A job-level `concurrency` is its own group, independent of the
 // workflow-level one: a constant group with cancellation on a matrix job
 // would let queued shards cancel in-progress ones. Nightly is swept with the
@@ -725,7 +724,7 @@ expect(
 );
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
-    'the offline smoke set must run on every pull-request run that touches the browser surface, including the review run an approval leaves reporting'
+    'the offline smoke set must run on every pull-request run that touches the browser surface, after the pull request becomes ready for review'
 );
 expect(
     stepNamed(smoke, 'Run offline smoke set')?.run === 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0',
@@ -733,7 +732,7 @@ expect(
 );
 expect(
     prSecrets?.if === 'github.event.pull_request != null',
-    'the diff secret scan must run on every run carrying a pull request, including the review run an approval leaves reporting'
+    'the diff secret scan must run on every run carrying a pull request, after the pull request becomes ready for review'
 );
 expect(
     !TOKEN_PATTERN.test(JSON.stringify(prSecrets)),
@@ -1249,7 +1248,7 @@ expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2', '${{ ma
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11', '${{ matrix.id }}');
 expect(
     dependencyReview?.if === 'github.event.pull_request != null',
-    'dependency review must gate on the pull request payload, not on the pull_request event, so an approval run can validate the head after any in-flight push run finishes'
+    'dependency review must gate on the pull request payload, not on the pull_request event, so every run carrying the pull request validates its head'
 );
 expect(
     dependencyReviewWith['base-ref'] === '${{ github.event.pull_request.base.sha }}',
@@ -1267,7 +1266,7 @@ expect(
 );
 expect(heavyGate?.if === '${{ always() }}', 'HeavyGate must evaluate cancelled selected browser checks');
 expect(heavyGateStep?.if === '${{ always() }}', 'HeavyGate assertion must run after cancellation');
-expect(gate?.if === '${{ always() }}', 'Gate must evaluate cancelled selected checks');
+expect(gate?.if === '${{ always() && !github.event.pull_request.draft }}', 'Gate must evaluate cancelled selected checks');
 // Job-level continue-on-error concludes the required check success over red
 // needs, and a conditional guard step can skip the only refusal the summary
 // has — either softening still reports a green Gate.
@@ -1312,7 +1311,6 @@ expect(
     'HeavyGate must require the exact outcomes for selected browser jobs'
 );
 const requiredResults = (codeql, overrides = {}) => JSON.stringify({
-    admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
     scope: { result: overrides.scope ?? 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql } },
     validation: { result: overrides.validation ?? 'success' },
     affected: { result: overrides.affected ?? 'success' },
@@ -1329,14 +1327,13 @@ expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('false', { codeql
 expect(
     workflowShellStatus(gateRun, {
         RESULTS: JSON.stringify({
-            admission: { result: 'success', outputs: { admitted: 'false', reason: 'not approved' } },
             scope: { result: 'skipped', outputs: {} },
             validation: { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         }),
     }) !== 0,
-    'a refused approval admission must fail Gate rather than pass on skipped checks'
+    'skipped required checks must fail Gate'
 );
 const browserResults = (e2e, report, hardware) => JSON.stringify({
     e2e: { result: e2e }, 'e2e-report': { result: report }, 'browser-ai-webgpu': { result: hardware },

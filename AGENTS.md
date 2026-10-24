@@ -460,18 +460,17 @@ Workflow separation is a security boundary. Owner-required `Gate` must pass on t
 GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that
 skips `Gate` can pass a red head (a `pull_request_review` trigger did, in production). Preserve:
 
-- `.github/workflows/health-gates.yml` answers to labeled `pull_request` events alone and mints `Gate`. Its `gate`
-  job and its assertion step carry `always()` so cancellation cannot skip the verdict.
+- `.github/workflows/health-gates.yml` answers to `pull_request` opened, synchronize, reopened and
+  ready_for_review events and mints `Gate` for every non-draft head, without a label or review
+  prerequisite. Drafts skip both check planners and `Gate` until ready_for_review.
+  Its `gate` job carries `always() && !draft` and its assertion step carries `always()` so
+  cancellation cannot skip a non-draft verdict.
   Its assertion requires successful scope, validation and affected checks, plus the exact
-  selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a trigger to this file, and do not rename `gate`.
-  Its `admission` job, run from the default branch so a head cannot rewrite it, admits only the reviewer App's
-  `ci:approved` label for that App's undismissed APPROVE of the event's exact head; any other label event fails
-  `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
-- `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
-  never required: it is the cheap pre-review signal, and a new head has no `Gate` until it is approved again.
-  Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
-  does not cancel an admitted run still working on the old head, and any later label event on the pull request
-  cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
+  selected CodeQL result; cancelled or unexpectedly skipped checks fail. Keep review, label,
+  schedule and dispatch events out of this file, and do not rename `gate`.
+- `.github/workflows/pr-checks.yml` runs the scope plan and validation on the same non-draft
+  pull-request head events, mints no `Gate`, and is never required. Its concurrency group stays separate from
+  the required workflow, so neither run cancels the other's checks.
 - `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
   `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
   reviewed head as Git objects and never checks out or executes it, and it mints the non-required
@@ -479,12 +478,12 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   `scripts/semanticReviewWorkflowContract.ts`
   ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
-  native checks, scoped smoke, PR diff secret scanning and dependency review on each push and in the admitted run.
+  native checks, scoped smoke, PR diff secret scanning and dependency review on every pull-request head event.
   Release provenance (`pnpm test:release-inventory`) is not a pull-request check: it runs in `nightly.yml`
   and in `release:proof:assemble`, which `docs/release.md` has the release owner run before `release:cut`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
-  only in the admitted run. CodeQL has a separately permissioned required
+  on every pull-request head event. CodeQL has a separately permissioned required
   job in `health-gates.yml`; full-history secret scanning remains in the nightly.
 - `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
   nightly failure report. It is the only production web deploy — `vercel.json` disables the Git

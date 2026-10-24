@@ -127,8 +127,9 @@ The delivery sequence, in order:
 1. `lane:publish` — push the lane and open or update the PR (mechanics below).
    It pushes without `--force` and refuses uncommitted changes: the publishing
    session commits the work itself with a conventional subject first.
-2. Wait for the cheap `PR checks` run on the head (pushes no longer run `Gate`),
-   then `review:prepare <pr>` — write the bundle (below) and dispatch blind
+2. Every published non-draft head starts required `Gate` and cheap `PR checks` automatically.
+   Drafts wait for `ready_for_review`; no label or reviewer approval starts CI.
+   Run `review:prepare <pr>` — write the bundle (below) and dispatch blind
    reviewers against it under the root Review rules.
    A head that conflicts with its base gets no GitHub merge ref, so no
    `pull_request` workflow run is created and no check can ever appear: waiting
@@ -143,15 +144,9 @@ The delivery sequence, in order:
    thread and leaves the thread open; let the reviewer confirm it with
    `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
 5. On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the
-   current head records the delivery authorization in the head's dossier, and
-   `review:publish` then re-applies the `ci:approved` label as the reviewer App,
-   after its publication lock is released; a failed label write exits nonzero
-   naming the pull request, and a plain re-run replays the review and retries it.
-   That label event alone starts the heavy checks and `Gate`, so CI capacity is
-   spent once per approved head; `REQUEST_CHANGES` removes the label. Re-running
-   `review:publish` on the same head replays the review and re-applies the label,
-   which restarts a `Gate` that a later label event failed or cancelled.
-6. Wait for the approval-triggered `Gate`, then the author runs `deliver <pr>`
+   current head records the delivery authorization in the head's dossier.
+   Review publication and exact replay write no CI label and do not trigger CI.
+6. Wait for the head's automatically triggered `Gate`, then the author runs `deliver <pr>`
    through the protected primary checkout's package route — it squash-merges as
    the author App after the reviewer APPROVE (below) and a green `Gate`. Lane
    files are data, never executable delivery code.

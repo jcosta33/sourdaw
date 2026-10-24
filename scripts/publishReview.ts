@@ -4,7 +4,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-    CI_APPROVAL_LABEL,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     ORCHESTRATOR_USER_NODE_ID,
@@ -45,7 +44,6 @@ import {
     readLiveApprovalContext,
 } from './reviewApprovalContext.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
-import { applyApprovalLabel, removeApprovalLabel } from './reviewApprovalLabel.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
 import {
     assertPublicationEvidence,
@@ -131,14 +129,6 @@ export type PublishReviewPort = {
      */
     publicReviews?: (number: number) => PublicReview[];
     publicReviewComments?: (number: number) => PublicReviewComment[];
-    /**
-     * Freshly applies `CI_APPROVAL_LABEL`, so its `labeled` event signals approval-gated CI for the
-     * approved head; `scripts/ciApprovalAdmission.ts` admits it only for this App's approval of that
-     * exact head.
-     */
-    applyApprovalLabel: (number: number) => void;
-    /** Takes `CI_APPROVAL_LABEL` off, succeeding when it was not applied. */
-    removeApprovalLabel: (number: number) => void;
     log: (message: string) => void;
 };
 
@@ -346,28 +336,6 @@ function publishPreparedReviewForActor(
     return posted.id;
 }
 
-/**
- * Runs once the publication lock is released, after a fresh review and its dossier binding or an
- * exact replay, so a failed label write cannot strand the lock behind a review that already stands:
- * a plain re-run replays the recorded publication and retries the label. The orchestrator's legacy
- * acceptance never labels: admission requires the reviewer App's own approval.
- */
-function syncApprovalLabel(number: number, reviewId: number, event: ReviewEvent, port: PublishReviewPort): void {
-    try {
-        if (event === 'APPROVE') {
-            port.applyApprovalLabel(number);
-        } else {
-            port.removeApprovalLabel(number);
-        }
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        fail(
-            `review ${reviewId} stands on PR #${number}, but the ${CI_APPROVAL_LABEL} label write failed (${message}); ` +
-                `re-run pnpm review:publish ${number} to replay the review and retry the label`
-        );
-    }
-}
-
 function assertAcceptancePreconditions(
     number: number,
     head: string,
@@ -528,8 +496,6 @@ export function shellPort(
         remoteReview: (number, reviewId) => readRemoteReview(gh, number, reviewId),
         publicReviews: (number) => readPublicReviews(gh, number),
         publicReviewComments: (number) => readPublicReviewComments(gh, number),
-        applyApprovalLabel: (number) => applyApprovalLabel(gh, number),
-        removeApprovalLabel: (number) => removeApprovalLabel(gh, number),
         log: (message) => {
             console.log(message);
         },
@@ -586,7 +552,7 @@ async function coordinateReviewPublication(
                     preflightPort
                 );
             }
-            const reviewId = await dependencies.serializeMutation(
+            await dependencies.serializeMutation(
                 primaryRoot,
                 number,
                 async (boundary) =>
@@ -610,9 +576,6 @@ async function coordinateReviewPublication(
                     },
                 }
             );
-            if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-                syncApprovalLabel(number, reviewId, prepared.document.event, preflightPort);
-            }
         } finally {
             auth.session.dispose();
         }

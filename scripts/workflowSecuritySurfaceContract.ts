@@ -9,8 +9,8 @@
 
 import { posix } from 'node:path';
 
-import { workflowJobCheckName } from './approvalGatedWorkflowContract.ts';
 import { HEALTH_GATE_WORKFLOW_FILES } from './healthGateWorkflowContract.ts';
+import { workflowJobCheckName } from './pullRequestGateWorkflowContract.ts';
 
 type JobPins<Value> = Readonly<Record<string, Readonly<Record<string, Value>>>>;
 
@@ -39,7 +39,6 @@ export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
 // to code that never needed one, and on a pull-request trigger to the head's code.
 export const SECRET_REFERENCE_PINS: JobPins<readonly string[]> = {
     'nightly-evidence-report.yml': { validate: ['GITHUB_TOKEN'], publish: ['GITHUB_TOKEN'] },
-    'health-gates.yml': { admission: ['GITHUB_TOKEN'] },
     'nightly.yml': {
         'deploy-web': ['GITHUB_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
         'nightly-report': ['GITHUB_TOKEN'],
@@ -61,7 +60,7 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         validate: ['Checkout trusted default-branch reporter'],
         publish: ['Checkout trusted default-branch repository context'],
     },
-    'health-gates.yml': { admission: ['Checkout trusted admission'], scope: ['Checkout'] },
+    'health-gates.yml': { scope: ['Checkout'] },
     'nightly.yml': {
         unit: ['Checkout'],
         secrets: ['Checkout trusted scanner', 'Checkout scan target'],
