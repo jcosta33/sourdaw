@@ -346,6 +346,28 @@ describe('trusted nightly evidence consumer', () => {
         });
     });
 
+    it.each(['Report\nrun_id=999', 'Report\r', 'Report\0', 'Report\t', '', 'x'.repeat(91)])(
+        'rejects an unsafe failed job name: %j',
+        async (name) => {
+            const f = fixture();
+            f.jobs[1] = { id: 2, name, status: 'completed', conclusion: 'failure' };
+
+            await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('Unsafe failed job name');
+            expect(f.calls.analyses).toBe(0);
+        }
+    );
+
+    it('accepts the 90-character failed job name boundary and supported punctuation', async () => {
+        const f = fixture();
+        const name = `${'x'.repeat(84)} (./-)`;
+        f.jobs[1] = { id: 2, name, status: 'completed', conclusion: 'failure' };
+
+        await expect(validateNightlyEvidence(f.event, f.port)).resolves.toMatchObject({
+            kind: 'validated',
+            failedLegs: [name],
+        });
+    });
+
     it.each(['failure', 'timed_out', 'cancelled'])(
         'refuses an unsuccessful %s run without an unsuccessful terminal leg',
         async (conclusion) => {
