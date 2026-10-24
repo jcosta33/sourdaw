@@ -139,6 +139,42 @@ describe('setCrustPanelUiLevel project path', () => {
         expect(getCrustState('b').patch.uiLevel).toBe(2);
     });
 
+    it('persists the latest rapid choice for one device after snapshot work releases', async () => {
+        let markStarted!: () => void;
+        let releaseTransaction!: () => void;
+        const started = new Promise<void>((resolve) => {
+            markStarted = resolve;
+        });
+        const release = new Promise<void>((resolve) => {
+            releaseTransaction = resolve;
+        });
+        const before = trackStore.value?.tracks[0]?.devices[0];
+        const transaction = transactSnapshot(async () => {
+            markStarted();
+            await release;
+        });
+        await started;
+
+        const shape = setCrustPanelUiLevel('a', 2);
+        const route = setCrustPanelUiLevel('a', 4);
+        releaseTransaction();
+        await transaction;
+        await Promise.all([shape, route]);
+
+        expect(rawProjectState('a')).toEqual({
+            version: 1,
+            data: { unrelated: 'preserve', disclosureTier: 'route' },
+        });
+        expect(projectState('a')).toEqual(rawProjectState('a'));
+        expect(projectState('b')).toBeUndefined();
+        const after = trackStore.value?.tracks[0]?.devices[0];
+        expect(after?.parameterValues).toEqual(before?.parameterValues);
+        expect(after?.bypassed).toBe(before?.bypassed);
+        crustStore.set({});
+        hydrateCrustPatchFromProject('a');
+        expect(getCrustState('a').patch.uiLevel).toBe(4);
+    });
+
     it('refuses an unknown state version without replacing or disclosing a choice', async () => {
         const tracks = tracksWithTwoCrustDevices();
         const device = tracks[0]?.devices[0];
@@ -232,6 +268,34 @@ describe('setCrustPanelUiLevel project path', () => {
         expect(projectState('a')).toEqual(replacement);
         expect(trackStore.value?.tracks[0]?.devices[0]?.name).toBe('Replacement Crust');
         expect(getCrustState('a').patch.uiLevel).toBe(1);
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+    });
+
+    it('does not carry a pending choice into a successor project with the same device id', async () => {
+        let markStarted!: () => void;
+        let releaseTransaction!: () => void;
+        const started = new Promise<void>((resolve) => {
+            markStarted = resolve;
+        });
+        const release = new Promise<void>((resolve) => {
+            releaseTransaction = resolve;
+        });
+        const transaction = transactSnapshot(async () => {
+            markStarted();
+            await release;
+        });
+        await started;
+
+        const request = setCrustPanelUiLevel('a', 4);
+        resetCrdtProjectAuthority('Successor Crust project');
+        trackStore.set({ ...defaultTrackState, tracks: tracksWithTwoCrustDevices() });
+        flushAutomergeStorageWrites();
+        releaseTransaction();
+        await transaction;
+        await request;
+
+        expect(rawProjectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
+        expect(projectState('a')).toEqual(rawProjectState('a'));
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
     });
 });
