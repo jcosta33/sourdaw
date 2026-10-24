@@ -645,8 +645,8 @@ function assertCommentBody(value: IssueComment, expectedBody: string): void {
     }
 }
 
-async function main(): Promise<number> {
-    const parsed = parseSupersedePullRequestArgs(process.argv.slice(2));
+export async function runSupersedePullRequestCli(args: string[]): Promise<number> {
+    const parsed = parseSupersedePullRequestArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -692,7 +692,7 @@ async function main(): Promise<number> {
     }
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
+    void runSupersedePullRequestCli(process.argv.slice(2)).then(
         (code) => process.exit(code),
         (error: unknown) => {
             console.error(error instanceof Error ? error.message : error);
