@@ -90,6 +90,22 @@ describe('PadMixer', () => {
         expect(onPadParam).not.toHaveBeenCalled();
     });
 
+    it('should release a fader drag on pointerup', () => {
+        const onPadParam = vi.fn();
+        const pad = makePad(0);
+        render(<PadMixer pads={[pad]} onPadParam={onPadParam} />);
+
+        const slider = screen.getByRole('slider', { name: /p0 volume/i });
+        fireEvent.pointerDown(slider, { clientY: 10 });
+        fireEvent.pointerMove(document, { clientY: 20 });
+        expect(onPadParam).toHaveBeenCalled();
+
+        fireEvent.pointerUp(document);
+        onPadParam.mockClear();
+        fireEvent.pointerMove(document, { clientY: 40 });
+        expect(onPadParam).not.toHaveBeenCalled();
+    });
+
     /**
      * The solo button shipped `disabled` while the engine had no `soloed` arm.
      * Asserting both directions is what keeps it honest: a handler that always

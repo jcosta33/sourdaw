@@ -114,8 +114,9 @@ export const PadGrid = ({
                         key={pad.id}
                         type="button"
                         data-testid={`toaster-pad-${index}`}
-                        className="relative aspect-square rounded-[16px] border transition-all select-none"
+                        className="relative aspect-square min-w-0 rounded-[16px] border transition-all select-none"
                         aria-label={ariaLabel}
+                        title={ariaLabel}
                         aria-pressed={sixteenLevelsTarget ? undefined : isSelected}
                         style={{
                             background: isFlashing
@@ -184,12 +185,15 @@ export const PadGrid = ({
                         }}
                     >
                         <div className="absolute inset-[1px] rounded-[14px] bg-black/30" />
-                        <Stack justify="between" className="relative z-10 h-full px-2 py-2">
-                            <Row align="start" justify="between" gap={2}>
+                        <Stack
+                            justify="between"
+                            className="relative z-10 h-full w-full min-w-0 overflow-hidden px-2 py-2"
+                        >
+                            <Row align="start" justify="between" gap={1}>
                                 {sixteenLevelsTarget && levelText ? (
-                                    <Stack gap={0.5} className="min-w-0">
+                                    <Stack gap={0.5} className="min-w-0 flex-1">
                                         <span
-                                            className="text-[10px] font-semibold leading-tight tracking-[0.02em]"
+                                            className="min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight tracking-[0.02em]"
                                             style={{ color: isFlashing ? '#fff' : `${activeColor}ee` }}
                                         >
                                             {levelText}
@@ -200,7 +204,7 @@ export const PadGrid = ({
                                     </Stack>
                                 ) : (
                                     <span
-                                        className="text-[10px] font-semibold leading-tight tracking-[0.02em]"
+                                        className="min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight tracking-[0.02em]"
                                         style={{ color: isFlashing ? '#fff' : `${activeColor}ee` }}
                                     >
                                         {pad.name}
@@ -208,7 +212,7 @@ export const PadGrid = ({
                                 )}
                                 {!sixteenLevelsTarget && pad.chokeGroup > 0 ? (
                                     <span
-                                        className="rounded-full border px-1 py-0.5 text-[7px] font-medium text-white/55"
+                                        className="shrink-0 rounded-full border px-1 py-0.5 text-[7px] font-medium text-white/55"
                                         style={{ borderColor: `${activeColor}55` }}
                                     >
                                         C{pad.chokeGroup}
@@ -216,13 +220,20 @@ export const PadGrid = ({
                                 ) : null}
                             </Row>
 
-                            <Stack gap={1}>
+                            <Stack gap={1} className="min-w-0">
                                 <Row
                                     justify="between"
-                                    gap={2}
+                                    gap={1}
                                     className="text-[7px] uppercase tracking-[0.18em] text-white/45"
                                 >
-                                    <span>
+                                    <span
+                                        className="min-w-0 flex-1 truncate"
+                                        title={
+                                            sixteenLevelsTarget
+                                                ? (targetPad?.engineType ?? pad.engineType)
+                                                : pad.engineType
+                                        }
+                                    >
                                         {(sixteenLevelsTarget
                                             ? (targetPad?.engineType ?? pad.engineType)
                                             : pad.engineType
@@ -230,7 +241,7 @@ export const PadGrid = ({
                                             .replace(/^(kick|snare|hihat|modal)-/, '')
                                             .slice(0, 8)}
                                     </span>
-                                    <span>
+                                    <span className="shrink-0">
                                         {Math.round(
                                             (sixteenLevelsTarget ? (targetPad?.volume ?? pad.volume) : pad.volume) * 100
                                         )}
