@@ -12,6 +12,11 @@ src/modules/Project/useCases/arrangement/duplicateArrangement.ts
   "git_ai_version": "1.7.5",
   "base_commit_sha": "0799c05f9e75b99e81ac0b5c3f0f2ae5524ba60b",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_1c08b47ac3792f": {
       "agent_id": {
