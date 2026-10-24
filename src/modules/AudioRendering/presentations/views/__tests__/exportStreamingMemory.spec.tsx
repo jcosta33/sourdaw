@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { unzipSync } from 'fflate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
@@ -10,7 +11,6 @@ import {
     configureOfflinePpqEndpointProjection,
 } from '#/modules/AudioEngine/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
-import { unzipSync } from 'fflate';
 
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings } from '../exportSettings';

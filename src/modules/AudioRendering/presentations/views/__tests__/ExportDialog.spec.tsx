@@ -1528,15 +1528,20 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         };
 
-        const holdRender = <TValue,>(renderMock: typeof mocks.renderOffline) => {
+        type RenderMock<TValue> = {
+            mockReturnValue: (value: Promise<TValue>) => unknown;
+            mock: { calls: [Parameters<RenderOffline>[0]][] };
+        };
+
+        const holdRender = <TValue,>(renderMock: RenderMock<TValue>) => {
             const rendering = createDeferred<TValue>();
             renderMock.mockReturnValue(rendering.promise);
             return rendering;
         };
 
         // The callbacks the dialog really handed the render: a late report goes through these.
-        const renderCallbacks = (renderMock: typeof mocks.renderOffline): RenderCallbacks => {
-            const renderedWith: RenderCallbacks | undefined = renderMock.mock.calls[0]?.[0];
+        const renderCallbacks = <TValue,>(renderMock: RenderMock<TValue>): RenderCallbacks => {
+            const renderedWith = renderMock.mock.calls[0]?.[0];
             const { onProgress, onWarning } = renderedWith ?? {};
             if (!onProgress || !onWarning) {
                 throw new TypeError('expected the render to receive onProgress and onWarning');
@@ -1545,7 +1550,7 @@ describe('ExportDialog', () => {
         };
 
         const cancelRenderInFlight = async <TValue,>(
-            renderMock: typeof mocks.renderOffline,
+            renderMock: RenderMock<TValue>,
             rendering: ReturnType<typeof createDeferred<TValue>>
         ): Promise<RenderCallbacks> => {
             await waitFor(() => {

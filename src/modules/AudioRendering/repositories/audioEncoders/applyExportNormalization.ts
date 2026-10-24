@@ -1,7 +1,7 @@
-import { type ExportAudioSource } from '../../models/ExportAudioSource';
-
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
+
+import { type ExportAudioSource } from '../../models/ExportAudioSource';
 
 import { resolveNormalizationGain } from './resolveNormalizationGain';
 

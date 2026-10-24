@@ -7,7 +7,9 @@ type CropHistoryFromRenderedBufferInput = {
 
 type BorrowedRenderWindow = Pick<AudioBuffer, 'length' | 'numberOfChannels' | 'sampleRate' | 'getChannelData'>;
 
-export function cropHistoryFromRenderedBuffer(input: CropHistoryFromRenderedBufferInput & { borrowed: true }): BorrowedRenderWindow;
+export function cropHistoryFromRenderedBuffer(
+    input: CropHistoryFromRenderedBufferInput & { borrowed: true }
+): BorrowedRenderWindow;
 export function cropHistoryFromRenderedBuffer(input: CropHistoryFromRenderedBufferInput): AudioBuffer;
 /** Returns the requested window after a timeline-zero history render. */
 export function cropHistoryFromRenderedBuffer({
@@ -28,8 +30,12 @@ export function cropHistoryFromRenderedBuffer({
     }
 
     if (borrowed) {
-        return { length: outputFrameCount, sampleRate: buffer.sampleRate, numberOfChannels: buffer.numberOfChannels,
-            getChannelData: (channel) => buffer.getChannelData(channel).subarray(startFrame, endFrame) };
+        return {
+            length: outputFrameCount,
+            sampleRate: buffer.sampleRate,
+            numberOfChannels: buffer.numberOfChannels,
+            getChannelData: (channel) => buffer.getChannelData(channel).subarray(startFrame, endFrame),
+        };
     }
 
     const output = new AudioBuffer({

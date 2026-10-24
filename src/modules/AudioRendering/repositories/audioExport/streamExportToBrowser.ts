@@ -14,14 +14,15 @@ type SavePicker = (options: {
 const MAX_CHUNK = 1024 * 1024;
 const ZIP32_MAX = 0xffffffff;
 
-/** Owns one transactional picker writable. No Blob or retained OPFS download is created. */
-export async function streamExportToBrowser(input: {
+type BrowserExportInput = {
     suggestedName: string;
     extension: string;
     mime: string;
     archive: boolean;
     checkCancelled: () => void;
-}) {
+};
+
+async function openBrowserWritable(input: BrowserExportInput): Promise<WritableExportFile> {
     const picker: unknown = Reflect.get(window, 'showSaveFilePicker');
     if (typeof picker !== 'function') {
         throw new TypeError(
@@ -46,40 +47,55 @@ export async function streamExportToBrowser(input: {
     ) {
         throw new Error('Writable file storage is unavailable for streaming export.');
     }
-    let archiveBytes = 0;
+    return writable;
+}
+
+type ArchiveDrainState = { archiveBytes: number; failure?: Error };
+
+async function drainZipOutput(
+    emitted: Uint8Array[],
+    writable: WritableExportFile,
+    checkCancelled: () => void,
+    state: ArchiveDrainState
+): Promise<void> {
+    while (emitted.length > 0) {
+        const bytes = emitted.shift()!;
+        if (state.archiveBytes + bytes.length > ZIP32_MAX) {
+            throw new Error('Export archive exceeds ZIP32 limits.');
+        }
+        state.archiveBytes += bytes.length;
+        for (let offset = 0; offset < bytes.length; offset += MAX_CHUNK) {
+            checkCancelled();
+            await writable.write(bytes.subarray(offset, offset + MAX_CHUNK));
+        }
+    }
+    if (state.failure) {
+        throw state.failure;
+    }
+}
+
+function createZipOutput(emitted: Uint8Array[], state: ArchiveDrainState): Zip {
+    return new Zip((error, bytes) => {
+        if (error) {
+            state.failure = error;
+            return;
+        }
+        emitted.push(bytes);
+    });
+}
+
+/** Owns one transactional picker writable. No Blob or retained OPFS download is created. */
+export async function streamExportToBrowser(input: BrowserExportInput) {
+    const writable = await openBrowserWritable(input);
+    const drainState: ArchiveDrainState = { archiveBytes: 0 };
     let centralBytes = 22;
     let count = 0;
     let closed = false;
     let fileOpen = false;
-    let failure: Error | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
-    let zip: Zip | undefined;
-    if (input.archive) {
-        zip = new Zip((error, bytes) => {
-            if (error) {
-                failure = error;
-                return;
-            }
-            emitted.push(bytes);
-        });
-    }
-    const drain = async () => {
-        while (emitted.length > 0) {
-            const bytes = emitted.shift()!;
-            if (archiveBytes + bytes.length > ZIP32_MAX) {
-                throw new Error('Export archive exceeds ZIP32 limits.');
-            }
-            archiveBytes += bytes.length;
-            for (let offset = 0; offset < bytes.length; offset += MAX_CHUNK) {
-                input.checkCancelled();
-                await writable.write(bytes.subarray(offset, offset + MAX_CHUNK));
-            }
-        }
-        if (failure) {
-            throw failure;
-        }
-    };
+    const zip = input.archive ? createZipOutput(emitted, drainState) : undefined;
+    const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState);
     return {
         async beginFile(name: string) {
             input.checkCancelled();
@@ -91,7 +107,7 @@ export async function streamExportToBrowser(input: {
                 throw new Error('Export exceeds ZIP32 entry limits.');
             }
             centralBytes += 46 + nameBytes;
-            if (zip && archiveBytes + 30 + nameBytes + 16 + centralBytes > ZIP32_MAX) {
+            if (zip && drainState.archiveBytes + 30 + nameBytes + 16 + centralBytes > ZIP32_MAX) {
                 throw new Error('Export archive exceeds ZIP32 limits.');
             }
             names.add(name);
@@ -112,7 +128,8 @@ export async function streamExportToBrowser(input: {
                     entryBytes += bytes.length;
                     if (
                         zip &&
-                        (entryBytes > ZIP32_MAX || archiveBytes + bytes.length + 16 + centralBytes > ZIP32_MAX)
+                        (entryBytes > ZIP32_MAX ||
+                            drainState.archiveBytes + bytes.length + 16 + centralBytes > ZIP32_MAX)
                     ) {
                         throw new Error('Export exceeds ZIP32 size limits.');
                     }

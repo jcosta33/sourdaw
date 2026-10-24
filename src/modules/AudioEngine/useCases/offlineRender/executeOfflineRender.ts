@@ -101,7 +101,9 @@ export async function executeOfflineRender(
         }
         callbacks.onProgress?.(1);
         if (options.onRendered) {
-            await options.onRendered(cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds, borrowed: true }));
+            await options.onRendered(
+                cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds, borrowed: true })
+            );
             return buffer;
         }
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });

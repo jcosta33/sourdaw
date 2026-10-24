@@ -1,8 +1,8 @@
 import { type ExportAudioSource, type ExportByteWriter } from '../../models/ExportAudioSource';
 
 import { type PcmDitherOptions } from './convertFloatChannelsToPcm';
-import { createPcmBlockReader } from './createPcmBlockReader';
 import { createIncrementalMd5 } from './createIncrementalMd5';
+import { createPcmBlockReader } from './createPcmBlockReader';
 
 const CRC8_POLY = 0x07;
 const CRC16_POLY = 0x8005;
@@ -466,4 +466,5 @@ export async function audioBufferToFlac(
         }
         return result;
     }
+    return undefined;
 }
