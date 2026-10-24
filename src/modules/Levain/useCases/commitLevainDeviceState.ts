@@ -39,8 +39,14 @@ export function commitLevainDeviceState(deviceId: string): void {
     }
     const request = Symbol();
     latestIdentityRequest.set(deviceId, request);
+    const clearRequest = () => {
+        if (latestIdentityRequest.get(deviceId) === request) {
+            latestIdentityRequest.delete(deviceId);
+        }
+    };
     const prior = fromLevainDeviceState(device.deviceState);
     if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
+        clearRequest();
         return;
     }
     // Carry current peer fields, then refuse if snapshot admission made this capture stale.
@@ -49,7 +55,7 @@ export function commitLevainDeviceState(deviceId: string): void {
     const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
     const projectIdentity = captureProjectIdentity();
     const capturedDeviceState = canonicalJson(device.deviceState ?? null);
-    void executeAppAction(
+    const action = executeAppAction(
         { type: 'setDeviceState', payload: { deviceId, state } },
         {
             skipMacroRecording: true,
@@ -68,4 +74,11 @@ export function commitLevainDeviceState(deviceId: string): void {
             },
         }
     );
+    void (async () => {
+        try {
+            await action;
+        } finally {
+            clearRequest();
+        }
+    })();
 }

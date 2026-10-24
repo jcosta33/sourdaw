@@ -28,7 +28,7 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
     latestTierRequest.set(deviceId, request);
     const projectIdentity = captureProjectIdentity();
     const capturedDeviceState = canonicalJson(device.deviceState ?? null);
-    await executeUserAppAction(
+    const action = executeUserAppAction(
         {
             type: 'setDeviceState',
             payload: {
@@ -67,4 +67,11 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
             },
         }
     );
+    try {
+        await action;
+    } finally {
+        if (latestTierRequest.get(deviceId) === request) {
+            latestTierRequest.delete(deviceId);
+        }
+    }
 }
