@@ -630,6 +630,162 @@ describe('parseProjectXml — clip routing via channel id', () => {
 });
 
 describe('parseProjectXml — inherited arrangement scope', () => {
+    describe.each(['Audio', 'Warps/Audio'])('leaf %s source offsets', (route) => {
+        const audio = '<Audio track="audio" file="audio.wav"/>';
+        const content = route === 'Audio' ? audio : `<Warps track="keys">${audio}</Warps>`;
+
+        it.each([
+            {
+                name: 'an active ramp',
+                initialTempo: 100,
+                points: '<RealPoint time="0" value="100" interpolation="linear"/><RealPoint time="16" value="140"/>',
+                offset: 2,
+            },
+            {
+                name: 'a preceding local tempo step',
+                initialTempo: 120,
+                points: '<RealPoint time="1" value="60"/>',
+                offset: 2.4,
+            },
+        ])('keeps an explicit beat window and its source offset during $name', ({ initialTempo, points, offset }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                        '<Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                        `<Arrangement><Lanes><Points target="tempo">${points}</Points><Clips track="keys">` +
+                        '<Clip name="Source window" time="4" duration="4" contentTimeUnit="seconds" playStart="1.2">' +
+                        `${content}</Clip></Clips></Lanes></Arrangement>`,
+                    `<Transport><Tempo value="${initialTempo}"/></Transport>`
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Source', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map([['audio.wav', 'buffer']]),
+                fileName: 'source.dawproject',
+            });
+
+            expect(mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips).toEqual([]);
+            expect(mapped.arrangement.tracks.find((track) => track.name === 'Audio')?.clips).toMatchObject([
+                { name: 'Source window', type: 'audio', startBeat: 4, endBeat: 8, sampleStartBeat: offset },
+            ]);
+            expect(parsed.warnings).toEqual([]);
+        });
+
+        it.each([
+            {
+                name: 'an inferred duration at a constant local tempo',
+                duration: '',
+                points: '<RealPoint time="4" value="60"/>',
+                supported: true,
+                endBeat: 9,
+            },
+            {
+                name: 'an explicit source stop at a constant local tempo',
+                duration: 'duration="2"',
+                points: '<RealPoint time="4" value="60"/>',
+                supported: true,
+                endBeat: 10,
+            },
+            {
+                name: 'an inferred duration during a ramp',
+                duration: '',
+                points: '<RealPoint time="0" value="100" interpolation="linear"/><RealPoint time="16" value="140"/>',
+                supported: false,
+                endBeat: 0,
+            },
+            {
+                name: 'an inferred duration crossing a tempo step',
+                duration: '',
+                points: '<RealPoint time="7.5" value="60"/>',
+                supported: false,
+                endBeat: 0,
+            },
+            {
+                name: 'an inferred duration with seconds-addressed tempo points',
+                duration: '',
+                points: '<RealPoint time="4" value="60"/>',
+                tempoUnit: 'seconds',
+                supported: false,
+                endBeat: 0,
+            },
+            {
+                name: 'an explicit source stop during a ramp',
+                duration: 'duration="2"',
+                points: '<RealPoint time="0" value="100" interpolation="linear"/><RealPoint time="16" value="140"/>',
+                supported: false,
+                endBeat: 0,
+            },
+        ])(
+            'retains affine admission for $name and continues with a beat sibling',
+            ({ duration, points, tempoUnit = 'beats', supported, endBeat }) => {
+                const parsed = parseProjectXml(
+                    project(
+                        '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                            `<Arrangement><Lanes><Points target="tempo" timeUnit="${tempoUnit}">${points}</Points>` +
+                            '<Clips track="audio"><Clip id="window" name="Content window" time="8" ' +
+                            `${duration} contentTimeUnit="seconds" playStart="1.2" playStop="2.2">${content}</Clip>` +
+                            '<Clip name="Beat sibling" time="24" duration="1"><Audio file="audio.wav"/></Clip>' +
+                            '</Clips></Lanes></Arrangement>',
+                        '<Transport><Tempo value="100"/></Transport>'
+                    )
+                );
+
+                if (supported) {
+                    expect(parsed.tracks[0]?.clips).toMatchObject([
+                        { name: 'Content window', startBeat: 8, endBeat, playStartBeat: 1.2 },
+                        { name: 'Beat sibling', startBeat: 24, endBeat: 25 },
+                    ]);
+                    expect(parsed.warnings).toEqual([]);
+                } else {
+                    expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Beat sibling']);
+                    expect(parsed.warnings).toMatchObject([
+                        { kind: 'unsupported-clip', sourceId: 'window', context: 'Audio', handling: 'dropped' },
+                    ]);
+                    expect(parsed.warnings).toHaveLength(1);
+                }
+            }
+        );
+    });
+
+    it.each([
+        { name: 'Notes content', clipUnit: 'contentTimeUnit="seconds"', content: '<Notes><Note key="60"/></Notes>' },
+        {
+            name: 'Notes time-unit override',
+            clipUnit: '',
+            content: '<Notes timeUnit="seconds"><Note key="60"/></Notes>',
+        },
+        { name: 'seconds parent timeline', clipUnit: '', content: '<Audio file="audio.wav"/>', unit: 'seconds' },
+        {
+            name: 'seconds parent timeline with seconds-addressed tempo points',
+            clipUnit: '',
+            content: '<Audio file="audio.wav"/>',
+            unit: 'seconds',
+            tempoUnit: 'seconds',
+        },
+    ])(
+        'still drops $name during a ramp and continues with a beat sibling',
+        ({ clipUnit, content, unit = 'beats', tempoUnit = 'beats' }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                        `<Arrangement><Lanes><Points target="tempo" timeUnit="${tempoUnit}">` +
+                        '<RealPoint time="0" value="100" interpolation="linear"/><RealPoint time="16" value="140"/>' +
+                        `</Points><Clips track="audio" timeUnit="${unit}">` +
+                        `<Clip id="window" name="Content window" time="4" duration="4" ${clipUnit}>${content}</Clip>` +
+                        '</Clips><Clips track="audio"><Clip name="Beat sibling" time="24" duration="1">' +
+                        '<Audio file="audio.wav"/></Clip></Clips></Lanes></Arrangement>',
+                    '<Transport><Tempo value="100"/></Transport>'
+                )
+            );
+
+            expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Beat sibling']);
+            expect(parsed.warnings).toMatchObject([
+                { kind: 'unsupported-clip', sourceId: 'window', context: 'Audio', handling: 'dropped' },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
     it('routes the consumed Notes, Audio and Warps content to its nearest explicit owner exactly once', () => {
         const parsed = parseProjectXml(
             project(

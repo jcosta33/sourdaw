@@ -624,8 +624,14 @@ function parseArrangementClips(
         const unit = rawUnit === 'beats' || rawUnit === 'seconds' ? rawUnit : scope.unit;
         const initialTiming = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo);
         const notes = clip.child(NOTES);
+        const audioSourceOffsetOnly =
+            notes === null &&
+            Boolean(resolveAudioAssetPath(clip)) &&
+            !hasNestedClips(clip) &&
+            clip.attr('duration') !== null &&
+            clip.attr('playStop') === null;
         const secondsContent =
-            initialTiming.contentUnit === 'seconds' ||
+            (!audioSourceOffsetOnly && initialTiming.contentUnit === 'seconds') ||
             (notes !== null && readTimeUnit(notes, initialTiming.contentUnit) === 'seconds');
         // Seconds-addressed tempo points still use the initial-tempo parser.
         // Their beat positions cannot prove a local seconds transform.
@@ -636,7 +642,10 @@ function parseArrangementClips(
         if (tempo === null) {
             return null;
         }
-        const timing = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo, tempo);
+        // A leaf media seek retains its initial-tempo representation. Content
+        // windows and nested timelines still need the locally affine transform.
+        const contentTempo = audioSourceOffsetOnly ? context.tempo : tempo;
+        const timing = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo, contentTempo);
         if (
             unit === 'seconds' &&
             constantTempo(Math.min(scope.originBeat, timing.startBeat), Math.max(scope.originBeat, timing.endBeat)) !==
