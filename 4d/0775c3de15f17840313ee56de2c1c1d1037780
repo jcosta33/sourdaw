@@ -1,0 +1,23 @@
+scripts/__tests__/codeqlNightlyEvidence.spec.ts
+  s_29d8df116c5b92::t_daf7c673750eb5 66,68,73,138,174-202,269,301,312,324-331,334-342,436,438
+  s_29d8df116c5b92::t_03bd29f474279c 281-295,332-333
+scripts/codeqlNightlyEvidence.ts
+  s_29d8df116c5b92::t_c706017314da2d 21,180-191,196,282,301-307
+  s_29d8df116c5b92::t_62f16cd3de179c 308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d0775c3de15f17840313ee56de2c1c1d1037780",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
