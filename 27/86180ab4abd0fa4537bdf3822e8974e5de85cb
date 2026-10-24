@@ -1,0 +1,164 @@
+src/modules/AudioEngine/useCases/noteExpression/findChannelBendInForce.ts
+  s_3e7dea5cde3f9e::t_ef82a03cadef6b 4-20,27,29,32,38
+src/modules/MIDI/useCases/midiClipData/projectChannelBend.ts
+  s_3e7dea5cde3f9e::t_858e8c95d6661c 96
+  s_3e7dea5cde3f9e::t_e4d01d0a30e14d 57-64
+  s_3e7dea5cde3f9e::t_035337d3facee4 46-47
+src/modules/MIDI/useCases/midiClipData/__tests__/projectChannelBend.spec.ts
+  s_3e7dea5cde3f9e::t_74e155d25bd03a 54-55
+  s_3e7dea5cde3f9e::t_8a90f57dc105dd 477,484-486
+  s_3e7dea5cde3f9e::t_099975da5992f9 56-63,493-496,506,513
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_3e7dea5cde3f9e::t_a2f0fcc7d6941f 175-176,181-183,188-189,192-193,198,202,204
+  s_3e7dea5cde3f9e::t_1da90956b79a30 208,211-212
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_3e7dea5cde3f9e::t_513e80865a21b4 522
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  s_3e7dea5cde3f9e::t_7cd8cc96e8faa9 258-278
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/hydrateProjectMidi.spec.ts
+  s_3e7dea5cde3f9e::t_d97e179b81d42e 131,136-137,141,143-144
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  s_3e7dea5cde3f9e::t_ab79ebae195ec5 67-68
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_3e7dea5cde3f9e::t_714e0f7bd0b573 202-218
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_3e7dea5cde3f9e::t_50b08a057f758b 70-73
+  s_3e7dea5cde3f9e::t_a0f09828a72cec 5
+  s_3e7dea5cde3f9e::t_2cd1bb517a0557 674-685
+src/utils/handlerContract.ts
+  s_3e7dea5cde3f9e::t_505b376df59e20 351
+  s_3e7dea5cde3f9e::t_f2755efed05963 488
+src/modules/Transport/AGENTS.md
+  s_3e7dea5cde3f9e::t_9f09db3a0f1f60 32
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_3e7dea5cde3f9e::t_5d811cb3178ded 23-24
+  s_3e7dea5cde3f9e::t_45a474e320f8b2 78
+src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx
+  s_3e7dea5cde3f9e::t_412843dd1a79af 142-144
+  s_3e7dea5cde3f9e::t_bc00fc97017dd8 8
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_3e7dea5cde3f9e::t_5c1154dac66392 2064-2070,2078-2081
+  s_3e7dea5cde3f9e::t_62feceb15d47a1 2097-2106,2112,2115,2121,2124
+src/modules/MIDI/stores/midiStore.ts
+  s_3e7dea5cde3f9e::t_251797a3782674 237
+  s_3e7dea5cde3f9e::t_fb69803c6ce54b 259-260
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipData.ts
+  s_3e7dea5cde3f9e::t_06648b1696de77 122
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_3e7dea5cde3f9e::t_be82eb30d08e8b 100-102
+src/modules/AudioEngine/useCases/noteExpression/noteExpressionTimeline.ts
+  s_3e7dea5cde3f9e::t_6b5336468e9b46 29-31,33
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_3e7dea5cde3f9e::t_5abfa10024b23d 598-599,603,605-609,612-613,619-620
+src/modules/AudioEngine/useCases/noteExpression/__tests__/projectNoteExpressionCurves.spec.ts
+  s_3e7dea5cde3f9e::t_95a5642ed9235a 397,406,409
+  s_3e7dea5cde3f9e::t_79bfd50a42545c 419-434,437
+  s_3e7dea5cde3f9e::t_e0aba69d4de8ff 371
+  s_3e7dea5cde3f9e::t_da98b8cbae1da2 324,331
+  s_3e7dea5cde3f9e::t_80e5807af4bf81 385
+src/modules/AudioEngine/useCases/noteExpression/__tests__/relocateNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_5f20b0810b90c8 110
+  s_3e7dea5cde3f9e::t_e290d74ad16056 97
+  s_3e7dea5cde3f9e::t_f8f40e9861cd1b 22,29
+  s_3e7dea5cde3f9e::t_4dc48709d94f54 70
+  s_3e7dea5cde3f9e::t_e207064198d407 9,16
+  s_3e7dea5cde3f9e::t_65659392562569 83
+  s_3e7dea5cde3f9e::t_6688569795336f 105
+src/modules/Project/stores/arrangementStore.ts
+  s_3e7dea5cde3f9e::t_6b7d2028fbbef2 330
+src/modules/MIDI/useCases/recordedControllerTake/bufferRecordedMidiPitchBend.ts
+  s_3e7dea5cde3f9e::t_125d1ae142669a 20
+src/modules/MIDI/useCases/midiEvent/restorePitchBend.ts
+  s_3e7dea5cde3f9e::t_60e6731f09ad54 15-16,21
+  s_3e7dea5cde3f9e::t_f1cec9963df6a8 1-14,17-20,22-24
+src/modules/MIDI/useCases/midiEvent/__tests__/restorePitchBend.spec.ts
+  s_3e7dea5cde3f9e::t_ae3c6fe59d94d9 1-34
+src/modules/MIDI/AGENTS.md
+  s_3e7dea5cde3f9e::t_0374b2790d232b 25
+src/modules/AudioEngine/useCases/noteExpression/reachesChannel.ts
+  s_3e7dea5cde3f9e::t_9a97a02c207b3d 11
+  s_3e7dea5cde3f9e::t_a4ea3563661b0e 4-8
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidi.ts
+  s_3e7dea5cde3f9e::t_f315bf510cb550 18-19
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_3e7dea5cde3f9e::t_9650cc43278090 197-198
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  s_3e7dea5cde3f9e::t_664c13207cfff8 577,589-603
+  s_3e7dea5cde3f9e::t_6b3f39c9205884 639
+  s_3e7dea5cde3f9e::t_6c0585f1e19270 700-701
+  s_3e7dea5cde3f9e::t_07f17bec86c82d 659
+  s_3e7dea5cde3f9e::t_8d11041a4cb067 163-167
+  s_3e7dea5cde3f9e::t_5aa90996dafb2a 675
+  s_3e7dea5cde3f9e::t_454768ce3c79bc 613
+  s_3e7dea5cde3f9e::t_ad6d98f4e0711d 723
+  s_3e7dea5cde3f9e::t_9db0be50e05253 741,746
+  s_3e7dea5cde3f9e::t_1d0659a2e71366 975
+  s_3e7dea5cde3f9e::t_7ac32019c092c1 691
+  s_1c08b47ac3792f::t_2a6bdce02123a6 604-605
+src/modules/AudioEngine/useCases/noteExpression/startNoteExpression.ts
+  s_3e7dea5cde3f9e::t_48229e61555e70 179
+src/modules/MIDI/useCases/index.ts
+  s_3e7dea5cde3f9e::t_6b4379876ea881 101
+src/modules/TimelineEditor/models/MidiNoteViewTypes.ts
+  s_3e7dea5cde3f9e::t_0826cacfc7e1ae 39-40
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTake.spec.ts
+  s_3e7dea5cde3f9e::t_a47cc328dd9ad0 143,145-149
+  s_3e7dea5cde3f9e::t_f509e75a913593 152-153
+src/modules/MIDI/models/MidiNote.ts
+  s_3e7dea5cde3f9e::t_4c831c89cf8835 98-102,109,112
+  s_3e7dea5cde3f9e::t_2a664039274ffd 237,239-240
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_3e7dea5cde3f9e::t_f99ccfb2b399be 369,371-372
+  s_3e7dea5cde3f9e::t_19c00aafae6e19 332,342-352
+  s_3e7dea5cde3f9e::t_4789071e5d7a47 271-276,278-279
+  s_3e7dea5cde3f9e::t_397330256fb32c 327-330
+  s_3e7dea5cde3f9e::t_bd96af53dd2704 331,353-354,373-374,376-377
+src/modules/Transport/useCases/scheduling/__tests__/takeHeldNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_b56affb86190d5 236
+  s_3e7dea5cde3f9e::t_a6b65ade6039a9 224
+  s_3e7dea5cde3f9e::t_8dbcec8780a93c 35,42
+  s_3e7dea5cde3f9e::t_f87e8dde2e44f7 241,245
+src/modules/AudioEngine/useCases/noteExpression/advanceNoteExpression.ts
+  s_3e7dea5cde3f9e::t_40afaf56f3a450 86
+src/modules/AudioEngine/AGENTS.md
+  s_3e7dea5cde3f9e::t_6538c1c90f72b6 32
+src/modules/Transport/useCases/scheduling/__tests__/relocateHeldNoteExpression.spec.ts
+  s_3e7dea5cde3f9e::t_1fa7096c4891df 37
+  s_3e7dea5cde3f9e::t_e179f7f417a074 138
+src/modules/Project/models/ProjectData.ts
+  s_3e7dea5cde3f9e::t_7bc53eb10c599d 278-279
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_3e7dea5cde3f9e::t_56b7a55a619127 726
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_3e7dea5cde3f9e::t_1c6f8f82345f33 120
+  s_3e7dea5cde3f9e::t_f10071a6fad508 110
+src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts
+  s_3e7dea5cde3f9e::t_811946850f8cdd 161,163
+  s_3e7dea5cde3f9e::t_6fc17269e1ca25 236-237
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_3e7dea5cde3f9e::t_6d9f2fbb3ef5d0 1549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2786180ab4abd0fa4537bdf3822e8974e5de85cb",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
