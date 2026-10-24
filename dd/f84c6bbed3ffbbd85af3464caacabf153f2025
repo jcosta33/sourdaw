@@ -1,0 +1,39 @@
+src/modules/AiRuntime/AGENTS.md
+  s_59e31a5c6f3e31::t_9b4e84f50a3299 48
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_59e31a5c6f3e31::t_c16cc05adfacc8 1277-1379
+src/modules/AiRuntime/useCases/agentReference/__tests__/proposalGroundingBasis.spec.ts
+  s_1c08b47ac3792f::t_539f99add0e16d 1-66
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_1c08b47ac3792f::t_ad2acdc28bcf78 29,64,92-93,96-100,181-195,484-535
+src/modules/AiRuntime/useCases/agentReference/protectionObjectForms.ts
+  s_1c08b47ac3792f::t_e060af6a760b79 1-193
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_1c08b47ac3792f::t_1bbe04be956ee0 4-14,46-47,74,84-90,94,134-136,162,164,181,184-185,244-265,379-383,385,415,418,425-426
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_1c08b47ac3792f::t_037962f5919eae 54-55,148-155,158,168,178,193-194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ddf84c6bbed3ffbbd85af3464caacabf153f2025",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
