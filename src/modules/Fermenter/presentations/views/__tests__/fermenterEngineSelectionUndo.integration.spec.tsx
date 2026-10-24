@@ -249,7 +249,7 @@ describe('Fermenter Engine selection through Command', () => {
         flushAutomergeStorageWrites();
         renderPanel();
         const patch = getFermenterState(DEVICE_ID).patch;
-        const macros = [...patch.macros];
+        const macros: typeof patch.macros = [...patch.macros];
         macros[0] = 0.84;
         act(() => loadFermenterPatch(DEVICE_ID, { ...patch, macros }));
         await choose(2, 1);
