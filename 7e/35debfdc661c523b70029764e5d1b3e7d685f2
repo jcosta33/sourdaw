@@ -1,0 +1,23 @@
+scripts/retargetCapabilityPlan.ts
+  s_29d8df116c5b92::t_2749fecc69a9c9 264-284,340-341
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_29d8df116c5b92::t_f6207baf56f202 859-894
+scripts/__tests__/retargetCapabilityPlan.spec.ts
+  s_29d8df116c5b92::t_63b15f35267c74 113-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7e35debfdc661c523b70029764e5d1b3e7d685f2",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
