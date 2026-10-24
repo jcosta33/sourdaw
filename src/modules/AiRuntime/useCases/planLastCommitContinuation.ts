@@ -188,7 +188,7 @@ function continuedValue(
     return { status: 'value', value: -direction * figure };
 }
 
-function compileCalls(calls: readonly ToolCallResult[], context: ProjectContext): LastCommitContinuation {
+function groundContinuedCalls(calls: readonly ToolCallResult[], context: ProjectContext): LastCommitContinuation {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return denied(
             `Repeating the last committed change there takes ${String(calls.length)} commands, more than one batch of ${String(MAX_LLM_ACTIONS_PER_BATCH)} holds.`
@@ -247,7 +247,7 @@ function continueCommittedLevels(
             arguments: { ...readStatedArguments(command), [value.argument]: continued.value },
         });
     }
-    return compileCalls(calls, context);
+    return groundContinuedCalls(calls, context);
 }
 
 type NamedTracks =
@@ -376,7 +376,7 @@ function retargetCommittedChange(
             calls.push({ name: command.type, arguments: { ...readStatedArguments(command), [rule.argument]: id } });
         }
     }
-    return compileCalls(calls, context);
+    return groundContinuedCalls(calls, context);
 }
 
 /**
