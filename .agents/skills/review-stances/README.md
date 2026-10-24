@@ -23,6 +23,16 @@ in addition; a stance matching no file dispatches without one. An escape attache
 whose probes participate in what would have caught it, or mints a new file for a defect class
 none covers.
 
+A diff that touches any file in a release tracked set (for example the command schema or handler
+contract that feed the Grand Boule project-state digest) must pass `pnpm test:release-inventory`
+before review, and any moved digest is restamped in the same lane with `pnpm release:restamp:tracked-set`.
+Pull-request checks never run the release inventory, so only the author's run catches the drift.
+
+**Why:** PR #5568 changed `src/modules/Command/useCases/versionedCommandArgumentKeys.ts` and
+`src/utils/handlerContract.ts`, both inside the Grand Boule project-state tracked set, without
+restamping. Its checks were green, and `main` then failed `pnpm test:release-inventory` with a
+digest mismatch until a follow-up restamp.
+
 ## Reviewer isolation
 
 A reviewer holds no author tree. It reads the head with `git show <sha>:<path>` from the primary checkout and the bundle under `.agents/review-bundles/<pr>-<sha>/`. It never edits, installs, or runs a check in a live lane. Findings go to the orchestrator, never to GitHub.
