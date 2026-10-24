@@ -1,0 +1,60 @@
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  s_59e31a5c6f3e31::t_3a3d1f8f9aef19 4-5,58-60,70,73-91,125-171,188,212-214,218-221,227,230,243,248-254,264,268-271,288-294,300,357,359,363,366,380,390,393-396,405,429,440,454,457,464,468-469,475,485,541-545,548-563,567,594-596,599-614,619-638,640-650,658,661-667,669-707,715-717,719-726,728-751,756-757,759,761-769,783-789,791-792,794-795,797-799,803-857,859-860,863-889,895-896,903,905-906,910-934,938-939,941-948,950-959,962-966,969-977,979-981,986-993,1023-1024,1041,1052
+  s_59e31a5c6f3e31::t_327808cec451d3 1025
+  s_59e31a5c6f3e31::t_199c156428f8e1 708,712-714
+  s_59e31a5c6f3e31::t_d03ca11c6aabd1 360-361,385,410,434,902,907-909,937,960
+  s_59e31a5c6f3e31::t_a4d5d77353cf9c 961,982
+  s_59e31a5c6f3e31::t_4c38d4f5b8f0f3 272-287,298-299,306-307,343-344,374-376,417,421,709-711,754-755,758,760
+  s_59e31a5c6f3e31::t_7341f3ba3521f3 326-342,345-347,350-351,372-373,377,391-392,513-518,525,583-593,597,718,727,752-753,790,796
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_59e31a5c6f3e31::t_eb158cd1971fd4 6,144-152,244-355,357-358,369,388-400,485-515,524,535-558,567-579,621,634-1096,1141-1166,1246-1349,1351-1352,1354-1361,1365-1433
+  s_59e31a5c6f3e31::t_d529a72a12d36f 1350,1353,1362-1364
+  s_59e31a5c6f3e31::t_8a5230d15c1c98 1434-1450,2150
+  s_59e31a5c6f3e31::t_77ca294f957848 1097-1100,1105-1112,1114-1123,1125-1140
+  s_59e31a5c6f3e31::t_30b43f4e4711ae 1101-1104,1113,1124
+  s_59e31a5c6f3e31::t_bbdb9b8ecbce85 1167-1169,1172-1192,1195-1237,1244-1245
+  s_59e31a5c6f3e31::t_428ade54866198 1238-1241
+  s_59e31a5c6f3e31::t_e7a0ca82b79d2e 1170-1171,1193-1194
+  s_59e31a5c6f3e31::t_c707108581182e 1242-1243
+  s_59e31a5c6f3e31::t_a521ecda6eac02 356,1576-1661,1664-1678,2095-2097,2100-2101,2104,2111-2112,2115-2116,2118-2119
+  s_59e31a5c6f3e31::t_54c1bcab94f257 2098-2099,2102-2103,2105-2110,2113-2114,2117
+  s_59e31a5c6f3e31::t_fc7a7fbf7859e5 1662-1663,1679-1777,1936-2007
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  s_59e31a5c6f3e31::t_a4b86a9be36365 3-5,41-57,78-87,97,110,121,149,172,197-409
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  s_59e31a5c6f3e31::t_4e9eaf8af6fe89 5,173,203,207-209,255,276,282,286,307,313-347
+src/modules/DawInterchange/useCases/__tests__/pickAndImportDawProject.spec.ts
+  s_59e31a5c6f3e31::t_ed4fcf0b2a9b8d 35,87-93
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  s_59e31a5c6f3e31::t_b37bb8a8e9893d 18-43,62-63,103
+  s_59e31a5c6f3e31::t_1a6a08a20b195b 59
+src/modules/DawInterchange/useCases/importDawProject.ts
+  s_59e31a5c6f3e31::t_9f76a842dc8687 5,17-35,50,53-54,60,70,72,84-85,87-89,92,94-96,98
+  s_59e31a5c6f3e31::t_1a6a08a20b195b 46-48
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  s_59e31a5c6f3e31::t_097424a1a705b5 4-9,27,80-82,86-96,145,148,155,173-198,245,259
+  s_59e31a5c6f3e31::t_1a6a08a20b195b 109,129
+src/modules/DawInterchange/useCases/parseDawProject.ts
+  s_59e31a5c6f3e31::t_41348e87508d2b 21
+src/modules/DawInterchange/useCases/pickAndImportDawProject.ts
+  s_59e31a5c6f3e31::t_3568a31555aa2e 24
+src/modules/DawInterchange/useCases/__tests__/importDawProject.parseAuthority.integration.spec.ts
+  s_59e31a5c6f3e31::t_6090354b9780f9 1-61
+  s_59e31a5c6f3e31::t_818add9d2b7690 62-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "400cf9c8726e8d11c8706d05602f54c99c8f4009",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
