@@ -6,6 +6,24 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### Explicit protection tests must observe final caller admission
+
+Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports protection text that a grounding
+route did not enforce. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) added coordinated-list
+restriction cases, including a Strings case expected to refuse. The earliest defect introduction
+and exact historical missed stance or tier remain unproven; that suite boundary alone proves no
+single-target or compiled-route protection.
+
+Require canonical actions or refusal through direct and atomic callers and through compiler-backed
+callers where the selector path applies. Remove the final protection enforcement in an isolated
+probe and require the named regression to fail; a helper-only parse assertion cannot establish
+admission. For retained protections, move selection after creating the real grounding basis,
+retain the original source call, refine twice, then compile a replacement targeting the formerly
+selected object. Assert the recorded identity, exception, proposal scope and final refusal together.
+Pair allowed gain with forbidden pan and rename after a whole-track fader exception, and add a
+later whole-object protection to prove that refinement narrows the earlier permission. Separately
+combine a positive fader protection and an exception through the basis producer and direct caller.
+
 ### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
 
 PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but

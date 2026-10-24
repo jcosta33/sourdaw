@@ -1860,6 +1860,230 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     });
                 });
 
+                it('keeps whole-owner exceptions across changed selection, repeated refinement and compilation', () => {
+                    const original = threeTrackContext('track-vocals');
+                    const moved = threeTrackContext('track-bass');
+                    const root = cardBasis(
+                        'turn Snare down 3 dB and leave the selected track alone except for the fader',
+                        [snareBy(-3)],
+                        original
+                    );
+                    const first = ground('make Snare 2 dB', [snareBy(-2)], root, moved);
+                    if (first.status !== 'grounded' || first.groundingBasis === undefined) {
+                        throw new Error('Expected the first refinement with its basis.');
+                    }
+                    const second = ground('make Snare 1 dB', [snareBy(-1)], first.groundingBasis, moved);
+                    if (second.status !== 'grounded' || second.groundingBasis === undefined) {
+                        throw new Error('Expected the second refinement with its basis.');
+                    }
+                    const basis = second.groundingBasis;
+                    expect(basis.protectedControls).toContainEqual({
+                        trackId: 'track-vocals',
+                        operations: [],
+                        exceptOperations: ['setTrackGain'],
+                    });
+                    expect(basis.protectedUnchanged).toEqual([]);
+                    expect(basis.sources).toEqual(root.sources);
+                    expect(basis.commands[0]).toMatchObject({
+                        source: 0,
+                        sourceCallIndex: 0,
+                        payload: { trackId: 'track-snare', deltaDb: -1 },
+                    });
+
+                    const variants = [
+                        {
+                            name: 'setTrackGain',
+                            arguments: { deltaDb: -1 },
+                            text: 'turn Vocals down 1 dB',
+                            allowed: true,
+                        },
+                        { name: 'setTrackPan', arguments: { pan: -20 }, text: 'pan Vocals 20% left', allowed: false },
+                        {
+                            name: 'renameTrack',
+                            arguments: { name: 'Lead' },
+                            text: 'rename Vocals to "Lead"',
+                            allowed: false,
+                        },
+                    ];
+                    for (const variant of variants) {
+                        const compiled = compileArbitraryCommandList({
+                            context: moved,
+                            revision: 'revision-exception',
+                            calls: [
+                                {
+                                    name: 'command.batch.propose',
+                                    arguments: {
+                                        plan: asCommandBatchProposal({ calls: [snareBy(-1)] }).arguments.plan,
+                                        list: {
+                                            schemaVersion: 1,
+                                            items: [
+                                                {
+                                                    id: 'snare',
+                                                    name: 'setTrackGain',
+                                                    arguments: { deltaDb: -1 },
+                                                    selector: {
+                                                        targetArgument: 'trackId',
+                                                        entity: 'track',
+                                                        where: { name: 'Snare' },
+                                                        quantity: { unit: 'targets', exactly: 1 },
+                                                    },
+                                                },
+                                                {
+                                                    id: 'vocals',
+                                                    name: variant.name,
+                                                    arguments: variant.arguments,
+                                                    selector: {
+                                                        targetArgument: 'trackId',
+                                                        entity: 'track',
+                                                        where: { name: 'Vocals' },
+                                                        quantity: { unit: 'targets', exactly: 1 },
+                                                    },
+                                                },
+                                            ],
+                                        },
+                                    },
+                                },
+                            ],
+                        });
+                        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                            throw new Error('Expected the exception replacement to compile.');
+                        }
+                        const result = groundCompiledCommandBatch({
+                            toolCalls: compiled.compilerEvidence.commands,
+                            compilerEvidence: compiled.compilerEvidence,
+                            context: moved,
+                            prompt: `turn Snare down 1 dB and ${variant.text}`,
+                            projectRevision: 'revision-exception',
+                            workflowCapabilityId: undefined,
+                            selectedCompilations: [],
+                            transformCommands: [],
+                            transformTargetIds: [],
+                            creativeAuthority: undefined,
+                            providerProposal: null,
+                            refinementBasis: basis,
+                        });
+                        expect({ type: variant.name, status: result.status }).toEqual({
+                            type: variant.name,
+                            status: variant.allowed ? 'grounded' : 'rejected',
+                        });
+                        if (result.status === 'grounded') {
+                            expect(result.actions.map((action) => action.type)).toEqual([
+                                'setTrackGain',
+                                'setTrackGain',
+                            ]);
+                            expect(result.providerProposal?.scope.protectedTargetIds ?? []).not.toContain(
+                                'track-vocals'
+                            );
+                        } else if (result.status === 'rejected') {
+                            expect(result.rejectionReason).toContain('"Vocals", which a protection in it leaves alone');
+                        }
+                    }
+                });
+
+                it('lets a later positive protection restrict an earlier exception', () => {
+                    const context = threeTrackContext('track-vocals');
+                    const basis = cardBasis(
+                        'turn Snare down 3 dB and leave the selected track alone except for the fader',
+                        [snareBy(-3)],
+                        context
+                    );
+                    const first = ground('make Snare 2 dB and keep the Vocals as is', [snareBy(-2)], basis, context);
+                    if (first.status !== 'grounded' || first.groundingBasis === undefined) {
+                        throw new Error('Expected the restricted refinement with its basis.');
+                    }
+                    expect(first.groundingBasis.protectedUnchanged).toContainEqual({
+                        id: 'track-vocals',
+                        name: 'Vocals',
+                    });
+                    expect(first.groundingBasis.protectedControls).toContainEqual({
+                        trackId: 'track-vocals',
+                        operations: [],
+                        exceptOperations: ['setTrackGain'],
+                    });
+                    expect(
+                        ground(
+                            'turn Vocals down 1 dB',
+                            [snareBy(-2), vocalsBy(-1)],
+                            first.groundingBasis,
+                            threeTrackContext('track-bass')
+                        )
+                    ).toMatchObject({
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining('"Vocals", which the request chain leaves unchanged'),
+                    });
+                });
+
+                it('keeps the whole selected owner when a compiled replacement retains the original call', () => {
+                    const context = threeTrackContext('track-bass');
+                    const basis = cardBasis(
+                        'turn Snare down 3 dB and leave the selected track alone',
+                        [snareBy(-3)],
+                        threeTrackContext('track-vocals')
+                    );
+                    expect(basis.protectedUnchanged).toContainEqual({ id: 'track-vocals', name: 'Vocals' });
+                    const compiled = compileArbitraryCommandList({
+                        context,
+                        revision: 'revision-compiled-refinement',
+                        calls: [
+                            {
+                                name: 'command.batch.propose',
+                                arguments: {
+                                    plan: asCommandBatchProposal({ calls: [snareBy(-3), vocalsBy(-1)] }).arguments.plan,
+                                    list: {
+                                        schemaVersion: 1,
+                                        items: [
+                                            {
+                                                id: 'snare',
+                                                name: 'setTrackGain',
+                                                arguments: { deltaDb: -3 },
+                                                selector: {
+                                                    targetArgument: 'trackId',
+                                                    entity: 'track',
+                                                    where: { name: 'Snare' },
+                                                    quantity: { unit: 'targets', exactly: 1 },
+                                                },
+                                            },
+                                            {
+                                                id: 'vocals',
+                                                name: 'setTrackGain',
+                                                arguments: { deltaDb: -1 },
+                                                selector: {
+                                                    targetArgument: 'trackId',
+                                                    entity: 'track',
+                                                    where: { name: 'Vocals' },
+                                                    quantity: { unit: 'targets', exactly: 1 },
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            },
+                        ],
+                    });
+                    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                        throw new Error('Expected the replacement to compile.');
+                    }
+                    expect(
+                        groundCompiledCommandBatch({
+                            toolCalls: compiled.compilerEvidence.commands,
+                            compilerEvidence: compiled.compilerEvidence,
+                            context,
+                            prompt: 'turn Snare down 3 dB and Vocals down 1 dB',
+                            projectRevision: 'revision-compiled-refinement',
+                            workflowCapabilityId: undefined,
+                            selectedCompilations: [],
+                            transformCommands: [],
+                            transformTargetIds: [],
+                            creativeAuthority: undefined,
+                            providerProposal: null,
+                            refinementBasis: basis,
+                        })
+                    ).toMatchObject({
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining('"Vocals", which a protection in it leaves alone'),
+                    });
+                });
+
                 it('keeps the selected track a request kept intact', () => {
                     const card = {
                         prompt: 'turn Snare down 3 dB and keep the selected track intact',

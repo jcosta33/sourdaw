@@ -176,7 +176,10 @@ function readObjectForm(
     const last = content.at(-1);
     // The control follows the name ("the Kick fader"); one before a word names a concept ("the Gain Staging").
     const endsOnControl = last !== undefined && (possessive ? isControl(last.lower) : CONTROL_WORDS.has(last.lower));
-    if (names.length > 0 && endsOnControl) {
+    // A title-cased compound ("Overall Level") does not establish a separate owner. A possessive or
+    // quoted owner does, as does the ordinary name followed by a lowercase control ("the Kick pan").
+    const separatesOwner = possessive || last?.capitalized !== true || names.some((token) => token.quoted);
+    if (names.length > 0 && endsOnControl && separatesOwner) {
         return unbound(names);
     }
     const subject = content.slice(0, -1).filter((token) => token.lower !== 'vca');

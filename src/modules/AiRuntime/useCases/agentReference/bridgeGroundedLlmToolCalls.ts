@@ -6126,12 +6126,24 @@ function findChangedObject(
 /** The first track whose protected operations an action performs. */
 function findChangedControl(
     actions: BridgeGroundedLlmToolCallsResult['actions'],
-    controls: ReadonlyArray<{ trackId: string; actionTypes: readonly string[] }>,
+    controls: ReadonlyArray<{ trackId: string; actionTypes: readonly string[]; exceptActionTypes?: readonly string[] }>,
     context: ProjectContext
 ): { id: string; name: string } | null {
-    for (const { trackId, actionTypes } of controls) {
+    for (const { trackId, actionTypes, exceptActionTypes } of controls) {
         const track = context.tracks.find((candidate) => candidate.id === trackId);
-        const hit = track === undefined ? null : findChangedObject(actions, [track], context, actionTypes);
+        const changedActions =
+            exceptActionTypes === undefined
+                ? actions
+                : actions.filter((action) => !exceptActionTypes.includes(action.type));
+        const hit =
+            track === undefined
+                ? null
+                : findChangedObject(
+                      changedActions,
+                      [track],
+                      context,
+                      exceptActionTypes === undefined ? actionTypes : undefined
+                  );
         if (hit !== null) {
             return hit;
         }
@@ -6148,7 +6160,7 @@ function getRefinementReadProtections(
     basis: ProposalGroundingBasis,
     context: ProjectContext,
     prompt: string
-): { controls: Array<{ trackId: string; actionTypes: string[] }>; namedTracks: Array<{ id: string; name: string }> } {
+): { controls: ReturnType<typeof readRecordedControls>; namedTracks: Array<{ id: string; name: string }> } {
     const current = readExplicitProtections(prompt, context);
     const earlier = readRecordedControls(basis, context);
     return {
@@ -6161,10 +6173,18 @@ function getRefinementReadProtections(
 function readRecordedControls(
     basis: ProposalGroundingBasis,
     context: ProjectContext
-): Array<{ trackId: string; actionTypes: string[] }> {
+): ReturnType<typeof readExplicitProtections>['protectedControls'] {
     return (
-        basis.protectedControls?.map(({ trackId, operations }) => ({ trackId, actionTypes: operations })) ??
-        basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls)
+        basis.protectedControls?.map(({ trackId, operations, exceptOperations }) => {
+            const control: ReturnType<typeof readExplicitProtections>['protectedControls'][number] = {
+                trackId,
+                actionTypes: operations,
+            };
+            if (exceptOperations !== undefined) {
+                control.exceptActionTypes = exceptOperations;
+            }
+            return control;
+        }) ?? basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls)
     );
 }
 
@@ -6999,8 +7019,11 @@ function refuseWhenProtectionIsUnresolved(
     const recordedControls =
         input.protectionBasis === undefined ? [] : readRecordedControls(input.protectionBasis, context);
     const changedTrack =
-        findChangedObject(grounded.actions, wholeTracks, context) ??
-        findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
+        findChangedObject(
+            grounded.actions,
+            [...wholeTracks, ...(input.protectionBasis?.protectedUnchanged ?? [])],
+            context
+        ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
     return changedTrack === null
         ? grounded
         : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
@@ -7075,7 +7098,14 @@ function bridgeUnrefinedLlmToolCalls(
         };
     }
     if (transformCalls.length > 0 || compilerEvidence !== undefined) {
-        const clipProtection = getExplicitClipProtection(prompt, context);
+        const trackProtections = readExplicitProtections(prompt, context);
+        // The shared reader has consumed these exact original spans as resolved track/control clauses.
+        // Residual clauses, including every actual clip protection, retain the older clip completeness check.
+        const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+            (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+            prompt
+        );
+        const clipProtection = getExplicitClipProtection(clipPrompt, context);
         const protectedIds = new Set(
             getApplicationProtectedObjects({ actions: [], context, prompt }).map((object) => object.id)
         );

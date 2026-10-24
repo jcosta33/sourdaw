@@ -38,6 +38,12 @@ export function getApplicationProtectedObjects(input: {
     workflowCapabilityId?: WorkflowCapabilityId;
 }): ApplicationProtectedObject[] {
     const { actions, context, prompt, wholeProjectVibeMixPlan, workflowCapabilityId } = input;
+    const readProtections = readExplicitProtections(prompt, context);
+    const carvedOutTrackIds = new Set(
+        readProtections.protectedControls
+            .filter((control) => control.exceptActionTypes !== undefined)
+            .map((control) => control.trackId)
+    );
     const protectedScopes = [
         ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
     ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
@@ -52,7 +58,8 @@ export function getApplicationProtectedObjects(input: {
         return (
             excludedFrozenTrackIds.has(track.id) ||
             structurallyProtectedTrackIds.has(track.id) ||
-            protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
+            (protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `)) &&
+                (!carvedOutTrackIds.has(track.id) || readProtections.protectedTrackIds.includes(track.id)))
         );
     });
     const deviceParameterScope = getDeviceParameterPromptScope(prompt, context);
@@ -122,7 +129,6 @@ export function getApplicationProtectedObjects(input: {
     const syncopatedArpeggioProtections =
         syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const explicitClipProtection = getExplicitClipProtection(prompt, context);
-    const readProtections = readExplicitProtections(prompt, context);
     const readProtectedTracks = new Set(
         readProtections.protectedTrackIds.filter((id) => !readProtections.namedTrackIds.includes(id))
     );

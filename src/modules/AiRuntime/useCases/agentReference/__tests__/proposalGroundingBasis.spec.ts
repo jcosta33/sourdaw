@@ -49,6 +49,33 @@ describe('proposalGroundingBasis protected controls', () => {
         expect(refined.protectedControls).toEqual([pan]);
     });
 
+    it('retains a whole-track exception through repeated refinements', () => {
+        const exception = { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] };
+        const card = createCard([exception]);
+        const first = proposalGroundingBasis.extend({
+            previous: card,
+            prompt: 'make Snare 2 dB',
+            calls: [snareRefined],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [],
+        });
+        const second = proposalGroundingBasis.extend({
+            previous: first,
+            prompt: 'make Snare 3 dB',
+            calls: [snare],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [fader],
+        });
+
+        expect(card.protectedControls).toContainEqual(exception);
+        expect(first.protectedControls).toContainEqual(exception);
+        expect(second.protectedControls).toContainEqual(exception);
+        expect(second.protectedControls).toContainEqual(fader);
+        expect(second.sources).toEqual(card.sources);
+    });
+
     it('leaves a basis that predates the record without one', () => {
         const legacy = createCard([]);
         delete legacy.protectedControls;

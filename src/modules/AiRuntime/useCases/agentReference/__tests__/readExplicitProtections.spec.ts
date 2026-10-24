@@ -79,7 +79,13 @@ function unresolvedIn(prompt: string, project: ProjectContext = context): string
 }
 
 const SEND_ACTIONS = ['addSend', 'removeSend', 'setSend'];
-const NOTHING = { unresolved: [], protectedTrackIds: [], namedTrackIds: [], protectedControls: [] };
+const NOTHING = {
+    resolvedTrackClauses: expect.any(Array),
+    unresolved: [],
+    protectedTrackIds: [],
+    namedTrackIds: [],
+    protectedControls: [],
+};
 
 describe('readExplicitProtections', () => {
     describe('refuses only an object form that names a project object and binds to none', () => {
@@ -315,6 +321,57 @@ describe('readExplicitProtections', () => {
             expect(readExplicitProtections('turn Drums down 3 dB except Bass', context)).toMatchObject({
                 protectedTrackIds: [bass.id],
             });
+        });
+    });
+
+    describe('reserved and complete owners', () => {
+        it('reads unquoted selection before a project display name, while quotes stay literal', () => {
+            const collision = createTrack('track-selected-name', 'Selected Track');
+            const project = { ...context, tracks: [...context.tracks, collision] };
+            const prompt = "turn Drums down 3 dB; leave the selected track's fader alone";
+
+            expect(readExplicitProtections(prompt, project).unresolved).toEqual(["the selected track's fader"]);
+            expect(readExplicitProtections(prompt, { ...project, selectedTrackId: drums.id })).toMatchObject({
+                unresolved: [],
+                protectedControls: [{ trackId: drums.id, actionTypes: ['setTrackGain'] }],
+            });
+            expect(readExplicitProtections('leave the fader of "Selected Track" alone', project)).toMatchObject({
+                unresolved: [],
+                protectedControls: [{ trackId: collision.id, actionTypes: ['setTrackGain'] }],
+            });
+        });
+
+        it('proves an entire resolved track clause before separating it from clip completeness', () => {
+            const whole = 'turn Drums down 3 dB; leave the fader of "Drum Bus" alone';
+            const reading = readExplicitProtections(whole, context);
+            expect(reading.resolvedTrackClauses.map(({ start, end }) => whole.slice(start, end))).toEqual([
+                'leave the fader of "Drum Bus" alone',
+            ]);
+            for (const prompt of [
+                `${whole} with the Missing clip`,
+                'turn Drums down 3 dB; leave the fader of "Drum Bus" and the Missing clip alone',
+            ]) {
+                expect(readExplicitProtections(prompt, context).resolvedTrackClauses).toEqual([]);
+            }
+        });
+
+        it('requires the whole quoted owner even when another project name is contained in it', () => {
+            expect(readExplicitProtections('leave the fader of "Bass Amp" alone', context).unresolved).toEqual([
+                'Bass Amp',
+            ]);
+            expect(readExplicitProtections('leave the fader of "Drum Bus" alone', context)).toMatchObject({
+                unresolved: [],
+                protectedControls: [{ trackId: drumBus.id, actionTypes: ['setTrackGain'] }],
+            });
+        });
+
+        it('does not split a title-cased compound quality into an owner and control', () => {
+            expect(unresolvedIn('turn Drums down 3 dB; keep the Overall Level the same')).toEqual([]);
+            expect(unresolvedIn('turn Drums down 3 dB; keep the Kick pan as is')).toEqual(['Kick']);
+        });
+
+        it('does not protect the members of a VCA mentioned in an unclosed quality', () => {
+            expect(readExplicitProtections('turn Keys down 3 dB and keep Strings punchy', context)).toEqual(NOTHING);
         });
     });
 
@@ -633,23 +690,15 @@ describe('readExplicitProtections', () => {
             'turn the Drums down 3 dB and leave the Drums alone except for the fader',
             'turn the Drums down 3 dB and keep the Drums unchanged other than the gain',
             'turn the Drums down 3 dB and keep the Drums as is apart from the level',
-        ])('keeps every other mixer control of Drums in "%s"', (prompt) => {
+        ])('keeps every other operation on Drums in "%s"', (prompt) => {
             const reading = readExplicitProtections(prompt, context);
 
             expect(reading.protectedTrackIds).toEqual([]);
             expect(reading.protectedControls).toEqual([
                 {
                     trackId: drums.id,
-                    actionTypes: [
-                        'setTrackPan',
-                        'muteTrack',
-                        'soloTrack',
-                        'armTrack',
-                        'addSend',
-                        'removeSend',
-                        'setSend',
-                        'setTrackOutput',
-                    ],
+                    actionTypes: [],
+                    exceptActionTypes: ['setTrackGain'],
                 },
             ]);
         });

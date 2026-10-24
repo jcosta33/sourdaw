@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { getApplicationProtectedObjects } from '../agentReference/getApplicationProtectedObjects';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 
@@ -1681,5 +1682,168 @@ describe('a protection grounds what main grounds outside its object forms', () =
 
         expect(result.actions).not.toContainEqual(gainAction(drumBus.id, { deltaDb: -3 }));
         expect(result.rejections).not.toEqual([]);
+    });
+});
+
+describe('complete protection owners at every grounding boundary', () => {
+    const collision = createTrack({ id: 'track-selected-name', name: 'Selected Track' });
+    const project = { ...projectContext, tracks: [...projectContext.tracks, collision] };
+
+    it.each([null, drums.id])('gives reserved selection priority with selection %s', (selectedTrackId) => {
+        const context = { ...project, selectedTrackId };
+        const prompt = "turn the Drums down 3 dB; leave the selected track's fader alone";
+        const direct = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, context);
+
+        expect(direct.actions).toEqual([]);
+        expect(direct.rejections).toEqual([
+            {
+                index: 0,
+                name: '<batch>',
+                reason: expect.stringContaining(selectedTrackId === null ? 'resolves to no' : 'leaves alone'),
+            },
+        ]);
+        expect(groundGainList(prompt, [drums], context).status).toBe('rejected');
+        expect(bridgeCompiledGainList(prompt, [drums], context).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums], context, true).status).toBe('rejected');
+    });
+
+    it('keeps quoted selection names literal on every route', () => {
+        const prompt = 'turn the Drums down 3 dB; leave the fader of "Selected Track" alone';
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, project).actions).toEqual([
+            gainAction(drums.id, { deltaDb: -3 }),
+        ]);
+        expect(bridgeCompiledGainList(prompt, [drums], project).rejections).toEqual([]);
+        expect(groundGainList(prompt, [drums], project).status).toBe('grounded');
+        expect(groundGainList(prompt, [drums], project, true).status).toBe('grounded');
+    });
+
+    it('refuses a missing whole quoted owner on every route', () => {
+        const prompt = 'turn the Drums down 3 dB; leave the fader of "Bass Amp" alone';
+        const direct = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+        expect(direct).toMatchObject({ actions: [], rejections: [{ reason: expect.stringContaining('"Bass Amp"') }] });
+        expect(bridgeCompiledGainList(prompt, [drums]).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums]).status).toBe('rejected');
+        expect(groundGainList(prompt, [drums], projectContext, true).status).toBe('rejected');
+    });
+
+    it.each([
+        ['turn the Drums down 3 dB; keep the Overall Level the same', drums, projectContext],
+        ['turn Keys down 3 dB and keep Strings punchy', keys, projectWithStringsGroup],
+        ['turn the Drums down 3 dB; leave the fader of "Bass DI" alone', drums, projectContext],
+    ])('admits %s on direct and atomic routes', (prompt, track, context) => {
+        expect(bridge([gainCall(track.id, { deltaDb: -3 })], prompt, context).actions).toEqual([
+            gainAction(track.id, { deltaDb: -3 }),
+        ]);
+        expect(groundGainList(prompt, [track], context).status).toBe('grounded');
+        if (prompt.includes('"Bass DI"')) {
+            expect(bridgeCompiledGainList(prompt, [track], context).rejections).toEqual([]);
+            expect(groundGainList(prompt, [track], context, true).status).toBe('grounded');
+        }
+    });
+
+    it.each([
+        'turn Drums down 3 dB; leave the fader of "Bass DI" and the Missing clip alone',
+        'turn Drums down 3 dB; leave the fader of "Bass DI" alone with the Missing clip',
+        'turn Drums down 3 dB; leave the fader of "Bass DI" alone; keep the Missing clip unchanged',
+    ])('retains unread and mixed clip restrictions in %s', (prompt) => {
+        expect(bridgeCompiledGainList(prompt, [drums]).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums], projectContext, true).status).toBe('rejected');
+    });
+
+    it.each([
+        'turn the Drums down 3 dB and leave Drums alone except for the fader',
+        'turn the Drums down 3 dB and keep Drums unchanged other than the gain',
+    ])('retains the exception in the basis and application scope for %s', (prompt) => {
+        const result = groundCompiledCommandBatch({
+            toolCalls: [gainCall(drums.id, { deltaDb: -3 })],
+            context: projectContext,
+            prompt,
+            projectRevision: undefined,
+            workflowCapabilityId: undefined,
+            selectedCompilations: [],
+            transformCommands: [],
+            transformTargetIds: [],
+            creativeAuthority: undefined,
+            providerProposal: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: prompt,
+                constraints: [],
+                scope: { targetIds: [drums.id], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                capabilityIds: ['setTrackGain'],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: [],
+                stoppingConditions: [],
+            },
+        });
+        expect(result.status).toBe('grounded');
+        if (result.status !== 'grounded') {
+            throw new Error('Expected the allowed gain to ground.');
+        }
+        expect(result.providerProposal?.scope).toEqual({
+            targetIds: [drums.id],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        });
+        expect(result.actions).toEqual([groundedGainAction(drums, { deltaDb: -3 })]);
+        expect(result.groundingBasis?.protectedUnchanged).not.toContainEqual({ id: drums.id, name: drums.name });
+        expect(result.groundingBasis?.protectedControls).toContainEqual({
+            trackId: drums.id,
+            operations: [],
+            exceptOperations: ['setTrackGain'],
+        });
+        expect(
+            getApplicationProtectedObjects({ prompt, context: projectContext, actions: result.actions })
+        ).not.toContainEqual({ id: drums.id, name: drums.name });
+    });
+
+    it.each([
+        'turn Drums down 3 dB; leave Drums alone except the fader; leave Drums alone except the pan',
+        'turn Drums down 3 dB; keep the Drums fader as is; leave Drums alone except the fader',
+        'turn Drums down 3 dB; leave Drums alone; leave Drums alone except the fader',
+    ])('never lets an exception relax another protection in %s', (prompt) => {
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums]).status).toBe('rejected');
+    });
+
+    it('keeps pan protected after a fader carve-out on both direct and atomic routes', () => {
+        const prompt = 'pan the Drums 20% left; leave the Drums alone except for the fader';
+        const call = { name: 'setTrackPan', arguments: { trackId: drums.id, pan: -20 } };
+        expect(bridge([call], prompt).actions).toEqual([]);
+        expect(
+            groundCompiledCommandBatch({
+                toolCalls: [call],
+                context: projectContext,
+                prompt,
+                projectRevision: undefined,
+                workflowCapabilityId: undefined,
+                selectedCompilations: [],
+                transformCommands: [],
+                transformTargetIds: [],
+                creativeAuthority: undefined,
+                providerProposal: null,
+            })
+        ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('"Drums"') });
+    });
+
+    it('keeps rename protected after a whole-track fader carve-out on direct and atomic routes', () => {
+        const prompt = 'rename Drums to "Percussion" and leave Drums alone except for the fader';
+        const call = { name: 'renameTrack', arguments: { trackId: drums.id, name: 'Percussion' } };
+        expect(bridge([call], prompt).actions).toEqual([]);
+        expect(
+            groundCompiledCommandBatch({
+                toolCalls: [call],
+                context: projectContext,
+                prompt,
+                projectRevision: undefined,
+                workflowCapabilityId: undefined,
+                selectedCompilations: [],
+                transformCommands: [],
+                transformTargetIds: [],
+                creativeAuthority: undefined,
+                providerProposal: null,
+            })
+        ).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('"Drums"') });
     });
 });

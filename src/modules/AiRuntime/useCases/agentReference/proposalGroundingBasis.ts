@@ -11,10 +11,16 @@ import { proposalCommandShape } from './proposalCommandShape';
 type ProtectedObject = ProposalGroundingBasis['protectedUnchanged'][number];
 type ProtectedControl = NonNullable<ProposalGroundingBasis['protectedControls']>[number];
 
-/** Every control protection once per track, with the operations of all of them. */
+/** Unions positive controls per track while retaining every independent whole-object restriction. */
 function unionProtectedControls(...groups: ReadonlyArray<readonly ProtectedControl[]>): ProtectedControl[] {
     const byTrack = new Map<string, Set<string>>();
-    for (const { trackId, operations } of groups.flat()) {
+    const complements: ProtectedControl[] = [];
+    for (const { trackId, operations, exceptOperations } of groups.flat()) {
+        if (exceptOperations !== undefined) {
+            // Independent restrictions remain independent: joining their exceptions would widen permission.
+            complements.push({ trackId, operations: [...operations], exceptOperations: [...exceptOperations] });
+            continue;
+        }
         const known = byTrack.get(trackId);
         if (known === undefined) {
             byTrack.set(trackId, new Set(operations));
@@ -24,7 +30,10 @@ function unionProtectedControls(...groups: ReadonlyArray<readonly ProtectedContr
             }
         }
     }
-    return Array.from(byTrack, ([trackId, operations]) => ({ trackId, operations: [...operations] }));
+    return [
+        ...Array.from(byTrack, ([trackId, operations]) => ({ trackId, operations: [...operations] })),
+        ...complements,
+    ];
 }
 
 type GroundedCall = { name: string; arguments: Readonly<Record<string, unknown>> };

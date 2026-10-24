@@ -55,5 +55,10 @@ export type ProposalGroundingBasis = {
      * when each request was grounded. A basis without it predates it, and reads its sources' protections
      * against the live project instead.
      */
-    protectedControls?: Array<{ trackId: string; operations: string[] }>;
+    protectedControls?: Array<{
+        trackId: string;
+        operations: string[];
+        /** When present, every operation except these is protected; an absent field keeps positive-only semantics. */
+        exceptOperations?: string[];
+    }>;
 };

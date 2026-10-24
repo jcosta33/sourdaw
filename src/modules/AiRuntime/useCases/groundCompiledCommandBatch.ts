@@ -337,10 +337,16 @@ function composeGroundingBasis(
             .filter((track) => readProtections.namedTrackIds.includes(track.id))
             .map(({ id, name }) => ({ id, name }))
     );
-    const protectedControls = readProtections.protectedControls.map(({ trackId, actionTypes }) => ({
-        trackId,
-        operations: actionTypes,
-    }));
+    const protectedControls = readProtections.protectedControls.map(({ trackId, actionTypes, exceptActionTypes }) => {
+        const control: NonNullable<ProposalGroundingBasis['protectedControls']>[number] = {
+            trackId,
+            operations: actionTypes,
+        };
+        if (exceptActionTypes !== undefined) {
+            control.exceptOperations = exceptActionTypes;
+        }
+        return control;
+    });
     if (input.refinementBasis !== undefined && bridged.refinement !== undefined) {
         return proposalGroundingBasis.extend({
             previous: input.refinementBasis,

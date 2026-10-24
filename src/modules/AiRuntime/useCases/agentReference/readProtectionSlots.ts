@@ -45,6 +45,8 @@ type Piece = { start: number; end: number; lead: { kind: StartKind; end: number;
 export type Slot = {
     start: number;
     end: number;
+    /** The whole clause, only when no unread text follows its closer. */
+    completeRange: Range | null;
     /** Whether a closing word shows the clause is a closed protection, which a selection phrase needs. */
     strict: boolean;
     /** The word that closed the slot. */
@@ -121,6 +123,17 @@ function splitPieces(masked: string): Piece[] {
 
 type Closer = Range & { word: string };
 
+function readCompleteRange(masked: string, piece: Piece, closer: Closer | null, requiresCloser: boolean): Range | null {
+    if (closer === null) {
+        if (requiresCloser) {
+            return null;
+        }
+    } else if (!TRAILING_FILLER.test(masked.slice(closer.end, piece.end))) {
+        return null;
+    }
+    return { start: piece.start, end: piece.end };
+}
+
 /** The first closing word of a text whose closure is sound: "the same" closes only the clause it ends. */
 function findCloser(masked: string, from: number, end: number, pattern: RegExp, verb: string | null): Closer | null {
     for (const match of masked.slice(from, end).matchAll(pattern)) {
@@ -155,6 +168,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
         return {
             start,
             end: Math.max(start, end),
+            completeRange: readCompleteRange(masked, piece, closer, true),
             strict: true,
             closer: closer.word,
             exempts: false,
@@ -162,13 +176,22 @@ function readSlot(masked: string, piece: Piece): Slot | null {
         };
     }
     if (lead.kind === 'carve-out') {
-        return { start: lead.end, end: piece.end, strict: true, closer: null, exempts: false, otherwise: false };
+        return {
+            start: lead.end,
+            end: piece.end,
+            completeRange: { start: piece.start, end: piece.end },
+            strict: true,
+            closer: null,
+            exempts: false,
+            otherwise: false,
+        };
     }
     if (lead.kind === 'prohibition') {
         const closer = findCloser(masked, lead.end, piece.end, closerPattern, null);
         return {
             start: lead.end,
             end: closer?.start ?? piece.end,
+            completeRange: readCompleteRange(masked, piece, closer, false),
             strict: true,
             closer: closer?.word ?? null,
             exempts: false,
@@ -179,6 +202,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
     return {
         start: lead.end,
         end: closer?.start ?? piece.end,
+        completeRange: readCompleteRange(masked, piece, closer, true),
         strict: closer !== null,
         closer: closer?.word ?? null,
         exempts: false,
