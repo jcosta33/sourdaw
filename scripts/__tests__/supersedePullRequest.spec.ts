@@ -84,6 +84,18 @@ function markerComment(
         authorType,
     };
 }
+function changeMarker(
+    comments: IssueComment[],
+    body: string,
+    change: (comment: IssueComment) => IssueComment
+): IssueComment[] {
+    return comments.map((comment) => {
+        if (comment.body === body) {
+            return change(comment);
+        }
+        return comment;
+    });
+}
 const validParentComments: [IssueComment, IssueComment] = [
     markerComment('IC_parent_receipt', String(databaseBase + 20n), receiptBody),
     markerComment('IC_parent_lineage', String(databaseBase + 21n), parentLineageBody),
@@ -141,6 +153,7 @@ type Input = {
     parentThreads?: SupersededReviewThread[];
     parentThreadsByRead?: SupersededReviewThread[][];
     removeParentReceiptDuringClose?: boolean;
+    finalParentProofChildComments?: (comments: IssueComment[]) => IssueComment[];
 };
 
 function fakePort(input: Input = {}) {
@@ -216,6 +229,9 @@ function fakePort(input: Input = {}) {
         }
         if (number === parentNumber) {
             const inspection = parentInspections++;
+            if (inspection === 3 && input.finalParentProofChildComments !== undefined) {
+                comments = input.finalParentProofChildComments(comments);
+            }
             const headRepository = input.parentHeadRepositories?.[inspection];
             return {
                 number,
@@ -1598,6 +1614,58 @@ describe('pull-request supersession', () => {
         expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
         expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
     });
+    it.each([
+        ['lineage removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== lineageBody)],
+        ['receipt removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== receiptBody)],
+        [
+            'receipt body change',
+            (comments: IssueComment[]) =>
+                changeMarker(comments, receiptBody, (comment) => ({ ...comment, body: supersessionCommentBody(9999) })),
+        ],
+        [
+            'receipt identity replacement',
+            (comments: IssueComment[]) =>
+                changeMarker(comments, receiptBody, () =>
+                    markerComment('IC_replacement_receipt', String(databaseBase + 500n), receiptBody)
+                ),
+        ],
+        [
+            'receipt actor change',
+            (comments: IssueComment[]) =>
+                changeMarker(comments, receiptBody, (comment) => ({ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID })),
+        ],
+        [
+            'lineage actor type change',
+            (comments: IssueComment[]) =>
+                changeMarker(comments, lineageBody, (comment) => ({ ...comment, authorType: 'User' })),
+        ],
+        [
+            'duplicate receipt',
+            (comments: IssueComment[]) => [
+                ...comments,
+                markerComment('IC_duplicate_receipt', String(databaseBase + 501n), receiptBody),
+            ],
+        ],
+    ] satisfies [string, (comments: IssueComment[]) => IssueComment[]][])(
+        'reports post-close ambiguity for %s during the final parent proof',
+        (_case, change) => {
+            let changedComments: IssueComment[] | undefined;
+            const { port, calls, state } = fakePort({
+                bases: [parentBranch],
+                finalParentProofChildComments: (comments) => {
+                    changedComments = change(comments);
+                    return changedComments;
+                },
+            });
+            expect(() => runWithParent(port)).toThrow(/ambiguous/i);
+            expect(changedComments).toBeDefined();
+            expect(state().state).toBe('CLOSED');
+            expect(state().closedAt).toBe('2026-08-20T12:00:00Z');
+            expect(state().comments).toEqual(changedComments);
+            expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+            expect(calls.filter((call) => /^(?:delete|log):/.test(call))).toEqual([]);
+        }
+    );
     it('keeps the exact-base requirement when no superseded parent is named', () => {
         const { port, calls } = fakePort({ bases: [parentBranch] });
         expect(() => run(port)).toThrow(`replacement PR #${replacementNumber} does not target ${parentBranch}`);
