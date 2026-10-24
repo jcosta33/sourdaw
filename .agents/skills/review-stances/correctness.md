@@ -504,13 +504,20 @@ PR #2357 introduced the compensation snapshot; PR #4420 extended rollback to rec
 markers. An invocation could read OPEN during compensation, then delete its verified canonical
 markers after another invocation adopted them, closed the pull request, and verified success.
 Historical exact review stance and tier are unestablished. Checking OPEN again before DELETE
-leaves the same gap; canonical markers are shared recoverable intent, not disposable private work.
+leaves the same gap. Retention alone is also insufficient: if finding 1002 arrives after lineage
+1001 was posted, the retained old lineage prevents a retry with the complete corrected lineage.
 
-Pause one invocation after its OPEN compensation snapshot, run a second real supersession to
-completion, then resume the first. Require the closed pull request to retain exactly one receipt
-and lineage marker, and only the successful invocation to log success. On an OPEN refusal, retain
-canonical intent for a rerun; cleanup may delete only verified markers this invocation created
-that have an independent canonical marker. Preserve prior, altered, foreign and ambiguous comments.
+Serialize the production operation's reads, replay, writes and compensation under the existing
+per-PR mutation owner. A verified pre-close rollback may release only after OPEN state, the exact
+original comment IDs and absence of its created IDs are proven; the invocation still fails.
+Ambiguous writes, altered markers, attempted closure and incomplete compensation retain the
+journal for native recovery. Preserve prior and foreign comments.
+
+Pause one invocation after its OPEN compensation snapshot. A second real serialized entrypoint
+must refuse before any PR port call; after verified rollback releases, its later invocation must
+close with both canonical proofs intact. Also add a finding before close, then require the
+complete updated lineage to succeed on retry without relaxing marker validation. A lock-release
+failure must never print a supersession success.
 
 ### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
 

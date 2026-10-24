@@ -21,6 +21,7 @@ import {
     spawnCapture,
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE, supersessionCommentBody } from './prContract.ts';
+import { withPullRequestMutationLock, type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
 import {
     commentClientMutationId,
     isDecimalId,
@@ -149,6 +150,93 @@ type CommentTransaction = { markers: MarkerPair; attempts: number; created: Crea
 const RECEIPT_LABEL = 'supersession comment marker';
 const LINEAGE_LABEL = 'finding lineage marker';
 
+type SupersessionInput = {
+    oldNumber: number;
+    expectedHead: string;
+    replacementNumber: number;
+    lineage: FindingLineage;
+    authorNodeId: string;
+    port: SupersedePullRequestPort;
+};
+
+class VerifiedSupersessionCompensationError extends Error {
+    readonly refusal: unknown;
+
+    constructor(refusal: unknown) {
+        super(errorMessage(refusal), { cause: refusal });
+        this.refusal = refusal;
+    }
+}
+
+type SupersessionOutcome = { success: string } | { compensated: VerifiedSupersessionCompensationError };
+
+/** The production entrypoint holds one shared per-PR owner through reads, writes, replay and compensation. */
+export async function serializedSupersedePullRequest(
+    primaryRoot: string,
+    input: SupersessionInput,
+    serialize: PullRequestMutationSerialization = withPullRequestMutationLock
+): Promise<string> {
+    let attemptedOwner: string | undefined;
+    let unsafeFailure = false;
+    let outcome: SupersessionOutcome;
+    try {
+        outcome = await serialize(primaryRoot, input.oldNumber, async (boundary): Promise<SupersessionOutcome> => {
+            const markMutation = () => {
+                boundary.markRemoteMutationAttempt();
+                attemptedOwner = boundary.ownerOid;
+            };
+            const port: SupersedePullRequestPort = {
+                ...input.port,
+                log: () => undefined,
+                comment: (number, body) => {
+                    markMutation();
+                    return input.port.comment(number, body);
+                },
+                deleteComment: (id) => {
+                    markMutation();
+                    input.port.deleteComment(id);
+                },
+                close: (number) => {
+                    markMutation();
+                    return input.port.close(number);
+                },
+            };
+            try {
+                return {
+                    success: supersedePullRequest(
+                        input.oldNumber,
+                        input.expectedHead,
+                        input.replacementNumber,
+                        input.lineage,
+                        input.authorNodeId,
+                        port
+                    ),
+                };
+            } catch (error) {
+                if (error instanceof VerifiedSupersessionCompensationError) {
+                    return { compensated: error };
+                }
+                unsafeFailure = true;
+                throw error;
+            }
+        });
+    } catch (error) {
+        if (unsafeFailure && attemptedOwner !== undefined) {
+            throw new Error(
+                `${errorMessage(error)}; PR #${input.oldNumber} supersession preserved lock owner ${attemptedOwner}: ` +
+                    `pnpm deliver --recover-lock ${input.oldNumber} --owner ${attemptedOwner}`,
+                { cause: error }
+            );
+        }
+        throw error;
+    }
+    if ('compensated' in outcome) {
+        throwWithCompensation(outcome.compensated.refusal, []);
+    }
+    input.port.log(outcome.success);
+    return outcome.success;
+}
+
 export function supersedePullRequest(
     oldNumber: number,
     expectedHead: string,
@@ -266,10 +354,40 @@ function compensateSupersession(
         } else if (unverified) {
             failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
         } else if (transaction.created.length > 0 && !stateMayHaveMutated && current.state === before.state) {
-            deleteCreatedNoncanonicalComments(current.comments, transaction, port, failures);
+            deleteCreatedComments(current.comments, transaction, port, failures);
+        }
+    }
+    if (
+        current !== undefined &&
+        current.state === before.state &&
+        !closeAttempted &&
+        transaction.attempts === transaction.created.length
+    ) {
+        attempt(failures, 'verify supersession compensation', () => {
+            const verified = port.inspect(number);
+            const createdRemains = transaction.created.some((created) =>
+                verified.comments.some((comment) => comment.id === created.id)
+            );
+            if (
+                verified.state !== before.state ||
+                !sameCommentIds(verified.comments, before.comments) ||
+                createdRemains
+            ) {
+                fail(`PR #${number} compensation was not verified`);
+            }
+        });
+        if (failures.length === 0) {
+            throw new VerifiedSupersessionCompensationError(original);
         }
     }
     throwWithCompensation(original, failures);
+}
+function sameCommentIds(left: IssueComment[], right: IssueComment[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const ids = new Set(left.map((comment) => comment.id));
+    return ids.size === right.length && right.every((comment) => ids.has(comment.id));
 }
 function throwWithCompensation(original: unknown, failures: string[]): never {
     const message = errorMessage(original);
@@ -411,7 +529,7 @@ function convergeCommentMarkers(
         }
     }
 }
-/** Canonical markers can already be another invocation's recovery intent, even after an OPEN snapshot. */
+/** Deletes this invocation's noncanonical markers once another invocation has closed the pull request. */
 function deleteCreatedNoncanonicalComments(
     comments: IssueComment[],
     transaction: CommentTransaction,
@@ -426,14 +544,33 @@ function deleteCreatedNoncanonicalComments(
             failures.push(`inspect concurrent supersession markers: ${errorMessage(error)}`);
             return;
         }
-        if (canonical.id === created.id) {
-            continue;
-        }
-        if (!hasExpectedComment(comments, created.id, created.spec.body)) {
-            failures.push("retained this invocation's unverified supersession comment");
+        if (canonical.id === created.id || !hasExpectedComment(comments, created.id, created.spec.body)) {
+            failures.push("concurrent closure retained this invocation's canonical or unverified supersession comment");
             return;
         }
         attempt(failures, 'delete noncanonical supersession comment', () => port.deleteComment(created.id));
+    }
+}
+/** Rolls this invocation's verified markers back, refusing as a whole when any of them was altered. */
+function deleteCreatedComments(
+    comments: IssueComment[],
+    transaction: CommentTransaction,
+    port: SupersedePullRequestPort,
+    failures: string[]
+): void {
+    const altered = transaction.created.filter(
+        (created) =>
+            comments.some((comment) => comment.id === created.id) &&
+            !hasExpectedComment(comments, created.id, created.spec.body)
+    );
+    if (altered.length > 0) {
+        failures.push(`${altered.length} created supersession marker(s) are no longer exact; refusing to roll back`);
+        return;
+    }
+    for (const created of transaction.created) {
+        if (hasExpectedComment(comments, created.id, created.spec.body)) {
+            attempt(failures, 'delete supersession comment', () => port.deleteComment(created.id));
+        }
     }
 }
 function findReusableComment(
@@ -541,14 +678,14 @@ async function main(): Promise<number> {
             })
         );
         const lineage = readFindingLineageFile(parsed.lineagePath);
-        supersedePullRequest(
-            parsed.oldNumber,
-            parsed.head,
-            parsed.replacementNumber,
+        await serializedSupersedePullRequest(primaryRoot, {
+            oldNumber: parsed.oldNumber,
+            expectedHead: parsed.head,
+            replacementNumber: parsed.replacementNumber,
             lineage,
-            auth.minted.actorNodeId,
-            shellPort(auth.session)
-        );
+            authorNodeId: auth.minted.actorNodeId,
+            port: shellPort(auth.session),
+        });
         return 0;
     } finally {
         auth.session.dispose();

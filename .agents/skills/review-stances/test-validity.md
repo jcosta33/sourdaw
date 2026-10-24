@@ -11,15 +11,20 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 The compensation snapshot from PR #2357 and two-marker rollback from PR #4420 were tested as one
 invocation's cleanup. They did not interleave another real supersession after that snapshot, so a
 successful close could lose both canonical proofs. Historical exact review stance and tier are
-unestablished; serial rollback assertions did not establish concurrent ownership.
+unestablished. The first retention-only repair also omitted a newly arriving finding followed by
+a corrected-lineage retry, which the retained stale lineage refused.
 
-Capture an OPEN compensation response, let a second invocation adopt the exact receipt and
-lineage IDs, close and verify success, then deliver the stale response to the first invocation.
-Assert retained marker bodies and IDs, one success log, and no canonical deletion. Put the
-interleaving at the response boundary, not inside DELETE: safe retention removes that DELETE, so
-such a callback would stop exercising the competitor after repair. Restoring canonical rollback
-must fail this case. Also prove an OPEN refusal's retained intent is adopted on an ordinary rerun
-without reposting, while only owned noncanonical duplicates can be removed.
+Capture an OPEN compensation response and invoke the actual serialized production entrypoint
+for the competitor. Require the real Git-ref owner to refuse it before any PR port call, then
+prove that a later invocation closes with both canonical proofs after verified rollback. Pure
+core calls do not acquire the production lock. Keep the unsafe interleaving in this entrypoint
+probe, and require an updated finding set to recover with the complete lineage.
+
+Record a boundary before every comment, delete and close. Unknown comment results, altered
+markers, attempted closes and unavailable rollback verification must retain the exact journal;
+only proven compensation or a read-only refusal may release. Exercise the existing native
+recovery route with stable OPEN and CLOSED unmerged observations, and require no false success
+after refusal or lock-release failure. A second PR and completed replay are positive controls.
 
 ### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
 
