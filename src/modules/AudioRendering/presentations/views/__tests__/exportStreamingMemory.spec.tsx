@@ -891,16 +891,18 @@ describe('connected stem export output ownership', () => {
                             return;
                         }
                         samples++;
+                        reportGcPhase('before-turn');
                         // WeakRef targets are kept alive for the job that observed them. Advance a real
                         // turn before GC; no fixed microtask count stands in for collection completion.
                         await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                        reportGcPhase('before-gc');
                         gc();
+                        reportGcPhase('before-scan');
                         const live = sampleLiveExportBytes(allocations);
                         peak = Math.max(peak, live);
+                        reportGcPhase('before-bound', live);
                         expect(live).toBeLessThanOrEqual(2 * b);
-                        if (samples % 8 === 0) {
-                            reportGcPhase('sample', live);
-                        }
+                        reportGcPhase('after-bound', live);
                     },
                     close: async () => {
                         closed = true;
@@ -908,20 +910,27 @@ describe('connected stem export output ownership', () => {
                         resolveFinished();
                     },
                     abort: async () => {
+                        reportGcPhase('abort');
                         rejectFinished(
                             mocks.loggerError.mock.calls.at(-1)?.[0] ??
                                 new Error('Streaming export aborted before commit.')
                         );
+                        reportGcPhase('finished-rejected');
                     },
                 }),
             }));
             try {
                 render(<ExportDialog open onClose={() => {}} />);
                 fireEvent.click(screen.getByTestId('export-mode-stems'));
-                await act(async () => {
-                    fireEvent.click(screen.getByTestId('export-start'));
-                    await finished;
-                });
+                try {
+                    await act(async () => {
+                        fireEvent.click(screen.getByTestId('export-start'));
+                        await finished;
+                    });
+                } catch (error) {
+                    reportGcPhase('act-rejected');
+                    throw error;
+                }
                 reportGcPhase('act-resolved');
                 expect(closed).toBe(true);
                 expect(ownership.rendered).toBe(64);
@@ -939,6 +948,7 @@ describe('connected stem export output ownership', () => {
                 expect(peak).toBeGreaterThan(b);
                 expect(peak).toBeLessThanOrEqual(2 * b);
             } finally {
+                reportGcPhase('finally');
                 collecting = false;
                 reportFirstGcRender = () => {};
                 zipAllocation.observe = () => {};
