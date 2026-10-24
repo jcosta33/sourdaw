@@ -1,0 +1,20 @@
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_59e31a5c6f3e31::t_9a806d86761fb7 607
+  s_59e31a5c6f3e31::t_c6263a0c0210d3 294,297,325,405,618-620,668-670,674-676,687
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75c1624bb3ce0e7dd5c94fa5d22e138644aa427c",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
