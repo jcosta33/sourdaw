@@ -1,0 +1,109 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_59e31a5c6f3e31::t_1e5ebc3089c47a 125,128,131,228,231,234,447,604,708,1016-1020,1028-1030
+src/app/bootstrap.ts
+  s_59e31a5c6f3e31::t_0ac31b0bf52d86 76,153,200,416-420
+src/modules/Arrangement/handlers/__tests__/singleActionAbortCompensation.integration.spec.ts
+  s_29d8df116c5b92::t_02d7fd806eeab2 134
+src/modules/Arrangement/handlers/clip/__tests__/deleteTimeCompMidiLoopPass.integration.spec.ts
+  s_29d8df116c5b92::t_f5f39e5d2f9b0f 191
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_59e31a5c6f3e31::t_cf9d9d15204d24 11,40,47,65,80-86,285-289,399-538
+src/modules/Arrangement/handlers/clip/__tests__/handleInsertTime.integration.spec.ts
+  s_29d8df116c5b92::t_2cf10456b06d55 97
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_29d8df116c5b92::t_b86bd6c1b26b7e 8-12,29-38,171-175,183
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_29d8df116c5b92::t_a3e7456ce7582e 27
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_29d8df116c5b92::t_97fef129ad28fb 66
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletionValidation.spec.ts
+  s_29d8df116c5b92::t_caadf30b4efb69 34,481
+src/modules/Arrangement/useCases/clipEditing/__tests__/placementLoopOrigin.spec.ts
+  s_29d8df116c5b92::t_e394efff3d5b76 150
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  s_29d8df116c5b92::t_f474cc1556cebd 47
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeDeletionLoopOrigin.spec.ts
+  s_29d8df116c5b92::t_76701e237c695a 54
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeClipSatellites.spec.ts
+  s_29d8df116c5b92::t_1090de827abcb9 144
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeDeleteLoopOrigin.spec.ts
+  s_29d8df116c5b92::t_f2410298db6e43 56
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTakeLanes.spec.ts
+  s_29d8df116c5b92::t_73b3b0099b2145 105
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTakeReKey.spec.ts
+  s_29d8df116c5b92::t_79ed912c956db8 105
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_29d8df116c5b92::t_bb8d7d6e8612b3 178,419,810
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransactionValidation.spec.ts
+  s_29d8df116c5b92::t_eecde8e3bfd5d3 172
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_29d8df116c5b92::t_cf2ceb9555b5d5 243
+src/modules/Arrangement/useCases/timeOperations/clipSatelliteStateCodec.ts
+  s_59e31a5c6f3e31::t_5c67ac3c05b4a8 2-6,220-252,254
+src/modules/Arrangement/useCases/timeOperations/isValidClipSatelliteStateRestorePlan.ts
+  s_59e31a5c6f3e31::t_5360dd1d45f258 1-10
+src/modules/Arrangement/useCases/timeOperations/prepareClipSatelliteStateRestore.ts
+  s_59e31a5c6f3e31::t_323b62f41f0bae 59
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_59e31a5c6f3e31::t_fb417cd8583324 11,270-281
+src/modules/Arrangement/useCases/timeOperations/timeOperationDependencies.ts
+  s_59e31a5c6f3e31::t_1af2ad27eae2a0 88-92
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_29d8df116c5b92::t_4a2d3cd4ada989 109
+src/modules/Automation/useCases/automation/automationTimeStateCodec.ts
+  s_1c08b47ac3792f::t_8ed7a5522deaa3 1-180
+src/modules/Automation/useCases/automation/isValidAutomationTimeStateRestorePlan.ts
+  s_1c08b47ac3792f::t_bafdbb5b1cede0 1-10
+src/modules/Automation/useCases/automation/prepareAutomationTimeStateRestore.ts
+  s_1c08b47ac3792f::t_6e00426e46ba1f 1,3,5,19,24-28,35-36,46,67,93,117
+src/modules/Automation/useCases/index.ts
+  s_59e31a5c6f3e31::t_296a8dd2ed1f12 25
+src/modules/MIDI/useCases/index.ts
+  s_59e31a5c6f3e31::t_4b0beaea4674f9 115
+src/modules/MIDI/useCases/midiNoteCrud/isValidMidiTimeStateRestorePlan.ts
+  s_59e31a5c6f3e31::t_ab66617a9f7d24 1-10
+src/modules/MIDI/useCases/midiNoteCrud/midiTimeStateCodec.ts
+  s_59e31a5c6f3e31::t_e7d1d4dbb92e26 511-535,607
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiTimeStateRestore.ts
+  s_59e31a5c6f3e31::t_046d7870681860 29
+src/modules/Transport/useCases/index.ts
+  s_59e31a5c6f3e31::t_300353702a69ea 29
+src/modules/Transport/useCases/tempoMap/isValidTimelineMapStateRestorePlan.ts
+  s_59e31a5c6f3e31::t_f41a3e75e4d614 1-6
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapStateRestore.ts
+  s_59e31a5c6f3e31::t_82d84f1802cdc7 71
+src/modules/Transport/useCases/tempoMap/timelineMapTimeStateCodec.ts
+  s_59e31a5c6f3e31::t_626d84878f5843 457-503,581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb767fcabce8b365dbbfeca2bac43c7f0c7241ca",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
