@@ -31,7 +31,45 @@ const GC_CHILD_OUTPUT_TAIL_LIMIT = 8 * 1024;
 const GC_CASE_TIMEOUT_MS =
     process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function' ? 120_000 : 180_000;
 
-function sampleLiveExportBytes(allocations: WeakRef<ArrayBufferLike>[]): number {
+type BufferObservation = {
+    origin: string;
+    allocationBytes: number;
+    format: string;
+    renderGeneration: number;
+    producerStack?: string;
+};
+
+type BufferBucket = { count: number; bytes: number };
+
+type LiveBufferSample = {
+    live: number;
+    bySize: Map<number, BufferBucket>;
+    byOrigin: Map<string, BufferBucket>;
+    byGeneration: Map<string, BufferBucket>;
+    byEightKiBStack: Map<string, BufferBucket>;
+};
+
+function addBufferBucket<Key>(buckets: Map<Key, BufferBucket>, key: Key, bytes: number): void {
+    const bucket = buckets.get(key);
+    if (bucket) {
+        bucket.count++;
+        bucket.bytes += bytes;
+        return;
+    }
+    buckets.set(key, { count: 1, bytes });
+}
+
+function sampleLiveExportBytes(
+    allocations: WeakRef<ArrayBufferLike>[],
+    observations: WeakMap<ArrayBufferLike, BufferObservation>
+): LiveBufferSample {
+    const sample: LiveBufferSample = {
+        live: 0,
+        bySize: new Map(),
+        byOrigin: new Map(),
+        byGeneration: new Map(),
+        byEightKiBStack: new Map(),
+    };
     let live = 0;
     let retained = 0;
     for (const reference of allocations) {
@@ -39,12 +77,29 @@ function sampleLiveExportBytes(allocations: WeakRef<ArrayBufferLike>[]): number 
         if (buffer === undefined) {
             continue;
         }
-        live += buffer.byteLength;
+        const bytes = buffer.byteLength;
+        const observation = observations.get(buffer);
+        live += bytes;
+        addBufferBucket(sample.bySize, observation?.allocationBytes ?? bytes, bytes);
+        addBufferBucket(sample.byOrigin, observation?.origin ?? 'unobserved', bytes);
+        addBufferBucket(
+            sample.byGeneration,
+            observation ? `${observation.format}:render-${observation.renderGeneration}` : 'unobserved',
+            bytes
+        );
+        if ((observation?.allocationBytes ?? bytes) === 8192) {
+            addBufferBucket(sample.byEightKiBStack, observation?.producerStack ?? 'stack-unavailable', bytes);
+        }
         allocations[retained] = reference;
         retained++;
     }
     allocations.length = retained;
-    return live;
+    sample.live = live;
+    return sample;
+}
+
+function topBufferBuckets<Key>(buckets: Map<Key, BufferBucket>, limit: number): Array<[Key, BufferBucket]> {
+    return [...buckets.entries()].sort((left, right) => right[1].bytes - left[1].bytes).slice(0, limit);
 }
 
 function stopGcChild(pid: number | undefined): void {
@@ -825,11 +880,30 @@ describe('connected stem export output ownership', () => {
                 normalization: 'off',
             });
             const observed = new WeakSet<ArrayBufferLike>();
+            const observations = new WeakMap<ArrayBufferLike, BufferObservation>();
             const allocations: WeakRef<ArrayBufferLike>[] = [];
-            const track = (buffer: ArrayBufferLike) => {
+            let currentFormat: 'wav' | 'mp3' | 'flac' | '-' = '-';
+            const track = (buffer: ArrayBufferLike, origin: string) => {
                 if (!observed.has(buffer)) {
                     observed.add(buffer);
                     allocations.push(new WeakRef(buffer));
+                    const allocationBytes = buffer.byteLength;
+                    let producerStack: string | undefined;
+                    if (allocationBytes === 8192) {
+                        producerStack = new Error('Export buffer allocation').stack
+                            ?.split('\n')
+                            .slice(3, 7)
+                            .join(' | ')
+                            .replaceAll(process.cwd(), '.')
+                            .slice(0, 320);
+                    }
+                    observations.set(buffer, {
+                        origin,
+                        allocationBytes,
+                        format: currentFormat,
+                        renderGeneration: ownership.rendered,
+                        producerStack,
+                    });
                 }
             };
             let collecting = true;
@@ -853,9 +927,9 @@ describe('connected stem export output ownership', () => {
                             const value = Reflect.construct(target, args);
                             if (collecting) {
                                 if (ArrayBuffer.isView(value)) {
-                                    track(value.buffer);
+                                    track(value.buffer, `ctor:${name}`);
                                 } else if (value instanceof ArrayBuffer) {
-                                    track(value);
+                                    track(value, `ctor:${name}`);
                                 }
                             }
                             return value;
@@ -865,18 +939,18 @@ describe('connected stem export output ownership', () => {
             }
             zipAllocation.observe = (bytes) => {
                 if (collecting) {
-                    track(bytes.buffer);
+                    track(bytes.buffer, 'zip-output');
                 }
             };
             let closed = false;
             let writes = 0;
             let samples = 0;
-            let currentFormat: 'wav' | 'mp3' | 'flac' | '-' = '-';
             let entryWrites = 0;
             let entryBytes = 0;
             let lastWorkPhase = 'entry';
             let lastSampledLive: number | undefined;
             let lastSampledAt: number | undefined;
+            let reportedNearBound = false;
             let heartbeat: ReturnType<typeof setInterval> | undefined;
             let resolveFinished: () => void = () => {};
             let rejectFinished: (reason: unknown) => void = () => {};
@@ -911,6 +985,31 @@ describe('connected stem export output ownership', () => {
                     collecting = wasCollecting;
                 }
             };
+            const reportBufferAttribution = (phase: 'near-bound' | 'over-bound', sample: LiveBufferSample) => {
+                const wasCollecting = collecting;
+                collecting = false;
+                try {
+                    const payload = {
+                        phase,
+                        sample: samples,
+                        live: sample.live,
+                        bySize: topBufferBuckets(sample.bySize, 12),
+                        byOrigin: topBufferBuckets(sample.byOrigin, 12),
+                        byGeneration: topBufferBuckets(sample.byGeneration, 12),
+                        eightKiBStacks: topBufferBuckets(sample.byEightKiBStack, 8),
+                    };
+                    const line = `GC_ATTRIBUTION ${JSON.stringify(payload)}`;
+                    if (Buffer.byteLength(line, 'utf8') <= 8191) {
+                        process.stdout.write(`${line}\n`);
+                        return;
+                    }
+                    process.stdout.write(
+                        `GC_ATTRIBUTION ${JSON.stringify({ phase, sample: samples, live: sample.live, bySize: topBufferBuckets(sample.bySize, 8), byOrigin: topBufferBuckets(sample.byOrigin, 8), truncated: true })}\n`
+                    );
+                } finally {
+                    collecting = wasCollecting;
+                }
+            };
             reportFirstGcRender = () => reportGcPhase('render');
             zipAllocation.onEntry = (filename) => {
                 if (filename.endsWith('.wav')) {
@@ -928,7 +1027,7 @@ describe('connected stem export output ownership', () => {
             vi.stubGlobal('showSaveFilePicker', async () => ({
                 createWritable: async () => ({
                     write: async (bytes: Uint8Array) => {
-                        track(bytes.buffer);
+                        track(bytes.buffer, 'sink-write');
                         writes++;
                         entryWrites++;
                         entryBytes += bytes.byteLength;
@@ -948,11 +1047,18 @@ describe('connected stem export output ownership', () => {
                         reportGcPhase('before-gc');
                         gc();
                         reportGcPhase('before-scan');
-                        const live = sampleLiveExportBytes(allocations);
+                        const sample = sampleLiveExportBytes(allocations, observations);
+                        const live = sample.live;
                         peak = Math.max(peak, live);
                         lastSampledLive = live;
                         lastSampledAt = Date.now();
                         reportGcPhase('before-bound', live);
+                        if (live > 2 * b) {
+                            reportBufferAttribution('over-bound', sample);
+                        } else if (!reportedNearBound && live >= 2 * b - 16 * 1024) {
+                            reportedNearBound = true;
+                            reportBufferAttribution('near-bound', sample);
+                        }
                         expect(live).toBeLessThanOrEqual(2 * b);
                         reportGcPhase('after-bound', live);
                     },
@@ -1017,12 +1123,32 @@ describe('connected stem export output ownership', () => {
 });
 
 it('keeps only live observed export buffers after sampling', () => {
-    const first = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => new ArrayBuffer(8)) } as const;
+    const firstBuffer = new ArrayBuffer(8);
+    const secondBuffer = new ArrayBuffer(13);
+    const first = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => firstBuffer) } as const;
     const collected = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => undefined) } as const;
-    const second = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => new ArrayBuffer(13)) } as const;
+    const second = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => secondBuffer) } as const;
     const allocations: WeakRef<ArrayBufferLike>[] = [first, collected, second];
+    const observations = new WeakMap<ArrayBufferLike, BufferObservation>([
+        [firstBuffer, { origin: 'ctor:Uint8Array', allocationBytes: 8, format: 'mp3', renderGeneration: 2 }],
+        [secondBuffer, { origin: 'sink-write', allocationBytes: 13, format: 'wav', renderGeneration: 3 }],
+    ]);
 
-    expect(sampleLiveExportBytes(allocations)).toBe(21);
+    const sample = sampleLiveExportBytes(allocations, observations);
+    expect(sample.live).toBe(21);
+    expect([...sample.bySize]).toEqual([
+        [8, { count: 1, bytes: 8 }],
+        [13, { count: 1, bytes: 13 }],
+    ]);
+    expect([...sample.byOrigin]).toEqual([
+        ['ctor:Uint8Array', { count: 1, bytes: 8 }],
+        ['sink-write', { count: 1, bytes: 13 }],
+    ]);
+    expect([...sample.byGeneration]).toEqual([
+        ['mp3:render-2', { count: 1, bytes: 8 }],
+        ['wav:render-3', { count: 1, bytes: 13 }],
+    ]);
+    expect([...sample.bySize.values()].reduce((sum, bucket) => sum + bucket.bytes, 0)).toBe(sample.live);
     expect(allocations).toEqual([first, second]);
     expect(first.deref).toHaveBeenCalledTimes(1);
     expect(collected.deref).toHaveBeenCalledTimes(1);
