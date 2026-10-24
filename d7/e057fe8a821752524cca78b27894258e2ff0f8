@@ -1,0 +1,57 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_46767bff551ce1 1647,1657
+  s_1c08b47ac3792f::t_3746d556938c36 1629-1646,1648-1656,1658-1659,1661-1662,1668,1675-1685
+  s_1c08b47ac3792f::t_ce46a3e8f7624e 1660,1663-1667,1669-1674
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_1c08b47ac3792f::t_5e4e21b5a02cd6 59-62,64-68,191-192,196-197,200,202,207-209,213,215,222
+  s_29d8df116c5b92::t_1d65d835915150 189-190,193-195,198-199,201,203-206
+src/modules/AiRuntime/useCases/agentReference/protectionObjectForms.ts
+  s_1c08b47ac3792f::t_add1e261b09c2b 61-62
+  s_1c08b47ac3792f::t_eed022d8798a44 99-100,104,109,176-179
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_1c08b47ac3792f::t_959bbd9896e886 210-211,245-251
+  s_1c08b47ac3792f::t_e0b6e83eb126d2 156-162,175,241,320,432-449,455-457,481,488-491,495-499
+  s_1c08b47ac3792f::t_add1e261b09c2b 11,66,104,131,133,137-138,318-319
+  s_1c08b47ac3792f::t_350e489c3a85af 185-188,195-209,212-214,216-217,234-235
+  s_1c08b47ac3792f::t_c838f06bf7b10d 215,236
+  s_1c08b47ac3792f::t_ce46a3e8f7624e 450-454
+  s_1c08b47ac3792f::t_bc81cff287c90b 252-253
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_ce46a3e8f7624e 6999-7000
+  s_1c08b47ac3792f::t_095445c317823e 183-187,6153,6160-6168,7003
+  s_1c08b47ac3792f::t_b2774eadcbcfc2 6169-6170
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_1c08b47ac3792f::t_ddb964d0f6f0d8 687-728,731-734
+  s_1c08b47ac3792f::t_f53b2d25804cc3 108,529-536,540-630,632-670,675-686
+  s_1c08b47ac3792f::t_ce46a3e8f7624e 537-539,631,671-674
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_13c2275c2aff79 1787-1861
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_bf24804b575a24 48
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_1c08b47ac3792f::t_095445c317823e 135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7e057fe8a821752524cca78b27894258e2ff0f8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
