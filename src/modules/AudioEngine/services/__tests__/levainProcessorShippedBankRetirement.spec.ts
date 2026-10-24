@@ -26,7 +26,13 @@ function posted(processor: LevainProcessorLike): { type?: string; loadToken?: nu
     return processor.port.postMessage.mock.calls.map(([message]) => message as { type?: string });
 }
 
-function stageBank(processor: LevainProcessorLike, loadToken: number, instrumentId: string, constant?: number): void {
+function stageBank(
+    processor: LevainProcessorLike,
+    loadToken: number,
+    instrumentId: string,
+    constant?: number,
+    loopMode: 'forward' | 'none' = 'forward'
+): void {
     send(processor, { type: 'beginSampleBank', bankKey: `bank-${loadToken}`, instrumentId, loadToken });
     const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => constant ?? Math.sin(frame * 0.05) * 0.5);
     send(processor, {
@@ -53,7 +59,7 @@ function stageBank(processor: LevainProcessorLike, loadToken: number, instrument
         rrPos: 0,
         rrLen: 1,
         micId: 0,
-        loopMode: 'forward',
+        loopMode,
         loopStart: 0,
         loopEnd: SAMPLE_FRAMES,
         loopCrossfade: 0,
@@ -74,8 +80,13 @@ function stageBank(processor: LevainProcessorLike, loadToken: number, instrument
     });
 }
 
-function loadBank(processor: LevainProcessorLike, loadToken: number, instrumentId: string): void {
-    stageBank(processor, loadToken, instrumentId);
+function loadBank(
+    processor: LevainProcessorLike,
+    loadToken: number,
+    instrumentId: string,
+    loopMode: 'forward' | 'none' = 'forward'
+): void {
+    stageBank(processor, loadToken, instrumentId, undefined, loopMode);
     stageAndCommitBank((data) => send(processor, data), wasmModule, loadToken, {
         zones: [WIDE_ZONE],
         numArticulations: 1,
@@ -230,6 +241,50 @@ afterEach(() => {
 });
 
 describe('shipped LevainProcessor bank retirement', () => {
+    it.each([62, 64])('delays note %s after a held predecessor ran out of samples', async (note) => {
+        async function renderSecond(withSpentPredecessor: boolean): Promise<Float32Array> {
+            vi.resetModules();
+            const { registry } = installWorkletGlobals<LevainProcessorLike>();
+            await import('../levainProcessor');
+            const Processor = registry.get('levain-processor');
+            if (!Processor) {
+                throw new TypeError('Expected levain-processor registration');
+            }
+            const processor = new Processor({ processorOptions: { wasmModule } });
+            send(processor, { type: 'init' });
+            loadBank(processor, 1, 'marimba', 'none');
+            expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
+            send(processor, { type: 'param', name: 'humanize', value: 0 });
+            send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+            send(processor, { type: 'param', name: 'legatoEnabled', value: 1 });
+            const output = makeChannels(2, FRAMES);
+            let startQuantum = 0;
+            if (withSpentPredecessor) {
+                send(processor, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 0 });
+                for (let quantum = 0; quantum < 42; quantum++) {
+                    vi.stubGlobal('currentFrame', quantum * FRAMES);
+                    expect(processor.process([], [output])).toBe(true);
+                }
+                expect(output[0]!.every((sample) => sample === 0)).toBe(true);
+                startQuantum = 42;
+            }
+            // 62 has a recorded transition; 64 takes the synthetic-glide route.
+            send(processor, { type: 'noteOn', note, velocity: 100, sampleFrame: startQuantum * FRAMES });
+            const rendered = new Float32Array(8 * FRAMES);
+            for (let quantum = 0; quantum < 8; quantum++) {
+                vi.stubGlobal('currentFrame', (startQuantum + quantum) * FRAMES);
+                expect(processor.process([], [output])).toBe(true);
+                rendered.set(output[0]!, quantum * FRAMES);
+            }
+            expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+            return rendered;
+        }
+
+        const fresh = await renderSecond(false);
+        const afterSpent = await renderSecond(true);
+        expect(onsetFrame(fresh)).toBeGreaterThan(0);
+        expect(onsetFrame(afterSpent)).toBe(onsetFrame(fresh));
+    });
     it('commits a replacement bank, frees the displaced one by message, and still sounds', async () => {
         const { registry } = installWorkletGlobals<LevainProcessorLike>();
         await import('../levainProcessor');

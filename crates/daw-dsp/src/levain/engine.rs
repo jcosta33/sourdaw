@@ -903,6 +903,27 @@ impl LevainEngine {
         let legato_result = self
             .legato
             .note_on(note, velocity, voice_idx, current_dynamic);
+        // A held key can outlive its recording or remember a recycled slot.
+        // Only a matching voice that has started sounding can continue a line;
+        // every other result needs the complete fresh-attack setup below.
+        let legato_result = match legato_result {
+            LegatoResult::TrueTransition {
+                from_note,
+                from_voice,
+                ..
+            }
+            | LegatoResult::SyntheticGlide {
+                from_note,
+                from_voice,
+                ..
+            } if !self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
+                voice.note == from_note && voice.is_sounding() && !voice.attack_is_pending()
+            }) =>
+            {
+                LegatoResult::Normal
+            }
+            result => result,
+        };
 
         // Per-voice vibrato init — independent phase + rate scale for
         // ensemble decorrelation (spec §4.2). Captured once so each arm
@@ -936,7 +957,6 @@ impl LevainEngine {
                 self.attach_dynamic_layer(voice_idx, art, note, &zones, velocity);
             }
             LegatoResult::TrueTransition {
-                from_note,
                 from_voice,
                 transition,
                 crossfade_out,
@@ -946,23 +966,7 @@ impl LevainEngine {
                 // "into the transition" ramp `crossfade_in` names — this
                 // voice pool has no independent stream to apply a second,
                 // separately-timed crossfade to that departing voice.
-                //
-                // `note == from_note` is what makes the stored index safe to
-                // act on. `LegatoEngine` remembers a voice index from when
-                // the held key went down, and the pool can recycle that slot
-                // underneath it — a voice whose recording has run dry frees
-                // itself with the key still held (`LevainVoice::tick`), so the
-                // next note-on takes the slot and the remembered index then
-                // addresses a different, sounding note. Releasing on a stale
-                // index cuts that note off mid-sound.
-                if self
-                    .voice_pool
-                    .voices
-                    .get(from_voice)
-                    .is_some_and(|voice| voice.active && voice.note == from_note)
-                {
-                    self.voice_pool.voices[from_voice].release();
-                }
+                self.voice_pool.voices[from_voice].release();
                 let voice = &mut self.voice_pool.voices[voice_idx];
                 voice.trigger(
                     note,
@@ -1002,54 +1006,28 @@ impl LevainEngine {
                 );
             }
             LegatoResult::SyntheticGlide {
-                from_note,
                 from_voice,
                 glide_time,
+                ..
             } => {
                 // Reuse the existing voice and crossfade to the new zone.
                 // The reused voice keeps its existing vibrato state (it's
                 // a continuous slur, not a fresh attack).
-                //
-                // `active` alone is not enough to trust the remembered index:
-                // see the `TrueTransition` arm. A recycled slot is active and
-                // sounding *someone else's* note, and gliding it would drag
-                // that note to this pitch instead of slurring the one the
-                // player is actually holding.
-                if self
-                    .voice_pool
-                    .voices
-                    .get(from_voice)
-                    .is_some_and(|voice| voice.active && voice.note == from_note)
-                {
-                    // The incoming zones enter at the outgoing streams' elapsed
-                    // time, so the slur adds no second attack even when mic
-                    // positions have different decoded sample rates.
-                    self.voice_pool.voices[from_voice].start_crossfade(
-                        &zones,
-                        note,
-                        glide_time,
-                        self.sample_rate,
-                        &self.sample_pool,
-                    );
-                    self.voice_pool.voices[from_voice].note = note;
-                    // A synthetic glide reuses the sounding voice, so it
-                    // must inherit the new note's expression address.
-                    self.voice_pool.voices[from_voice].channel = channel;
-                    self.voice_pool.voices[from_voice].held = true;
-                } else {
-                    let voice = &mut self.voice_pool.voices[voice_idx];
-                    voice.trigger(
-                        note,
-                        channel,
-                        velocity,
-                        &zones,
-                        art,
-                        gain,
-                        &self.sample_pool,
-                    );
-                    voice.vibrato_phase = vibrato_phase;
-                    voice.vibrato_rate_scale = vibrato_rate_scale;
-                }
+                // The incoming zones enter at the outgoing streams' elapsed
+                // time, so the slur adds no second attack even when mic
+                // positions have different decoded sample rates.
+                self.voice_pool.voices[from_voice].start_crossfade(
+                    &zones,
+                    note,
+                    glide_time,
+                    self.sample_rate,
+                    &self.sample_pool,
+                );
+                self.voice_pool.voices[from_voice].note = note;
+                // A synthetic glide reuses the sounding voice, so it
+                // must inherit the new note's expression address.
+                self.voice_pool.voices[from_voice].channel = channel;
+                self.voice_pool.voices[from_voice].held = true;
             }
         }
         if !fresh_attack {
@@ -3887,6 +3865,157 @@ mod tests {
         let mut engine = ensemble_engine(ensemble_timing);
         engine.note_on(note, 100);
         render(&mut engine, 12)
+    }
+
+    fn ensemble_legato_engine(recorded_transition: bool, loop_mode: LoopMode) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let data = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.loop_mode = loop_mode;
+        engine.add_zone(zone);
+        engine.build_zone_map(1, 1).expect("zone map should build");
+        if recorded_transition {
+            engine.add_legato_transition(LegatoTransition {
+                interval: 2,
+                transition_type: TransitionType::Slurred,
+                dynamic: Dynamic::MF,
+                sample_id,
+                crossfade_out_ms: 20.0,
+            });
+        }
+        engine.set_param("humanize", 0.0);
+        engine.set_param("ensemble_timing", 1.0);
+        engine
+    }
+
+    #[test]
+    fn a_spent_legato_source_starts_a_complete_fresh_attack_on_both_transition_routes() {
+        for recorded_transition in [false, true] {
+            let mut fresh = ensemble_legato_engine(recorded_transition, LoopMode::NoLoop);
+            fresh.note_on(62, 100);
+            let expected = render(&mut fresh, 8);
+
+            let mut spent = ensemble_legato_engine(recorded_transition, LoopMode::NoLoop);
+            spent.note_on(60, 100);
+            let predecessor = render(&mut spent, 42);
+            assert!(predecessor[41 * 128..].iter().all(|sample| *sample == 0.0));
+            assert_eq!(spent.active_voice_count(), 0);
+            spent.note_on(62, 100);
+            let actual = render(&mut spent, 8);
+
+            assert!(onset_frame(&expected).is_some_and(|frame| frame > 0));
+            assert_eq!(
+                actual, expected,
+                "a spent held source must give the same fresh attack as an isolated note; \
+                 recorded transition: {recorded_transition}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unheard_legato_source_cannot_skip_the_next_notes_fresh_attack() {
+        for recorded_transition in [false, true] {
+            let mut fresh = ensemble_legato_engine(recorded_transition, LoopMode::NoLoop);
+            fresh.set_param("attack_spread", 3.23);
+            fresh.note_on(69, 100);
+            let expected = render(&mut fresh, 8);
+
+            let mut pending = ensemble_legato_engine(recorded_transition, LoopMode::NoLoop);
+            pending.set_param("attack_spread", 3.23);
+            assert_eq!(
+                pending.ensemble_timing.onset_delay_samples(67, SAMPLE_RATE),
+                128
+            );
+            pending.note_on(67, 100);
+            assert!(render(&mut pending, 1).iter().all(|sample| *sample == 0.0));
+            pending.note_on(69, 100);
+            pending.note_off(67);
+
+            assert!(onset_frame(&expected).is_some_and(|frame| frame > 0));
+            assert_eq!(
+                render(&mut pending, 8),
+                expected,
+                "a source at its last silent frame has no sounding line to continue; \
+                 recorded transition: {recorded_transition}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_fresh_legato_fallback_starts_bowed_realism_on_its_audible_frame() {
+        fn prepared(recorded_transition: bool, ensemble_timing: bool) -> LevainEngine {
+            let mut engine = ensemble_legato_engine(recorded_transition, LoopMode::NoLoop);
+            engine.note_on(60, 100);
+            render(&mut engine, 42);
+            assert_eq!(engine.active_voice_count(), 0);
+            // The spent predecessor was neutral, so no earlier bow burst
+            // or resonant tail can obscure the new attack's onset.
+            engine.set_instrument("violin-1");
+            engine.set_param("ensemble_timing", if ensemble_timing { 1.0 } else { 0.0 });
+            engine
+        }
+
+        for recorded_transition in [false, true] {
+            let mut off = prepared(recorded_transition, false);
+            off.note_on(62, 100);
+            let undelayed = render(&mut off, 8);
+            let mut on = prepared(recorded_transition, true);
+            let delay = on.ensemble_timing.onset_delay_samples(62, SAMPLE_RATE) as usize;
+            on.note_on(62, 100);
+            let delayed = render(&mut on, 8);
+
+            assert!(delayed[..delay].iter().all(|sample| *sample == 0.0));
+            assert!(undelayed.iter().any(|sample| sample.abs() > 1e-6));
+            assert_eq!(
+                &delayed[delay..],
+                &undelayed[..undelayed.len() - delay],
+                "the bow burst must move with the sample attack; \
+                 recorded transition: {recorded_transition}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sounding_legato_source_keeps_both_transition_routes_continuous() {
+        fn prepared(recorded_transition: bool) -> LevainEngine {
+            let mut engine = ensemble_legato_engine(recorded_transition, LoopMode::Forward);
+            engine.set_param("ensemble_timing", 0.0);
+            engine.note_on(60, 100);
+            assert!(render(&mut engine, 8)
+                .iter()
+                .any(|sample| sample.abs() > 1e-6));
+            engine
+        }
+
+        for recorded_transition in [false, true] {
+            let mut off = prepared(recorded_transition);
+            off.note_on(62, 100);
+            let expected = render(&mut off, 8);
+            let mut on = prepared(recorded_transition);
+            on.set_param("ensemble_timing", 1.0);
+            on.note_on(62, 100);
+            let incoming = on
+                .voice_pool
+                .voices
+                .iter()
+                .find(|voice| voice.active && voice.note == 62)
+                .expect("the slur must have an incoming voice");
+            assert!(incoming.crossfading);
+            assert!(!incoming.attack_is_pending());
+            let actual = render(&mut on, 8);
+
+            assert!(expected[..128].iter().any(|sample| sample.abs() > 1e-6));
+            assert_eq!(
+                actual, expected,
+                "ensemble timing must leave a sounding slur continuous; \
+                 recorded transition: {recorded_transition}"
+            );
+        }
     }
 
     #[test]
