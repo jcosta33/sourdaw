@@ -17,8 +17,14 @@ export const DEFAULT_LOD: SampleLodConfig = {
 
 let bankLoadSequence = 0;
 
+type UploadDecision = { uploadRequired: boolean; ownerLoadToken?: number };
+type SharedShipment = { bankKey: string; group: symbol };
+// Tokens never repeat across ports or live/offline realms. A processor names
+// its actual owner; matching the decoded publication then authenticates the PCM.
+const sharedShipments = new Map<number, SharedShipment>();
+
 type SampleBankHandshake = {
-    uploadRequired: Promise<boolean>;
+    uploadRequired: Promise<UploadDecision>;
     completed: Promise<void>;
     /** Cancel the load on the worklet; false when the abort could not be posted because the port is closed. */
     cancel: () => boolean;
@@ -89,7 +95,7 @@ function createSampleBankHandshake(
     loadToken: number,
     signal?: AbortSignal
 ): SampleBankHandshake {
-    function ignoreUploadDecision(_uploadRequired: boolean): void {}
+    function ignoreUploadDecision(_decision: UploadDecision): void {}
     function ignoreError(_error: Error): void {}
     function ignoreCompletion(): void {}
 
@@ -109,7 +115,7 @@ function createSampleBankHandshake(
     let resolveCompleted = ignoreCompletion;
     let rejectCompleted = ignoreError;
 
-    const uploadRequired = new Promise<boolean>((resolve, reject) => {
+    const uploadRequired = new Promise<UploadDecision>((resolve, reject) => {
         resolveUpload = resolve;
         rejectUpload = reject;
     });
@@ -153,8 +159,20 @@ function createSampleBankHandshake(
         }
         if (message.type === 'sampleBankUploadDecision' && typeof message.uploadRequired === 'boolean') {
             if (!uploadSettled) {
+                const ownerLoadToken = message.ownerLoadToken;
+                if (
+                    ownerLoadToken !== undefined &&
+                    (message.uploadRequired ||
+                        typeof ownerLoadToken !== 'number' ||
+                        !Number.isSafeInteger(ownerLoadToken) ||
+                        ownerLoadToken <= 0 ||
+                        ownerLoadToken === loadToken)
+                ) {
+                    reject(new Error('Levain processor returned an invalid shared bank owner load token'));
+                    return;
+                }
                 uploadSettled = true;
-                resolveUpload(message.uploadRequired);
+                resolveUpload({ uploadRequired: message.uploadRequired, ownerLoadToken });
             }
             return;
         }
@@ -321,9 +339,12 @@ function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: 
     request();
 }
 
+type ChunkReservation = { kind: 'sample'; sampleId: number } | { kind: 'zone' };
+
 type ChunkPacer = {
     /** Resolve when a chunk may be posted; reject if the load was aborted, the worklet refused it or the processor ended. */
-    reserve: () => Promise<void>;
+    reserve: (reservation: ChunkReservation) => Promise<void>;
+    hasOutstandingZoneChunks: () => boolean;
     /**
      * Aborts, with the error, once the worklet refuses the load, the processor
      * ends or the pacer is disposed: no answer will come for anything the load
@@ -404,16 +425,17 @@ function createChunkPacer(
     nodePort: MessagePort,
     loadToken: number,
     signal: AbortSignal | undefined,
-    onActivity: () => void
+    onSampleActivity: () => void,
+    onZoneActivity: () => void
 ): ChunkPacer {
-    let held = 0;
+    const held: ChunkReservation[] = [];
     let failure: Error | null = null;
     let queued: BudgetWaiter | null = null;
     let ended = false;
     const stop = new AbortController();
 
     function stopListeningWhenDone(): void {
-        if (ended && held === 0) {
+        if (ended && held.length === 0) {
             nodePort.removeEventListener('message', onMessage);
         }
     }
@@ -425,7 +447,8 @@ function createChunkPacer(
         }
     }
     function passedAllChunks(): void {
-        for (; held > 0; held -= 1) {
+        while (held.length > 0) {
+            held.pop();
             giveBackChunkCredit();
         }
         stopListeningWhenDone();
@@ -450,10 +473,20 @@ function createChunkPacer(
             return;
         }
         if (message.type === 'sampleChunkWritten' || message.type === 'zoneTableChunkWritten') {
-            if (held > 0) {
-                held -= 1;
+            const index = held.findIndex((reservation) => {
+                if (message.type === 'sampleChunkWritten') {
+                    return reservation.kind === 'sample' && reservation.sampleId === message.sampleId;
+                }
+                return reservation.kind === 'zone';
+            });
+            if (index !== -1) {
+                const reservation = held.splice(index, 1)[0];
                 if (!ended && !failure && !signal?.aborted) {
-                    onActivity();
+                    if (reservation?.kind === 'sample') {
+                        onSampleActivity();
+                    } else {
+                        onZoneActivity();
+                    }
                 }
                 giveBackChunkCredit();
             }
@@ -469,11 +502,11 @@ function createChunkPacer(
             passedAllChunks();
         }
     }
-    async function reserve(): Promise<void> {
+    async function reserve(reservation: ChunkReservation): Promise<void> {
         throwIfStopped();
         if (chunkBudget.credits > 0 && chunkBudget.waiters.length === 0) {
             chunkBudget.credits -= 1;
-            held += 1;
+            held.push(reservation);
             return;
         }
         const answered = Promise.withResolvers<boolean>();
@@ -497,12 +530,13 @@ function createChunkPacer(
         } finally {
             queued = null;
         }
-        held += 1;
+        held.push(reservation);
     }
 
     nodePort.addEventListener('message', onMessage);
     return {
         reserve,
+        hasOutstandingZoneChunks: () => held.some((reservation) => reservation.kind === 'zone'),
         stopped: stop.signal,
         dispose: (abortDelivered) => {
             ended = true;
@@ -546,7 +580,7 @@ async function uploadSampleInChunks(
         sampleRate: decoded.sampleRate,
     });
     for (let offset = 0; offset < decoded.data.length; offset += LEVAIN_SAMPLE_CHUNK_FLOATS) {
-        await pacer.reserve();
+        await pacer.reserve({ kind: 'sample', sampleId });
         const data = decoded.data.slice(offset, offset + LEVAIN_SAMPLE_CHUNK_FLOATS);
         nodePort.postMessage({ type: 'sampleChunk', loadToken, sampleId, data }, [data.buffer]);
     }
@@ -595,7 +629,7 @@ async function uploadZoneTableInChunks(
 ): Promise<void> {
     const chunkWords = LEVAIN_ZONE_TABLE_CHUNK_ENTRIES * wordsPerEntry;
     for (let offset = 0; offset < words.length; offset += chunkWords) {
-        await pacer.reserve();
+        await pacer.reserve({ kind: 'zone' });
         const data = words.slice(offset, offset + chunkWords);
         nodePort.postMessage({ type: 'zoneTableChunk', loadToken, table, start: offset / wordsPerEntry, data }, [
             data.buffer,
@@ -689,6 +723,26 @@ export async function loadInstrumentFromManifest({
     let completed = false;
     // Paces the chunk uploads of this load; made with its handshake.
     let chunkPacer: ChunkPacer | null = null;
+    let shipment: SharedShipment | undefined;
+    let registeredLoadToken: number | undefined;
+    let ownerLoadToken: number | undefined;
+    let commitPosted = false;
+    // PCM is the only shared prerequisite. An independently stalled builder
+    // or zone upload must keep its own inactivity deadline.
+    function joinOwnerShipment(): void {
+        if (
+            !commitPosted ||
+            ownerLoadToken === undefined ||
+            chunkPacer?.hasOutstandingZoneChunks() ||
+            signal?.aborted
+        ) {
+            return;
+        }
+        const owner = sharedShipments.get(ownerLoadToken);
+        if (owner?.bankKey === bank.bankKey) {
+            lease.setSharedShipmentGroup(owner.group);
+        }
+    }
     try {
         // Hold this load's `beginSampleBank` until every earlier load on the
         // port is over, the bank the last one displaced fully freed a bounded
@@ -709,7 +763,13 @@ export async function loadInstrumentFromManifest({
         // Made before the begin whatever the role: a load that uploads no PCM
         // still stages its zone tables, and must hear the processor end or
         // the worklet refuse the load while they are being built.
-        const pacer = createChunkPacer(nodePort, loadToken, signal, lease.reportActivity);
+        shipment = { bankKey: bank.bankKey, group: Symbol('Levain PCM shipment') };
+        sharedShipments.set(loadToken, shipment);
+        registeredLoadToken = loadToken;
+        const pacer = createChunkPacer(nodePort, loadToken, signal, lease.reportSharedShipmentActivity, () => {
+            lease.reportActivity();
+            joinOwnerShipment();
+        });
         chunkPacer = pacer;
         nodePort.postMessage({
             type: 'beginSampleBank',
@@ -719,8 +779,13 @@ export async function loadInstrumentFromManifest({
         });
         postedLoadToken = loadToken;
 
-        const uploadRequired = await handshake.uploadRequired;
+        const decision = await handshake.uploadRequired;
+        const { uploadRequired } = decision;
+        ownerLoadToken = decision.ownerLoadToken;
         signal?.throwIfAborted();
+        if (uploadRequired) {
+            lease.setSharedShipmentGroup(shipment.group);
+        }
         lease.reportActivity();
         const sampleIdMap = new Map<string, number>();
         for (const [sampleId, file] of bank.files.entries()) {
@@ -838,6 +903,8 @@ export async function loadInstrumentFromManifest({
         // superseding abort waits for the worklet's own terminal message
         // instead of rejecting a load the engine goes on to commit.
         handshake.markCommitPosted();
+        commitPosted = true;
+        joinOwnerShipment();
         await handshake.completed;
         lease.reportActivity();
         completed = true;
@@ -845,6 +912,10 @@ export async function loadInstrumentFromManifest({
         releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
         return bank;
     } finally {
+        lease.setSharedShipmentGroup(undefined);
+        if (registeredLoadToken !== undefined && sharedShipments.get(registeredLoadToken) === shipment) {
+            sharedShipments.delete(registeredLoadToken);
+        }
         // The abort goes out before the pacer is told the load is over: it
         // learns from it whether the worklet will still answer.
         const abortDelivered = handshake && !completed ? handshake.cancel() : true;

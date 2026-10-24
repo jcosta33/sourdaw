@@ -548,6 +548,7 @@ describe('LevainProcessor message handling', () => {
             type: 'sampleBankUploadDecision',
             loadToken: 2,
             uploadRequired: false,
+            ownerLoadToken: 1,
         });
         uploadSample(owner, 1, 0, [0.1]);
         uploadSample(follower, 2, 0, [0.1]);
@@ -590,6 +591,26 @@ describe('LevainProcessor message handling', () => {
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(0);
         expect(calls.filter((call) => call.method === 'seal_zone_tables')).toHaveLength(1);
         expect(cached.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
+    });
+
+    it('names only the current in-flight owner after the prior owner leaves', async () => {
+        const first = await loadProcessor();
+        const next = await loadProcessor();
+        const follower = await loadProcessor();
+        for (const processor of [first, next, follower]) {
+            send(processor, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        }
+        send(first, { type: 'beginSampleBank', bankKey: 'replacement-bank', instrumentId: 'violin', loadToken: 51 });
+        send(first, { type: 'abortSampleBank', loadToken: 51 });
+        send(next, { type: 'beginSampleBank', bankKey: 'replacement-bank', instrumentId: 'violin', loadToken: 52 });
+        send(follower, { type: 'beginSampleBank', bankKey: 'replacement-bank', instrumentId: 'violin', loadToken: 53 });
+        expect(follower.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleBankUploadDecision',
+            loadToken: 53,
+            uploadRequired: false,
+            ownerLoadToken: 52,
+        });
+        send(next, { type: 'abortSampleBank', loadToken: 52 });
     });
 
     it('rejects owner and follower loads when an upload fails and permits a clean same-key retry', async () => {

@@ -1028,6 +1028,106 @@ describe('createDecodedBankResource', () => {
         }
     );
 
+    it.each(['release', 'abort', 'invalidate', 'clear'] as const)(
+        'renews only opaque shipment members and queues, fencing %s',
+        async (ending) => {
+            const resource = createDecodedBankResource({
+                loadManifest: (url) =>
+                    Promise.resolve(
+                        createManifest({
+                            instrumentId: url.includes('cello') ? 'cello' : 'violin-1',
+                            files: ['note.wav'],
+                        })
+                    ),
+                loadSample: () => Promise.resolve(createSample(1)),
+            });
+            const controller = new AbortController();
+            const ownerProgress = vi.fn();
+            const followerProgress = vi.fn();
+            const nativeProgress = vi.fn();
+            const otherProgress = vi.fn();
+            const queuedProgress = vi.fn();
+            const owner = await resource.acquire({ ...DEFAULT_INPUT, onProgress: ownerProgress });
+            const follower = await resource.acquire({
+                ...DEFAULT_INPUT,
+                onProgress: followerProgress,
+                signal: controller.signal,
+            });
+            const native = await resource.acquire({ ...DEFAULT_INPUT, onProgress: nativeProgress });
+            const other = await resource.acquire({ ...DEFAULT_INPUT, onProgress: otherProgress });
+            const group = Symbol('owner shipment');
+            owner.setSharedShipmentGroup(group);
+            follower.setSharedShipmentGroup(group);
+            other.setSharedShipmentGroup(Symbol('independent shipment'));
+            const queued = resource.acquire({
+                ...DEFAULT_INPUT,
+                manifestUrl: '/cello/manifest.json',
+                basePath: '/cello',
+                expectedInstrumentId: 'cello',
+                onProgress: queuedProgress,
+            });
+            const queuedOutcome = Promise.allSettled([queued]);
+            await vi.waitFor(() => expect(queuedProgress).toHaveBeenCalledWith(0));
+            const reset = () => {
+                for (const listener of [
+                    ownerProgress,
+                    followerProgress,
+                    nativeProgress,
+                    otherProgress,
+                    queuedProgress,
+                ]) {
+                    listener.mockClear();
+                }
+            };
+            try {
+                reset();
+                owner.reportActivity();
+                expect(ownerProgress).toHaveBeenCalledTimes(1);
+                expect(queuedProgress).toHaveBeenCalledTimes(1);
+                expect(followerProgress).not.toHaveBeenCalled();
+                reset();
+                owner.reportSharedShipmentActivity();
+                expect(ownerProgress).toHaveBeenCalledExactlyOnceWith({ type: 'activity' });
+                expect(followerProgress).toHaveBeenCalledExactlyOnceWith({ type: 'activity' });
+                expect(queuedProgress).toHaveBeenCalledExactlyOnceWith({ type: 'activity' });
+                expect(nativeProgress).not.toHaveBeenCalled();
+                expect(otherProgress).not.toHaveBeenCalled();
+                expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 4, decodedBytes: 4 });
+                if (ending === 'release') {
+                    follower.release();
+                }
+                if (ending === 'abort') {
+                    controller.abort();
+                }
+                if (ending === 'invalidate') {
+                    resource.invalidate(DEFAULT_INPUT);
+                }
+                if (ending === 'clear') {
+                    resource.clear();
+                }
+                reset();
+                follower.setSharedShipmentGroup(group);
+                owner.reportSharedShipmentActivity();
+                expect(followerProgress).not.toHaveBeenCalled();
+                follower.reportSharedShipmentActivity();
+                expect(followerProgress).not.toHaveBeenCalled();
+                if (ending === 'invalidate' || ending === 'clear') {
+                    expect(ownerProgress).not.toHaveBeenCalled();
+                }
+            } finally {
+                for (const lease of [owner, follower, native, other]) {
+                    lease.release();
+                }
+                resource.clear();
+                const [outcome] = await queuedOutcome;
+                if (outcome?.status === 'fulfilled') {
+                    outcome.value.release();
+                }
+                expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 0, decodedBytes: 0 });
+            }
+        }
+    );
+
     it('does not pin cached PCM for a queued cache hit while the admitted bank needs eviction', async () => {
         const secondSample = createDeferred<DecodedSample>();
         const resource = createDecodedBankResource({

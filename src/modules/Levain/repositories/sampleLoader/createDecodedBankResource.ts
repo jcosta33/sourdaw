@@ -52,6 +52,10 @@ export type DecodedBankLease = {
     release: () => void;
     /** Report a successful shipment acknowledgement before releasing admission. */
     reportActivity: () => void;
+    /** Opt into one exact, ephemeral PCM shipment after this consumer's own work is acknowledged. */
+    setSharedShipmentGroup: (group: symbol | undefined) => void;
+    /** Report an accepted PCM acknowledgement from this shipment's owner. */
+    reportSharedShipmentActivity: () => void;
 };
 
 export type LoadDecodedBankInput = {
@@ -129,6 +133,7 @@ type BankAdmission = {
     controller: AbortController;
     granted: PromiseWithResolvers<void>;
     consumers: Map<symbol, LoadDecodedBankInput['onProgress']>;
+    shipmentGroups: Map<symbol, { group: symbol; signal: AbortSignal | undefined }>;
 };
 
 type ManifestEntry = {
@@ -383,7 +388,12 @@ export function createDecodedBankResource({
         }
     }
 
-    function notifyAdmissionActivity(admission: BankAdmission, activeToken?: symbol, includeAdmitted = false): void {
+    function notifyAdmissionActivity(
+        admission: BankAdmission,
+        activeToken?: symbol,
+        includeAdmitted = false,
+        shipmentGroup?: symbol
+    ): void {
         if (admittedBank !== admission || admission.controller.signal.aborted) {
             return;
         }
@@ -393,7 +403,13 @@ export function createDecodedBankResource({
                 continue;
             }
             for (const [token, listener] of cohort.consumers) {
-                if (!listener || (cohort === admission && activeToken !== undefined && token !== activeToken)) {
+                const membership = cohort.shipmentGroups.get(token);
+                const sharesShipment =
+                    shipmentGroup !== undefined && membership?.group === shipmentGroup && !membership.signal?.aborted;
+                if (
+                    !listener ||
+                    (cohort === admission && activeToken !== undefined && token !== activeToken && !sharesShipment)
+                ) {
                     continue;
                 }
                 try {
@@ -419,6 +435,7 @@ export function createDecodedBankResource({
                 controller: new AbortController(),
                 granted: Promise.withResolvers<void>(),
                 consumers: new Map(),
+                shipmentGroups: new Map(),
             };
             bankQueue.push(admission);
         }
@@ -438,6 +455,7 @@ export function createDecodedBankResource({
                 return;
             }
             released = true;
+            cohort.shipmentGroups.delete(token);
             cohort.consumers.delete(token);
             if (cohort.consumers.size === 0 && admittedBank !== cohort) {
                 const index = bankQueue.indexOf(cohort);
@@ -473,6 +491,23 @@ export function createDecodedBankResource({
                 reportActivity: () => {
                     if (!released && !input.signal?.aborted) {
                         notifyAdmissionActivity(cohort, token);
+                    }
+                },
+                setSharedShipmentGroup: (group: symbol | undefined) => {
+                    cohort.shipmentGroups.delete(token);
+                    if (
+                        group &&
+                        !released &&
+                        !input.signal?.aborted &&
+                        !cohort.controller.signal.aborted &&
+                        admittedBank === cohort
+                    ) {
+                        cohort.shipmentGroups.set(token, { group, signal: input.signal });
+                    }
+                },
+                reportSharedShipmentActivity: () => {
+                    if (!released && !input.signal?.aborted) {
+                        notifyAdmissionActivity(cohort, token, false, cohort.shipmentGroups.get(token)?.group);
                     }
                 },
             };
@@ -811,6 +846,8 @@ export function createDecodedBankResource({
                 return Object.freeze({
                     bank,
                     reportActivity: () => {},
+                    setSharedShipmentGroup: () => {},
+                    reportSharedShipmentActivity: () => {},
                     release(): void {
                         if (released) {
                             return;
@@ -927,9 +964,11 @@ export function createDecodedBankResource({
                 return Object.freeze({
                     bank: lease.bank,
                     reportActivity: admission.reportActivity,
+                    setSharedShipmentGroup: admission.setSharedShipmentGroup,
+                    reportSharedShipmentActivity: admission.reportSharedShipmentActivity,
                     release(): void {
-                        lease.release();
                         admission.release();
+                        lease.release();
                     },
                 });
             } catch (error) {
