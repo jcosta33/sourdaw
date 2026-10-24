@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_59e31a5c6f3e31::t_05d4fc746ae663 2052-2059,2068,2096-2097,2132,2135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ddf3bc5b7aab433ad0d06a4e62ca57a5490a710",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
