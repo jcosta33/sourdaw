@@ -50,4 +50,10 @@ export type ProposalGroundingBasis = {
     sources: ProposalGroundingSource[];
     commands: ProposalGroundingCommand[];
     protectedUnchanged: Array<{ id: string; name: string }>;
+    /**
+     * The track operations the chain's requests keep as they are (a fader, a pan), as the project was
+     * when each request was grounded. A basis without it predates it, and reads its sources' protections
+     * against the live project instead.
+     */
+    protectedControls?: Array<{ trackId: string; operations: string[] }>;
 };
