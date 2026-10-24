@@ -194,6 +194,32 @@ function fullyStatesTrackMember(tokens: readonly Token[]): boolean {
     return words.length > 0 && (words.every(isControl) || owner(words.slice(0, trailingControl + 1)));
 }
 
+/** The single track owner a bound member names in full, preserving the controls attached to it. */
+function readBoundTrackMember(
+    member: MemberReading,
+    references: readonly NamedRange[],
+    range: Range,
+    trackIds: ReadonlySet<string>
+): BoundMember | null {
+    if (member.kind !== 'bound' || !member.onlyNames) {
+        return null;
+    }
+    const memberReferences = references.filter(
+        (reference) => reference.start >= range.start && reference.end <= range.end
+    );
+    const [only] = memberReferences;
+    // A member protects a track only when it names that one track alone: "the Vocals compressor" names a
+    // device, and "the return into the Drum Bus" names two objects, one of which it merely routes to.
+    if (
+        memberReferences.length !== 1 ||
+        only === undefined ||
+        !Array.from(only.denotes).every((id) => trackIds.has(id))
+    ) {
+        return null;
+    }
+    return { trackIds: Array.from(only.denotes), controls: [...member.controls] };
+}
+
 function readSlotMembers(input: {
     prompt: string;
     blanked: string;
@@ -258,25 +284,13 @@ function readSlotMembers(input: {
             reading.unresolved.push(member.text);
         } else if (member.kind === 'variant') {
             reading.bound.push({ trackIds: member.trackIds, controls: [] });
-        } else if (member.kind === 'bound' && member.onlyNames) {
-            const memberReferences = references.filter(
-                (reference) => reference.start >= range.start && reference.end <= range.end
-            );
-            const [only] = memberReferences;
-            // A member protects a track only when it names that one track alone: "the Vocals compressor" names a
-            // device, and "the return into the Drum Bus" names two objects, one of which it merely routes to.
-            const namesOneTrack =
-                memberReferences.length === 1 &&
-                only !== undefined &&
-                Array.from(only.denotes).every((id) => trackIds.has(id));
-            reading.complete &&= namesOneTrack;
-            if (namesOneTrack) {
-                const owner = { trackIds: Array.from(only.denotes), controls: [...member.controls] };
+        } else {
+            const owner = readBoundTrackMember(member, references, range, trackIds);
+            reading.complete &&= owner !== null;
+            if (owner !== null) {
                 reading.bound.push(owner);
                 lastOwner = adoptControls(owner, pending);
             }
-        } else {
-            reading.complete = false;
         }
         namedBefore ||= tokens.some(isBoundToken);
     }
