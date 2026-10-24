@@ -8,12 +8,18 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ### 2026-10-24 — cold stylesheet work consumed a composition spec's deadline (PR #5363 repair)
 
-The `main.spec.tsx` composition fixture imported the real global stylesheet although its assertions
-cover application startup ordering. Cold CSS compilation could consume the per-case deadline and
-cascade failures into later cases; the CSS-free controlled variant passed while retaining the
-startup assertions. Probe isolation by holding the shared stylesheet import beyond the case
-boundary and observing the next case; then mock only that unrelated CSS module and keep real
-registration, ordering assertions, lifecycle, and deadlines unchanged.
+PR #3270 (`43f7a11dd6815befaa18f3b332b2b7c96a43880a`) introduced the composition fixture without a
+CSS mock. PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a separate second App render,
+leaving the fixture's global stylesheet import in place. The historical review prompt and tier are
+unestablished. The missed failure mode was cold work in an unrelated dependency crossing a test
+case deadline and affecting following cases: the fixture covered startup ordering but not
+test-lifecycle isolation. Cold CSS compilation could consume the per-case deadline and cascade
+failures into later cases; the CSS-free controlled variant passed with the startup assertions
+intact.
+
+Probe isolation by holding the shared stylesheet import beyond the case boundary and observing the
+next case; then mock only that unrelated CSS module and keep real registration, ordering assertions,
+lifecycle, and deadlines unchanged.
 
 ### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
 
