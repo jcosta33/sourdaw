@@ -27,10 +27,14 @@ const METHOD_STEPS: readonly MethodStep[] = [
         clause: "(5) measure that planned list as a preview with analysis.measure subject 'preview' and the list as proposal; ",
     },
     {
-        name: 'propose adopting the compiled call ids',
-        clause: "(6) propose with command.batch.propose, adopting the preview's, recipe.expand's and transform.compile's callId in compiledCallIds. ",
+        name: 'propose adopting only the preview call id',
+        clause: "(6) propose with command.batch.propose, adopting only the preview's callId in compiledCallIds, because its list already carries the recipe's commands. ",
     },
-    { name: 'propose ends the run', clause: 'command.batch.propose ends the run, so measure before it.' },
+    { name: 'propose ends the run', clause: 'command.batch.propose ends the run, so measure before it. ' },
+    {
+        name: 'without a preview, adopt the compilation',
+        clause: "With no preview, adopt recipe.expand's or transform.compile's callId instead.",
+    },
 ];
 
 describe('buildPlanningSystemPrompt mixing method', () => {

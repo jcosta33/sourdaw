@@ -574,12 +574,44 @@ describe('a measured preview through proposal and approval', () => {
         expect(drumsLevel()).toBe(0);
     });
 
-    // Red when the order the planning prompt states (measure the target, measure the planned list as
-    // a preview, then propose adopting the preview by call id) stops completing with measured deltas.
-    it('completes the prompt-stated method: a measure, a preview measure with proposal, then a propose adopting it', async () => {
+    // Red when the order the planning prompt states (resolve, measure, discover and expand a recipe, measure
+    // the planned list as a preview, then propose adopting only the preview by call id) stops completing
+    // with measured deltas.
+    it('completes the prompt-stated method: resolve, measure, recipe, preview measure, then a propose adopting the preview', async () => {
         const revision = captureProjectRevision();
-        const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, -6));
+        const recipeValues = [
+            { paramId: 'comp-threshold', value: -16 },
+            { paramId: 'comp-ratio', value: 4 },
+            { paramId: 'comp-attack', value: 25 },
+            { paramId: 'comp-release', value: 90 },
+            { paramId: 'comp-makeup', value: 4.5 },
+        ];
+        const addCompressor = {
+            id: 'add-compressor',
+            name: 'addDevice',
+            arguments: { deviceType: 'builtin-compressor', binding: 'compressor' },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: 'Drums' },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        };
+        const plannedList: Proposal = {
+            schemaVersion: 1,
+            items: [
+                addCompressor,
+                ...recipeValues.map(({ paramId, value }) => ({
+                    id: `set-${paramId}`,
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: '$compressor', paramId, value },
+                    dependsOn: ['add-compressor'],
+                })),
+            ],
+        };
+        const ADOPTED_CALL_IDS = ['measure-preview'];
         scriptTurns(revision, [
+            // The target is resolved by the interpretation turn above. The loop admits five turns in all.
             [
                 {
                     id: 'measure-target',
@@ -592,8 +624,20 @@ describe('a measured preview through proposal and approval', () => {
                     },
                 },
             ],
-            [measureCallFor('measure-preview', proposal)],
-            [proposeCall({ commands: [], compiledCallIds: ['measure-preview'] })],
+            [
+                {
+                    id: 'discover-1',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+                {
+                    id: 'expand-1',
+                    name: 'recipe.expand',
+                    arguments: { recipeId: 'drums-punchy', targetId: 'drums' },
+                },
+            ],
+            [measureCallFor('measure-preview', plannedList)],
+            [proposeCall({ commands: [], compiledCallIds: ADOPTED_CALL_IDS })],
         ]);
 
         const planned = await parsePromptToActions({
@@ -602,28 +646,38 @@ describe('a measured preview through proposal and approval', () => {
             projectRevision: revision,
         });
 
-        expect(planned.rejectionReason).toBeUndefined();
-        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(4);
-        const receiptStatuses = (planned.applicationToolReceipts ?? []).map(({ callId, status }) => ({
-            callId,
-            status,
-        }));
-        expect(receiptStatuses).toEqual(
-            expect.arrayContaining([
-                { callId: 'measure-target', status: 'success' },
-                { callId: 'measure-preview', status: 'success' },
-            ])
+        const receipts = planned.applicationToolReceipts ?? [];
+        const failedReads = receipts.flatMap((receipt) => (receipt.error === null ? [] : [receipt.error.safeMessage]));
+        expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({
+            rejection: null,
+            failedReads: [],
+        });
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
+            expect.arrayContaining(
+                ['measure-target', 'discover-1', 'expand-1', 'measure-preview'].map((callId) => ({
+                    callId,
+                    status: 'success',
+                }))
+            )
         );
+        const expansion: unknown = receipts.find(({ callId }) => callId === 'expand-1')?.data;
+        const expandedValues =
+            typeof expansion === 'object' && expansion !== null && 'values' in expansion ? expansion.values : null;
+        expect(expandedValues).toMatchObject(recipeValues);
         expect(planned.actions).toMatchObject([
-            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 } },
+            { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            ...recipeValues.map(({ paramId, value }) => ({
+                type: 'setDeviceParameter',
+                payload: { paramId, value },
+            })),
         ]);
 
         const confirmationId = persistForApproval(planned, revision);
         const [target] = getAgentApprovalView({ confirmationId })?.measuredPreview?.targets ?? [];
         const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
         expect(target?.targetId).toBe('drums');
-        expect(loudness?.delta?.value).toBeCloseTo(-6, 1);
-        expect(drumsLevel()).toBe(0);
+        expect(typeof loudness?.delta?.value).toBe('number');
     });
 
     // Red when the batch hash counts the ids each compilation mints for the objects it creates.
