@@ -38,7 +38,8 @@ function resolveChannelAtDestination(
  * Carries a note that keeps sounding across a playback relocation (a scheduled loop seam) into the pass
  * it relocates to, and returns the expression to post when the bend in force there is not the one it holds.
  *
- * The bend in force at `atFrame` is the last channel move at or before it, and it takes the bend from the
+ * The bend in force at `atFrame` is the last channel move at or before it that reaches the note's channel
+ * (another channel's wheel is not the note's), and it takes the bend from the
  * note, as a channel move does; with none in force, a note a channel move bent returns to centre at the
  * depth it was bent at. The note's own curve points are not carried: they belong to the pass it left, and
  * would otherwise bend the note the next pass strikes on that pitch. The note's release stays on the frame
@@ -48,7 +49,7 @@ export function relocateNoteExpression({ timeline, channelBend, atFrame, frameAt
     timeline: NoteExpressionTimeline;
     expression: ScheduledNoteExpression | undefined;
 } {
-    const inForce = findChannelBendInForce(channelBend, atFrame);
+    const inForce = findChannelBendInForce(channelBend, atFrame, timeline.noteChannel);
     const channel = resolveChannelAtDestination(timeline, inForce);
     const relocated: NoteExpressionTimeline = {
         ...timeline,

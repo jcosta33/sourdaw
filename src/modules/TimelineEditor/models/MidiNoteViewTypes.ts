@@ -36,4 +36,6 @@ export type MidiPitchBend = {
     value: number;
     beat: number;
     channel: number;
+    /** Captured from a channel's wheel; the lane keeps it when a removed point is restored. */
+    channelScoped?: boolean;
 };

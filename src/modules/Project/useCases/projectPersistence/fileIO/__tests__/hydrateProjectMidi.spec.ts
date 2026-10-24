@@ -128,6 +128,22 @@ describe('hydrateProjectMidi', () => {
         expect(pb?.channel).toBe(0);
     });
 
+    it('preserves the channel-scoped mark of a recorded bend, and leaves a drawn bend unmarked', () => {
+        const saved = serializeProjectMidi({
+            ...midi,
+            pitchBendByClipId: {
+                'clip-1': [
+                    { id: 'pb-recorded', value: 100, beat: 0, channel: 1, channelScoped: true },
+                    { id: 'pb-drawn', value: 200, beat: 1, channel: 0 },
+                ],
+            },
+        });
+        const [recorded, drawn] = hydrateProjectMidi(saved).pitchBendByClipId['clip-1'] ?? [];
+
+        expect(recorded).toMatchObject({ value: 100, channel: 1, channelScoped: true });
+        expect(drawn).not.toHaveProperty('channelScoped');
+    });
+
     it('mints deterministic CC/pitch-bend ids so re-imports are stable', () => {
         const first = hydrateProjectMidi(serializeProjectMidi(midi));
         const second = hydrateProjectMidi(serializeProjectMidi(midi));

@@ -58,12 +58,16 @@ function hydrateProjectMidiPitchBend({
     clipId,
     index,
 }: HydrateProjectMidiPitchBendInput): HydrateProjectMidiPitchBendOutput {
-    return {
+    const hydrated: HydrateProjectMidiPitchBendOutput = {
         id: `pb-${clipId}-${index}`,
         value: pb.value,
         beat: pb.beat,
         channel: pb.channel,
     };
+    if (pb.channelScoped === true) {
+        hydrated.channelScoped = true;
+    }
+    return hydrated;
 }
 
 /** Hydrate the runtime MIDI store from the serialized `.sourdaw` MIDI block.

@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases';
+import { addPitchBend, removePitchBend, movePitchBend, restorePitchBend } from '#/modules/MIDI/useCases';
 
 import { type MidiPitchBend } from '../../../../models/MidiNoteViewTypes';
 import { PitchBendLane } from '../PitchBendLane';
@@ -66,6 +66,10 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     removePitchBend: vi.fn((clipId: string, pbId: string): void => {
         const existing = laneMocks.midiState.pitchBendByClipId[clipId] ?? [];
         laneMocks.midiState.pitchBendByClipId[clipId] = existing.filter((point) => point.id !== pbId);
+    }),
+    restorePitchBend: vi.fn((clipId: string, row: MidiPitchBend): void => {
+        const existing = laneMocks.midiState.pitchBendByClipId[clipId] ?? [];
+        laneMocks.midiState.pitchBendByClipId[clipId] = [...existing, row];
     }),
     movePitchBend: vi.fn((clipId: string, pbId: string, beat: number, value: number): void => {
         const existing = laneMocks.midiState.pitchBendByClipId[clipId] ?? [];
@@ -666,9 +670,19 @@ describe('PitchBendLane', () => {
             );
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
-            vi.mocked(addPitchBend).mockClear();
             undoFn!();
-            expect(addPitchBend).toHaveBeenCalledWith('clip-1', 20, 0, 0, 'pb-a');
+            expect(restorePitchBend).toHaveBeenCalledWith('clip-1', { id: 'pb-a', value: 20, beat: 0, channel: 0 });
+        });
+
+        it('should hand the whole removed row, its channel-scoped mark included, to the undo entry', () => {
+            const recorded = { id: 'pb-r', value: 20, beat: 0, channel: 1, channelScoped: true };
+            laneMocks.midiState.pitchBendByClipId['clip-1'] = [recorded];
+            const { container } = render(<PitchBendLane {...defaultProps} />);
+
+            fireEvent.doubleClick(container.querySelector('[data-pb-point="true"]')!);
+            vi.mocked(pushUndoEntry).mock.calls[0]?.[1]();
+
+            expect(restorePitchBend).toHaveBeenCalledWith('clip-1', recorded);
         });
     });
 });

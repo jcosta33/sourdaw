@@ -554,6 +554,7 @@ describe('startPlayheadScheduler', () => {
             releaseBeat: 4,
             followsChannelBend: false,
             timeline: {
+                noteChannel: 0,
                 startFrame: 0,
                 releaseFrame: 192_000,
                 frameAtBeat: (beat) => beat * 48_000,

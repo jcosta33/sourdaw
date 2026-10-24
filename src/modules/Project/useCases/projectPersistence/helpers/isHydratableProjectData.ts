@@ -516,7 +516,11 @@ function isMidiCc(value: unknown): boolean {
 }
 
 function isMidiPitchBend(value: unknown): boolean {
-    return isRecord(value) && hasType({ record: value, keys: ['beat', 'value', 'channel'], type: 'number' });
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['beat', 'value', 'channel'], type: 'number' }) &&
+        (value.channelScoped === undefined || typeof value.channelScoped === 'boolean')
+    );
 }
 
 function isArrayRecordOf(value: unknown, predicate: (item: unknown) => boolean): boolean {

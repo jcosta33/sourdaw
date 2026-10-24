@@ -158,9 +158,10 @@ describe('handleWebMidiNoteOff', () => {
         await fn(0, 60, 0);
 
         expect(create_midi_note).toHaveBeenCalledWith(60, 4, 2, 100);
+        // The note is appended with the channel it sounded on.
         expect(append_recorded_midi_note).toHaveBeenCalledWith({
             clipId: 'clip-1',
-            note: recorded_note,
+            note: { ...recorded_note, channel: 0 },
         });
     });
 
@@ -1423,6 +1424,7 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
     type RecordedNote = {
         pitch?: number;
         startBeat?: number;
+        channel?: number;
         pressure?: number;
         slide?: number;
         pitchBend?: number;
@@ -1534,6 +1536,33 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         audio_clock.outputLatency = 0;
         recorded = [];
         setUp();
+    });
+
+    it('stores the channel a recorded member-channel note sounded on', async () => {
+        holdNote();
+
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0, { audioTime: 1 });
+
+        expect(recorded[0]?.channel).toBe(MEMBER_CHANNEL);
+    });
+
+    it('stores the channel of a note recorded with MPE off, which plays under that channel’s wheel', async () => {
+        mpe_enabled.value = false;
+        activeNotes.set(createWebMidiNoteKey(2, PITCH), {
+            channel: 2,
+            note: PITCH,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+        });
+
+        at(1);
+        await noteOff(2, PITCH, 0, { audioTime: 1 });
+
+        expect(recorded[0]?.channel).toBe(2);
     });
 
     it('keeps direct member gestures at their admitted onset and offsets while predecessor release waits', async () => {

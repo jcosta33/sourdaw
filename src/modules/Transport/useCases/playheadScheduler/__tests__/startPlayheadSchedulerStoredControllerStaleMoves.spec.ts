@@ -832,6 +832,7 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
                 releaseBeat: 100,
                 followsChannelBend: true,
                 timeline: {
+                    noteChannel: 0,
                     startFrame: 0,
                     releaseFrame: 1_000_000_000,
                     frameAtBeat: (beat) => beat * 24_000,

@@ -199,6 +199,23 @@ describe('isHydratableProjectData', () => {
         }
     );
 
+    it.each([
+        { label: 'a boolean channel-scoped mark', mark: { channelScoped: true }, hydratable: true },
+        { label: 'an explicit false mark', mark: { channelScoped: false }, hydratable: true },
+        { label: 'no mark', mark: {}, hydratable: true },
+        { label: 'a non-boolean channel-scoped mark', mark: { channelScoped: 'yes' }, hydratable: false },
+        { label: 'a numeric channel-scoped mark', mark: { channelScoped: 1 }, hydratable: false },
+    ])('judges a pitch-bend row with $label', ({ mark, hydratable }) => {
+        const base = buildValidProjectData();
+        const midi = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: { 'clip-1': [{ value: 100, beat: 1, channel: 1, ...mark }] },
+        };
+
+        expect(isHydratableProjectData({ ...base, midi })).toBe(hydratable);
+    });
+
     it('rejects an exclusive-end expression point while accepting legacy notes without expression', () => {
         const base = buildValidProjectData();
         const note = { id: 'expressive', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };

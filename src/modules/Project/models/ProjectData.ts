@@ -275,6 +275,8 @@ export type ProjectMidiPitchBend = {
     beat: number;
     value: number;
     channel: number;
+    /** Captured from a channel's wheel: the bend moves only the notes of its channel. Absent bends every note. */
+    channelScoped?: boolean;
 };
 
 export type ProjectMidi = {

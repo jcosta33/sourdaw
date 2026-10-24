@@ -595,6 +595,31 @@ describe('handleWebMidiPitchBend', () => {
             expect(recorded_rows()).toEqual([{ value: 4096, beat: 2, channel: 0 }]);
         });
 
+        it('scopes a bend recorded while MPE is off to its channel, whatever channel it arrived on', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(0, 127, 127, at_beat(6));
+            fn(1, 127, 127, at_beat(7));
+
+            const rows = recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? [];
+            expect(rows.map(({ channel, channelScoped }) => [channel, channelScoped])).toEqual([
+                [0, true],
+                [1, true],
+            ]);
+        });
+
+        it('leaves the master-channel bend recorded while MPE is on unscoped, so it reaches every member channel', () => {
+            mpe_enabled.value = true;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(0, 127, 127, at_beat(6));
+
+            const rows = recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? [];
+            expect(rows).toHaveLength(1);
+            expect(Object.hasOwn(rows[0]!, 'channelScoped')).toBe(false);
+        });
+
         // The controller route shares the placement helper, so a bend row that
         // skipped it would still agree with the flat-tempo cases above. The beat
         // is derived by hand from the map: beats 0-4 run at 120 BPM (2 s) and

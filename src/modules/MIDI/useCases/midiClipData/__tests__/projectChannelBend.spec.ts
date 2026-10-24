@@ -51,8 +51,16 @@ describe('projectChannelBend', () => {
         });
 
         expect(points).toEqual([
-            { beat: 3, frame: 72_000, recordedBeat: 3, value: 8_191, rangeSemitones: 2 },
-            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2 },
+            {
+                beat: 3,
+                frame: 72_000,
+                recordedBeat: 3,
+                value: 8_191,
+                rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
+            },
+            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2, channel: 0, channelScoped: false },
         ]);
     });
 
@@ -442,6 +450,67 @@ describe('projectChannelBend', () => {
                 [0, 12],
                 [2, 12],
             ]);
+        });
+    });
+
+    describe('per MIDI channel', () => {
+        const clip = { startBeat: 0, endBeat: 8 };
+
+        it('keeps the channel each move was recorded on, with the depth that channel declared', () => {
+            const points = projectChannelBend({
+                clips: [
+                    {
+                        clip,
+                        controlChanges: [...declareRange(0, 12, 0, 1), ...declareRange(0, 24, 0, 2)],
+                        pitchBends: [bend('left', 1, 4_096, 1), bend('right', 1, -4_096, 2)],
+                    },
+                ],
+                frameAtBeat,
+            });
+
+            expect(points.map(({ channel, value, rangeSemitones }) => ({ channel, value, rangeSemitones }))).toEqual([
+                { channel: 1, value: 4_096, rangeSemitones: 12 },
+                { channel: 2, value: -4_096, rangeSemitones: 24 },
+            ]);
+        });
+
+        it('scopes a move to its channel only when the recorder marked the row', () => {
+            const points = projectChannelBend({
+                clips: [
+                    {
+                        clip,
+                        controlChanges: [],
+                        pitchBends: [
+                            { ...bend('recorded', 1, 4_096, 1), channelScoped: true },
+                            bend('drawn', 2, 100, 0),
+                            bend('imported-channel', 3, 200, 5),
+                        ],
+                    },
+                ],
+                frameAtBeat,
+            });
+
+            expect(points.map(({ value, channel, channelScoped }) => ({ value, channel, channelScoped }))).toEqual([
+                { value: 4_096, channel: 1, channelScoped: true },
+                { value: 100, channel: 0, channelScoped: false },
+                { value: 200, channel: 5, channelScoped: false },
+            ]);
+        });
+
+        it('keeps a row’s mark through a loop pass and a content offset', () => {
+            const points = projectChannelBend({
+                clips: [
+                    {
+                        clip: { startBeat: 0, endBeat: 4, midiOffsetBeats: 1, loopEnabled: true, loopLength: 2 },
+                        controlChanges: [],
+                        pitchBends: [{ ...bend('recorded', 1.5, 4_096, 1), channelScoped: true }],
+                    },
+                ],
+                frameAtBeat,
+            });
+
+            expect(points.length).toBeGreaterThan(1);
+            expect(points.every((point) => point.channelScoped)).toBe(true);
         });
     });
 });
