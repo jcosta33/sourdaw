@@ -1356,7 +1356,8 @@ describe('TrackContextMenu Flatten failure with canonical project truth', () => 
         expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
     });
 });
-vi.mock('#/modules/Project/useCases', () => ({
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
