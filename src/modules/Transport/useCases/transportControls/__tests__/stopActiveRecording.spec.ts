@@ -8,6 +8,29 @@ import { updateTransportState } from '../../../repositories/transport/updateTran
 import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
 
+// MIDI owns the overdub landings; Transport reads them through its use cases.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => overdub.state.landing !== null,
+    countSettledOverdubPasses: () => overdub.state.settled,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
+}));
+
 vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
 }));
@@ -145,6 +168,39 @@ describe('stopActiveRecording', () => {
 
             punchOutCommit.resolve();
             await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        it('does not resolve before an overdub pass the falling edge started has landed', async () => {
+            const passLanding = Promise.withResolvers<void>();
+            // The falling edge the stop writes is what starts the pass landing.
+            vi.mocked(updateTransportState).mockImplementationOnce(() => {
+                overdub.land(passLanding.promise);
+            });
+            let stopped = false;
+
+            const stopping = stopActiveRecording().then(() => {
+                stopped = true;
+            });
+            await vi.advanceTimersByTimeAsync(10);
+            expect(stopped).toBe(false);
+            expect(recordingLifecycle.isClosingRecording()).toBe(true);
+
+            passLanding.resolve();
+            await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        it('resolves when the overdub pass the stop waited on was refused', async () => {
+            const passLanding = Promise.withResolvers<void>();
+            vi.mocked(updateTransportState).mockImplementationOnce(() => {
+                overdub.land(passLanding.promise);
+            });
+
+            const stopping = stopActiveRecording();
+            passLanding.reject(new Error('refused'));
+
+            await expect(stopping).resolves.toBeUndefined();
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
         });
 

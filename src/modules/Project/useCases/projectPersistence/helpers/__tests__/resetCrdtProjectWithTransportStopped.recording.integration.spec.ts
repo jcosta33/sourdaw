@@ -39,6 +39,8 @@ const mocks = vi.hoisted(() => {
     return {
         audioClock,
         events: [] as string[],
+        // MIDI owns the overdub landings; the transport reads them through its use cases.
+        overdub: { landing: null as Promise<void> | null, settled: 0 },
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
@@ -75,6 +77,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     resetAudioGraph: mocks.resetAudioGraph,
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
+}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    isOverdubLanding: () => mocks.overdub.landing !== null,
+    countSettledOverdubPasses: () => mocks.overdub.settled,
+    waitForOverdubLanding: async () => {
+        await mocks.overdub.landing;
+    },
 }));
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
@@ -477,6 +487,29 @@ describe('replacing a project while a take is recording or closing (issue #5500)
 
         expect(committedEntryCount()).toBe(1);
         expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
+    });
+
+    // An overdub pass's rows land after the falling edge, behind the snapshot transaction queue: the
+    // transport reads stopped and no commit is in flight, but the project is about to gain the pass.
+    it('does not switch authority while an overdub pass is still landing, then saves it', async () => {
+        seedTrack('midi');
+        const landing = Promise.withResolvers<void>();
+        const settle = (): void => {
+            mocks.overdub.landing = null;
+            mocks.overdub.settled += 1;
+        };
+        mocks.overdub.landing = landing.promise.then(settle, settle);
+
+        const replacing = replace();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(mocks.events).not.toContain('switch');
+        expect(mocks.events.filter((event) => event.startsWith('save:'))).toEqual([]);
+
+        landing.resolve();
+        await expect(replacing).resolves.toMatchObject({ status: 'replaced' });
+
+        expect(mocks.events.filter((event) => event.startsWith('save:'))).toHaveLength(1);
+        expect(mocks.events.at(-1)).toBe('switch');
     });
 
     it('resets the audio graph and unloads the plugins again before the switch when a Play lands during the plugin unload', async () => {

@@ -1,6 +1,7 @@
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { stopRecording } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
+import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
@@ -63,5 +64,9 @@ export async function stopActiveRecording(): Promise<void> {
         await closing;
     } finally {
         await recordingLifecycle.waitForClosing();
+        // The falling edge this stop wrote started an overdub pass landing, behind the snapshot
+        // transaction queue; the stop is not done until it has landed or been refused, or the next
+        // Undo would act on the entry before it and the pass would arrive as an orphan.
+        await waitForOverdubLanding();
     }
 }
