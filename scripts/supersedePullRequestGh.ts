@@ -31,8 +31,12 @@ export type SupersededPullRequest = {
     number: number;
     state: string;
     head: string;
+    headRefName: string;
+    headRepository: string | null;
     repository: string;
     base: string;
+    baseRef?: { name: string; repository: string; target: string } | null;
+    merged: boolean;
     closedAt: string | null;
     comments: IssueComment[];
 };
@@ -88,9 +92,34 @@ function repositoryFields(): string[] {
     }
     return ['-f', `owner=${owner}`, '-f', `name=${name}`];
 }
-function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
+function readHeadRepository(value: unknown, number: number): string | null {
+    if (value === null) {
+        return null;
+    }
+    const repository = value as { nameWithOwner?: unknown };
+    if (typeof repository?.nameWithOwner !== 'string') {
+        fail(`cannot inspect PR #${number}`);
+    }
+    return repository.nameWithOwner;
+}
+function readBaseRef(value: unknown, number: number): SupersededPullRequest['baseRef'] {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    const ref = value as { name?: unknown; repository?: { nameWithOwner?: unknown }; target?: { oid?: unknown } };
+    if (
+        typeof ref.name !== 'string' ||
+        typeof ref.repository?.nameWithOwner !== 'string' ||
+        typeof ref.target?.oid !== 'string' ||
+        !/^[0-9a-f]{40}$/.test(ref.target.oid)
+    ) {
+        fail(`cannot inspect PR #${number} live base ref`);
+    }
+    return { name: ref.name, repository: ref.repository.nameWithOwner, target: ref.target.oid };
+}
+export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid baseRefName closedAt}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt baseRef{name repository{nameWithOwner} target{oid}}}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -100,7 +129,11 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
                     number?: unknown;
                     state?: unknown;
                     headRefOid?: unknown;
+                    headRefName?: unknown;
+                    headRepository?: { nameWithOwner?: unknown } | null;
                     baseRefName?: unknown;
+                    baseRef?: unknown;
+                    merged?: unknown;
                     closedAt?: unknown;
                 };
             };
@@ -115,18 +148,25 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         !Number.isSafeInteger(pullRequest.number) ||
         typeof pullRequest.state !== 'string' ||
         typeof pullRequest.headRefOid !== 'string' ||
+        typeof pullRequest.headRefName !== 'string' ||
         typeof pullRequest.baseRefName !== 'string' ||
+        typeof pullRequest.merged !== 'boolean' ||
         (typeof pullRequest.closedAt !== 'string' && pullRequest.closedAt !== null)
     ) {
         fail(`cannot inspect PR #${number}`);
     }
+    const headRepository = readHeadRepository(pullRequest.headRepository, number);
     ids.set(number, pullRequest.id);
     return {
         number: pullRequest.number,
         state: pullRequest.state,
         head: pullRequest.headRefOid,
+        headRefName: pullRequest.headRefName,
+        headRepository,
         repository: repository.nameWithOwner,
         base: pullRequest.baseRefName,
+        baseRef: readBaseRef(pullRequest.baseRef, number),
+        merged: pullRequest.merged,
         closedAt: pullRequest.closedAt,
         comments: inspectIssueComments(pullRequest.id, gh),
     };
