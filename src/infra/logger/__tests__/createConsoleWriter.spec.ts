@@ -196,6 +196,42 @@ describe('createConsoleWriter', () => {
             expect(diagnostic.length).toBeLessThanOrEqual(2048);
         });
 
+        it('does not split an astral character at the per-field text limit', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const message = `${'x'.repeat(199)}😀`;
+            const error = new Error('outer', { cause: new Error(message) });
+
+            writer.error(error);
+
+            const diagnostic = vi.mocked(console.error).mock.calls[0]?.[2];
+            expect(typeof diagnostic).toBe('string');
+            if (typeof diagnostic !== 'string') {
+                throw new TypeError('Missing nested-error diagnostic');
+            }
+            expect(() => encodeURIComponent(diagnostic)).not.toThrow();
+            expect(diagnostic).toContain(`${'x'.repeat(199)}[truncated]`);
+        });
+
+        it('does not split an astral character at the whole-diagnostic limit', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const leaves = () => Array.from({ length: 3 }, () => new Error(`${'x'.repeat(182)}😀${'x'.repeat(16)}`));
+            const error = new AggregateError(
+                Array.from({ length: 3 }, () => new AggregateError(leaves(), 'branch')),
+                'outer'
+            );
+
+            writer.error(error);
+
+            const diagnostic = vi.mocked(console.error).mock.calls[0]?.[2];
+            expect(typeof diagnostic).toBe('string');
+            if (typeof diagnostic !== 'string') {
+                throw new TypeError('Missing nested-error diagnostic');
+            }
+            expect(() => encodeURIComponent(diagnostic)).not.toThrow();
+            expect(diagnostic).toHaveLength(2047);
+            expect(diagnostic.endsWith('[truncated]')).toBe(true);
+        });
+
         it('does not throw or expose unrelated data when a cause getter fails', () => {
             const writer = createConsoleWriter({ mode: 'development' });
             const error = new Error('outer');

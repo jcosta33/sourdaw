@@ -27,6 +27,17 @@ const MAX_NESTED_ERRORS = 24;
 const MAX_ERROR_TEXT_LENGTH = 200;
 const MAX_DIAGNOSTIC_LENGTH = 2048;
 
+const truncateAtCodePointBoundary = (value: string, limit: number): string => {
+    const splitsSurrogatePair =
+        limit > 0 &&
+        limit < value.length &&
+        value.charCodeAt(limit - 1) >= 0xd800 &&
+        value.charCodeAt(limit - 1) <= 0xdbff &&
+        value.charCodeAt(limit) >= 0xdc00 &&
+        value.charCodeAt(limit) <= 0xdfff;
+    return value.slice(0, splitsSurrogatePair ? limit - 1 : limit);
+};
+
 const isNativeError = (value: unknown): value is Error => {
     const errorIsError: unknown = Reflect.get(Error, 'isError');
     return typeof errorIsError === 'function' && Reflect.apply(errorIsError, Error, [value]) === true;
@@ -36,7 +47,9 @@ const boundedText = (value: unknown, fallback: string): string => {
     if (typeof value !== 'string') {
         return fallback;
     }
-    return value.length > MAX_ERROR_TEXT_LENGTH ? `${value.slice(0, MAX_ERROR_TEXT_LENGTH)}[truncated]` : value;
+    return value.length > MAX_ERROR_TEXT_LENGTH
+        ? `${truncateAtCodePointBoundary(value, MAX_ERROR_TEXT_LENGTH)}[truncated]`
+        : value;
 };
 
 type DataProperty = { kind: 'value'; value: unknown } | { kind: 'missing' | 'unreadable' };
@@ -194,7 +207,7 @@ const formatNestedErrors = (root: Error): string | undefined => {
     }
     const diagnostic = `Nested errors: ${parts.join('; ')}`;
     return diagnostic.length > MAX_DIAGNOSTIC_LENGTH
-        ? `${diagnostic.slice(0, MAX_DIAGNOSTIC_LENGTH - '[truncated]'.length)}[truncated]`
+        ? `${truncateAtCodePointBoundary(diagnostic, MAX_DIAGNOSTIC_LENGTH - '[truncated]'.length)}[truncated]`
         : diagnostic;
 };
 
