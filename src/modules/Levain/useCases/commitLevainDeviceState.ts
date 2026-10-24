@@ -6,6 +6,8 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
 
+const latestIdentityRequest = new Map<string, symbol>();
+
 /**
  * Mirror a device's selected instrument into project truth.
  *
@@ -35,6 +37,8 @@ export function commitLevainDeviceState(deviceId: string): void {
     if (!owner || !device || (device.deviceState && device.deviceState.version !== 1)) {
         return;
     }
+    const request = Symbol();
+    latestIdentityRequest.set(deviceId, request);
     const prior = fromLevainDeviceState(device.deviceState);
     if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
         return;
@@ -44,19 +48,22 @@ export function commitLevainDeviceState(deviceId: string): void {
     const encoded = toLevainDeviceState(patch, tier);
     const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
     const projectIdentity = captureProjectIdentity();
-    const capturedDevice = canonicalJson(device);
+    const capturedDeviceState = canonicalJson(device.deviceState ?? null);
     void executeAppAction(
         { type: 'setDeviceState', payload: { deviceId, state } },
         {
             skipMacroRecording: true,
             shouldExecute: () => {
+                if (latestIdentityRequest.get(deviceId) !== request) {
+                    return false;
+                }
                 const current = trackStore.value?.tracks
                     .find((track) => track.id === owner.id)
                     ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
                 return (
                     captureProjectIdentity() === projectIdentity &&
-                    current === device &&
-                    canonicalJson(current) === capturedDevice
+                    current !== undefined &&
+                    canonicalJson(current.deviceState ?? null) === capturedDeviceState
                 );
             },
         }

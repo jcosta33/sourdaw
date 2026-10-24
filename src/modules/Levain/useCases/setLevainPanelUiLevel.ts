@@ -7,7 +7,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { toLevainDeviceState } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
 
-const latestTierRequest = new WeakMap<object, symbol>();
+const latestTierRequest = new Map<string, symbol>();
 
 /** Request project truth; only its authoritative projection may paint the choice. */
 export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Promise<void> {
@@ -25,9 +25,9 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
         return;
     }
     const request = Symbol();
-    latestTierRequest.set(device, request);
+    latestTierRequest.set(deviceId, request);
     const projectIdentity = captureProjectIdentity();
-    const capturedDevice = canonicalJson(device);
+    const capturedDeviceState = canonicalJson(device.deviceState ?? null);
     await executeUserAppAction(
         {
             type: 'setDeviceState',
@@ -46,7 +46,7 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
         {
             skipMacroRecording: true,
             shouldExecute: () => {
-                if (latestTierRequest.get(device) !== request) {
+                if (latestTierRequest.get(deviceId) !== request) {
                     return false;
                 }
                 const current = trackStore.value?.tracks
@@ -54,8 +54,8 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
                     ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
                 if (
                     captureProjectIdentity() === projectIdentity &&
-                    current === device &&
-                    canonicalJson(current) === capturedDevice
+                    current !== undefined &&
+                    canonicalJson(current.deviceState ?? null) === capturedDeviceState
                 ) {
                     return true;
                 }

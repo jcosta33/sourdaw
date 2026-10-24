@@ -6,7 +6,7 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, persistDeviceParam, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -73,14 +73,18 @@ function projectState(deviceId: string) {
         ?.deviceState;
 }
 
-function rawProjectState(deviceId: string) {
+function rawProjectDevice(deviceId: string) {
     return getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')
         ?.tracks.tracks.flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.deviceState;
+        .find((device) => device.id === deviceId);
+}
+
+function rawProjectState(deviceId: string) {
+    return rawProjectDevice(deviceId)?.deviceState;
 }
 
 async function requestDuringSnapshotEdit(
-    edit: ((state: TrackStoreState) => TrackStoreState) | null,
+    edit: ((state: TrackStoreState) => TrackStoreState | void) | null,
     requestAction = () => setLevainPanelUiLevel('a', 6)
 ): Promise<void> {
     let allowEdit!: () => void;
@@ -104,7 +108,10 @@ async function requestDuringSnapshotEdit(
         await editAllowed;
         const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
             if (edit) {
-                trackStore.set(edit(trackStore.value!));
+                const next = edit(trackStore.value!);
+                if (next) {
+                    trackStore.set(next);
+                }
             }
         });
         storageTransaction.commit();
@@ -281,6 +288,65 @@ it('does not paint a denied action or create a missing device', async () => {
     expect(notifyUser).toHaveBeenCalledWith('Project repair is required before project actions can execute', 'warning');
 });
 
+it('saves a tier while real gain and mic writes replace its projected device', async () => {
+    await requestDuringSnapshotEdit(() => {
+        persistDeviceParam('a', 'masterGain', 0.52);
+        persistDeviceParam('a', 'mic0Volume', 0.31);
+    });
+    expect(rawProjectState('a')?.data.disclosureTier).toBe('expert');
+    expect(rawProjectDevice('a')?.parameterValues).toMatchObject({ masterGain: 0.52, mic0Volume: 0.31 });
+});
+
+it('saves an identity while real gain and mic writes replace its projected device', async () => {
+    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
+    await requestDuringSnapshotEdit(
+        () => {
+            persistDeviceParam('a', 'masterGain', 0.52);
+            persistDeviceParam('a', 'mic0Volume', 0.31);
+        },
+        async () => {
+            commitLevainDeviceState('a');
+            await Promise.all(dispatched);
+        }
+    );
+    expect(rawProjectState('a')?.data).toMatchObject({ instrumentId: 'horn' });
+    expect(rawProjectDevice('a')?.parameterValues).toMatchObject({ masterGain: 0.52, mic0Volume: 0.31 });
+});
+
+it('saves the latest identity and articulation queued behind one snapshot', async () => {
+    await requestDuringSnapshotEdit(null, async () => {
+        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
+        commitLevainDeviceState('a');
+        levainStore.set({
+            ...levainStore.value,
+            a: { ...defaultLevainState, patch: { ...createDefaultPatch('cello'), currentArticulation: 'tremolo' } },
+        });
+        commitLevainDeviceState('a');
+        await Promise.all(dispatched);
+    });
+    expect(rawProjectState('a')?.data).toMatchObject({
+        instrumentId: 'cello',
+        currentArticulation: 'tremolo',
+    });
+});
+
+it('cancels a queued identity when the latest patch returns to the saved choice', async () => {
+    await requestDuringSnapshotEdit(null, async () => {
+        levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
+        commitLevainDeviceState('a');
+        levainStore.set({
+            ...levainStore.value,
+            a: { ...defaultLevainState, patch: { ...createDefaultPatch('cello'), currentArticulation: 'pizzicato' } },
+        });
+        commitLevainDeviceState('a');
+        await Promise.all(dispatched);
+    });
+    expect(rawProjectState('a')?.data).toMatchObject({
+        instrumentId: 'cello',
+        currentArticulation: 'pizzicato',
+    });
+});
+
 it.each([1, 99])('preserves queued peer identity and metadata in version %i during a tier write', async (version) => {
     const peer = { version, data: { instrumentId: 'flute', currentArticulation: 'staccato', unrelated: 'newer' } };
     await requestDuringSnapshotEdit((state) => editDevice(state, (device) => ({ ...device, deviceState: peer })));
@@ -289,11 +355,12 @@ it.each([1, 99])('preserves queued peer identity and metadata in version %i duri
     expect(levainStore.value?.a?.uiLevel).toBe(1);
 });
 
-it('does not address a same-ID, byte-identical replacement after a snapshot wait', async () => {
+it('keeps a tier request for the same entity when its projection is cloned', async () => {
     const before = structuredClone(projectState('a'));
     await requestDuringSnapshotEdit((state) => editDevice(state, (device) => structuredClone(device)));
-    expect(rawProjectState('a')).toEqual(before);
-    expect(projectState('a')).toEqual(before);
+    // The projection clone neither removes the UUID nor changes its persisted identity.
+    expect(rawProjectState('a')?.data).toMatchObject({ ...before?.data, disclosureTier: 'expert' });
+    expect(projectState('a')).toEqual(rawProjectState('a'));
 });
 
 it('does not carry a queued tier into a successor project retaining identical device objects and bytes', async () => {
@@ -302,11 +369,16 @@ it('does not carry a queued tier into a successor project retaining identical de
 });
 
 it('commits the newest valid tier choice when two choices wait behind one snapshot', async () => {
-    await requestDuringSnapshotEdit(null, async () => {
-        const expert = setLevainPanelUiLevel('a', 6);
-        const basic = setLevainPanelUiLevel('a', 1);
-        await Promise.all([expert, basic]);
-    });
+    await requestDuringSnapshotEdit(
+        () => {
+            persistDeviceParam('a', 'masterGain', 0.52);
+        },
+        async () => {
+            const expert = setLevainPanelUiLevel('a', 6);
+            const basic = setLevainPanelUiLevel('a', 1);
+            await Promise.all([expert, basic]);
+        }
+    );
 
     expect(rawProjectState('a')?.data).toMatchObject({
         instrumentId: 'cello',
@@ -315,6 +387,7 @@ it('commits the newest valid tier choice when two choices wait behind one snapsh
         unrelated: 'preserve',
     });
     expect(projectState('a')).toEqual(rawProjectState('a'));
+    expect(rawProjectDevice('a')?.parameterValues).toMatchObject({ masterGain: 0.52 });
     reconcileLevainDeviceStateFromProject('a');
     expect(levainStore.value?.a?.uiLevel).toBe(1);
 });
@@ -342,7 +415,7 @@ it.each([
     expect(projectState('a')).toEqual(peer);
 });
 
-it('does not write an identity onto a same-ID replacement after a snapshot wait', async () => {
+it('keeps an identity request for the same entity when its projection is cloned', async () => {
     const before = structuredClone(projectState('a'));
     levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
     await requestDuringSnapshotEdit(
@@ -352,7 +425,12 @@ it('does not write an identity onto a same-ID replacement after a snapshot wait'
             await Promise.all(dispatched);
         }
     );
-    expect(rawProjectState('a')).toEqual(before);
+    // The clone is the same persisted UUID and state facet, with no new entity generation.
+    expect(rawProjectState('a')?.data).toMatchObject({
+        ...before?.data,
+        instrumentId: 'horn',
+        currentArticulation: 'sustain',
+    });
 });
 
 it('does not carry a queued identity into a successor project retaining identical device objects and bytes', async () => {
