@@ -1456,7 +1456,7 @@ ready();
                     earlierProof === 'unavailable' ? 'storage-metadata-unavailable' : 'storage-not-private-same-uid';
                 expect(result.reason).toBe('leak');
                 expect(result.output).toBe(
-                    `${childOutput}\n\nguard storage file-use proof unavailable: ${evidence}\n\n${retainedNotice}`
+                    `${childOutput}\n\nguard storage file-use proof unavailable: ${evidence}\n\n${retainedNotice}\nguard storage final census: unknown ${evidence}`
                 );
                 return;
             }
@@ -1619,8 +1619,9 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         expect(states.every((observed) => observed === state)).toBe(true);
         expect(inspections).not.toHaveLength(0);
         // Every observation inspects the whole list the previous re-list returned.
-        let expectedInspection = Array.from({ length: Math.min(arrivals + 1, linuxCensusObservationLimit) }, (_, round) =>
-            Array.from({ length: round + 1 }, (_, index) => 123 + index)
+        let expectedInspection = Array.from(
+            { length: Math.min(arrivals + 1, linuxCensusObservationLimit) },
+            (_, round) => Array.from({ length: round + 1 }, (_, index) => 123 + index)
         ).flat();
         if (scenario === 'expired first census') {
             expectedInspection = [123];
@@ -1970,7 +1971,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             });
             if (recurring) {
                 expect(observed).toBe('unknown');
-                expect(reports).toEqual(['proc-exit-resample-unsettled']);
+                expect(reports).toEqual(['proc-time-bound']);
                 expect(waits).toBe(linuxCensusObservationLimit);
                 expect(inspected).toEqual(Array.from({ length: linuxCensusObservationLimit }, () => [100, 123]).flat());
                 return;
