@@ -90,7 +90,9 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectMutationAuthorization: vi.fn<() => () => boolean>(() => () => false),
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     createCrdtDoc: vi.fn(),

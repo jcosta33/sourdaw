@@ -33,7 +33,9 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
  * resolve against — the liveness rule every take replay follows); a take it
  * re-keyed, split, trimmed, or shifted takes the target side's fields, except
  * `selected` — interaction state the operation never owns, so a live toggle
- * survives either direction. A take identical on both sides (including one
+ * survives either direction. A retained live selection wins over a missing
+ * take's captured selection; without one, at most one restored take regains
+ * selection. A take identical on both sides (including one
  * the paired retirement removes: it is verbatim in both captures) is never
  * touched here — and when live no longer holds it, it stays absent: its
  * deletion is a write the capture never recorded, the resurrection doctrine
@@ -64,6 +66,14 @@ function reconcileTransitionTakes(
         }
     }
     let liveClipIds: ReadonlySet<string> | null = null;
+    const targetClipIds = new Set(toTakes.map((take) => take.clipId));
+    const removedClipCandidates = new Set(fromTakes.map((take) => take.clipId).filter((id) => !targetClipIds.has(id)));
+    let hasSelectedTake = live.some(
+        (take) =>
+            take.selected &&
+            (toById.has(take.id) || !fromIds.has(take.id)) &&
+            (!removedClipCandidates.has(take.clipId) || requireLiveClipIds().has(take.clipId))
+    );
 
     const reconciled: Take[] = [];
     for (const target of toTakes) {
@@ -80,7 +90,10 @@ function reconcileTransitionTakes(
                 liveClipIds = requireLiveClipIds();
             }
             if (liveClipIds.has(target.clipId)) {
-                reconciled.push(structuredClone(target));
+                const restored = structuredClone(target);
+                restored.selected = target.selected && !hasSelectedTake;
+                hasSelectedTake = hasSelectedTake || restored.selected;
+                reconciled.push(restored);
             }
             continue;
         }
@@ -95,8 +108,6 @@ function reconcileTransitionTakes(
             reconciled.push(liveTake);
         }
     }
-    const targetClipIds = new Set(toTakes.map((take) => take.clipId));
-    const removedClipCandidates = new Set(fromTakes.map((take) => take.clipId).filter((id) => !targetClipIds.has(id)));
     return reconciled.filter(
         (take) => !removedClipCandidates.has(take.clipId) || requireLiveClipIds().has(take.clipId)
     );

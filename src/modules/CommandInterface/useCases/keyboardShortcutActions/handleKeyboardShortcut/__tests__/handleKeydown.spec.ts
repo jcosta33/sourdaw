@@ -853,7 +853,7 @@ describe('handleKeydown', () => {
             expect(pushUndoEntry).not.toHaveBeenCalled();
         });
 
-        it('dispatches one registered removeClip per selected clip, in selection order, and no raw mutation', () => {
+        it('dispatches one registered removeClip per selected clip, in selection order, and no raw mutation', async () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
             ];
@@ -862,11 +862,21 @@ describe('handleKeydown', () => {
                 { id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] },
                 { id: 't2', clips: [{ id: 'clip-2', startBeat: 4, endBeat: 6 }] },
             ];
+            let finishFirst: (() => void) | undefined;
+            vi.mocked(executeUserAppAction).mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        finishFirst = resolve;
+                    })
+            );
 
             const prevent = handleKeydown(descriptor({ key: 'F1' }));
 
             expect(prevent).toBe(true);
-            expect(executeUserAppAction).toHaveBeenCalledTimes(2);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(finishFirst).toBeDefined();
+            finishFirst?.();
+            await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(2));
             expect(executeUserAppAction).toHaveBeenNthCalledWith(
                 1,
                 { type: 'removeClip', payload: { clipId: 'clip-2' } },
@@ -885,7 +895,7 @@ describe('handleKeydown', () => {
             expect(clearClipSelection).toHaveBeenCalled();
         });
 
-        it('mints a fresh undo group id per delete keypress', () => {
+        it('mints a fresh undo group id per delete keypress', async () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
             ];
@@ -896,10 +906,12 @@ describe('handleKeydown', () => {
             clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
 
             handleKeydown(descriptor({ key: 'F1' }));
+            await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(2));
             // The selection the first keypress asked to clear is still set on
             // the mock store, so the second keypress is the same gesture shape.
             clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
             handleKeydown(descriptor({ key: 'F1' }));
+            await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(4));
 
             const groupIds = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]?.groupId);
             expect(groupIds).toHaveLength(4);

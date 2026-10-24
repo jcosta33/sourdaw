@@ -5,8 +5,10 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';
 import { removeTakesForClips } from '../removeTakesForClips';
 import { restoreTakesForClip } from '../restoreTakesForClip';
+import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
 
 const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
@@ -74,6 +76,84 @@ describe('restoreTakesForClip', () => {
 
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
+
+    it('admits an absent captured lane or a new lane for its track, but refuses a foreign reuse of its id', () => {
+        const capture = [
+            { laneIndex: 0, lane: { id: 'captured-lane', trackId: 't1', takes: [], activeCompRegions: [] } },
+        ];
+        mocks.takeLaneStoreValue.value = { lanes: [] };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(true);
+        const replacement = { id: 'replacement-lane', trackId: 't1', takes: [], activeCompRegions: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [replacement] };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(true);
+        mocks.takeLaneStoreValue.value = {
+            lanes: [replacement, { ...replacement, id: 'captured-lane', trackId: 't2' }],
+        };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(false);
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it.each(['t1', 't2'])('refuses a retired take id occupied by another clip on %s', (trackId) => {
+        const retired = { ...createTake('c1', 'Retired', 0, 4), id: 'retired-take' };
+        const captured = { ...laneWithTakes('t1', [retired]), id: 'captured-lane' };
+        const peer = { ...retired, clipId: trackId === 't1' ? 'c2' : 'c9', selected: true };
+        mocks.takeLaneStoreValue.value = { lanes: [{ ...laneWithTakes(trackId, [peer]), id: 'peer-lane' }] };
+
+        expect(retiredTakeLaneOwnersMatchStore([{ laneIndex: 0, lane: captured, retiredTakeIds: [retired.id] }])).toBe(
+            false
+        );
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it('admits the same retired take owner in a replacement lane without claiming untouched captured takes', () => {
+        const retired = { ...createTake('c1', 'Retired', 0, 4), id: 'retired-take' };
+        const untouched = { ...createTake('c2', 'Untouched', 4, 8), id: 'untouched-take' };
+        const captured = { ...laneWithTakes('t1', [retired, untouched]), id: 'captured-lane' };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    ...laneWithTakes('t1', [{ ...retired, name: 'Later name', selected: true }]),
+                    id: 'replacement-lane',
+                },
+                laneWithTakes('t2', [{ ...untouched, clipId: 'c9' }]),
+            ],
+        };
+
+        expect(retiredTakeLaneOwnersMatchStore([{ laneIndex: 0, lane: captured, retiredTakeIds: [retired.id] }])).toBe(
+            true
+        );
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it.each(['apply', 'restore'] as const)(
+        'authenticates the %s source take owner and reserves minted target ids globally',
+        (direction) => {
+            const before = { ...createTake('c1', 'Before', 0, 4), id: 'moved-take' };
+            const after = { ...before, clipId: 'c2', startBeat: 4, endBeat: 8 };
+            const minted = { ...createTake('c3', 'Minted', 8, 12), id: 'minted-take' };
+            const transition = {
+                laneId: 'captured-lane',
+                trackId: 't1',
+                takesBefore: [before],
+                takesAfter: [after, minted],
+                regionsBefore: [],
+                regionsAfter: [],
+            };
+            const source = direction === 'apply' ? before : after;
+            mocks.takeLaneStoreValue.value = {
+                lanes: [{ ...laneWithTakes('t1', [{ ...source, selected: true }]), id: 'replacement-lane' }],
+            };
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(true);
+
+            mocks.takeLaneStoreValue.value.lanes[0]!.takes[0] = direction === 'apply' ? after : before;
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(false);
+
+            mocks.takeLaneStoreValue.value.lanes[0]!.takes[0] = source;
+            mocks.takeLaneStoreValue.value.lanes.push(laneWithTakes('t2', [{ ...minted, clipId: 'c9' }]));
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(false);
+            expect(takeLaneStore.set).not.toHaveBeenCalled();
+        }
+    );
 
     it('re-inserts a lane retired whole at the index it held', () => {
         const firstLane = laneWithTakes('t2', [createTake('c9', 'First survivor', 0, 4)]);
@@ -185,6 +265,30 @@ describe('restoreTakesForClip', () => {
         expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, survivorTake.id, projectedTake.id]);
         expect(restored?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }]);
     });
+
+    it.each(['selected', 'unselected', 'absent'] as const)(
+        'restores a selected take with the live lane %s and preserves placed source fields',
+        (resident) => {
+            const retiredTake = {
+                ...createTake('c1', 'Retired selected pass', 0, 4, 8),
+                selected: true,
+                passAnchorSeconds: 4,
+                passDepthSeconds: 2,
+            };
+            const survivor = { ...createTake('c2', 'Later choice', 4, 8), selected: resident === 'selected' };
+            const captured = laneWithTakes('t1', [retiredTake]);
+            mocks.takeLaneStoreValue.value = {
+                lanes: resident === 'absent' ? [] : [{ ...captured, takes: [survivor] }],
+            };
+
+            restoreTakesForClip([{ laneIndex: 0, lane: captured, retiredTakeIds: [retiredTake.id] }]);
+
+            const expectedRetired = { ...retiredTake, selected: resident !== 'selected' };
+            const expectedTakes = resident === 'absent' ? [expectedRetired] : [expectedRetired, survivor];
+            expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes).toEqual(expectedTakes);
+            expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.filter((take) => take.selected)).toHaveLength(1);
+        }
+    );
 
     it('merges a retired lane into the track lane instead of leaving two lanes for one track', () => {
         const retiredTake = createTake('c1', 'Retired', 0, 4);
@@ -334,6 +438,28 @@ describe('restoreTakesForClip', () => {
             { startBeat: 0, endBeat: 4, takeId: retiredTake.id },
             { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
         ]);
+    });
+
+    it('drops the whole captured region on live overlap while preserving the later selection', () => {
+        const retiredTake = { ...createTake('c1', 'Retired', 0, 4), selected: true };
+        const survivor = { ...createTake('c2', 'Later choice', 0, 4), selected: true };
+        const captured: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        const liveRegion = { startBeat: 1, endBeat: 2, takeId: survivor.id };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ ...captured, takes: [survivor], activeCompRegions: [liveRegion] }],
+        };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: captured, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]).toEqual({
+            ...captured,
+            takes: [{ ...retiredTake, selected: false }, survivor],
+            activeCompRegions: [liveRegion],
+        });
     });
 
     it('orders the restored regions by beat with the ones already live', () => {

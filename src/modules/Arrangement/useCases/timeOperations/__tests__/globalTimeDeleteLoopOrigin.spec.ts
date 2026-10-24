@@ -53,6 +53,7 @@ const prepareMidiTimeStateRestore = () => ({
 const LOOP_LENGTH = 4;
 
 setTimeOperationDependencies({
+    savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
     prepareMidiGlobalTimeTransaction,

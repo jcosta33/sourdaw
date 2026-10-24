@@ -18,7 +18,10 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    getCurrentAutomergeStorageMutationOwner,
+    runOutsideAutomergeStoragePublisherScope,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
@@ -1154,7 +1157,7 @@ class AutomergeRepository {
     private notifyListeners(docId?: DocId, hint?: CrdtChangeHint): void {
         for (const listener of this.changeListeners) {
             try {
-                listener(docId, hint);
+                runOutsideAutomergeStoragePublisherScope(() => listener(docId, hint));
             } catch (error) {
                 logger.warn('[AutomergeRepository] Listener error:', error);
             }

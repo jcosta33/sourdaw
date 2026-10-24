@@ -46,6 +46,8 @@ const mocks = vi.hoisted(() => ({
     removeMidiClipData: vi.fn<(clipIds: readonly string[]) => void>(),
     readClipSatelliteEntry: vi.fn(),
     readClipScopedAutomationLanes: vi.fn(),
+    workspaceStore: { value: { rippleEditing: false } },
+    witness: 'before',
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -64,7 +66,22 @@ vi.mock('../../../useCases/rippleDelete/rippleDeleteClips', () => ({
     rippleDeleteClips: mocks.rippleDeleteClips,
 }));
 
+vi.mock('#/modules/WorkspaceShell/stores', () => ({ workspaceStore: mocks.workspaceStore }));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+    pushUndoEntry: vi.fn(),
+    getExecutableAppActionEffect: vi.fn(),
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    hasForeignPendingProjectWrites: vi.fn(() => false),
+    captureDurableDocumentWitness: vi.fn(() => mocks.witness),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
+    getCrdtDoc: vi.fn(() => ({})),
+}));
+
 vi.mock('#/modules/MIDI/useCases', () => ({
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     getMidiStoreState: mocks.getMidiStoreState,
     removeMidiClipData: mocks.removeMidiClipData,
 }));
@@ -80,6 +97,8 @@ vi.mock('../../../useCases/clip/readClipScopedAutomationLanes', () => ({
 describe('handleRemoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.workspaceStore.value = { rippleEditing: false };
+        mocks.witness = 'before';
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.planRippleDelete.mockReturnValue(null);
         mocks.rippleDeleteClips.mockReturnValue(null);
@@ -96,25 +115,45 @@ describe('handleRemoveClip', () => {
         takeLaneStore.set({ lanes: [] });
     });
 
+    it('publishes the actual producer mode only after its commit, not the earlier description', async () => {
+        const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+        const action = { type: 'removeClip' as const, payload: Object.freeze({ clipId: 'c1' }) };
+        const description = handleRemoveClip.describe(action);
+        expect(description.redoAction).toEqual(action);
+        expect(description.redoAction?.payload).not.toBe(action.payload);
+        mocks.workspaceStore.value = { rippleEditing: true };
+        const result = handleRemoveClip.execute(action);
+        expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'], ripple: true });
+        expect(description.redoAction).toEqual(action);
+        if (!result || !('afterCommit' in result)) {
+            throw new Error('Expected staged committed mode capture');
+        }
+        mocks.witness = 'after';
+        await result.afterCommit?.();
+        expect(description.redoAction).toEqual({ type: 'removeClip', payload: { clipId: 'c1', ripple: true } });
+        expect(action.payload).toEqual({ clipId: 'c1' });
+        expect(mocks.workspaceStore.value.rippleEditing).toBe(true);
+    });
+
     describe('execute', () => {
-        it('removes clip directly if track state is missing', () => {
+        it('returns no-write when track state is missing', () => {
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
-            expect(result).toBeUndefined();
-            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
-            expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.removeClip).not.toHaveBeenCalled();
             expect(mocks.rippleDeleteClips).not.toHaveBeenCalled();
             expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 
-        it('removes clip directly if clip is not found in tracks', () => {
+        it('returns no-write when the clip is not found in tracks', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
 
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
-            expect(result).toBeUndefined();
-            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
-            expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.removeClip).not.toHaveBeenCalled();
+            expect(mocks.rippleDeleteClips).not.toHaveBeenCalled();
             expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 
@@ -127,7 +166,7 @@ describe('handleRemoveClip', () => {
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
             expect(result).toBeUndefined();
-            expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
+            expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'], ripple: false });
             expect(mocks.removeClip).toHaveBeenCalledTimes(1);
             expect(mocks.removeClip).toHaveBeenCalledWith('c1');
             expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
@@ -160,7 +199,7 @@ describe('handleRemoveClip', () => {
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
             expect(result).toBeUndefined();
-            expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
+            expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'], ripple: false });
             expect(mocks.removeClip).not.toHaveBeenCalled();
             expect(mocks.removeMidiClipData).toHaveBeenCalledTimes(1);
             expect(mocks.removeMidiClipData).toHaveBeenCalledWith(['c1', 'c2']);

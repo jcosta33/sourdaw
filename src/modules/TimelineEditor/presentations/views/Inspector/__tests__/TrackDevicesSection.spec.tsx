@@ -80,6 +80,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 const mockExecuteUserAppAction = vi.fn<(action: unknown) => void>();
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),

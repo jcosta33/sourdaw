@@ -1,8 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
+    flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 
+import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
+import { setArrangementEventBus } from '../../useCases/arrangementEventBus';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { defaultTrackState, trackStore, type TrackStoreState } from '../trackStore';
 
 type TestDoc = {
@@ -139,4 +147,118 @@ describe('trackStore transient-state fallback', () => {
         expect(trackStore.value?.selectedTrackId).toBe('probe-valid');
         expect(trackStore.value?.ghostClips).toEqual([valid_ghost]);
     });
+
+    it('notifies once for each public selection and same-array local update without claiming document authority', () => {
+        const track = TrackDummy.create({ id: 'track-local', name: 'Local', kind: 'audio' });
+        trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        const raw = structuredClone(fake_doc);
+        const tracks = trackStore.value!.tracks;
+        const pending = countPendingAutomergeStorageWrites();
+        const storeObserver = vi.fn();
+        const reactObserver = vi.fn();
+        const unsubscribe = trackStore.subscribe(storeObserver);
+        const unsubscribeReact = trackStore.subscribeReact(reactObserver);
+        try {
+            selectTrack(track.id);
+            expect(trackStore.value?.selectedTrackId).toBe(track.id);
+            expect(trackStore.value?.tracks).toBe(tracks);
+            expect(storeObserver).toHaveBeenCalledTimes(1);
+            expect(reactObserver).toHaveBeenCalledTimes(1);
+            expect(countPendingAutomergeStorageWrites()).toBe(pending);
+            expect(fake_doc).toEqual(raw);
+
+            const ghost = ClipDummy.create({ id: 'local-ghost', trackId: track.id });
+            trackStore.update((current) => ({ ...current!, ghostClips: [ghost] }));
+            expect(trackStore.value?.ghostClips).toEqual([ghost]);
+            expect(storeObserver).toHaveBeenCalledTimes(2);
+            expect(reactObserver).toHaveBeenCalledTimes(2);
+            expect(countPendingAutomergeStorageWrites()).toBe(pending);
+            expect(fake_doc).toEqual(raw);
+
+            selectTrack(track.id);
+            expect(storeObserver).toHaveBeenCalledTimes(3);
+            expect(reactObserver).toHaveBeenCalledTimes(3);
+            selectTrack('missing-track');
+            expect(trackStore.value?.selectedTrackId).toBeNull();
+            expect(storeObserver).toHaveBeenCalledTimes(4);
+            expect(reactObserver).toHaveBeenCalledTimes(4);
+            expect(trackStore.trySet({ ...trackStore.value!, selectedTrackId: track.id })).toBe(false);
+            expect(trackStore.value?.selectedTrackId).toBe(track.id);
+            expect(storeObserver).toHaveBeenCalledTimes(5);
+            expect(reactObserver).toHaveBeenCalledTimes(5);
+            expect(countPendingAutomergeStorageWrites()).toBe(pending);
+            expect(fake_doc).toEqual(raw);
+        } finally {
+            unsubscribe();
+            unsubscribeReact();
+        }
+    });
+
+    it('retains local selection and ghosts after an unrelated pending tracks owner aborts', () => {
+        const base = TrackDummy.create({ id: 'track-base', name: 'Base', kind: 'audio' });
+        const peer = TrackDummy.create({ id: 'track-peer', name: 'Peer', kind: 'audio' });
+        trackStore.set({ tracks: [base], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const raw = structuredClone(fake_doc);
+        const foreign = runWithAutomergeStorageTransaction(undefined, () => {
+            trackStore.set({ ...trackStore.value!, tracks: [base, peer] });
+        });
+        expect(foreign.status).toBe('returned');
+        const pending = countPendingAutomergeStorageWrites();
+        const ghost = ClipDummy.create({ id: 'abort-local-ghost', trackId: base.id });
+        const observer = vi.fn();
+        const reactObserver = vi.fn();
+        const unsubscribe = trackStore.subscribe(observer);
+        const unsubscribeReact = trackStore.subscribeReact(reactObserver);
+        try {
+            trackStore.set({ ...trackStore.value!, selectedTrackId: base.id, ghostClips: [ghost] });
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(reactObserver).toHaveBeenCalledTimes(1);
+            expect(countPendingAutomergeStorageWrites()).toBe(pending);
+            foreign.abort();
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(reactObserver).toHaveBeenCalledTimes(2);
+            expect(trackStore.value?.tracks).toEqual([base]);
+            expect(trackStore.value?.selectedTrackId).toBe(base.id);
+            expect(trackStore.value?.ghostClips).toEqual([ghost]);
+            expect(fake_doc).toEqual(raw);
+        } finally {
+            unsubscribe();
+            unsubscribeReact();
+        }
+    });
+
+    it.each(['selection', 'ghosts'] as const)(
+        'keeps an independent %s edit without retaining the aborted owner’s other transient fields',
+        (field) => {
+            const selected = TrackDummy.create({ id: 'selected', name: 'Selected', kind: 'audio' });
+            const survivor = TrackDummy.create({ id: 'survivor', name: 'Survivor', kind: 'audio' });
+            const originalGhost = ClipDummy.create({ id: 'original-ghost', trackId: selected.id });
+            trackStore.set({ tracks: [selected, survivor], selectedTrackId: selected.id, ghostClips: [originalGhost] });
+            flushAutomergeStorageWrites();
+            const committedTracks = trackStore.value!.tracks;
+            const raw = structuredClone(fake_doc);
+            const pending = runWithAutomergeStorageTransaction(undefined, () => {
+                trackStore.set({ tracks: [survivor], selectedTrackId: null, ghostClips: [] });
+            });
+            expect(pending.status).toBe('returned');
+            const pendingCount = countPendingAutomergeStorageWrites();
+            const localGhost = ClipDummy.create({ id: 'independent-ghost', trackId: survivor.id });
+
+            if (field === 'selection') {
+                trackStore.set({ ...trackStore.value!, selectedTrackId: survivor.id });
+            } else {
+                trackStore.set({ ...trackStore.value!, ghostClips: [localGhost] });
+            }
+
+            expect(countPendingAutomergeStorageWrites()).toBe(pendingCount);
+            pending.abort();
+            expect(trackStore.value?.tracks).toBe(committedTracks);
+            expect(trackStore.value?.selectedTrackId).toBe(field === 'selection' ? survivor.id : selected.id);
+            expect(trackStore.value?.ghostClips).toEqual(field === 'ghosts' ? [localGhost] : [originalGhost]);
+            expect(fake_doc).toEqual(raw);
+        }
+    );
 });

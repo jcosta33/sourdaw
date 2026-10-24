@@ -4,8 +4,14 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
+import {
+    getAutomationHandlers,
+    isValidAutomationTimeStateRestorePlan,
+    prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore as undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -14,6 +20,8 @@ import {
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
+    registerProductionCommandHandlers,
+    isExecutableAppActionType,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
@@ -24,11 +32,24 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     setupProjectionBridge,
+    getDrumPreviewBranchHandlers,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
+import {
+    getMidiNoteTransformHandlers,
+    isValidMidiTimeStateRestorePlan,
+    prepareMidiGlobalTimeTransaction,
+    prepareMidiTimeStateRestore,
+} from '#/modules/MIDI/useCases';
 import { readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
-import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
+import {
+    getTransportHandlers,
+    isValidTimelineMapStateRestorePlan,
+    prepareTimelineMapStateRestore,
+    prepareTimelineMapTimeOperation,
+} from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -36,11 +57,14 @@ import { createTake, createTakeLane, type Take, type TakeLane } from '../../../m
 import { gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { trackStore, type TrackStoreState } from '../../../stores/trackStore';
+import { setWarpState, warpStateStore } from '../../../stores/warpStates';
 import { deleteTimeRange } from '../../../useCases/clipEditing/deleteTimeRange';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
+import { timeOperationStateCodec } from '../../../useCases/timeOperations/timeOperationStateCodec';
 import { validateTakeLaneTransitionPlan } from '../../../useCases/timeOperations/validateTakeLaneTransitionPlan';
+import { isDeleteTimeSessionEntry, isRestoreTimeOperationSessionPayload } from '../validateClipEditSessionEntries';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
@@ -50,6 +74,14 @@ type Project = {
     midi: NonNullable<typeof midiStore.value>;
     automation: NonNullable<typeof automationStore.value>;
     gainEnvelopes: NonNullable<typeof gainEnvelopeStore.value>;
+    warpStates: NonNullable<typeof warpStateStore.value>;
+};
+
+type SavedOwner = 'automation' | 'midi' | 'timelineMap' | 'clipSatellites';
+type SavedTimePlan = Record<SavedOwner, unknown> & { takeLanes?: unknown };
+type SavedDeleteEntry = {
+    inverseAction: { payload: { plan: SavedTimePlan } };
+    redoAction: { payload: { plan: SavedTimePlan } };
 };
 
 const noActionHistoryMetadataPort = {
@@ -59,6 +91,19 @@ const noActionHistoryMetadataPort = {
 };
 
 let stopProjectionBridge: () => void;
+
+function hydrateProductionContracts(): void {
+    clearHandlerRegistry();
+    registerProductionCommandHandlers([
+        getArrangementHandlers(),
+        getAudioRenderingHandlers(),
+        getAutomationHandlers(),
+        getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+        getMidiNoteTransformHandlers(),
+        getTransportHandlers(),
+        getYeastHandlers(),
+    ]);
+}
 
 function lane(): TakeLane {
     const current = takeLaneStore.value?.lanes[0];
@@ -166,6 +211,31 @@ function arrangeJoinedOwners(): void {
     });
 }
 
+function durableOwners() {
+    const project = getCrdtDoc<Project>('root');
+    if (!project) {
+        throw new Error('Expected the current project');
+    }
+    return structuredClone({
+        tracks: project.tracks.tracks,
+        takeLanes: project.takeLanes,
+        midi: project.midi,
+        automation: project.automation,
+        gainEnvelopes: project.gainEnvelopes,
+        warpStates: project.warpStates,
+    });
+}
+
+function expectDurableOwners(expected: ReturnType<typeof durableOwners>): void {
+    expect(durableOwners()).toEqual(expected);
+    expect(trackStore.value?.tracks).toEqual(expected.tracks);
+    expect(takeLaneStore.value).toEqual(expected.takeLanes);
+    expect(midiStore.value).toEqual(expected.midi);
+    expect(automationStore.value).toEqual(expected.automation);
+    expect(gainEnvelopeStore.value).toEqual(expected.gainEnvelopes);
+    expect(warpStateStore.value).toEqual(expected.warpStates);
+}
+
 async function removeTime(route: 'global' | 'selected', startBeat: number, endBeat: number): Promise<void> {
     if (route === 'global') {
         await executeAppAction({ type: 'deleteTime', payload: { startBeat, endBeat } });
@@ -212,6 +282,11 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         setTimeOperationDependencies({
+            savedRestorePlanValidators: {
+                automation: isValidAutomationTimeStateRestorePlan,
+                midi: isValidMidiTimeStateRestorePlan,
+                timelineMap: isValidTimelineMapStateRestorePlan,
+            },
             prepareAutomationTimeOperation,
             prepareAutomationTimeStateRestore,
             prepareMidiGlobalTimeTransaction,
@@ -258,6 +333,322 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             })
         ).toBeNull();
         expectAuthority();
+    });
+
+    it('persists a real Delete Time entry across fresh projection reset and replays all owners', async () => {
+        expect(isExecutableAppActionType('deleteTime')).toBe(false);
+        hydrateProductionContracts();
+        arrangeJoinedOwners();
+        setWarpState('gone', {
+            enabled: true,
+            markers: [{ id: 'gone-warp', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        flushAutomergeStorageWrites();
+        const original = durableOwners();
+        expect(trackStore.value?.selectedTrackId).toBe('track-1');
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        expect(isDeleteTimeSessionEntry(undoStore.value?.past[0] as HandlerSessionActionEntry)).toBe(true);
+        const liveEntry = undoStore.value?.past[0] as HandlerSessionActionEntry;
+        expect(isRestoreTimeOperationSessionPayload(liveEntry.inverseAction?.payload)).toBe(true);
+        expect(isRestoreTimeOperationSessionPayload(liveEntry.redoAction?.payload)).toBe(true);
+        const deleted = durableOwners();
+        expect(deleted.tracks).not.toEqual(original.tracks);
+        expect(deleted.midi).not.toEqual(original.midi);
+        expect(deleted.automation.lanes).toEqual([]);
+        expect(deleted.gainEnvelopes.envelopes.gone).toBeUndefined();
+        expect(deleted.warpStates.states.gone).toBeUndefined();
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            const stored = JSON.parse(raw!) as { past: { inverseAction: { type: string } }[] };
+            expect(stored.past).toHaveLength(1);
+            expect(stored.past[0]?.inverseAction.type).toBe('restoreTimeOperationState');
+        });
+        // loadProject clears transient state by resetting projections before hydration.
+        projectCrdtToStores({ resetProjections: true });
+        expect(trackStore.value?.selectedTrackId).toBeNull();
+        expectDurableOwners(deleted);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        const ghost = ClipDummy.create({ id: 'current-ghost', trackId: 'track-1', isGhost: true });
+        trackStore.set({ ...trackStore.value!, ghostClips: [ghost] });
+        flushAutomergeStorageWrites();
+        await undo();
+        expectDurableOwners(original);
+        expect(trackStore.value).toMatchObject({ selectedTrackId: null, ghostClips: [ghost] });
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+        await vi.waitFor(() => {
+            const stored = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { future: unknown[] };
+            expect(stored.future).toHaveLength(1);
+        });
+        projectCrdtToStores({ resetProjections: true });
+        hydrateProductionContracts();
+        trackStore.set({ ...trackStore.value!, selectedTrackId: 'midi-track', ghostClips: [ghost] });
+        flushAutomergeStorageWrites();
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expectDurableOwners(deleted);
+        expect(trackStore.value).toMatchObject({ selectedTrackId: 'midi-track', ghostClips: [ghost] });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it.each(
+        (['automation', 'midi', 'timelineMap', 'clipSatellites'] as const).flatMap(
+            (owner) =>
+                [
+                    { owner, inverseSide: 'expected', redoSide: 'replacement' },
+                    { owner, inverseSide: 'replacement', redoSide: 'expected' },
+                ] as const
+        )
+    )('drops a saved Delete Time entry with malformed $owner $inverseSide before replay', async (row) => {
+        hydrateProductionContracts();
+        arrangeJoinedOwners();
+        setWarpState('gone', {
+            enabled: true,
+            markers: [{ id: 'gone-warp', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-120', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-60', beat: 10, tempo: 60, curve: 'instant' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            expect((JSON.parse(raw!) as { past: unknown[] }).past).toHaveLength(1);
+        });
+        const stored = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };
+        const entry = stored.past[0];
+        if (!entry) {
+            throw new Error('Expected a genuine saved Delete Time entry');
+        }
+        for (const owner of ['automation', 'midi', 'timelineMap', 'clipSatellites'] as const) {
+            expect(entry.inverseAction.payload.plan[owner]).not.toBeNull();
+            expect(entry.redoAction.payload.plan[owner]).not.toBeNull();
+        }
+        const inverseOwner = entry.inverseAction.payload.plan[row.owner];
+        const redoOwner = entry.redoAction.payload.plan[row.owner];
+        if (
+            !inverseOwner ||
+            typeof inverseOwner !== 'object' ||
+            Array.isArray(inverseOwner) ||
+            !redoOwner ||
+            typeof redoOwner !== 'object' ||
+            Array.isArray(redoOwner)
+        ) {
+            throw new Error('Expected populated saved owner plans');
+        }
+        expect(Object.hasOwn(inverseOwner, row.inverseSide)).toBe(true);
+        expect(Object.hasOwn(redoOwner, row.redoSide)).toBe(true);
+        Reflect.set(inverseOwner, row.inverseSide, 17);
+        Reflect.set(redoOwner, row.redoSide, 17);
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(stored));
+        const beforeDocument = structuredClone(getCrdtDoc<Project>('root'));
+        const beforeOwners = durableOwners();
+
+        projectCrdtToStores({ resetProjections: true });
+        hydrateProductionContracts();
+
+        expect(undoStore.value?.past).toEqual([]);
+        expect(getCrdtDoc<Project>('root')).toEqual(beforeDocument);
+        expectDurableOwners(beforeOwners);
+    });
+
+    it('keeps a saved Delete Time entry with one opaque owner, null owner, and absent take lanes', async () => {
+        hydrateProductionContracts();
+        arrangeJoinedOwners();
+        setWarpState('gone', {
+            enabled: true,
+            markers: [{ id: 'gone-warp', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            expect((JSON.parse(raw!) as { past: unknown[] }).past).toHaveLength(1);
+        });
+        const stored = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };
+        const entry = stored.past[0];
+        if (!entry) {
+            throw new Error('Expected a genuine saved Delete Time entry');
+        }
+        const inversePlan = entry.inverseAction.payload.plan;
+        const redoPlan = entry.redoAction.payload.plan;
+        expect(inversePlan.timelineMap).toBeNull();
+        expect(redoPlan.timelineMap).toBeNull();
+        const inverseMidi = timeOperationStateCodec.encodeOpaqueJsonPlan(inversePlan.midi);
+        const redoMidi = timeOperationStateCodec.encodeOpaqueJsonPlan(redoPlan.midi);
+        expect(inverseMidi).not.toBeNull();
+        expect(redoMidi).not.toBeNull();
+        inversePlan.midi = inverseMidi;
+        redoPlan.midi = redoMidi;
+        delete inversePlan.takeLanes;
+        delete redoPlan.takeLanes;
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(stored));
+        const beforeDocument = structuredClone(getCrdtDoc<Project>('root'));
+        const beforeOwners = durableOwners();
+
+        projectCrdtToStores({ resetProjections: true });
+        hydrateProductionContracts();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(isDeleteTimeSessionEntry(undoStore.value?.past[0] as HandlerSessionActionEntry)).toBe(true);
+        expect(getCrdtDoc<Project>('root')).toEqual(beforeDocument);
+        expectDurableOwners(beforeOwners);
+    });
+
+    it('drops a saved Delete Time entry when pure owner validators are unavailable', async () => {
+        hydrateProductionContracts();
+        arrangeJoinedOwners();
+        setWarpState('gone', {
+            enabled: true,
+            markers: [{ id: 'gone-warp', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            expect((JSON.parse(raw!) as { past: unknown[] }).past).toHaveLength(1);
+        });
+        const beforeDocument = structuredClone(getCrdtDoc<Project>('root'));
+        const beforeOwners = durableOwners();
+
+        setTimeOperationDependencies(null);
+        projectCrdtToStores({ resetProjections: true });
+        hydrateProductionContracts();
+
+        expect(undoStore.value?.past).toEqual([]);
+        expect(getCrdtDoc<Project>('root')).toEqual(beforeDocument);
+        expectDurableOwners(beforeOwners);
+    });
+
+    it.each(['geometry', 'midi', 'automation', 'gain', 'warp'] as const)(
+        'hydrated Delete Time refuses changed durable %s without writes or history movement',
+        async (owner) => {
+            hydrateProductionContracts();
+            arrangeJoinedOwners();
+            const originalAutomation = structuredClone(automationStore.value!.lanes[0]!);
+            await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+            await vi.waitFor(() => {
+                const stored = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] };
+                expect(stored.past).toHaveLength(1);
+            });
+            projectCrdtToStores({ resetProjections: true });
+            hydrateProductionContracts();
+            mutateCrdtDoc<Project>({
+                id: 'root',
+                changeFn: (project) => {
+                    if (owner === 'geometry') {
+                        project.tracks.tracks[0]!.clips[0]!.endBeat = 1.75;
+                    } else if (owner === 'midi') {
+                        project.midi.notesByClipId['midi-source']![0]!.velocity = 75;
+                    } else if (owner === 'automation') {
+                        project.automation.lanes.push({
+                            ...originalAutomation,
+                            id: 'later-lane',
+                        });
+                    } else if (owner === 'gain') {
+                        project.gainEnvelopes.envelopes.gone = {
+                            clipId: 'gone',
+                            enabled: true,
+                            points: [{ id: 'later-gain', beatOffset: 0, gainDb: -3 }],
+                        };
+                    } else {
+                        project.warpStates = {
+                            states: {
+                                gone: {
+                                    enabled: true,
+                                    markers: [{ id: 'later-warp', originalBeat: 0, warpedBeat: 1 }],
+                                    stretchMode: 'repitch',
+                                    originalTempo: 120,
+                                },
+                            },
+                        };
+                    }
+                },
+            });
+            const before = structuredClone(getCrdtDoc<Project>('root'));
+            const history = structuredClone(undoStore.value);
+            const projections = structuredClone({
+                tracks: trackStore.value,
+                takes: takeLaneStore.value,
+                midi: midiStore.value,
+                automation: automationStore.value,
+                gain: gainEnvelopeStore.value,
+                warp: warpStateStore.value,
+            });
+            await undo();
+            expect(getCrdtDoc<Project>('root')).toEqual(before);
+            expect(undoStore.value).toEqual(history);
+            expect({
+                tracks: trackStore.value,
+                takes: takeLaneStore.value,
+                midi: midiStore.value,
+                automation: automationStore.value,
+                gain: gainEnvelopeStore.value,
+                warp: warpStateStore.value,
+            }).toEqual(projections);
+        }
+    );
+
+    it.each([
+        { name: 'bogus inverse scope', leg: 'inverseAction', scope: 'other-scope' },
+        { name: 'mismatched redo scope', leg: 'redoAction', scope: 'selected-range' },
+    ])('drops a Delete Time entry with $name before a project write', async ({ leg, scope }) => {
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        arrangeComp(0, 10);
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            const stored = JSON.parse(raw!) as { past: unknown[] };
+            expect(stored.past).toHaveLength(1);
+        });
+        const raw = sessionStorage.getItem('sourdaw-undo-session');
+        const stored = JSON.parse(raw!) as {
+            past: {
+                inverseAction: { payload: { plan: { scope: string } } };
+                redoAction: { payload: { plan: { scope: string } } };
+            }[];
+        };
+        stored.past[0]![leg as 'inverseAction' | 'redoAction'].payload.plan.scope = scope;
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(stored));
+        const before = structuredClone(getCrdtDoc<Project>('root'));
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(getCrdtDoc<Project>('root')).toEqual(before);
     });
 
     it.each(['global', 'selected'] as const)(
