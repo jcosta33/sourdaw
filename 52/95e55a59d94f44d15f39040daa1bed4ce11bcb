@@ -1,0 +1,25 @@
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_59e31a5c6f3e31::t_de72dd5afbf052 691-697,707-712,714-716,718-719,721,766,768,773,777,794,797,803,831,836,860,865,898,903,918-919,951,958,983,1007,1011,1015,1019
+  s_59e31a5c6f3e31::t_263f1441385632 348-353,359,377,662-671,674,677-678,680-686
+  s_59e31a5c6f3e31::t_749bf74d51ad22 698-706,713
+  s_59e31a5c6f3e31::t_e296333a9049da 725-758,812
+  s_59e31a5c6f3e31::t_803f45c817e80d 813
+  s_59e31a5c6f3e31::t_0101e2920c8781 360-376,717
+  s_59e31a5c6f3e31::t_9444a7d200278d 723-724
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5295e55a59d94f44d15f39040daa1bed4ce11bcb",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
