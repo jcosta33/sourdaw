@@ -113,7 +113,10 @@ type CaptureContext = Pick<AudioContext, 'currentTime'> & Partial<Pick<AudioCont
 class RecordingCaptureClocks {
     private readonly rootIdentity = captureProjectRootIdentity();
     private readonly clocks = new Map<string, CaptureClock>();
-    readonly nativeClock = createNativeRecordingCaptureClock();
+    readonly nativeClock = createNativeRecordingCaptureClock({
+        identity: this.rootIdentity,
+        isCurrent: () => captureProjectRootIdentity() === this.rootIdentity,
+    });
     private ended = false;
     private unregisterClock = (): void => {};
     private unregisterEnding = (): void => {};

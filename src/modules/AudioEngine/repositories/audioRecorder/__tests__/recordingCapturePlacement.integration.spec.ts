@@ -21,6 +21,7 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRootIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -829,7 +830,9 @@ describe('real recorder first-frame capture placement', () => {
                 loopStart: 8,
                 loopEnd: 12,
             };
-            nativeRecordingCaptureClockState.retainAdmission(geometry, 7);
+            const rootIdentity = captureProjectRootIdentity();
+            const owner = { identity: rootIdentity, isCurrent: () => captureProjectRootIdentity() === rootIdentity };
+            nativeRecordingCaptureClockState.retainAdmission(geometry, 7, false, undefined, owner);
             const observe = (seconds: number): void => {
                 hardware.now = seconds;
                 const beat = seconds < 52.5 ? 7 + (seconds - 50) * 2 : 8 + (seconds - 52.5) * 2;
@@ -873,7 +876,13 @@ describe('real recorder first-frame capture placement', () => {
             for (const seconds of [50.25, 50.5, 50.75, 51, 51.25, 51.5, 51.75, 52, 52.25, 52.5, 52.75, 53]) {
                 hardware.outputDateAvailable = seconds >= 52.75;
                 if (mapGap && seconds === 52.75) {
-                    nativeRecordingCaptureClockState.retainAdmission({ ...geometry, loopStart: 9 }, 9);
+                    nativeRecordingCaptureClockState.retainAdmission(
+                        { ...geometry, loopStart: 9 },
+                        9,
+                        false,
+                        undefined,
+                        owner
+                    );
                 }
                 if (!mapGap || seconds !== 52.5) {
                     observe(seconds);

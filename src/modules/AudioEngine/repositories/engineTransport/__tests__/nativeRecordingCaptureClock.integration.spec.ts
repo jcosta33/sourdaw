@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureProjectRootIdentity, createCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { desktopInvoke } from '#/utils/desktopBridge';
 
 import {
@@ -19,6 +20,7 @@ vi.mock('#/utils/DOM/AnimationScheduler', () => ({ animationScheduler: { registe
 
 describe('dated native recording capture through the real parser and feed', () => {
     let rendererSeconds = 100;
+    const root = { identity: 'capture-root', isCurrent: () => true };
     const geometry = {
         secondsAtBeat: (beat: number) => beat / 2,
         beatAtSeconds: (seconds: number) => seconds * 2,
@@ -56,7 +58,7 @@ describe('dated native recording capture through the real parser and feed', () =
         rendererSeconds = 100;
         vi.spyOn(performance, 'now').mockImplementation(() => rendererSeconds * 1000);
         vi.mocked(desktopInvoke).mockReset();
-        nativeRecordingCaptureClockState.retainAdmission(geometry, 7);
+        nativeRecordingCaptureClockState.retainAdmission(geometry, 7, false, undefined, root);
         startNativeEnginePlayheadFeed();
     });
     afterEach(() => {
@@ -79,7 +81,7 @@ describe('dated native recording capture through the real parser and feed', () =
         'removes cached sample and later reply age %ss using independent calibration',
         async (lag) => {
             await poll(payload(), 100, 100.004);
-            const owner = createNativeRecordingCaptureClock();
+            const owner = createNativeRecordingCaptureClock(root);
             const first = owner.read(context);
             expect(first).toMatchObject({ carrier: 'native', status: 'available' });
             if (first.carrier !== 'native' || first.status !== 'available') {
@@ -106,7 +108,7 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('reports broad initial calibration uncertainty without asserting its midpoint as truth', async () => {
         await poll(payload(), 100, 100.154);
-        const read = createNativeRecordingCaptureClock().read(context);
+        const read = createNativeRecordingCaptureClock(root).read(context);
         expect(read).toMatchObject({ carrier: 'native', status: 'available' });
         if (read.carrier !== 'native' || read.status !== 'available') {
             throw new Error('Missing broad clock');
@@ -122,7 +124,7 @@ describe('dated native recording capture through the real parser and feed', () =
             state: 'running' as const,
             getOutputTimestamp: () => ({ contextTime: rendererSeconds, performanceTime: rendererSeconds * 1000 }),
         };
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         expect(owner.read(output)).toMatchObject({
             status: 'available',
             snapshot: { contextSeconds: 51, songSeconds: 5 },
@@ -151,7 +153,7 @@ describe('dated native recording capture through the real parser and feed', () =
     });
 
     it('keeps native carrier identity without timing, and rejects an old map fence independently of writers', async () => {
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
         await poll({ ...payload(), batchesApplied: 6 }, 100, 100.004);
         expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
@@ -164,7 +166,7 @@ describe('dated native recording capture through the real parser and feed', () =
     });
 
     it('retains an authentic admission stamp while output dating is unavailable', async () => {
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         expect(owner.admission).toBeNull();
         await poll(payload(), 100, 100.004);
         const admission = owner.admission;
@@ -187,11 +189,11 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('does not authenticate an initially missing stamp with a later edited admission', async () => {
         await poll({ ...payload(), captureClock: null }, 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         const initialAdmission = owner.admission;
         expect(initialAdmission).toBeNull();
         const edited = { ...geometry, loopStart: 9 };
-        nativeRecordingCaptureClockState.retainAdmission(edited, 9, true);
+        nativeRecordingCaptureClockState.retainAdmission(edited, 9, true, undefined, root);
         await poll({ ...payload(20.2, 20.202), batchesApplied: 9 }, 100.199, 100.204);
         expect(owner.admission).toMatchObject({ clockIdentity: expect.stringMatching(/^1:1:/) });
         expect(owner.read(context)).toMatchObject({
@@ -203,7 +205,7 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('keeps future callback presentation distinct from the current output edge and stream replacement', async () => {
         await poll({ ...payload(), loopWraps: 1, positionSeconds: 4.01 }, 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         const read = owner.read(context);
         if (read.carrier !== 'native' || read.status !== 'available') {
             throw new Error('Missing future clock');
@@ -213,7 +215,7 @@ describe('dated native recording capture through the real parser and feed', () =
         await poll({ ...replacement, captureClock: { ...replacement.captureClock, streamEpoch: 2 } }, 100.199, 100.204);
         expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
         expect(owner.last).toBe(read.snapshot);
-        expect(createNativeRecordingCaptureClock().read(context)).toMatchObject({
+        expect(createNativeRecordingCaptureClock(root).read(context)).toMatchObject({
             carrier: 'native',
             status: 'available',
         });
@@ -221,14 +223,14 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('keeps issued geometry behind its actual batch and preserves history through unavailable output timestamps', async () => {
         await poll(payload(), 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         expect(owner.read(context)).toMatchObject({ status: 'available' });
         const edited = {
             ...geometry,
             beatAtSeconds: (seconds: number) => seconds,
             secondsAtBeat: (beat: number) => beat,
         };
-        nativeRecordingCaptureClockState.retainAdmission(edited, 9, true);
+        nativeRecordingCaptureClockState.retainAdmission(edited, 9, true, undefined, root);
         await poll(payload(20.2, 20.202), 100.199, 100.204);
         expect(owner.read(context)).toMatchObject({
             status: 'available',
@@ -257,14 +259,14 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('retains history but requires fresh owner admission after context resume or incompatible calibration', async () => {
         await poll(payload(), 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         expect(owner.read(context)).toMatchObject({ status: 'available' });
         const history = owner.last;
         expect(owner.read({ ...context, state: 'suspended' })).toEqual({ carrier: 'native', status: 'unavailable' });
         await poll(payload(20.2, 20.202), 100.199, 100.204);
         expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
         expect(owner.last).toBe(history);
-        const successor = createNativeRecordingCaptureClock();
+        const successor = createNativeRecordingCaptureClock(root);
         expect(successor.read(context)).toMatchObject({ status: 'available' });
         const retained = successor.last;
         await poll(payload(20.3, 20.302), 101, 101.004);
@@ -272,10 +274,10 @@ describe('dated native recording capture through the real parser and feed', () =
         expect(successor.last).toBe(retained);
         await poll(payload(20.4, 20.402), 101.1, 101.104);
         expect(successor.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
-        expect(createNativeRecordingCaptureClock().read(context)).toMatchObject({ status: 'available' });
+        expect(createNativeRecordingCaptureClock(root).read(context)).toMatchObject({ status: 'available' });
     });
     it('retains authentic raw callback history before the output date and input reader become available', async () => {
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         const undated = { ...context, getOutputTimestamp: () => ({ contextTime: 0, performanceTime: 0 }) };
         const first = payload();
         await poll({ ...first, positionSeconds: 3.5 }, 100, 100.004);
@@ -313,7 +315,7 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('requires the dated batch after each maps write and retains the witnessed projection after rejection', async () => {
         await poll(payload(), 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         expect(owner.read(context)).toMatchObject({ snapshot: { geometry, forwardAuthorized: true } });
         const rejected = nativeRecordingCaptureClockState.beginMutation('maps');
         expect(owner.read(context)).toMatchObject({ snapshot: { forwardAuthorized: false } });
@@ -332,7 +334,7 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('does not settle an uncertain locate with an unrelated maps receipt or a rejected later locate', async () => {
         await poll(payload(), 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         owner.read(context);
         const locate = nativeRecordingCaptureClockState.beginMutation('locate');
         const maps = nativeRecordingCaptureClockState.beginMutation('maps');
@@ -354,7 +356,7 @@ describe('dated native recording capture through the real parser and feed', () =
 
     it('keeps a reset owner retired and refuses an old operation receipt after rearm', async () => {
         await poll(payload(), 100, 100.004);
-        const owner = createNativeRecordingCaptureClock();
+        const owner = createNativeRecordingCaptureClock(root);
         owner.read(context);
         const stale = nativeRecordingCaptureClockState.beginMutation('locate');
         stopNativeEnginePlayheadFeed();
@@ -362,8 +364,48 @@ describe('dated native recording capture through the real parser and feed', () =
         expect(nativeRecordingCaptureClockState.settleMutation(stale, 'applied')).toBe(false);
         await poll(payload(20.2, 20.202), 100.199, 100.204);
         expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
-        expect(createNativeRecordingCaptureClock().read(context)).toMatchObject({
+        expect(createNativeRecordingCaptureClock(root).read(context)).toMatchObject({
             snapshot: { forwardAuthorized: true },
         });
+    });
+
+    it('refuses an outgoing receipt and raw dates after the actual active root is replaced', async () => {
+        createCrdtDoc('root');
+        try {
+            const identity = captureProjectRootIdentity();
+            const outgoing = { identity, isCurrent: () => captureProjectRootIdentity() === identity };
+            nativeLiveGraphSession.captureAdmissions = [];
+            nativeRecordingCaptureClockState.retainAdmission(geometry, 7, false, undefined, outgoing);
+            await poll(payload(), 100, 100.004);
+            const owner = createNativeRecordingCaptureClock(outgoing);
+            expect(owner.read(context)).toMatchObject({ snapshot: { admission: { rootIdentity: identity } } });
+            const operation = nativeRecordingCaptureClockState.beginMutation('maps', outgoing);
+
+            createCrdtDoc('root');
+            const replacementIdentity = captureProjectRootIdentity();
+            expect(replacementIdentity).not.toBe(identity);
+            const replacement = {
+                identity: replacementIdentity,
+                isCurrent: () => captureProjectRootIdentity() === replacementIdentity,
+            };
+            expect(nativeRecordingCaptureClockState.settleMutation(operation, 'applied')).toBe(false);
+            nativeRecordingCaptureClockState.retainAdmission(geometry, 9, false, operation);
+            expect(nativeLiveGraphSession.captureAdmissions).toHaveLength(1);
+            expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
+            const successor = createNativeRecordingCaptureClock(replacement);
+            expect(successor.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
+
+            const fresh = nativeRecordingCaptureClockState.beginMutation('start', replacement);
+            expect(nativeRecordingCaptureClockState.settleMutation(fresh, 'applied')).toBe(true);
+            nativeRecordingCaptureClockState.retainAdmission(geometry, 9, true, fresh);
+            expect(successor.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
+            await poll({ ...payload(20.2, 20.202), batchesApplied: 9 }, 100.199, 100.204);
+            expect(successor.read(context)).toMatchObject({
+                snapshot: { admission: { rootIdentity: replacementIdentity }, forwardAuthorized: true },
+            });
+            expect(owner.read(context)).toEqual({ carrier: 'native', status: 'unavailable' });
+        } finally {
+            removeCrdtDoc('root');
+        }
     });
 });

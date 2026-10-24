@@ -104,7 +104,7 @@ const hardware = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (original) => {
     const real = await original<typeof import('#/modules/AudioEngine/useCases')>();
-    const { captureNativeRecordingGeometry } = await import('../../transportControls/captureNativeRecordingGeometry');
+    const { captureNativeRecordingContext } = await import('../../transportControls/captureNativeRecordingContext');
     return {
         ...real,
         getAudioContext: () => ({
@@ -165,7 +165,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                     if (!hardware.nativeCursorBeat) {
                         return { carrier: 'browser' as const };
                     }
-                    const geometry = captureNativeRecordingGeometry();
+                    const geometry = captureNativeRecordingContext().recordingGeometry;
                     const signature = JSON.stringify([
                         geometry.loopStart,
                         geometry.loopEnd,

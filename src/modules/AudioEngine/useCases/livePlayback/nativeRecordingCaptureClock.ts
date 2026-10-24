@@ -1,7 +1,9 @@
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
-
 import { type EngineTransportPosition } from '../../models/EngineTransportPosition';
-import { type NativeRecordingAdmission, type NativeRecordingGeometry } from '../../models/NativeRecordingCapture';
+import {
+    type NativeRecordingAdmission,
+    type NativeRecordingGeometry,
+    type NativeRecordingRootWitness,
+} from '../../models/NativeRecordingCapture';
 
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
@@ -25,7 +27,7 @@ type CaptureMutation = Readonly<{
     serial: number;
     session: number;
     feedGeneration: number;
-    rootIdentity: string;
+    root: NativeRecordingRootWitness | null;
     kind: MutationKind;
 }>;
 type Mutation = {
@@ -43,12 +45,12 @@ function resetNativeRecordingCaptureClock(): void {
     datedReading = null;
 }
 
-function beginCaptureMutation(kind: MutationKind = 'locate'): CaptureMutation {
+function beginCaptureMutation(kind: MutationKind = 'locate', owner?: NativeRecordingRootWitness): CaptureMutation {
     const token = {
         serial: ++mutationSerial,
         session: nativeLiveGraphSession.rearmEpoch,
         feedGeneration,
-        rootIdentity: captureProjectRootIdentity(),
+        root: owner ?? nativeLiveGraphSession.captureAdmissions.at(-1)?.owner ?? null,
         kind,
     };
     mutations.set(token.serial, { token, outcome: 'pending', admission: null });
@@ -61,7 +63,7 @@ function settleCaptureMutation(token: CaptureMutation, outcome: 'applied' | 'rej
         mutation?.token !== token ||
         token.session !== nativeLiveGraphSession.rearmEpoch ||
         token.feedGeneration !== feedGeneration ||
-        token.rootIdentity !== captureProjectRootIdentity()
+        !token.root?.isCurrent()
     ) {
         return false;
     }
@@ -69,15 +71,18 @@ function settleCaptureMutation(token: CaptureMutation, outcome: 'applied' | 'rej
     return true;
 }
 
-function authorizesForward(admission: NativeRecordingAdmission): boolean {
+function authorizesForward(admission: NativeRecordingAdmission, rootIdentity: string): boolean {
     if (admission.serial !== nativeLiveGraphSession.captureAdmissions.at(-1)?.serial) {
         return false;
     }
     for (const mutation of mutations.values()) {
+        const root = mutation.token.root;
         if (
             mutation.token.session !== nativeLiveGraphSession.rearmEpoch ||
             mutation.token.feedGeneration !== feedGeneration ||
-            mutation.token.rootIdentity !== captureProjectRootIdentity() ||
+            !root ||
+            root.identity !== rootIdentity ||
+            !root.isCurrent() ||
             mutation.outcome === 'rejected'
         ) {
             continue;
@@ -163,7 +168,8 @@ function retainNativeRecordingAdmission(
     geometry: NativeRecordingGeometry | undefined,
     admittedBatch: number | null,
     located = false,
-    mutation?: CaptureMutation
+    mutation?: CaptureMutation,
+    owner?: NativeRecordingRootWitness
 ): void {
     if (admittedBatch === null || !Number.isSafeInteger(admittedBatch) || admittedBatch < 0) {
         if (mutation) {
@@ -171,7 +177,8 @@ function retainNativeRecordingAdmission(
         }
         return;
     }
-    if (mutation && mutation.rootIdentity !== captureProjectRootIdentity()) {
+    const root = mutation?.root ?? owner;
+    if (!root?.isCurrent()) {
         return;
     }
     const serial = ++admissionSerial;
@@ -183,22 +190,23 @@ function retainNativeRecordingAdmission(
         operation.admission = serial;
     }
     nativeLiveGraphSession.captureAdmissions.push({
+        owner: root,
         geometry: geometry ?? null,
         admittedBatch,
         serial,
         located,
-        rootIdentity: captureProjectRootIdentity(),
+        rootIdentity: root.identity,
     });
     nativeLiveGraphSession.captureAdmissions.sort((left, right) => left.admittedBatch - right.admittedBatch);
 }
 
-function admittedGeometry(batchesApplied: number): NativeRecordingAdmission | null {
+function admittedGeometry(batchesApplied: number, rootIdentity: string): NativeRecordingAdmission | null {
     const admissions = nativeLiveGraphSession.captureAdmissions;
     let index = admissions.length - 1;
     while (
         index >= 0 &&
         (admissions[index]!.admittedBatch > batchesApplied ||
-            admissions[index]!.rootIdentity !== captureProjectRootIdentity())
+            admissions[index]!.rootIdentity !== rootIdentity)
     ) {
         index--;
     }
@@ -286,8 +294,7 @@ function usableObservation(reading: EngineTransportPosition | null): reading is 
 
 /** Implementation state stays private to the existing per-recording callable. */
 class RecordingCaptureClockOwner {
-    private readonly rootIdentity = captureProjectRootIdentity();
-    constructor() {
+    constructor(private readonly root: NativeRecordingRootWitness) {
         owners.add(new WeakRef(this));
     }
     observe(): void {
@@ -318,7 +325,7 @@ class RecordingCaptureClockOwner {
         const reading = datedReading;
         const currentCalibration = calibration;
         if (
-            this.rootIdentity !== captureProjectRootIdentity() ||
+            !this.root.isCurrent() ||
             !nativeLiveGraphSession.audibleCarrier ||
             !usableObservation(reading) ||
             !currentCalibration ||
@@ -327,7 +334,7 @@ class RecordingCaptureClockOwner {
             return null;
         }
         const stamp = reading.captureClock!;
-        const admission = admittedGeometry(reading.batchesApplied);
+        const admission = admittedGeometry(reading.batchesApplied, this.root.identity);
         if (!admission?.geometry) {
             return null;
         }
@@ -338,7 +345,12 @@ class RecordingCaptureClockOwner {
             this.interrupted = true;
             return null;
         }
-        const raw = { reading, admission, geometry: admission.geometry, authorized: authorizesForward(admission) };
+        const raw = {
+            reading,
+            admission,
+            geometry: admission.geometry,
+            authorized: authorizesForward(admission, this.root.identity),
+        };
         const epoch = this.epochs.get(admission.serial);
         if (epoch) {
             const previous = epoch.latest.reading;
@@ -435,8 +447,8 @@ class RecordingCaptureClockOwner {
 }
 
 /** Each recording freezes its correlation; receipt lag cannot redate its PCM. */
-export function createNativeRecordingCaptureClock() {
-    const owner = new RecordingCaptureClockOwner();
+export function createNativeRecordingCaptureClock(root: NativeRecordingRootWitness) {
+    const owner = new RecordingCaptureClockOwner(root);
     return {
         get admission() {
             return owner.admission;

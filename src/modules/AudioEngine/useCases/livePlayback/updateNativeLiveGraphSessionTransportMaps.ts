@@ -39,7 +39,7 @@
  */
 
 import { type EngineLoopRegion, type EngineTransportMaps } from '../../models/EngineTransportPosition';
-import { type NativeRecordingGeometry } from '../../models/NativeRecordingCapture';
+import { type NativeRecordingGeometry, type NativeRecordingRootWitness } from '../../models/NativeRecordingCapture';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
@@ -50,6 +50,7 @@ import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInP
 
 export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
     recordingGeometry?: NativeRecordingGeometry;
+    recordingOwner?: NativeRecordingRootWitness;
     /**
      * The arrangement's tempo map, meter map and loop region, already projected
      * into engine coordinates — the same shape a session start carries, and
@@ -80,7 +81,7 @@ export function updateNativeLiveGraphSessionTransportMaps(
         if (!nativeLiveGraphSession.backend) {
             return { outcome: 'declined', reason: 'no live native graph session' };
         }
-        const captureMutation = nativeRecordingCaptureClockState.beginMutation('maps');
+        const captureMutation = nativeRecordingCaptureClockState.beginMutation('maps', input.recordingOwner);
         let maps: Awaited<ReturnType<typeof setEngineTransportMaps>>;
         try {
             maps = await setEngineTransportMaps(input.transportMaps);

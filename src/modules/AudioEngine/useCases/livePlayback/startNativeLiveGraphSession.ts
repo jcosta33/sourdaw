@@ -100,7 +100,7 @@ import {
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
 import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
-import { type NativeRecordingGeometry } from '../../models/NativeRecordingCapture';
+import { type NativeRecordingGeometry, type NativeRecordingRootWitness } from '../../models/NativeRecordingCapture';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
@@ -193,6 +193,7 @@ export type NativeSessionTransport =
 
 export type StartNativeLiveGraphSessionInput = Readonly<{
     recordingGeometry?: NativeRecordingGeometry;
+    recordingOwner?: NativeRecordingRootWitness;
     /** Where playback begins, on the engine's clock. */
     positionSeconds: number;
     /**
@@ -748,6 +749,7 @@ async function rollNativeTransport(
  */
 async function rollSessionTransport(input: {
     recordingGeometry?: NativeRecordingGeometry;
+    recordingOwner?: NativeRecordingRootWitness;
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     stripTracks: readonly Track[];
     /** The attach state the topology this session installed was built from. */
@@ -767,7 +769,7 @@ async function rollSessionTransport(input: {
     // must not render a frame the region does not govern. Before the feed
     // too, because a position read against no maps reports the engine's
     // default tempo rather than the arrangement's.
-    const captureMutation = nativeRecordingCaptureClockState.beginMutation('start');
+    const captureMutation = nativeRecordingCaptureClockState.beginMutation('start', input.recordingOwner);
     let maps: Awaited<ReturnType<typeof setEngineTransportMaps>>;
     try {
         maps = await setEngineTransportMaps(input.transportMaps);
@@ -797,7 +799,10 @@ async function rollSessionTransport(input: {
     nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
     nativeRecordingCaptureClockState.retainAdmission(
         input.recordingGeometry && { ...input.recordingGeometry, isLooping: maps.applied.loopEnabled },
-        maps.applied.admittedBatch
+        maps.applied.admittedBatch,
+        false,
+        undefined,
+        input.recordingOwner
     );
     // Before the roll, and awaited — the opposite order to the automation
     // writer's, for a reason that belongs to the note store rather than to
@@ -1064,6 +1069,7 @@ async function installRolledSession(input: {
         carriedStripIds: reboundStripIds,
         transportMaps: session.transportMaps,
         recordingGeometry: session.recordingGeometry,
+        recordingOwner: session.recordingOwner,
         positionSeconds: session.positionSeconds,
         transport: session.transport,
         sampleRate: session.sampleRate,

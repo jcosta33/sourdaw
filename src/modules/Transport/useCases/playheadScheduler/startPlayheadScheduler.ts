@@ -21,6 +21,7 @@ import {
     refreshSidechainAlignment,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { BEAT_EPSILON, getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
@@ -288,7 +289,11 @@ export function startPlayheadScheduler(): void {
 
     const ctx = getAudioContext();
     const captureClock = createNativeRecordingPassClock();
-    const idleNativeClock = createNativeRecordingCaptureClock();
+    const rootIdentity = captureProjectRootIdentity();
+    const idleNativeClock = createNativeRecordingCaptureClock({
+        identity: rootIdentity,
+        isCurrent: () => captureProjectRootIdentity() === rootIdentity,
+    });
     const readCapture = () => recordingLifecycle.readNativeCaptureClock() ?? idleNativeClock.read(ctx);
     schedulerSession.observeNativeRecordingClock = () => {
         const current = transportStore.value;

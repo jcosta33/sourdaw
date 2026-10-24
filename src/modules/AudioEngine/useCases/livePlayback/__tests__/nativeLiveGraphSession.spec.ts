@@ -2158,6 +2158,7 @@ describe('startNativeLiveGraphSession', () => {
 
 describe('updateNativeLiveGraphSessionTransportMaps', () => {
     it('retains capture geometry at real start, tempo-only maps and locate fences without an automation pass', async () => {
+        const owner = { identity: 'native-session-fixture-root', isCurrent: () => true };
         const geometry = {
             secondsAtBeat: (beat: number) => beat / 2,
             beatAtSeconds: (seconds: number) => seconds * 2,
@@ -2171,6 +2172,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             recordingGeometry: geometry,
+            recordingOwner: owner,
         });
         expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toMatchObject({
             admittedBatch: 6,
@@ -2197,6 +2199,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
             await updateNativeLiveGraphSessionTransportMaps({
                 transportMaps: { ...FLAT_MAPS, tempo: [{ startSeconds: 0, beatsPerMinute: 60 }] },
                 recordingGeometry: edited,
+                recordingOwner: owner,
             })
         ).toEqual({ outcome: 'updated', admittedBatch: 7 });
         const admitted = nativeLiveGraphSession.captureAdmissions.at(-1)!;

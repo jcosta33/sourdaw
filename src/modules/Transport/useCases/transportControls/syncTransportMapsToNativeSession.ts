@@ -125,7 +125,7 @@ import { type TimeSignatureChange, timeSignatureMapStore } from '../../stores/ti
 import { transportStore } from '../../stores/transportStore';
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
-import { captureNativeRecordingGeometry } from './captureNativeRecordingGeometry';
+import { captureNativeRecordingContext } from './captureNativeRecordingContext';
 
 type MapsRelevantSnapshot = Readonly<{
     tempo: number;
@@ -213,7 +213,7 @@ export function syncTransportMapsToNativeSession(): () => void {
         Promise.resolve(
             updateNativeLiveGraphSessionTransportMaps({
                 transportMaps: projectEngineTransportMaps(),
-                recordingGeometry: captureNativeRecordingGeometry(),
+                ...captureNativeRecordingContext(),
             })
         )
             .then((result) => {
