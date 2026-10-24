@@ -1,7 +1,12 @@
 import { defaultTransportState } from '#/modules/Transport/stores';
 import { clampFaderGain } from '#/utils/audioLevelLaw';
 
-import { type DawProjectParseResult, type DawProjectParsedClip, type DawProjectParsedTrack } from './dawProjectTypes';
+import {
+    type DawProjectImportWarning,
+    type DawProjectParseResult,
+    type DawProjectParsedClip,
+    type DawProjectParsedTrack,
+} from './dawProjectTypes';
 import {
     type ProjectAutomation,
     type ProjectClip,
@@ -19,6 +24,7 @@ export type MapToProjectDataInput = {
     parsed: DawProjectParseResult;
     bufferIdsByPath: Map<string, string>;
     fileName: string;
+    warnings?: DawProjectImportWarning[];
 };
 
 const PROJECT_SCHEMA_VERSION = 1;
@@ -71,10 +77,23 @@ function mapNote(note: { pitch: number; startBeat: number; duration: number; vel
 function mapClip(
     parsedClip: DawProjectParsedClip,
     trackId: string,
-    bufferIdsByPath: Map<string, string>
+    bufferIdsByPath: Map<string, string>,
+    trackName: string,
+    warnings?: DawProjectImportWarning[]
 ): { clip: ProjectClip; notes: ProjectMidiNote[] } {
     if (parsedClip.type === 'audio') {
         const bufferId = parsedClip.audioAssetPath ? bufferIdsByPath.get(parsedClip.audioAssetPath) : undefined;
+        if (!bufferId) {
+            warnings?.push({
+                kind: 'missing-audio',
+                name: parsedClip.name,
+                sourceType: 'Clip',
+                sourceId: parsedClip.sourceId ?? parsedClip.audioAssetPath,
+                context: trackName,
+                handling: 'dropped',
+                sourceOrder: parsedClip.sourceOrder ?? -1,
+            });
+        }
         const clip: ProjectClip = {
             id: parsedClip.id,
             trackId,
@@ -123,16 +142,17 @@ type MapTrackInput = {
      * literal `'master'` when this import synthesizes one; a file that carries
      * its own master supplies whatever id the parser assigned it. */
     masterTrackId: string;
+    warnings?: DawProjectImportWarning[];
 };
 
-function mapTrack({ parsed, bufferIdsByPath, masterTrackId }: MapTrackInput): {
+function mapTrack({ parsed, bufferIdsByPath, masterTrackId, warnings }: MapTrackInput): {
     track: ProjectTrack;
     notesByClipId: Record<string, ProjectMidiNote[]>;
 } {
     const notesByClipId: Record<string, ProjectMidiNote[]> = {};
     const clips: ProjectClip[] = [];
     for (const rawClip of parsed.clips) {
-        const { clip, notes } = mapClip(rawClip, parsed.id, bufferIdsByPath);
+        const { clip, notes } = mapClip(rawClip, parsed.id, bufferIdsByPath, parsed.name, warnings);
         clips.push(clip);
         if (notes.length > 0) {
             notesByClipId[clip.id] = notes;
@@ -150,7 +170,32 @@ function mapTrack({ parsed, bufferIdsByPath, masterTrackId }: MapTrackInput): {
                       parameterValues: {},
                   },
               ]
-            : parsed.deviceTypes.map(normalizeDeviceType);
+            : parsed.deviceTypes.map((rawType, index) => {
+                  const device = normalizeDeviceType(rawType);
+                  const source = parsed.deviceSources?.[index];
+                  if (device.type === 'builtin-gain' && !PASS_THROUGH_DEVICE_TYPES.has(rawType.toLowerCase())) {
+                      warnings?.push({
+                          kind: 'unsupported-device',
+                          name: source?.name ?? rawType,
+                          sourceType: source?.sourceType ?? rawType,
+                          sourceId: source?.sourceId,
+                          context: parsed.name,
+                          handling: 'substituted',
+                          sourceOrder: source?.sourceOrder ?? -1,
+                      });
+                  } else if (source?.hasSettings) {
+                      warnings?.push({
+                          kind: 'unsupported-device-settings',
+                          name: source.name,
+                          sourceType: source.sourceType,
+                          sourceId: source.sourceId,
+                          context: parsed.name,
+                          handling: 'dropped',
+                          sourceOrder: source.sourceOrder,
+                      });
+                  }
+                  return device;
+              });
 
     const altId = `${parsed.id}-alt-default`;
     const alternatives: ProjectTrackAlternative[] = [{ id: altId, name: 'Alternative 1', clips: [] }];
@@ -197,7 +242,7 @@ function mapTrack({ parsed, bufferIdsByPath, masterTrackId }: MapTrackInput): {
 }
 
 export function mapToProjectData(input: MapToProjectDataInput): ProjectData {
-    const { parsed, bufferIdsByPath, fileName } = input;
+    const { parsed, bufferIdsByPath, fileName, warnings } = input;
     const now = Date.now();
 
     // Resolved before the mapping loop: the imported file's own master keeps
@@ -211,7 +256,7 @@ export function mapToProjectData(input: MapToProjectDataInput): ProjectData {
     const tracks: ProjectTrack[] = [];
     const notesByClipId: Record<string, ProjectMidiNote[]> = {};
     for (const parsedTrack of parsed.tracks) {
-        const mapped = mapTrack({ parsed: parsedTrack, bufferIdsByPath, masterTrackId });
+        const mapped = mapTrack({ parsed: parsedTrack, bufferIdsByPath, masterTrackId, warnings });
         tracks.push(mapped.track);
         Object.assign(notesByClipId, mapped.notesByClipId);
     }
