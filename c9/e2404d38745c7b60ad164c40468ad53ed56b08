@@ -1,0 +1,38 @@
+scripts/retirePullRequest.ts
+  s_29d8df116c5b92::t_1c2ee4604f31ae 417-433,438-467,469-472,475-476,478,481-487,494,503,505,509-525,527-529,532,544,553-557
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_48e6f4c554f2b4 39-41
+scripts/recoverDeliveryLock.ts
+  s_29d8df116c5b92::t_28f4845b65c730 269
+  s_29d8df116c5b92::t_3921161a954f09 270-271
+scripts/__tests__/retirePullRequest.spec.ts
+  s_29d8df116c5b92::t_6560096c61c593 132-136,294-304,404-416
+  s_29d8df116c5b92::t_de6abfd3836cbe 112-131,137-156,265-272,281-286,306-403,417-430,436-440,449-453
+  s_29d8df116c5b92::t_ad1e5f187613b0 293,305,431-435,441-448,454-457
+  s_29d8df116c5b92::t_82b4dc0943003d 111,157-158,255-264,273-280,287-292
+  s_29d8df116c5b92::t_4c9542ecd80484 458-462
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_6aaa9b6481c9b6 69-70
+scripts/__tests__/recoverDeliveryLockGeneral.spec.ts
+  s_29d8df116c5b92::t_e0d81aa02ef33e 22,162
+  s_29d8df116c5b92::t_f1d393dd270cd1 180-208
+  s_29d8df116c5b92::t_d16b6fd18146aa 209-219,323
+.agents/skills/delivery-orchestration/SKILL.md
+  s_29d8df116c5b92::t_d034d2e69cb11c 66-70,677-679
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9e2404d38745c7b60ad164c40468ad53ed56b08",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
