@@ -1,4 +1,12 @@
-import { type ReactElement, type ChangeEvent, type DragEvent, useRef, useState } from 'react';
+import {
+    type ReactElement,
+    type ChangeEvent,
+    type DragEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { TRACK_COLOR_PRESETS } from '#/components/daw/colorPresets';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
@@ -63,6 +71,13 @@ function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, Dev
 
 type ParameterMapping = { modulatorId: string; amount: number };
 type ParameterHalo = { id: string; amount: number; color: string; activity: number; preview?: boolean };
+type EnteredModulationTarget = {
+    modulatorId: string;
+    trackId: string;
+    deviceId: string;
+    paramId: string;
+    isCurrentProject: () => boolean;
+};
 
 const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
 const NO_ACTIVITIES: number[] = [];
@@ -84,11 +99,18 @@ function colorForSource(id: string, usedColors: Set<string>): string {
             return color;
         }
     }
-    // More simultaneous sources than palette entries remain distinguishable.
-    const hue = (sourceHash(id) + usedColors.size * 137) % 360;
-    const color = `oklch(0.72 0.13 ${hue})`;
-    usedColors.add(color);
-    return color;
+    // Probe no more candidates than the number already taken. Fractional hues
+    // keep distinct fallback colors when the integer hue circle wraps.
+    const firstHue = (sourceHash(id) + usedColors.size * 137) % 360;
+    for (let offset = 0; offset <= usedColors.size; offset += 1) {
+        const hue = (firstHue + offset * 137.507764) % 360;
+        const color = `oklch(0.72 0.13 ${hue.toFixed(6)})`;
+        if (!usedColors.has(color)) {
+            usedColors.add(color);
+            return color;
+        }
+    }
+    throw new Error('No unused modulation color');
 }
 
 /**
@@ -220,8 +242,28 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         (state) =>
             state?.modulators.some((modulator) => modulator.id === draggedModulatorId && modulator.enabled) ?? false
     );
-    const [hoveredModulatorId, setHoveredModulatorId] = useState<string | null>(null);
+    const [enteredTarget, setEnteredTarget] = useState<EnteredModulationTarget | null>(null);
     const dropCommittedRef = useRef(false);
+    const mountedRef = useRef(true);
+    const currentTargetRef = useRef({ trackId, deviceId: device.id, paramId: param.id });
+    const targetGenerationRef = useRef(0);
+
+    useLayoutEffect(() => {
+        targetGenerationRef.current += 1;
+        currentTargetRef.current = { trackId, deviceId: device.id, paramId: param.id };
+        setEnteredTarget(null);
+    }, [trackId, device.id, param.id]);
+
+    useEffect(() => {
+        setEnteredTarget(null);
+    }, [draggedModulatorId, draggedSourceEnabled]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
     const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);
@@ -296,24 +338,30 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         !isDiscrete &&
         !isSlider &&
         !modulations.some((modulation) => modulation.id === draggedModulatorId);
-    const isPreviewing = canPreview && hoveredModulatorId === draggedModulatorId;
+    const isPreviewing =
+        canPreview &&
+        enteredTarget?.modulatorId === draggedModulatorId &&
+        enteredTarget.trackId === trackId &&
+        enteredTarget.deviceId === device.id &&
+        enteredTarget.paramId === param.id &&
+        enteredTarget.isCurrentProject();
     const previewColor =
         isPreviewing && draggedModulatorId
             ? colorForSource(draggedModulatorId, new Set(modulations.map((modulation) => modulation.color)))
             : null;
-    const displayedModulations =
-        isPreviewing && draggedModulatorId && previewColor
-            ? [
-                  ...modulations,
-                  {
-                      id: draggedModulatorId,
-                      amount: 0.5,
-                      activity: 0,
-                      color: previewColor,
-                      preview: true,
-                  },
-              ]
-            : modulations;
+    let displayedModulations = param.automatable ? modulations : [];
+    if (isPreviewing && draggedModulatorId && previewColor) {
+        displayedModulations = [
+            ...modulations,
+            {
+                id: draggedModulatorId,
+                amount: 0.5,
+                activity: 0,
+                color: previewColor,
+                preview: true,
+            },
+        ];
+    }
 
     const handleDragEnter = (event: DragEvent<HTMLDivElement>): void => {
         if (!canPreview) {
@@ -321,7 +369,17 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
         event.preventDefault();
         dropCommittedRef.current = false;
-        setHoveredModulatorId(draggedModulatorId);
+        const authority = captureProjectTransitionAuthority();
+        if (!authority.isCurrent()) {
+            return;
+        }
+        setEnteredTarget({
+            modulatorId: draggedModulatorId,
+            trackId,
+            deviceId: device.id,
+            paramId: param.id,
+            isCurrentProject: authority.isCurrent,
+        });
     };
 
     const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
@@ -336,29 +394,54 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
             return;
         }
-        setHoveredModulatorId(null);
+        setEnteredTarget(null);
     };
 
     const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
-        if (draggedModulatorId === null || !canPreview || !isPreviewing || dropCommittedRef.current) {
+        if (
+            enteredTarget === null ||
+            !isPreviewing ||
+            !enteredTarget.isCurrentProject() ||
+            modulationDragPreviewStore.value?.modulatorId !== enteredTarget.modulatorId ||
+            !modulationStore.value?.modulators.some(
+                (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
+            ) ||
+            dropCommittedRef.current
+        ) {
             return;
         }
         event.preventDefault();
         event.stopPropagation();
         dropCommittedRef.current = true;
-        setHoveredModulatorId(null);
-        void executeUserAppAction({
-            type: 'addMapping',
-            payload: {
-                modulatorId: draggedModulatorId,
-                mapping: {
-                    targetTrackId: trackId,
-                    targetDeviceId: device.id,
-                    targetParamId: param.id,
-                    amount: 0.5,
+        setEnteredTarget(null);
+        const targetGeneration = targetGenerationRef.current;
+        void executeUserAppAction(
+            {
+                type: 'addMapping',
+                payload: {
+                    modulatorId: enteredTarget.modulatorId,
+                    mapping: {
+                        targetTrackId: enteredTarget.trackId,
+                        targetDeviceId: enteredTarget.deviceId,
+                        targetParamId: enteredTarget.paramId,
+                        amount: 0.5,
+                    },
                 },
             },
-        });
+            {
+                shouldExecute: () =>
+                    mountedRef.current &&
+                    enteredTarget.isCurrentProject() &&
+                    targetGenerationRef.current === targetGeneration &&
+                    currentTargetRef.current.trackId === enteredTarget.trackId &&
+                    currentTargetRef.current.deviceId === enteredTarget.deviceId &&
+                    currentTargetRef.current.paramId === enteredTarget.paramId &&
+                    (modulationStore.value?.modulators.some(
+                        (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
+                    ) ??
+                        false),
+            }
+        );
     };
 
     const renderSliderOrKnob = () => {
@@ -452,12 +535,12 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
         return (
             <div
-                role="region"
-                aria-label={`Modulation target for ${param.name}`}
-                onDragEnter={handleDragEnter}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
+                role={param.automatable ? 'region' : undefined}
+                aria-label={param.automatable ? `Modulation target for ${param.name}` : undefined}
+                onDragEnter={param.automatable ? handleDragEnter : undefined}
+                onDragOver={param.automatable ? handleDragOver : undefined}
+                onDragLeave={param.automatable ? handleDragLeave : undefined}
+                onDrop={param.automatable ? handleDrop : undefined}
             >
                 <RotaryKnob
                     paramId={param.id}
