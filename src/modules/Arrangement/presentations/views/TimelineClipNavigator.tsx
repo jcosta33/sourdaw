@@ -49,12 +49,12 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
     );
     const listboxRef = useRef<HTMLDivElement>(null);
     const id = useId();
-    const [activeKey, setActiveKey] = useState<string | null>(() => {
+    const [activeClipId, setActiveClipId] = useState<string | null>(() => {
         const selected = new Set(selectedClipIds(selection));
-        return clips.find((item) => selected.has(item.clip.id))?.key ?? clips[0]?.key ?? null;
+        return clips.find((item) => selected.has(item.clip.id))?.clip.id ?? clips[0]?.clip.id ?? null;
     });
     const lastIndex = useRef(0);
-    const foundIndex = clips.findIndex((item) => item.key === activeKey);
+    const foundIndex = clips.findIndex((item) => item.clip.id === activeClipId);
     const activeIndex = foundIndex >= 0 ? foundIndex : Math.min(lastIndex.current, clips.length - 1);
     const active = clips[activeIndex];
     const first = Math.max(0, activeIndex - 4);
@@ -69,12 +69,15 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
     }, []);
 
     useEffect(() => {
-        if (active && active.key !== activeKey) {
-            setActiveKey(active.key);
-        } else if (!active && activeKey !== null) {
-            setActiveKey(null);
+        if (active) {
+            lastIndex.current = activeIndex;
+            if (active.clip.id !== activeClipId) {
+                setActiveClipId(active.clip.id);
+            }
+        } else if (activeClipId !== null) {
+            setActiveClipId(null);
         }
-    }, [active, activeKey]);
+    }, [active, activeClipId, activeIndex]);
 
     function moveTo(index: number): void {
         const next = clips[index];
@@ -82,7 +85,7 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
             return;
         }
         lastIndex.current = index;
-        setActiveKey(next.key);
+        setActiveClipId(next.clip.id);
     }
 
     function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {

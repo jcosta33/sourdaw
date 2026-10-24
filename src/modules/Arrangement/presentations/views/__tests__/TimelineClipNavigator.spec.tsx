@@ -18,6 +18,7 @@ import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
 import { getWarpState } from '../../../stores/warpStates';
+import { moveClip } from '../../../useCases/clip/moveClip';
 import { selectClipWithFocus } from '../../../useCases/clipSelection/selectClipWithFocus';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TimelineClipNavigator } from '../TimelineClipNavigator';
@@ -195,6 +196,37 @@ describe('TimelineClipNavigator', () => {
         const listbox = openNavigator();
         expect(activeOption(listbox)).toHaveAccessibleName(/two, Voice/);
         expect(clipSelectionStore.value?.selectedClipIds).toEqual(['two']);
+    });
+
+    it('keeps the active clip through a live cross-track move and Enter selects that identity', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('first', 'First', [clip('anchor', 'first', 0, 'Anchor')]),
+                    track('second', 'Second', [clip('moved', 'second', 8, 'Moved')]),
+                ],
+            });
+            selectClipWithFocus('moved');
+        });
+        const listbox = openNavigator();
+
+        expect(activeOption(listbox)).toHaveAccessibleName(/Moved, Second/);
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['moved']);
+
+        act(() => {
+            expect(moveClip('moved', 'first', 8, undefined, false)).toBe(true);
+        });
+
+        expect(screen.getByRole('status')).toHaveTextContent(/Selected Moved, First/);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Moved, First/);
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['moved']);
+
+        fireEvent.keyDown(listbox, { key: 'Enter' });
+
+        expect(trackStore.value?.selectedTrackId).toBe('first');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['moved']);
+        expect(within(listbox).getByRole('option', { name: /Moved, First/ })).toHaveAttribute('aria-selected', 'true');
     });
 
     it('includes offscreen canonical clips, excludes collapsed children and master, and retargets removal', () => {
