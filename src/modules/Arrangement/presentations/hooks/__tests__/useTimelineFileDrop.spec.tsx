@@ -1,5 +1,8 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor, render, fireEvent } from '@testing-library/react';
+import { IDBFactory } from 'fake-indexeddb';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { useTimelineFileDrop } from '../useTimelineFileDrop';
 
@@ -28,6 +31,8 @@ const mocks = vi.hoisted(() => {
         discardDecodedAudioFile: vi.fn(),
         getCachedAudioBuffer: vi.fn(),
         resolveDroppedSampleFile: vi.fn(),
+        rememberLibraryAssetMapping: vi.fn(),
+        resolveMappedLibraryAssetCandidate: vi.fn(),
         stageClipAudioAsset: vi.fn(),
         executeAddDeviceAction: vi.fn(),
         executeAppAction: vi.fn(),
@@ -75,6 +80,8 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
 
 vi.mock('#/modules/SampleLibrary/useCases', () => ({
     resolveDroppedSampleFile: mocks.resolveDroppedSampleFile,
+    rememberLibraryAssetMapping: mocks.rememberLibraryAssetMapping,
+    resolveMappedLibraryAssetCandidate: mocks.resolveMappedLibraryAssetCandidate,
 }));
 
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
@@ -151,7 +158,7 @@ describe('useTimelineFileDrop', () => {
         mocks.getAssetTransfer.mockReturnValue({
             stageLocalAsset: vi.fn().mockResolvedValue({ hash: 'hash', leaseId: 'lease' }),
             releaseStagedAsset: vi.fn(),
-            promoteStagedAsset: vi.fn(),
+            promoteStagedAsset: vi.fn().mockReturnValue(true),
         });
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
@@ -160,6 +167,8 @@ describe('useTimelineFileDrop', () => {
         // assetHash, exactly as an unregistered composition root would.
         mocks.stageClipAudioAsset.mockResolvedValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
+        mocks.rememberLibraryAssetMapping.mockResolvedValue(true);
+        mocks.resolveMappedLibraryAssetCandidate.mockResolvedValue(null);
         mocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-1' });
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
@@ -1436,5 +1445,193 @@ describe('useTimelineFileDrop', () => {
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+    });
+
+    function prepareRawLibraryDrop() {
+        const file = new File(['original raw library bytes'], 'kick.wav', { type: 'audio/wav' });
+        mocks.hitTestTrack.mockReturnValue('raw-track');
+        mocks.trackStoreValue.value = { tracks: [{ id: 'raw-track', kind: 'audio' }], selectedTrackId: 'raw-track' };
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'raw-buffer', buffer: { duration: 1 } });
+        return file;
+    }
+
+    async function dispatchRawLibraryDrop() {
+        const finished = Promise.withResolvers<void>();
+        function DropTarget() {
+            const drop = useTimelineFileDrop({ getCanvasCoords, getBeatFromX });
+            return (
+                <div
+                    data-testid="raw-library-drop"
+                    onDrop={(event) => {
+                        void drop.handleFileDrop(event).then(finished.resolve, finished.reject);
+                    }}
+                />
+            );
+        }
+        const view = render(<DropTarget />);
+        await act(async () => {
+            fireEvent.drop(view.getByTestId('raw-library-drop'), {
+                dataTransfer: {
+                    getData: (type: string) =>
+                        type === 'application/x-sourdaw-sample'
+                            ? JSON.stringify({
+                                  id: 'sample-one',
+                                  name: 'Kick',
+                                  libraryRootId: 'root-one',
+                                  path: 'Drums/kick.wav',
+                              })
+                            : '',
+                    files: [],
+                },
+            });
+            await finished.promise;
+        });
+    }
+
+    it.each(['committed', 'committed-with-warning'])(
+        'remembers raw provenance only after a definite %s and true promotion',
+        async (status) => {
+            const file = prepareRawLibraryDrop();
+            mocks.executeAppActionBatch.mockResolvedValue({ status, actions: [] });
+            await dispatchRawLibraryDrop();
+            const transfer = mocks.getAssetTransfer();
+            expect(transfer.stageLocalAsset).toHaveBeenCalledExactlyOnceWith(file, 'kick.wav');
+            expect(transfer.promoteStagedAsset).toHaveBeenCalledExactlyOnceWith('lease');
+            expect(mocks.rememberLibraryAssetMapping).toHaveBeenCalledExactlyOnceWith({
+                hash: 'hash',
+                sampleId: 'sample-one',
+                libraryRootId: 'root-one',
+                relativePath: 'Drums/kick.wav',
+                isCurrent: expect.any(Function),
+            });
+            expect(mocks.rememberLibraryAssetMapping.mock.calls[0]![0].isCurrent()).toBe(true);
+        }
+    );
+
+    it.each([false, undefined, 1])(
+        'does not mistake promotion result %s for an actual live lease promotion',
+        async (promotion) => {
+            prepareRawLibraryDrop();
+            mocks.getAssetTransfer().promoteStagedAsset.mockReturnValue(promotion);
+            await dispatchRawLibraryDrop();
+            expect(mocks.rememberLibraryAssetMapping).not.toHaveBeenCalled();
+            expect(mocks.getAssetTransfer().releaseStagedAsset).not.toHaveBeenCalled();
+            expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+        }
+    );
+
+    it('retains ambiguous committed media without claiming a successful raw binding', async () => {
+        prepareRawLibraryDrop();
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'ambiguous', reason: 'commit uncertain', actions: [] });
+        await dispatchRawLibraryDrop();
+        expect(mocks.getAssetTransfer().promoteStagedAsset).toHaveBeenCalledWith('lease');
+        expect(mocks.rememberLibraryAssetMapping).not.toHaveBeenCalled();
+        expect(mocks.getAssetTransfer().releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('does not register after an invariant promotion error or stale post-commit authority', async () => {
+        prepareRawLibraryDrop();
+        mocks.getAssetTransfer().promoteStagedAsset.mockImplementation(() => {
+            throw new Error('missing staged lease');
+        });
+        await dispatchRawLibraryDrop();
+        expect(mocks.rememberLibraryAssetMapping).not.toHaveBeenCalled();
+    });
+
+    it('checks the original authority after a definite batch rather than recapturing the successor', async () => {
+        prepareRawLibraryDrop();
+        mocks.executeAppActionBatch.mockImplementation(async () => {
+            projectEpoch.advance();
+            return { status: 'committed', actions: [] };
+        });
+        await dispatchRawLibraryDrop();
+        expect(mocks.rememberLibraryAssetMapping).not.toHaveBeenCalled();
+        expect(mocks.getAssetTransfer().releaseStagedAsset).not.toHaveBeenCalled();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+    });
+
+    it('does not roll back a committed drop when optional mapping persistence refuses', async () => {
+        prepareRawLibraryDrop();
+        mocks.rememberLibraryAssetMapping.mockRejectedValue(new Error('controlled settings quota'));
+        await dispatchRawLibraryDrop();
+        expect(mocks.getAssetTransfer().releaseStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(batchPayload('addClip').assetHash).toBe('hash');
+    });
+
+    it('persists the real no-session manager raw SHA from the actual drop into reopened local IDB', async () => {
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        const library = await vi.importActual<typeof import('#/modules/SampleLibrary/useCases')>(
+            '#/modules/SampleLibrary/useCases'
+        );
+        const collaboration = await vi.importActual<typeof import('#/modules/Collaboration/useCases')>(
+            '#/modules/Collaboration/useCases'
+        );
+        collaboration.configureCollaborationAssetOwner({
+            captureOwnerId: () => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+        });
+        const transfer = collaboration.getAssetTransfer();
+        if (!transfer) {
+            throw new TypeError('Expected the real no-session project manager');
+        }
+        try {
+            const file = prepareRawLibraryDrop();
+            mocks.getAssetTransfer.mockReturnValue(transfer);
+            injectDependencies(library.rememberLibraryAssetMapping, {
+                mappings: library.rememberLibraryAssetMapping._deps.mappings,
+                libraryStore: {
+                    value: {
+                        roots: [{ id: 'root-one', status: 'ready' }],
+                        samples: [
+                            {
+                                id: 'sample-one',
+                                libraryRootId: 'root-one',
+                                relativePath: 'Drums/kick.wav',
+                                sync: { exists: true },
+                            },
+                        ],
+                    },
+                },
+            });
+            mocks.rememberLibraryAssetMapping.mockImplementation(library.rememberLibraryAssetMapping);
+            const promotion = vi.spyOn(transfer, 'promoteStagedAsset');
+            await dispatchRawLibraryDrop();
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+            const hash = `sha256:${Array.from(digest, (value) => value.toString(16).padStart(2, '0')).join('')}`;
+            expect(batchPayload('addClip').assetHash).toBe(hash);
+            expect(promotion.mock.results[0]?.value).toBe(true);
+            const rows = await new Promise<unknown[]>((resolve, reject) => {
+                const open = indexedDB.open('sourdaw-library-asset-mappings', 1);
+                open.onerror = () => reject(open.error);
+                open.onsuccess = () => {
+                    const db = open.result;
+                    const transaction = db.transaction('mappings', 'readonly');
+                    const request = transaction.objectStore('mappings').getAll();
+                    transaction.oncomplete = () => {
+                        db.close();
+                        resolve(request.result);
+                    };
+                    transaction.onabort = () => {
+                        db.close();
+                        reject(transaction.error);
+                    };
+                };
+            });
+            expect(rows).toEqual([
+                {
+                    schemaVersion: 1,
+                    localPeerSettingsId: expect.stringMatching(/^[a-f0-9-]{36}$/),
+                    hash,
+                    sampleId: 'sample-one',
+                    libraryRootId: 'root-one',
+                    relativePath: 'Drums/kick.wav',
+                },
+            ]);
+        } finally {
+            transfer.dispose();
+            vi.unstubAllGlobals();
+        }
     });
 });

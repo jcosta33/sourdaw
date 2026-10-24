@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { resolveMappedLibraryAssetCandidate } from '#/modules/SampleLibrary/useCases';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import {
@@ -88,6 +89,7 @@ type ReceiveAttempt = {
     restored?: boolean;
     persistenceUnavailable?: boolean;
     recovery?: Promise<void>;
+    localLookupInProgress?: boolean;
     requestIssued?: boolean;
     repairSequence: number;
     badIndices: Map<number, number>;
@@ -434,18 +436,24 @@ export class AssetTransfer {
     }
 
     /** Promote one live-session staging reference to committed availability. */
-    promoteStagedAsset(leaseId: string): void {
+    promoteStagedAsset(leaseId: string): boolean {
+        if (this.disposed) {
+            return false;
+        }
         const hash = this.stagingLeaseHashById.get(leaseId);
         if (!hash) {
-            return;
+            return false;
         }
         this.stagingLeaseHashById.delete(leaseId);
         const entry = this.localAssets.get(hash);
         if (!entry) {
             throw new Error(`Cannot promote missing staged asset lease: ${leaseId}`);
         }
-        entry.stagingLeaseIds.delete(leaseId);
+        if (!entry.stagingLeaseIds.delete(leaseId)) {
+            throw new Error(`Cannot promote missing staged asset lease: ${leaseId}`);
+        }
         entry.durable = true;
+        return true;
     }
 
     /** Stage a caller-keyed restartable original for future #2648 integration. */
@@ -1174,6 +1182,17 @@ export class AssetTransfer {
             await this.assembleAsset(hash, attempt.partial, attempt);
             return;
         }
+        attempt.localLookupInProgress = true;
+        try {
+            if (await this.fulfillFromMappedLibrary(hash, attempt)) {
+                return;
+            }
+        } finally {
+            attempt.localLookupInProgress = false;
+        }
+        if (!this.attemptIsCurrent(hash, attempt)) {
+            return;
+        }
 
         const msg: AssetControlMessage = {
             type: 'asset.request',
@@ -1193,6 +1212,78 @@ export class AssetTransfer {
             docId: DOC_ID_ASSET,
             data: JSON.stringify(msg),
         });
+    }
+
+    private async fulfillFromMappedLibrary(hash: string, attempt: ReceiveAttempt): Promise<boolean> {
+        if (attempt.persistenceUnavailable) {
+            return false;
+        }
+        const isCurrent = () => this.attemptIsCurrent(hash, attempt);
+        let blob: Blob;
+        let name: string;
+        try {
+            const file = await resolveMappedLibraryAssetCandidate({ hash, isCurrent });
+            if (
+                !isCurrent() ||
+                !file ||
+                !Number.isSafeInteger(file.size) ||
+                file.size <= 0 ||
+                file.size > MAX_ASSET_SIZE ||
+                file.name.length === 0 ||
+                file.name.length > MAX_ASSET_NAME_LEN ||
+                file.type.length > MAX_ASSET_MIME_LEN
+            ) {
+                return false;
+            }
+            const buffer = await file.arrayBuffer();
+            if (!isCurrent() || buffer.byteLength !== file.size) {
+                return false;
+            }
+            const copied = new Uint8Array(buffer.byteLength);
+            copied.set(new Uint8Array(buffer));
+            if ((await hashBytes(copied)) !== hash || !isCurrent()) {
+                return false;
+            }
+            blob = new Blob([copied], { type: file.type });
+            name = file.name;
+        } catch {
+            return false;
+        }
+        if (!isCurrent()) {
+            return false;
+        }
+        attempt.assembling = true;
+        await this.publishVerifiedAsset(hash, blob, name, attempt);
+        return true;
+    }
+
+    private async publishVerifiedAsset(hash: string, blob: Blob, name: string, attempt: ReceiveAttempt): Promise<void> {
+        if (!this.attemptIsCurrent(hash, attempt)) {
+            return;
+        }
+        if (attempt.journal) {
+            const removed = await this.resumeRepository.remove(attempt.journal, this.resumeAuthority(hash, attempt));
+            if (!this.attemptIsCurrent(hash, attempt)) {
+                return;
+            }
+            if (!removed) {
+                throw new Error('Asset resume completion was superseded');
+            }
+            if (this.journalByHash.get(hash) === attempt.journal) {
+                this.journalByHash.delete(hash);
+            }
+        }
+
+        // Both verified sources publish owned resident bytes; durable original
+        // ownership still requires explicit hash-bound stage/promotion.
+        this.localAssets.set(hash, { blob, name, durable: true, stagingLeaseIds: new Set() });
+        this.incomingTransfers.delete(hash);
+        this.clearStallTimer(hash);
+        this.requestedHashes.delete(hash);
+        this.receiveAttempts.delete(hash);
+        this.retryNotBefore.delete(hash);
+        this.failedAttempts.delete(hash);
+        this.callbacks.onAssetAvailable(hash);
     }
 
     private recordJournal(hash: string, attempt: ReceiveAttempt, metadata: ResumeMetadata): void {
@@ -1395,7 +1486,11 @@ export class AssetTransfer {
         if (attempt) {
             const repository = this.resumeRepository;
             const cleanup = (async () => {
-                await attempt.recovery;
+                // Local file I/O starts only after the journal is known, and
+                // cannot write progress after cancellation invalidates this attempt.
+                if (!attempt.localLookupInProgress) {
+                    await attempt.recovery;
+                }
                 await partial?.journalReady?.catch(() => undefined);
                 await pendingChunks?.catch(() => undefined);
                 const journal = attempt.journal;
@@ -1950,38 +2045,7 @@ export class AssetTransfer {
                 this.abortTransfer(hash, `integrity check failed (received ${actualHash})`);
                 return;
             }
-            if (attempt.journal) {
-                const removed = await this.resumeRepository.remove(
-                    attempt.journal,
-                    this.resumeAuthority(hash, attempt)
-                );
-                if (!this.attemptIsCurrent(hash, attempt)) {
-                    return;
-                }
-                if (!removed) {
-                    throw new Error('Asset resume completion was superseded');
-                }
-                if (this.journalByHash.get(hash) === attempt.journal) {
-                    this.journalByHash.delete(hash);
-                }
-            }
-
-            // Received session bytes stay resident only. Durable ownerIds are
-            // minted exclusively by explicit hash-bound stage/promotion; a
-            // transfer has no project reachability authority to retain them.
-            this.localAssets.set(hash, {
-                blob,
-                name: transfer.manifest.name,
-                durable: true,
-                stagingLeaseIds: new Set(),
-            });
-            this.clearStallTimer(hash);
-            this.requestedHashes.delete(hash);
-            this.receiveAttempts.delete(hash);
-            // The asset resolved, so the hash owes nothing to the retry policy.
-            this.retryNotBefore.delete(hash);
-            this.failedAttempts.delete(hash);
-            this.callbacks.onAssetAvailable(hash);
+            await this.publishVerifiedAsset(hash, blob, transfer.manifest.name, attempt);
         } catch (error) {
             if (isCurrent()) {
                 this.abortTransfer(hash, `assembly failed (${describeError(error)})`, true);
