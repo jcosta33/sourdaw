@@ -89,6 +89,7 @@ import {
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
@@ -428,6 +429,54 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
 }
 
 /**
+ * The planned result of a request read against the thread's last commit, or `null` when it is no
+ * such request and is planned as any other. A compiled continuation crosses the same validation,
+ * state guards, production brief and risk policy as every application-compiled batch.
+ */
+function createLastCommitContinuationResult(
+    prompt: string,
+    context: ProjectContext,
+    thread: ThreadContext | null
+): IntentResult | null {
+    const continuation = planLastCommitContinuation({ prompt, context, thread });
+    switch (continuation.status) {
+        case 'none':
+            return null;
+        case 'actions':
+            return createFastPathResult({ actions: continuation.actions, context, prompt });
+        case 'revert':
+            return {
+                actions: [],
+                rawText: prompt,
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'revert',
+                    runId: continuation.runId,
+                    revertGroupId: continuation.revertGroupId,
+                },
+            };
+        case 'clarify':
+            return {
+                actions: [],
+                rawText: prompt,
+                requiresConfirmation: false,
+                planningOutcome: { kind: 'clarify', reason: continuation.reason, questions: continuation.questions },
+            };
+        case 'denied':
+            return {
+                actions: [],
+                rawText: prompt,
+                requiresConfirmation: false,
+                planningOutcome: { kind: 'denied', reason: continuation.reason },
+            };
+        default: {
+            const exhaustive: never = continuation;
+            throw new Error(`Unsupported last-commit continuation: ${JSON.stringify(exhaustive)}`);
+        }
+    }
+}
+
+/**
  * Prompt parsing order:
  * 1. Non-executable recognition for explicitly denied action intents
  * 2. Fast-path: unique exact label or declared command alias in the preset registry
@@ -462,6 +511,15 @@ const planPromptIntent = inject({ logger })(
                     requiresConfirmation: false,
                     rejectionReason: `Action ${deniedActionType} cannot be executed by AI because it does not report completion.`,
                 };
+            }
+
+            // A chat request that continues, re-targets or undoes the thread's last commit compiles from
+            // the committed batch, never from a provider re-deriving its values.
+            if (thread !== undefined) {
+                const continuation = createLastCommitContinuationResult(prompt, context, thread);
+                if (continuation !== null) {
+                    return continuation;
+                }
             }
 
             // 2. Try complete executable preset commands via unique exact match

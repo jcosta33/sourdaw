@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undo } from '../undo';
 
@@ -155,6 +158,42 @@ describe('undo', () => {
             past: [previous],
             future: [first, second, future],
         });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
+    });
+
+    it('keeps an atomic group whose replay conflicts on past, retryable, with nothing moved to future', async () => {
+        const first = actionEntry({ id: 'group-1', groupId: 'group' });
+        const second = actionEntry({ id: 'group-2', inverseAction: { type: 'stopPlayback' }, groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [first, second], future: [] };
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'conflicted',
+            reason: 'The project changed since the group was applied',
+            actions: [],
+        });
+
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+        expect(mocks.undoStoreValue.value).toEqual({ past: [first, second], future: [] });
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
+    it('advances the stacks past a group whose batch committed with a warning, then rethrows it as committed', async () => {
+        const previous = actionEntry({ id: 'previous' });
+        const first = actionEntry({ id: 'group-1', groupId: 'group' });
+        const second = actionEntry({ id: 'group-2', inverseAction: { type: 'stopPlayback' }, groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [previous, first, second], future: [] };
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'committed-with-warning',
+            warning: 'Effects are still settling',
+            actions: [],
+        });
+
+        const undone = undo();
+
+        await expect(undone).rejects.toBeInstanceOf(AppActionCommittedError);
+        await expect(undone).rejects.toMatchObject({ cause: new Error('Effects are still settling') });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [previous], future: [first, second] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
 
