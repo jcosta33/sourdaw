@@ -63,12 +63,14 @@ function fixture() {
     };
     const jobs = [
         {
+            id: 1,
             name: 'CodeQL',
+            status: 'completed',
             conclusion: 'success',
             started_at: '2026-10-11T01:20:00Z',
             completed_at: '2026-10-11T01:40:00Z',
         },
-        { name: 'End-to-end report', conclusion: 'failure' },
+        { id: 2, name: 'End-to-end report', status: 'completed', conclusion: 'failure' },
     ];
     const analyses = [
         {
@@ -133,7 +135,7 @@ describe('trusted nightly evidence consumer', () => {
 
     it('enumerates every artifact page before deciding whether identity is ambiguous', async () => {
         const responses = [
-            { total_count: 101, artifacts: Array.from({ length: 100 }, (_, id) => ({ id, name: 'other' })) },
+            { total_count: 101, artifacts: Array.from({ length: 100 }, (_, id) => ({ id: id + 1, name: 'other' })) },
             { total_count: 101, artifacts: [{ id: 101, name: 'nightly-evidence-v1' }] },
         ];
         const runGh = vi.fn(
@@ -168,6 +170,35 @@ describe('trusted nightly evidence consumer', () => {
         );
         await expect(githubEvidencePort('fixture-token', incompleteGh).listArtifacts(42)).rejects.toThrow('Incomplete');
     });
+
+    it.each(['artifacts', 'jobs', 'analyses'] as const)(
+        'requires unique positive item identities across every %s page',
+        async (collection) => {
+            const firstPage = Array.from({ length: 100 }, (_, id) => ({ id: id + 1 }));
+            const page = (items: unknown[]) =>
+                collection === 'analyses' ? items : { total_count: 101, [collection]: items };
+            let responses = [page(firstPage), page([{ id: 101 }])];
+            const runGh = vi.fn(() => Buffer.from(JSON.stringify(responses)));
+            const port = githubEvidencePort('fixture-token', runGh);
+            const read = () => {
+                if (collection === 'artifacts') {
+                    return port.listArtifacts(42);
+                }
+                if (collection === 'jobs') {
+                    return port.listJobs(42, 1);
+                }
+                return port.listAnalyses('refs/heads/main');
+            };
+
+            await expect(read()).resolves.toHaveLength(101);
+            responses = [page(firstPage), page([{ id: 100 }])];
+            await expect(read()).rejects.toThrow('Duplicate GitHub pagination item ID');
+            for (const id of [undefined, null, '101', 0, -1, 1.5]) {
+                responses = [page(firstPage), page([{ id }])];
+                await expect(read()).rejects.toThrow('Invalid GitHub pagination item ID');
+            }
+        }
+    );
 
     it('uses fixed read-only routes for every API read and a bounded immutable artifact download', async () => {
         const f = fixture();
@@ -235,7 +266,7 @@ describe('trusted nightly evidence consumer', () => {
     it.each(['failure', 'timed_out', 'cancelled'])('reports an unsuccessful %s terminal leg', async (conclusion) => {
         const f = fixture();
         f.run.conclusion = conclusion;
-        f.jobs.splice(1, 1, { name: 'End-to-end report', conclusion });
+        f.jobs.splice(1, 1, { id: 2, name: 'End-to-end report', status: 'completed', conclusion });
 
         await expect(validateNightlyEvidence(f.event, f.port)).resolves.toEqual({
             kind: 'validated',
@@ -247,12 +278,27 @@ describe('trusted nightly evidence consumer', () => {
         expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
     });
 
+    it('reports every unsuccessful terminal leg while retaining neutral and skipped observations', async () => {
+        const f = fixture();
+        f.jobs.push(
+            { id: 3, name: 'Build', status: 'completed', conclusion: 'timed_out' },
+            { id: 4, name: 'Browser', status: 'completed', conclusion: 'cancelled' },
+            { id: 5, name: 'Optional', status: 'completed', conclusion: 'neutral' },
+            { id: 6, name: 'Unselected', status: 'completed', conclusion: 'skipped' }
+        );
+
+        await expect(validateNightlyEvidence(f.event, f.port)).resolves.toMatchObject({
+            kind: 'validated',
+            failedLegs: ['End-to-end report', 'Build', 'Browser'],
+        });
+    });
+
     it.each(['failure', 'timed_out', 'cancelled'])(
         'refuses an unsuccessful %s run without an unsuccessful terminal leg',
         async (conclusion) => {
             const f = fixture();
             f.run.conclusion = conclusion;
-            f.jobs.splice(1, 1, { name: 'End-to-end report', conclusion: 'skipped' });
+            f.jobs.splice(1, 1, { id: 2, name: 'End-to-end report', status: 'completed', conclusion: 'skipped' });
 
             await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow(
                 'Unsuccessful run has no unsuccessful job evidence'
@@ -263,7 +309,7 @@ describe('trusted nightly evidence consumer', () => {
     it('preserves a successful run with no unsuccessful terminal legs', async () => {
         const f = fixture();
         f.run.conclusion = 'success';
-        f.jobs.splice(1, 1, { name: 'End-to-end report', conclusion: 'success' });
+        f.jobs.splice(1, 1, { id: 2, name: 'End-to-end report', status: 'completed', conclusion: 'success' });
 
         await expect(validateNightlyEvidence(f.event, f.port)).resolves.toEqual({
             kind: 'validated',
@@ -273,6 +319,25 @@ describe('trusted nightly evidence consumer', () => {
             analysisId: 123,
         });
         expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
+    });
+
+    it.each([
+        { status: 'in_progress', conclusion: null },
+        { status: 'queued', conclusion: null },
+        { status: undefined, conclusion: 'success' },
+        { status: 'unknown', conclusion: 'failure' },
+        { status: 'completed', conclusion: null },
+        { status: 'completed', conclusion: undefined },
+        { status: 'completed', conclusion: 'unknown' },
+        { status: 'completed', conclusion: 'action_required' },
+        { status: 'completed', conclusion: 'stale' },
+        { status: 'completed', conclusion: 1 },
+    ])('refuses an incomplete or unrecognized job observation: %j', async (job) => {
+        const f = fixture();
+        f.port.listJobs = async () => [...f.jobs, { id: 3, name: 'Build', ...job }];
+
+        await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('Incomplete or unrecognized job result');
+        expect(f.calls.analyses).toBe(0);
     });
 
     it('leaves legacy scheduled producers inert without downloading or reading jobs', async () => {
@@ -368,7 +433,9 @@ describe('trusted nightly evidence consumer', () => {
         f.jobs.shift();
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('CodeQL job');
         f.jobs.unshift({
+            id: 1,
             name: 'CodeQL',
+            status: 'completed',
             conclusion: 'success',
             started_at: '2026-10-11T01:20:00Z',
             completed_at: '2026-10-11T01:40:00Z',

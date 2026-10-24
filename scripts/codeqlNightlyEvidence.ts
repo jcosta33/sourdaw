@@ -18,6 +18,7 @@ const ANALYSIS_KEY = `${WORKFLOW}:codeql`;
 const SHA = /^[0-9a-f]{40}$/;
 const SAFE_LEG = /^[A-Za-z0-9 ()/.-]{1,90}$/;
 const UNSUCCESSFUL_CONCLUSIONS = ['failure', 'cancelled', 'timed_out'];
+const SUPPORTED_JOB_CONCLUSIONS = ['success', 'neutral', 'skipped', ...UNSUCCESSFUL_CONCLUSIONS];
 
 type RecordValue = Record<string, unknown>;
 
@@ -176,14 +177,23 @@ async function observedResult(
     runId: number,
     headSha: string
 ): Promise<{ failedLegs: string[]; analysisId: number }> {
-    const jobs = await port.listJobs(runId, 1);
-    const codeql = jobs.map((job) => record(job, 'job')).filter((job) => job.name === 'CodeQL');
+    const jobs = (await port.listJobs(runId, 1)).map((job) => record(job, 'job'));
+    if (
+        jobs.some(
+            (job) =>
+                job.status !== 'completed' ||
+                typeof job.conclusion !== 'string' ||
+                !SUPPORTED_JOB_CONCLUSIONS.includes(job.conclusion)
+        )
+    ) {
+        throw new Error('Incomplete or unrecognized job result');
+    }
+    const codeql = jobs.filter((job) => job.name === 'CodeQL');
     const codeqlJob = codeql.at(0);
     if (codeql.length !== 1 || codeqlJob === undefined || codeqlJob.conclusion !== 'success') {
         throw new Error('Missing successful CodeQL job for this run and attempt');
     }
-    const checkedJobs = jobs.map((job) => record(job, 'job'));
-    const failedJobs = checkedJobs.filter((job) => UNSUCCESSFUL_CONCLUSIONS.includes(String(job.conclusion)));
+    const failedJobs = jobs.filter((job) => UNSUCCESSFUL_CONCLUSIONS.includes(String(job.conclusion)));
     const failedLegs = failedJobs.map((job) => job.name);
     if (failedLegs.some((name) => typeof name !== 'string' || !SAFE_LEG.test(name))) {
         throw new Error('Unsafe failed job name');
@@ -269,6 +279,7 @@ function ghPages(token: string, route: string, runGh: GhRead, key?: string): unk
         throw new TypeError('Invalid paginated GitHub response');
     }
     const values: unknown[] = [];
+    const itemIds = new Set<number>();
     let totalCount: number | undefined;
     for (const page of pages as unknown[]) {
         const response = key ? record(page, 'paged response') : undefined;
@@ -287,7 +298,14 @@ function ghPages(token: string, route: string, runGh: GhRead, key?: string): unk
             }
             totalCount = Number(count);
         }
-        values.push(...(list as unknown[]));
+        for (const item of list as unknown[]) {
+            const id = integer(record(item, 'GitHub pagination item').id, 'GitHub pagination item ID');
+            if (itemIds.has(id)) {
+                throw new Error('Duplicate GitHub pagination item ID');
+            }
+            itemIds.add(id);
+            values.push(item);
+        }
     }
     if (totalCount !== undefined && values.length !== totalCount) {
         throw new Error('Incomplete GitHub pagination');
