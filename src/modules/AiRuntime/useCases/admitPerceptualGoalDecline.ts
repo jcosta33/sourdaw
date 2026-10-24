@@ -179,6 +179,10 @@ function describeTarget(
             return `the ${target.role} role (${String(target.ids.length)} track(s))`;
         case 'project':
             return 'the project scope';
+        default: {
+            const exhaustive: never = target;
+            throw new Error(`Unsupported perceptual goal target: ${JSON.stringify(exhaustive)}`);
+        }
     }
 }
 

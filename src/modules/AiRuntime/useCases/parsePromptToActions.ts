@@ -44,6 +44,7 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
+import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
@@ -71,7 +72,6 @@ import {
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
-import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
