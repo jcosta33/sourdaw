@@ -1,0 +1,42 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenuFocus.integration.spec.tsx
+  s_59e31a5c6f3e31::t_4a8e371d6aff0c 16,153,168,191,204
+  s_59e31a5c6f3e31::t_63adf418e1050f 175,178,206-207,229-231
+  s_59e31a5c6f3e31::t_7fe397a91b6665 8-13,17,58-59,135,163,169-172,215-218
+  s_59e31a5c6f3e31::t_e2dd572e350da2 1-7,15,18-24,26-57,60-134,136-152,154-162,164-167,173-174,176-177,179-190,192-203,205,233-234
+  s_59e31a5c6f3e31::t_7575d0fa60479d 14,25,208-214,219-228,232
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_59e31a5c6f3e31::t_739db2592ff6b8 561-595,630
+  s_59e31a5c6f3e31::t_3ea533691cb056 546,554
+  s_59e31a5c6f3e31::t_3774c3c9296362 555-557,596-622,627-629
+  s_59e31a5c6f3e31::t_6950074d64679e 623-626
+  s_59e31a5c6f3e31::t_14a0517fc1f742 4-5,520-524
+  s_59e31a5c6f3e31::t_cdc2d7cce27d51 517-519,525-545,547-553,558-560,631
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_59e31a5c6f3e31::t_287b4f0708e250 120-121
+  s_59e31a5c6f3e31::t_2ebd97479addfd 46-47
+  s_1c08b47ac3792f::t_a7a3e081a5f791 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c77f6d7a4b0b3067981a08d7ddfb41f70021e273",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
