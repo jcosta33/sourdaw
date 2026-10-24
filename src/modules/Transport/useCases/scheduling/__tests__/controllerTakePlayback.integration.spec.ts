@@ -326,6 +326,24 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         ]);
     });
 
+    it('plays the held note bent from its first frame when the wheel was already up as the take began', async () => {
+        // 14-bit 12288 (a quarter of the way up): the keyboard's wheel is held before Record is pressed.
+        const clipId = await recordBendTake([[0xe0, 0, 96]]);
+        expect(midiStore.value?.pitchBendByClipId[clipId]?.map(({ value, beat }) => [value, beat])).toEqual([
+            [4096, 0],
+            [8191, 0.5],
+            [0, 1.5],
+        ]);
+
+        await playWindow(0, 12);
+
+        expect(engineStub.expressions).toEqual([
+            { note: 60, pitchBend: 4096, range: 2, frame: 4 * BEAT_FRAMES },
+            { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
+            { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
+        ]);
+    });
+
     it('plays the stored pedal of a duplicate of the take, which copies the rows and no note list', async () => {
         const clipId = await recordPedalOnlyTake();
         expect(duplicateClip(clipId)).toBe(true);
