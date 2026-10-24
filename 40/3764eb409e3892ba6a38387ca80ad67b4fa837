@@ -1,0 +1,35 @@
+tests/e2e/crustAttackTimeTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 36-38
+tests/e2e/crustUnityDeltaTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 29-31
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 17-19,55-57
+tests/e2e/crustOversamplingTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 30-32
+tests/e2e/crustReleaseAutoTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 31-33
+tests/e2e/crustChannelLinkTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 32-34
+tests/e2e/crustAttackAutoTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 30-32
+tests/e2e/crustLevelChipsTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 32-34,39-41
+tests/e2e/crustReleaseLookaheadTestId.spec.ts
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 42-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "403764eb409e3892ba6a38387ca80ad67b4fa837",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
