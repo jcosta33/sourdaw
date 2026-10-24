@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — injected owner fences concealed missing launcher admission (introduced by PR #5639)
+
+PR #5639's real Git-ref lock cases supplied fixture owner fences, so they never observed the
+default fence's trusted process-tool requirement. The native package route still bypassed the
+launcher and refused before PR I/O. Strongest-tier review was present; actual native CLI and
+platform-tool admission was missing from the exercised boundary.
+
+Keep an actual package-to-snapshot-to-CLI case with controlled credential and PR ports, but no
+injected owner fence. Observe the default owner before the first PR port read, and require a
+detached POSIX process group. Direct-package and omitted-fenced-command negative controls must
+restore the missing-tool refusal. Test POSIX and Windows tool selection separately, and label
+Windows selection on another host as structural evidence rather than Windows execution.
+
 ### 2026-10-24 — rollback fixtures omitted adoption after their OPEN snapshot (PRs #2357 and #4420)
 
 The compensation snapshot from PR #2357 and two-marker rollback from PR #4420 were tested as one

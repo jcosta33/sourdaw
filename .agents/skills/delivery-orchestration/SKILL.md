@@ -625,6 +625,12 @@ CLOSED unmerged observations, but recovery does not prove supersession complete:
 rerun `pr:supersede` with the verified head, replacement and complete lineage.
 Supersession success is logged only after its mutation owner releases.
 
+Launch supersession through the protected primary package route. Its pinned
+snapshot closure includes the CLI, transaction, GitHub adapter and lineage parser;
+the launcher freezes POSIX `ps` or Windows PowerShell before the default process
+fence is acquired. POSIX snapshots own a detached process group. Calling the
+transaction script directly does not supply this trusted process-tool boundary.
+
 Recovery refuses a live recorded process fence, adopts the lock under its own
 fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
@@ -688,7 +694,7 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+Run `lane:publish`, `deliver`, `pr:supersede`, `issue:claim`, and `issue:reconcile` through the
 protected primary checkout's package route; `review:accept` remains only for
 legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure
