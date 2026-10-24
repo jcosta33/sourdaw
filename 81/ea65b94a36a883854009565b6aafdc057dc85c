@@ -1,0 +1,23 @@
+src/modules/Fermenter/useCases/selectFermenterOscillatorEngine.ts
+  s_59e31a5c6f3e31::t_e665882c676f61 9-10,26-29,37-38,56-59,63-66
+src/modules/Fermenter/presentations/views/__tests__/fermenterEngineSelectionUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_969d3f9cd84d52 373-374,380-392
+  s_59e31a5c6f3e31::t_3ebb5d8a40b0ed 352-368,371-372,375,393-394
+  s_59e31a5c6f3e31::t_b88df8f8d45b39 369-370,376-379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81ea65b94a36a883854009565b6aafdc057dc85c",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
