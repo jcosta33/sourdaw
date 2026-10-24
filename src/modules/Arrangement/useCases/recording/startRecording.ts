@@ -1,9 +1,9 @@
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
