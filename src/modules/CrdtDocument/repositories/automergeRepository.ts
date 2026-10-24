@@ -22,6 +22,7 @@ import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/c
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
@@ -244,7 +245,9 @@ class AutomergeRepository {
     private docs = new Map<DocId, Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
-    private documentIdentityEpoch = 0;
+    private get documentIdentityEpoch(): number {
+        return readDocumentIdentityEpoch();
+    }
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
@@ -1125,7 +1128,7 @@ class AutomergeRepository {
     }
 
     private markDocumentIdentityMutation(): void {
-        this.documentIdentityEpoch += 1;
+        advanceDocumentIdentityEpoch();
         this.markMutation();
     }
 
