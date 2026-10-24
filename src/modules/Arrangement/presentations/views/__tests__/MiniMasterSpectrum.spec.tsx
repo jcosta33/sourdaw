@@ -223,6 +223,7 @@ describe('MiniMasterSpectrum', () => {
         expect(spectrum).not.toHaveAttribute('aria-describedby');
         expect(spectrum).toHaveAttribute('title', 'Master Track (Click to inspect)');
         expect(spectrum.querySelector('canvas')).toBeInTheDocument();
+        expect(selectTrack).not.toHaveBeenCalled();
 
         vi.mocked(useTracks).mockReturnValue({
             tracks: [{ ...master, freezeState: { status: 'error', errorMessage: reason } }],
