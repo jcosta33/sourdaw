@@ -2,6 +2,11 @@ import { logger } from '#/infra/logger/appLogger';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import {
+    ASSET_CHUNK_INTEGRITY_VERSION,
+    type ResumeAuthority,
+    type ResumeMetadata,
+} from '../models/AssetTransferResume';
+import {
     ASSET_CHUNK_SIZE,
     ASSET_REQUEST_MAX_ATTEMPTS,
     ASSET_REQUEST_RETRY_COOLDOWN_MS,
@@ -15,6 +20,7 @@ import {
     type PeerMessage,
 } from '../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../models/SyncChannelConstants';
+import { createAssetTransferResumeRepository } from '../repositories/assetTransferResumeRepository';
 import { durableAssetOwnerResolution } from '../repositories/durableAssetOwnerResolution';
 import {
     createDurableAssetRepository,
@@ -58,12 +64,49 @@ export type AssetManifest = {
     chunkCount: number;
     name: string;
     mime: string;
+    integrityVersion?: typeof ASSET_CHUNK_INTEGRITY_VERSION;
 };
 
-type AssetControlMessage =
-    | { type: 'asset.request'; hash: string; missingChunks: number[] }
+type AttemptToken = { attemptToken?: string };
+
+type IncomingTransfer = {
+    manifest: AssetManifest;
+    peerId: PeerId;
+    attemptToken?: string;
+    chunks: Map<number, Uint8Array>;
+    receivedBitmap: Set<number>;
+    pendingIndices: Map<number, symbol>;
+    journalReady?: Promise<void>;
+};
+
+type ReceiveAttempt = {
+    token: string;
+    lifetime: number;
+    partial?: IncomingTransfer;
+    assembling?: boolean;
+    journal?: ResumeMetadata;
+    restored?: boolean;
+    persistenceUnavailable?: boolean;
+    recovery?: Promise<void>;
+    requestIssued?: boolean;
+    repairSequence: number;
+    badIndices: Map<number, number>;
+};
+
+type ResponseRequest = {
+    attemptToken?: string;
+    missingChunks?: number[];
+    integrityVersion?: typeof ASSET_CHUNK_INTEGRITY_VERSION;
+    repairSequence?: number;
+};
+type ResponseSlot = { current: ResponseRequest; successor?: ResponseRequest };
+
+type AssetControlMessage = (
+    | { type: 'asset.request'; hash: string; missingChunks: number[]; integrityVersion?: 1; repairSequence?: number }
     | { type: 'asset.manifest'; manifest: AssetManifest }
-    | { type: 'asset.chunk'; hash: string; index: number; data: string };
+    | { type: 'asset.chunk'; hash: string; index: number; data: string; digest?: string; repairSequence?: number }
+) &
+    AttemptToken;
 
 type AssetTransferCallbacks = {
     onAssetAvailable: (hash: string) => void;
@@ -72,10 +115,10 @@ type AssetTransferCallbacks = {
      * A solicited transfer ended without producing the asset — rejected chunk,
      * failed integrity check, or a stall past
      * {@link ASSET_TRANSFER_STALL_TIMEOUT_MS}. By the time this fires the hash
-     * is no longer outstanding and no longer in flight, so the receiver is free
-     * to request it again.
+     * is no longer outstanding or in flight. The disposition reports whether
+     * the scheduler may request it after cooldown or the session has abandoned it.
      */
-    onTransferFailed: (hash: string, reason: string) => void;
+    onTransferFailed: (hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void;
 };
 
 type LocalAssetEntry = {
@@ -207,15 +250,16 @@ export class AssetTransfer {
     /** Restartable IndexedDB bytes stay distinct from session staging authority. */
     private durableAssetCache = new Map<string, DurableAssetCacheEntry>();
 
-    /** In-flight incoming transfers: hash → { chunks, received bitmap } */
-    private incomingTransfers = new Map<
-        string,
-        {
-            manifest: AssetManifest;
-            chunks: Map<number, Uint8Array>;
-            receivedBitmap: Set<number>;
-        }
-    >();
+    /** Unfinished transport bytes are runtime state, never durable ownership. */
+    private incomingTransfers = new Map<string, IncomingTransfer>();
+    private receiveAttempts = new Map<string, ReceiveAttempt>();
+    private retainedTransfers = new Map<string, { transfer: IncomingTransfer; timer: ReturnType<typeof setTimeout> }>();
+    private transferLifetime = 0;
+    private resumeAbort = new AbortController();
+    private resumeRepository: ReturnType<typeof createAssetTransferResumeRepository>;
+    private chunkTails = new Map<string, Promise<void>>();
+    private cleanupByHash = new Map<string, Promise<ResumeMetadata | undefined>>();
+    private journalByHash = new Map<string, ResumeMetadata>();
 
     /**
      * Hashes this peer has actively requested and has not yet resolved. A
@@ -245,15 +289,15 @@ export class AssetTransfer {
      *
      * The scheduler calls `requestAsset` on every tick for every missing clip,
      * so the request path has no memory of its own; this is that memory. An
-     * entry is written on abort and dropped once the asset resolves.
+     * entry is written on failure and dropped once the asset resolves.
      */
     private retryNotBefore = new Map<string, number>();
 
-    /** Aborted attempts per hash, counted toward {@link ASSET_REQUEST_MAX_ATTEMPTS}. */
+    /** Failed attempts per hash, counted toward {@link ASSET_REQUEST_MAX_ATTEMPTS}. */
     private failedAttempts = new Map<string, number>();
 
     /**
-     * Hashes abandoned for the rest of the session after too many aborts. A
+     * Hashes abandoned for the rest of the session after too many failures. A
      * peer can write any string into `clip.assetHash`, so without a terminal
      * state a hash no peer holds re-broadcasts forever.
      */
@@ -263,11 +307,11 @@ export class AssetTransfer {
      * Hashes this host is currently serving, per requesting peer.
      *
      * A request is cheap to send and expensive to answer, so identical requests
-     * arriving while one is being served are dropped rather than served
-     * concurrently, and the number of distinct assets one peer may pull at once
-     * is capped.
+     * arriving while one is being served are dropped. A new attempt replaces
+     * at most one pending successor, served after the current transport await
+     * settles. The number of distinct assets one peer may pull at once is capped.
      */
-    private servingHashesByPeer = new Map<PeerId, Set<string>>();
+    private servingHashesByPeer = new Map<PeerId, Map<string, ResponseSlot>>();
 
     constructor(
         peerManager: PeerConnectionManager,
@@ -279,6 +323,7 @@ export class AssetTransfer {
         this.peerManager = peerManager;
         this.callbacks = callbacks;
         this.ownerId = ownerId;
+        this.resumeRepository = createAssetTransferResumeRepository(ownerId);
         this.durableAssets = durableAssets;
         this.durableOwnerHandoffSources = new Map(
             [...new Set(durabilityOptions.handoffSourceOwnerIds ?? [])]
@@ -308,6 +353,25 @@ export class AssetTransfer {
             return;
         }
         this.disposed = true;
+        this.invalidateUnfinishedTransfers();
+        this.localAssets.clear();
+        this.stagingLeaseHashById.clear();
+        this.durableAssetCache.clear();
+        this.unsubscribeInvalidation?.();
+        this.unsubscribeInvalidation = null;
+    }
+
+    private invalidateUnfinishedTransfers(): void {
+        this.transferLifetime++;
+        this.resumeAbort.abort();
+        this.resumeAbort = new AbortController();
+        this.chunkTails.clear();
+        this.journalByHash.clear();
+        for (const partial of this.retainedTransfers.values()) {
+            clearTimeout(partial.timer);
+        }
+        this.retainedTransfers.clear();
+        this.receiveAttempts.clear();
         for (const timer of this.stallTimers.values()) {
             clearTimeout(timer);
         }
@@ -318,11 +382,6 @@ export class AssetTransfer {
         this.failedAttempts.clear();
         this.abandonedHashes.clear();
         this.servingHashesByPeer.clear();
-        this.localAssets.clear();
-        this.stagingLeaseHashById.clear();
-        this.durableAssetCache.clear();
-        this.unsubscribeInvalidation?.();
-        this.unsubscribeInvalidation = null;
     }
 
     /** Register a local asset (e.g. after recording or importing). */
@@ -822,8 +881,10 @@ export class AssetTransfer {
     }
 
     private installReboundDurableOwner(nextOwnerId: string): void {
+        this.invalidateUnfinishedTransfers();
         this.unsubscribeInvalidation?.();
         this.ownerId = nextOwnerId;
+        this.resumeRepository = createAssetTransferResumeRepository(nextOwnerId);
         this.durableAssets = createDurableAssetRepository(nextOwnerId);
         this.durableOwnerHandoffSources.clear();
         this.ownerRecoveryPending = true;
@@ -846,6 +907,14 @@ export class AssetTransfer {
                 resumeRecoveries: true,
                 recoveryAuthority: authority,
             });
+            if (
+                !this.disposed &&
+                authority.isCurrent() &&
+                !authority.signal.aborted &&
+                authority.ownerId === this.ownerId
+            ) {
+                await this.resumeRepository.expire();
+            }
         } catch (error) {
             if (!(error instanceof DurableOwnerRecoveryCancelled)) {
                 throw error;
@@ -998,23 +1067,143 @@ export class AssetTransfer {
         if (notBefore !== undefined && Date.now() < notBefore) {
             return;
         }
+        if (!this.durableStagingReady) {
+            return;
+        }
 
         // Mark the hash as outstanding so an incoming manifest for it is treated
         // as a solicited reply rather than an unsolicited transfer slot.
         this.requestedHashes.add(hash);
-        this.armStallTimer(hash);
+        const retained = this.retainedTransfers.get(hash);
+        if (retained) {
+            clearTimeout(retained.timer);
+            this.retainedTransfers.delete(hash);
+        }
+        const attempt: ReceiveAttempt = {
+            token: crypto.randomUUID(),
+            lifetime: this.transferLifetime,
+            partial: retained?.transfer,
+            repairSequence: 0,
+            badIndices: new Map(),
+        };
+        this.receiveAttempts.set(hash, attempt);
+        attempt.recovery = this.recoverAndRequest(hash, attempt).catch((error: unknown) => {
+            if (this.attemptIsCurrent(hash, attempt)) {
+                this.abortTransfer(hash, `asset request failed (${describeError(error)})`, true);
+            }
+        });
+    }
+
+    private attemptIsCurrent(hash: string, attempt: ReceiveAttempt): boolean {
+        return (
+            !this.disposed && attempt.lifetime === this.transferLifetime && this.receiveAttempts.get(hash) === attempt
+        );
+    }
+
+    private resumeAuthority(hash: string, attempt: ReceiveAttempt): ResumeAuthority {
+        return { signal: this.resumeAbort.signal, isCurrent: () => this.attemptIsCurrent(hash, attempt) };
+    }
+
+    private async recoverAndRequest(hash: string, attempt: ReceiveAttempt): Promise<void> {
+        try {
+            const journal = await this.resumeRepository.claim(hash, attempt.token, this.resumeAuthority(hash, attempt));
+            if (journal) {
+                this.recordJournal(hash, attempt, journal.metadata);
+            }
+            if (!this.attemptIsCurrent(hash, attempt)) {
+                return;
+            }
+            if (journal) {
+                attempt.partial = undefined;
+                const chunks = new Map<number, Uint8Array>();
+                const corrupt: number[] = [];
+                for await (const entry of journal.chunks) {
+                    if (!this.attemptIsCurrent(hash, attempt)) {
+                        return;
+                    }
+                    const chunk = entry.chunk;
+                    const expectedSize = Math.min(
+                        journal.metadata.manifest.chunkSize,
+                        journal.metadata.manifest.size - entry.index * journal.metadata.manifest.chunkSize
+                    );
+                    if (
+                        chunk &&
+                        chunk.data.byteLength === expectedSize &&
+                        isChunkDigest(chunk.digest) &&
+                        (await hashBytes(chunk.data)) === chunk.digest
+                    ) {
+                        chunks.set(entry.index, chunk.data);
+                    } else {
+                        corrupt.push(entry.index);
+                    }
+                    if (!this.attemptIsCurrent(hash, attempt)) {
+                        return;
+                    }
+                }
+                if (corrupt.length > 0) {
+                    const metadata = await this.resumeRepository.discard(
+                        journal.metadata,
+                        corrupt,
+                        this.resumeAuthority(hash, attempt)
+                    );
+                    this.recordJournal(hash, attempt, metadata);
+                }
+                attempt.partial = {
+                    manifest: { ...journal.metadata.manifest, integrityVersion: ASSET_CHUNK_INTEGRITY_VERSION },
+                    peerId: '',
+                    chunks,
+                    receivedBitmap: new Set(chunks.keys()),
+                    pendingIndices: new Map(),
+                };
+                attempt.restored = true;
+            }
+        } catch (error) {
+            if (!this.attemptIsCurrent(hash, attempt)) {
+                return;
+            }
+            attempt.persistenceUnavailable = true;
+            logger.warn('[AssetTransfer] Resume storage could not be read:', error);
+        }
+        if (!this.attemptIsCurrent(hash, attempt)) {
+            return;
+        }
+        if (attempt.partial && attempt.partial.receivedBitmap.size === attempt.partial.manifest.chunkCount) {
+            attempt.assembling = true;
+            this.clearStallTimer(hash);
+            await this.assembleAsset(hash, attempt.partial, attempt);
+            return;
+        }
 
         const msg: AssetControlMessage = {
             type: 'asset.request',
             hash,
-            missingChunks: [],
+            missingChunks: attempt.partial
+                ? Array.from({ length: attempt.partial.manifest.chunkCount }, (_, index) => index).filter(
+                      (index) => !attempt.partial?.receivedBitmap.has(index)
+                  )
+                : [],
+            attemptToken: attempt.token,
+            integrityVersion: ASSET_CHUNK_INTEGRITY_VERSION,
         };
 
+        attempt.requestIssued = true;
+        this.armStallTimer(hash);
         this.peerManager.broadcastCrdtSync({
             type: 'crdt-sync',
             docId: DOC_ID_ASSET,
             data: JSON.stringify(msg),
         });
+    }
+
+    private recordJournal(hash: string, attempt: ReceiveAttempt, metadata: ResumeMetadata): void {
+        attempt.journal = metadata;
+        const known = this.journalByHash.get(hash);
+        if (
+            this.attemptIsCurrent(hash, attempt) ||
+            (known?.writerId === metadata.writerId && known.generation === metadata.generation)
+        ) {
+            this.journalByHash.set(hash, metadata);
+        }
     }
 
     /** Handle an incoming asset-related message. */
@@ -1027,17 +1216,110 @@ export class AssetTransfer {
         }
 
         try {
-            const data = JSON.parse(message.data) as AssetControlMessage;
-
-            if (data.type === 'asset.request') {
-                await this.handleAssetRequest(peerId, data.hash, data.missingChunks);
-            } else if (data.type === 'asset.manifest') {
-                this.handleManifest(peerId, data.manifest);
-            } else if (data.type === 'asset.chunk') {
-                this.handleChunk(data.hash, data.index, data.data);
+            const data: unknown = JSON.parse(message.data);
+            if (!isRecord(data)) {
+                return;
+            }
+            if ('attemptToken' in data && !isAttemptToken(data.attemptToken)) {
+                return;
+            }
+            const token = isAttemptToken(data.attemptToken) ? data.attemptToken : undefined;
+            const integrityVersion =
+                data.integrityVersion === ASSET_CHUNK_INTEGRITY_VERSION ? ASSET_CHUNK_INTEGRITY_VERSION : undefined;
+            const repairSequence = data.repairSequence === undefined ? undefined : data.repairSequence;
+            if (
+                repairSequence !== undefined &&
+                (!Number.isInteger(repairSequence) ||
+                    typeof repairSequence !== 'number' ||
+                    repairSequence < 1 ||
+                    repairSequence > ASSET_REQUEST_MAX_ATTEMPTS)
+            ) {
+                return;
+            }
+            if (data.type === 'asset.request' && typeof data.hash === 'string') {
+                await this.handleAssetRequest(
+                    peerId,
+                    data.hash,
+                    data.missingChunks,
+                    token,
+                    integrityVersion,
+                    repairSequence
+                );
+            } else if (data.type === 'asset.manifest' && isManifestSane(data.manifest)) {
+                this.handleManifest(peerId, data.manifest, token);
+            } else if (data.type === 'asset.chunk' && typeof data.hash === 'string' && typeof data.index === 'number') {
+                const hash = data.hash;
+                const index = data.index;
+                const encoded = data.data;
+                const transfer = this.incomingTransfers.get(hash);
+                const attempt = this.receiveAttempts.get(hash);
+                if (
+                    !transfer ||
+                    transfer.peerId !== peerId ||
+                    transfer.attemptToken !== token ||
+                    !attempt ||
+                    (attempt.badIndices.has(index) && attempt.badIndices.get(index) !== repairSequence) ||
+                    !this.admitChunk(hash, index, encoded, transfer)
+                ) {
+                    return;
+                }
+                const digest = isChunkDigest(data.digest) ? data.digest : undefined;
+                await this.queueAcceptedChunk(peerId, hash, index, encoded, token, digest, repairSequence, transfer);
+                return;
             }
         } catch (error) {
             logger.warn('[AssetTransfer] Failed to handle message:', error);
+        }
+    }
+
+    /** Bound queued payloads before an awaited digest or transaction can retain them. */
+    private admitChunk(hash: string, index: number, data: unknown, transfer: IncomingTransfer): data is string {
+        if (!Number.isInteger(index) || index < 0 || index >= transfer.manifest.chunkCount) {
+            this.abortTransfer(hash, `chunk ${index} is outside the declared range`);
+            return false;
+        }
+        if (typeof data !== 'string') {
+            this.abortTransfer(hash, `chunk ${index} payload is not a string`);
+            return false;
+        }
+        if (data.length > base64LengthFor(transfer.manifest.chunkSize)) {
+            this.abortTransfer(
+                hash,
+                `chunk ${index} encodes more than the declared chunk size ${transfer.manifest.chunkSize}`
+            );
+            return false;
+        }
+        return !transfer.receivedBitmap.has(index) && !transfer.pendingIndices.has(index);
+    }
+
+    private async queueAcceptedChunk(
+        peerId: PeerId,
+        hash: string,
+        index: number,
+        encoded: string,
+        token: string | undefined,
+        digest: string | undefined,
+        repairSequence: number | undefined,
+        transfer: IncomingTransfer
+    ): Promise<void> {
+        const reservation = Symbol();
+        transfer.pendingIndices.set(index, reservation);
+        const prior = this.chunkTails.get(hash) ?? Promise.resolve();
+        const next = prior.then(() => this.handleChunk(peerId, hash, index, encoded, token, digest, repairSequence));
+        this.chunkTails.set(hash, next);
+        try {
+            await next;
+        } catch (error) {
+            if (this.incomingTransfers.get(hash) === transfer) {
+                this.abortTransfer(hash, `chunk verification failed (${describeError(error)})`, true);
+            }
+        } finally {
+            if (transfer.pendingIndices.get(index) === reservation) {
+                transfer.pendingIndices.delete(index);
+            }
+            if (this.chunkTails.get(hash) === next) {
+                this.chunkTails.delete(hash);
+            }
         }
     }
 
@@ -1051,7 +1333,7 @@ export class AssetTransfer {
             hash,
             setTimeout(() => {
                 this.stallTimers.delete(hash);
-                this.abortTransfer(hash, 'the sending peer stopped responding');
+                this.abortTransfer(hash, 'the sending peer stopped responding', true);
             }, ASSET_TRANSFER_STALL_TIMEOUT_MS)
         );
     }
@@ -1074,71 +1356,203 @@ export class AssetTransfer {
      * user-facing seam: an abandoned transfer used to be a `logger.warn` and
      * nothing else, leaving clips silently unplayable.
      *
-     * Recovery is rate-limited, not free: the abort arms a cooldown and spends
+     * Failure recovery is rate-limited: a failure arms a cooldown and spends
      * one of the hash's attempts. Its caller is the per-tick scheduler, so an
      * uncooled re-open turns every immediately-aborting failure class into a
      * request/abort loop at peer-RTT speed.
      */
-    private abortTransfer(hash: string, reason: string): void {
+    private abortTransfer(
+        hash: string,
+        reason: string,
+        retainPartial = false,
+        outcome: 'failure' | 'cancelled' = 'failure'
+    ): void {
         if (this.disposed) {
             return;
         }
         this.clearStallTimer(hash);
+        const attempt = this.receiveAttempts.get(hash);
+        const partial = this.incomingTransfers.get(hash) ?? attempt?.partial;
+        const pendingChunks = this.chunkTails.get(hash);
+        this.receiveAttempts.delete(hash);
         const wasOutstanding = this.requestedHashes.delete(hash);
         const wasInFlight = this.incomingTransfers.delete(hash);
+        this.chunkTails.delete(hash);
         if (!wasOutstanding && !wasInFlight) {
             return;
         }
 
-        const attempts = (this.failedAttempts.get(hash) ?? 0) + 1;
-        this.failedAttempts.set(hash, attempts);
-        if (attempts >= ASSET_REQUEST_MAX_ATTEMPTS) {
-            this.abandonedHashes.add(hash);
-            this.retryNotBefore.delete(hash);
-        } else {
-            this.retryNotBefore.set(hash, Date.now() + ASSET_REQUEST_RETRY_COOLDOWN_MS);
+        if (outcome === 'failure') {
+            const attempts = (this.failedAttempts.get(hash) ?? 0) + 1;
+            this.failedAttempts.set(hash, attempts);
+            if (attempts >= ASSET_REQUEST_MAX_ATTEMPTS) {
+                this.abandonedHashes.add(hash);
+                this.retryNotBefore.delete(hash);
+            } else {
+                this.retryNotBefore.set(hash, Date.now() + ASSET_REQUEST_RETRY_COOLDOWN_MS);
+            }
         }
 
-        logger.warn(`[AssetTransfer] Transfer for ${hash} aborted: ${reason}`);
-        this.callbacks.onTransferFailed(hash, reason);
+        if (retainPartial && !this.abandonedHashes.has(hash) && partial?.attemptToken && partial.chunks.size > 0) {
+            const timer = setTimeout(() => {
+                this.retainedTransfers.delete(hash);
+            }, ASSET_REQUEST_RETRY_COOLDOWN_MS + ASSET_TRANSFER_STALL_TIMEOUT_MS);
+            this.retainedTransfers.set(hash, { transfer: partial, timer });
+        }
+        if (attempt) {
+            const repository = this.resumeRepository;
+            const cleanup = (async () => {
+                await attempt.recovery;
+                await partial?.journalReady?.catch(() => undefined);
+                await pendingChunks?.catch(() => undefined);
+                const journal = attempt.journal;
+                if (!retainPartial && journal) {
+                    await repository.remove(journal);
+                    const known = this.journalByHash.get(hash);
+                    if (known?.writerId === journal.writerId && known.generation === journal.generation) {
+                        this.journalByHash.delete(hash);
+                    }
+                }
+                return journal;
+            })();
+            this.cleanupByHash.set(hash, cleanup);
+            const settle = () => {
+                if (this.cleanupByHash.get(hash) === cleanup) {
+                    this.cleanupByHash.delete(hash);
+                }
+            };
+            void cleanup.then(settle, settle);
+            void cleanup.catch((error: unknown) => {
+                logger.warn('[AssetTransfer] Resume cleanup remains pending:', error);
+                if (!this.disposed && attempt.lifetime === this.transferLifetime) {
+                    this.callbacks.onTransferFailed(
+                        hash,
+                        `resume cleanup failed (${describeError(error)})`,
+                        'cooldown'
+                    );
+                }
+            });
+        }
+        if (outcome === 'failure') {
+            logger.warn(`[AssetTransfer] Transfer for ${hash} aborted: ${reason}`);
+            this.callbacks.onTransferFailed(hash, reason, this.abandonedHashes.has(hash) ? 'abandoned' : 'cooldown');
+        }
     }
 
-    private async handleAssetRequest(peerId: PeerId, hash: string, missingChunks: unknown): Promise<void> {
-        // A request is a ~100-byte message; answering one slices, base64-encodes
-        // and buffers the whole asset. Without an in-flight marker, N identical
-        // requests are served N times concurrently, so the responder multiplies
-        // the sender's cost by N — a bound on any single response cannot help.
-        // Identical requests are dropped while one is serving (the response the
-        // peer is already receiving is the answer); distinct hashes are capped.
-        const serving = this.servingHashesByPeer.get(peerId) ?? new Set<string>();
-        if (serving.has(hash) || serving.size >= MAX_CONCURRENT_ASSET_RESPONSES_PER_PEER) {
+    /** Explicit cancellation deletes its exact generation without changing peer failures or reporting one. */
+    async cancelAssetRequest(hash: string): Promise<void> {
+        if (this.disposed) {
             return;
         }
-        serving.add(hash);
+        const knownJournal = this.journalByHash.get(hash);
+        const pending = this.cleanupByHash.get(hash);
+        const repository = this.resumeRepository;
+        const active = this.receiveAttempts.has(hash);
+        this.abortTransfer(hash, 'the asset request was cancelled', false, 'cancelled');
+        if (active) {
+            await this.cleanupByHash.get(hash);
+            return;
+        }
+        const retained = this.retainedTransfers.get(hash);
+        if (retained) {
+            clearTimeout(retained.timer);
+            this.retainedTransfers.delete(hash);
+        }
+        const journal = (await pending) ?? knownJournal;
+        if (journal) {
+            await repository.remove(journal);
+            if (this.journalByHash.get(hash) === journal) {
+                this.journalByHash.delete(hash);
+            }
+        }
+    }
+
+    private async handleAssetRequest(
+        peerId: PeerId,
+        hash: string,
+        missingChunks: unknown,
+        attemptToken?: string,
+        integrityVersion?: 1,
+        repairSequence?: number
+    ): Promise<void> {
+        const serving = this.servingHashesByPeer.get(peerId) ?? new Map<string, ResponseSlot>();
+        const existing = serving.get(hash);
+        if (
+            existing &&
+            attemptToken === existing.current.attemptToken &&
+            (repairSequence ?? 0) <
+                Math.max(existing.current.repairSequence ?? 0, existing.successor?.repairSequence ?? 0)
+        ) {
+            return;
+        }
+        if (
+            existing &&
+            ((attemptToken === existing.current.attemptToken && repairSequence === existing.current.repairSequence) ||
+                (existing.successor &&
+                    attemptToken === existing.successor.attemptToken &&
+                    repairSequence === existing.successor.repairSequence))
+        ) {
+            return;
+        }
+        if (!existing && serving.size >= MAX_CONCURRENT_ASSET_RESPONSES_PER_PEER) {
+            return;
+        }
+        // Normalize before retaining a successor; remote arrays never live in a slot.
+        const request: ResponseRequest = {
+            attemptToken,
+            integrityVersion,
+            repairSequence,
+            missingChunks: isNonEmptyIndexList(missingChunks)
+                ? boundedChunkIndices(missingChunks, Math.ceil(MAX_ASSET_SIZE / ASSET_CHUNK_SIZE))
+                : undefined,
+        };
+        if (existing) {
+            existing.successor = request;
+            return;
+        }
+        const slot: ResponseSlot = { current: request };
+        const lifetime = this.transferLifetime;
+        const isLive = () => !this.disposed && lifetime === this.transferLifetime && serving.get(hash) === slot;
+        serving.set(hash, slot);
         this.servingHashesByPeer.set(peerId, serving);
         try {
-            const resident = this.localAssets.get(hash);
-            if (resident) {
-                await this.sendAssetResponse(peerId, hash, resident, missingChunks);
-                return;
+            let entry: DurableAssetCacheEntry | undefined = this.localAssets.get(hash);
+            if (!entry) {
+                const durable = await this.runOwnerOperation((assets) => assets.reopenDurableAsset(hash));
+                if (!isLive()) {
+                    return;
+                }
+                if (durable.status === 'failed') {
+                    this.durableAssetCache.delete(hash);
+                    return;
+                }
+                entry = { blob: durable.blob, name: durable.name };
+                this.durableAssetCache.set(hash, entry);
             }
-            // A renderer/session restart has no resident entry. Only an
-            // explicitly promoted project owner may reopen durable bytes;
-            // ordinary local and received session assets never mint ownerIds.
-            const durable = await this.runOwnerOperation((durableAssets) => durableAssets.reopenDurableAsset(hash));
-            if (this.disposed) {
-                return;
+            while (isLive()) {
+                const current = slot.current;
+                function isCurrent() {
+                    const queuedRepair =
+                        slot.successor?.attemptToken === current.attemptToken &&
+                        slot.successor?.repairSequence !== undefined;
+                    return isLive() && slot.current === current && (!slot.successor || queuedRepair);
+                }
+                try {
+                    await this.sendAssetResponse(peerId, hash, entry, current, isCurrent);
+                } catch (error) {
+                    if (!slot.successor) {
+                        throw error;
+                    }
+                }
+                if (!isLive() || !slot.successor) {
+                    return;
+                }
+                slot.current = slot.successor;
+                slot.successor = undefined;
             }
-            if (durable.status === 'failed') {
-                this.durableAssetCache.delete(hash);
-                return;
-            }
-            const entry = { blob: durable.blob, name: durable.name };
-            this.durableAssetCache.set(hash, entry);
-            await this.sendAssetResponse(peerId, hash, entry, missingChunks);
         } finally {
             serving.delete(hash);
-            if (serving.size === 0) {
+            if (serving.size === 0 && this.servingHashesByPeer.get(peerId) === serving) {
                 this.servingHashesByPeer.delete(peerId);
             }
         }
@@ -1148,7 +1562,8 @@ export class AssetTransfer {
         peerId: PeerId,
         hash: string,
         entry: DurableAssetCacheEntry,
-        missingChunks: unknown
+        request: ResponseRequest,
+        isCurrent: () => boolean
     ): Promise<void> {
         const { blob, name } = entry;
         const chunkCount = Math.ceil(blob.size / ASSET_CHUNK_SIZE);
@@ -1159,11 +1574,12 @@ export class AssetTransfer {
             chunkCount,
             name,
             mime: blob.type || 'application/octet-stream',
+            integrityVersion: request.integrityVersion,
         };
 
         // The manifest must land before its chunks: a chunk for a hash with no
         // manifest is rejected by `handleChunk`.
-        if (this.disposed) {
+        if (!isCurrent()) {
             return;
         }
         await this.peerManager.sendCrdtSync({
@@ -1171,7 +1587,11 @@ export class AssetTransfer {
             message: {
                 type: 'crdt-sync',
                 docId: DOC_ID_ASSET,
-                data: JSON.stringify({ type: 'asset.manifest', manifest } satisfies AssetControlMessage),
+                data: JSON.stringify({
+                    type: 'asset.manifest',
+                    manifest,
+                    attemptToken: request.attemptToken,
+                } satisfies AssetControlMessage),
             },
         });
 
@@ -1181,22 +1601,29 @@ export class AssetTransfer {
         // peer. Bound while filtering, never before: deduplicating first would
         // materialize a `Set` at the sender's declared cardinality, which the
         // CRDT framing lets reach tens of millions of elements.
-        const chunksToSend = isNonEmptyIndexList(missingChunks)
-            ? boundedChunkIndices(missingChunks, chunkCount)
+        const chunksToSend = request.missingChunks
+            ? boundedChunkIndices(request.missingChunks, chunkCount)
             : Array.from({ length: chunkCount }, (_, index1) => index1);
 
         for (const index of chunksToSend) {
-            if (this.disposed) {
+            if (!isCurrent()) {
                 return;
             }
             const start = index * ASSET_CHUNK_SIZE;
             const end = Math.min(start + ASSET_CHUNK_SIZE, blob.size);
             const slice = blob.slice(start, end);
             const buffer = await slice.arrayBuffer();
-            if (this.disposed) {
+            if (!isCurrent()) {
                 return;
             }
             const base64 = arrayBufferToBase64(buffer);
+            const digest =
+                request.integrityVersion === ASSET_CHUNK_INTEGRITY_VERSION
+                    ? await hashBytes(new Uint8Array(buffer))
+                    : undefined;
+            if (!isCurrent()) {
+                return;
+            }
 
             await this.peerManager.sendCrdtSyncBuffered({
                 peerId,
@@ -1205,17 +1632,28 @@ export class AssetTransfer {
                     docId: DOC_ID_ASSET,
                     data: JSON.stringify({
                         type: 'asset.chunk',
+                        attemptToken: request.attemptToken,
                         hash,
                         index,
                         data: base64,
+                        digest,
+                        repairSequence: request.repairSequence,
                     } satisfies AssetControlMessage),
                 },
             });
         }
     }
 
-    private handleManifest(_peerId: PeerId, manifest: AssetManifest): void {
+    private handleManifest(peerId: PeerId, manifest: AssetManifest, attemptToken?: string): void {
         if (this.disposed) {
+            return;
+        }
+        const attempt = this.receiveAttempts.get(manifest.hash);
+        if (
+            !attempt?.requestIssued ||
+            attempt.assembling ||
+            (attemptToken !== undefined && attemptToken !== attempt.token)
+        ) {
             return;
         }
         // Already have the asset — nothing to fetch.
@@ -1239,28 +1677,63 @@ export class AssetTransfer {
             return;
         }
 
-        // Reject manifests whose declared dimensions are inconsistent or
-        // unbounded — these define the limits all later chunks are checked
-        // against, so an untrustworthy manifest is itself a DoS vector.
-        if (!isManifestSane(manifest)) {
-            logger.warn(`[AssetTransfer] Rejecting malformed manifest for ${manifest.hash}`);
-            return;
-        }
-
         // The outstanding marker stays until the transfer terminates (see
         // `requestedHashes`); duplicate and stale manifests are already excluded
         // by the in-flight check above.
-        this.incomingTransfers.set(manifest.hash, {
+        const partial = attempt.partial;
+        if (
+            partial &&
+            (attemptToken === undefined ||
+                (!attempt.restored && partial.peerId !== peerId) ||
+                !sameGeometry(partial.manifest, manifest) ||
+                (attempt.restored && manifest.integrityVersion !== ASSET_CHUNK_INTEGRITY_VERSION))
+        ) {
+            // Retire the selective attempt before its ordinary budgeted failure.
+            // The scheduler's next eligible request starts a full transfer.
+            attempt.partial = undefined;
+            this.abortTransfer(manifest.hash, 'the resumed transfer requires a fresh full request');
+            return;
+        }
+        attempt.partial = undefined;
+        const transfer: IncomingTransfer = {
             manifest,
-            chunks: new Map(),
-            receivedBitmap: new Set(),
-        });
+            peerId,
+            attemptToken,
+            chunks: partial?.chunks ?? new Map<number, Uint8Array>(),
+            receivedBitmap: partial?.receivedBitmap ?? new Set<number>(),
+            pendingIndices: new Map(),
+        };
+        this.incomingTransfers.set(manifest.hash, transfer);
+        if (manifest.integrityVersion === ASSET_CHUNK_INTEGRITY_VERSION) {
+            transfer.journalReady = (async () => {
+                if (attempt.persistenceUnavailable) {
+                    throw new Error('Asset resume storage is unavailable; verified progress cannot be committed');
+                }
+                if (!attempt.journal) {
+                    const metadata = await this.resumeRepository.begin(
+                        manifest,
+                        attempt.token,
+                        this.resumeAuthority(manifest.hash, attempt)
+                    );
+                    this.recordJournal(manifest.hash, attempt, metadata);
+                }
+            })();
+            void transfer.journalReady.catch(() => undefined);
+        }
 
         // Progress: restart the no-progress clock against the first chunk.
         this.armStallTimer(manifest.hash);
     }
 
-    private handleChunk(hash: string, index: number, base64Data: unknown): void {
+    private async handleChunk(
+        peerId: PeerId,
+        hash: string,
+        index: number,
+        base64Data: unknown,
+        attemptToken?: string,
+        expectedDigest?: unknown,
+        repairSequence?: number
+    ): Promise<void> {
         if (this.disposed) {
             return;
         }
@@ -1269,11 +1742,26 @@ export class AssetTransfer {
         // that lost the first-responder race, and chunks for assets we already
         // hold or never asked for.
         const transfer = this.incomingTransfers.get(hash);
-        if (!transfer) {
+        if (!transfer || transfer.peerId !== peerId || transfer.attemptToken !== attemptToken) {
             return;
         }
 
         const { manifest } = transfer;
+        const attempt = this.receiveAttempts.get(hash);
+        if (!attempt) {
+            return;
+        }
+        try {
+            await transfer.journalReady;
+        } catch (error) {
+            if (this.attemptIsCurrent(hash, attempt)) {
+                this.abortTransfer(hash, `resume storage failed (${describeError(error)})`, true);
+            }
+            return;
+        }
+        if (!this.attemptIsCurrent(hash, attempt) || this.incomingTransfers.get(hash) !== transfer) {
+            return;
+        }
 
         // Reject out-of-range indices. A malicious peer could otherwise store
         // chunks at arbitrary indices (including indices >= chunkCount),
@@ -1320,6 +1808,45 @@ export class AssetTransfer {
         // a single already-received index below the deadline pin the transfer —
         // and with it the hash's outstanding marker — for the whole session.
         const receivedBefore = transfer.receivedBitmap.size;
+        if (transfer.receivedBitmap.has(index)) {
+            return;
+        }
+        if (manifest.integrityVersion === ASSET_CHUNK_INTEGRITY_VERSION) {
+            if (attempt.badIndices.has(index) && attempt.badIndices.get(index) !== repairSequence) {
+                return;
+            }
+            const expectedSize = Math.min(manifest.chunkSize, manifest.size - index * manifest.chunkSize);
+            const digest = await hashBytes(data);
+            if (!this.attemptIsCurrent(hash, attempt) || this.incomingTransfers.get(hash) !== transfer) {
+                return;
+            }
+            if (data.byteLength !== expectedSize || !isChunkDigest(expectedDigest) || digest !== expectedDigest) {
+                this.requestChunkRepair(hash, index, transfer, attempt);
+                return;
+            }
+            try {
+                if (!attempt.journal) {
+                    throw new Error('Verified transfer has no resume journal');
+                }
+                const metadata = await this.resumeRepository.append(
+                    attempt.journal,
+                    index,
+                    data,
+                    digest,
+                    this.resumeAuthority(hash, attempt)
+                );
+                this.recordJournal(hash, attempt, metadata);
+            } catch (error) {
+                if (this.attemptIsCurrent(hash, attempt)) {
+                    this.abortTransfer(hash, `resume storage failed (${describeError(error)})`, true);
+                }
+                return;
+            }
+            if (!this.attemptIsCurrent(hash, attempt)) {
+                return;
+            }
+            attempt.badIndices.delete(index);
+        }
         transfer.chunks.set(index, data);
         transfer.receivedBitmap.add(index);
         const progressed = transfer.receivedBitmap.size > receivedBefore;
@@ -1333,7 +1860,12 @@ export class AssetTransfer {
             // full-size reassembly. The captured `transfer` carries the chunks.
             this.clearStallTimer(hash);
             this.incomingTransfers.delete(hash);
-            void this.assembleAsset(hash, transfer);
+            const attempt = this.receiveAttempts.get(hash);
+            if (attempt) {
+                attempt.assembling = true;
+                attempt.partial = transfer;
+                void this.assembleAsset(hash, transfer, attempt);
+            }
             return;
         }
 
@@ -1341,6 +1873,42 @@ export class AssetTransfer {
             // Progress: restart the no-progress clock against the next chunk.
             this.armStallTimer(hash);
         }
+    }
+
+    private requestChunkRepair(hash: string, index: number, transfer: IncomingTransfer, attempt: ReceiveAttempt): void {
+        if (attempt.repairSequence >= ASSET_REQUEST_MAX_ATTEMPTS) {
+            this.abortTransfer(hash, `chunk ${index} failed its integrity check repeatedly`, true);
+            return;
+        }
+        const sequence = ++attempt.repairSequence;
+        attempt.badIndices.set(index, sequence);
+        for (const pending of attempt.badIndices.keys()) {
+            attempt.badIndices.set(pending, sequence);
+        }
+        // A local transport can deliver the repair before this handler returns.
+        // Its reservation must survive the rejected frame's finalizer.
+        transfer.pendingIndices.delete(index);
+        void this.peerManager
+            .sendCrdtSync({
+                peerId: transfer.peerId,
+                message: {
+                    type: 'crdt-sync',
+                    docId: DOC_ID_ASSET,
+                    data: JSON.stringify({
+                        type: 'asset.request',
+                        hash,
+                        missingChunks: [...attempt.badIndices.keys()],
+                        attemptToken: attempt.token,
+                        integrityVersion: ASSET_CHUNK_INTEGRITY_VERSION,
+                        repairSequence: sequence,
+                    } satisfies AssetControlMessage),
+                },
+            })
+            .catch((error: unknown) => {
+                if (this.attemptIsCurrent(hash, attempt)) {
+                    this.abortTransfer(hash, `chunk repair request failed (${describeError(error)})`, true);
+                }
+            });
     }
 
     /**
@@ -1354,13 +1922,9 @@ export class AssetTransfer {
      * a half-gigabyte blob can fail on memory alone) route through
      * `abortTransfer` rather than escaping under the caller's `void`.
      */
-    private async assembleAsset(
-        hash: string,
-        transfer: {
-            manifest: AssetManifest;
-            chunks: Map<number, Uint8Array>;
-        }
-    ): Promise<void> {
+    private async assembleAsset(hash: string, transfer: IncomingTransfer, attempt: ReceiveAttempt): Promise<void> {
+        const isCurrent = () =>
+            !this.disposed && attempt.lifetime === this.transferLifetime && this.receiveAttempts.get(hash) === attempt;
         try {
             const sortedChunks: Uint8Array[] = [];
             for (let index = 0; index < transfer.manifest.chunkCount; index++) {
@@ -1373,6 +1937,10 @@ export class AssetTransfer {
             }
 
             const totalSize = sortedChunks.reduce((sum, context) => sum + context.length, 0);
+            if (totalSize !== transfer.manifest.size) {
+                this.abortTransfer(hash, 'assembled size differs from the manifest');
+                return;
+            }
             const assembled = new Uint8Array(totalSize);
             let offset = 0;
             for (const chunk of sortedChunks) {
@@ -1384,12 +1952,27 @@ export class AssetTransfer {
 
             // Verify integrity before accepting the asset.
             const actualHash = await hashBlob(blob);
-            if (this.disposed) {
+            if (!isCurrent()) {
                 return;
             }
             if (actualHash !== hash) {
                 this.abortTransfer(hash, `integrity check failed (received ${actualHash})`);
                 return;
+            }
+            if (attempt.journal) {
+                const removed = await this.resumeRepository.remove(
+                    attempt.journal,
+                    this.resumeAuthority(hash, attempt)
+                );
+                if (!this.attemptIsCurrent(hash, attempt)) {
+                    return;
+                }
+                if (!removed) {
+                    throw new Error('Asset resume completion was superseded');
+                }
+                if (this.journalByHash.get(hash) === attempt.journal) {
+                    this.journalByHash.delete(hash);
+                }
             }
 
             // Received session bytes stay resident only. Durable ownerIds are
@@ -1403,12 +1986,15 @@ export class AssetTransfer {
             });
             this.clearStallTimer(hash);
             this.requestedHashes.delete(hash);
+            this.receiveAttempts.delete(hash);
             // The asset resolved, so the hash owes nothing to the retry policy.
             this.retryNotBefore.delete(hash);
             this.failedAttempts.delete(hash);
             this.callbacks.onAssetAvailable(hash);
         } catch (error) {
-            this.abortTransfer(hash, `assembly failed (${describeError(error)})`);
+            if (isCurrent()) {
+                this.abortTransfer(hash, `assembly failed (${describeError(error)})`, true);
+            }
         }
     }
 }
@@ -1469,8 +2055,17 @@ function isNonEmptyIndexList(value: unknown): value is readonly unknown[] {
  * over the hard size ceiling — plus any metadata string a sender could inflate,
  * since the name is retained with the assembled asset.
  */
-function isManifestSane(manifest: AssetManifest): boolean {
+function isManifestSane(manifest: unknown): manifest is AssetManifest {
+    if (!isRecord(manifest) || typeof manifest.hash !== 'string') {
+        return false;
+    }
     const { size, chunkSize, chunkCount, name, mime } = manifest;
+    if ('integrityVersion' in manifest && manifest.integrityVersion !== ASSET_CHUNK_INTEGRITY_VERSION) {
+        return false;
+    }
+    if (typeof size !== 'number' || typeof chunkSize !== 'number' || typeof chunkCount !== 'number') {
+        return false;
+    }
 
     if (typeof name !== 'string' || name.length > MAX_ASSET_NAME_LEN) {
         return false;
@@ -1505,11 +2100,41 @@ function isManifestSane(manifest: AssetManifest): boolean {
 /** Hash a blob using SHA-256 (browser-native). BLAKE3 can be added via wasm. */
 async function hashBlob(blob: Blob): Promise<string> {
     const buffer = await blob.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return hashBytes(new Uint8Array(buffer));
+}
+
+async function hashBytes(data: Uint8Array): Promise<string> {
+    const bytes = new Uint8Array(data.byteLength);
+    bytes.set(data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return `sha256:${hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
+function isChunkDigest(value: unknown): value is string {
+    return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value);
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
     return bytesToBase64(new Uint8Array(buffer));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAttemptToken(value: unknown): value is string {
+    return (
+        typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
+    );
+}
+
+function sameGeometry(previous: AssetManifest, current: AssetManifest): boolean {
+    return (
+        previous.hash === current.hash &&
+        previous.size === current.size &&
+        previous.chunkSize === current.chunkSize &&
+        previous.chunkCount === current.chunkCount &&
+        previous.integrityVersion === current.integrityVersion
+    );
 }
