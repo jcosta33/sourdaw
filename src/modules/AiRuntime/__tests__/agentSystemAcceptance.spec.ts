@@ -4,7 +4,24 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import {
     AGENT_ACCEPTANCE_CORPORA,
@@ -19,6 +36,7 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
+import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     classifyPlanningOutcome,
@@ -26,20 +44,62 @@ import {
     failedAgentAcceptanceThresholds,
     scoreAgentAcceptanceCase,
 } from '../services/agentAcceptanceScorer';
+import { clearAiHistory } from '../stores/aiActionHistoryStore';
+import { chatStore } from '../stores/chatStore';
 import {
+    clearPendingActionConfirmations,
+    getPendingActionConfirmation,
+    pendingActionConfirmationStore,
+} from '../stores/pendingActionConfirmationStore';
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from '../useCases/__tests__/aiWorkflowCommandPreflightFixture';
+import {
+    assertDiscoveredCommandSchemas,
     declineCall,
     discoverSearchedCalls,
     isRecord,
     proposeDiscoveredCalls,
     scriptProviderTurns,
     searchCalls,
+    type ProviderCall,
     type ScriptedTurn,
 } from '../useCases/__tests__/highLevelIntentWorkflowFixture';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
+import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
+import { type planPromptActions } from '../useCases/planPromptActions';
+import { readChatThreadContext } from '../useCases/readChatThreadContext';
+import { sendChatMessage } from '../useCases/sendChatMessage';
 
-const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
+type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'];
+
+const runtimeMocks = vi.hoisted(() => ({
+    generateWebLlmCompletion: vi.fn(),
+    getAllSidechainRoutes: vi.fn(() => []),
+    resolveToasterPadBinding: vi.fn(() => null),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+}));
+
+/** What the chat route planned for the request it last sent, read where the route itself reads it. */
+const chatPlanning = vi.hoisted(() => ({ last: null as PlannedChatRequest | null }));
+
+vi.mock('../useCases/planPromptActions', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../useCases/planPromptActions')>();
+    return {
+        ...actual,
+        planPromptActions: async (input: Parameters<typeof actual.planPromptActions>[0]) => {
+            const planned = await actual.planPromptActions(input);
+            chatPlanning.last = planned.result;
+            return planned;
+        },
+    };
+});
 
 vi.mock('../useCases/llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => ['webllm'],
@@ -51,6 +111,20 @@ vi.mock('../repositories/webLlm/generateWebLlmCompletion', () => ({
     generateWebLlmCompletion: runtimeMocks.generateWebLlmCompletion,
 }));
 vi.mock('../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
+    setTrackGain: runtimeMocks.setTrackGain,
+    setTrackMute: runtimeMocks.setTrackMute,
+    setTrackPan: runtimeMocks.setTrackPan,
+    setTrackSoloGate: runtimeMocks.setTrackSoloGate,
+}));
+
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
+    getAllSidechainRoutes: runtimeMocks.getAllSidechainRoutes,
+}));
 
 const REPOSITORY_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../..');
 
@@ -73,6 +147,9 @@ const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
     'deny-policy',
 ];
 
+/** A whole corpus runs in one test, its refinement cases through the chat route twice each. */
+const CORPUS_RUN_TIMEOUT_MS = 60_000;
+
 /** How many cases a sealed scored prompt class must carry before its floors mean anything. */
 const MINIMUM_SEALED_CLASS_CASES = 3;
 
@@ -85,7 +162,20 @@ type CorpusProviderTurn =
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[] }
+    | ProposeCommandsTurn
     | { kind: 'decline'; args: Record<string, unknown> };
+
+/**
+ * A proposal of plain commands, the form whose card carries the grounding basis a terse refinement
+ * inherits from. `refinesPriorProposal` names the card the prior turn left pending: its confirmation
+ * id is application-minted, so the runner reads it from the live thread rather than the corpus
+ * pinning it.
+ */
+type ProposeCommandsTurn = {
+    kind: 'propose-commands';
+    commands: Array<{ name: string; arguments: Record<string, unknown> }>;
+    refinesPriorProposal?: true;
+};
 
 /** One compiled command's frozen oracle: the exact type, and the payload fields the prompt fixes.
  *  Never carries an application-generated id (trackId, clipId, revision) — those cannot be known
@@ -105,11 +195,49 @@ type CorpusOracleInvariants = {
 };
 
 type CorpusOracle =
-    | { kind: 'proposal'; actions: CorpusOracleAction[]; invariants?: CorpusOracleInvariants }
+    | {
+          kind: 'proposal';
+          actions: CorpusOracleAction[];
+          invariants?: CorpusOracleInvariants;
+          /** A refinement's replacement: the batch must supersede the card the prior turn left pending. */
+          replaces?: 'prior-proposal';
+      }
+    | { kind: 'revert'; group: 'prior-commit' }
     | { kind: 'clarify' }
     | { kind: 'unsupported' }
     | { kind: 'denied' }
     | { kind: 'pending' };
+
+/** The five follow-ups a refinement case answers: two against a pending card, three against a commit. */
+const REFINEMENT_KINDS = [
+    'scale-pending',
+    'exclude-pending',
+    'relative-to-commit',
+    'undo-commit',
+    'retarget-commit',
+] as const;
+
+type RefinementKind = (typeof REFINEMENT_KINDS)[number];
+
+/** What the prior turn of each kind must leave behind for the follow-up to mean anything. */
+const PRIOR_OUTCOME_BY_KIND: Record<RefinementKind, CorpusPriorTurn['outcome']> = {
+    'scale-pending': 'pending',
+    'exclude-pending': 'pending',
+    'relative-to-commit': 'committed',
+    'undo-commit': 'committed',
+    'retarget-commit': 'committed',
+};
+
+/**
+ * The turn a refinement follows: its request, its scripted provider turns, and what it must leave
+ * behind — a card awaiting confirmation, or a batch committed through the real batch path (the
+ * runner confirms the card where the risk policy holds one for approval, as the musician would).
+ */
+type CorpusPriorTurn = {
+    prompt: string;
+    providerTurns: readonly CorpusProviderTurn[];
+    outcome: 'pending' | 'committed';
+};
 
 type CorpusCase = {
     id: string;
@@ -118,6 +246,9 @@ type CorpusCase = {
     prompt: string;
     providerTurns: readonly CorpusProviderTurn[];
     oracle: CorpusOracle;
+    /** A `refinement` case only: which follow-up it is, and the turn it follows. */
+    refinementKind?: RefinementKind;
+    prior?: CorpusPriorTurn;
 };
 
 type CorpusClassState = { sealed: boolean; pendingContract?: string };
@@ -152,6 +283,36 @@ function isBatchMintedId(id: string): boolean {
     return GENERATED_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
 }
 
+/** Every request a case sends: a refinement's prior turn as well as its follow-up. */
+function casePrompts(testCase: CorpusCase): string[] {
+    return testCase.prior === undefined ? [testCase.prompt] : [testCase.prior.prompt, testCase.prompt];
+}
+
+/** The shape of oracle a refinement case declares: a pending card's replacement, a batch, or an undo. */
+type RefinementOracleShape = 'replacement' | 'batch' | 'revert';
+
+/**
+ * The oracle each refinement kind answers with: a pending card's replacement, the compiled batch on
+ * top of a commit, or the commit's undo.
+ */
+const REFINEMENT_ORACLE_SHAPE: Record<RefinementKind, RefinementOracleShape> = {
+    'scale-pending': 'replacement',
+    'exclude-pending': 'replacement',
+    'relative-to-commit': 'batch',
+    'undo-commit': 'revert',
+    'retarget-commit': 'batch',
+};
+
+function refinementOracleShape(oracle: CorpusOracle): RefinementOracleShape | null {
+    if (oracle.kind === 'revert') {
+        return 'revert';
+    }
+    if (oracle.kind !== 'proposal') {
+        return null;
+    }
+    return oracle.replaces === 'prior-proposal' ? 'replacement' : 'batch';
+}
+
 function sealedClasses(corpus: Corpus): readonly AgentPromptClass[] {
     return AGENT_PROMPT_CLASSES.filter((promptClass) => corpus.classes[promptClass]?.sealed === true);
 }
@@ -166,8 +327,52 @@ function scoredCases(corpus: Corpus): readonly CorpusCase[] {
     return corpus.cases.filter((testCase) => sealed.has(testCase.promptClass));
 }
 
-/** Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture proves against production. */
-function toScriptedTurn(turn: CorpusProviderTurn): ScriptedTurn {
+/**
+ * The plain-command proposal a scripted provider sends, in the shape the refinement specs drive the
+ * chat route with: the plan's scope is every track a command names.
+ */
+function commandBatchProposal(turn: ProposeCommandsTurn, refines: string | undefined): ProviderCall {
+    const targetIds = [...new Set(turn.commands.flatMap((command) => [command.arguments.trackId].filter(isString)))];
+    const proposal: ProviderCall = {
+        name: 'command.batch.propose',
+        arguments: {
+            commands: turn.commands.map((command) => ({ name: command.name, arguments: command.arguments })),
+            plan: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Apply the exact requested mix changes.',
+                constraints: [],
+                scope: {
+                    targetIds,
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+                capabilityIds: [...new Set(turn.commands.map((command) => command.name))],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Validate exact track identities and values.'],
+                stoppingConditions: ['Stop if any target precondition fails.'],
+            },
+        },
+    };
+    if (refines !== undefined) {
+        proposal.arguments.refines = refines;
+    }
+    return proposal;
+}
+
+function isString(value: unknown): value is string {
+    return typeof value === 'string';
+}
+
+/**
+ * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
+ * proves against production. `priorProposalId` reads the card a refinement names in `refines`.
+ */
+function toScriptedTurn(
+    turn: CorpusProviderTurn,
+    priorProposalId: () => string | undefined = () => undefined
+): ScriptedTurn {
     switch (turn.kind) {
         case 'search':
             return () => searchCalls(turn.intents);
@@ -176,6 +381,17 @@ function toScriptedTurn(turn: CorpusProviderTurn): ScriptedTurn {
         case 'propose': {
             const names = [...new Set(turn.items.map((item) => String(item.name)))];
             return proposeDiscoveredCalls(turn.items, names);
+        }
+        case 'propose-commands': {
+            const names = [...new Set(turn.commands.map((command) => command.name))];
+            return (userMessage) => {
+                assertDiscoveredCommandSchemas(userMessage, names);
+                const refines = turn.refinesPriorProposal === true ? priorProposalId() : undefined;
+                if (turn.refinesPriorProposal === true && refines === undefined) {
+                    throw new Error('A refining proposal names a prior card the thread does not hold.');
+                }
+                return [commandBatchProposal(turn, refines)];
+            };
         }
         case 'decline':
             return () => [declineCall(turn.args)];
@@ -227,7 +443,24 @@ const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, AgentAcceptanceO
     'deny-policy': 'denied',
 };
 
+/** An executed change is either a compiled batch or the undo of the last commit, which carries none. */
+const EXECUTE_ORACLE_KINDS: readonly AgentAcceptanceOracleKind[] = ['proposal', 'revert'];
+
+function assertOracleKindFitsClass(testCase: CorpusCase): void {
+    const admitted = testCase.class === 'execute-exact' ? EXECUTE_ORACLE_KINDS : [ORACLE_KIND_BY_CLASS[testCase.class]];
+    expect(
+        admitted,
+        `Case ${testCase.id} declares oracle.kind='${testCase.oracle.kind}' for class='${testCase.class}'`
+    ).toContain(testCase.oracle.kind);
+}
+
 type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'];
+
+/** One scored case and the writes it made that its oracle never asked for. */
+type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
+
+/** How many writes the Command barrel has been asked for so far in this corpus run. */
+type BarrelWriteCount = () => number;
 
 /** Asserts the reach invariants a proposal oracle declares against the batch the run actually compiled. */
 function assertProposalInvariants(id: string, actions: PlannedActions, invariants: CorpusOracleInvariants): void {
@@ -250,7 +483,17 @@ function assertProposalInvariants(id: string, actions: PlannedActions, invariant
  * classes cannot cover is a corpus defect, never a silently-coerced result, so it throws instead of
  * scoring.
  */
-async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseResult> {
+async function runCorpusCase(testCase: CorpusCase, barrelWrites: BarrelWriteCount): Promise<CaseRun> {
+    if (testCase.promptClass === 'refinement') {
+        return runRefinementCase(testCase, barrelWrites);
+    }
+    const writesBefore = barrelWrites();
+    const result = await runPlannedCorpusCase(testCase);
+    return { result, unintendedMutations: barrelWrites() - writesBefore };
+}
+
+/** Plans one single-turn case against the fixture project, with no thread and no chat route. */
+async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseResult> {
     expect(
         testCase.oracle.kind,
         `Case ${testCase.id} declares oracle.kind='${testCase.oracle.kind}' for class='${testCase.class}'`
@@ -258,7 +501,10 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
 
     runtimeMocks.generateWebLlmCompletion.mockReset();
     if (testCase.providerTurns.length > 0) {
-        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, testCase.providerTurns.map(toScriptedTurn));
+        scriptProviderTurns(
+            runtimeMocks.generateWebLlmCompletion,
+            testCase.providerTurns.map((turn) => toScriptedTurn(turn))
+        );
     }
     const result = await parsePromptToActions({
         prompt: testCase.prompt,
@@ -309,6 +555,324 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
         observed,
         matchesOracle,
     });
+}
+
+function readStoreTrackKind(kind: string): Track['kind'] {
+    if (kind === 'audio' || kind === 'midi' || kind === 'bus') {
+        return kind;
+    }
+    throw new Error(`The fixture project holds a track kind the chat project cannot load: ${kind}`);
+}
+
+/** One fixture-project track as the arrangement store holds it, so the chat route reads the same project. */
+function toStoreTrack(track: ProjectContext['tracks'][number]): Track {
+    return {
+        id: track.id,
+        name: track.name,
+        kind: readStoreTrackKind(track.kind),
+        muted: track.muted,
+        soloed: track.soloed,
+        armed: track.armed,
+        gain: track.gain,
+        pan: track.pan,
+        color: '#ffffff',
+        clips: [],
+        devices: track.devices.map((device) => ({
+            id: device.id,
+            name: device.name ?? device.type,
+            type: device.type,
+            bypassed: device.bypassed,
+            parameterValues: Object.fromEntries(
+                (device.parameters ?? []).map((parameter) => [parameter.id, parameter.value])
+            ),
+        })),
+        sends: (track.sends ?? []).map((send) => ({ busId: send.busId, level: send.level, preFader: send.preFader })),
+        midiFx: [],
+        frozen: track.frozen ?? false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 72,
+        outputId: 'master',
+        automationMode: track.automationMode,
+        groupId: null,
+        soloSafe: track.soloSafe,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: '',
+        alternatives: [],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
+}
+
+/**
+ * Opens the fixture project as the chat sees it — real stores, Command and CRDT document, as the
+ * refinement specs drive the chat route — with an empty thread and an empty undo history.
+ */
+function openChatProject(): void {
+    configureAiWorkflowCommandPreflightFixture();
+    configureAutomergeStoragePort(null);
+    resetCrdtProjectAuthority('agent acceptance refinement case');
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    clearHandlerRegistry();
+    registerHandlerMap(getArrangementHandlers());
+    commandUseCases.clearUndoHistory();
+    commandUseCases.resetActionReplayAuthority();
+    commandUseCases.setActionHistoryMetadataPort({
+        record: () => [],
+        markReverted: () => ({ status: 'unavailable' as const }),
+        clear: () => undefined,
+    });
+    clearAiHistory();
+    clearPendingActionConfirmations();
+    setArrangementEventBus({ emit: () => Promise.resolve() });
+    setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+    macroStore.set({ macros: [], recording: false, currentRecording: [] });
+    trackStore.set({ tracks: context.tracks.map(toStoreTrack), selectedTrackId: null, ghostClips: [] });
+    automationStore.set({ lanes: [] });
+    transportStore.set(defaultTransportState);
+    chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+}
+
+function closeChatProject(): void {
+    commandUseCases.clearUndoHistory();
+    resetAiWorkflowCommandPreflightFixture();
+    commandUseCases.resetActionReplayAuthority();
+    clearHandlerRegistry();
+    clearAiHistory();
+    clearPendingActionConfirmations();
+    trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    automationStore.set({ lanes: [] });
+    transportStore.set(defaultTransportState);
+    chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+}
+
+function proposedConfirmationIds(): string[] {
+    return (pendingActionConfirmationStore.value?.confirmations ?? [])
+        .filter((confirmation) => confirmation.status === 'proposed')
+        .map((confirmation) => confirmation.id);
+}
+
+function lastAssistantReply(): string {
+    const message = chatStore.value?.messages.findLast((candidate) => candidate.role === 'assistant');
+    return `${message?.content ?? ''} ${message?.error ?? ''}`.trim();
+}
+
+function captureSettledRevision(): string {
+    flushAutomergeStorageWrites();
+    return settlePendingProjectWritesAndCaptureRevision();
+}
+
+/**
+ * Sends one chat turn with its own scripted provider turns and returns the writes it made: the
+ * Command barrel writes it asked for, and at least one when the project or its undo history moved by
+ * any other route.
+ */
+async function sendScriptedChatTurn(input: {
+    id: string;
+    prompt: string;
+    providerTurns: readonly CorpusProviderTurn[];
+    priorProposalId: () => string | undefined;
+    barrelWrites: BarrelWriteCount;
+}): Promise<number> {
+    runtimeMocks.generateWebLlmCompletion.mockReset();
+    if (input.providerTurns.length > 0) {
+        scriptProviderTurns(
+            runtimeMocks.generateWebLlmCompletion,
+            input.providerTurns.map((turn) => toScriptedTurn(turn, input.priorProposalId))
+        );
+    }
+    chatPlanning.last = null;
+    const revision = captureSettledRevision();
+    const undoEntries = undoHistoryStore.value?.past.length ?? 0;
+    const writesBefore = input.barrelWrites();
+
+    await sendChatMessage(input.prompt);
+
+    expect(
+        runtimeMocks.generateWebLlmCompletion,
+        `Case ${input.id} turn "${input.prompt}" declares ${String(input.providerTurns.length)} scripted provider turns but the run consumed a different number`
+    ).toHaveBeenCalledTimes(input.providerTurns.length);
+    const moved = captureSettledRevision() !== revision || (undoHistoryStore.value?.past.length ?? 0) !== undoEntries;
+    return Math.max(input.barrelWrites() - writesBefore, moved ? 1 : 0);
+}
+
+/** What the prior turn left for the follow-up: the card it holds pending, or the group it committed. */
+type PriorTurnState = { proposalId: string | undefined; commitGroupId: string | undefined };
+
+/**
+ * Brings the prior turn to the state its case declares. A turn that must commit is confirmed where
+ * the risk policy put it to the musician, so its commit takes the real confirmed-batch path and the
+ * undo history holds its revert group either way.
+ */
+async function settlePriorTurn(id: string, outcome: CorpusPriorTurn['outcome']): Promise<PriorTurnState> {
+    const proposed = proposedConfirmationIds();
+    if (outcome === 'pending') {
+        expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
+        return { proposalId: proposed[0], commitGroupId: undefined };
+    }
+    expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
+    for (const confirmationId of proposed) {
+        await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+    }
+    expect(
+        readChatThreadContext()?.lastCommit?.standing,
+        `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
+    ).toBe('standing');
+    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId };
+}
+
+type LandedAction = { type: string; payload?: unknown };
+
+/** The commands one undo group holds applied, or `null` when any member is no plain action. */
+function committedGroupActions(groupId: string): LandedAction[] | null {
+    const entries = (undoHistoryStore.value?.past ?? []).filter((entry) => entry.groupId === groupId);
+    const actions = entries.flatMap((entry) => (entry.kind === 'action' ? [entry.action] : []));
+    return actions.length === entries.length ? actions : null;
+}
+
+/** The card that replaced the prior one: the only card proposed, superseding it, the prior one retired. */
+function replacementCardActions(prior: PriorTurnState): LandedAction[] | null {
+    const proposed = proposedConfirmationIds();
+    const replacement = proposed.length === 1 ? getPendingActionConfirmation(proposed[0] ?? '') : null;
+    if (replacement === null || prior.proposalId === undefined || replacement.supersedes !== prior.proposalId) {
+        return null;
+    }
+    return getPendingActionConfirmation(prior.proposalId)?.status === 'proposed' ? null : replacement.actions;
+}
+
+/** The follow-up's own batch on top of a commit: a new commit, or a new card superseding nothing. */
+function followUpBatchActions(prior: PriorTurnState): LandedAction[] | null {
+    const proposed = proposedConfirmationIds();
+    const newestGroupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+    if (proposed.length === 0) {
+        if (newestGroupId === undefined || newestGroupId === prior.commitGroupId) {
+            return null;
+        }
+        return committedGroupActions(newestGroupId);
+    }
+    const card = proposed.length === 1 ? getPendingActionConfirmation(proposed[0] ?? '') : null;
+    return card === null || card.supersedes !== null ? null : card.actions;
+}
+
+/** The undo of the prior commit: the planned revert names its group, and the history holds it undone whole. */
+function revertsPriorCommit(outcome: PlanningOutcome, prior: PriorTurnState): boolean {
+    const history = undoHistoryStore.value;
+    return (
+        outcome.kind === 'revert' &&
+        prior.commitGroupId !== undefined &&
+        outcome.revertGroupId === prior.commitGroupId &&
+        (history?.past ?? []).every((entry) => entry.groupId !== prior.commitGroupId) &&
+        (history?.future ?? []).some((entry) => entry.groupId === prior.commitGroupId)
+    );
+}
+
+function landedActionsMatch(id: string, landed: LandedAction[] | null, expected: CorpusOracleAction[]): boolean {
+    return (
+        landed !== null &&
+        landed.length === expected.length &&
+        landed.every((action, index) => payloadMatches(action, expected[index], `${id} actions[${String(index)}]`))
+    );
+}
+
+/**
+ * Whether the follow-up landed what its oracle names, read from what the chat route left in the
+ * stores rather than from the plan alone: a replacement card superseding the prior one and writing
+ * nothing, the follow-up's own batch on top of the commit, or the commit's group undone.
+ */
+function followUpMatchesOracle(input: {
+    testCase: CorpusCase;
+    outcome: PlanningOutcome;
+    prior: PriorTurnState;
+    writes: number;
+}): boolean {
+    const { testCase, outcome, prior, writes } = input;
+    switch (testCase.oracle.kind) {
+        case 'revert':
+            return revertsPriorCommit(outcome, prior);
+        case 'proposal':
+            if (testCase.oracle.replaces === 'prior-proposal') {
+                return (
+                    writes === 0 &&
+                    landedActionsMatch(testCase.id, replacementCardActions(prior), testCase.oracle.actions)
+                );
+            }
+            return landedActionsMatch(testCase.id, followUpBatchActions(prior), testCase.oracle.actions);
+        default:
+            throw new Error(
+                `Refinement case ${testCase.id} declares an oracle no follow-up lands: ${testCase.oracle.kind}`
+            );
+    }
+}
+
+/** A follow-up against a pending card replaces the card and writes nothing; one against a commit may write. */
+function followUpMayWrite(kind: RefinementKind): boolean {
+    return PRIOR_OUTCOME_BY_KIND[kind] === 'committed';
+}
+
+/**
+ * Runs one refinement case through the chat route a musician's follow-up takes: the prior turn, then
+ * the follow-up, each planned with the thread the chat reads, so thread context, `refines`
+ * admission, the grounding basis and the last-commit continuation all run for real. Writes the prior
+ * turn makes to reach a commit are the case's setup; any other write its oracle did not ask for is
+ * unintended.
+ */
+async function runRefinementCase(testCase: CorpusCase, barrelWrites: BarrelWriteCount): Promise<CaseRun> {
+    const { prior, refinementKind } = testCase;
+    if (prior === undefined || refinementKind === undefined) {
+        throw new Error(`Refinement case ${testCase.id} names no prior turn or refinement kind`);
+    }
+    assertOracleKindFitsClass(testCase);
+    openChatProject();
+    try {
+        const priorWrites = await sendScriptedChatTurn({
+            id: testCase.id,
+            prompt: prior.prompt,
+            providerTurns: prior.providerTurns,
+            priorProposalId: () => undefined,
+            barrelWrites,
+        });
+        const priorState = await settlePriorTurn(testCase.id, prior.outcome);
+        const writes = await sendScriptedChatTurn({
+            id: testCase.id,
+            prompt: testCase.prompt,
+            providerTurns: testCase.providerTurns,
+            priorProposalId: () => priorState.proposalId,
+            barrelWrites,
+        });
+        const outcome = chatPlanning.last?.planningOutcome;
+        if (outcome === undefined) {
+            throw new Error(`Case ${testCase.id} follow-up was never planned: ${lastAssistantReply()}`);
+        }
+        const observed = classifyPlanningOutcome(outcome, chatPlanning.last?.actions.length ?? 0);
+        if (observed === null) {
+            throw new Error(`Case ${testCase.id} observed no scorable outcome class (kind=${outcome.kind})`);
+        }
+        const matchesOracle = followUpMatchesOracle({ testCase, outcome, prior: priorState, writes });
+        const unintendedFollowUpWrites = followUpMayWrite(refinementKind) && matchesOracle ? 0 : writes;
+        return {
+            result: scoreAgentAcceptanceCase({
+                id: testCase.id,
+                expectedClass: testCase.class,
+                promptClass: testCase.promptClass,
+                oracleKind: testCase.oracle.kind,
+                observed,
+                matchesOracle,
+            }),
+            unintendedMutations: (prior.outcome === 'pending' ? priorWrites : 0) + unintendedFollowUpWrites,
+        };
+    } finally {
+        closeChatProject();
+    }
 }
 
 type ThresholdCells = { development: number; heldOut: number };
@@ -395,9 +959,11 @@ describe('agent acceptance corpora', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
         expect(new Set(allIds).size).toBe(allIds.length);
 
-        const developmentPrompts = new Set(corpora.development.cases.map((testCase) => testCase.prompt));
-        for (const heldOutCase of corpora['held-out'].cases) {
-            expect(developmentPrompts.has(heldOutCase.prompt)).toBe(false);
+        const developmentPrompts = new Set(corpora.development.cases.flatMap(casePrompts));
+        for (const heldOutPrompt of corpora['held-out'].cases.flatMap(casePrompts)) {
+            expect(developmentPrompts.has(heldOutPrompt), `Held-out prompt "${heldOutPrompt}" is in development`).toBe(
+                false
+            );
         }
     });
 
@@ -459,6 +1025,36 @@ describe('agent acceptance corpora', () => {
             }
         });
 
+        it('gives every refinement kind its own cases, each following the turn its kind needs', () => {
+            const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
+            for (const kind of REFINEMENT_KINDS) {
+                expect(
+                    refinementCases.filter((entry) => entry.refinementKind === kind).length,
+                    `The refinement class carries too few ${kind} cases`
+                ).toBeGreaterThanOrEqual(MINIMUM_SEALED_CLASS_CASES);
+            }
+            for (const testCase of refinementCases) {
+                const kind = testCase.refinementKind;
+                expect(REFINEMENT_KINDS, `Case ${testCase.id} declares an unknown refinement kind`).toContain(kind);
+                if (kind === undefined) {
+                    continue;
+                }
+                expect(testCase.prior?.outcome, `Case ${testCase.id} follows the wrong prior turn`).toBe(
+                    PRIOR_OUTCOME_BY_KIND[kind]
+                );
+                expect(testCase.class, `Case ${testCase.id} is no executed change`).toBe('execute-exact');
+                expect(
+                    refinementOracleShape(testCase.oracle),
+                    `Case ${testCase.id} declares the wrong oracle for ${kind}`
+                ).toBe(REFINEMENT_ORACLE_SHAPE[kind]);
+            }
+            for (const testCase of corpus.cases.filter((entry) => entry.promptClass !== 'refinement')) {
+                expect(testCase.prior, `Case ${testCase.id} follows a turn outside the refinement class`).toBe(
+                    undefined
+                );
+            }
+        });
+
         it('covers every outcome class the boundary cases answer for', () => {
             const boundaryCases = corpus.cases.filter((entry) => entry.promptClass === 'boundary');
             for (const outcomeClass of BOUNDARY_OUTCOME_CLASSES) {
@@ -474,38 +1070,45 @@ describe('agent acceptance corpora', () => {
     });
 
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus', (corpusName) => {
-        it('scores every sealed-class case within the frozen thresholds with zero unintended mutations', async () => {
-            const executeAppActionSpy = vi.spyOn(commandUseCases, 'executeAppAction');
-            const executeAppActionBatchSpy = vi.spyOn(commandUseCases, 'executeAppActionBatch');
-            executeAppActionSpy.mockClear();
-            executeAppActionBatchSpy.mockClear();
+        it(
+            'scores every sealed-class case within the frozen thresholds with zero unintended mutations',
+            async () => {
+                const executeAppActionSpy = vi.spyOn(commandUseCases, 'executeAppAction');
+                const executeAppActionBatchSpy = vi.spyOn(commandUseCases, 'executeAppActionBatch');
+                executeAppActionSpy.mockClear();
+                executeAppActionBatchSpy.mockClear();
 
-            const cases = scoredCases(corpora[corpusName]);
-            const results: AgentAcceptanceCaseResult[] = [];
-            for (const testCase of cases) {
-                results.push(await runCorpusCase(testCase));
-            }
+                const barrelWrites = () =>
+                    executeAppActionSpy.mock.calls.length + executeAppActionBatchSpy.mock.calls.length;
+                const cases = scoredCases(corpora[corpusName]);
+                const results: AgentAcceptanceCaseResult[] = [];
+                let unintendedMutations = 0;
+                for (const testCase of cases) {
+                    const run = await runCorpusCase(testCase, barrelWrites);
+                    results.push(run.result);
+                    unintendedMutations += run.unintendedMutations;
+                }
 
-            expect(results).toHaveLength(cases.length);
-            for (const result of results) {
-                expect(result.observed).toBeDefined();
-            }
+                expect(results).toHaveLength(cases.length);
+                for (const result of results) {
+                    expect(result.observed).toBeDefined();
+                }
 
-            const unintendedMutations =
-                executeAppActionSpy.mock.calls.length + executeAppActionBatchSpy.mock.calls.length;
-            const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
-            expect(metrics.unintendedMutations).toBe(0);
+                const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
+                expect(metrics.unintendedMutations).toBe(0);
 
-            const failed = failedAgentAcceptanceThresholds(
-                metrics,
-                corpusName,
-                sealedScoredClasses(corpora[corpusName])
-            );
-            expect(failed).toEqual([]);
+                const failed = failedAgentAcceptanceThresholds(
+                    metrics,
+                    corpusName,
+                    sealedScoredClasses(corpora[corpusName])
+                );
+                expect(failed).toEqual([]);
 
-            executeAppActionSpy.mockRestore();
-            executeAppActionBatchSpy.mockRestore();
-        });
+                executeAppActionSpy.mockRestore();
+                executeAppActionBatchSpy.mockRestore();
+            },
+            CORPUS_RUN_TIMEOUT_MS
+        );
     });
 });
 
@@ -540,8 +1143,10 @@ describe('agentAcceptanceScorer', () => {
         expect(classifyPlanningOutcome({ kind: 'no-match' }, 0)).toBeNull();
     });
 
-    it('places the undo of a chat commit in no frozen class until its corpus is sealed', () => {
-        expect(classifyPlanningOutcome({ kind: 'revert', runId: 'run-1', revertGroupId: 'group-1' }, 0)).toBeNull();
+    it('classifies the undo of a chat commit as an executed change, though it carries no batch', () => {
+        expect(classifyPlanningOutcome({ kind: 'revert', runId: 'run-1', revertGroupId: 'group-1' }, 0)).toBe(
+            'execute-exact'
+        );
     });
 
     it('requires both the class label and the oracle content to agree for an exact match', () => {
