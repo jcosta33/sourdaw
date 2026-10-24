@@ -1,0 +1,23 @@
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/stringOrchestra.spec.ts
+  s_59e31a5c6f3e31::t_9166f72f33268e 5,35-47
+  s_59e31a5c6f3e31::t_db8a787a8af3ab 31
+  s_59e31a5c6f3e31::t_38008cb1c04e48 27-30
+src/modules/Project/useCases/projectTemplates/templateFiles/stringOrchestra.ts
+  s_59e31a5c6f3e31::t_38008cb1c04e48 10-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5276785f2b5fa897ce70ec68bd6bae1c46967395",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
