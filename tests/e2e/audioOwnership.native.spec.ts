@@ -175,6 +175,28 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
     );
 }
 
+async function initializeEmptyCollector(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+        const [projectStores, arrangementStores, metadata, crdt] = await Promise.all([
+            import('/src/modules/Project/stores/index.ts'),
+            import('/src/modules/Arrangement/stores/index.ts'),
+            import('/src/modules/Project/useCases/createFreshProjectMetadata.ts'),
+            import('/src/modules/CrdtDocument/useCases/index.ts'),
+        ]);
+        if (crdt.getCrdtDocIds().length > 0) {
+            throw new Error('The empty collector fixture requires a fresh realm without CRDT authority');
+        }
+        // Leave the CRDT storage runtime unregistered: these empty projections
+        // describe only this collector and must never replace the saved root.
+        projectStores.projectStore.set(
+            metadata.createFreshProjectMetadata({ name: 'Empty audio collector', loading: false, initialized: true })
+        );
+        arrangementStores.trackStore.set({ tracks: [], selectedTrackId: null });
+        projectStores.arrangementStore.set({ arrangements: [], activeArrangementId: 'empty-collector' });
+        projectStores.projectLoadFailureStore.set(null);
+    });
+}
+
 async function loadSavedProjectInFreshRealm(
     context: BrowserContext,
     bufferId: string,
@@ -346,16 +368,16 @@ async function readDurableProjectAudio(page: Page, bufferId: string): Promise<{ 
                         let samples: number[] = [];
                         request.addEventListener('success', () => {
                             const value: unknown = request.result;
-                            const channelData =
-                                value !== null && typeof value === 'object'
-                                    ? Reflect.get(value, 'channelData')
-                                    : undefined;
+                            let channelData: unknown;
+                            if (value !== null && typeof value === 'object') {
+                                channelData = Reflect.get(value, 'channelData');
+                            }
                             const channel = Array.isArray(channelData) ? channelData[0] : undefined;
                             if (Object.prototype.toString.call(channel) === '[object Float32Array]') {
-                                const length =
-                                    channel !== null && typeof channel === 'object'
-                                        ? Reflect.get(channel, 'length')
-                                        : undefined;
+                                let length: unknown;
+                                if (channel !== null && typeof channel === 'object') {
+                                    length = Reflect.get(channel, 'length');
+                                }
                                 if (typeof length === 'number') {
                                     samples = Array.from({ length }, (_, index) => {
                                         const sample = Reflect.get(channel, String(index));
@@ -436,6 +458,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         const collector = await openRealm(context);
         await clearStorage(saver);
         const { bufferId, decodedPcm } = await initializeProjectWithAudio(saver);
+        await initializeEmptyCollector(collector);
 
         await expect(saveProject(saver)).resolves.toBe(true);
         await expect(collectWithRealProvider(collector)).resolves.toBe(0);
@@ -452,6 +475,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         const collector = await openRealm(context);
         await clearStorage(saver);
         const { bufferId, decodedPcm } = await initializeProjectWithAudio(saver);
+        await initializeEmptyCollector(collector);
 
         await expect(beginCollectionWithCapturedRealCensus(collector)).resolves.toEqual([]);
         await beginSaveWaitingForLock(saver);
