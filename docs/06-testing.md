@@ -9,6 +9,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
 - **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e -- <spec>`. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
+- **CI browser shards serve a production-mode build.** The dev server's cold module transform is about half of all browser runner time, so a CI shard serves `vite build --mode e2e` through `vite preview` with one Playwright worker. A build serves no `/src/...` module URLs, so any file that loads one at runtime (itself, through a helper, or through an HTML probe) is listed in `tests/e2e/devServerOnlySpecs.ts` and runs against a dev server started in the same shard. Local runs, the offline smoke job, and nightly use the dev server throughout. A built shard runs a production React build, so a browser spec asserting zero console errors there cannot see React's development-only warnings; the dev-server runs still can. `scripts/__tests__/e2eDevServerOnlySpecs.spec.ts` fails when a file loads a `/src/...` URL without being listed, or stays listed after it stops.
 - **Two reference hosts, no test-only privilege.** Surfaces that have to hold in both hosts are proven in both. `tests/e2e/agentWorkspace.spec.ts` drives the agent workspace in the standalone browser — chat composer, Agent bottom tab, approval card, A/B comparison, revert — against an OpenAI-compatible endpoint on loopback admitted through `configureCloudProvider`. `pnpm desktop:agent-proof` (`scripts/proveDesktopAgentWorkspace.ts`, nightly only) drives the same flow in the packaged Electron app over the DevTools protocol, admitting the same endpoint through the Preferences AI form because the packaged renderer has no `/src/...` to import, and streaming one explain-mode answer back from it — as `tests/e2e/aiConfirmApplyUndo.spec.ts` does for the browser host — because admission alone is a local write and proves no round trip. Neither adds a hook, a test id, or a relaxed policy to the app or the preload: a proof that needs a privilege the product does not ship is proving something the product is not.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `#/utils/desktopBridge` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
@@ -704,13 +705,13 @@ unchanged into a passing record.
 | `pnpm test:run <target>`                     | Single run; pass a file or narrow directory to stay focused. Bare `pnpm test:run` runs the full suite — do that only when explicitly requested |
 | `pnpm test:coverage`                         | Full Vitest run with **v8** coverage; run only when explicitly requested                                                                       |
 | `pnpm test:e2e <spec>`                       | Playwright run; pass a spec to stay focused. Bare `pnpm test:e2e` runs the full suite — do that only when explicitly requested                 |
-| `pnpm typecheck:test`                        | Spec-inclusive type check (`tsconfig.test.json`)                                                                                               |
 | `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                                          |
 
-Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
-coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
-sequentially within each lane through `package.json`. Other lanes may validate concurrently when
-RAM permits. Wrap compute-heavy agent runs with
+Run only checks affected by the changed files. Keep local verification focused on tests and
+formatting; CI owns lint and TypeScript typechecks. Never expand to repository-wide tests, coverage,
+E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks sequentially
+within each lane through `package.json`. Other lanes may validate concurrently when RAM permits.
+Wrap compute-heavy agent runs with
 `pnpm guard --profile <p> [--max-rss-mib <estimate>] -- <command>`. Estimate peak RAM from the
 latest observed guard peak or the nearest command; without an estimate the guard applies the
 profile ceiling, raised to the measured budget it records for known heavy scripts, and an RSS
@@ -880,7 +881,7 @@ needed. Do not rewrite or clean another agent's lane to upgrade it.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
-Spec files are excluded from the app `pnpm typecheck` (`tsconfig.app.json` excludes `src/**/*.spec.ts(x)`), so `pnpm typecheck:test` is the only gate that type-checks them. Run it whenever you touch a spec, a dummy factory, or a model shape that fixtures mirror. It must stay at zero errors — fix fixtures to the real types; never silence with `any` or `@ts-expect-error`.
+CI owns lint and all TypeScript typechecks, including the spec-inclusive `tsconfig.test.json` check. Do not run lint or typecheck commands locally; use the pull request's CI results as their verification evidence. When you touch a spec, dummy factory, or model shape mirrored by fixtures, keep fixtures aligned with the real types and never silence errors with `any` or `@ts-expect-error`.
 
 ---
 

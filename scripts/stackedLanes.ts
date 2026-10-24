@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 
 import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from './githubAppIdentity.ts';
-import { fail, PR_STATE, type PullRequestState } from './prContract.ts';
+import { fail, isLaneBranch, PR_STATE, type PullRequestState } from './prContract.ts';
 
 export type LaneStack = {
     version: 1;
@@ -25,7 +25,6 @@ export type StackParent = {
 };
 
 const shaPattern = /^[0-9a-f]{40,64}$/;
-const branchPattern = /^agent\/[a-z0-9][a-z0-9/-]*$/;
 
 export function parseLaneStack(value: unknown): LaneStack {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -37,9 +36,9 @@ export function parseLaneStack(value: unknown): LaneStack {
         Object.keys(row).some((key) => !keys.includes(key)) ||
         row.version !== 1 ||
         typeof row.childBranch !== 'string' ||
-        !branchPattern.test(row.childBranch) ||
+        !isLaneBranch(row.childBranch) ||
         typeof row.parentBranch !== 'string' ||
-        !branchPattern.test(row.parentBranch) ||
+        !isLaneBranch(row.parentBranch) ||
         row.childBranch === row.parentBranch ||
         typeof row.forkHead !== 'string' ||
         !shaPattern.test(row.forkHead) ||

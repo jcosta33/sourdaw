@@ -147,7 +147,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             } else if (event.key === 'Delete' || event.key === 'Backspace') {
                 const selected = elasticState.selectedMarkerIds;
                 for (const markerId of selected) {
-                    removeMarker(markerId);
+                    removeMarker(clipId, markerId);
                 }
                 refreshWarp();
                 event.preventDefault();
@@ -246,14 +246,14 @@ export const ElasticEditorPanel = (): ReactElement => {
         }
         if (tool === 'remove-marker') {
             if (hit) {
-                removeMarker(hit.id);
+                removeMarker(clipId, hit.id);
                 refreshWarp();
             }
             return;
         }
         if (tool === 'lock-marker') {
             if (hit) {
-                toggleMarkerLock(hit.id);
+                toggleMarkerLock(clipId, hit.id);
                 refreshWarp();
             }
             return;

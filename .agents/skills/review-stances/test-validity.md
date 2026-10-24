@@ -6,6 +6,113 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
+
+Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
+(`789351350ae323da1bac0aa68fc35b80a294c328`) shows core metadata read before comments and a
+node-ID-only close. A controlled production-adapter probe moved the head during the final comment
+response; CLOSE happened before later refusal. Exact historical reviewer prompts are unavailable,
+so whether the missed composition risk lacked a stance, was mis-prompted or was mis-tiered remains
+unestablished. No live GitHub occurrence is claimed.
+
+Use actual inspection and close adapters over controlled provider responses. A stable head must
+close once; movement between core and comment responses must yield zero CLOSE mutations, while
+prior legitimate marker creation/compensation remains allowed. Prove the final witness contains no
+comment read, is bound to the same repository/PR/node/head/source/base, and directly precedes the
+mutation. Require malformed/missing witnesses to refuse and post-close/CLOSED replay movement to
+preserve the appropriate no-write or uncertain-owner result. A fake close that bypasses this native
+boundary cannot carry the claim; the final observation is not server-side compare-and-swap.
+
+### 2026-10-24 — an empty rollback projection hid an acknowledged remote marker (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) introduced the serializer and
+`VerifiedSupersessionCompensationError` release path around preexisting cleanup that only deleted
+visible markers. Fixtures covered unknown writes and altered rollback markers, but omitted a valid
+receipt followed by reads that hid the still-present marker. The final review record carried a
+strongest-tier ambiguous-write/altered-rollback stance; its exact historical raw prompt is
+unestablished. No physical or API-lag production occurrence is established.
+
+Separate actual remote marker state from the inspection projection. After acknowledged creation,
+omit that ID from every later read without deleting it. Both real serialized closure callers must
+retain the journaled owner, print recovery, and send zero unverified deletes; inspect the actual
+marker collection as well as the projected OPEN state. Preserve the observed-delete rollback and
+read-only release controls. The original comment-ID set alone is not proof of compensation.
+
+### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
+
+PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but
+never guaranteed the child stdout Writable returned `false`. The first PR check for #5638 failed at
+that admission assertion, before exact-output and disposal checks ran. Public review covered other
+capture risks; a native false-return admission probe was missing.
+
+Keep stdout as a real child-process pipe. Hold the child's real Writable output while calling its
+bound `write`, record pressure only from that call returning `false`, and release on a later event-loop
+turn. Require exact independent canonical bytes, successful close, empty stderr, and disposal after
+release. A forced exit before release must lose bytes and fail the case. Parent `readableLength` alone
+proves only that some bytes crossed the pipe, not child Writable or kernel-pipe saturation.
+
+### 2026-10-24 — injected owner fences concealed missing launcher admission (introduced by PR #5639)
+
+PR #5639's real Git-ref lock cases supplied fixture owner fences, so they never observed the
+default fence's trusted process-tool requirement. The native package route still bypassed the
+launcher and refused before PR I/O. Strongest-tier review was present; actual native CLI and
+platform-tool admission was missing from the exercised boundary.
+
+Keep an actual package-to-snapshot-to-CLI case with controlled credential and PR ports, but no
+injected owner fence. Observe the default owner before the first PR port read, and require a
+detached POSIX process group. Direct-package and omitted-fenced-command negative controls must
+restore the missing-tool refusal. Test POSIX and Windows tool selection separately, and label
+Windows selection on another host as structural evidence rather than Windows execution.
+
+### 2026-10-24 — rollback fixtures omitted adoption after their OPEN snapshot (PRs #2357 and #4420)
+
+The compensation snapshot from PR #2357 and two-marker rollback from PR #4420 were tested as one
+invocation's cleanup. They did not interleave another real supersession after that snapshot, so a
+successful close could lose both canonical proofs. Historical exact review stance and tier are
+unestablished. The first retention-only repair also omitted a newly arriving finding followed by
+a corrected-lineage retry, which the retained stale lineage refused.
+
+Capture an OPEN compensation response and invoke the actual serialized production entrypoint
+for the competitor. Require the real Git-ref owner to refuse it before any PR port call, then
+prove that a later invocation closes with both canonical proofs after verified rollback. Pure
+core calls do not acquire the production lock. Keep the unsafe interleaving in this entrypoint
+probe, and require an updated finding set to recover with the complete lineage.
+
+Record a boundary before every comment, delete and close. Unknown comment results, altered
+markers, attempted closes and unavailable rollback verification must retain the exact journal;
+only proven compensation or a read-only refusal may release. Exercise the existing native
+recovery route with stable OPEN and CLOSED unmerged observations, and require no false success
+after refusal or lock-release failure. A second PR and completed replay are positive controls.
+Inspect the recovery output on fresh reconciliation and receipt replay: it must guide the original
+operation with its original bound inputs, without selecting one consumer of the shared owner.
+
+### 2026-10-24 — cold stylesheet work consumed a composition spec's deadline (PR #5363 repair)
+
+PR #3270 (`43f7a11dd6815befaa18f3b332b2b7c96a43880a`) introduced the composition fixture without a
+CSS mock. PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a separate second App render,
+leaving the fixture's global stylesheet import in place. The historical review prompt and tier are
+unestablished. The missed failure mode was cold work in an unrelated dependency crossing a test
+case deadline and affecting following cases: the fixture covered startup ordering but not
+test-lifecycle isolation. Cold CSS compilation could consume the per-case deadline and cascade
+failures into later cases; the CSS-free controlled variant passed with the startup assertions
+intact.
+
+Probe isolation by holding the shared stylesheet import beyond the case boundary and observing the
+next case; then mock only that unrelated CSS module and keep real registration, ordering assertions,
+lifecycle, and deadlines unchanged.
+
+### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
+
+The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
+path at epoch 0, where the epoch term is bypassed, and mocked `captureProjectRevision` to a
+constant with a no-op `stopPlayback`. None of them could observe the guard reading the discard's
+own load transaction, transport halt and `loading` publication as a newer transition or an edit
+(#5573). The full lesson is in `project-integrity.md`.
+
+Probe: run the real revision and identity capture over a real root document, after one real
+transition has activated, with every wait the action crosses spanning a frame so pending document
+writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
+
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
 PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
@@ -35,8 +142,8 @@ transcript with exit zero; widening admission to 101 or zero must fail that case
 The immutable event base can precede both synthetic integration parents when main advances. Drive
 the native job's configured checkout depth through a tiny real Git fetch topology; require the
 event base, candidate head and integration commit to resolve. A literal depth assertion alone does
-not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
-and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+not prove object availability. Require PR CI typecheck evidence to cover the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type. Preserve recognition of coded ESRCH from a foreign Error realm.
 
 Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
 termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
@@ -612,11 +719,11 @@ Blind spot: the stance proves specs discriminate by running them; vitest's pass 
 the strict `tsc` contracts the pipeline enforces, so a PR adding TypeScript files can carry type
 errors no spec-level probe surfaces.
 
-Probe that would have caught it: when a diff adds or edits TypeScript files, compile a narrow `tsc`
-program inside the review worktree defined in the Reviewer isolation section (extend the lane
-tsconfig with strict options, include the changed files plus the ambient types the import closure
-needs) and require exit 0; reproduce the failure pre-fix when validating a posted type finding. (PR
-#3136's dispatch already carried this probe and produced clean heads.)
+Probe that would have caught it: when a diff adds or edits TypeScript files, require the pull
+request's CI TypeScript typecheck to cover the changed files and inspect its result; a focused
+Vitest pass is not type evidence. Reproduce a posted type finding by identifying the CI diagnostic
+and the source change that removes it. PR #3136 historically used an isolated compiler probe; the
+current evidence path is the pull request's CI typecheck.
 
 ### 2026-08-30 — a new device type string that is a classified third-party mark (escaped via PR #3127, caught by the release-inventory job)
 
@@ -632,7 +739,35 @@ registry can violate a data contract no spec observes.
 Probe that would have caught it: when a diff adds type or name strings to registries (device types,
 plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
-any hit in the same change.
+any hit in the same change. The tracked-set digest variant of this gap, where no digest moves
+at all, is the 2026-10-24 entry below.
+
+### 2026-10-24 — a tracked-set source edit left its release digest unrestamped (escaped via PR #5568, found by a manual release-inventory run on main)
+
+PR #5568 added the overdub controller command handlers and their argument keys. It changed
+`src/modules/Command/useCases/versionedCommandArgumentKeys.ts` and `src/utils/handlerContract.ts`,
+both inside the Grand Boule project-state tracked set in `scripts/checkReleaseInventory.ts`, and did
+not restamp `release/open-source-inventory.json`. Its checks were green. `main` then failed
+`pnpm test:release-inventory` with a digest mismatch until a follow-up restamp. A manual run on main
+found it after a reviewer of another PR noticed the stale digest.
+
+Blind spot: no pull-request check runs `pnpm test:release-inventory`; the nightly and
+`release:proof:assemble` are the only runners. A diff can therefore change a tracked-set source while
+its recorded digest goes stale unobserved. Stances that attack the change's behavior never touch the
+digest, so the escape reaches `main` unless a reviewer checks for it.
+
+Probe that would have caught it: for each surface boundary in `scripts/checkReleaseInventory.ts`,
+find its `gitPathspecs` by its `digestLabel` (the Grand Boule project-state boundary is the one with
+`digestLabel: 'grand-boule-project-state'`) and run
+`git diff --name-only <base> <head> -- <gitPathspecs>`, keeping its `:(exclude…)` entries. Match only
+against `gitPathspecs`: those are what the digest hashes. The boundary's `paths` is licensing
+membership and is broader, since it includes GrandBoule specs and AGENTS.md. When the command lists
+a path, require `release/open-source-inventory.json` to move in the same diff, and have the reviewer
+run `pnpm test:release-inventory` in their probe worktree (see Reviewer isolation in
+`.agents/skills/review-stances/README.md`), not in the lane; it must pass. A missing digest move is
+a finding for the reviewer, not something to leave to the author's run. If the author must restamp,
+`pnpm release:restamp:tracked-set` refuses while tracked-set source changes are uncommitted, so the
+source commit comes first.
 
 ### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
 

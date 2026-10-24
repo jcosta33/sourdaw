@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { useRef, useState, type ReactElement, type ReactNode } from 'react';
 
 import {
     PanelLeft,
@@ -45,6 +45,55 @@ type PanelTogglesProps = {
     compact?: boolean;
 };
 
+function CompactPanelPopover({ children }: { children: ReactNode }): ReactElement {
+    const [tooltipOpen, setTooltipOpen] = useState(false);
+    const popoverOpen = useRef(false);
+    const tooltipDismissed = useRef(false);
+
+    const resetTooltipDismissal = (): void => {
+        if (!popoverOpen.current) {
+            tooltipDismissed.current = false;
+        }
+    };
+
+    return (
+        <Popover
+            onOpenChange={(open) => {
+                popoverOpen.current = open;
+                tooltipDismissed.current = true;
+                setTooltipOpen(false);
+            }}
+        >
+            <Tooltip
+                open={tooltipOpen}
+                onOpenChange={(open) => {
+                    setTooltipOpen(open && !popoverOpen.current && !tooltipDismissed.current);
+                }}
+            >
+                <TooltipTrigger asChild>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="View and panel controls"
+                            data-onboarding="mixer-button"
+                            onPointerEnter={resetTooltipDismissal}
+                            onPointerLeave={resetTooltipDismissal}
+                            onBlur={resetTooltipDismissal}
+                        >
+                            <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                        </Button>
+                    </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>View and panel controls</TooltipContent>
+            </Tooltip>
+            <PopoverContent align="end" aria-label="View and panel controls">
+                {children}
+            </PopoverContent>
+        </Popover>
+    );
+}
+
 export const PanelToggles = ({
     sidebarOpen,
     inspectorOpen,
@@ -59,97 +108,80 @@ export const PanelToggles = ({
 
     if (compact) {
         return (
-            <Popover>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label="View and panel controls"
-                                data-onboarding="mixer-button"
-                            >
-                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-                            </Button>
-                        </PopoverTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>View and panel controls</TooltipContent>
-                </Tooltip>
-                <PopoverContent align="end" aria-label="View and panel controls">
-                    <div className="grid min-w-48 gap-1">
-                        <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-                            View
-                        </p>
-                        <Button
-                            variant={trackListOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={trackListOpen}
-                            onClick={toggleTrackList}
-                        >
-                            Track list
-                        </Button>
-                        <Button
-                            variant={sidebarOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={sidebarOpen}
-                            onClick={toggleSidebar}
-                        >
-                            Browser
-                        </Button>
-                        <Button
-                            variant={inspectorOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={inspectorOpen}
-                            onClick={toggleInspector}
-                        >
-                            Inspector
-                        </Button>
-                        <Button
-                            variant={dualViewOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={dualViewOpen}
-                            onClick={toggleDualView}
-                        >
-                            Session + Arrangement View
-                        </Button>
-                        <Button
-                            variant={mixerOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={mixerOpen}
-                            onClick={toggleMixer}
-                        >
-                            Bottom dock
-                        </Button>
-                        <Button
-                            variant={virtualKeyboardOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={virtualKeyboardOpen}
-                            onClick={toggleVirtualKeyboard}
-                        >
-                            Virtual keyboard
-                        </Button>
-                        <Button
-                            variant={chatPanelOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={chatPanelOpen}
-                            onClick={toggleChatPanel}
-                        >
-                            AI chat
-                        </Button>
-                        <Button
-                            variant={aiState.isPanelOpen ? 'secondary' : 'ghost'}
-                            size="sm"
-                            aria-pressed={aiState.isPanelOpen}
-                            onClick={toggleAiPanel}
-                        >
-                            Generate
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={openPreferencesDialog}>
-                            Preferences
-                        </Button>
-                    </div>
-                </PopoverContent>
-            </Popover>
+            <CompactPanelPopover>
+                <div className="grid min-w-48 gap-1">
+                    <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                        View
+                    </p>
+                    <Button
+                        variant={trackListOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={trackListOpen}
+                        onClick={toggleTrackList}
+                    >
+                        Track list
+                    </Button>
+                    <Button
+                        variant={sidebarOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={sidebarOpen}
+                        onClick={toggleSidebar}
+                    >
+                        Browser
+                    </Button>
+                    <Button
+                        variant={inspectorOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={inspectorOpen}
+                        onClick={toggleInspector}
+                    >
+                        Inspector
+                    </Button>
+                    <Button
+                        variant={dualViewOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={dualViewOpen}
+                        onClick={toggleDualView}
+                    >
+                        Session + Arrangement View
+                    </Button>
+                    <Button
+                        variant={mixerOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={mixerOpen}
+                        onClick={toggleMixer}
+                    >
+                        Bottom dock
+                    </Button>
+                    <Button
+                        variant={virtualKeyboardOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={virtualKeyboardOpen}
+                        onClick={toggleVirtualKeyboard}
+                    >
+                        Virtual keyboard
+                    </Button>
+                    <Button
+                        variant={chatPanelOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={chatPanelOpen}
+                        onClick={toggleChatPanel}
+                    >
+                        AI chat
+                    </Button>
+                    <Button
+                        variant={aiState.isPanelOpen ? 'secondary' : 'ghost'}
+                        size="sm"
+                        aria-pressed={aiState.isPanelOpen}
+                        onClick={toggleAiPanel}
+                    >
+                        Generate
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={openPreferencesDialog}>
+                        Preferences
+                    </Button>
+                </div>
+            </CompactPanelPopover>
         );
     }
 
