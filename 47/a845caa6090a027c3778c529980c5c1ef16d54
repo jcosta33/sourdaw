@@ -1,0 +1,41 @@
+src/modules/Collaboration/models/AssetTransferResume.ts
+  s_59e31a5c6f3e31::t_2c703e39cb8095 17,36-40,43
+src/modules/Collaboration/repositories/__tests__/assetBitmapLifecycle.spec.ts
+  s_59e31a5c6f3e31::t_bbcf87f2b0252a 134-138,141-145
+src/modules/Collaboration/repositories/__tests__/assetTransferResumeRepository.spec.ts
+  s_59e31a5c6f3e31::t_40b2efe6078e54 4-10,53-119,172-176,215-216,238-239,264,288,311-425
+src/modules/Collaboration/repositories/assetTransferResumeRepository.ts
+  s_59e31a5c6f3e31::t_013a3d98f8d57c 8,22-24,131,135-164,183,186-187,194,202,219-316,323,339-340,342-360,364,382,421,438-440,474
+src/modules/Collaboration/useCases/__tests__/assetTransferIntegrity.spec.ts
+  s_29d8df116c5b92::t_f5a1f77f0ffe6e 99,102-119
+src/modules/Collaboration/useCases/__tests__/assetTransferRestart.spec.ts
+  s_59e31a5c6f3e31::t_621a9257ef4bb5 11,14,27,50,54-56,66,110-120,175,255,341,377-594
+src/modules/Collaboration/useCases/__tests__/assetTransferResume.spec.ts
+  s_59e31a5c6f3e31::t_1ac93916a78145 1-2,13-15,24,118,466
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_29d8df116c5b92::t_4419ae22e52c67 1120-1125,1128,1131,1136-1138,1173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47a845caa6090a027c3778c529980c5c1ef16d54",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
