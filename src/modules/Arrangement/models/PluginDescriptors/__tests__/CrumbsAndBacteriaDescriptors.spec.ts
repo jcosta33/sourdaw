@@ -37,6 +37,12 @@ describe('CRUMBS_DESCRIPTOR', () => {
 });
 
 describe('BACTERIA_DESCRIPTOR', () => {
+    it('does not advertise inert breakdown depth while retaining working distortion parameters', () => {
+        const ids = BACTERIA_DESCRIPTOR.parameters.map((parameter) => parameter.id);
+        expect(ids).not.toContain('breakdownDepth');
+        expect(ids).toEqual(expect.arrayContaining(['distortionMode', 'drive', 'asymmetry']));
+    });
+
     it('has a non-empty id', () => {
         expect(BACTERIA_DESCRIPTOR.id).toBeTruthy();
     });
