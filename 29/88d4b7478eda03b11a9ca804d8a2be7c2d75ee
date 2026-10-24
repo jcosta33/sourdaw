@@ -1,0 +1,23 @@
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_1c08b47ac3792f::t_c7f25d8551dd4f 20,43-47,71-76
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_1c08b47ac3792f::t_12ed3afd171eb4 13,18
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_1c08b47ac3792f::t_f4bfa51d482286 29,453,685-742
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2988d4b7478eda03b11a9ca804d8a2be7c2d75ee",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
