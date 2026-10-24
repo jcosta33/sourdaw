@@ -249,6 +249,7 @@ src/modules/AiRuntime/useCases/agentReference/refinementCardCommands.ts
   s_3e7dea5cde3f9e::t_7b931878c33241 1-63
 src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
   s_3e7dea5cde3f9e::t_d3a53495d1dc80 1-509
+  s_1c08b47ac3792f::t_a0d9f0cb9e0139 96,98-100
 src/modules/AiRuntime/useCases/agentReference/refinementCourtesy.ts
   s_3e7dea5cde3f9e::t_e95785de71c2de 1-76
 src/modules/AiRuntime/useCases/agentReference/refinementMarks.ts
@@ -421,6 +422,8 @@ src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
   s_3e7dea5cde3f9e::t_b79acc307a7647 234,774-834
 tests/e2e/nativeButtonKeyboardActivation.spec.ts
   s_3e7dea5cde3f9e::t_a74630f82ae814 1-83
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_13f890a3dd3c4c 387,388
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -428,6 +431,14 @@ tests/e2e/nativeButtonKeyboardActivation.spec.ts
   "base_commit_sha": "c1f91fd850f0f36db4b4a2c6fe1abbb4fe66f8b2",
   "prompts": {},
   "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_3e7dea5cde3f9e": {
       "agent_id": {
         "tool": "claude",

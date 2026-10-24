@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_1c08b47ac3792f::t_b7de38f0e50839 644-867,870-890
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_14f7348fc5d472 1207-1282
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_8a2a8ef01130c3 1657-1663
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/findReferencedIntentPhrase.spec.ts
+  s_1c08b47ac3792f::t_8269e37364cafb 6,22-27,33,44-48
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetEvidenceAdmissionStrategy.spec.ts
+  s_1c08b47ac3792f::t_0f993624d1ac01 198-225
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findReferencedIntentPhrase.ts
+  s_1c08b47ac3792f::t_bb441c61c3400c 7-8,15,17-18,26,36-38,40-41,47-50,54-56,59-63
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isExplicitCommandClause.ts
+  s_1c08b47ac3792f::t_fd224c616b451a 63
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetEvidenceAdmissionStrategy.ts
+  s_1c08b47ac3792f::t_98992190ec7d05 18,129-148,193-199
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/promptScope.ts
+  s_1c08b47ac3792f::t_f08e10405ad47e 15-16
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveClauseActionIntent.ts
+  s_1c08b47ac3792f::t_b55420aa1e4bc6 19-20,57-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11e7aba0165a6fd90cdb29c71e1530bc1cefe0e6",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

@@ -14,6 +14,10 @@ src/modules/Project/useCases/__tests__/importSclFile.spec.ts
   s_59e31a5c6f3e31::t_402e5d3b2ffe35 9,182-187,218-223,248-272
 src/modules/Project/useCases/importSclFile.ts
   s_59e31a5c6f3e31::t_6549e8fdacefa2 34,38-42
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_0b3061944a0a00 1532-1546
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_79d591a458dd41 95
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -21,6 +25,14 @@ src/modules/Project/useCases/importSclFile.ts
   "base_commit_sha": "2dc50d1388dd27a72a1661a26a79571f28c3a3a9",
   "prompts": {},
   "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_3e7dea5cde3f9e": {
       "agent_id": {
         "tool": "claude",
