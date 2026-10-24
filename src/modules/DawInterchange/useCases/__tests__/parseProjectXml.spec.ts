@@ -630,6 +630,224 @@ describe('parseProjectXml — clip routing via channel id', () => {
 });
 
 describe('parseProjectXml — inherited arrangement scope', () => {
+    it('routes the consumed Notes, Audio and Warps content to its nearest explicit owner exactly once', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                    '<Track id="drums" name="Drums" contentType="notes"><Channel id="drum-channel"/></Track></Structure>' +
+                    '<Arrangement><Lanes track="keys"><Clips track="keys">' +
+                    '<Clip track="keys" name="Notes" duration="2"><Notes track="drums"><Note key="60"/></Notes></Clip>' +
+                    '<Clip name="Audio" duration="2"><Audio channel="drum-channel" file="audio.wav"/></Clip>' +
+                    '<Clip name="Warps" duration="2"><Warps track="drums"><Audio file="warped.wav"/></Warps></Clip>' +
+                    '<Clip name="Inner audio" duration="2"><Warps track="keys"><Audio track="drums" file="inner.wav"/></Warps></Clip>' +
+                    '<Clip name="Sibling" duration="2"><Notes/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Owners', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map([
+                ['audio.wav', 'audio'],
+                ['warped.wav', 'warped'],
+                ['inner.wav', 'inner'],
+            ]),
+            fileName: 'owners.dawproject',
+        });
+
+        expect(
+            mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)
+        ).toEqual(['Sibling']);
+        const clips = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+        expect(clips?.map((clip) => [clip.name, clip.type])).toEqual([
+            ['Notes', 'midi'],
+            ['Audio', 'audio'],
+            ['Warps', 'audio'],
+            ['Inner audio', 'audio'],
+        ]);
+        expect(clips && mapped.midi.notesByClipId[clips[0]!.id]).toMatchObject([{ pitch: 60 }]);
+        expect(parsed.warnings).toEqual([]);
+    });
+
+    it.each(['Notes', 'Audio', 'Warps', 'Warps/Audio'])(
+        'drops unknown and empty explicit %s content owners without publishing an inherited empty clip',
+        (tag) => {
+            function content(reference: string, id: string): string {
+                if (tag === 'Notes') {
+                    return `<Notes id="${id}" track="${reference}"><Note key="60"/></Notes>`;
+                }
+                if (tag === 'Audio') {
+                    return `<Audio id="${id}" track="${reference}" file="audio.wav"/>`;
+                }
+                if (tag === 'Warps/Audio') {
+                    return `<Warps track="keys"><Audio id="${id}" track="${reference}" file="audio.wav"/></Warps>`;
+                }
+                return `<Warps id="${id}" track="${reference}"><Audio file="audio.wav"/></Warps>`;
+            }
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes track="keys"><Clips>' +
+                        `<Clip name="Unknown" duration="2">${content('missing', 'unknown')}</Clip>` +
+                        `<Clip name="Empty" duration="2">${content('', 'empty')}</Clip>` +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Owners', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map([['audio.wav', 'audio']]),
+                fileName: 'owners.dawproject',
+            });
+
+            expect(mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips).toEqual([]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'unsupported-clip',
+                    sourceType: tag === 'Warps/Audio' ? 'Audio' : tag,
+                    sourceId: 'unknown',
+                    name: 'Unknown',
+                    context: 'missing',
+                    handling: 'dropped',
+                },
+                {
+                    kind: 'unsupported-clip',
+                    sourceType: tag === 'Warps/Audio' ? 'Audio' : tag,
+                    sourceId: 'empty',
+                    name: 'Empty',
+                    context: '',
+                    handling: 'dropped',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(2);
+            expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
+        }
+    );
+
+    it.each([
+        { name: 'preceding tempo', points: '<RealPoint time="4" value="60"/>', supported: true },
+        {
+            name: 'later tempo outside the window',
+            points: '<RealPoint time="4" value="60"/><RealPoint time="20" value="90"/>',
+            supported: true,
+        },
+        {
+            name: 'seconds-addressed tempo map',
+            points: '<RealPoint time="1" value="60"/><RealPoint time="2" value="90"/>',
+            timeUnit: 'seconds',
+            supported: false,
+        },
+        {
+            name: 'tempo step across playStart',
+            points: '<RealPoint time="7.5" value="60"/>',
+            supported: false,
+        },
+        {
+            name: 'tempo step inside the window',
+            points: '<RealPoint time="4" value="60"/><RealPoint time="10" value="90"/>',
+            supported: false,
+        },
+        {
+            name: 'tempo ramp through the window',
+            points: '<RealPoint time="4" value="60" interpolation="linear"/><RealPoint time="20" value="120"/>',
+            supported: false,
+        },
+    ])(
+        'uses or rejects the containing seconds transform for a $name before publishing it',
+        ({ points, supported, timeUnit = 'beats' }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                        `<Arrangement><Lanes><Points target="tempo" timeUnit="${timeUnit}">${points}</Points><Clips track="keys">` +
+                        '<Clip id="container" name="Container" time="8" duration="8" contentTimeUnit="seconds" playStart="1"><Clips>' +
+                        '<Clip name="Seconds phrase" time="1.5" duration="1"><Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                        '</Clips></Clip><Clip name="Beat phrase" time="24" duration="1"><Notes timeUnit="beats">' +
+                        '<Note key="67" duration="0.5"/></Notes></Clip></Clips></Lanes></Arrangement>'
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Seconds', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map(),
+                fileName: 'seconds.dawproject',
+            });
+            const clips = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+            if (supported) {
+                expect(clips?.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
+                    ['Container', 8, 16],
+                    ['Seconds phrase', 8.5, 9.5],
+                    ['Beat phrase', 24, 25],
+                ]);
+                const phrase = clips?.[1];
+                expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+                    { pitch: 60, startBeat: 0, duration: 0.5 },
+                ]);
+                expect(parsed.warnings).toEqual([]);
+            } else {
+                expect(clips?.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
+                    ['Beat phrase', 24, 25],
+                ]);
+                const phrase = clips?.[0];
+                expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([{ pitch: 67, duration: 0.5 }]);
+                expect(parsed.warnings).toMatchObject([
+                    {
+                        kind: 'unsupported-clip',
+                        name: 'Container',
+                        sourceId: 'container',
+                        context: 'Keys',
+                        handling: 'dropped',
+                    },
+                ]);
+                expect(parsed.warnings).toHaveLength(1);
+            }
+        }
+    );
+
+    it('still reports unsupported direct Audio inside a seconds wrapper during a tempo ramp', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes track="keys"><Points target="tempo">' +
+                    '<RealPoint time="4" value="60" interpolation="linear"/><RealPoint time="20" value="120"/>' +
+                    '</Points><Clips><Clip name="Container" time="8" duration="8">' +
+                    '<Lanes timeUnit="seconds"><Audio id="direct" file="audio.wav"/></Lanes>' +
+                    '</Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Container']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Audio', sourceId: 'direct', context: 'Keys' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('drops non-integer and out-of-range notes while preserving MIDI boundary notes on the resolved owner', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes track="drums"><Points target="tempo"><RealPoint time="4" value="60"/>' +
+                    '<RealPoint time="20" value="90"/></Points><Clips><Clip name="Phrase" time="8" duration="2" contentTimeUnit="seconds"><Notes track="drums">' +
+                    '<Note id="negative" key="-1"/><Note id="high" key="128" time="100"/><Note id="fractional" key="60.5"/>' +
+                    '<Note key="0"/><Note key="127"/></Notes></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Notes', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'notes.dawproject',
+        });
+        const clip = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips[0];
+        expect(clip).toBeDefined();
+        expect(clip && mapped.midi.notesByClipId[clip.id]?.map((note) => note.pitch)).toEqual([0, 127]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'invalid-note', sourceId: 'negative', name: 'key -1', context: 'Drums / Phrase' },
+            { kind: 'invalid-note', sourceId: 'high', name: 'key 128', context: 'Drums / Phrase' },
+            { kind: 'invalid-note', sourceId: 'fractional', name: 'key 60.5', context: 'Drums / Phrase' },
+        ]);
+        expect(parsed.warnings).toHaveLength(3);
+        expect(parsed.warnings.map((warning) => warning.sourceOrder)).toEqual(
+            [...parsed.warnings.map((warning) => warning.sourceOrder)].sort((a, b) => a - b)
+        );
+    });
+
     it('maps a trackless Clips under its Lanes owner and names that owner in a sibling Video warning', () => {
         const xml = project(
             '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +

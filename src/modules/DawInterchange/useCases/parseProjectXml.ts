@@ -126,9 +126,16 @@ type ClipTiming = {
     contentUnit: TimelineUnit;
     playStartBeat: number;
     visibleEndBeat: number | null;
+    tempo: number;
 };
 
-function readClipTiming(clip: XmlQuery, parentUnit: TimelineUnit, originBeat: number, tempo: number): ClipTiming {
+function readClipTiming(
+    clip: XmlQuery,
+    parentUnit: TimelineUnit,
+    originBeat: number,
+    tempo: number,
+    contentTempo = tempo
+): ClipTiming {
     // A Clip's time is on its parent timeline. Its contentTimeUnit applies to
     // the timeline inside the Clip and to playStart/playStop instead.
     const rawUnit = clip.attr('timeUnit');
@@ -142,8 +149,9 @@ function readClipTiming(clip: XmlQuery, parentUnit: TimelineUnit, originBeat: nu
             : clip.attrNumber('duration', 0);
     const durationUnit = explicitDuration === null ? contentUnit : unit;
     const startBeat = originBeat + toBeats(clip.attrNumber('time', 0), unit, tempo);
-    const endBeat = startBeat + toBeats(Math.max(0, rawDuration), durationUnit, tempo);
-    const playStartBeat = toBeats(clip.attrNumber('playStart', 0), contentUnit, tempo);
+    const endBeat =
+        startBeat + toBeats(Math.max(0, rawDuration), durationUnit, explicitDuration === null ? contentTempo : tempo);
+    const playStartBeat = toBeats(clip.attrNumber('playStart', 0), contentUnit, contentTempo);
     const contentOriginBeat = startBeat - playStartBeat;
     const visibleEndBeat =
         explicitDuration === null && playStop === null
@@ -152,9 +160,9 @@ function readClipTiming(clip: XmlQuery, parentUnit: TimelineUnit, originBeat: nu
                   endBeat,
                   playStop === null
                       ? endBeat
-                      : contentOriginBeat + toBeats(clip.attrNumber('playStop', 0), contentUnit, tempo)
+                      : contentOriginBeat + toBeats(clip.attrNumber('playStop', 0), contentUnit, contentTempo)
               );
-    return { startBeat, endBeat, contentUnit, playStartBeat, visibleEndBeat };
+    return { startBeat, endBeat, contentUnit, playStartBeat, visibleEndBeat, tempo: contentTempo };
 }
 
 function parseTransport(transport: XmlQuery | null): {
@@ -253,16 +261,21 @@ function parseChannelInfo(
     };
 }
 
+function isValidMidiKey(key: number): boolean {
+    return Number.isInteger(key) && key >= 0 && key <= 127;
+}
+
 function parseNotesNode(
     notes: XmlQuery,
     unit: 'beats' | 'seconds',
     context: ParseContext,
-    clipName: string
+    clipName: string,
+    tempo: number
 ): DawProjectParsedMidiNote[] {
     const result: DawProjectParsedMidiNote[] = [];
     for (const note of notes.children(NOTE)) {
         const key = note.attrNumber('key', -1);
-        if (key < 0) {
+        if (!isValidMidiKey(key)) {
             warn(context, note, 'invalid-note', note.attr('name') ?? `key ${note.attr('key') ?? 'missing'}`, clipName);
             continue;
         }
@@ -271,8 +284,8 @@ function parseNotesNode(
         const velRaw = note.attrNumber('vel', 0.787);
         result.push({
             pitch: key,
-            startBeat: toBeats(rawStart, unit, context.tempo),
-            duration: toBeats(rawDuration, unit, context.tempo),
+            startBeat: toBeats(rawStart, unit, tempo),
+            duration: toBeats(rawDuration, unit, tempo),
             velocity: Math.round(Math.max(0, Math.min(1, velRaw)) * 127),
         });
     }
@@ -294,18 +307,12 @@ function resolveAudioAssetPath(clip: XmlQuery): string | undefined {
 function parseClip(
     clip: XmlQuery,
     ownerKind: DawProjectParsedTrack['kind'],
-    parentUnit: 'beats' | 'seconds',
+    timing: ClipTiming,
     context: ParseContext,
     index: number,
-    trackName: string,
-    originBeat: number
+    trackName: string
 ): DawProjectParsedClip | null {
-    const { startBeat, endBeat, contentUnit, playStartBeat } = readClipTiming(
-        clip,
-        parentUnit,
-        originBeat,
-        context.tempo
-    );
+    const { startBeat, endBeat, contentUnit, playStartBeat, tempo } = timing;
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
@@ -327,7 +334,13 @@ function parseClip(
             // contentTimeUnit governs the content while `time` and `duration`
             // stay in the timeline unit. A Notes `timeUnit` attribute still
             // wins via readTimeUnit.
-            notes: parseNotesNode(notesNode, readTimeUnit(notesNode, contentUnit), context, `${trackName} / ${name}`),
+            notes: parseNotesNode(
+                notesNode,
+                readTimeUnit(notesNode, contentUnit),
+                context,
+                `${trackName} / ${name}`,
+                tempo
+            ),
             ...playStart,
         };
     }
@@ -451,9 +464,14 @@ function parseTsAutomation(point: XmlQuery, unit: 'beats' | 'seconds', tempo: nu
 function parseMasterTrackAutomation(
     arrangement: XmlQuery,
     context: ParseContext
-): { tempoChanges: DawProjectTempoChange[]; timeSignatureChanges: DawProjectTimeSignatureChange[] } {
+): {
+    tempoChanges: DawProjectTempoChange[];
+    timeSignatureChanges: DawProjectTimeSignatureChange[];
+    tempoPointsUseBeats: boolean;
+} {
     const tempoChanges: DawProjectTempoChange[] = [];
     const timeSignatureChanges: DawProjectTimeSignatureChange[] = [];
+    let tempoPointsUseBeats = true;
 
     for (const direct of arrangement.children()) {
         if (
@@ -472,7 +490,7 @@ function parseMasterTrackAutomation(
 
     const lanesRoot = arrangement.child(LANES);
     if (!lanesRoot) {
-        return { tempoChanges, timeSignatureChanges };
+        return { tempoChanges, timeSignatureChanges, tempoPointsUseBeats };
     }
 
     const containerUnit = readTimeUnit(lanesRoot, context.defaultTimeUnit);
@@ -487,6 +505,9 @@ function parseMasterTrackAutomation(
             if (child.element.tagName === POINTS || child.element.tagName === 'Automation') {
                 if (target === 'tempo') {
                     for (const point of child.children(REAL_POINT)) {
+                        if (childUnit === 'seconds') {
+                            tempoPointsUseBeats = false;
+                        }
                         tempoChanges.push(parseTempoAutomation(point, childUnit, context.tempo));
                     }
                     for (const point of child
@@ -549,18 +570,103 @@ function parseMasterTrackAutomation(
     }
 
     walkAutomation(lanesRoot, containerUnit);
-    return { tempoChanges, timeSignatureChanges };
+    return { tempoChanges, timeSignatureChanges, tempoPointsUseBeats };
 }
 
-function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTrack[], context: ParseContext): void {
+function parseArrangementClips(
+    arrangement: XmlQuery,
+    tracks: DawProjectParsedTrack[],
+    context: ParseContext,
+    tempoChanges: DawProjectTempoChange[],
+    tempoPointsUseBeats: boolean
+): void {
     const trackById = new Map(tracks.map((track) => [track.id, track] as const));
+    const sortedTempoChanges = [...tempoChanges].sort((a, b) => a.beat - b.beat);
     type Scope = {
         ownerRef: string | null;
         unit: TimelineUnit;
         originBeat: number;
         visibleStartBeat: number | null;
         visibleEndBeat: number | null;
+        tempo: number | null;
     };
+
+    // Seconds can be flattened with one scale only while the entire converted
+    // window has a constant tempo. Ramps belong to the point they start at.
+    function constantTempo(startBeat: number, endBeat: number): number | null {
+        let tempo = context.tempo > 0 ? context.tempo : 120;
+        let previous: DawProjectTempoChange | undefined;
+        for (const change of sortedTempoChanges) {
+            if (change.beat <= startBeat) {
+                tempo = change.tempo;
+                previous = change;
+                continue;
+            }
+            if (previous?.curve === 'linear' && previous.tempo !== change.tempo && endBeat > previous.beat) {
+                return null;
+            }
+            if (change.beat >= endBeat) {
+                break;
+            }
+            if (change.tempo !== tempo) {
+                return null;
+            }
+            previous = change;
+        }
+        return Number.isFinite(tempo) && tempo > 0 ? tempo : null;
+    }
+
+    function scopedClipTiming(clip: XmlQuery, scope: Scope): ClipTiming | null {
+        if (scope.tempo === null) {
+            return null;
+        }
+        const rawUnit = clip.attr('timeUnit');
+        const unit = rawUnit === 'beats' || rawUnit === 'seconds' ? rawUnit : scope.unit;
+        const initialTiming = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo);
+        const notes = clip.child(NOTES);
+        const secondsContent =
+            initialTiming.contentUnit === 'seconds' ||
+            (notes !== null && readTimeUnit(notes, initialTiming.contentUnit) === 'seconds');
+        // Seconds-addressed tempo points still use the initial-tempo parser.
+        // Their beat positions cannot prove a local seconds transform.
+        if (!tempoPointsUseBeats && (unit === 'seconds' || secondsContent)) {
+            return null;
+        }
+        const tempo = secondsContent ? constantTempo(initialTiming.startBeat, initialTiming.startBeat) : scope.tempo;
+        if (tempo === null) {
+            return null;
+        }
+        const timing = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo, tempo);
+        if (
+            unit === 'seconds' &&
+            constantTempo(Math.min(scope.originBeat, timing.startBeat), Math.max(scope.originBeat, timing.endBeat)) !==
+                scope.tempo
+        ) {
+            return null;
+        }
+        if (secondsContent) {
+            const origin = timing.startBeat - timing.playStartBeat;
+            let startBeat = Math.min(origin, timing.startBeat);
+            let endBeat = Math.max(origin, timing.endBeat);
+            if (notes && readTimeUnit(notes, timing.contentUnit) === 'seconds') {
+                for (const note of notes.children(NOTE)) {
+                    if (!isValidMidiKey(note.attrNumber('key', -1))) {
+                        continue;
+                    }
+                    const noteStart = origin + toBeats(note.attrNumber('time', 0), 'seconds', tempo);
+                    startBeat = Math.min(startBeat, noteStart);
+                    endBeat = Math.max(
+                        endBeat,
+                        noteStart + toBeats(note.attrNumber('duration', 0.25), 'seconds', tempo)
+                    );
+                }
+            }
+            if (constantTempo(startBeat, endBeat) !== tempo) {
+                return null;
+            }
+        }
+        return timing;
+    }
 
     function resolveTrackId(candidate: string | null): string | null {
         if (candidate === null) {
@@ -579,6 +685,29 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
         return node.attr('track') ?? node.attr('channel') ?? inherited;
     }
 
+    function consumedOwner(clip: XmlQuery, inherited: string | null): { reference: string | null; node: XmlQuery } {
+        let reference = inherited;
+        let node = clip;
+        const notes = clip.child(NOTES);
+        const audio = clip.child(AUDIO);
+        const warps = clip.child('Warps');
+        let route: (XmlQuery | null)[] = [];
+        if (notes) {
+            route = [notes];
+        } else if (audio) {
+            route = [audio];
+        } else if (warps) {
+            route = [warps, warps.child(AUDIO)];
+        }
+        for (const content of route) {
+            if (content && (content.attr('track') !== null || content.attr('channel') !== null)) {
+                reference = ownerRef(content, reference);
+                node = content;
+            }
+        }
+        return { reference, node };
+    }
+
     function ownerName(reference: string | null, fallback: string): string {
         return reference === null ? fallback : (context.trackNames.get(reference) ?? reference);
     }
@@ -594,10 +723,22 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
         return node.element.getElementsByTagName(CLIP).length > 0;
     }
 
+    function timelineScope(node: XmlQuery, scope: Scope): Scope {
+        const unit = timelineUnit(node, scope.unit);
+        let tempo = scope.tempo;
+        if (unit === 'seconds') {
+            tempo = tempoPointsUseBeats ? constantTempo(scope.originBeat, scope.originBeat) : null;
+        }
+        return { ...scope, unit, tempo };
+    }
+
     function nestedTimingIsAffine(node: XmlQuery, scope: Scope): boolean {
         let nextScope: Scope;
         if (node.element.tagName === CLIP) {
-            const timing = readClipTiming(node, scope.unit, scope.originBeat, context.tempo);
+            const timing = scopedClipTiming(node, scope);
+            if (!timing) {
+                return false;
+            }
             if (
                 scope.visibleStartBeat !== null &&
                 (scope.visibleEndBeat === null ||
@@ -609,8 +750,8 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
             if (hasNestedClips(node)) {
                 const loopStart = node.attr('loopStart');
                 const loopEnd = node.attr('loopEnd');
-                const loopStartBeat = toBeats(node.attrNumber('loopStart', 0), timing.contentUnit, context.tempo);
-                const loopEndBeat = toBeats(node.attrNumber('loopEnd', 0), timing.contentUnit, context.tempo);
+                const loopStartBeat = toBeats(node.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
+                const loopEndBeat = toBeats(node.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
                 if (
                     timing.visibleEndBeat === null ||
                     node.attr('reference') !== null ||
@@ -629,12 +770,13 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
                 originBeat: timing.startBeat - timing.playStartBeat,
                 visibleStartBeat: timing.startBeat,
                 visibleEndBeat: timing.visibleEndBeat,
+                tempo: timing.tempo,
             };
         } else {
             if (node.element.tagName === 'Warps' && node.children('Warp').length > 0 && hasNestedClips(node)) {
                 return false;
             }
-            nextScope = { ...scope, unit: timelineUnit(node, scope.unit) };
+            nextScope = timelineScope(node, scope);
         }
 
         for (const child of node.children()) {
@@ -656,7 +798,7 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
         let clipIndex = 0;
         for (const laneOrClips of node.children()) {
             const reference = ownerRef(laneOrClips, scope.ownerRef);
-            const laneUnit = timelineUnit(laneOrClips, scope.unit);
+            const laneScope = timelineScope(laneOrClips, scope);
             if (laneOrClips.element.tagName === AUDIO || laneOrClips.element.tagName === 'Video') {
                 if (!clipMediaHandled) {
                     const name =
@@ -669,39 +811,32 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
             }
             if (laneOrClips.element.tagName === CLIP && node.element.tagName === CLIPS) {
                 const index = clipIndex++;
-                const timing = readClipTiming(laneOrClips, scope.unit, scope.originBeat, context.tempo);
-                if (hasNestedClips(laneOrClips) && !nestedTimingIsAffine(laneOrClips, scope)) {
+                const contentOwner = consumedOwner(laneOrClips, reference);
+                const timing = scopedClipTiming(laneOrClips, scope);
+                if (!timing || (hasNestedClips(laneOrClips) && !nestedTimingIsAffine(laneOrClips, scope))) {
                     warn(
                         context,
                         laneOrClips,
                         'unsupported-clip',
                         laneOrClips.attr('name') ?? `Clip ${String(index + 1)}`,
-                        ownerName(reference, 'Unassigned lane')
+                        ownerName(contentOwner.reference, 'Unassigned lane')
                     );
                     continue;
                 }
-                const targetTrackId = resolveTrackId(reference);
+                const targetTrackId = resolveTrackId(contentOwner.reference);
                 const target = targetTrackId ? trackById.get(targetTrackId) : null;
                 if (target) {
-                    const clip = parseClip(
-                        laneOrClips,
-                        target.kind,
-                        scope.unit,
-                        context,
-                        index,
-                        target.name,
-                        scope.originBeat
-                    );
+                    const clip = parseClip(laneOrClips, target.kind, timing, context, index, target.name);
                     if (clip) {
                         target.clips.push(clip);
                     }
                 } else {
                     warn(
                         context,
-                        laneOrClips,
+                        contentOwner.node,
                         'unsupported-clip',
                         laneOrClips.attr('name') ?? 'Clip',
-                        ownerName(reference, 'Unassigned lane')
+                        ownerName(contentOwner.reference, 'Unassigned lane')
                     );
                 }
                 walkClips(
@@ -712,6 +847,7 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
                         originBeat: timing.startBeat - timing.playStartBeat,
                         visibleStartBeat: timing.startBeat,
                         visibleEndBeat: timing.visibleEndBeat,
+                        tempo: timing.tempo,
                     },
                     true
                 );
@@ -720,7 +856,7 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
             const childMediaHandled =
                 laneOrClips.element.tagName === CLIP ||
                 (node.element.tagName === CLIP && laneOrClips.element.tagName === 'Warps');
-            walkClips(laneOrClips, { ...scope, ownerRef: reference, unit: laneUnit }, childMediaHandled);
+            walkClips(laneOrClips, { ...laneScope, ownerRef: reference }, childMediaHandled);
         }
     }
 
@@ -730,6 +866,7 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
         originBeat: 0,
         visibleStartBeat: null,
         visibleEndBeat: null,
+        tempo: context.tempo > 0 ? context.tempo : 120,
     });
 }
 
@@ -778,7 +915,7 @@ export function parseProjectXml(xml: string): ParsedProjectXml {
         const automation = parseMasterTrackAutomation(arrangementNode, context);
         tempoChanges = automation.tempoChanges;
         timeSignatureChanges = automation.timeSignatureChanges;
-        parseArrangementClips(arrangementNode, tracks, context);
+        parseArrangementClips(arrangementNode, tracks, context, tempoChanges, automation.tempoPointsUseBeats);
         markers = parseMarkers(arrangementNode, context.defaultTimeUnit, context.tempo);
     }
 
