@@ -39,6 +39,9 @@ export function classifyPlanningOutcome(
         // The answer class is sealed with its corpus; until then an answer lands in no frozen class.
         case 'answer':
             return null;
+        // A commit's undo is sealed with the refinement corpus; until then it lands in no frozen class.
+        case 'revert':
+            return null;
         default: {
             const exhaustive: never = outcome;
             throw new Error(`Planning outcome is not supported: ${JSON.stringify(exhaustive)}`);

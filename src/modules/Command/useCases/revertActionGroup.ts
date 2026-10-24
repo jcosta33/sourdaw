@@ -1,11 +1,11 @@
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
+import { commitRevertedEntries } from './commitRevertedEntries';
 import { executeAppAction } from './executeAppAction';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
-import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /**
  * Undo a single undo entry, returning whether anything was actually undone. An
@@ -32,17 +32,6 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
         return true;
     }
     return false;
-}
-
-function commitRevertedEntries(entries: readonly UndoEntry[]): void {
-    const liveState = undoStore.value;
-    if (!liveState || entries.length === 0) {
-        return;
-    }
-    const revertedIds = new Set(entries.map((entry) => entry.id));
-    const past = liveState.past.filter((entry) => !revertedIds.has(entry.id));
-    undoStore.set({ past, future: [...entries, ...liveState.future] });
-    undoTreeMoveTo(past.length > 0 ? past[past.length - 1]!.id : null);
 }
 
 /**
