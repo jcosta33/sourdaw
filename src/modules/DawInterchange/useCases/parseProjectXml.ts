@@ -582,6 +582,7 @@ function parseArrangementClips(
 ): void {
     const trackById = new Map(tracks.map((track) => [track.id, track] as const));
     const sortedTempoChanges = [...tempoChanges].sort((a, b) => a.beat - b.beat);
+    const timingScalarPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
     type Scope = {
         ownerRef: string | null;
         unit: TimelineUnit;
@@ -624,7 +625,11 @@ function parseArrangementClips(
             (scope.visibleStartBeat !== null || hasNestedClips(clip)) &&
             ['time', 'duration', 'playStart', 'playStop', 'loopStart', 'loopEnd'].some((attribute) => {
                 const value = clip.attr(attribute);
-                return value !== null && !Number.isFinite(Number(value));
+                if (value === null) {
+                    return false;
+                }
+                const scalar = value.trim();
+                return !timingScalarPattern.test(scalar) || !Number.isFinite(Number(scalar));
             })
         ) {
             return null;

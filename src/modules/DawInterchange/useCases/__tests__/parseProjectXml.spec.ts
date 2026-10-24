@@ -1095,6 +1095,10 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         { name: 'time', attributes: 'time="not-a-number" duration="1"' },
         { name: 'duration', attributes: 'time="0" duration="not-a-number"' },
         { name: 'time and duration', attributes: 'time="not-a-number" duration="not-a-number"' },
+        { name: 'empty time', attributes: 'time="" duration="1"' },
+        { name: 'whitespace duration', attributes: 'time="0" duration=" "' },
+        { name: 'hexadecimal time', attributes: 'time="0x1" duration="1"' },
+        { name: 'hexadecimal duration', attributes: 'time="0" duration="0x1"' },
     ])('warns and omits a nested phrase with malformed $name while preserving its siblings', ({ attributes }) => {
         const parsed = parseProjectXml(
             project(
@@ -1103,6 +1107,7 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                     '<Clip id="container" name="Container" time="8" duration="8"><Clips>' +
                     '<Clip id="valid" name="Valid phrase" time="0" duration="1"><Notes>' +
                     '<Note time="0" duration="1" key="60"/></Notes></Clip>' +
+                    '<Clip id="scientific" name="Scientific phrase" time="1e0" duration=".25"><Notes/></Clip>' +
                     `<Clip id="malformed" name="Malformed phrase" ${attributes}><Notes>` +
                     '<Note time="0" duration="1" key="62"/></Notes></Clip>' +
                     '<Clip id="optional" name="Optional defaults"><Notes/></Clip>' +
@@ -1113,6 +1118,7 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
             ['Container', 8, 16],
             ['Valid phrase', 8, 9],
+            ['Scientific phrase', 9, 9.25],
             ['Optional defaults', 8, 8.25],
         ]);
         expect(parsed.warnings).toMatchObject([
