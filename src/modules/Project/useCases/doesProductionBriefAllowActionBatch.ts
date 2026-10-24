@@ -484,13 +484,23 @@ function actionIndirectlyMutatesObject(
     );
 }
 
+/**
+ * An overdub pass names its rows by beats relative to the clip that holds them, which say
+ * nothing about where on the timeline the pass lands. Such a payload is measured by the clips
+ * it names (`referencedClipOverlapsRange`) and never by its row beats, which would read a
+ * clip-relative beat as a timeline position.
+ */
+function carriesClipRelativeBeats(action: AppAction): boolean {
+    return action.type === 'appendOverdubControllers';
+}
+
 function actionOverlapsRange(
     action: AppAction,
     scope: Extract<ProductionBriefScope, { kind: 'range' }>,
     footprint: ProductionBriefActionFootprint
 ): boolean {
     return (
-        valueOverlapsRange(action.payload, scope) ||
+        (!carriesClipRelativeBeats(action) && valueOverlapsRange(action.payload, scope)) ||
         referencedClipOverlapsRange(action, scope, footprint) ||
         projectedClipOverlapsRange(action, scope, footprint) ||
         referencedAutomationOverlapsRange(action, scope, footprint) ||

@@ -11,9 +11,10 @@ type WriteRecordedControllerRowsInput = {
 };
 
 /**
- * Land a take's rows in its clip. A failed write is logged and dropped rather
- * than thrown: the callers sit on the recording commit and the transport stop,
- * and a controller fault must not cost the musician the notes of the take.
+ * Land a committing take's rows in its clip, inside the commit's transaction. A
+ * failed write is logged and dropped rather than thrown: a controller fault must
+ * not cost the musician the notes of the take. An overdub pass lands through
+ * `landOverdubPass` instead, as its own undoable action.
  */
 export function writeRecordedControllerRows(input: WriteRecordedControllerRowsInput): void {
     try {
