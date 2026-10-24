@@ -31,6 +31,22 @@ const GC_CHILD_OUTPUT_TAIL_LIMIT = 8 * 1024;
 const GC_CASE_TIMEOUT_MS =
     process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function' ? 120_000 : 180_000;
 
+function sampleLiveExportBytes(allocations: WeakRef<ArrayBufferLike>[]): number {
+    let live = 0;
+    let retained = 0;
+    for (const reference of allocations) {
+        const buffer = reference.deref();
+        if (buffer === undefined) {
+            continue;
+        }
+        live += buffer.byteLength;
+        allocations[retained] = reference;
+        retained++;
+    }
+    allocations.length = retained;
+    return live;
+}
+
 function stopGcChild(pid: number | undefined): void {
     if (pid === undefined) {
         return;
@@ -856,10 +872,7 @@ describe('connected stem export output ownership', () => {
                         // turn before GC; no fixed microtask count stands in for collection completion.
                         await new Promise<void>((resolve) => setTimeout(resolve, 0));
                         gc();
-                        let live = 0;
-                        for (const reference of allocations) {
-                            live += reference.deref()?.byteLength ?? 0;
-                        }
+                        const live = sampleLiveExportBytes(allocations);
                         peak = Math.max(peak, live);
                         expect(live).toBeLessThanOrEqual(2 * b);
                     },
@@ -905,4 +918,17 @@ describe('connected stem export output ownership', () => {
         },
         GC_CASE_TIMEOUT_MS
     );
+});
+
+it('keeps only live observed export buffers after sampling', () => {
+    const first = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => new ArrayBuffer(8)) } as const;
+    const collected = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => undefined) } as const;
+    const second = { [Symbol.toStringTag]: 'WeakRef', deref: vi.fn(() => new ArrayBuffer(13)) } as const;
+    const allocations: WeakRef<ArrayBufferLike>[] = [first, collected, second];
+
+    expect(sampleLiveExportBytes(allocations)).toBe(21);
+    expect(allocations).toEqual([first, second]);
+    expect(first.deref).toHaveBeenCalledTimes(1);
+    expect(collected.deref).toHaveBeenCalledTimes(1);
+    expect(second.deref).toHaveBeenCalledTimes(1);
 });
