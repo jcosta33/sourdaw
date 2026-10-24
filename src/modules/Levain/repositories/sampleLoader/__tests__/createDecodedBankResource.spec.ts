@@ -618,6 +618,7 @@ describe('createDecodedBankResource', () => {
         await vi.waitFor(() =>
             expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, queuedSampleLoads: 1 })
         );
+        expect(loadSample).toHaveBeenCalledTimes(1);
 
         sample.resolve(createSample(1));
         await expect(retry).resolves.toMatchObject({ decodedByteLength: 4 });
