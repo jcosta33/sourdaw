@@ -51,8 +51,8 @@ describe('projectChannelBend', () => {
         });
 
         expect(points).toEqual([
-            { beat: 3, frame: 72_000, recordedBeat: 3, value: 8_191, rangeSemitones: 2, channel: 0, zoneWide: true },
-            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2, channel: 0, zoneWide: true },
+            { beat: 3, frame: 72_000, recordedBeat: 3, value: 8_191, rangeSemitones: 2, channel: 0, zoneWide: false },
+            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2, channel: 0, zoneWide: false },
         ]);
     });
 
@@ -455,7 +455,6 @@ describe('projectChannelBend', () => {
                         clip,
                         controlChanges: [...declareRange(0, 12, 0, 1), ...declareRange(0, 24, 0, 2)],
                         pitchBends: [bend('left', 1, 4_096, 1), bend('right', 1, -4_096, 2)],
-                        notes: [{ channel: 1 }, { channel: 2 }],
                     },
                 ],
                 frameAtBeat,
@@ -467,43 +466,43 @@ describe('projectChannelBend', () => {
             ]);
         });
 
-        it('lets the master channel move every channel when no track note sounds on it', () => {
+        it('makes a move zone-wide only when its row was recorded under an MPE zone master', () => {
             const points = projectChannelBend({
                 clips: [
                     {
                         clip,
                         controlChanges: [],
-                        pitchBends: [bend('master', 1, 4_096, 0), bend('member', 2, 100, 1)],
-                        notes: [{ channel: 1 }, { channel: 2 }],
+                        pitchBends: [
+                            { ...bend('master', 1, 4_096, 0), zoneMaster: true },
+                            bend('wheel', 2, 100, 0),
+                            bend('member', 3, 200, 1),
+                        ],
                     },
                 ],
                 frameAtBeat,
             });
 
-            expect(points.map(({ channel, zoneWide }) => ({ channel, zoneWide }))).toEqual([
-                { channel: 0, zoneWide: true },
-                { channel: 1, zoneWide: false },
+            expect(points.map(({ value, channel, zoneWide }) => ({ value, channel, zoneWide }))).toEqual([
+                { value: 4_096, channel: 0, zoneWide: true },
+                { value: 100, channel: 0, zoneWide: false },
+                { value: 200, channel: 1, zoneWide: false },
             ]);
         });
 
-        it('keeps a channel-0 move on its own channel once any played clip of the track holds a channel-0 note', () => {
+        it('keeps a row’s mark through a loop pass and a content offset', () => {
             const points = projectChannelBend({
                 clips: [
                     {
-                        clip,
+                        clip: { startBeat: 0, endBeat: 4, midiOffsetBeats: 1, loopEnabled: true, loopLength: 2 },
                         controlChanges: [],
-                        pitchBends: [bend('wheel', 1, 4_096, 0)],
-                        notes: [{ channel: 1 }],
+                        pitchBends: [{ ...bend('master', 1.5, 4_096, 0), zoneMaster: true }],
                     },
-                    // A clip with no bend of its own still decides: its note is on the channel the move is on.
-                    { clip, controlChanges: [], pitchBends: [], notes: [{}] },
                 ],
                 frameAtBeat,
             });
 
-            expect(points.map(({ channel, zoneWide }) => ({ channel, zoneWide }))).toEqual([
-                { channel: 0, zoneWide: false },
-            ]);
+            expect(points.length).toBeGreaterThan(1);
+            expect(points.every((point) => point.zoneWide)).toBe(true);
         });
     });
 });

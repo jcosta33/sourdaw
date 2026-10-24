@@ -1119,7 +1119,6 @@ export async function scheduleMidiNotes(
         resolveChannelBendClips({
             trackId: track.id,
             clips: track.clips,
-            notesByClipId: midiState.notesByClipId,
             ccByClipId: midiState.ccByClipId,
             pitchBendByClipId: midiState.pitchBendByClipId,
         });

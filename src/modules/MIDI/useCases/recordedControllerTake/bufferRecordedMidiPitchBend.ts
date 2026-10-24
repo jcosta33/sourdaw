@@ -9,7 +9,7 @@ type BufferRecordedMidiPitchBendInput = { clipId: string; row: RecordedPitchBend
 
 /** Buffer one pitch-bend message of the take, in arrival order. */
 export function bufferRecordedMidiPitchBend({ clipId, row }: BufferRecordedMidiPitchBendInput): void {
-    if (!Object.values(row).every(Number.isFinite)) {
+    if (![row.value, row.beat, row.channel].every(Number.isFinite)) {
         throw createMidiError('Recorded pitch-bend row must carry finite numbers');
     }
     const buffer = openRecordedControllerBuffer(clipId);
@@ -17,5 +17,5 @@ export function bufferRecordedMidiPitchBend({ clipId, row }: BufferRecordedMidiP
         return;
     }
     captureRegisteredStateAtFirstRow({ buffer });
-    buffer.pitchBend.push(createMidiPitchBend(row.value, row.beat, row.channel));
+    buffer.pitchBend.push(createMidiPitchBend(row.value, row.beat, row.channel, row.zoneMaster));
 }

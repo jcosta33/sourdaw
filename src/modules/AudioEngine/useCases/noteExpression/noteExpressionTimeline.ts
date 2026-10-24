@@ -57,8 +57,11 @@ type ChannelBendInForce = { value: number; rangeSemitones: number };
  * move the clips hold now reaches a note whichever window started it.
  */
 export type NoteExpressionTimeline = {
-    /** The channel the note sounds on: only the channel moves that reach it are followed. */
-    noteChannel: number;
+    /**
+     * The channel the note sounds on: only the channel moves that reach it are followed. Absent for a note
+     * that stores no channel, which hears every move.
+     */
+    noteChannel: number | undefined;
     /** The frame the note starts on; a channel move at or before it is the note-on's own business. */
     startFrame: number;
     /** The frame the note's release is posted on; nothing at or after it is addressed to the voice. */

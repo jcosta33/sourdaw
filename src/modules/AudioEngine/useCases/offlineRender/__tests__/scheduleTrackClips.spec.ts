@@ -1725,6 +1725,8 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             pitchBendRangeSemitones: number;
             startBeat: number;
             duration: number;
+            /** The channel the note sounds on (3 unless given; `undefined` stores none). */
+            channel: number | undefined;
             expression: NonNullable<MidiStoreState>['notesByClipId'][string][number]['expression'];
         }>,
         options: {
@@ -1932,7 +1934,8 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
     });
 
     describe('stored channel pitch bend', () => {
-        const bendRow = (id: string, beat: number, value: number, channel = 0): MidiPitchBendRow => ({
+        // The rows sit on the channel the note under test sounds on (3), as a wheel and its keys do.
+        const bendRow = (id: string, beat: number, value: number, channel = 3): MidiPitchBendRow => ({
             id,
             beat,
             value,
@@ -1943,7 +1946,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             beat,
             controller,
             value,
-            channel: 0,
+            channel: 3,
         });
         const fullBend = (8_191 / 8_192) * 2;
 
@@ -2082,34 +2085,34 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                 ]);
             });
 
-            it('lets the master channel bend a member-channel note when the track plays nothing on the master channel', async () => {
+            it('lets the master channel bend a member-channel note for a row recorded while MPE was on', async () => {
                 const arrivals = await dispatchOneNote(
                     { startBeat: 1, duration: 2 },
-                    { productionProjection: true, lanes: { bends: [bendRow('master', 2, 8_191, 0)] } }
+                    {
+                        productionProjection: true,
+                        lanes: { bends: [{ ...bendRow('master', 2, 8_191, 0), zoneMaster: true }] },
+                    }
                 );
 
                 expect(bends(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([48_000]);
             });
 
-            it('keeps the master channel’s bend off a member-channel note once the track plays a note on the master channel', async () => {
+            it('keeps an unmarked channel-0 wheel off a channel-3 note, however the track’s other notes sound', async () => {
                 const arrivals = await dispatchOneNote(
                     { startBeat: 1, duration: 2 },
-                    {
-                        productionProjection: true,
-                        lanes: { bends: [bendRow('wheel', 2, 8_191, 0)] },
-                        otherClips: [
-                            {
-                                clip: { id: 'clip-2', startBeat: 8, endBeat: 12 },
-                                notes: [
-                                    { id: 'note-2', pitch: 48, startBeat: 1, duration: 1, velocity: 100, channel: 0 },
-                                ],
-                            },
-                        ],
-                    }
+                    { productionProjection: true, lanes: { bends: [bendRow('wheel', 2, 8_191, 0)] } }
                 );
 
-                // Only the master-channel note is bent by the master's wheel; the channel-3 note is not.
-                expect(arrivals.expression.map(({ noteOrPad, channel }) => [noteOrPad, channel])).toEqual([[48, 0]]);
+                expect(arrivals.expression).toEqual([]);
+            });
+
+            it('lets a note with no stored channel hear a move on any channel', async () => {
+                const arrivals = await dispatchOneNote(
+                    { startBeat: 1, duration: 2, channel: undefined },
+                    { productionProjection: true, lanes: { bends: [bendRow('wheel', 2, 8_191, 5)] } }
+                );
+
+                expect(bends(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([48_000]);
             });
         });
 

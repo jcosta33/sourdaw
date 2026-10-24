@@ -5,7 +5,7 @@ import { reachesChannel } from './reachesChannel';
 export function findChannelBendInForce(
     channelBend: readonly ChannelBendPoint[],
     frame: number,
-    noteChannel: number
+    noteChannel: number | undefined
 ): ChannelBendPoint | undefined {
     let low = 0;
     let high = channelBend.length;

@@ -1546,6 +1546,7 @@ const schemaDefinitions = [
             value: 1,
             beat: 1,
             channel: 1,
+            zoneMaster: 33,
         },
         required: ['id', 'value', 'beat', 'channel'],
         additionalProperties: false,

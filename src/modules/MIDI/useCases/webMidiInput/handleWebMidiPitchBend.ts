@@ -97,7 +97,9 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
             recordChannelEvent(deps, {
                 trackId: targetTrackId,
                 channel,
-                event: { kind: 'pitchBend', value: bendValue },
+                // A non-member bend with MPE on is the zone master's; stored playback cannot tell that from a
+                // plain channel-0 wheel unless the row says so.
+                event: { kind: 'pitchBend', value: bendValue, zoneMaster: mpeEnabled },
                 timeStamp,
             });
 

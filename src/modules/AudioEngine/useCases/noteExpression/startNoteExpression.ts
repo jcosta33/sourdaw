@@ -26,7 +26,10 @@ type NoteExpressionCurveSource = {
     slide?: number;
     pitchBend?: number;
     pitchBendRangeSemitones?: number;
-    /** The zero-based MIDI channel the note sounds on; absent is channel 0, as the scheduler addresses it. */
+    /**
+     * The zero-based MIDI channel the note was recorded on. Absent for a note that stores none, which hears the
+     * channel moves of every channel, as it did before notes kept their channel.
+     */
     channel?: number;
     expression?: NoteExpressionCurves;
 };
@@ -195,7 +198,7 @@ export function startNoteExpression({
             { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend },
             note.pitchBendRangeSemitones
         );
-    const noteChannel = note.channel ?? 0;
+    const noteChannel = note.channel;
     const inForce = findChannelBendInForce(channelBend, startFrame, noteChannel);
     const channel = inForce && { value: inForce.value, rangeSemitones: inForce.rangeSemitones };
     const ownBendFrame = findOwnBendFrame({

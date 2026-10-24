@@ -89,6 +89,19 @@ describe('relocateNoteExpression', () => {
             expect(relocated.timeline.channel).toBeUndefined();
         });
 
+        it('takes the bend in force on any channel for a note with no stored channel', () => {
+            const timeline = startNote({ note: { pressure: 10 } });
+
+            const relocated = relocateNoteExpression({
+                timeline,
+                channelBend: [newPassMove(0, 300, 12, 2)],
+                atFrame: AT_FRAME,
+                frameAtBeat: newPassFrameAtBeat,
+            });
+
+            expect(relocated.expression).toEqual({ pressure: 10, pitchBend: 300, pitchBendRangeSemitones: 12 });
+        });
+
         it('gives a zone-wide move to a note on any channel', () => {
             const timeline = startNote({ note: { pressure: 10, channel: 4 } });
 

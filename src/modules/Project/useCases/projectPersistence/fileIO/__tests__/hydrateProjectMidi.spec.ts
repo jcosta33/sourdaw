@@ -128,6 +128,22 @@ describe('hydrateProjectMidi', () => {
         expect(pb?.channel).toBe(0);
     });
 
+    it('preserves the zone-master mark of a bend recorded under MPE, and leaves a plain bend unmarked', () => {
+        const saved = serializeProjectMidi({
+            ...midi,
+            pitchBendByClipId: {
+                'clip-1': [
+                    { id: 'pb-master', value: 100, beat: 0, channel: 0, zoneMaster: true },
+                    { id: 'pb-plain', value: 200, beat: 1, channel: 1 },
+                ],
+            },
+        });
+        const [master, plain] = hydrateProjectMidi(saved).pitchBendByClipId['clip-1'] ?? [];
+
+        expect(master).toMatchObject({ value: 100, channel: 0, zoneMaster: true });
+        expect(plain).not.toHaveProperty('zoneMaster');
+    });
+
     it('mints deterministic CC/pitch-bend ids so re-imports are stable', () => {
         const first = hydrateProjectMidi(serializeProjectMidi(midi));
         const second = hydrateProjectMidi(serializeProjectMidi(midi));

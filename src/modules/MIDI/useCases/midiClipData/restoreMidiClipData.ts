@@ -2,6 +2,7 @@ import {
     isValidMidiNoteExpression,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
+    MIDI_PITCH_BEND_OPTIONAL_KEYS,
     type MidiCC,
     type MidiNote,
     type MidiPitchBend,
@@ -109,11 +110,16 @@ function isValidMidiControlChange(value: unknown): value is MidiCC {
 function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
     return (
         isPlainObject(value) &&
-        hasExactKeys({ value, requiredKeys: MIDI_PITCH_BEND_KEYS }) &&
+        hasExactKeys({
+            value,
+            requiredKeys: MIDI_PITCH_BEND_KEYS,
+            optionalKeys: MIDI_PITCH_BEND_OPTIONAL_KEYS,
+        }) &&
         typeof value.id === 'string' &&
         isFiniteNumber(value.value) &&
         isFiniteNumber(value.beat) &&
-        isFiniteNumber(value.channel)
+        isFiniteNumber(value.channel) &&
+        (!Object.hasOwn(value, 'zoneMaster') || typeof value.zoneMaster === 'boolean')
     );
 }
 

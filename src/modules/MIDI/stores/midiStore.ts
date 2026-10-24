@@ -10,6 +10,7 @@ import {
     MIDI_EXPRESSION_DIMENSIONS,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
+    MIDI_PITCH_BEND_OPTIONAL_KEYS,
     type MidiNote,
     type MidiNoteExpression,
     type MidiCC,
@@ -232,21 +233,33 @@ function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
         'beat' in value &&
         isFiniteNumber(value.beat) &&
         'channel' in value &&
-        isFiniteNumber(value.channel)
+        isFiniteNumber(value.channel) &&
+        (!('zoneMaster' in value) || typeof value.zoneMaster === 'boolean')
     );
 }
 
 function isExactMidiPitchBend(value: unknown): value is MidiPitchBend {
-    return isValidMidiPitchBend(value) && hasExactKeys({ value, requiredKeys: MIDI_PITCH_BEND_KEYS });
+    return (
+        isValidMidiPitchBend(value) &&
+        hasExactKeys({
+            value,
+            requiredKeys: MIDI_PITCH_BEND_KEYS,
+            optionalKeys: MIDI_PITCH_BEND_OPTIONAL_KEYS,
+        })
+    );
 }
 
 function normalizeMidiPitchBend(event: MidiPitchBend): MidiPitchBend {
-    return {
+    const normalized: MidiPitchBend = {
         id: event.id,
         value: event.value,
         beat: event.beat,
         channel: event.channel,
     };
+    if (event.zoneMaster !== undefined) {
+        normalized.zoneMaster = event.zoneMaster;
+    }
+    return normalized;
 }
 
 type NormalizeClipMapInput<TRow> = {

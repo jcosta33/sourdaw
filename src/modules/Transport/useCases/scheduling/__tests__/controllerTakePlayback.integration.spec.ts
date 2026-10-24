@@ -68,9 +68,11 @@ import {
     startRecording,
     stopRecording,
 } from '#/modules/Arrangement/useCases';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -83,7 +85,13 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { destroyWebMidi, initWebMidi, setMidiInputTrack, setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
+import {
+    destroyWebMidi,
+    getWebMidiInputHandlers,
+    initWebMidi,
+    setMidiInputTrack,
+    setWebMidiRuntimeEventBus,
+} from '#/modules/MIDI/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import {
@@ -94,6 +102,7 @@ import { transportStore } from '../../../stores/transportStore';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
+const engineSpies: { mockRestore: () => void }[] = [];
 const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';
 /** At 120 BPM and 48 kHz a beat is 24 000 frames. */
@@ -134,6 +143,7 @@ describe('a recorded controller-only take, played by the window scheduler', () =
                 type: 'grand-boule',
                 deviceId: DEVICE_ID,
                 grandBouleControls: {
+                    ready: true,
                     noteOn: () => {
                         engineStub.noteOns += 1;
                     },
@@ -178,6 +188,9 @@ describe('a recorded controller-only take, played by the window scheduler', () =
     });
 
     afterEach(() => {
+        for (const spy of engineSpies.splice(0)) {
+            spy.mockRestore();
+        }
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
         clearHandlerRegistry();
@@ -246,6 +259,107 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         });
         return provisional.id;
     }
+
+    /**
+     * Record a held note at beat 4 to 7 and a pitch-wheel bend out at beat 4.5 and back at 5.5, all through the
+     * live input route, the note on `noteChannel` and the wheel on `wheelChannel` (zero-based MIDI channels),
+     * into a clip spanning beats 4 to 8. Nothing is added to the stores by hand: the note, its channel and the
+     * bend rows are what the recorder wrote.
+     */
+    async function recordChannelTake(input: { noteChannel: number; wheelChannel: number }): Promise<string> {
+        // The live input voices a recorded note through the engine singleton: only its track strip is doubled.
+        const strip = { gainNode: {}, preFaderTap: { connect: () => undefined }, deviceNodes: engineStub.nodes };
+        engineSpies.push(
+            vi.spyOn(audioEngine, 'ensureTrackStrip').mockReturnValue(strip as never),
+            vi.spyOn(audioEngine, 'getTrackStrip').mockReturnValue(strip as never)
+        );
+        // The audio clock follows the playhead at 120 BPM, so a note's length is the beats between its keys.
+        const noopContext = audioEngine.context;
+        const defineContext = (value: unknown): void => {
+            Object.defineProperty(audioEngine, 'context', { value, configurable: true, writable: true });
+        };
+        defineContext({
+            get currentTime() {
+                return transportStore.value!.playheadPosition / 2;
+            },
+            sampleRate: 48_000,
+            baseLatency: 0,
+            outputLatency: 0,
+        });
+        engineSpies.push({ mockRestore: () => defineContext(noopContext) });
+        setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+        await initWebMidi();
+        setMidiInputTrack(TRACK_ID);
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        transportStore.set({ ...transportStore.value!, isRecording: true });
+        const send = async (beat: number, ...bytes: number[]): Promise<void> => {
+            transportStore.set({ ...transportStore.value!, playheadPosition: beat });
+            liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        };
+        await send(4.25, 0x90 | input.noteChannel, 60, 100);
+        await send(4.5, 0xe0 | input.wheelChannel, 127, 127);
+        await send(5.5, 0xe0 | input.wheelChannel, 0, 64);
+        await send(7, 0x80 | input.noteChannel, 60, 0);
+        await stopRecording(8);
+        transportStore.set({ ...transportStore.value!, isRecording: false });
+        flushAutomergeStorageWrites();
+        // What the live route told the instrument while the take was played is not the playback under test.
+        engineStub.expressions = [];
+        return provisional.id;
+    }
+
+    const bendsPlayed = () => engineStub.expressions.filter(({ pitchBend }) => pitchBend !== undefined);
+
+    it('plays the bend of a take recorded on a keyboard that sends on MIDI channel 2, notes and wheel alike', async () => {
+        const clipId = await recordChannelTake({ noteChannel: 1, wheelChannel: 1 });
+        expect(midiStore.value?.notesByClipId[clipId]?.map(({ pitch, channel }) => [pitch, channel])).toEqual([
+            [60, 1],
+        ]);
+        expect(midiStore.value?.pitchBendByClipId[clipId]?.map(({ channel }) => channel)).toEqual([1, 1]);
+
+        await playWindow(0, 12);
+
+        expect(bendsPlayed()).toEqual([
+            { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
+            { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
+        ]);
+    });
+
+    it('leaves a channel-2 note in tune under a channel-1 wheel, as it was played', async () => {
+        const clipId = await recordChannelTake({ noteChannel: 2, wheelChannel: 1 });
+        expect(midiStore.value?.notesByClipId[clipId]?.map(({ channel }) => channel)).toEqual([2]);
+
+        await playWindow(0, 12);
+
+        expect(bendsPlayed()).toEqual([]);
+    });
+
+    it('bends a member-channel note by the master channel’s wheel when the take was recorded with MPE on', async () => {
+        registerHandlerMap(getWebMidiInputHandlers());
+        await executeAppAction({ type: 'enableMpe' });
+        try {
+            const clipId = await recordChannelTake({ noteChannel: 2, wheelChannel: 0 });
+            expect(
+                midiStore.value?.pitchBendByClipId[clipId]?.map(({ channel, zoneMaster }) => [channel, zoneMaster])
+            ).toEqual([
+                [0, true],
+                [0, true],
+            ]);
+
+            await playWindow(0, 12);
+
+            expect(bendsPlayed()).toEqual([
+                { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
+                { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
+            ]);
+        } finally {
+            await executeAppAction({ type: 'disableMpe' });
+        }
+    });
 
     const playWindow = (fromBeat: number, toBeat: number) =>
         scheduleMidiNotes(fromBeat, toBeat, 0, new Set<string>(), [], defaultTransportState, 120);

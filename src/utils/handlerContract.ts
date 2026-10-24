@@ -348,6 +348,7 @@ export type OverdubControllerRowsSnapshot = {
         readonly value: number;
         readonly beat: number;
         readonly channel: number;
+        readonly zoneMaster?: boolean;
     }[];
 };
 /**
@@ -484,6 +485,7 @@ export type MidiClipPitchBendSnapshot = {
     readonly value: number;
     readonly beat: number;
     readonly channel: number;
+    readonly zoneMaster?: boolean;
 };
 export type MidiClipDataActionSnapshot = {
     readonly notes: { readonly present: boolean; readonly value: readonly MidiClipNoteSnapshot[] };

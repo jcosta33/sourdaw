@@ -158,6 +158,12 @@ const INVALID_SNAPSHOT_CASES = [
         snapshots: createSnapshots({ pitchBendSnapshot: [{ ...createPitchBend('pitch-invalid'), extra: true }] }),
     },
     {
+        label: 'pitch-bend zone-master mark that is not a boolean',
+        snapshots: createSnapshots({
+            pitchBendSnapshot: [{ ...createPitchBend('pitch-invalid'), zoneMaster: 'yes' }],
+        }),
+    },
+    {
         label: 'infinite pitch-bend beat',
         snapshots: createSnapshots({
             pitchBendSnapshot: [{ ...createPitchBend('pitch-invalid'), beat: Infinity }],
@@ -225,6 +231,19 @@ describe('restoreMidiClipData', () => {
         expect(nextState.notesByClipId['clip-keep']).toBe(previousState.notesByClipId['clip-keep']);
         expect(nextState.ccByClipId['clip-keep']).toBe(previousState.ccByClipId['clip-keep']);
         expect(nextState.pitchBendByClipId['clip-keep']).toBe(previousState.pitchBendByClipId['clip-keep']);
+    });
+
+    it('restores a pitch-bend row with the zone-master mark it was recorded with', () => {
+        const pitchBendSnapshot = [{ ...createPitchBend('pitch-master'), zoneMaster: true }];
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: null,
+            controlChangeSnapshot: null,
+            pitchBendSnapshot,
+        });
+
+        expect(requireMidiState().pitchBendByClipId['clip-restore']).toEqual(pitchBendSnapshot);
     });
 
     it('only clones maps with a supplied snapshot', () => {

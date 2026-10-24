@@ -275,6 +275,8 @@ export type ProjectMidiPitchBend = {
     beat: number;
     value: number;
     channel: number;
+    /** Recorded on the MPE zone master while MPE was on: the bend reaches every member channel. Absent otherwise. */
+    zoneMaster?: boolean;
 };
 
 export type ProjectMidi = {

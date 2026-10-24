@@ -107,9 +107,7 @@ export type OfflineChannelBendProjector = (input: {
             loopLength?: number;
         };
         controlChanges: readonly OfflineControllerRow[];
-        pitchBends: readonly { id: string; value: number; beat: number; channel: number }[];
-        /** The clip's notes, of which only the channel counts: they decide whether a master-channel bend is zone-wide. */
-        notes?: readonly { channel?: number }[];
+        pitchBends: readonly { id: string; value: number; beat: number; channel: number; zoneMaster?: boolean }[];
     }[];
     frameAtBeat: (beat: number) => number;
 }) => readonly {

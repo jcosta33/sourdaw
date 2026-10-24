@@ -416,16 +416,17 @@ describe('projectNoteExpressionCurves', () => {
                 expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[2, 2_000]]);
             });
 
-            it('treats a note with no channel as channel 0', () => {
-                const { changes } = projectNoteExpressionCurves({
+            it('lets a note with no stored channel hear the moves of every channel', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
                     note: plainNote,
-                    channelBend: [move(1, 500, 2, 0), move(1.5, 700, 2, 1)],
-                    startBeat: 0,
+                    channelBend: [move(0.5, 300, 2, 3), move(1, 500, 2, 0), move(1.5, 700, 2, 1)],
+                    startBeat: 0.75,
                     releaseFrame: frameAtBeat(3),
                     frameAtBeat,
                 });
 
-                expect(changes.map((change) => change.expression.pitchBend)).toEqual([500]);
+                expect(atStart?.pitchBend).toBe(300);
+                expect(changes.map((change) => change.expression.pitchBend)).toEqual([500, 700]);
             });
         });
 

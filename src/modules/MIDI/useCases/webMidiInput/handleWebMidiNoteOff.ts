@@ -421,12 +421,17 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         };
 
         // Preserve the played velocity (was hardcoded 100, M-143).
-        const midiNote = deps.createMidiNote(
-            note,
-            compensatedStartBeat,
-            Math.max(durationBeats, 0.0625),
-            noteData.velocity ?? DEFAULT_NOTE_VELOCITY
-        );
+        // The note keeps the channel it sounded on: stored playback bends a note only by its own channel's wheel
+        // (or an MPE zone master's), as the live input does.
+        const midiNote = {
+            ...deps.createMidiNote(
+                note,
+                compensatedStartBeat,
+                Math.max(durationBeats, 0.0625),
+                noteData.velocity ?? DEFAULT_NOTE_VELOCITY
+            ),
+            channel: noteData.channel,
+        };
 
         if (!getMpeEnabled()) {
             deps.appendRecordedMidiNote({ clipId, note: midiNote });

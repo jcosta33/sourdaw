@@ -643,15 +643,51 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             expect(bendsOnChannel(2)).toEqual([]);
         });
 
+        it('leaves a channel-1 note in tune under a channel-0 wheel recorded with MPE off', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: {
+                    'clip-1': [onChannel(0, note('low', 0, 6, 48)), onChannel(1, note('high', 0, 6, 72))],
+                },
+                bends: { 'clip-1': [bend('wheel', 3, 8191, 0)] },
+            });
+
+            await play(0, 8);
+
+            expect(bendsOnChannel(0)).toEqual([
+                { note: 48, sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+            ]);
+            expect(bendsOnChannel(1)).toEqual([]);
+        });
+
+        it('leaves a lone channel-1 note in tune under a channel-0 wheel, however few notes the track holds', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [onChannel(1, note('only', 0, 6, 72))] },
+                bends: { 'clip-1': [bend('wheel', 3, 8191, 0)] },
+            });
+
+            await play(0, 8);
+
+            expect(bendsOnChannel(1)).toEqual([]);
+        });
+
         describe('on the MPE master channel', () => {
-            it('moves the notes of every member channel when the track holds no note on the master channel', async () => {
+            const master = (id: string, beat: number, value: number) => ({
+                ...bend(id, beat, value, 0),
+                zoneMaster: true,
+            });
+
+            it('moves the notes of every member channel for a row recorded while MPE was on', async () => {
                 stripFor(FERMENTER);
                 setProject({
                     track: midiTrack(FERMENTER, [midiClip()]),
                     notes: {
                         'clip-1': [onChannel(1, note('first', 0, 6, 60)), onChannel(2, note('second', 0, 6, 64))],
                     },
-                    bends: { 'clip-1': [bend('master', 3, 8191, 0)] },
+                    bends: { 'clip-1': [master('master', 3, 8191)] },
                 });
 
                 await play(0, 8);
@@ -664,23 +700,43 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
                 ]);
             });
 
-            it('moves only the channel-0 notes when the track also plays notes on channel 0', async () => {
+            it('starts a member note struck under a master bend bent, and keeps it so when a channel-0 note is drawn in', async () => {
                 stripFor(FERMENTER);
                 setProject({
                     track: midiTrack(FERMENTER, [midiClip()]),
                     notes: {
-                        'clip-1': [onChannel(0, note('low', 0, 6, 48)), onChannel(1, note('high', 0, 6, 72))],
+                        'clip-1': [onChannel(0, note('drawn', 5, 1, 48)), onChannel(2, note('member', 2, 1, 64))],
                     },
-                    bends: { 'clip-1': [bend('wheel', 3, 8191, 0)] },
+                    bends: { 'clip-1': [master('master', 1, 4096)] },
                 });
 
                 await play(0, 8);
 
-                expect(bendsOnChannel(0)).toEqual([
-                    { note: 48, sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                expect(bendsOnChannel(2)).toEqual([
+                    { note: 64, sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 2 },
                 ]);
-                expect(bendsOnChannel(1)).toEqual([]);
             });
+        });
+
+        it('lets a note with no stored channel hear the moves of every channel', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [note('drawn', 0, 6, 60)] },
+                bends: { 'clip-1': [bend('out', 3, 8191, 2), bend('back', 4, 0, 5)] },
+            });
+
+            await play(0, 8);
+
+            expect(
+                vi
+                    .mocked(applyNoteExpression)
+                    .mock.calls.filter(([input]) => input.expression.pitchBend !== undefined)
+                    .map(([input]) => [input.sampleFrame, input.expression.pitchBend])
+            ).toEqual([
+                [3 * FRAMES_PER_BEAT, 8191],
+                [4 * FRAMES_PER_BEAT, 0],
+            ]);
         });
     });
 

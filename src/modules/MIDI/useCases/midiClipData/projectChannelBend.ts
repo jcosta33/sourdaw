@@ -1,4 +1,3 @@
-import { MPE_MASTER_CHANNEL } from '../../models/MidiControllerState';
 import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
 
 import { createStoredBendRangeReader } from './createStoredBendRangeReader';
@@ -10,11 +9,6 @@ type ChannelBendClip = {
     /** The clip's stored controllers: the RPN 0 messages among them say how deep its bend is. */
     controlChanges: readonly MidiCC[];
     pitchBends: readonly MidiPitchBend[];
-    /**
-     * The clip's notes, of which only the channel counts (a note with none sounds on channel 0). They say
-     * whether the track was recorded under an MPE zone master. Absent means the clip holds no note.
-     */
-    notes?: readonly { channel?: number }[];
 };
 
 type ProjectChannelBendInput = {
@@ -49,7 +43,7 @@ type ChannelBendPoint = {
     rangeSemitones: number;
     /** The zero-based MIDI channel the row was recorded on: a move bends the notes of that channel. */
     channel: number;
-    /** Whether the move is an MPE zone master's, which bends the notes of every channel (see `projectChannelBend`). */
+    /** Whether the row was recorded under an MPE zone master, which bends the notes of every channel. */
     zoneWide: boolean;
 };
 
@@ -69,12 +63,10 @@ type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number
  * bent starts bent.
  *
  * The one exception is the MPE zone master. Live, with MPE on, a bend on the master channel
- * (0) reaches the notes of every member channel, while member bend is per note and is never a
- * channel row. A stored row does not say whether MPE was on when it was recorded, so it is
- * inferred from the notes the track plays: a channel-0 row is zone-wide (`zoneWide`) exactly
- * when none of the supplied clips holds a note on channel 0. A zone master carries no notes, so
- * such a track is an MPE take; a track that plays a channel-0 note has a channel-0 wheel that
- * bends those notes only, and its other channels' notes are left alone.
+ * reaches the notes of every member channel, while member bend is per note and is never a
+ * channel row. Whether MPE was on is not a fact of the notes a track plays, so the recorder marks
+ * such a row (`MidiPitchBend.zoneMaster`) and only the mark makes a point zone-wide (`zoneWide`);
+ * a row without it, whatever its channel, bends its own channel's notes.
  *
  * "Last" is the posting order, by sample frame, then clip sequence, then the clip's own row
  * order, never by float beat: two rows a rounding step apart in beat share a frame, and the
@@ -90,6 +82,9 @@ export function projectChannelBend({
 }: ProjectChannelBendInput): ChannelBendPoint[] {
     const placed: PlacedBend[] = [];
     for (const [clipIndex, { clip, controlChanges, pitchBends }] of clips.entries()) {
+        if (pitchBends.length === 0) {
+            continue;
+        }
         const readRange = createStoredBendRangeReader(controlChanges);
         const bends = projectClipPitchBendEvents({ pitchBends, clip, fromBeat, toBeat });
         for (const [rowIndex, bend] of bends.entries()) {
@@ -101,14 +96,13 @@ export function projectChannelBend({
                     value: bend.value,
                     rangeSemitones: readRange(bend.channel, bend.recordedContentBeat),
                     channel: bend.channel,
-                    zoneWide: false,
+                    zoneWide: bend.zoneMaster === true,
                 },
                 clipIndex,
                 rowIndex,
             });
         }
     }
-    const masterIsZone = placed.some(({ point }) => point.channel === MPE_MASTER_CHANNEL) && !holdsMasterNote(clips);
     return placed
         .sort(
             (left, right) =>
@@ -116,12 +110,5 @@ export function projectChannelBend({
                 left.clipIndex - right.clipIndex ||
                 left.rowIndex - right.rowIndex
         )
-        .map(({ point }) => ({ ...point, zoneWide: masterIsZone && point.channel === MPE_MASTER_CHANNEL }));
-}
-
-/** Whether any clip holds a note on the master channel, which a note without a channel is on. */
-function holdsMasterNote(clips: readonly ChannelBendClip[]): boolean {
-    return clips.some(({ notes = [] }) =>
-        notes.some((note) => (note.channel ?? MPE_MASTER_CHANNEL) === MPE_MASTER_CHANNEL)
-    );
+        .map(({ point }) => point);
 }
