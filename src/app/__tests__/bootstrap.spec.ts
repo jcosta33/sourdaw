@@ -122,10 +122,13 @@ const {
     reconcileVcaRuntimeGainMock,
     prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestoreMock,
+    isValidAutomationTimeStateRestorePlanMock,
     prepareMidiGlobalTimeTransactionMock,
     prepareMidiTimeStateRestoreMock,
+    isValidMidiTimeStateRestorePlanMock,
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
+    isValidTimelineMapStateRestorePlanMock,
     configureAudioDeviceRuntimeSinkMock,
     isTunerTelemetryNativelyOwnedMock,
     updateTunerTelemetryMock,
@@ -222,10 +225,13 @@ const {
         reconcileVcaRuntimeGainMock: vi.fn(),
         prepareAutomationTimeOperationMock: vi.fn(),
         prepareAutomationTimeStateRestoreMock: vi.fn(),
+        isValidAutomationTimeStateRestorePlanMock: vi.fn(() => false),
         prepareMidiGlobalTimeTransactionMock: vi.fn(),
         prepareMidiTimeStateRestoreMock: vi.fn(),
+        isValidMidiTimeStateRestorePlanMock: vi.fn(() => false),
         prepareTimelineMapTimeOperationMock: vi.fn(),
         prepareTimelineMapStateRestoreMock: vi.fn(),
+        isValidTimelineMapStateRestorePlanMock: vi.fn(() => false),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         isTunerTelemetryNativelyOwnedMock: vi.fn<(deviceId: string) => boolean>(() => false),
         updateTunerTelemetryMock: vi.fn(),
@@ -438,6 +444,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     createOfflineAutomationEvaluator: vi.fn(() => () => null),
     prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
+    isValidAutomationTimeStateRestorePlan: isValidAutomationTimeStateRestorePlanMock,
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,
     setAutomationParameterRangeResolver: setAutomationParameterRangeResolverMock,
@@ -594,6 +601,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
     prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
     prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
+    isValidMidiTimeStateRestorePlan: isValidMidiTimeStateRestorePlanMock,
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     projectClipControllerEvents: noop,
@@ -697,6 +705,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     resolveTempoAtBeat: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
+    isValidTimelineMapStateRestorePlan: isValidTimelineMapStateRestorePlanMock,
     setStopPlaybackCallback: noop,
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
@@ -1004,6 +1013,11 @@ describe('bootstrap', () => {
 
     it('registers the exact forward and restore global-time owner preparations', () => {
         expect(setTimeOperationDependenciesMock).toHaveBeenCalledExactlyOnceWith({
+            savedRestorePlanValidators: {
+                automation: isValidAutomationTimeStateRestorePlanMock,
+                midi: isValidMidiTimeStateRestorePlanMock,
+                timelineMap: isValidTimelineMapStateRestorePlanMock,
+            },
             prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
             prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
             prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
@@ -1011,6 +1025,9 @@ describe('bootstrap', () => {
             prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
             prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
         });
+        expect(setTimeOperationDependenciesMock.mock.invocationCallOrder[0]).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
+        );
     });
 
     it('wires VCA runtime projection through the composition root', () => {

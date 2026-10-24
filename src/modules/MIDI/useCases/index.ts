@@ -26,6 +26,7 @@ export { getChordTrackHandlers } from './getChordTrackHandlers';
 export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
+export { decodeMidiClipDataSnapshots } from './midiClipData/decodeMidiClipDataSnapshots';
 export { commitRecordedControllers } from './recordedControllerTake/commitRecordedControllers';
 export { discardRecordedControllers } from './recordedControllerTake/discardRecordedControllers';
 export { planRecordedControllers } from './recordedControllerTake/planRecordedControllers';
@@ -111,6 +112,7 @@ export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNote
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
 export { prepareClipMidiShiftTransaction } from './midiNoteCrud/prepareClipMidiShiftTransaction';
 export { prepareMidiGlobalTimeTransaction } from './midiNoteCrud/prepareMidiGlobalTimeTransaction';
+export { isValidMidiTimeStateRestorePlan } from './midiNoteCrud/isValidMidiTimeStateRestorePlan';
 export { prepareMidiTimeStateRestore } from './midiNoteCrud/prepareMidiTimeStateRestore';
 export { prepareMidiTimeShiftTransaction } from './midiNoteCrud/prepareMidiTimeShiftTransaction';
 export { removeMidiNote } from './midiNoteCrud/removeMidiNote';

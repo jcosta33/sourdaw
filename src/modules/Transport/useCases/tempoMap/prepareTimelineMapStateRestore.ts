@@ -6,14 +6,6 @@ import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../../st
 import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
 
 type TimelineMapTimeStateSnapshot = NonNullable<ReturnType<typeof timelineMapTimeStateCodec.encodeState>>;
-type DecodedTimelineMapTimeState = NonNullable<ReturnType<typeof timelineMapTimeStateCodec.decodeState>>;
-
-type TimelineMapTimeStateRestorePlan = {
-    version: 1;
-    expected: TimelineMapTimeStateSnapshot;
-    replacement: TimelineMapTimeStateSnapshot;
-};
-
 type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
 
 type PreparedRestoreState = {
@@ -54,84 +46,6 @@ class UnrecoveredTimelineMapStateError extends Error {
     }
 }
 
-function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        return null;
-    }
-
-    const prototype: unknown = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-        return null;
-    }
-
-    const ownKeys = Reflect.ownKeys(value);
-    if (ownKeys.length !== expectedKeys.length) {
-        return null;
-    }
-
-    const expectedKeySet = new Set(expectedKeys);
-    const properties: Record<string, unknown> = {};
-    for (const ownKey of ownKeys) {
-        if (typeof ownKey !== 'string' || !expectedKeySet.has(ownKey)) {
-            return null;
-        }
-
-        const descriptor = Object.getOwnPropertyDescriptor(value, ownKey);
-        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
-            return null;
-        }
-        Object.defineProperty(properties, ownKey, {
-            configurable: true,
-            enumerable: true,
-            value: descriptor.value,
-            writable: true,
-        });
-    }
-
-    return properties;
-}
-
-function validateRestorePlanUnchecked(value: unknown): {
-    plan: TimelineMapTimeStateRestorePlan;
-    expectedState: DecodedTimelineMapTimeState;
-    replacementState: DecodedTimelineMapTimeState;
-} | null {
-    const properties = readDataObject(value, ['version', 'expected', 'replacement']);
-    if (!properties || properties.version !== 1) {
-        return null;
-    }
-
-    const expectedState = timelineMapTimeStateCodec.decodeState(properties.expected);
-    const replacementState = timelineMapTimeStateCodec.decodeState(properties.replacement);
-    if (!expectedState || !replacementState) {
-        return null;
-    }
-
-    const expected = timelineMapTimeStateCodec.encodeState(expectedState);
-    const replacement = timelineMapTimeStateCodec.encodeState(replacementState);
-    if (!expected || !replacement) {
-        return null;
-    }
-
-    return {
-        plan: {
-            version: 1,
-            expected,
-            replacement,
-        },
-        expectedState,
-        replacementState,
-    };
-}
-
-function validateRestorePlan(value: unknown): ReturnType<typeof validateRestorePlanUnchecked> {
-    try {
-        return validateRestorePlanUnchecked(value);
-    } catch {
-        return null;
-    }
-}
-
 function statesMatchReferenceAndValue(
     tempoState: TempoMapStoreState,
     timeSignatureState: TimeSignatureMapStoreState,
@@ -154,7 +68,7 @@ function prepareRestoreStateUnchecked(plan: unknown): PreparedRestoreState | nul
         return null;
     }
 
-    const validatedPlan = validateRestorePlan(plan);
+    const validatedPlan = timelineMapTimeStateCodec.decodeRestorePlan(plan);
     if (
         !validatedPlan ||
         !statesMatchReferenceAndValue(capturedTempoState, capturedTimeSignatureState, validatedPlan.plan.expected)

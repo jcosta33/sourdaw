@@ -85,6 +85,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
     projectClipControllerEvents: vi.fn(),
     projectChannelBend: vi.fn(),
@@ -153,6 +154,8 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     isAppActionConflictError: vi.fn(() => false),
     setCommandEventBus: mocks.setCommandEventBus,

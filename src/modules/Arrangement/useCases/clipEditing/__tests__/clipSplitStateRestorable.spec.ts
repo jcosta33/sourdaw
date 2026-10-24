@@ -24,6 +24,20 @@ function snapshot(leftClip: ClipSplitActionSnapshot['leftClip']): ClipSplitActio
 }
 
 describe('clipSplitStateRestorable', () => {
+    it.each(['left', 'right'] as const)('refuses a %s identity reused under another project track', (id) => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const expected = snapshot(left);
+        const state = {
+            tracks: [
+                TrackDummy.create({ id: 'track-1', clips: [left] }),
+                TrackDummy.create({ id: 'peer-track', clips: [ClipDummy.create({ id, trackId: 'peer-track' })] }),
+            ],
+        };
+        expect(
+            clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement: expected }, state)
+        ).toBe(false);
+    });
+
     it('accepts a live clip whose object keys were rebuilt in a different order', () => {
         const captured = ClipDummy.create({ id: 'left', trackId: 'track-1' });
         const { audioBufferId, ...leadingFields } = captured;

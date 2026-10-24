@@ -7,19 +7,23 @@ import { type Clip } from '../../stores/trackStore';
 import { clipSplitStateRestorable, type ClipSplitStateRestorableInput } from './clipSplitStateRestorable';
 
 function cloneClip(snapshot: ClipStateSnapshot): Clip {
-    return {
-        ...structuredClone(snapshot),
-        overrides: snapshot.overrides ? { ...snapshot.overrides } : undefined,
-        kneadState: snapshot.kneadState
+    const { overrides, kneadState, ...snapshotClip } = structuredClone(snapshot);
+    const clip: Clip = snapshotClip;
+    if (Object.hasOwn(snapshot, 'overrides')) {
+        clip.overrides = overrides ? { ...overrides } : undefined;
+    }
+    if (Object.hasOwn(snapshot, 'kneadState')) {
+        clip.kneadState = kneadState
             ? {
-                  ...snapshot.kneadState,
-                  blobs: snapshot.kneadState.blobs.map((blob) => ({
+                  ...kneadState,
+                  blobs: kneadState.blobs.map((blob) => ({
                       ...blob,
                       pitchCurveCents: [...blob.pitchCurveCents],
                   })),
               }
-            : undefined,
-    };
+            : undefined;
+    }
+    return clip;
 }
 
 export function replaceClipSplitTrackState(input: ClipSplitStateRestorableInput): boolean {

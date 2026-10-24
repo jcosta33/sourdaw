@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
@@ -105,6 +106,7 @@ function noChangeTimeOperationPreparation() {
 
 function installTimeOperationDependencies(): void {
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: () => ({
             status: 'ready' as const,
             hasChanges: false,
@@ -254,6 +256,7 @@ describe('AI preview undo ownership', () => {
         const clip = placeDroppedClip(payload);
         const bufferId = droppedBufferId(payload);
         expect(clip.audioBufferId).toBe(bufferId);
+        flushAutomergeStorageWrites();
 
         // Delete through the real handler path: the undo history now holds an
         // entry whose restoreClip inverse carries the removed clip snapshot.

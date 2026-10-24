@@ -141,6 +141,7 @@ function registerRealAutomationDependencies() {
         revert: () => true,
     };
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation,
         prepareAutomationTimeStateRestore,
         prepareTimelineMapTimeOperation: () => idle,

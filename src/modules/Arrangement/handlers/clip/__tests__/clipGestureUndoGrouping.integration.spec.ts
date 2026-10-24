@@ -1,8 +1,12 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -15,6 +19,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -103,6 +108,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
         });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        flushAutomergeStorageWrites();
     });
 
     afterEach(() => {
@@ -149,6 +155,35 @@ describe('clip gesture undo grouping (issue #3622)', () => {
         expect(trackClips()).toEqual([]);
         expect(undoStore.value?.future).toEqual([]);
         expect(undoStore.value?.past).toHaveLength(2);
+    });
+
+    it('records no history for a stale single removal and only the live member of a grouped gesture', async () => {
+        await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } }, { skipUndo: true });
+        const before = Automerge.clone(getCrdtDoc('root')!);
+        const heads = Automerge.getHeads(getCrdtDoc('root')!);
+        await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } });
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+        expect(undoStore.value?.past).toEqual([]);
+
+        const groupId = `clip-menu-delete-${crypto.randomUUID()}`;
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            { groupId, groupLabel: 'Delete 2 clips' }
+        );
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-b' } },
+            { groupId, groupLabel: 'Delete 2 clips' }
+        );
+        expect(trackClips()).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        await undo();
+        expect(trackClips().map((clip) => clip.id)).toEqual(['clip-a']);
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expect(trackClips()).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(1);
     });
 
     it('discards both copies of a grouped two-clip duplicate gesture with one undo', async () => {
@@ -200,6 +235,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                 }),
             ],
         });
+        flushAutomergeStorageWrites();
 
         const firstGesture = `clip-menu-delete-${crypto.randomUUID()}`;
         await executeUserAppAction(
@@ -324,6 +360,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                         midiNotesSnapshot: null,
                         midiCcSnapshot: null,
                         midiPitchBendSnapshot: null,
+                        retiredTakeLanes: [],
                     },
                 },
                 {
@@ -336,6 +373,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                         midiNotesSnapshot: null,
                         midiCcSnapshot: null,
                         midiPitchBendSnapshot: null,
+                        retiredTakeLanes: [],
                     },
                 },
             ]);
@@ -346,6 +384,29 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                     .map((clip) => clip.id)
                     .sort()
             ).toEqual(['clip-a', 'clip-b']);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a restoreClip batch action without its take-retirement capture', async () => {
+            await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { skipUndo: true });
+
+            const result = await executeAppActionBatch([
+                {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: 'clip-a',
+                        trackId: TRACK_ID,
+                        clipSnapshot: createClipFixture('clip-a', 0, 4),
+                        ripplePlan: null,
+                        midiNotesSnapshot: null,
+                        midiCcSnapshot: null,
+                        midiPitchBendSnapshot: null,
+                    },
+                },
+            ]);
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(trackClips().map((clip) => clip.id)).toEqual(['clip-b']);
             expect(undoStore.value?.past).toEqual([]);
         });
     });

@@ -68,6 +68,20 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-09 — a global ID detector rejected clip-local gain points (introduced in `83be56e84ee`; retained by PR #3032)
+
+The recursive project ID walker treated every nested `id` as globally unique.
+PR #3032 (`93710471aa`) gave arrangement snapshots separate namespaces but left
+canonical live gain points in the global set. Split and duplicate deliberately
+retain point IDs, and gain edits address clipId plus pointId. A saved rich split
+therefore failed project inspection and withheld every owner projection on reload.
+The missing invariant clause was the producer's identity scope. Binary-load old
+projects with repeated gain point IDs across clips, including a point ID equal to
+a track ID, and require normal inspection and genuine rich split Undo/Redo.
+Keep same-envelope point duplicates, global track/clip/device collisions, and
+repeated arrangement IDs repair-required; only canonical gain point rows have
+this local scope.
+
 ### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
 
 PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
@@ -574,6 +588,51 @@ Probe: render a mono buffer through each real factory in Chromium OfflineAudioCo
 must produce a right-channel peak; Widener at non-unity width must emit equal left and right
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
+
+### 2026-10-09 — copied split automation identities broke saved-project replay (PR #4036)
+
+Commit `7961816964ebfe247ead1f057a2cd0f33571f624`, merged through PR #4036, copied
+surviving automation point IDs onto the right fragment while retaining the source lane.
+A split before those points therefore violated global ID uniqueness after binary reload.
+PR #4036's public round-four review described curve, stretch, and link-law probes, but
+its published evidence did not include binary reload or a global identity census. The
+missed stance was reload identity and global-ID preservation; its historical tier is not inferred.
+
+Split before surviving identified main, trim, and ghost points, using both a dyadic cut
+and a non-dyadic cut. Produce entries through real Command, save/load the Automerge
+document, replace it in its lineage, reset every owner projection, and hydrate the separate
+session history mirror. Require a full global-ID census, valid project invariants, exact
+scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
+copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
+do not observe this obligation.
+
+### Saved replay authority refinements measured in PR #5064
+
+A saved clip inverse must use its MIDI owner's complete snapshot law before hydration or any
+Arrangement write. Duplicate note identities, malformed CC or pitch-bend rows, and a missing
+required capture are not an empty or null capture. Probe a real removal's saved inverse through
+production hydration, then require no raw, projection or history write; retain separate valid null
+and present-empty controls. Minimal mocked rows cannot establish that the restore owner admitted
+what the earlier Arrangement write already published.
+
+For split replay, recreate either target identity under another track after Undo and binary reload,
+then require direct and grouped Redo to preserve every owner and the pending history. Delete just
+one side of a mirrored optional satellite or automation guard: reject the group before a later peer
+value can be replaced. Both historically absent sides remain valid, and present empty is distinct.
+A durable-head change alone cannot authorize refresh of a removal inverse; roll the root back in
+its lineage from a committed observer before the finalizer, and require the old inverse to survive
+on ordinary and ambiguous commit paths. Keep genuine own-commit warning and refused-flush controls.
+
+Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
+Preoccupy the preferred generated identity under an unrelated owner before the split, then require
+binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer
+claim an actual captured identity and require zero-write refusal rather than reminting that saved
+capture. A census only against the source lane misses both collisions. Include nested object points
+and cross-domain clip owners, while preserving clip-local gain point and arrangement namespaces.
+For a batch-admitted restored clip preceding a split, compare captured IDs with the actual committed
+IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
+replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
+execution. Read executable entries from the full history owner rather than its label-only UI view.
 
 ### 2026-10-12 — near-zero tempo identity escape (PR #5199)
 

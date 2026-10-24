@@ -18,6 +18,54 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 describe('planRippleDelete', () => {
     beforeEach(() => vi.clearAllMocks());
 
+    it('uses the supplied replay prefix for exact removal geometry and ordering', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.workspaceStore.value = { rippleEditing: true };
+        const original = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'a', trackId: 't1', startBeat: 0, endBeat: 4 },
+                        { id: 'b', trackId: 't1', startBeat: 4, endBeat: 8 },
+                        { id: 'c', trackId: 't1', startBeat: 8, endBeat: 12 },
+                    ],
+                },
+            ],
+        };
+        const plan = planRippleDelete({ trackId: 't1', clipIds: ['a'] }, original);
+        expect(plan?.nextClips).toEqual([
+            { id: 'b', trackId: 't1', startBeat: 0, endBeat: 4 },
+            { id: 'c', trackId: 't1', startBeat: 4, endBeat: 8 },
+        ]);
+        expect(plan?.shiftedClips).toEqual([
+            { clipId: 'b', origStartBeat: 4, origEndBeat: 8, automationDelta: -4 },
+            { clipId: 'c', origStartBeat: 8, origEndBeat: 12, automationDelta: -4 },
+        ]);
+        expect(original.tracks[0]?.clips[0]?.id).toBe('a');
+        expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('uses captured ripple=%s over the opposite workspace preference', (ripple) => {
+        mocks.workspaceStore.value = { rippleEditing: !ripple };
+        const state = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'a', trackId: 't1', startBeat: 0, endBeat: 4 },
+                        { id: 'b', trackId: 't1', startBeat: 4, endBeat: 8 },
+                    ],
+                },
+            ],
+        };
+        const plan = planRippleDelete({ trackId: 't1', clipIds: ['a'], ripple }, state);
+        expect(plan?.nextClips).toEqual([
+            { id: 'b', trackId: 't1', startBeat: ripple ? 0 : 4, endBeat: ripple ? 4 : 8 },
+        ]);
+        expect(mocks.workspaceStore.value.rippleEditing).toBe(!ripple);
+    });
+
     it('plans a simple delete without ripple if disabled', () => {
         const mockClips = [
             { id: 'c1', startBeat: 0, endBeat: 4 },

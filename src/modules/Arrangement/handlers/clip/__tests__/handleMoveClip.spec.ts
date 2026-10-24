@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
     moveClip: vi.fn<() => boolean>(),
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     getClipAutomationMoveState: mocks.getClipAutomationMoveState,
 }));
 

@@ -188,6 +188,7 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
             prepareAutomationTimeOperation,
             prepareAutomationTimeStateRestore,
             prepareMidiGlobalTimeTransaction,

@@ -408,6 +408,20 @@ export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
     return activeAutomergeStorageTransaction?.commitOwner;
 }
 
+/** Run one synchronous repository listener without inheriting its publisher's owner. */
+export function runOutsideAutomergeStoragePublisherScope<Result>(callback: () => Result): Result {
+    const previousTransaction = activeAutomergeStorageTransaction;
+    const previousProvenance = activeAutomergeStorageMutationProvenance;
+    activeAutomergeStorageTransaction = undefined;
+    activeAutomergeStorageMutationProvenance = undefined;
+    try {
+        return callback();
+    } finally {
+        activeAutomergeStorageTransaction = previousTransaction;
+        activeAutomergeStorageMutationProvenance = previousProvenance;
+    }
+}
+
 export function isAutomergeStorageMutationOwned(): boolean {
     return getCurrentAutomergeStorageMutationOwner() !== undefined;
 }
@@ -1186,6 +1200,14 @@ export function flushAutomergeStorageWrites(snapshotTransaction?: object): void 
 /** Exists so a test helper can prove a write it made added a pending write, not just that one already exists. */
 export function countPendingAutomergeStorageWrites(): number {
     return pendingAutomergeStorageWrites.size;
+}
+
+/** Pending writes from another owner can make projected stores newer than the committed document. */
+export function hasForeignPendingAutomergeStorageWrites(docId: AutomergeStorageDocId): boolean {
+    const currentOwner = getCurrentAutomergeStorageMutationOwner();
+    return [...pendingAutomergeStorageWrites].some(
+        (pending) => pending.docId === docId && pending.commitOwner !== currentOwner
+    );
 }
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {

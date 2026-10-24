@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import {
     addWarpMarker,
     clipSelectionStore,
@@ -181,6 +184,8 @@ describe('handleKeydown deleteSelection integration (issue #3627)', () => {
             selectedClipId: 'clip-a',
             selectedClipIds: ['clip-a', 'clip-b'],
         });
+        // Direct fixture writes have no action owner; settle them before the keypress.
+        flushAutomergeStorageWrites();
     });
 
     afterEach(() => {
@@ -203,8 +208,8 @@ describe('handleKeydown deleteSelection integration (issue #3627)', () => {
         const prevent = handleKeydown(deleteKeyDescriptor());
         expect(prevent).toBe(true);
 
-        // `deleteSelectionShortcut` fires the per-clip dispatches without
-        // awaiting them, so the real kernel's completion is observed through
+        // `handleKeydown` returns while the shortcut settles its per-clip
+        // actions in sequence, so the real kernel's completion is observed through
         // the state it owns: both clips gone and both history entries landed.
         await vi.waitFor(() => {
             expect(trackClips()).toEqual([]);

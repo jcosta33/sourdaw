@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -116,6 +119,7 @@ describe('handleSplitClip atomic integration', () => {
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         warpStates.clear();
         setAllEnvelopes({});
+        flushAutomergeStorageWrites();
     });
 
     afterEach(() => {
@@ -191,6 +195,7 @@ describe('handleSplitClip atomic integration', () => {
                 [rightClip.id]: [{ ...rightNotes[0]!, velocity: 12 }, ...rightNotes.slice(1)],
             },
         });
+        flushAutomergeStorageWrites();
 
         const staleUndoNotification = notifications.length;
         await undo();
@@ -211,6 +216,7 @@ describe('handleSplitClip atomic integration', () => {
                 [rightClip.id]: [{ ...rightNotes[0]!, velocity: preparedRightNoteVelocity }, ...rightNotes.slice(1)],
             },
         });
+        flushAutomergeStorageWrites();
 
         await undo();
 
@@ -234,6 +240,7 @@ describe('handleSplitClip atomic integration', () => {
             });
             const track = TrackDummy.create({ id: 'track-1', name: 'Audio', kind: 'audio', clips: [clip] });
             trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
             const channelData = new Float32Array(700).fill(1);
             channelData.fill(-1, 251);
             vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
@@ -353,6 +360,7 @@ describe('handleSplitClip atomic integration', () => {
                 { id: 'p6', beatOffset: 6, gainDb: -12 },
             ],
         });
+        flushAutomergeStorageWrites();
         const satellitesBefore = serializeClipSatelliteEntries(['clip-1']);
 
         const result = await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }], {
@@ -428,6 +436,7 @@ describe('handleSplitClip atomic integration', () => {
         });
         const track = TrackDummy.create({ id: 'track-1', name: 'Audio', kind: 'audio', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        flushAutomergeStorageWrites();
         const channelData = new Float32Array(700).fill(1);
         channelData.fill(-1, 251);
         vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
@@ -452,6 +461,7 @@ describe('handleSplitClip atomic integration', () => {
             enabled: true,
             points: [{ id: 'p-right', beatOffset: 0, gainDb: -4 }],
         });
+        flushAutomergeStorageWrites();
 
         const staleUndoNotification = notifications.length;
         await undo();
@@ -466,6 +476,7 @@ describe('handleSplitClip atomic integration', () => {
         ]);
 
         removeEnvelope(rightClip.id);
+        flushAutomergeStorageWrites();
         await undo();
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-1', startBeat: 0, endBeat: 8 }]);
