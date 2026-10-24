@@ -780,6 +780,20 @@ function get_current_track_transient_state(): TrackTransientState {
     return get_valid_transient_state(trackStore.value) ?? defaultTrackTransientState;
 }
 
+function project_track_local_state(input: {
+    authorityValue: TrackStoreState;
+    localValue: TrackStoreState;
+}): TrackStoreState {
+    const transient_state = get_valid_transient_state(input.localValue) ?? defaultTrackTransientState;
+    return {
+        ...input.authorityValue,
+        selectedTrackId: input.authorityValue.tracks.some((track) => track.id === transient_state.selectedTrackId)
+            ? transient_state.selectedTrackId
+            : null,
+        ghostClips: transient_state.ghostClips,
+    };
+}
+
 function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
     const transient_state = get_current_track_transient_state();
     const snapshot_state = sanitizeTrackSnapshot(value);
@@ -804,6 +818,9 @@ export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
         toCrdt: ({ tracks }) => ({ tracks }),
         fromCrdt: sanitize_track_store_state_from_crdt,
+        isLocalRuntimeStateUpdate: ({ currentValue, nextValue }) => nextValue.tracks === currentValue.tracks,
+        preserveLocalRuntimeStateOnRecompute: true,
+        projectCommittedLocalState: project_track_local_state,
         // Tracks, clips, devices, midiFx and alternatives all carry an `id`, so
         // the slot reconciles row by row on its own. Sends are the one
         // collection here without one: a send is identified by the bus it

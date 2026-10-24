@@ -214,6 +214,10 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     writeMetadata?: AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata>;
     /** Restore explicitly named runtime fields after committed durable authority is projected. */
     projectCommittedLocalState?: (input: { authorityValue: TData; localValue: TData }) => TData;
+    /** Classify a same-authority update whose changes belong only to the adapter's local read projection. */
+    isLocalRuntimeStateUpdate?: (input: { currentValue: TData; nextValue: TData }) => boolean;
+    /** Keep declared local fields when a pending owner settles and the visible authority is recomputed. */
+    preserveLocalRuntimeStateOnRecompute?: true;
 };
 
 /**
@@ -1308,6 +1312,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const writeMetadata = options?.writeMetadata;
     const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
+    const isLocalRuntimeStateUpdate = options?.isLocalRuntimeStateUpdate;
+    const preserveLocalRuntimeStateOnRecompute = options?.preserveLocalRuntimeStateOnRecompute;
     type AdapterPendingWrite = {
         /**
          * The base-capture snapshot of the document slot — `getDoc`, never
@@ -1917,7 +1923,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         retainDeferredBaseline(pending);
     };
 
-    const recomputeCachedValue = (): void => {
+    const recomputeCachedValue = (localValue: TData | null = cachedValue): void => {
         let visibleValue = committedCacheValue;
         let visibleRevision = committedCacheRevision;
         for (const remaining of pendingWritesByOwner.values()) {
@@ -1926,8 +1932,31 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 visibleRevision = remaining.revision;
             }
         }
-        cachedValue = visibleValue;
+        cachedValue =
+            preserveLocalRuntimeStateOnRecompute &&
+            projectCommittedLocalState &&
+            visibleValue !== null &&
+            localValue !== null
+                ? projectCommittedLocalState({ authorityValue: visibleValue, localValue })
+                : visibleValue;
         cachedRevision = visibleRevision;
+    };
+
+    const projectCachedValue = (value: TData | null, notify: boolean): void => {
+        const visibleBefore = cachedValue;
+        const visiblePending = [...pendingWritesByOwner.values()].find(
+            (pending) => pending.revision === cachedRevision
+        );
+        if (visiblePending) {
+            visiblePending.value = value;
+        } else {
+            committedCacheValue = value;
+            absencePresentation = value === null ? 'null' : 'default';
+        }
+        recomputeCachedValue(value);
+        if (notify && !Object.is(visibleBefore, cachedValue)) {
+            notifyDeferredChange();
+        }
     };
 
     const settleStaleCommittedWrite = (pending: AdapterPendingWrite, claimRevision: number): void => {
@@ -2474,6 +2503,15 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             const context = getWriteContext();
             const admittedProjectionGeneration = projectionGeneration;
             const intentBase = cachedValue;
+            if (
+                intentBase !== null &&
+                value !== null &&
+                isLocalRuntimeStateUpdate?.({ currentValue: intentBase, nextValue: value })
+            ) {
+                assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
+                projectCachedValue(value, false);
+                return;
+            }
             const capturedMetadata = captureWriteMetadata(intentBase, value, 'set');
             const scopedValue = prepareScopedValueAfterPredecessor(context, value, intentBase, capturedMetadata);
             assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
@@ -2559,20 +2597,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
          * here — give a new sanitizer the accept path and keep it that way.
          */
         setProjected(value: TData | null): void {
-            const visibleBefore = cachedValue;
-            const visiblePending = [...pendingWritesByOwner.values()].find(
-                (pending) => pending.revision === cachedRevision
-            );
-            if (visiblePending) {
-                visiblePending.value = value;
-            } else {
-                committedCacheValue = value;
-                absencePresentation = value === null ? 'null' : 'default';
-            }
-            recomputeCachedValue();
-            if (!Object.is(visibleBefore, cachedValue)) {
-                notifyDeferredChange();
-            }
+            projectCachedValue(value, true);
         },
 
         isSupported(): boolean {

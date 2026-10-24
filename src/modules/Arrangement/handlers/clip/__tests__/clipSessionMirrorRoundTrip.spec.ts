@@ -6,6 +6,7 @@ import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -61,9 +62,11 @@ import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStor
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
+import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { projectClipReplayPrefix } from '../../../useCases/clipEditing/projectClipReplayPrefix';
 import { takeLaneSelection } from '../../../useCases/comping/takeLaneSelection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDrawClip } from '../handleDrawClip';
@@ -2711,9 +2714,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 const lane = automationLane('peer-unrelated-lane', peerClip.id);
                 project.automation.lanes.push({ ...lane, trackId: otherTrack.id });
             });
+            setArrangementEventBus({ emit: () => Promise.resolve() });
+            const tracksBeforeSelection = trackStore.value!.tracks;
+            selectTrack('other-track');
+            expect(trackStore.value?.tracks).toBe(tracksBeforeSelection);
             trackStore.set({
                 ...trackStore.value!,
-                selectedTrackId: 'other-track',
                 ghostClips: [createClipFixture('local-ghost', 9, 10)],
             });
             const removedRaw = structuredClone(getCrdtDoc('root'));
@@ -6066,6 +6072,13 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(warpStateStore.value?.states['clip-a']).toBeUndefined();
         expect(midiStore.value?.notesByClipId['clip-a']).toBeUndefined();
         expect(automationStore.value?.lanes.some((lane) => lane.clipId === 'clip-a')).toBe(false);
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        const pendingBeforeSelection = countPendingAutomergeStorageWrites();
+        selectTrack(null);
+        const localGhost = createClipFixture('hidden-peer-local-ghost', 9, 10);
+        trackStore.set({ ...trackStore.value!, ghostClips: [localGhost] });
+        expect(countPendingAutomergeStorageWrites()).toBe(pendingBeforeSelection);
+        expect(trackStore.value?.selectedTrackId).toBeNull();
         const raw = structuredClone(getCrdtDoc('root'));
         const heads = Automerge.getHeads(getCrdtDoc('root')!);
         const owners = ownerProjections();
@@ -6108,6 +6121,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(warpStateStore.value?.states['clip-a']).toEqual(peerWarp);
         expect(midiStore.value?.notesByClipId['clip-a']).toEqual([peerNote]);
         expect(automationStore.value?.lanes).toContainEqual(peerLane);
+        expect(trackStore.value?.selectedTrackId).toBeNull();
+        expect(trackStore.value?.ghostClips).toEqual([localGhost]);
         expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
     });
 

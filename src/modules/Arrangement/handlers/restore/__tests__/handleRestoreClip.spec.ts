@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -205,6 +206,7 @@ describe('handleRestoreClip', () => {
             ],
             selectedTrackId: 't1',
         });
+        flushAutomergeStorageWrites();
     });
 
     describe.each(['ripple', 'track'] as const)('%s restore path', (path) => {
