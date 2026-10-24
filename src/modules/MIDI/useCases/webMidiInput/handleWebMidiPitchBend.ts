@@ -10,6 +10,7 @@ import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMember
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordChannelEvent } from './recordChannelEvent';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -90,10 +91,26 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                 return;
             }
 
+            // A bend on a non-member channel moves the whole channel, so it is a
+            // channel event of the take. Member-channel bend is per-note data,
+            // recorded on the note it bends.
+            recordChannelEvent(deps, {
+                trackId: targetTrackId,
+                channel,
+                event: { kind: 'pitchBend', value: bendValue },
+                timeStamp,
+            });
+
             for (const noteData of activeNotes.values()) {
-                // A channel-wide bend is not MPE, but it reaches the instrument
-                // through the same surface — applied to every sounding note at
-                // the arriving channel's own range rather than the MPE member range.
+                // Outside MPE the bend moves only the notes on its own channel.
+                // With MPE on, a non-member bend is the zone master's and keeps
+                // its zone-wide reach over every member channel's note.
+                if (!mpeEnabled && noteData.channel !== channel) {
+                    continue;
+                }
+                // A channel bend is not MPE per-note data, but it reaches the instrument
+                // through the same surface — applied at the arriving channel's own
+                // range rather than the MPE member range.
                 // It is deliberately *not* written back onto the note record:
                 // only MPE member-channel bend is per-note data worth recording.
                 applyNoteExpression({

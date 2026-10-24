@@ -70,13 +70,15 @@ function createAppliedPlan({
         timeSignatureChange('signature-zero', -0),
         timeSignatureChange('signature-shifted', 4),
     ]),
+    durationBeats = 2,
 }: {
     tempo?: TempoMapStoreState;
     timeSignature?: TimeSignatureMapStoreState;
+    durationBeats?: number;
 } = {}): AppliedPlanFixture {
     setStoreStates(tempo, timeSignature);
     const transaction = prepareTimelineMapTimeOperation({
-        operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+        operation: { type: 'insert', atBeat: 4, durationBeats },
     });
     const plan = transaction.inversePlan;
     if (!plan) {
@@ -456,9 +458,12 @@ describe('prepareTimelineMapStateRestore', () => {
     });
 
     it('writes only the changed owner', () => {
+        // Four beats is one bar of the implied 4/4, so the insert carries no meter and only the
+        // tempo map changes; a shorter span would write a carried meter into the other owner.
         const fixture = createAppliedPlan({
             tempo: tempoState([tempoChange('tempo', 4)]),
             timeSignature: timeSignatureState([]),
+            durationBeats: 4,
         });
         const tempoSet = vi.spyOn(tempoMapStore, 'set');
         const timeSignatureSet = vi.spyOn(timeSignatureMapStore, 'set');

@@ -161,6 +161,15 @@ type ExecutableAppActionDescriptor = {
      * "put the Kick at -6 dB" does.
      */
     levelIntentPhrases?: readonly string[];
+    /**
+     * Level phrases that name the project object they act on with the `{reference}` placeholder:
+     * "set {reference} to" names this action in "set Drums to -6 dB", and "{reference} up" in
+     * "Drums up 2 dB". Like {@link levelIntentPhrases} they count only in a clause stating a decibel
+     * figure in a form one of its level value rules declares, and the placeholder stands for exactly
+     * one project reference, so "set Drums Reverb to -6 dB" and "set to -6 dB" name nothing. A phrase
+     * opening with the placeholder names the action only at the start of the clause.
+     */
+    referencedLevelIntentPhrases?: readonly string[];
     selectionPhrases?: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
@@ -1473,6 +1482,7 @@ export const executableAppActionDescriptors = [
         description: `Set track volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
         levelIntentPhrases: ['put', 'bring up', 'bring down'],
+        referencedLevelIntentPhrases: ['set {reference} to', '{reference} up', '{reference} down'],
         targetRules: trackTargetRules,
         valueRules: [
             { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },

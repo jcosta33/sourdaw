@@ -198,7 +198,6 @@ describe('Levain instrument persistence round trip', () => {
         });
         vi.stubGlobal('cancelAnimationFrame', vi.fn());
         const bridge = createLevainBridge({
-            getAllTracks: () => trackStore.value?.tracks ?? [],
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
             autoLoadLevainSamples: vi.fn().mockResolvedValue(null),
@@ -304,7 +303,6 @@ describe('Levain instrument persistence round trip', () => {
         Container.clear();
         const autoLoadLevainSamples = vi.fn().mockResolvedValue(null);
         injectDependencies(levainBridge, {
-            getAllTracks: () => [],
             persistDeviceParam: vi.fn(),
             writeNativeBuiltinParameters: vi.fn(),
             sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),

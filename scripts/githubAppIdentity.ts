@@ -23,6 +23,13 @@ export const AUTHOR_BOT_COMMIT_LOGIN = 'hplovecraft208';
 export const AUTHOR_BOT_COMMIT_NAME = `${AUTHOR_BOT_COMMIT_LOGIN}[bot]`;
 export const AUTHOR_BOT_COMMIT_EMAIL = `${AUTHOR_BOT_DATABASE_ID}+${AUTHOR_BOT_COMMIT_NAME}@users.noreply.github.com`;
 
+/**
+ * The label the reviewer App applies after it approves a head: the signal approval-gated CI keys its
+ * heavy checks and required `Gate` on. `scripts/ciApprovalAdmission.ts` admits its `labeled` event
+ * only when this App applied it and approved that exact head.
+ */
+export const CI_APPROVAL_LABEL = 'ci:approved';
+
 export function isOrchestratorUserNodeId(nodeId: string | undefined | null): boolean {
     return nodeId === ORCHESTRATOR_USER_NODE_ID;
 }

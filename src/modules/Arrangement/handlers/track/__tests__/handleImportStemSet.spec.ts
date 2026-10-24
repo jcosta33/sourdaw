@@ -313,7 +313,7 @@ function seedUnrelatedProjectTruth(): void {
                 [clip.id]: [{ id: 'cc-existing-midi', controller: 1, value: 0.5, beat: 1, channel: 0 }],
             },
             pitchBendByClipId: {
-                [clip.id]: [{ id: 'bend-existing-midi', value: 0.25, beat: 1, channel: 0 }],
+                [clip.id]: [{ id: 'bend-existing-midi', value: 2048, beat: 1, channel: 0 }],
             },
         });
         automationStore.set(automation);

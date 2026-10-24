@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
+import { describe, expect, it, vi } from 'vitest';
+
+import { SEMANTIC_SIDECAR_DIRECTORY, SemanticFailure } from '../semanticReview/contracts.ts';
 import { parseNameStatus } from '../semanticReview/gitSource.ts';
-import { parseCommandLine } from '../semanticReview.ts';
+import { TYPESAFE_API_KEY_ENV } from '../semanticReview/provider.ts';
+import { handlerVerify, parseCommandLine } from '../semanticReview.ts';
 
 describe('command line', () => {
     it('parses a pull-request scan', () => {
@@ -95,5 +102,139 @@ describe('name-status parsing', () => {
     it('stops cleanly on a truncated record rather than inventing an entry', () => {
         const statuses = parseNameStatus('M\0src/changed.ts\0R100\0src/old.ts\0');
         expect(statuses.size).toBe(1);
+    });
+});
+
+describe('verify handler', () => {
+    it('refuses --export-payload without --dry-run before any run', async () => {
+        // The bundle and findings paths do not exist: reaching their reads would fail differently, so
+        // this message proves the refusal fires before the run rather than after spending it.
+        let failure: unknown;
+        try {
+            await handlerVerify(
+                {
+                    command: 'verify',
+                    bundlePath: 'unused-bundle',
+                    findingsPath: 'unused-findings.json',
+                    exportPayloadPath: 'unused-payload.json',
+                    profile: 'local',
+                    dryRun: false,
+                },
+                'unused-primary-root'
+            );
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).toBeInstanceOf(SemanticFailure);
+        expect((failure as SemanticFailure).code).toBe('unsupported_scope');
+        expect((failure as SemanticFailure).message).toBe('--export-payload is only supported together with --dry-run');
+    });
+
+    it('writes the request previews on a dry run and leaves no report sidecar', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-verify-dry-run-'));
+        const git = (args: string[]): string => {
+            // Node skips undefined entries when it copies a child environment, so this is the same
+            // unset the child would see from a deleted key.
+            const env = { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined };
+            const result = spawnSync('git', args, { cwd: root, env, encoding: 'utf8', shell: false });
+            if (result.error !== undefined) {
+                throw result.error;
+            }
+            if (result.status !== 0) {
+                throw new Error(result.stderr);
+            }
+            return result.stdout.trim();
+        };
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const key = process.env[TYPESAFE_API_KEY_ENV];
+        delete process.env[TYPESAFE_API_KEY_ENV];
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            const file = join(root, 'src/modules/Project/a.ts');
+            mkdirSync(dirname(file), { recursive: true });
+            writeFileSync(file, 'first line\nsecond line\n');
+            git(['add', 'src/modules/Project/a.ts']);
+            git(['commit', '--no-gpg-sign', '-m', 'base']);
+            const baseSha = git(['rev-parse', 'HEAD']);
+            writeFileSync(file, 'first line\nsecond line changed\n');
+            git(['add', 'src/modules/Project/a.ts']);
+            git(['commit', '--no-gpg-sign', '-m', 'head']);
+            const headSha = git(['rev-parse', 'HEAD']);
+            git(['remote', 'add', 'origin', 'https://github.com/jcosta33/sourdaw.git']);
+
+            const bundle = join(root, 'bundle');
+            mkdirSync(bundle, { recursive: true });
+            writeFileSync(join(bundle, 'manifest.json'), JSON.stringify({ headSha, baseSha }));
+            const findingsPath = join(root, 'findings.json');
+            writeFileSync(
+                findingsPath,
+                JSON.stringify([
+                    {
+                        findingId: 'f1',
+                        headSha,
+                        claim: 'a claim',
+                        expectedBehavior: 'an expected behavior',
+                        evidenceReferences: [
+                            { path: 'src/modules/Project/a.ts', side: 'after', startLine: 2, endLine: 2 },
+                        ],
+                    },
+                    {
+                        // Names only the sensitive-path screen's own file, so no request can ever
+                        // carry its evidence and a live run would send nothing for it.
+                        findingId: 'f2',
+                        headSha,
+                        claim: 'a withheld claim',
+                        expectedBehavior: 'another expected behavior',
+                        evidenceReferences: [{ path: '.env', side: 'after', startLine: 1, endLine: 1 }],
+                    },
+                ])
+            );
+            const exportPath = join(root, 'payload.json');
+
+            // The key is unset, so a handler that loaded the live provider port would refuse on the
+            // missing credential instead of completing: exit 0 is the proof the stub was applied.
+            const exit = await handlerVerify(
+                {
+                    command: 'verify',
+                    bundlePath: bundle,
+                    findingsPath,
+                    exportPayloadPath: exportPath,
+                    profile: 'local',
+                    dryRun: true,
+                    trustedSha: headSha,
+                },
+                root
+            );
+            expect(exit).toBe(0);
+            const previews = JSON.parse(readFileSync(exportPath, 'utf8')) as unknown;
+            expect(Array.isArray(previews)).toBe(true);
+            const preview = (previews as { findingId?: string; state?: unknown; omissionReason?: string }[])[0];
+            expect(preview?.findingId).toBe('f1');
+            expect(preview?.omissionReason).toBeUndefined();
+            expect(JSON.stringify(preview?.state)).toContain('second line changed');
+            // The withheld finding still exports its (empty) request, but the summary counts only
+            // what a live run would send and names the withheld finding separately.
+            const withheldPreview = (previews as { findingId?: string; omissionReason?: string }[])[1];
+            expect(withheldPreview?.findingId).toBe('f2');
+            expect(withheldPreview?.omissionReason).toBe('no-admissible-evidence');
+            // A dry run produced no report to validate or write.
+            expect(existsSync(join(root, '.agents', SEMANTIC_SIDECAR_DIRECTORY))).toBe(false);
+            expect(logSpy.mock.calls).toContainEqual([
+                'dry-run: 1 request(s) would be sent; no TypeSafe call was made',
+            ]);
+            expect(logSpy.mock.calls).toContainEqual([
+                'dry-run: 1 finding(s) would send no request; every region they named was withheld',
+            ]);
+        } finally {
+            if (key !== undefined) {
+                process.env[TYPESAFE_API_KEY_ENV] = key;
+            }
+            logSpy.mockRestore();
+            warnSpy.mockRestore();
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });
