@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';

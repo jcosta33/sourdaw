@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
