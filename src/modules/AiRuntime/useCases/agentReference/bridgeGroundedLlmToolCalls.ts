@@ -6126,15 +6126,20 @@ function findChangedControl(
     return null;
 }
 
-/** Every track operation the chain's request texts leave alone, each read against the live project. */
-function getRefinementControlProtections(
+/** What the chain's request texts leave alone beyond the protected objects, each read against the live project. */
+function getRefinementReadProtections(
     basis: ProposalGroundingBasis,
     context: ProjectContext,
     prompt: string
-): Array<{ trackId: string; actionTypes: string[] }> {
-    return [...basis.sources.map((source) => source.text), prompt].flatMap(
-        (text) => readExplicitProtections(text, context).protectedControls
+): { controls: Array<{ trackId: string; actionTypes: string[] }>; variantTracks: Array<{ id: string; name: string }> } {
+    const readings = [...basis.sources.map((source) => source.text), prompt].map((text) =>
+        readExplicitProtections(text, context)
     );
+    const variantIds = new Set(readings.flatMap((reading) => reading.variantTrackIds));
+    return {
+        controls: readings.flatMap((reading) => reading.protectedControls),
+        variantTracks: context.tracks.filter((track) => variantIds.has(track.id)),
+    };
 }
 
 function findProtectedChange(
@@ -6667,16 +6672,13 @@ function bridgeRefinedLlmToolCalls(
     if (protectedChange !== null) {
         return refuseRefinement(protectedChange);
     }
-    const changedControl = findChangedControl(
-        routed.actions,
-        getRefinementControlProtections(basis, context, prompt),
-        context
-    );
-    return changedControl === null
+    const readProtections = getRefinementReadProtections(basis, context, prompt);
+    const changedRead =
+        findChangedObject(routed.actions, readProtections.variantTracks, context) ??
+        findChangedControl(routed.actions, readProtections.controls, context);
+    return changedRead === null
         ? routed
-        : refuseRefinement(
-              `Refined proposal changes "${changedControl.name}", which the request chain leaves unchanged`
-          );
+        : refuseRefinement(`Refined proposal changes "${changedRead.name}", which the request chain leaves unchanged`);
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;

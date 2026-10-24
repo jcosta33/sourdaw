@@ -1578,6 +1578,35 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 });
             });
 
+            it('keeps the member tracks of a VCA group a request kept intact', () => {
+                const kit = { id: 'vca-kit', name: 'Kit', gain: 1, muted: false, trackIds: ['track-snare'] };
+                const kitContext: ProjectContext = {
+                    ...projectContext([projectTrack('track-vocals', 'Vocals'), projectTrack('track-snare', 'Snare')]),
+                    vcaGroups: [kit],
+                };
+                const card = { prompt: 'turn Vocals down 3 dB and keep Kit intact', calls: [vocalsBy(-3)] };
+
+                expect(refine(card, 'turn Snare down 2 dB', [vocalsBy(-3), snareBy(-2)], kitContext)).toMatchObject({
+                    status: 'rejected',
+                    rejectionReason: expect.stringContaining('"Snare", which the request chain leaves unchanged'),
+                });
+            });
+
+            it('protects the track a singular or plural variant of its name kept', () => {
+                const variantContext = projectContext([
+                    projectTrack('track-vocals', 'Vocals'),
+                    projectTrack('track-snare', 'Snare'),
+                ]);
+                const card = { prompt: 'turn Snare down 3 dB and leave the Vocal alone', calls: [snareBy(-3)] };
+
+                expect(
+                    refine(card, 'turn Vocals down 1 dB', [snareBy(-3), vocalsBy(-1)], variantContext)
+                ).toMatchObject({
+                    status: 'rejected',
+                    rejectionReason: expect.stringContaining('"Vocals", which the request chain leaves unchanged'),
+                });
+            });
+
             describe('the selected track a request leaves alone', () => {
                 const selectedContext: ProjectContext = {
                     ...projectContext([projectTrack('track-vocals', 'Vocals'), projectTrack('track-snare', 'Snare')]),
@@ -1614,6 +1643,64 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     expect(refine(card, 'pan Vocals 20% left', [snareBy(-3), vocalsPan], selectedContext).status).toBe(
                         'grounded'
                     );
+                });
+
+                it.each(["leave the selected track's fader alone", 'leave the selected track’s fader alone'])(
+                    'refuses a refinement that changes the control a possessive form kept in "%s"',
+                    (protection) => {
+                        const card = { prompt: `turn Snare down 3 dB and ${protection}`, calls: [snareBy(-3)] };
+
+                        expect(
+                            refine(card, 'turn Vocals down 1 dB', [snareBy(-3), vocalsBy(-1)], selectedContext)
+                        ).toMatchObject({
+                            status: 'rejected',
+                            rejectionReason: expect.stringContaining(
+                                '"Vocals", which the request chain leaves unchanged'
+                            ),
+                        });
+                    }
+                );
+
+                it('keeps a possessive control protection through a second refinement', () => {
+                    const card = {
+                        prompt: "turn Snare down 3 dB and leave the selected track's fader alone",
+                        calls: [snareBy(-3)],
+                    };
+                    const first = ground(
+                        'make Snare 2 dB',
+                        [snareBy(-2)],
+                        cardBasis(card.prompt, card.calls, selectedContext),
+                        selectedContext
+                    );
+                    if (first.status !== 'grounded' || first.groundingBasis === undefined) {
+                        throw new Error('Expected the first refinement to ground with a basis.');
+                    }
+
+                    expect(
+                        ground(
+                            'turn Vocals down 1 dB',
+                            [snareBy(-2), vocalsBy(-1)],
+                            first.groundingBasis,
+                            selectedContext
+                        )
+                    ).toMatchObject({
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining('"Vocals", which the request chain leaves unchanged'),
+                    });
+                });
+
+                it('keeps the selected track a request kept intact', () => {
+                    const card = {
+                        prompt: 'turn Snare down 3 dB and keep the selected track intact',
+                        calls: [snareBy(-3)],
+                    };
+
+                    expect(
+                        refine(card, 'turn Vocals down 1 dB', [snareBy(-3), vocalsBy(-1)], selectedContext)
+                    ).toMatchObject({
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining('"Vocals", which the request chain leaves unchanged'),
+                    });
                 });
             });
         });

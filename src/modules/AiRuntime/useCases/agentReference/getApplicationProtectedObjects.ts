@@ -122,7 +122,10 @@ export function getApplicationProtectedObjects(input: {
     const syncopatedArpeggioProtections =
         syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const explicitClipProtection = getExplicitClipProtection(prompt, context);
-    const readProtectedTracks = new Set(readExplicitProtections(prompt, context).protectedTrackIds);
+    const readProtections = readExplicitProtections(prompt, context);
+    const readProtectedTracks = new Set(
+        readProtections.protectedTrackIds.filter((id) => !readProtections.variantTrackIds.includes(id))
+    );
     const protections = [
         ...(actions.some((action) => action.type === 'importStemSet')
             ? context.tracks.map(({ id, name }) => ({ id, name }))

@@ -839,9 +839,6 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         ['leave Keys and Ghost alone', 'Ghost', projectContext],
         ['leave Ghost alone', 'Ghost', projectContext],
         ['leave the Kick alone', 'Kick', projectContext],
-        ['leave the Lead Vocal alone', 'Lead Vocal', projectContext],
-        ['leave the Vocal alone', 'Vocal', projectContext],
-        ['leave the Drum alone', 'Drum', projectContext],
         ["leave Ghost's fader alone", 'Ghost', projectContext],
         ['leave Ghost and keep Keys alone', 'Ghost', projectContext],
         ['leave Ghost then Keys alone', 'Ghost', projectContext],
@@ -1037,8 +1034,6 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         ['turn the Drums down 3 dB except for the Intro', 'Intro'],
         ['turn the Drums down 3 dB but not in the Bridge', 'Bridge'],
         ['turn the Drums down 3 dB; Ghost stays as is', 'Ghost'],
-        ['turn the Drums down 3 dB. Ghost stays as is.', 'Ghost'],
-        ['Ghost stays as is, turn the Drums down 3 dB', 'Ghost'],
         ['turn the Drums down 3 dB; Piano and Ghost stay as they are', 'Piano'],
         ['turn the Drums down 3 dB with Ghost unchanged', 'Ghost'],
     ])('refuses the protection form in "%s" naming %s', (prompt, reference) => {
@@ -1194,6 +1189,202 @@ describe('an explicit protection naming a reference that binds to nothing refuse
 
             expect(result.rejections).toEqual([]);
             expect(result.actions).toEqual([gainAction(keys.id, { deltaDb: -3 })]);
+        });
+    });
+
+    describe('a capital at a sentence start carries no signal', () => {
+        it.each([
+            'turn the Drums down 3 dB. Ghost stays as is.',
+            'Ghost stays as is, turn the Drums down 3 dB',
+            'Turn the Drums down 3 dB. Levels unchanged.',
+            'Turn the Drums down 3 dB. Width stays as is.',
+            'Turn the Drums down 3 dB. Rest as is.',
+            'Turn the Drums down 3 dB. Others unchanged.',
+            'Turn the Drums down 3 dB. Automation stays as is.',
+            'turn the Drums down 3 dB; leave the Levels alone',
+            'turn the Drums down 3 dB; keep the Fx as is',
+            'turn the Drums down 3 dB; keep the Low End as is',
+            'turn the Drums down 3 dB; keep the Stereo Image the same',
+            'turn the Drums down 3 dB; keep the Sidechain unchanged',
+            "turn the Drums down 3 dB; don't touch the Equalizer",
+            'turn the Drums down 3 dB; keep the Meter as is',
+            'turn the Drums down 3 dB; do not change the Time Signature',
+            'turn the Drums down 3 dB and Keep Everything Else The Same',
+        ])('grounds the asked change in "%s" with nothing selected', (prompt) => {
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        });
+
+        it.each([
+            ['turn the Drums down 3 dB; do not change pan, solo, and fader of Strings', 'Strings'],
+            ['turn the Drums down 3 dB and leave the Kick alone', 'Kick'],
+            ['turn the Drums down 3 dB; Leave Ghost alone', 'Ghost'],
+            ['turn the Drums down 3 dB; keep the Ghost track as is', 'Ghost'],
+            ['turn the Drums down 3 dB. The Ghost track stays as is.', 'Ghost'],
+        ])('still refuses the unbound object in "%s"', (prompt, reference) => {
+            expectRefusedNamingReference(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt), reference);
+        });
+    });
+
+    describe('a singular or plural variant of an object name binds to the object and protects it', () => {
+        it('refuses a change to the object the variant names', () => {
+            const result = bridge(
+                [gainCall(vocals.id, { deltaDb: -3 })],
+                'turn the Vocals down 3 dB; leave the Vocal alone'
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Vocals"') },
+            ]);
+        });
+
+        it.each(['leave the Vocal alone', 'keep the Drum Bus the same as the Vocal', 'leave the Lead Vocal alone'])(
+            'neither refuses nor ignores it, so a change to another track grounds in "%s"',
+            (protection) => {
+                const result = bridge([gainCall(drums.id, { deltaDb: -3 })], `turn the Drums down 3 dB; ${protection}`);
+
+                expect(result.rejections).toEqual([]);
+                expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+            }
+        );
+    });
+
+    describe('intact exempts only a quality', () => {
+        const bassSelected = { ...projectContext, selectedTrackId: bass.id };
+
+        it('refuses the selected track kept intact on the bridge route', () => {
+            const result = bridge(
+                [gainCall(bass.id, { deltaDb: -3 })],
+                'turn the Bass down 3 dB; keep the selected track intact',
+                bassSelected
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Bass"') },
+            ]);
+        });
+
+        it('refuses the selected track kept intact on the atomic route', () => {
+            const prompt = 'turn the Bass down 3 dB; keep the selected track intact';
+
+            expect(groundGainList(prompt, [bass], bassSelected).status).toBe('rejected');
+            expect(groundGainList(prompt, [bass], bassSelected, true).status).toBe('rejected');
+        });
+
+        it.each(['keep Strings intact', 'Strings stays intact'])(
+            'refuses a change to a group member in "%s" on the bridge and atomic routes',
+            (protection) => {
+                const prompt = `turn the Keys down 3 dB; ${protection}`;
+                const result = bridge([gainCall(keys.id, { deltaDb: -3 })], prompt, projectWithStringsGroup);
+
+                expect(result.actions).toEqual([]);
+                expect(result.rejections).toEqual([
+                    { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Keys"') },
+                ]);
+                expect(groundGainList(prompt, [keys], projectWithStringsGroup).status).toBe('rejected');
+                expect(groundGainList(prompt, [keys], projectWithStringsGroup, true).status).toBe('rejected');
+            }
+        );
+
+        it('refuses an unbound selection phrase closed by intact', () => {
+            expectRefusedNamingReference(
+                bridge(
+                    [gainCall(drums.id, { deltaDb: -3 })],
+                    'turn the Drums down 3 dB; keep the selected track intact'
+                ),
+                'the selected track'
+            );
+        });
+
+        it('grounds a quality closed by intact', () => {
+            const prompt = 'turn the Drums down 3 dB; keep the Low End intact';
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+            expect(groundGainList(prompt, [drums]).status).toBe('grounded');
+        });
+    });
+
+    describe('a protection verb after a semicolon or colon is a request', () => {
+        it.each(['turn the Keys down 3 dB; Leave Strings alone', 'turn the Keys down 3 dB: Keep Strings unchanged'])(
+            'refuses a change to a group member in "%s"',
+            (prompt) => {
+                const result = bridge([gainCall(keys.id, { deltaDb: -3 })], prompt, projectWithStringsGroup);
+
+                expect(result.actions).toEqual([]);
+                expect(result.rejections).toEqual([
+                    { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Keys"') },
+                ]);
+            }
+        );
+
+        it('refuses a change to the selected track', () => {
+            const bassSelected = { ...projectContext, selectedTrackId: bass.id };
+            const result = bridge(
+                [gainCall(bass.id, { deltaDb: -3 })],
+                'turn the Bass down 3 dB; Leave the selected track alone',
+                bassSelected
+            );
+
+            expect(result.actions).toEqual([]);
+        });
+
+        it('refuses a name no object carries', () => {
+            expectRefusedNamingReference(
+                bridge([gainCall(drums.id, { deltaDb: -3 })], 'turn the Drums down 3 dB; Leave Ghost alone'),
+                'Ghost'
+            );
+        });
+    });
+
+    describe('rules the closed forms leave unpinned', () => {
+        const keysSelected = { ...projectContext, selectedTrackId: keys.id };
+        const bassSelected = { ...projectContext, selectedTrackId: bass.id };
+
+        it('reads a selection phrase only in a closed form: "leave this track" with no closer grounds', () => {
+            const result = bridge(
+                [gainCall(keys.id, { deltaDb: -3 })],
+                'turn the Keys down 3 dB and leave this track',
+                keysSelected
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(keys.id, { deltaDb: -3 })]);
+        });
+
+        it('maps "faders" to the gain control, so a pan change on that track still grounds', () => {
+            const pan = { name: 'setTrackPan', arguments: { trackId: bass.id, pan: -20 } };
+            const prompt = (verb: string) => `${verb}; keep the selected track's faders as is`;
+
+            const panned = bridge([pan], prompt('pan the Bass 20% left'), bassSelected);
+            expect(panned.rejections).toEqual([]);
+            expect(panned.actions).toHaveLength(1);
+
+            const leveled = bridge(
+                [gainCall(bass.id, { deltaDb: -3 })],
+                prompt('turn the Bass down 3 dB'),
+                bassSelected
+            );
+            expect(leveled.actions).toEqual([]);
+            expect(leveled.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Bass"') },
+            ]);
+        });
+
+        it('lets "except its pan" exempt a control, so a pan change on the target grounds', () => {
+            const pan = { name: 'setTrackPan', arguments: { trackId: drums.id, pan: -20 } };
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), pan],
+                'turn the Drums down 3 dB and pan the Drums 20% left and leave Bass alone except its pan'
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toHaveLength(2);
         });
     });
 

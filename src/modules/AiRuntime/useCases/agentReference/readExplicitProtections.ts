@@ -1,8 +1,27 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 
+import { protectionNameReferences } from './protectionNameReferences';
+import {
+    CONNECTIVE_WORDS,
+    CONTROL_WORDS,
+    KIND_NOUNS,
+    NON_OBJECT_WORDS,
+    protectionVocabulary,
+} from './protectionVocabulary';
 import { refinementProtectionForms } from './refinementProtectionForms';
-import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
+import { refinementRequestReading } from './refinementRequestReading';
+
+const { hasWord, isKnownMixWord, readControlActions, readProjectDeviceWords } = protectionVocabulary;
+const {
+    blankRanges,
+    getExtraCandidates,
+    isVariantOfAnotherKind,
+    normalizeName,
+    readNumberVariants,
+    readTargetTrackIds,
+    readVcaMemberTracks,
+} = protectionNameReferences;
 
 /**
  * An explicit protection is a preservation clause ("leave Keys alone", "with Bass unchanged", "Keys
@@ -11,21 +30,25 @@ import { refinementRequestReading, type ReferenceCandidate } from './refinementR
  * refinement grammar's own closed forms.
  *
  * A protection fails to bind only through a reference clearly meant as a project object that resolves
- * to none: a capitalized name that stands alone as a list member of a protection ("leave the Kick
- * alone", "except for the Intro", "the fader of Ghost", "Ghost stays as is"), a position ("the first
- * track", "track 2") the shared resolver does not bind, or a selection phrase ("this track", "it")
- * with nothing selected or named. A name inside quotes, a title-cased phrase, a trailing clause
- * ("until Friday") and any word that is a quality, the rest of the mix, a project setting, filler, a
- * kind noun, notes, a marker or section is no target and never unresolved. Project names are read
- * whole before the text is cut at punctuation or a stop word, so "Dr. Beat" and "Home Alone" bind as
- * the names they are.
+ * to none: a capitalized word no object carries that stands alone as a list member of a protection
+ * ("leave the Kick alone", "except for the Intro", "Ghost stays as is" after a `;`), in an object form
+ * ("the fader of Ghost", "Ghost's fader", "the Ghost track") wherever a sentence starts, a position
+ * ("the first track", "track 2") the shared resolver does not bind, or a selection phrase ("this
+ * track", "it") with nothing selected or named. A capital at the start of a sentence carries no signal.
+ * A name inside quotes, a title-cased phrase, a trailing clause ("until Friday"), and any word that is a
+ * control, a kind of object, a device type, a mixing quality, the rest of the mix or a project setting
+ * is no target and never unresolved. A singular or plural variant of a real object name binds to that
+ * object. Project names are read whole before the text is cut at punctuation or a stop word, so
+ * "Dr. Beat" and "Home Alone" bind as the names they are.
  */
 
 export type ProtectionReading = {
     /** Every reference of a protection clearly meant as an object that binds to none, as written, once each. */
     unresolved: string[];
-    /** Tracks a protection leaves wholly alone: the selected track through a selection phrase, a VCA group's members. */
+    /** Tracks a protection leaves wholly alone: the selected track through a selection phrase, a VCA group's members, a variant of a name. */
     protectedTrackIds: string[];
+    /** The part of `protectedTrackIds` read only through a singular or plural variant of a track's name. */
+    variantTrackIds: string[];
     /** Tracks a protection leaves alone only through the operations it names ("keep its pan as is"). */
     protectedControls: Array<{ trackId: string; actionTypes: string[] }>;
 };
@@ -56,9 +79,11 @@ const closerPattern = new RegExp(
     'giu'
 );
 const headlessCloserPattern = new RegExp(
-    String.raw`\b(?:as\s+they\s+are|${refinementProtectionForms.closingPhrase}|should\s+not\s+change)\b`,
+    String.raw`\b(?:as\s+they\s+are|${refinementProtectionForms.closingPhrase}|should\s+not\s+change|intact)\b`,
     'giu'
 );
+/** Marks a search over a piece with no protection verb, where `intact` closes only after a state verb. */
+const HEADLESS = 'headless';
 const TRAILING_FILLER = /^[\s,]*(?:(?:please|thanks|thank\s+you|too|now|for\s+now)[\s,]*)*$/iu;
 const STATE_VERBS = /\s+(?:stays?|remains?|should\s+(?:stay|remain)|must\s+(?:stay|remain)|is|are)\s*$/iu;
 /** A piece that opens on a protection verb is a title-cased request the verb readers skipped, not a subject. */
@@ -85,123 +110,10 @@ const SELECTION_PHRASES: ReadonlyMap<string, 'any' | 'track'> = new Map([
 const MEMBER_SEPARATOR = /\s*,\s*|\s+(?:and|or|as\s+well\s+as|along\s+with|together\s+with|plus)\s+|\s*&\s*/giu;
 /** A phrase naming the rest of the mix, which stands for no particular object a protection must bind. */
 const REST_OF_MIX =
-    /^(?:everything(?:\s+else)?|anything\s+else|all\s+else|the\s+rest(?:\s+of\s+(?:it|the\s+(?:mix|project|tracks|session|arrangement|song)))?|(?:all\s+)?(?:the\s+)?other\s+tracks|every\s+other\s+track|the\s+others|the\s+remaining\s+tracks)(?:\s+(?:the\s+same|as\s+is))?$/iu;
+    /^(?:everything(?:\s+else)?|anything\s+else|all\s+else|(?:the\s+)?rest|(?:the\s+)?others|the\s+rest(?:\s+of\s+(?:it|the\s+(?:mix|project|tracks|session|arrangement|song)))?|(?:all\s+)?(?:the\s+)?other\s+tracks|every\s+other\s+track|the\s+others|the\s+remaining\s+tracks)(?:\s+(?:the\s+same|as\s+is))?$/iu;
 /** A project-wide setting, which no object a batch could target carries. */
 const PROJECT_SETTING =
     /^(?:the\s+)?(?:tempo|bpm|time\s+signature|meter|key\s+signature|loop(?:\s+region)?|metronome)$/iu;
-const CONNECTIVE_WORDS: ReadonlySet<string> = new Set([
-    'the',
-    'a',
-    'an',
-    'of',
-    'and',
-    'or',
-    'both',
-    'my',
-    'your',
-    'our',
-    'in',
-    'on',
-    'at',
-    'to',
-    'for',
-    'from',
-    'by',
-    'with',
-    'into',
-    'than',
-]);
-const CONTROL_WORDS: ReadonlySet<string> = new Set([
-    'pan',
-    'panning',
-    'solo',
-    'mute',
-    'fader',
-    'faders',
-    'gain',
-    'level',
-    'volume',
-    'arm',
-    'send',
-    'sends',
-    'routing',
-    'output',
-    'settings',
-    'setting',
-]);
-const SEND_ACTIONS: readonly string[] = ['addSend', 'removeSend', 'setSend'];
-/** Nouns that name a kind of object beside a name ("the Keys track", "the compressor"), never an object. */
-const KIND_NOUNS: ReadonlySet<string> = new Set([
-    'track',
-    'tracks',
-    'channel',
-    'channels',
-    'bus',
-    'buses',
-    'group',
-    'groups',
-    'clip',
-    'clips',
-    'plugin',
-    'plugins',
-    'device',
-    'devices',
-    'insert',
-    'inserts',
-    'return',
-    'returns',
-]);
-/** Capitalized words that name no object: filler, qualities and project-wide terms. */
-const NON_OBJECT_WORDS: ReadonlySet<string> = new Set([
-    'please',
-    'thanks',
-    'thank',
-    'you',
-    'too',
-    'also',
-    'either',
-    'though',
-    'otherwise',
-    'now',
-    'again',
-    'okay',
-    'ok',
-    'groove',
-    'vibe',
-    'tone',
-    'feel',
-    'mix',
-    'dynamics',
-    'balance',
-    'energy',
-    'warmth',
-    'punch',
-    'sound',
-    'character',
-    'timing',
-    'arrangement',
-    'structure',
-    'song',
-    'project',
-    'tempo',
-    'key',
-    'loop',
-    'metronome',
-    'click',
-    'compressor',
-    'reverb',
-    'delay',
-    'master',
-    'notes',
-    'midi',
-    'marker',
-    'markers',
-    'section',
-    'sections',
-    'selected',
-    'current',
-]);
-
 type StartKind = 'verb' | 'prohibition' | 'carve-out';
 type Event = { index: number; end: number; kind: StartKind | 'cut' };
 type Piece = { start: number; end: number; lead: { kind: StartKind; end: number; text: string } | null };
@@ -219,7 +131,12 @@ type Range = { start: number; end: number };
 
 /** A capitalized word inside a sentence belongs to a title-cased name ("Keep Them Separate"), not to a request. */
 function opensTitleCasedPhrase(masked: string, index: number): boolean {
-    return /^\p{Lu}/u.test(masked.slice(index)) && !isSentenceInitial(masked, index);
+    return /^\p{Lu}/u.test(masked.slice(index)) && !opensClause(masked, index);
+}
+
+/** Whether a clause starts at the index: a sentence start, or after a semicolon or colon. */
+function opensClause(masked: string, index: number): boolean {
+    return isSentenceInitial(masked, index) || /[;:]$/u.test(masked.slice(0, index).trimEnd());
 }
 
 function isSentenceInitial(masked: string, index: number): boolean {
@@ -281,6 +198,9 @@ function findCloser(masked: string, from: number, end: number, pattern: RegExp, 
         if (/^the\s+same$/u.test(word) && !TRAILING_FILLER.test(masked.slice(closerEnd, end))) {
             continue;
         }
+        if (verb === HEADLESS && word === 'intact' && !STATE_VERBS.test(masked.slice(from, from + match.index))) {
+            continue;
+        }
         return { start: from + match.index, end: closerEnd, word };
     }
     return null;
@@ -290,7 +210,7 @@ function findCloser(masked: string, from: number, end: number, pattern: RegExp, 
 function readSlot(masked: string, piece: Piece): Slot | null {
     const { lead } = piece;
     if (lead === null) {
-        const closer = findCloser(masked, piece.start, piece.end, headlessCloserPattern, null);
+        const closer = findCloser(masked, piece.start, piece.end, headlessCloserPattern, HEADLESS);
         if (closer === null || OPENS_WITH_PROTECTION_VERB.test(masked.slice(piece.start, piece.end))) {
             return null;
         }
@@ -340,7 +260,7 @@ function readSlots(masked: string): Slot[] {
     return slots;
 }
 
-type Token = { text: string; lower: string; quoted: boolean };
+type Token = { text: string; lower: string; quoted: boolean; initial: boolean };
 
 function readTokens(blanked: string, masked: string, range: Range): Token[] {
     return Array.from(blanked.slice(range.start, range.end).matchAll(/[\p{L}\p{N}□]+/gu), (match) => {
@@ -349,6 +269,7 @@ function readTokens(blanked: string, masked: string, range: Range): Token[] {
             text: match[0],
             lower: match[0].toLocaleLowerCase(),
             quoted: masked[index] === ' ' && blanked[index] !== ' ',
+            initial: isSentenceInitial(masked, index),
         };
     });
 }
@@ -358,7 +279,7 @@ function isCapitalizedName(token: Token): boolean {
         /^\p{Lu}/u.test(token.text) &&
         token.text.length > 1 &&
         token.text !== token.text.toLocaleUpperCase() &&
-        !NON_OBJECT_WORDS.has(token.lower) &&
+        !hasWord(NON_OBJECT_WORDS, token.lower) &&
         !token.text.includes('□')
     );
 }
@@ -370,28 +291,53 @@ type MemberReading =
     | { kind: 'controls'; controls: string[] }
     | { kind: 'selection'; phrase: string; scope: 'any' | 'track'; controls: string[]; pronoun: boolean };
 
+const PROTECTION_VERB_WORD = /^(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)$/u;
+
+function countLeadingVerbs(tokens: readonly Token[]): number {
+    const firstOther = tokens.findIndex((token) => !PROTECTION_VERB_WORD.test(token.lower));
+    return firstOther === -1 ? tokens.length : firstOther;
+}
+
+type MemberInput = {
+    tokens: readonly Token[];
+    phrase: string;
+    slot: Slot;
+    possessive: boolean;
+    /** Whether a word names a device type or a mixing quality, which no project object is. */
+    isKnownWord: (lower: string) => boolean;
+};
+
 /** What one member of a protection's list names: a position, a selection, controls, or a name no object carries. */
-function readMember(tokens: readonly Token[], phrase: string, slot: Slot, possessive: boolean): MemberReading {
+function readMember(input: MemberInput): MemberReading {
+    const { phrase, slot, possessive, isKnownWord } = input;
+    const tokens = input.tokens.slice(countLeadingVerbs(input.tokens));
+    const isControl = (token: Token) => hasWord(CONTROL_WORDS, token.lower);
+    const isKind = (token: Token) => hasWord(KIND_NOUNS, token.lower);
     const lowered = tokens.map((token) => token.lower).join(' ');
     if (REST_OF_MIX.test(lowered) || PROJECT_SETTING.test(lowered)) {
         return { kind: 'ignore' };
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
-    const controls = content.filter((token) => CONTROL_WORDS.has(token.lower)).map((token) => token.lower);
-    const named = content.filter((token) => !CONTROL_WORDS.has(token.lower) && !KIND_NOUNS.has(token.lower));
+    const controls = content.filter(isControl).map((token) => token.lower);
+    const named = content.filter((token) => !isControl(token) && !isKind(token));
     const position = POSITION.exec(lowered);
     if (position !== null) {
-        const rest = lowered.replace(position[0], ' ').split(/\s+/u);
-        const leftover = rest.filter(
-            (word) =>
-                word.length > 0 && !CONNECTIVE_WORDS.has(word) && !CONTROL_WORDS.has(word) && !KIND_NOUNS.has(word)
-        );
+        const leftover = lowered
+            .replace(position[0], ' ')
+            .split(/\s+/u)
+            .filter(
+                (word) =>
+                    word.length > 0 &&
+                    !CONNECTIVE_WORDS.has(word) &&
+                    !hasWord(CONTROL_WORDS, word) &&
+                    !hasWord(KIND_NOUNS, word)
+            );
         if (leftover.length === 0) {
             return { kind: 'position', text: position[0].replace(/^the\s+/u, '') };
         }
     }
     const selectionPhrase = content
-        .filter((token) => !CONTROL_WORDS.has(token.lower))
+        .filter((token) => !isControl(token))
         .map((token) => token.lower)
         .join(' ');
     const scope = SELECTION_PHRASES.get(selectionPhrase);
@@ -404,21 +350,17 @@ function readMember(tokens: readonly Token[], phrase: string, slot: Slot, posses
             pronoun: selectionPhrase === 'it' || selectionPhrase === 'its',
         };
     }
-    if (
-        content.length > 0 &&
-        named.length === 0 &&
-        controls.length > 0 &&
-        content.every((t) => CONTROL_WORDS.has(t.lower))
-    ) {
+    if (content.length > 0 && named.length === 0 && content.every(isControl)) {
         return { kind: 'controls', controls };
     }
-    const hasObjectMarker =
-        possessive || content.some((token) => CONTROL_WORDS.has(token.lower) || KIND_NOUNS.has(token.lower));
-    const names = named.filter((token) => token.lower !== 's');
-    const aloneAsName = names.length > 0 && names.every(isCapitalizedName);
-    const quotedWithoutObject = names.some((token) => token.quoted) && !hasObjectMarker;
-    if (aloneAsName && !quotedWithoutObject && slot.closer !== 'intact') {
-        return { kind: 'unknown', text: names.map((token) => token.text).join(' ') };
+    const hasObjectMarker = possessive || content.some((token) => isControl(token) || isKind(token));
+    const [first] = named;
+    const quotedWithoutObject = named.some((token) => token.quoted) && !hasObjectMarker;
+    const atSentenceStart = first?.initial === true && !hasObjectMarker;
+    const aloneAsName =
+        named.length > 0 && named.every((token) => isCapitalizedName(token) && !isKnownWord(token.lower));
+    if (aloneAsName && !quotedWithoutObject && !atSentenceStart && slot.closer !== 'intact') {
+        return { kind: 'unknown', text: named.map((token) => token.text).join(' ') };
     }
     return { kind: 'ignore' };
 }
@@ -432,8 +374,14 @@ type SelectionMember = {
 };
 type SlotReading = { unresolved: string[]; selection: SelectionMember[] };
 
-function readSlotMembers(input: { prompt: string; blanked: string; masked: string; slot: Slot }): SlotReading {
-    const { prompt, blanked, masked, slot } = input;
+function readSlotMembers(input: {
+    prompt: string;
+    blanked: string;
+    masked: string;
+    slot: Slot;
+    isKnownWord: (lower: string) => boolean;
+}): SlotReading {
+    const { prompt, blanked, masked, slot, isKnownWord } = input;
     const reading: SlotReading = { unresolved: [], selection: [] };
     const bounds: Range[] = [];
     let start = slot.start;
@@ -449,7 +397,7 @@ function readSlotMembers(input: { prompt: string; blanked: string; masked: strin
         const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
         const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
         const phrase = prompt.slice(range.start, range.end).trim();
-        const member = readMember(tokens, phrase, slot, raw.some(isPossessiveS));
+        const member = readMember({ tokens, phrase, slot, possessive: raw.some(isPossessiveS), isKnownWord });
         if (member.kind === 'unknown' || member.kind === 'position') {
             reading.unresolved.push(member.text);
         } else if (member.kind === 'selection') {
@@ -471,31 +419,6 @@ function readSlotMembers(input: { prompt: string; blanked: string; masked: strin
     return reading;
 }
 
-/** The extra names a project holds that the refinement reader's candidates leave out. */
-function getExtraCandidates(context: ProjectContext): ReferenceCandidate[] {
-    const groups: Array<ReadonlyArray<{ id: string; name: string }> | undefined> = [
-        context.markers,
-        context.sections,
-        context.automationLanes,
-        context.adjustmentLayers,
-    ];
-    const named = groups.flatMap((objects) => objects ?? []);
-    return named.map((object) => ({
-        name: object.name
-            .toLocaleLowerCase()
-            .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-            .trim(),
-        denotes: new Set([object.id]),
-    }));
-}
-
-function blankRanges(text: string, ranges: readonly Range[]): string {
-    return ranges.reduce(
-        (blanked, { start, end }) => `${blanked.slice(0, start)}${'□'.repeat(end - start)}${blanked.slice(end)}`,
-        text
-    );
-}
-
 function hasSelectedClip(context: ProjectContext): boolean {
     return context.selectedClipId !== null || context.selectedClipIds.length > 0;
 }
@@ -503,16 +426,9 @@ function hasSelectedClip(context: ProjectContext): boolean {
 type Accumulator = {
     unresolved: Set<string>;
     wholeTrackIds: Set<string>;
+    variantTrackIds: Set<string>;
     controls: Map<string, Set<string>>;
 };
-
-/** The action types a control word names, or undefined when it names none, which makes it the whole track. */
-function readControlActions(control: string): readonly string[] | undefined {
-    if (control === 'send' || control === 'sends') {
-        return SEND_ACTIONS;
-    }
-    return refinementRequestReading.operationActions[control === 'faders' ? 'fader' : control];
-}
 
 function protectControls(found: Accumulator, trackId: string, controls: readonly string[]): void {
     const actionLists = controls.map(readControlActions);
@@ -575,36 +491,29 @@ function readSelectionMembers(
     }
 }
 
-/** The member tracks of every VCA group the slot names. */
-function readVcaMemberTracks(
-    references: ReadonlyArray<{ start: number; end: number; denotes: ReadonlySet<string> }>,
-    slot: Slot,
-    vcaGroups: ReadonlyMap<string, readonly string[]>
-): string[] {
-    return references
-        .filter((reference) => reference.start >= slot.start && reference.end <= slot.end)
-        .flatMap((reference) => Array.from(reference.denotes).flatMap((id) => vcaGroups.get(id) ?? []));
-}
-
-/** The tracks the request names outside every protection slot: what "it" can point at. */
-function readTargetTrackIds(
-    references: ReadonlyArray<{ start: number; end: number; denotes: ReadonlySet<string> }>,
-    slots: readonly Slot[],
-    context: ProjectContext
-): Set<string> {
-    const trackIds = new Set(context.tracks.map((track) => track.id));
-    const targets = new Set<string>();
-    for (const reference of references) {
-        if (slots.some((slot) => reference.start >= slot.start && reference.end <= slot.end)) {
-            continue;
-        }
-        for (const id of reference.denotes) {
-            if (trackIds.has(id)) {
-                targets.add(id);
-            }
-        }
+/** The tracks a bare protection names through a variant of their name, which it protects as an exact name does. */
+function readVariantTracks(input: {
+    prompt: string;
+    references: ReadonlyArray<{ start: number; end: number; denotes: ReadonlySet<string> }>;
+    exactNames: ReadonlySet<string>;
+    slot: Slot;
+    blanked: string;
+    masked: string;
+    context: ProjectContext;
+}): string[] {
+    const { prompt, references, exactNames, slot, blanked, masked, context } = input;
+    const hasControl = readTokens(blanked, masked, slot).some((token) => hasWord(CONTROL_WORDS, token.lower));
+    if (!slot.strict || hasControl) {
+        return [];
     }
-    return targets;
+    const trackIds = new Set(context.tracks.map((track) => track.id));
+    const isVariantInSlot = (reference: { start: number; end: number }) =>
+        reference.start >= slot.start &&
+        reference.end <= slot.end &&
+        !exactNames.has(normalizeName(prompt.slice(reference.start, reference.end)));
+    return references
+        .filter(isVariantInSlot)
+        .flatMap((reference) => Array.from(reference.denotes).filter((id) => trackIds.has(id)));
 }
 
 /**
@@ -613,27 +522,39 @@ function readTargetTrackIds(
  * selected track, the request's one named target or a VCA group is reported with what it keeps.
  */
 export function readExplicitProtections(prompt: string, context: ProjectContext): ProtectionReading {
-    const candidates = [...refinementRequestReading.candidates(context), ...getExtraCandidates(context)];
-    const references = refinementRequestReading.references(prompt, candidates);
+    const exact = [...refinementRequestReading.candidates(context), ...getExtraCandidates(context)];
+    const exactNames = new Set(exact.map((candidate) => candidate.name));
+    const references = refinementRequestReading
+        .references(prompt, [...exact, ...readNumberVariants(exact)])
+        .filter((reference) => !isVariantOfAnotherKind(prompt, reference, exactNames));
     const blanked = blankRanges(prompt, references);
     const scanned = scanPromptQuotedText(prompt).maskedText;
     const masked = Array.from(blanked, (character, index) => (scanned[index] === prompt[index] ? character : ' ')).join(
         ''
     );
     const vcaGroups = new Map((context.vcaGroups ?? []).map((group) => [group.id, group.trackIds]));
-    const found: Accumulator = { unresolved: new Set(), wholeTrackIds: new Set(), controls: new Map() };
+    const projectWords = readProjectDeviceWords(context);
+    const isKnownWord = (lower: string) => isKnownMixWord(lower, projectWords);
+    const found: Accumulator = {
+        unresolved: new Set(),
+        wholeTrackIds: new Set(),
+        variantTrackIds: new Set(),
+        controls: new Map(),
+    };
     const slots = readSlots(masked);
     const targetTrackIds = readTargetTrackIds(references, slots, context);
     for (const slot of slots) {
-        const reading = readSlotMembers({ prompt, blanked, masked, slot });
+        const reading = readSlotMembers({ prompt, blanked, masked, slot, isKnownWord });
         for (const reference of reading.unresolved) {
             found.unresolved.add(reference);
         }
-        if (slot.closer === 'intact') {
-            continue;
-        }
         readSelectionMembers(reading.selection, { context, targetTrackIds, protects: !slot.exempts }, found);
         if (!slot.exempts) {
+            const variantTracks = readVariantTracks({ prompt, references, exactNames, slot, blanked, masked, context });
+            for (const trackId of variantTracks) {
+                found.variantTrackIds.add(trackId);
+                found.wholeTrackIds.add(trackId);
+            }
             for (const trackId of readVcaMemberTracks(references, slot, vcaGroups)) {
                 found.wholeTrackIds.add(trackId);
             }
@@ -642,6 +563,7 @@ export function readExplicitProtections(prompt: string, context: ProjectContext)
     return {
         unresolved: [...found.unresolved],
         protectedTrackIds: [...found.wholeTrackIds],
+        variantTrackIds: [...found.variantTrackIds],
         protectedControls: Array.from(found.controls, ([trackId, actions]) => ({ trackId, actionTypes: [...actions] })),
     };
 }
