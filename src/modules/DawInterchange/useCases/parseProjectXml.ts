@@ -42,6 +42,10 @@ const {
     VOLUME,
 } = DAW_PROJECT_XML_TAGS;
 
+// Match the owning Transport tempo-map store; its model bounds are private to that module.
+const MIN_TEMPO_MAP_BPM = 20;
+const MAX_TEMPO_MAP_BPM = 999;
+
 type ParseContext = {
     /** Map from track XML id to our own stable id. */
     trackIdMap: Map<string, string>;
@@ -512,8 +516,12 @@ function parseTempoAutomation(point: XmlQuery, unit: 'beats' | 'seconds', tempo:
     if (time === null || value === null) {
         return null;
     }
+    const beat = toBeats(time, unit, tempo);
+    if (!Number.isFinite(beat) || beat < 0 || value < MIN_TEMPO_MAP_BPM || value > MAX_TEMPO_MAP_BPM) {
+        return null;
+    }
     return {
-        beat: toBeats(time, unit, tempo),
+        beat,
         tempo: value,
         curve: point.attr('interpolation') === 'linear' ? 'linear' : 'instant',
     };
@@ -878,7 +886,12 @@ function parseArrangementClips(
             .filter((child) => hasNestedClips(child) || child.element.tagName === CLIP);
         // One rejected branch cannot invalidate an independently placeable
         // sibling. Traversal checks each branch again before publishing it.
-        return nestedTimelines.length === 0 || nestedTimelines.some((child) => nestedTimingIsAffine(child, nextScope));
+        return (
+            nestedTimelines.length === 0 ||
+            (node.element.tagName === CLIP &&
+                (clipNotesContent(node) !== null || Boolean(resolveAudioAssetPath(node)))) ||
+            nestedTimelines.some((child) => nestedTimingIsAffine(child, nextScope))
+        );
     }
 
     const lanesRoot = arrangement.child(LANES);

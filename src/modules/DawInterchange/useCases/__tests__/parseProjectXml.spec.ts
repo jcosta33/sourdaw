@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
+import { tempoMapStore } from '#/modules/Transport/stores';
+import { restoreTimelineMapSnapshot } from '#/modules/Transport/useCases';
+
 import { mapToProjectData } from '../mapToProjectData';
 import { parseProjectXml } from '../parseProjectXml';
 
@@ -1775,6 +1778,40 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toEqual([]);
     });
 
+    it('keeps a muted recursive Notes phrase when its only child Clip falls outside the parent window', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip name="Parent" time="8" duration="4" enable="false"><Lanes track="drums">' +
+                    '<Notes><Note time=".5" duration="1" channel="0" key="60"/></Notes>' +
+                    '<Clips><Clip name="Outside" time="5" duration="1"><Notes><Note time="0" duration="1" channel="0" key="64"/></Notes></Clip></Clips>' +
+                    '</Lanes></Clip>' +
+                    '<Clip name="Independent" time="20" duration="1"><Notes><Note time="0" duration=".5" channel="0" key="67"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Nested', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'nested.dawproject',
+        });
+        const keys = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+        const drums = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+
+        expect(keys).toMatchObject([{ name: 'Independent', startBeat: 20, endBeat: 21 }]);
+        expect(drums).toMatchObject([{ name: 'Parent', startBeat: 8, endBeat: 12, muted: true }]);
+        const phrase = drums?.[0];
+        expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+            { pitch: 60, startBeat: 0.5, duration: 1 },
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Clip', name: 'Outside', context: 'Drums', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings[0]?.sourceId).toBeUndefined();
+    });
+
     it.each([
         { time: 'not-a-number', unit: 'beats' },
         { time: '1e309', unit: 'beats' },
@@ -1843,6 +1880,93 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings.map((warning) => warning.sourceOrder)).toEqual(
             [...parsed.warnings.map((warning) => warning.sourceOrder)].sort((a, b) => a - b)
         );
+    });
+
+    it.each([
+        { time: '0', value: '19' },
+        { time: '0', value: '1000' },
+        { time: '-1', value: '60' },
+    ])('rejects a tempo point outside store bounds before converting seconds: $time / $value', ({ time, value }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement timeUnit="seconds"><Lanes><Points name="Tempo shape" target="tempo" timeUnit="beats">' +
+                    `<RealPoint id="invalid-tempo" time="${time}" value="${value}"/>` +
+                    '<RealPoint time="20" value="150"/></Points><Clips track="keys">' +
+                    '<Clip name="Seconds phrase" time="4" duration="2" contentTimeUnit="seconds"><Notes>' +
+                    '<Note time="1" duration=".5" channel="0" key="60"/></Notes></Clip>' +
+                    '<Clip name="Beat sibling" timeUnit="beats" time="20" duration="1"><Notes>' +
+                    '<Note time="0" duration=".5" channel="0" key="64"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Tempo', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'tempo.dawproject',
+        });
+        const clips = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+
+        expect(parsed.tempoChanges).toEqual([{ beat: 20, tempo: 150, curve: 'instant' }]);
+        expect(parsed.warnings.map((warning) => warning.name)).toEqual(['Tempo shape']);
+        expect(parsed.tracks[0]?.clips).toMatchObject([
+            { name: 'Seconds phrase', startBeat: 8, endBeat: 12 },
+            { name: 'Beat sibling', startBeat: 20, endBeat: 21 },
+        ]);
+        expect(clips).toMatchObject([
+            { name: 'Seconds phrase', startBeat: 8, endBeat: 12 },
+            { name: 'Beat sibling', startBeat: 20, endBeat: 21 },
+        ]);
+        const phrase = clips?.[0];
+        expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+            { pitch: 60, startBeat: 2, duration: 1 },
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-automation',
+                sourceType: 'RealPoint',
+                sourceId: 'invalid-tempo',
+                name: 'Tempo shape',
+                context: 'Arrangement',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+        const validChange = { id: 'valid-tempo', beat: 20, tempo: 150, curve: 'instant' };
+        try {
+            restoreTimelineMapSnapshot({
+                tempoMap: {
+                    changes: [
+                        { id: 'invalid-tempo', beat: Number(time), tempo: Number(value), curve: 'instant' },
+                        validChange,
+                    ],
+                },
+            });
+            expect(tempoMapStore.value?.changes).toEqual([validChange]);
+        } finally {
+            restoreTimelineMapSnapshot({});
+        }
+    });
+
+    it.each([20, 999])('admits tempo-map boundary %i in both importer and owner store', (tempo) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure/><Arrangement><Lanes><Points target="tempo">' +
+                    `<RealPoint time="0" value="${String(tempo)}"/>` +
+                    '<RealPoint time="8" value="120"/></Points></Lanes></Arrangement>'
+            )
+        );
+        const change = { id: `boundary-${String(tempo)}`, ...parsed.tempoChanges[0] };
+        try {
+            expect(parsed.tempoChanges).toEqual([
+                { beat: 0, tempo, curve: 'instant' },
+                { beat: 8, tempo: 120, curve: 'instant' },
+            ]);
+            restoreTimelineMapSnapshot({ tempoMap: { changes: [change] } });
+            expect(tempoMapStore.value?.changes).toEqual([change]);
+            expect(parsed.warnings).toEqual([]);
+        } finally {
+            restoreTimelineMapSnapshot({});
+        }
     });
 
     it('names Video and its file after substituting an unsupported video track', () => {
