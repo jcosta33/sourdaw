@@ -59,6 +59,12 @@ export async function applyMidiBatch(input: ApplyMidiBatchInput): Promise<void> 
         for (const admission of batch.admissions) {
             admission.slot.cursor += admission.admitted;
             admission.slot.held = admission.heldAfter;
+            if (admission.heldEventIndicesAfter !== undefined) {
+                admission.slot.heldEventIndices = admission.heldEventIndicesAfter;
+            }
+        }
+        if (batch.loopWraps !== undefined) {
+            pass.lastLoopWraps = batch.loopWraps;
         }
         if (batch.lastClearedBeforeSeconds !== undefined) {
             pass.lastClearedBeforeSeconds = batch.lastClearedBeforeSeconds;
