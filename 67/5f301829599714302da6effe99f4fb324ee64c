@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingRootWitness.integration.spec.ts
+  s_1c08b47ac3792f::t_bf388e8851d16b 77,79,84-85,173,249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "675f301829599714302da6effe99f4fb324ee64c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
