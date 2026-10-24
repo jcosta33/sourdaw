@@ -4,6 +4,7 @@ import {
     type OwnExpressionMoment,
     type ProjectedNoteExpressionChange,
 } from './noteExpressionTimeline';
+import { reachesChannel } from './reachesChannel';
 import { readNoteExpression } from './readNoteExpression';
 
 type AdvanceNoteExpressionInput = {
@@ -43,14 +44,17 @@ function followChannelMove(timeline: NoteExpressionTimeline, move: ChannelBendPo
     };
 }
 
-/** The channel moves that fall between the note's start and release and before the window closes. */
+/**
+ * The channel moves that reach the note's channel and fall between its start and release, before the window
+ * closes. A move recorded on another channel is not the note's: it is neither followed nor chased.
+ */
 function listChannelEvents(
     timeline: NoteExpressionTimeline,
     channelMoves: readonly ChannelBendPoint[],
     toBeat: number
 ): ExpressionEvent[] {
     return channelMoves.flatMap((move) => {
-        if (move.beat >= toBeat) {
+        if (move.beat >= toBeat || !reachesChannel(move, timeline.noteChannel)) {
             return [];
         }
         const frame = timeline.frameAtBeat(move.beat);
@@ -78,8 +82,8 @@ function listChannelEvents(
  * are not followed a second time, but a move listed from before `fromBeat` still makes the window post the
  * expression in force at `fromFrame`.
  *
- * Channel moves come with the window, not the note: a move the clips hold now reaches every note that
- * sounds on the track at its frame, on the note's own clock.
+ * Channel moves come with the window, not the note: a move the clips hold now reaches every note of its
+ * channel (every note of the track, when it is zone-wide) that sounds at its frame, on the note's own clock.
  */
 export function advanceNoteExpression({
     timeline,

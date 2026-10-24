@@ -32,19 +32,25 @@ const bendChange = (beat: number, pitchBend: number, pressure = 10) => ({
     expression: { pressure, pitchBend, pitchBendRangeSemitones: 2 },
 });
 
-const move = (beat: number, value: number) => ({
+const move = (beat: number, value: number, channel = 0, zoneWide = false) => ({
     beat,
     frame: beat * 1000,
     recordedBeat: beat,
     value,
     rangeSemitones: 2,
+    channel,
+    zoneWide,
 });
 
-/** A note that starts on beat 0 and whose pressure curve is the given points, as `[offsetBeats, value]`. */
-function startNote(points: [number, number][], releaseBeat: number, pressure = 10) {
+/**
+ * A note that starts on beat 0 and whose pressure curve is the given points, as `[offsetBeats, value]`. It
+ * sounds on channel 0 unless the test says otherwise, which is the channel `move` is recorded on.
+ */
+function startNote(points: [number, number][], releaseBeat: number, pressure = 10, channel?: number) {
     return startNoteExpression({
         note: {
             pressure,
+            channel,
             expression: { pressure: points.map(([offsetBeats, value]) => ({ offsetBeats, value })) },
         },
         startBeat: 0,
@@ -73,7 +79,7 @@ function hold(
         receiverId: 'device-1',
         releaseBeat,
         followsChannelBend: false,
-        timeline: startNote(points, releaseBeat),
+        timeline: startNote(points, releaseBeat, 10, rest.channel),
         ...rest,
     });
 }
@@ -211,6 +217,36 @@ describe('heldNoteExpression', () => {
             ]);
         });
 
+        it('hands a move only to the sounding notes on the channel it was recorded on', () => {
+            hold({ pitch: 60, channel: 1, points: [], followsChannelBend: true });
+            hold({ pitch: 64, channel: 2, points: [], followsChannelBend: true });
+
+            const due = take(0, 5, 'track-1', [move(1, 8_191, 1), move(3, 0, 1)]);
+
+            expect(due.map(({ pitch, channel, change }) => [pitch, channel, change.beat])).toEqual([
+                [60, 1, 1],
+                [60, 1, 3],
+            ]);
+        });
+
+        it('posts the chase of a muted span only to the notes the skipped move was recorded for', () => {
+            hold({ pitch: 60, channel: 1, points: [], followsChannelBend: true });
+            hold({ pitch: 64, channel: 2, points: [], followsChannelBend: true });
+
+            const due = take(4, 6, 'track-1', [move(1, 8_191, 1)]);
+
+            expect(due.map(({ pitch, channel, change }) => [pitch, channel, change.frame])).toEqual([[60, 1, 4_007]]);
+        });
+
+        it('hands a zone-wide move to the notes of every channel', () => {
+            hold({ pitch: 60, channel: 1, points: [], followsChannelBend: true });
+            hold({ pitch: 64, channel: 2, points: [], followsChannelBend: true });
+
+            const due = take(0, 5, 'track-1', [move(1, 8_191, 0, true)]);
+
+            expect(due.map(({ pitch }) => pitch)).toEqual([60, 64]);
+        });
+
         it('reads the clips again in every window, so a move that is no longer there reaches no note', () => {
             hold({ points: [], followsChannelBend: true });
 
@@ -242,11 +278,8 @@ describe('heldNoteExpression', () => {
 
             // The window's clock puts beat 3.9999 past the note's release frame, the note's clock before it.
             const lateOnTheWindowClock = {
-                beat: 3.9999,
+                ...move(3.9999, 8_191),
                 frame: 4_001,
-                recordedBeat: 3.9999,
-                value: 8_191,
-                rangeSemitones: 2,
             };
             const due = take(0, 6, 'track-1', [lateOnTheWindowClock]);
 
@@ -356,11 +389,8 @@ describe('heldNoteExpression', () => {
             const wholeFrames = (beat: number) => Math.round(beat * 1000);
             holdFollowingNote([{ offsetBeats: 1.0001, value: 4_000 }], wholeFrames);
             const roundingStepLater = {
-                beat: 1.0004,
+                ...move(1.0004, 8_191),
                 frame: 1000,
-                recordedBeat: 1.0004,
-                value: 8_191,
-                rangeSemitones: 2,
             };
 
             expect(bends(take(0, 1.5, 'track-1', [roundingStepLater]))).toEqual([[1.0001, 4_000, 48]]);
@@ -380,8 +410,8 @@ describe('heldNoteExpression', () => {
             // first: the move the note ends on is the one with the earlier beat.
             const wholeFrames = (beat: number) => Math.round(beat * 1000);
             holdFollowingNote([], wholeFrames);
-            const listedFirst = { beat: 1.0004, frame: 1000, recordedBeat: 1.0004, value: 8_191, rangeSemitones: 2 };
-            const listedLast = { beat: 1.0001, frame: 1000, recordedBeat: 1.0001, value: 4_096, rangeSemitones: 2 };
+            const listedFirst = { ...move(1.0004, 8_191), frame: 1000 };
+            const listedLast = { ...move(1.0001, 4_096), frame: 1000 };
 
             expect(bends(take(0, 1.5, 'track-1', [listedFirst, listedLast]))).toEqual([[1.0001, 4_096, 2]]);
             expect(bends(take(2, 3, 'track-1', [listedFirst, listedLast]))).toEqual([[2, 4_096, 2]]);

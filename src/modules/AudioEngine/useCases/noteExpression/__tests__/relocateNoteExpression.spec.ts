@@ -6,23 +6,27 @@ import { startNoteExpression } from '../startNoteExpression';
 const frameAtBeat = (beat: number) => beat * 1000;
 const newPassFrameAtBeat = (beat: number) => 50_000 + beat * 1000;
 
-const move = (beat: number, value: number, rangeSemitones = 2) => ({
+const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, zoneWide = false) => ({
     beat,
     frame: beat * 1000,
     recordedBeat: beat,
     value,
     rangeSemitones,
+    channel,
+    zoneWide,
 });
 
 /** The destination of the relocation, 50 000 frames on: a new pass whose beat 0 lands there. */
 const AT_FRAME = 50_000;
 /** A move of the new pass, placed on the new clock. */
-const newPassMove = (beat: number, value: number, rangeSemitones = 2) => ({
+const newPassMove = (beat: number, value: number, rangeSemitones = 2, channel = 0, zoneWide = false) => ({
     beat,
     frame: newPassFrameAtBeat(beat),
     recordedBeat: beat,
     value,
     rangeSemitones,
+    channel,
+    zoneWide,
 });
 
 function startNote(
@@ -55,6 +59,48 @@ describe('relocateNoteExpression', () => {
         expect(relocated.expression).toEqual({ pressure: 10, pitchBend: 4096, pitchBendRangeSemitones: 2 });
         expect(relocated.timeline.channel).toEqual({ value: 4096, rangeSemitones: 2 });
         expect(relocated.timeline.bendOwner).toBe('channel');
+    });
+
+    describe('per MIDI channel', () => {
+        it('takes the bend in force on the note’s own channel and ignores another channel’s', () => {
+            const timeline = startNote({ note: { pressure: 10, channel: 2 } });
+
+            const relocated = relocateNoteExpression({
+                timeline,
+                channelBend: [newPassMove(0, 300, 12, 2), newPassMove(0, 8191, 2, 1)],
+                atFrame: AT_FRAME,
+                frameAtBeat: newPassFrameAtBeat,
+            });
+
+            expect(relocated.expression).toEqual({ pressure: 10, pitchBend: 300, pitchBendRangeSemitones: 12 });
+        });
+
+        it('sends a note nothing when only another channel holds a bend at the destination', () => {
+            const timeline = startNote({ note: { pressure: 10, channel: 2 } });
+
+            const relocated = relocateNoteExpression({
+                timeline,
+                channelBend: [newPassMove(0, 8191, 2, 1)],
+                atFrame: AT_FRAME,
+                frameAtBeat: newPassFrameAtBeat,
+            });
+
+            expect(relocated.expression).toBeUndefined();
+            expect(relocated.timeline.channel).toBeUndefined();
+        });
+
+        it('gives a zone-wide move to a note on any channel', () => {
+            const timeline = startNote({ note: { pressure: 10, channel: 4 } });
+
+            const relocated = relocateNoteExpression({
+                timeline,
+                channelBend: [newPassMove(0, 700, 48, 0, true)],
+                atFrame: AT_FRAME,
+                frameAtBeat: newPassFrameAtBeat,
+            });
+
+            expect(relocated.expression).toEqual({ pressure: 10, pitchBend: 700, pitchBendRangeSemitones: 48 });
+        });
     });
 
     it('records the move in force as taken, so the window that lists it again does not replay it', () => {

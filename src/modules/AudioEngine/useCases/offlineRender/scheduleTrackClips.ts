@@ -611,12 +611,15 @@ export async function scheduleTrackClips({
         if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
             return [];
         }
+        // A clip with notes and no bend is admitted too: the channels its notes sound on say whether a
+        // master-channel bend is an MPE zone master's, for the whole track.
         const clips = clipsToProcess.flatMap(({ clip }) => {
-            const pitchBends = midi.pitchBendByClipId[clip.id];
-            if (clip.type !== 'midi' || clip.muted || !pitchBends?.length) {
+            const pitchBends = midi.pitchBendByClipId[clip.id] ?? [];
+            const notes = midi.notesByClipId[clip.id] ?? [];
+            if (clip.type !== 'midi' || clip.muted || (pitchBends.length === 0 && notes.length === 0)) {
                 return [];
             }
-            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
+            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends, notes }];
         });
         // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
         // zero, rather than the clamp every note shares: the bend in force at the region start is then the last

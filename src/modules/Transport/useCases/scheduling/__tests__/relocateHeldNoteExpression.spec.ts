@@ -33,7 +33,9 @@ const newPassBeatAtFrame = (frame: number) => (frame - AT_FRAME) / 1000;
 function ringingNote(overrides: Partial<HeldNote> = {}): HeldNote {
     const { timeline } = startNoteExpression({
         note: { pressure: 10 },
-        channelBend: [{ beat: 0, frame: 0, recordedBeat: 0, value: 8191, rangeSemitones: 2 }],
+        channelBend: [
+            { beat: 0, frame: 0, recordedBeat: 0, value: 8191, rangeSemitones: 2, channel: 0, zoneWide: false },
+        ],
         startBeat: 0,
         releaseFrame: 80_000,
         frameAtBeat,
@@ -125,7 +127,17 @@ describe('relocateHeldNoteExpression', () => {
 
     it('returns nothing for a note that already holds the bend in force at the destination', () => {
         const due = relocate([ringingNote()], {
-            readChannelBend: () => [{ beat: 0, frame: AT_FRAME, recordedBeat: 0, value: 8191, rangeSemitones: 2 }],
+            readChannelBend: () => [
+                {
+                    beat: 0,
+                    frame: AT_FRAME,
+                    recordedBeat: 0,
+                    value: 8191,
+                    rangeSemitones: 2,
+                    channel: 0,
+                    zoneWide: false,
+                },
+            ],
         });
 
         expect(due).toEqual([]);

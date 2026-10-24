@@ -546,6 +546,144 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         ]);
     });
 
+    describe('per MIDI channel, as the live input plays it', () => {
+        const onChannel = (channel: number, stored: ReturnType<typeof note>) => ({ ...stored, channel });
+
+        /** The bends the engine was asked to apply to the notes of one channel: frame, bend and depth. */
+        function bendsOnChannel(channel: number) {
+            return vi
+                .mocked(applyNoteExpression)
+                .mock.calls.filter(([input]) => input.channel === channel && input.expression.pitchBend !== undefined)
+                .map(([input]) => ({
+                    note: input.note,
+                    sampleFrame: input.sampleFrame,
+                    pitchBend: input.expression.pitchBend,
+                    bendRangeSemitones: input.bendRangeSemitones,
+                }));
+        }
+
+        it('moves only the sounding notes on the channel the bend was recorded on', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: {
+                    'clip-1': [onChannel(1, note('left', 0, 6, 60)), onChannel(2, note('right', 0, 6, 64))],
+                },
+                bends: { 'clip-1': [bend('out', 3, 8191, 1), bend('return', 4, 0, 1)] },
+            });
+
+            await play(0, 8);
+
+            expect(bendsOnChannel(1)).toEqual([
+                { note: 60, sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                { note: 60, sampleFrame: 4 * FRAMES_PER_BEAT, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+            expect(bendsOnChannel(2)).toEqual([]);
+        });
+
+        it('starts a note struck after another channel’s bend unbent, and one on that channel bent', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: {
+                    'clip-1': [onChannel(1, note('left', 2, 1, 60)), onChannel(2, note('right', 2, 1, 64))],
+                },
+                bends: { 'clip-1': [bend('out', 1, 8191, 1)] },
+            });
+
+            await play(0, 8);
+
+            expect(bendsOnChannel(1)).toEqual([
+                { note: 60, sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+            ]);
+            expect(bendsOnChannel(2)).toEqual([]);
+        });
+
+        it('reads each channel’s bend at that channel’s own range', async () => {
+            stripFor(FERMENTER);
+            const declare = (channel: number, semitones: number) => [
+                controller(`rpn-msb-${channel}`, 0, 101, 0, channel),
+                controller(`rpn-lsb-${channel}`, 0, 100, 0, channel),
+                controller(`data-${channel}`, 0, 6, semitones, channel),
+                controller(`null-msb-${channel}`, 0, 101, 127, channel),
+                controller(`null-lsb-${channel}`, 0, 100, 127, channel),
+            ];
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: {
+                    'clip-1': [onChannel(1, note('left', 0, 6, 60)), onChannel(2, note('right', 0, 6, 64))],
+                },
+                controllers: { 'clip-1': [...declare(1, 12), ...declare(2, 24)] },
+                bends: { 'clip-1': [bend('left-out', 1, 4096, 1), bend('right-out', 1, -4096, 2)] },
+            });
+
+            await play(0, 8);
+
+            expect(bendsOnChannel(1)).toEqual([
+                { note: 60, sampleFrame: FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 12 },
+            ]);
+            expect(bendsOnChannel(2)).toEqual([
+                { note: 64, sampleFrame: FRAMES_PER_BEAT, pitchBend: -4096, bendRangeSemitones: 24 },
+            ]);
+        });
+
+        it('starts the notes struck at a seek destination inside the bend only on the bend’s channel', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: {
+                    'clip-1': [onChannel(1, note('left', 5, 1, 60)), onChannel(2, note('right', 5, 1, 64))],
+                },
+                bends: { 'clip-1': [bend('out', 3, 8191, 1)] },
+            });
+
+            await play(5, 6, true);
+
+            expect(bendsOnChannel(1)).toEqual([{ note: 60, sampleFrame: 0, pitchBend: 8191, bendRangeSemitones: 2 }]);
+            expect(bendsOnChannel(2)).toEqual([]);
+        });
+
+        describe('on the MPE master channel', () => {
+            it('moves the notes of every member channel when the track holds no note on the master channel', async () => {
+                stripFor(FERMENTER);
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip()]),
+                    notes: {
+                        'clip-1': [onChannel(1, note('first', 0, 6, 60)), onChannel(2, note('second', 0, 6, 64))],
+                    },
+                    bends: { 'clip-1': [bend('master', 3, 8191, 0)] },
+                });
+
+                await play(0, 8);
+
+                expect(bendsOnChannel(1)).toEqual([
+                    { note: 60, sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                ]);
+                expect(bendsOnChannel(2)).toEqual([
+                    { note: 64, sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                ]);
+            });
+
+            it('moves only the channel-0 notes when the track also plays notes on channel 0', async () => {
+                stripFor(FERMENTER);
+                setProject({
+                    track: midiTrack(FERMENTER, [midiClip()]),
+                    notes: {
+                        'clip-1': [onChannel(0, note('low', 0, 6, 48)), onChannel(1, note('high', 0, 6, 72))],
+                    },
+                    bends: { 'clip-1': [bend('wheel', 3, 8191, 0)] },
+                });
+
+                await play(0, 8);
+
+                expect(bendsOnChannel(0)).toEqual([
+                    { note: 48, sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+                ]);
+                expect(bendsOnChannel(1)).toEqual([]);
+            });
+        });
+    });
+
     // The export's case: scheduleTrackClips.spec.ts, "keeps a note a trimmed clip head cut on its own bend when the
     // move carried onto the head was recorded before it": both routes share startNoteExpression.
     it('keeps a note a trimmed clip head cut on its own bend when the move carried onto the head was recorded before it', async () => {
@@ -749,6 +887,28 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             expect(appliedTo(DOWNBEAT_PITCH)).toEqual([
                 { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
             ]);
+        });
+
+        it('carries the bend in force only into the ringing notes of the channel it was recorded on', async () => {
+            const OTHER_CHANNEL_PITCH = 67;
+            loadSeamSong({
+                notes: [
+                    { ...note('left', 2, 4, LONG_NOTE_PITCH), channel: 1 },
+                    { ...note('right', 2, 4, OTHER_CHANNEL_PITCH), channel: 2 },
+                ],
+                bends: [bend('centre', 0, 0, 1), bend('out', 3, 8191, 1)],
+            });
+            await playOnPass(0, 2, 4);
+            vi.mocked(applyNoteExpression).mockClear();
+
+            await playOnPass(SEAM_SECONDS, 0, 1, true);
+            await playOnPass(SEAM_SECONDS, 1, 2);
+
+            // Only the channel-1 note took the bend out before the pass ended, so only it returns to centre.
+            expect(appliedTo(LONG_NOTE_PITCH)).toEqual([
+                { sampleFrame: SEAM_FRAME, pitchBend: 0, bendRangeSemitones: 2 },
+            ]);
+            expect(appliedTo(OTHER_CHANNEL_PITCH)).toEqual([]);
         });
 
         it('moves the ringing note with the later moves of the new pass, and none past its release', async () => {

@@ -2055,6 +2055,64 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             expect(arrivals.expression[0]!.bendSemitones).toBeCloseTo(fullBend, 6);
         });
 
+        // The live scheduler's case: scheduleMidiNotesChannelBend.spec.ts, "per MIDI channel, as the live input plays
+        // it": the note sounds on channel 3.
+        describe('per MIDI channel', () => {
+            it('moves and starts a note only by the bends recorded on its own channel', async () => {
+                const arrivals = await dispatchOneNote(
+                    { startBeat: 2, duration: 3 },
+                    {
+                        productionProjection: true,
+                        clip: { startBeat: 0, endBeat: 8 },
+                        lanes: {
+                            bends: [
+                                bendRow('before-start-other', 1, -8_192, 1),
+                                bendRow('before-start-own', 1.5, 4_096, 3),
+                                bendRow('while-sounding-other', 3, 8_191, 1),
+                                bendRow('while-sounding-own', 4, 0, 3),
+                            ],
+                        },
+                    }
+                );
+
+                expect(arrivals.noteOn[0]?.sampleFrame).toBe(48_000);
+                expect(bends(arrivals)).toEqual([
+                    { sampleFrame: 48_000, bendSemitones: 1 },
+                    { sampleFrame: 96_000, bendSemitones: 0 },
+                ]);
+            });
+
+            it('lets the master channel bend a member-channel note when the track plays nothing on the master channel', async () => {
+                const arrivals = await dispatchOneNote(
+                    { startBeat: 1, duration: 2 },
+                    { productionProjection: true, lanes: { bends: [bendRow('master', 2, 8_191, 0)] } }
+                );
+
+                expect(bends(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([48_000]);
+            });
+
+            it('keeps the master channel’s bend off a member-channel note once the track plays a note on the master channel', async () => {
+                const arrivals = await dispatchOneNote(
+                    { startBeat: 1, duration: 2 },
+                    {
+                        productionProjection: true,
+                        lanes: { bends: [bendRow('wheel', 2, 8_191, 0)] },
+                        otherClips: [
+                            {
+                                clip: { id: 'clip-2', startBeat: 8, endBeat: 12 },
+                                notes: [
+                                    { id: 'note-2', pitch: 48, startBeat: 1, duration: 1, velocity: 100, channel: 0 },
+                                ],
+                            },
+                        ],
+                    }
+                );
+
+                // Only the master-channel note is bent by the master's wheel; the channel-3 note is not.
+                expect(arrivals.expression.map(({ noteOrPad, channel }) => [noteOrPad, channel])).toEqual([[48, 0]]);
+            });
+        });
+
         // The live scheduler's case: projectNoteExpressionCurves.spec.ts, "starts a cut note on a channel move recorded
         // after its scalar bend, before the cut": both routes share startNoteExpression.
         it('starts a note a trimmed clip head cut on a move recorded after its own bend and before the cut', async () => {

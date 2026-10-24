@@ -716,7 +716,15 @@ describe('renderTrackSubgraphOffline', () => {
             createChordPitchProjector: () => (input) => input.pitch,
             evaluateAutomationValue: () => 0,
             projectChannelBend: ({ frameAtBeat }) => [
-                { beat: 0.25, frame: frameAtBeat(0.25), recordedBeat: 0.25, value: 4_096, rangeSemitones: 12 },
+                {
+                    beat: 0.25,
+                    frame: frameAtBeat(0.25),
+                    recordedBeat: 0.25,
+                    value: 4_096,
+                    rangeSemitones: 12,
+                    channel: 0,
+                    zoneWide: false,
+                },
             ],
         });
         const { midiStore } = await import('#/modules/MIDI/stores');

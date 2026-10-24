@@ -108,9 +108,19 @@ export type OfflineChannelBendProjector = (input: {
         };
         controlChanges: readonly OfflineControllerRow[];
         pitchBends: readonly { id: string; value: number; beat: number; channel: number }[];
+        /** The clip's notes, of which only the channel counts: they decide whether a master-channel bend is zone-wide. */
+        notes?: readonly { channel?: number }[];
     }[];
     frameAtBeat: (beat: number) => number;
-}) => readonly { beat: number; frame: number; recordedBeat: number; value: number; rangeSemitones: number }[];
+}) => readonly {
+    beat: number;
+    frame: number;
+    recordedBeat: number;
+    value: number;
+    rangeSemitones: number;
+    channel: number;
+    zoneWide: boolean;
+}[];
 
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;

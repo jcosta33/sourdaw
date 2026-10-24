@@ -1,3 +1,4 @@
+import { MPE_MASTER_CHANNEL } from '../../models/MidiControllerState';
 import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
 
 import { createStoredBendRangeReader } from './createStoredBendRangeReader';
@@ -9,6 +10,11 @@ type ChannelBendClip = {
     /** The clip's stored controllers: the RPN 0 messages among them say how deep its bend is. */
     controlChanges: readonly MidiCC[];
     pitchBends: readonly MidiPitchBend[];
+    /**
+     * The clip's notes, of which only the channel counts (a note with none sounds on channel 0). They say
+     * whether the track was recorded under an MPE zone master. Absent means the clip holds no note.
+     */
+    notes?: readonly { channel?: number }[];
 };
 
 type ProjectChannelBendInput = {
@@ -41,6 +47,10 @@ type ChannelBendPoint = {
     value: number;
     /** The depth `value` is read against, in semitones: the one in force where the row was recorded, even for a carry. */
     rangeSemitones: number;
+    /** The zero-based MIDI channel the row was recorded on: a move bends the notes of that channel. */
+    channel: number;
+    /** Whether the move is an MPE zone master's, which bends the notes of every channel (see `projectChannelBend`). */
+    zoneWide: boolean;
 };
 
 type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number };
@@ -50,11 +60,21 @@ type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number
  * when one is given: every move of every clip's stored bend lane, in the order the instrument
  * receives them.
  *
- * A bend belongs to the channel, not to a note, so it is the bend of the whole track: a note
- * struck while a bend is in force sounds under it, and a note sounding when a move arrives is
- * moved. The caller reads the bend in force at a frame as the last move at or before it.
- * Nothing resets at a clip end: a bend stays where the last row put it until a row says
- * otherwise, as CC1 does, so the clip after one that ended bent starts bent.
+ * A bend belongs to its MIDI channel, as the live input plays it outside MPE: a note struck
+ * while its channel's bend is in force sounds under it, and a note sounding when a move on its
+ * channel arrives is moved; a move on another channel leaves it alone. Every point carries the
+ * row's channel, and the caller reads the bend in force for a note as the last move at or before
+ * its frame that reaches the note's channel. Nothing resets at a clip end: a bend stays where
+ * the last row put it until a row says otherwise, as CC1 does, so the clip after one that ended
+ * bent starts bent.
+ *
+ * The one exception is the MPE zone master. Live, with MPE on, a bend on the master channel
+ * (0) reaches the notes of every member channel, while member bend is per note and is never a
+ * channel row. A stored row does not say whether MPE was on when it was recorded, so it is
+ * inferred from the notes the track plays: a channel-0 row is zone-wide (`zoneWide`) exactly
+ * when none of the supplied clips holds a note on channel 0. A zone master carries no notes, so
+ * such a track is an MPE take; a track that plays a channel-0 note has a channel-0 wheel that
+ * bends those notes only, and its other channels' notes are left alone.
  *
  * "Last" is the posting order, by sample frame, then clip sequence, then the clip's own row
  * order, never by float beat: two rows a rounding step apart in beat share a frame, and the
@@ -80,12 +100,15 @@ export function projectChannelBend({
                     recordedBeat: bend.recordedBeat,
                     value: bend.value,
                     rangeSemitones: readRange(bend.channel, bend.recordedContentBeat),
+                    channel: bend.channel,
+                    zoneWide: false,
                 },
                 clipIndex,
                 rowIndex,
             });
         }
     }
+    const masterIsZone = placed.some(({ point }) => point.channel === MPE_MASTER_CHANNEL) && !holdsMasterNote(clips);
     return placed
         .sort(
             (left, right) =>
@@ -93,5 +116,12 @@ export function projectChannelBend({
                 left.clipIndex - right.clipIndex ||
                 left.rowIndex - right.rowIndex
         )
-        .map(({ point }) => point);
+        .map(({ point }) => ({ ...point, zoneWide: masterIsZone && point.channel === MPE_MASTER_CHANNEL }));
+}
+
+/** Whether any clip holds a note on the master channel, which a note without a channel is on. */
+function holdsMasterNote(clips: readonly ChannelBendClip[]): boolean {
+    return clips.some(({ notes = [] }) =>
+        notes.some((note) => (note.channel ?? MPE_MASTER_CHANNEL) === MPE_MASTER_CHANNEL)
+    );
 }

@@ -26,6 +26,8 @@ type NoteExpressionCurveSource = {
     slide?: number;
     pitchBend?: number;
     pitchBendRangeSemitones?: number;
+    /** The zero-based MIDI channel the note sounds on; absent is channel 0, as the scheduler addresses it. */
+    channel?: number;
     expression?: NoteExpressionCurves;
 };
 
@@ -33,7 +35,8 @@ type StartNoteExpressionInput = {
     note: NoteExpressionCurveSource;
     /**
      * The track's channel pitch bend, ordered by `frame` (posting order); only the move in force at the
-     * note's start frame is read. A note whose own scalar or curve holds no bend by then starts under it.
+     * note's start frame that reaches the note's channel is read. A note whose own scalar or curve holds no
+     * bend by then starts under it.
      */
     channelBend?: readonly ChannelBendPoint[];
     /** Where the caller plays the note from: grooved, looped and offset, so a curve moves with its note. */
@@ -169,8 +172,9 @@ function findOwnBendFrame({
  * move recorded after it, before a cut head, is in force). The move counts where it was recorded
  * (`recordedBeat`), not where it plays: a trimmed clip head carries its rows onto the head the cut note
  * starts on, though they may precede the note's own bend. A tie on one frame stays with the note. A note
- * with no bend sounds under the channel bend in force, the last move at or before the start frame. From
- * then on the later event wins (`advanceNoteExpression`).
+ * with no bend sounds under the channel bend in force, the last move at or before the start frame that
+ * reaches its channel: one recorded on that channel, or a zone-wide one. From then on the later event wins
+ * (`advanceNoteExpression`).
  */
 export function startNoteExpression({
     note,
@@ -191,7 +195,8 @@ export function startNoteExpression({
             { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend },
             note.pitchBendRangeSemitones
         );
-    const inForce = findChannelBendInForce(channelBend, startFrame);
+    const noteChannel = note.channel ?? 0;
+    const inForce = findChannelBendInForce(channelBend, startFrame, noteChannel);
     const channel = inForce && { value: inForce.value, rangeSemitones: inForce.rangeSemitones };
     const ownBendFrame = findOwnBendFrame({
         scalarBend: note.pitchBend,
@@ -204,6 +209,7 @@ export function startNoteExpression({
         (ownBendFrame === undefined || channelBendFrameAtBeat(inForce.recordedBeat) > ownBendFrame);
     const bendOwner = channelBentLast ? 'channel' : 'note';
     const timeline: NoteExpressionTimeline = {
+        noteChannel,
         startFrame,
         releaseFrame,
         frameAtBeat,

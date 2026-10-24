@@ -321,12 +321,14 @@ describe('projectNoteExpressionCurves', () => {
     });
 
     describe('with the track channel pitch bend', () => {
-        const move = (beat: number, value: number, rangeSemitones = 2) => ({
+        const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, zoneWide = false) => ({
             beat,
             frame: frameAtBeat(beat),
             recordedBeat: beat,
             value,
             rangeSemitones,
+            channel,
+            zoneWide,
         });
         /** A move a pass head plays at `beat`, carried from the row recorded at `recordedBeat` before it. */
         const carried = (beat: number, recordedBeat: number, value: number) => ({
@@ -358,6 +360,73 @@ describe('projectNoteExpressionCurves', () => {
                     expression: { pressure: 10, slide: 64, pitchBend: 0, pitchBendRangeSemitones: 2 },
                 },
             ]);
+        });
+
+        describe('per MIDI channel', () => {
+            const channelTwoNote = { pressure: 10, slide: 64, channel: 2 };
+
+            it('moves a sounding note only by the moves recorded on its own channel', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: channelTwoNote,
+                    channelBend: [move(1, 8_191, 2, 1), move(1.5, 100, 12, 2), move(2, 0, 2, 1)],
+                    startBeat: 0,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart).toBeUndefined();
+                expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[1.5, 100]]);
+                expect(changes[0]?.expression.pitchBendRangeSemitones).toBe(12);
+            });
+
+            it('starts a note under its own channel’s bend in force, not another channel’s later one', () => {
+                const { atStart } = projectNoteExpressionCurves({
+                    note: channelTwoNote,
+                    channelBend: [move(0.2, 300, 12, 2), move(0.5, 8_191, 2, 1)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart).toEqual({ pressure: 10, slide: 64, pitchBend: 300, pitchBendRangeSemitones: 12 });
+            });
+
+            it('starts a note unbent when only another channel bent', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: channelTwoNote,
+                    channelBend: [move(0.5, 8_191, 2, 1)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect({ atStart, changes }).toEqual({ atStart: undefined, changes: [] });
+            });
+
+            it('gives a zone-wide move to a note on any channel, at the move’s own range', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: { pressure: 10, slide: 64, channel: 5 },
+                    channelBend: [move(0.5, 1_000, 48, 0, true), move(2, 2_000, 48, 0, true)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart).toEqual({ pressure: 10, slide: 64, pitchBend: 1_000, pitchBendRangeSemitones: 48 });
+                expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[2, 2_000]]);
+            });
+
+            it('treats a note with no channel as channel 0', () => {
+                const { changes } = projectNoteExpressionCurves({
+                    note: plainNote,
+                    channelBend: [move(1, 500, 2, 0), move(1.5, 700, 2, 1)],
+                    startBeat: 0,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(changes.map((change) => change.expression.pitchBend)).toEqual([500]);
+            });
         });
 
         it('starts a note on the bend in force at its start, the last move at or before the start frame', () => {

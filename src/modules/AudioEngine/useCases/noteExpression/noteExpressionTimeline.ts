@@ -23,6 +23,13 @@ export type ChannelBendPoint = {
     value: number;
     /** The depth `value` is read against, in semitones. */
     rangeSemitones: number;
+    /** The zero-based MIDI channel the move was recorded on. */
+    channel: number;
+    /**
+     * Whether the move is the MPE zone master's, which reaches the notes of every channel and not only its own.
+     * The caller decides it from the data it holds, because the stored rows do not say whether MPE was on.
+     */
+    zoneWide: boolean;
 };
 
 export type ProjectedNoteExpressionChange = {
@@ -50,6 +57,8 @@ type ChannelBendInForce = { value: number; rangeSemitones: number };
  * move the clips hold now reaches a note whichever window started it.
  */
 export type NoteExpressionTimeline = {
+    /** The channel the note sounds on: only the channel moves that reach it are followed. */
+    noteChannel: number;
     /** The frame the note starts on; a channel move at or before it is the note-on's own business. */
     startFrame: number;
     /** The frame the note's release is posted on; nothing at or after it is addressed to the voice. */
