@@ -1,6 +1,6 @@
 import { Profiler, type ProfilerOnRenderCallback } from 'react';
 
-import { render, act, fireEvent, screen } from '@testing-library/react';
+import { render, act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { modulationDragPreviewStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
@@ -200,6 +200,79 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         expect(
             Object.fromEntries(reloaded.map((halo: { id: string; color: string }) => [halo.id, halo.color]))
         ).toEqual(Object.fromEntries(before.map((halo: { id: string; color: string }) => [halo.id, halo.color])));
+    });
+
+    it('keeps colliding source colors across targets, hover, and the accepted mapping', () => {
+        const related = modulationStore.value!.modulators[0]!;
+        const colliding = {
+            ...related,
+            id: 'mod-1',
+            mappings: [{ targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'rate', amount: -0.4 }],
+        };
+        act(() => modulationStore.set({ modulators: [related, colliding] }));
+        const rateParam = { ...param, id: 'rate', name: 'Rate' };
+        render(
+            <>
+                <DeviceParameterControl param={param} device={device} trackId="track-1" />
+                <DeviceParameterControl param={rateParam} device={device} trackId="track-1" />
+            </>
+        );
+        const gainTarget = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        const rateTarget = screen.getByRole('region', { name: 'Modulation target for Rate' });
+        const halosAt = (target: HTMLElement) =>
+            JSON.parse(within(target).getByTestId('rotary-knob').dataset.modulations!) as Array<{
+                id: string;
+                amount: number;
+                color: string;
+                activity: number;
+                preview?: boolean;
+            }>;
+        const relatedBefore = halosAt(gainTarget)[0]!;
+        const collidingOnRate = halosAt(rateTarget)[0]!;
+        expect(relatedBefore.id).toBe('mod-related');
+        expect(collidingOnRate.id).toBe('mod-1');
+
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-1' }));
+        fireEvent.dragEnter(gainTarget);
+        const preview = halosAt(gainTarget);
+        expect(preview.map((halo) => halo.id)).toEqual(['mod-related', 'mod-1']);
+        expect(preview[0]).toEqual(relatedBefore);
+        expect(preview[1]).toEqual({
+            id: 'mod-1',
+            amount: 0.5,
+            activity: 0,
+            color: collidingOnRate.color,
+            preview: true,
+        });
+        expect(relatedBefore.color).not.toBe(collidingOnRate.color);
+
+        fireEvent.drop(gainTarget);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        const [action, options] = vi.mocked(executeUserAppAction).mock.calls[0]!;
+        const acceptedMapping = {
+            targetTrackId: 'track-1',
+            targetDeviceId: 'device-1',
+            targetParamId: 'gain',
+            amount: 0.5,
+        };
+        expect(action).toEqual({
+            type: 'addMapping',
+            payload: {
+                modulatorId: 'mod-1',
+                mapping: acceptedMapping,
+            },
+        });
+        expect((options as { shouldExecute: () => boolean }).shouldExecute()).toBe(true);
+        act(() =>
+            modulationStore.set({
+                modulators: [related, { ...colliding, mappings: [...colliding.mappings, acceptedMapping] }],
+            })
+        );
+        const committed = halosAt(gainTarget);
+        expect(committed.map((halo) => halo.id)).toEqual(['mod-1', 'mod-related']);
+        expect(committed.find((halo) => halo.id === 'mod-related')?.color).toBe(relatedBefore.color);
+        expect(committed.find((halo) => halo.id === 'mod-1')?.color).toBe(collidingOnRate.color);
+        expect(halosAt(rateTarget)[0]?.color).toBe(collidingOnRate.color);
     });
 
     it('gives every admitted halo a distinct effective color after the preset palette is exhausted', () => {

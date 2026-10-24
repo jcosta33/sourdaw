@@ -81,6 +81,7 @@ type EnteredModulationTarget = {
 
 const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
 const NO_ACTIVITIES: number[] = [];
+const NO_SOURCE_IDS: string[] = [];
 
 function sourceHash(id: string): number {
     let hash = 2166136261;
@@ -111,6 +112,19 @@ function colorForSource(id: string, usedColors: Set<string>): string {
         }
     }
     throw new Error('No unused modulation color');
+}
+
+function sourceIdsEqual(left: string[], right: string[]): boolean {
+    return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function colorsForSources(sourceIds: string[]): Map<string, string> {
+    const colors = new Map<string, string>();
+    const usedColors = new Set<string>();
+    for (const id of sourceIds) {
+        colors.set(id, colorForSource(id, usedColors));
+    }
+    return colors;
 }
 
 /**
@@ -174,7 +188,12 @@ function activitiesEqual(left: number[], right: number[]): boolean {
 }
 
 /** Runtime ticks for unrelated sources keep the returned selection unchanged. */
-function useDeviceParameterModulation(trackId: string, deviceId: string, paramId: string): ParameterHalo[] {
+function useDeviceParameterModulation(
+    trackId: string,
+    deviceId: string,
+    paramId: string,
+    sourceColors: Map<string, string>
+): ParameterHalo[] {
     const mappings = useStoreSelector(
         modulationStore,
         (state) => selectParameterMappings(state, trackId, deviceId, paramId),
@@ -186,11 +205,10 @@ function useDeviceParameterModulation(trackId: string, deviceId: string, paramId
         (state) => selectModulationActivities(state, mappings),
         activitiesEqual
     );
-    const usedColors = new Set<string>();
     return mappings.map((mapping, index) => ({
         id: mapping.modulatorId,
         amount: mapping.amount,
-        color: colorForSource(mapping.modulatorId, usedColors),
+        color: sourceColors.get(mapping.modulatorId)!,
         activity: activities[index] ?? 0,
     }));
 }
@@ -235,7 +253,14 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
     const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
 
-    const modulations = useDeviceParameterModulation(trackId, device.id, param.id);
+    // Allocate across the full source set so each target and hover sees the same color.
+    const sourceIds = useStoreSelector(
+        modulationStore,
+        (state) => state?.modulators.map((modulator) => modulator.id).sort() ?? NO_SOURCE_IDS,
+        sourceIdsEqual
+    );
+    const sourceColors = colorsForSources(sourceIds);
+    const modulations = useDeviceParameterModulation(trackId, device.id, param.id, sourceColors);
     const draggedModulatorId = useStoreSelector(modulationDragPreviewStore, (state) => state?.modulatorId ?? null);
     const draggedSourceEnabled = useStoreSelector(
         modulationStore,
@@ -345,10 +370,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         enteredTarget.deviceId === device.id &&
         enteredTarget.paramId === param.id &&
         enteredTarget.isCurrentProject();
-    const previewColor =
-        isPreviewing && draggedModulatorId
-            ? colorForSource(draggedModulatorId, new Set(modulations.map((modulation) => modulation.color)))
-            : null;
+    const previewColor = isPreviewing && draggedModulatorId ? sourceColors.get(draggedModulatorId) : null;
     let displayedModulations = param.automatable ? modulations : [];
     if (isPreviewing && draggedModulatorId && previewColor) {
         displayedModulations = [
