@@ -31,10 +31,10 @@ describe('CrustControlZone level 1 (style tiles)', () => {
     it('marks the tile matching the current style as pressed and forwards clicks to setParam', () => {
         const { setParam } = renderZone({ uiLevel: 1, style: 'punchy' });
 
-        expect(screen.getByRole('button', { name: /punchy/i })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('button', { name: /transparent/i })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Style PUNCHY' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Style TRANSPARENT' })).toHaveAttribute('aria-pressed', 'false');
 
-        fireEvent.click(screen.getByRole('button', { name: /^loud/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Style LOUD' }));
 
         // Style→algorithm sync lives on setCrustParamWithAudio so L1 does not
         // schedule a second engine algorithm write.
@@ -145,6 +145,14 @@ describe('CrustControlZone level 4 (routing)', () => {
 });
 
 describe('CrustControlZone level 5 (loudness stats)', () => {
+    it('keeps Play style and advanced controls available cumulatively at Lab', () => {
+        const { setParam } = renderZone({ uiLevel: 5, satEnabled: true });
+        fireEvent.click(screen.getByRole('button', { name: 'Style LOUD' }));
+        expect(setParam).toHaveBeenCalledWith('style', 'loud');
+        expect(screen.getByText('Saturation')).toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Dither mode' })).toBeInTheDocument();
+        expect(screen.getByRole('group', { name: 'Loudness statistics' })).toBeInTheDocument();
+    });
     it('renders each stat row formatted to one decimal with its unit suffix', () => {
         renderZone({ uiLevel: 5 });
 
@@ -161,5 +169,16 @@ describe('CrustControlZone level 5 (loudness stats)', () => {
         renderZone({ uiLevel: 5 });
         const stats = screen.getByRole('group', { name: /loudness statistics/i });
         expect(stats).toHaveClass('shrink-0');
+    });
+});
+
+describe('cumulative Crust disclosure', () => {
+    it.each([1, 2, 3, 4, 5] as const)('keeps Play style available at level %i', (uiLevel) => {
+        renderZone({ uiLevel });
+        expect(screen.getByRole('button', { name: 'Style LOUD' })).toBeInTheDocument();
+        expect(Boolean(screen.queryByText('Algorithm'))).toBe(uiLevel >= 2);
+        expect(Boolean(screen.queryByText('Saturation'))).toBe(uiLevel >= 3);
+        expect(Boolean(screen.queryByRole('combobox', { name: 'Dither mode' }))).toBe(uiLevel >= 4);
+        expect(Boolean(screen.queryByRole('group', { name: 'Loudness statistics' }))).toBe(uiLevel >= 5);
     });
 });

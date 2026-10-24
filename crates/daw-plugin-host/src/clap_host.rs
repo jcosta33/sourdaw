@@ -396,6 +396,13 @@ pub fn take_pending_editor_resize_signal() -> bool {
     EDITOR_RESIZE_PENDING.swap(false, Ordering::AcqRel)
 }
 
+/// Serialises every raiser of the process-wide tail hint against every asserter
+/// of it. The hint is raised from this module's tests and from the wrapper's, so
+/// the lock is crate-visible beside the hint it guards; `#[cfg(test)]` keeps it
+/// out of production builds.
+#[cfg(test)]
+pub(crate) static TAIL_SIGNAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Serialises every raiser of the process-wide editor-resize hint against
 /// every asserter of it, so one test's raise cannot stand in for another's
 /// deleted one. Raisers live in more than one of this crate's test modules,
@@ -926,10 +933,6 @@ mod tests {
     /// Serialises every test that raises the process-wide flush hint, so one
     /// test's raise cannot stand in for another's deleted one.
     static FLUSH_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    /// Serialises every test that raises the process-wide tail hint, for the
-    /// same reason.
-    static TAIL_SIGNAL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Arm a state so a resize request can be accepted: an open editor window
     /// and an installed wake, recording what the wake was told.

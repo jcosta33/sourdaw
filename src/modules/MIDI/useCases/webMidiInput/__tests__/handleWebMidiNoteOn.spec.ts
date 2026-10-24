@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
+import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 import { type RealtimeMidiInput } from '../../../repositories/webMidi/realtimeMidiProcessorState';
@@ -12,6 +13,7 @@ const ensure_track_strip = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 const start_faust_note = vi.hoisted(() => vi.fn<(...args: unknown[]) => () => void>());
+const apply_note_expression = vi.hoisted(() => vi.fn());
 const schedule_device_key_on = vi.hoisted(() => vi.fn());
 const schedule_device_key_off = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
@@ -35,6 +37,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    applyNoteExpression: apply_note_expression,
     audioEngine: {
         context: audio_clock,
         ensureTrackStrip: ensure_track_strip,
@@ -57,9 +60,15 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));
 
+const { getSynthParamsFromDevices, scheduleNote } = await import('#/modules/Synth/useCases');
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
+const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { admitPitchBend } = await import('../../../repositories/webMidi/admitPitchBend');
+const { memberExpressionState } = await import('../../../repositories/webMidi/memberExpressionState');
+const { channelPitchBendState } = await import('../../../repositories/webMidi/channelPitchBendState');
+const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
 const { releaseAllActiveNotes } = await import('../../../repositories/webMidi/releaseAllActiveNotes');
 const { pendingYeastRelease } = await import('../../../repositories/webMidi/pendingYeastRelease');
 const { releaseCapturedYeastVoices } = await import('../../../repositories/webMidi/releaseCapturedYeastVoices');
@@ -93,6 +102,65 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
     };
 }
 
+type FakeDetuneParam = {
+    value: number;
+    /** The value the param ends up at once its scheduled automation has played out. */
+    settled: number;
+    setValueAtTime: (value: number) => void;
+    setTargetAtTime: (value: number) => void;
+    linearRampToValueAtTime: () => void;
+    exponentialRampToValueAtTime: () => void;
+};
+
+function makeFakeDetuneParam(): FakeDetuneParam {
+    const param: FakeDetuneParam = {
+        settled: 0,
+        setValueAtTime: (value) => {
+            param.settled = value;
+        },
+        setTargetAtTime: (value) => {
+            param.settled = value;
+        },
+        linearRampToValueAtTime: () => {},
+        exponentialRampToValueAtTime: () => {},
+        get value() {
+            return param.settled;
+        },
+        set value(value: number) {
+            param.settled = value;
+        },
+    };
+    return param;
+}
+
+/** An audio context whose oscillators record where their detune settles, in creation order. */
+function makeOscillatorRecordingContext() {
+    const oscillators: Array<{ detune: FakeDetuneParam }> = [];
+    const node = () => ({ connect: (destination: unknown) => destination, disconnect: () => {} });
+    const ctx = {
+        sampleRate: 48_000,
+        currentTime: 0,
+        createGain: () => ({ ...node(), gain: makeFakeDetuneParam() }),
+        createBiquadFilter: () => ({
+            ...node(),
+            frequency: makeFakeDetuneParam(),
+            Q: makeFakeDetuneParam(),
+        }),
+        createOscillator: () => {
+            const oscillator = {
+                ...node(),
+                frequency: makeFakeDetuneParam(),
+                detune: makeFakeDetuneParam(),
+                start: () => {},
+                stop: () => {},
+            };
+            oscillators.push(oscillator);
+            return oscillator;
+        },
+    } as unknown as BaseAudioContext;
+    return { ctx, oscillators };
+}
+
 /**
  * Frame a live note lands on with the harness clock at 2 s / 48 kHz and no
  * event timestamp: the arrival frame plus the one-render-quantum scheduling
@@ -107,6 +175,9 @@ describe('handleWebMidiNoteOn', () => {
         ensure_track_strip.mockReset();
         get_track_strip.mockReset();
         start_faust_note.mockReset();
+        apply_note_expression.mockReset();
+        channelPitchBendState.clear();
+        resetChannelControllerState();
         target_track_id.value = 'track-1';
         mpe_enabled.value = false;
         faust_instrument_types.value = new Set();
@@ -745,6 +816,251 @@ describe('handleWebMidiNoteOn', () => {
         expect(activeNotes.get(createWebMidiNoteKey(0, 72))?.levainDeviceId).toBe('lev-1');
     });
 
+    describe('starting under the channel bend', () => {
+        /** Receive a bend as the input route does: admitted as the channel's wheel, then handled. */
+        function bendWheel(channel: number, lsb: number, msb: number): void {
+            admitPitchBend(channel, lsb, msb);
+            handleWebMidiPitchBend(channel, lsb, msb);
+        }
+
+        /** Hold the wheel at +4096 (a quarter of full scale up) on a channel through the live pitch-bend route. */
+        function holdWheelUp(channel: number): void {
+            bendWheel(channel, 0, 96);
+        }
+
+        function declareBendRange(channel: number, semitones: number): void {
+            ingestChannelControlChange({ channel, cc: 101, value: 0 });
+            ingestChannelControlChange({ channel, cc: 100, value: 0 });
+            ingestChannelControlChange({ channel, cc: 6, value: semitones });
+            ingestChannelControlChange({ channel, cc: 38, value: 0 });
+        }
+
+        type ExpressionDevice = 'fermenter' | 'grand-boule' | 'levain';
+
+        function stripWithNoteOn(deviceType: ExpressionDevice, noteOn: ReturnType<typeof vi.fn>) {
+            const controlsKey = {
+                fermenter: 'fermenterControls',
+                'grand-boule': 'grandBouleControls',
+                levain: 'levainControls',
+            }[deviceType];
+            ensure_track_strip.mockReturnValue({
+                gainNode: {},
+                deviceNodes: [{ type: deviceType, deviceId: 'dev-1', [controlsKey]: { ready: true, noteOn } }],
+            });
+            return handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', type: deviceType }] }],
+                        selectedTrackId: 'track-1',
+                    }),
+                })
+            );
+        }
+
+        it.each(['fermenter', 'grand-boule', 'levain'] as const)(
+            'starts a %s note struck while its channel wheel is held at that bend, after the note-on',
+            async (deviceType) => {
+                const note_on = vi.fn();
+                const fn = stripWithNoteOn(deviceType, note_on);
+                holdWheelUp(1);
+
+                await fn(1, 64, 90);
+
+                expect(apply_note_expression).toHaveBeenCalledTimes(1);
+                expect(apply_note_expression).toHaveBeenCalledWith({
+                    trackId: 'track-1',
+                    note: 64,
+                    channel: 1,
+                    expression: { pitchBend: 4096, pressure: undefined, slide: undefined },
+                    bendRangeSemitones: 2,
+                    sampleFrame: LIVE_DISPATCH_FRAME,
+                });
+                expect(note_on.mock.invocationCallOrder[0]).toBeLessThan(
+                    apply_note_expression.mock.invocationCallOrder.at(-1) ?? 0
+                );
+            }
+        );
+
+        it('starts the note at the range the channel declared through RPN 0', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            declareBendRange(1, 12);
+            holdWheelUp(1);
+
+            await fn(1, 64, 90);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
+        });
+
+        it('leaves a note struck on another channel unbent while one channel holds the wheel', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(1);
+
+            await fn(2, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('posts no start bend while the wheel was never moved', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+
+            await fn(1, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('posts no start bend once the wheel returned to centre', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(1);
+            bendWheel(1, 0, 64);
+            apply_note_expression.mockClear();
+
+            await fn(1, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('starts a note under the wheels captured at its admission, not the wheel it finds when it runs', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(1);
+
+            await fn(1, 64, 90, undefined, { channel: 0, master: 0 });
+            expect(apply_note_expression).not.toHaveBeenCalled();
+
+            await fn(2, 64, 90, undefined, { channel: 2048, master: 0 });
+            expect(apply_note_expression).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ channel: 2, expression: expect.objectContaining({ pitchBend: 2048 }) })
+            );
+        });
+
+        it('starts an MPE member note under the zone master wheel captured at its admission', async () => {
+            mpe_enabled.value = true;
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(0);
+
+            await fn(3, 64, 90, undefined, { channel: 0, master: -1024 });
+
+            expect(apply_note_expression).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ channel: 3, expression: expect.objectContaining({ pitchBend: -1024 }) })
+            );
+        });
+
+        it('starts the built-in synth oscillator detuned by the held wheel on top of its own detune', async () => {
+            const set_value_at_time = vi.fn();
+            const schedule_note = vi.fn((..._args: unknown[]) => ({
+                _env: { gain: {} },
+                detune: { setValueAtTime: set_value_at_time },
+            }));
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getSynthParamsForTrack: () => ({ detune: 5, release: 0.3 }),
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+            holdWheelUp(1);
+
+            await fn(1, 60, 100);
+
+            // +4096 of 8192 at the default ±2 semitones is +100 cents, set at the
+            // note's own start instant; the scheduled params stay unbent.
+            expect(set_value_at_time).toHaveBeenCalledExactlyOnceWith(105, LIVE_DISPATCH_FRAME / 48_000);
+            expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 5, release: 0.3 });
+        });
+
+        it('leaves the built-in synth detune untouched while the wheel is centred', async () => {
+            const set_value_at_time = vi.fn();
+            const schedule_note = vi.fn((..._args: unknown[]) => ({
+                _env: { gain: {} },
+                detune: { setValueAtTime: set_value_at_time },
+            }));
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getSynthParamsForTrack: () => ({ detune: 5, release: 0.3 }),
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+            await fn(1, 60, 100);
+
+            expect(set_value_at_time).not.toHaveBeenCalled();
+            expect(schedule_note.mock.calls[0]?.[6]).toEqual({ detune: 5, release: 0.3 });
+        });
+
+        it('leaves no oscillator of a two-oscillator note bent once the wheel it was struck under is centred', async () => {
+            const { ctx, oscillators } = makeOscillatorRecordingContext();
+            const twoOscillatorParams = { ...getSynthParamsFromDevices([]), osc2Mix: 0.5, osc2Detune: 7 };
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getSynthParamsForTrack: () => twoOscillatorParams,
+                    scheduleNote: (...[, ...args]: Parameters<typeof scheduleNote>) => scheduleNote(ctx, ...args),
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+            holdWheelUp(1);
+
+            await fn(1, 60, 100);
+            expect(oscillators).toHaveLength(2);
+            expect(oscillators[0]?.detune.settled).toBe(100);
+            bendWheel(1, 0, 64);
+
+            // Every oscillator is back at its own unbent detune: the second one
+            // is not left holding a bend a live bend cannot move.
+            expect(oscillators.map((oscillator) => oscillator.detune.settled)).toEqual([0, 7]);
+        });
+
+        it('starts a note at the wheel a channel last held, including a bend that arrived while MPE was on', async () => {
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(2);
+            mpe_enabled.value = true;
+            bendWheel(2, 0, 64);
+            mpe_enabled.value = false;
+            apply_note_expression.mockClear();
+
+            await fn(2, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+
+        it('starts an MPE member note under the zone master wheel', async () => {
+            mpe_enabled.value = true;
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(0);
+            memberExpressionState.set(3, { pressure: 80, slide: 30 });
+            apply_note_expression.mockClear();
+
+            try {
+                await fn(3, 64, 90);
+            } finally {
+                memberExpressionState.clear();
+            }
+
+            // The master's wheel is read at the master's range (the ±2 default
+            // here), not the member default of ±48 the mocked surface reports,
+            // and the member's own pressure and slide stand beside it.
+            expect(apply_note_expression).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                note: 64,
+                channel: 3,
+                expression: { pitchBend: 4096, pressure: 80, slide: 30 },
+                bendRangeSemitones: 2,
+                sampleFrame: LIVE_DISPATCH_FRAME,
+            });
+        });
+
+        it('leaves an MPE member note carrying its own bend to that bend', async () => {
+            mpe_enabled.value = true;
+            const fn = stripWithNoteOn('levain', vi.fn());
+            holdWheelUp(0);
+            bendWheel(3, 0, 100);
+            apply_note_expression.mockClear();
+
+            await fn(3, 64, 90);
+
+            expect(apply_note_expression).not.toHaveBeenCalled();
+        });
+    });
+
     it('schedules a builtin synth note and stores the oscillator for later release', async () => {
         const oscillator = { _env: { gain: {} } };
         const schedule_note = vi.fn(() => oscillator);
@@ -773,7 +1089,9 @@ describe('handleWebMidiNoteOn', () => {
                     tracks: [
                         {
                             id: 'track-1',
-                            devices: [{ id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 2 } }],
+                            devices: [
+                                { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 2, level: -6 } },
+                            ],
                         },
                     ],
                     selectedTrackId: 'track-1',
@@ -792,7 +1110,9 @@ describe('handleWebMidiNoteOn', () => {
             { id: 'kit-def-2' },
             36,
             expect.anything(),
-            110
+            110,
+            1,
+            dbToGain(-6)
         );
     });
 
@@ -830,11 +1150,15 @@ describe('handleWebMidiNoteOn', () => {
                 { id: `kit-def-${kitIndex}` },
                 36,
                 expect.anything(),
-                110
+                110,
+                1,
+                1
             );
         }
     );
 
+    // A saved kit holding a legacy gain and no level plays at unity: the gain
+    // never reached a hit, so honouring it would change the project's mix.
     it('falls back to the factory kit the same device selects when no kit definition covers it', async () => {
         const schedule_kit_note = vi.fn(() => null);
         const get_kit = vi.fn((index: number) => ({ id: `factory-${index}` }));
@@ -844,7 +1168,7 @@ describe('handleWebMidiNoteOn', () => {
                     tracks: [
                         {
                             id: 'track-1',
-                            devices: [{ id: 'kit-1', type: 'drum-kit', parameterValues: { kitId: 4 } }],
+                            devices: [{ id: 'kit-1', type: 'drum-kit', parameterValues: { kitId: 4, gain: 0.8 } }],
                         },
                     ],
                     selectedTrackId: 'track-1',
@@ -859,7 +1183,17 @@ describe('handleWebMidiNoteOn', () => {
         await fn(0, 36, 110);
 
         expect(get_kit).toHaveBeenCalledWith(4);
-        expect(schedule_kit_note).toHaveBeenCalledTimes(1);
+        expect(schedule_kit_note).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            { id: 'factory-4' },
+            36,
+            expect.anything(),
+            60,
+            110,
+            1,
+            1
+        );
     });
 
     it('logs a warning and returns early when no target track is selected', async () => {
@@ -1447,7 +1781,9 @@ describe('handleWebMidiNoteOn', () => {
                 { id: 'kit-def-0' },
                 36,
                 LIVE_DISPATCH_FRAME / 48_000,
-                110
+                110,
+                1,
+                1
             );
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
         });
@@ -1511,7 +1847,7 @@ describe('handleWebMidiNoteOn', () => {
             const fn = handleWebMidiNoteOn._factory(
                 make_dependencies({
                     getTrackStoreState: single_track([
-                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
+                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0, level: -6 } },
                         { id: 'lev-1', type: 'levain' },
                         { id: 'yeast-1', type: 'yeast' },
                     ]),
@@ -1529,7 +1865,9 @@ describe('handleWebMidiNoteOn', () => {
                 { id: 'kit-def-0' },
                 67,
                 96_240 / 48_000,
-                100
+                100,
+                1,
+                dbToGain(-6)
             );
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
         });

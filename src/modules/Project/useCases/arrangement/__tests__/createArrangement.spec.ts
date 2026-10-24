@@ -1,11 +1,28 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+
+import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import {
     arrangementStore,
+    defaultArrangementId,
     defaultArrangementStoreState,
     type ArrangementStoreState,
 } from '../../../stores/arrangementStore';
 import { createArrangement } from '../createArrangement';
+import { loadSnapshot } from '../loadSnapshot';
+import { switchArrangement } from '../switchArrangement';
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    getAudioContext: vi.fn(() => null),
+    prepareCachedAudioBuffersFromIdb: vi.fn(async () => ({ publish: () => {}, cancel: () => {} })),
+}));
+
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    stopPlayback: vi.fn(async () => {}),
+}));
 
 // A canonical RFC-4122 UUID after the `arr-` prefix. The previous implementation
 // truncated to `crypto.randomUUID().slice(0, 8)` (an 8-hex-char id with a high
@@ -14,6 +31,7 @@ const ARRANGEMENT_ID_PATTERN = /^arr-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 function seed(): void {
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
+    loadSnapshot(defaultArrangementStoreState.arrangements[0]!);
 }
 
 describe('createArrangement', () => {
@@ -22,7 +40,7 @@ describe('createArrangement', () => {
     });
 
     afterEach(() => {
-        arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        seed();
     });
 
     it('assigns the new arrangement a full-UUID id (not an 8-char truncation)', () => {
@@ -42,5 +60,54 @@ describe('createArrangement', () => {
             ids.add((arrangementStore.value as ArrangementStoreState).activeArrangementId);
         }
         expect(ids.size).toBe(200);
+    });
+    it('retains current tracks, clips and markers when returning to the original arrangement', async () => {
+        // The stored original is still empty while its live owner stores have newer edits.
+        expect(arrangementStore.value?.arrangements[0]?.tracks.tracks).toEqual([]);
+        const latestTrack = createTrack({ id: 'track-bass', name: 'Edited bass', kind: 'midi' });
+        latestTrack.clips = [
+            {
+                id: 'clip-bass',
+                trackId: latestTrack.id,
+                name: 'New phrase',
+                startBeat: 4,
+                endBeat: 8,
+                type: 'midi',
+                midiOffsetBeats: 0,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '#ff0000',
+                locked: false,
+                muted: false,
+            },
+        ];
+        const latestMarkers = {
+            markers: [{ id: 'marker-verse', beat: 4, name: 'Edited verse', color: '#ff0000' }],
+            sections: [],
+        };
+        trackStore.set({ tracks: [latestTrack], selectedTrackId: latestTrack.id });
+        markerStore.set(latestMarkers);
+
+        createArrangement('Blank');
+
+        const state = arrangementStore.value;
+        const original = state?.arrangements.find((arrangement) => arrangement.id === defaultArrangementId);
+        const created = state?.arrangements.find((arrangement) => arrangement.name === 'Blank');
+        expect(original?.tracks.tracks).toEqual([latestTrack]);
+        expect(original?.markers).toEqual(latestMarkers);
+        expect(created?.id).toMatch(ARRANGEMENT_ID_PATTERN);
+        expect(created?.id).not.toBe(defaultArrangementId);
+        expect(state?.activeArrangementId).toBe(created?.id);
+        expect(created?.tracks.tracks).toEqual([]);
+        expect(created?.automation.lanes).toEqual([]);
+        expect(created?.midi.notesByClipId).toEqual({});
+        expect(trackStore.value?.tracks).toEqual([]);
+
+        await switchArrangement(defaultArrangementId);
+
+        expect(arrangementStore.value?.activeArrangementId).toBe(defaultArrangementId);
+        expect(trackStore.value?.tracks).toEqual([latestTrack]);
+        expect(markerStore.value).toEqual(latestMarkers);
     });
 });

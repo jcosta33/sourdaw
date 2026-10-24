@@ -34,6 +34,9 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
     adaptGrooveTemplateForConsumer: vi.fn(),
     getGrooveTemplate: vi.fn(),
     getScopedGrooveAssignment: vi.fn(),

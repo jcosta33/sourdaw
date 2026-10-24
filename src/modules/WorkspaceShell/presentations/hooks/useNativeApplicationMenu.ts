@@ -12,6 +12,8 @@ import {
     discardProjectChanges,
     getRecentProjects,
     getProjectSnapshotKey,
+    isOpenProjectKey,
+    pendingProjectReplacements,
     loadRecentProject,
     newProject,
     pickAndImportProjectFile,
@@ -40,6 +42,8 @@ import type { ProjectStoreState } from '#/modules/Project/stores';
 type NativeMenu = NonNullable<ReturnType<typeof nativeApplicationMenu>>;
 type NativeMenuIntent = Parameters<Parameters<NativeMenu['listen']>[0]>[0];
 type CanvasEditorCommand = Parameters<typeof dispatchCanvasEditorCommand>[1];
+
+const DOM_EDIT_OWNER_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 const isCanvasEditorCommand = (action: NativeMenuIntent['action']): action is CanvasEditorCommand =>
     action.startsWith('edit:');
@@ -76,6 +80,27 @@ const reportCloseResult = async (
     });
 };
 
+/** Choosing the open project withdraws a pending replacement; any other project opens after a clean save. */
+const openRecentProject = async (recentKey: string): Promise<void> => {
+    // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
+    if (isOpenProjectKey(recentKey)) {
+        pendingProjectReplacements.withdraw();
+        return;
+    }
+    const isStillChosen = pendingProjectReplacements.capture();
+    if ((await saveProjectIfClean()) && isStillChosen()) {
+        await loadRecentProject(recentKey, { shouldProceed: isStillChosen });
+    }
+};
+
+/** A new project starts after a clean save unless the open project is chosen meanwhile. */
+const createNewProject = async (): Promise<void> => {
+    const isStillChosen = pendingProjectReplacements.capture();
+    if ((await saveProjectIfClean()) && isStillChosen()) {
+        await newProject(undefined, { shouldProceed: isStillChosen });
+    }
+};
+
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
     if (isCanvasEditorCommand(action)) {
@@ -92,12 +117,13 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                 return;
             }
         }
+        if (document.activeElement?.closest(DOM_EDIT_OWNER_SELECTOR)) {
+            return;
+        }
     }
     switch (action) {
         case 'project:new':
-            if (await saveProjectIfClean()) {
-                await newProject();
-            }
+            await createNewProject();
             return;
         case 'project:import-project':
             await pickAndImportProjectFile();
@@ -144,8 +170,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             return;
         }
         case 'project:open-recent':
-            if (intent.recentKey !== undefined && (await saveProjectIfClean())) {
-                await loadRecentProject(intent.recentKey);
+            if (intent.recentKey !== undefined) {
+                await openRecentProject(intent.recentKey);
             }
             return;
         case 'project:import-audio':

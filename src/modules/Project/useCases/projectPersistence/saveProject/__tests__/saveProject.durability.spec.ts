@@ -49,6 +49,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
 }));
 
+// The save reads the settled-take count with its snapshot; no take is recorded here.
+vi.mock('#/modules/Transport/useCases', () => ({
+    countSettledTakes: () => 0,
+}));
+
 vi.mock('../../../../stores/projectStore', () => ({
     projectStore: {
         get value() {

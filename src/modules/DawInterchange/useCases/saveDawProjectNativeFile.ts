@@ -6,7 +6,7 @@ type SaveDawProjectNativeFileInput = {
     suggestedName: string;
 };
 
-type SaveDawProjectNativeFileOutput = Promise<void>;
+type SaveDawProjectNativeFileOutput = Promise<'saved' | 'cancelled'>;
 
 export async function saveDawProjectNativeFile({
     bytes,
@@ -14,7 +14,8 @@ export async function saveDawProjectNativeFile({
 }: SaveDawProjectNativeFileInput): SaveDawProjectNativeFileOutput {
     const filePath = await saveDawProjectFileDialog({ suggestedName });
     if (!filePath) {
-        return;
+        return 'cancelled';
     }
     await writeDawProjectFile({ filePath, bytes });
+    return 'saved';
 }

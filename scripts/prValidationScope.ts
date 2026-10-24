@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
+import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 import type { AffectedSelection } from './e2eAffectedGraph.ts';
@@ -17,7 +18,6 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
-    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -32,13 +32,13 @@ const REVIEW_TOOLING = new Set([
     'repairReviewFinding',
     'resolveThread',
     'reviewApprovalFormat',
+    'reviewApprovalLabel',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -65,6 +65,7 @@ const REVIEW_TOOLING = new Set([
     'pullRequestReviewState',
     'pullRequestMutationLock',
     'prValidationScope',
+    'prValidationScopeCheckout',
     'pruneLane',
     'removeLane',
     'retargetCapabilityPlan',
@@ -156,6 +157,21 @@ export type ValidationPlan = {
 
 function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
+}
+
+/**
+ * Repository tooling and prose never select browser execution, though they keep broad non-browser
+ * validation. Generator and build scripts reach the browser only through their outputs, which land
+ * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
+ * stays classified with them.
+ */
+function isRepositoryTooling(path: string): boolean {
+    return (
+        path.startsWith('scripts/') ||
+        path.startsWith('.agents/') ||
+        /^release\/[^/]+\.json$/.test(path) ||
+        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+    );
 }
 
 function needsCodeql(path: string): boolean {
@@ -370,6 +386,13 @@ function browserPathSelection(
     };
 }
 
+function planProfile(broad: boolean, tooling: boolean): ValidationPlan['profile'] {
+    if (broad) {
+        return 'broad';
+    }
+    return tooling ? 'tooling' : 'docs';
+}
+
 export function selectValidationPlan(
     paths: readonly string[],
     availableSpecs: readonly string[],
@@ -392,6 +415,7 @@ export function selectValidationPlan(
     let browserAi = false;
     let codeql = false;
     let tooling = false;
+    let nonBrowser = false;
     for (const path of paths) {
         if (isDocumentation(path)) {
             reasons.push({ path, reason: 'documentation; no browser execution' });
@@ -402,6 +426,14 @@ export function selectValidationPlan(
         if (reason !== null) {
             tooling = true;
             reasons.push({ path, reason });
+            continue;
+        }
+        if (isRepositoryTooling(path)) {
+            nonBrowser = true;
+            reasons.push({
+                path,
+                reason: 'repository tooling; broad non-browser validation without browser execution',
+            });
             continue;
         }
         browser = true;
@@ -421,12 +453,7 @@ export function selectValidationPlan(
         throw new Error('Full browser coverage has no specs');
     }
     const matrix = browserMatrix(specs, durations);
-    let profile: ValidationPlan['profile'] = 'docs';
-    if (browser) {
-        profile = 'broad';
-    } else if (tooling) {
-        profile = 'tooling';
-    }
+    const profile = planProfile(browser || nonBrowser, tooling);
     return { version: 1, profile, browser, browserAi, codeql, matrix, reasons };
 }
 
@@ -464,46 +491,49 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
+/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
+export function productPathsOf(
+    paths: readonly string[],
+    specs: readonly string[],
+    packageScriptOnly: boolean
+): string[] {
+    return paths.filter(
+        (path) =>
+            !isDocumentation(path) &&
+            toolingReason(path, packageScriptOnly) === null &&
+            !isRepositoryTooling(path) &&
+            !(isSpec(path) && specs.includes(path))
+    );
+}
+
+const HISTORICAL_STATUS = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/;
+
+/** The planner narrows only live product sources under src/modules/; a deleted, renamed, copied, or retyped path widens. */
+export function canNarrow(input: {
+    productPaths: readonly string[];
+    candidateDiff: string;
+    integrationDiff: string;
+}): boolean {
+    const historicalChange = [input.candidateDiff, input.integrationDiff].some((value) =>
+        HISTORICAL_STATUS.test(value)
+    );
+    return (
+        !historicalChange &&
+        input.productPaths.length > 0 &&
+        input.productPaths.every((path) => path.startsWith('src/modules/'))
+    );
+}
+
 async function affectedFromCheckout(
     root: string,
     base: string,
     head: string,
     diff: string,
-    candidatePaths: readonly string[],
     specs: readonly string[]
 ): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
-    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-    const integrated =
-        checkout === head ||
-        (spawnSync('git', ['merge-base', '--is-ancestor', base, checkout]).status === 0 &&
-            spawnSync('git', ['merge-base', '--is-ancestor', head, checkout]).status === 0);
-    let integrationDiff = '';
-    if (integrated && checkout !== head) {
-        integrationDiff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', base, checkout, '--'], {
-            encoding: 'utf8',
-            maxBuffer: 16 * 1024 * 1024,
-        });
-    }
-    const allPaths = new Set(candidatePaths);
-    if (integrationDiff !== '') {
-        for (const path of parseChangedPaths(integrationDiff)) {
-            allPaths.add(path);
-        }
-    }
-    const paths = [...allPaths].sort();
-    const packageUnchangedAtCheckout =
-        checkout === head || spawnSync('git', ['diff', '--quiet', head, checkout, '--', 'package.json']).status === 0;
-    const packageScriptOnly =
-        paths.includes('package.json') &&
-        packageUnchangedAtCheckout &&
-        isOperationalPackageScriptChange(diff, base, head);
-    const productPaths = paths.filter(
-        (path) =>
-            !isDocumentation(path) &&
-            toolingReason(path, packageScriptOnly) === null &&
-            !(isSpec(path) && specs.includes(path))
-    );
-    const historicalChange = [diff, integrationDiff].some((value) => /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(value));
+    const paths = parseChangedPaths(diff);
+    const packageScriptOnly = paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head);
+    const productPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
         [
@@ -517,17 +547,11 @@ async function affectedFromCheckout(
             'scripts/e2eAffectedGraph.ts',
             'tsconfig.json',
         ],
-        { encoding: 'utf8' }
+        { cwd: root, encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
     let affected: AffectedSelection | undefined;
-    if (
-        integrated &&
-        cleanGraphInputs &&
-        !historicalChange &&
-        productPaths.length > 0 &&
-        productPaths.every((path) => path.startsWith('src/modules/'))
-    ) {
+    if (cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff: '' })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
             affected = await loadAffectedE2e(root, productPaths, specs);
@@ -556,19 +580,11 @@ async function main(): Promise<void> {
     if (!base || !head || !/^[a-f0-9]{40}$/.test(base) || !/^[a-f0-9]{40}$/.test(head) || !output) {
         throw new Error('Plan requires immutable base/head SHAs and GITHUB_OUTPUT');
     }
-    const diff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], {
-        encoding: 'utf8',
-        maxBuffer: 16 * 1024 * 1024,
-    });
-    const candidatePaths = parseChangedPaths(diff);
+    const { checkout, firstParent, diff } = readCheckoutDiff(root, base, head);
     const specs = listSpecs(root);
-    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(
-        root,
-        base,
-        head,
-        diff,
-        candidatePaths,
-        specs
+    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(root, firstParent, checkout, diff, specs);
+    console.log(
+        JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
     );
     const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
     if (affected?.kind === 'full') {

@@ -1,26 +1,43 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 
 const mocks = vi.hoisted(() => ({
     createTrack: vi.fn(() => ({ id: 'master', name: 'Master', kind: 'master' })),
     resetArrangementStoresForProject: vi.fn(),
+    getAllTracks: vi.fn(() => []),
     replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     transportSet: vi.fn(),
     projectSet: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    createTrack: mocks.createTrack,
-    resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
-}));
-vi.mock('#/modules/MIDI/useCases', () => ({
-    replaceChordTrackState: mocks.replaceChordTrackState,
-    hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
-}));
-vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { set: mocks.transportSet },
-    defaultTransportState: {},
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        createTrack: mocks.createTrack,
+        resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
+    };
+});
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        ...actual,
+        replaceChordTrackState: mocks.replaceChordTrackState,
+        hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
+    };
+});
+// Real stores with only the write spied, so the real Transport useCases barrel —
+// and with it the real `preferencesSeededTransportState` — loads and runs below.
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
+    return {
+        ...actual,
+        transportStore: { ...actual.transportStore, set: mocks.transportSet },
+    };
+});
 vi.mock('#/modules/Project/stores/projectStore', () => ({
     projectStore: { set: mocks.projectSet },
 }));
@@ -31,6 +48,10 @@ import { initProject } from '../initProject';
 describe('initProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        preferencesStore.set(defaultPreferences);
     });
 
     it('does not signal workspace-ready — the async template build has not settled yet', () => {
@@ -49,6 +70,30 @@ describe('initProject', () => {
         expect(published.loading).toBe(true);
         // The project metadata IS published (name/tempo) — only the ready signal is withheld.
         expect(published).toMatchObject({ name: 'EDM' });
+    });
+
+    it('seeds the template transport from non-default Recording preferences', () => {
+        // Every shipped template builds its transport through initProject, so
+        // the full-state replace here is the one place the preference seed
+        // would be silently dropped (#4673): non-default Recording preferences
+        // must survive the template's tempo/time-signature overrides.
+        preferencesStore.set({ ...defaultPreferences, recordCountIn: 2, preRollEnabled: true, preRollBars: 1 });
+
+        initProject({ name: 'EDM', bpm: 128 });
+
+        expect(mocks.transportSet).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tempo: 128,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+                loopEnd: 64,
+                isLooping: true,
+                countInEnabled: true,
+                countInBars: 2,
+                preRollEnabled: true,
+                preRollBars: 1,
+            })
+        );
     });
 
     it('gives same-tick template projects distinct canonical identities', () => {

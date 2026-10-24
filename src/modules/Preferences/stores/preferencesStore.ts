@@ -74,6 +74,29 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
 const PREFERENCE_KEYS = Object.keys(PREFERENCES_SCHEMA) as (keyof Preferences)[];
 
 /**
+ * Schema-version-ordered content migrations for persisted values a released
+ * schema never consumed. Each rewrite is scoped to records stored under the
+ * older schema version, because a same-valued explicit choice made under the
+ * current schema is indistinguishable from the retired default.
+ */
+function migrateLegacyCountInDefault(record: Record<string, unknown>): Record<string, unknown> {
+    const storedSchemaVersion = record.preferencesSchemaVersion;
+    // A version-less or corrupt blob is the same never-consumed legacy state
+    // the minimap visibility migration treats as non-authoritative: no
+    // schema-aware build wrote it, so its stored values are old defaults.
+    const fromRetiredSchema =
+        !isValidPreferencesSchemaVersion(storedSchemaVersion) || storedSchemaVersion < PREFERENCES_SCHEMA_VERSION;
+    if (!fromRetiredSchema || record.recordCountIn !== 1) {
+        return record;
+    }
+    // Schemas 1–2 shipped `recordCountIn: 1` as an inert default — the
+    // transport never read it, so a stored 1 is the old default, not a choice.
+    // Schema 3 honors the preference for new projects, so the planted 1
+    // rewrites to the new Off default; an explicit 2 or 4 survives.
+    return { ...record, recordCountIn: 0 };
+}
+
+/**
  * Validate a raw persisted value against the schema, field by field. Returns a
  * complete Preferences object: every valid stored field is preserved, every
  * invalid or missing field falls back to its default. Rejected fields are logged.
@@ -86,7 +109,7 @@ export function validateStoredPreferences(stored: unknown): Preferences {
         return defaultPreferences;
     }
 
-    const record = stored as Record<string, unknown>;
+    const record = migrateLegacyCountInDefault(stored as Record<string, unknown>);
     const storedSchemaVersion = record.preferencesSchemaVersion;
     const futureSchemaVersion =
         isValidPreferencesSchemaVersion(storedSchemaVersion) && storedSchemaVersion > PREFERENCES_SCHEMA_VERSION;

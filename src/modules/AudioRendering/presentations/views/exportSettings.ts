@@ -32,6 +32,7 @@ export type ExportSettings = {
     mp3BitRate: Mp3BitRate;
     dither: ExportDither;
     normalization: ExportNormalization;
+    targetLufs?: number;
 };
 
 /**
@@ -40,6 +41,10 @@ export type ExportSettings = {
  * the bound on what a user may type into the field.
  */
 export const MAX_MANUAL_TAIL_SECONDS = 60;
+
+// Below the meter's absolute gate there is no programme loudness to target.
+export const MIN_EXPORT_TARGET_LUFS = -70;
+export const MAX_EXPORT_TARGET_LUFS = -1;
 
 /**
  * Sample rates an export may run at. The dialog's offered list and the
@@ -56,6 +61,7 @@ const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
     mp3BitRate: 128,
     dither: 'random',
     normalization: 'off',
+    targetLufs: R128_TARGET_LUFS,
 };
 
 const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac'];
@@ -135,6 +141,13 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
         mp3BitRate: readMp3BitRate(value.mp3BitRate),
         dither: readDither(value.dither),
         normalization: readNormalization(value.normalization),
+        targetLufs:
+            typeof value.targetLufs === 'number' &&
+            Number.isFinite(value.targetLufs) &&
+            value.targetLufs >= MIN_EXPORT_TARGET_LUFS &&
+            value.targetLufs <= MAX_EXPORT_TARGET_LUFS
+                ? value.targetLufs
+                : R128_TARGET_LUFS,
     };
 }
 
