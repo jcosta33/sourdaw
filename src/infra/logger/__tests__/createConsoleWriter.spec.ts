@@ -68,41 +68,65 @@ describe('createConsoleWriter', () => {
             const writer = createConsoleWriter({ mode: 'development' });
             const iframe = document.createElement('iframe');
             document.body.append(iframe);
-            const foreignWindow = iframe.contentWindow;
-            if (!foreignWindow) {
-                throw new Error('Missing iframe window');
+            try {
+                const foreignWindow = iframe.contentWindow;
+                if (!foreignWindow) {
+                    throw new Error('Missing iframe window');
+                }
+                const foreignErrorConstructor: unknown = Reflect.get(foreignWindow, 'Error');
+                if (typeof foreignErrorConstructor !== 'function') {
+                    throw new TypeError('Missing iframe Error constructor');
+                }
+                const foreignCause: Error = Reflect.construct(foreignErrorConstructor, ['foreign cause']);
+                const foreignRoot: Error = Reflect.construct(foreignErrorConstructor, [
+                    'foreign root',
+                    { cause: foreignCause },
+                ]);
+
+                writer.error(foreignRoot);
+
+                const call = vi.mocked(console.error).mock.calls[0];
+                expect(call?.[1]).toBe(foreignRoot);
+                expect(call?.[2]).toContain('foreign root');
+                expect(call?.[2]).toContain('foreign cause');
+            } finally {
+                iframe.remove();
             }
-            const foreignCause = new foreignWindow.Error('foreign cause');
-            const foreignRoot = new foreignWindow.Error('foreign root', { cause: foreignCause });
-
-            writer.error(foreignRoot);
-
-            const call = vi.mocked(console.error).mock.calls[0];
-            expect(call?.[1]).toBe(foreignRoot);
-            expect(call?.[2]).toContain('foreign root');
-            expect(call?.[2]).toContain('foreign cause');
-            iframe.remove();
         });
 
         it('keeps native aggregate errors and children from another realm in the diagnostic', () => {
             const writer = createConsoleWriter({ mode: 'development' });
             const iframe = document.createElement('iframe');
             document.body.append(iframe);
-            const foreignWindow = iframe.contentWindow;
-            if (!foreignWindow) {
-                throw new Error('Missing iframe window');
+            try {
+                const foreignWindow = iframe.contentWindow;
+                if (!foreignWindow) {
+                    throw new Error('Missing iframe window');
+                }
+                const foreignErrorConstructor: unknown = Reflect.get(foreignWindow, 'Error');
+                if (typeof foreignErrorConstructor !== 'function') {
+                    throw new TypeError('Missing iframe Error constructor');
+                }
+                const foreignAggregateErrorConstructor: unknown = Reflect.get(foreignWindow, 'AggregateError');
+                if (typeof foreignAggregateErrorConstructor !== 'function') {
+                    throw new TypeError('Missing iframe AggregateError constructor');
+                }
+                const foreignChild: Error = Reflect.construct(foreignErrorConstructor, ['foreign aggregate child']);
+                const foreignAggregate: Error = Reflect.construct(foreignAggregateErrorConstructor, [
+                    [foreignChild],
+                    'foreign aggregate',
+                ]);
+                const root = new Error('local root', { cause: foreignAggregate });
+
+                writer.error(root);
+
+                const call = vi.mocked(console.error).mock.calls[0];
+                expect(call?.[1]).toBe(root);
+                expect(call?.[2]).toContain('foreign aggregate');
+                expect(call?.[2]).toContain('foreign aggregate child');
+            } finally {
+                iframe.remove();
             }
-            const foreignChild = new foreignWindow.Error('foreign aggregate child');
-            const foreignAggregate = new foreignWindow.AggregateError([foreignChild], 'foreign aggregate');
-            const root = new Error('local root', { cause: foreignAggregate });
-
-            writer.error(root);
-
-            const call = vi.mocked(console.error).mock.calls[0];
-            expect(call?.[1]).toBe(root);
-            expect(call?.[2]).toContain('foreign aggregate');
-            expect(call?.[2]).toContain('foreign aggregate child');
-            iframe.remove();
         });
 
         it('keeps an empty aggregate error on the original one-argument development call', () => {
