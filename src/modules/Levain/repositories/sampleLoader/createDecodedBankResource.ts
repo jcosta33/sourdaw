@@ -382,17 +382,17 @@ export function createDecodedBankResource({
         }
     }
 
-    function notifyAdmissionActivity(admission: BankAdmission, includeActive = false): void {
+    function notifyAdmissionActivity(admission: BankAdmission, activeToken?: symbol): void {
         if (admittedBank !== admission || admission.controller.signal.aborted) {
             return;
         }
-        const cohorts = includeActive ? [admission, ...bankQueue] : bankQueue;
+        const cohorts = activeToken ? [admission, ...bankQueue] : bankQueue;
         for (const cohort of cohorts) {
             if (cohort.controller.signal.aborted) {
                 continue;
             }
             for (const [token, listener] of cohort.consumers) {
-                if (!listener) {
+                if (!listener || (cohort === admission && token !== activeToken)) {
                     continue;
                 }
                 try {
@@ -407,7 +407,8 @@ export function createDecodedBankResource({
 
     async function acquireAdmission(key: string, baseKey: string, input: LoadDecodedBankInput) {
         let admission: BankAdmission | undefined | null = admittedBank;
-        if (admission?.key !== key || admission.controller.signal.aborted) {
+        // Later same-key arrivals must queue once another cohort is waiting.
+        if (admission?.key !== key || admission.controller.signal.aborted || bankQueue.length > 0) {
             admission = bankQueue.find((queued) => queued.key === key && !queued.controller.signal.aborted);
         }
         if (!admission) {
@@ -464,7 +465,7 @@ export function createDecodedBankResource({
                 release,
                 reportActivity: () => {
                     if (!released && !input.signal?.aborted) {
-                        notifyAdmissionActivity(cohort, true);
+                        notifyAdmissionActivity(cohort, token);
                     }
                 },
             };

@@ -832,11 +832,13 @@ describe('createDecodedBankResource', () => {
                 ),
             loadSample,
         });
-        const loads = inputs.map((input) => resource.acquire(input));
+        const firstLoad = resource.acquire(inputs[0]!);
+        const sameKeyLoad = resource.acquire(inputs[0]!);
+        const loads = [firstLoad, ...inputs.slice(1).map((input) => resource.acquire(input))];
         // Observe every rejection even on the broken implementation.
         const outcomes = Promise.allSettled(loads);
         const first = await loads[0]!;
-        const sameKey = await resource.acquire(inputs[0]!);
+        const sameKey = await sameKeyLoad;
         expect(sameKey.bank).toBe(first.bank);
         expect(loadSample).toHaveBeenCalledTimes(1);
         first.release();
@@ -857,6 +859,63 @@ describe('createDecodedBankResource', () => {
             failedBanks: 0,
             evictions: 4,
         });
+    });
+
+    it('admits an earlier distinct waiter before a late request for the held bank', async () => {
+        const loadSample = vi.fn(() => Promise.resolve(createSample(1)));
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            loadManifest: (url) =>
+                Promise.resolve(
+                    createManifest({
+                        instrumentId: url.includes('cello') ? 'cello' : 'violin-1',
+                        files: ['note.wav'],
+                    })
+                ),
+            loadSample,
+        });
+        const held = await resource.acquire(DEFAULT_INPUT);
+        const celloProgress = vi.fn();
+        const lateProgress = vi.fn();
+        let celloLease: Awaited<ReturnType<typeof resource.acquire>> | undefined;
+        let lateLease: Awaited<ReturnType<typeof resource.acquire>> | undefined;
+        const cello = resource
+            .acquire({
+                ...DEFAULT_INPUT,
+                manifestUrl: '/cello/manifest.json',
+                basePath: '/cello',
+                expectedInstrumentId: 'cello',
+                onProgress: celloProgress,
+            })
+            .then((lease) => {
+                celloLease = lease;
+                return lease;
+            });
+        await vi.waitFor(() => expect(celloProgress).toHaveBeenCalledWith(0));
+        const late = resource.acquire({ ...DEFAULT_INPUT, onProgress: lateProgress }).then((lease) => {
+            lateLease = lease;
+            return lease;
+        });
+        const outcomes = Promise.allSettled([cello, late]);
+        try {
+            await vi.waitFor(() => expect(lateProgress).toHaveBeenCalledWith(0));
+            held.release();
+            const next = await Promise.race([cello, late]);
+            expect(next.bank.instrumentId).toBe('cello');
+            expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4 });
+            next.release();
+            const last = await late;
+            expect(last.bank.instrumentId).toBe('violin-1');
+            expect(loadSample).toHaveBeenCalledTimes(3);
+            last.release();
+            expect((await outcomes).every((outcome) => outcome.status === 'fulfilled')).toBe(true);
+        } finally {
+            held.release();
+            celloLease?.release();
+            lateLease?.release();
+            resource.clear();
+            await outcomes;
+        }
     });
 
     it.each(['abort', 'invalidate', 'clear'] as const)(

@@ -43,6 +43,14 @@ const FILE_COUNT = 161;
 const DEVICE_IDS = Array.from({ length: 5 }, (_, index) => `levain-${index}`);
 let pendingWorkletAcks: Array<() => void> = [];
 let endWorklets: Array<() => void> = [];
+let workletAckPosted: PromiseWithResolvers<void>;
+
+async function waitForWorkletAcks(count: number): Promise<void> {
+    while (pendingWorkletAcks.length < count) {
+        await workletAckPosted.promise;
+        workletAckPosted = Promise.withResolvers<void>();
+    }
+}
 
 class FakeWorkletNode {
     readonly port = { postMessage: vi.fn(), close: vi.fn() };
@@ -117,6 +125,7 @@ function createPort(): MessagePort {
             }
             if (message.type === 'commitSampleBank') {
                 pendingWorkletAcks.push(() => emit({ type: 'sampleBankLoaded', loadToken: message.loadToken }));
+                workletAckPosted.resolve();
             }
         },
         addEventListener(_type: string, listener: (event: MessageEvent<unknown>) => void) {
@@ -208,6 +217,7 @@ describe('live Levain content progress', () => {
         progressChanged = Promise.withResolvers<void>();
         pendingWorkletAcks = [];
         endWorklets = [];
+        workletAckPosted = Promise.withResolvers<void>();
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         vi.stubGlobal(
             'OfflineAudioContext',
@@ -456,6 +466,73 @@ describe('live Levain content progress', () => {
             expect(
                 engine.getDeviceReadinessDiagnostics().devices.filter((device) => device.status === 'ready')
             ).toHaveLength(5);
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('times out an unacknowledged device when only its same-bank sibling completes shipment', async () => {
+        const deviceIds = DEVICE_IDS.slice(0, 2);
+        levainStore.set(
+            Object.fromEntries(
+                deviceIds.map((id) => [
+                    id,
+                    { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'solo-horn' } },
+                ])
+            )
+        );
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string) => {
+                if (url.endsWith('/manifest.json')) {
+                    const source = manifest('solo-horn');
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                ...source,
+                                articulations: source.articulations.map((articulation) => ({
+                                    ...articulation,
+                                    zones: articulation.zones.slice(0, 1),
+                                })),
+                            }),
+                    });
+                }
+                return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+            })
+        );
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            for (const deviceId of deviceIds) {
+                engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            }
+            await waitForWorkletAcks(2);
+            expect(Date.now()).toBe(0);
+            const waiting = engine.waitForDevices();
+            await vi.advanceTimersByTimeAsync(9000);
+            pendingWorkletAcks[0]!();
+            await vi.advanceTimersByTimeAsync(1000);
+
+            const acknowledgedDeviceIds = new Set(
+                progressEvents
+                    .filter((event) => event.atMs === 9000 && typeof event.progress !== 'number')
+                    .map((event) => event.deviceId)
+            );
+            expect(acknowledgedDeviceIds.size).toBe(1);
+            const diagnostics = engine.getDeviceReadinessDiagnostics();
+            expect(diagnostics.counts.failed).toBe(1);
+            for (const deviceId of deviceIds) {
+                const device = diagnostics.devices.find((record) => record.deviceId === deviceId);
+                if (acknowledgedDeviceIds.has(deviceId)) {
+                    expect(device).toMatchObject({ status: 'ready' });
+                } else {
+                    expect(device).toMatchObject({ status: 'failed', failureStage: 'content' });
+                }
+            }
+            await expect(waiting).resolves.toMatchObject({ status: 'failed' });
         } finally {
             for (const end of endWorklets) {
                 end();
