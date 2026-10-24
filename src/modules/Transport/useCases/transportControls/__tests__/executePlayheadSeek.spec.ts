@@ -51,7 +51,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAllScheduled: mockStopAllScheduled,
     repositionNativeLiveGraphSession: mockReposition,
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mockResetMidiState }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    resetMidiState: mockResetMidiState,
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';

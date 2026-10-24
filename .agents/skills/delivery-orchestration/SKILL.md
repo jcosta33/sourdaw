@@ -609,6 +609,22 @@ or already-merged recovery and tracker completion. Validate and refuse existing
 owners without waiting or automatic takeover, regardless of liveness. Crashes
 leave the ref; only `deliver --recover-lock` clears it.
 
+`pr:supersede` uses this same per-PR owner for every live PR read, replay, comment,
+delete, close and compensation. A pre-close refusal releases only after verified
+rollback restores the original OPEN comment-ID set and removes every comment the
+invocation created; the overall command still fails. This permits corrected
+lineage on a later invocation without letting another native closer adopt markers
+while their creator can still roll them back. Retaining stale lineage alone would
+prevent such a corrected retry.
+
+Ambiguous comment results, altered markers, attempted closure and unverified or
+failed compensation retain the journaled owner and print its exact recovery
+command. After that owner's process fence is dead, use the existing
+`deliver --recover-lock <pr> --owner <oid>` route. It can reconcile stable OPEN or
+CLOSED unmerged observations, but recovery does not prove supersession complete:
+rerun `pr:supersede` with the verified head, replacement and complete lineage.
+Supersession success is logged only after its mutation owner releases.
+
 Recovery refuses a live recorded process fence, adopts the lock under its own
 fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
