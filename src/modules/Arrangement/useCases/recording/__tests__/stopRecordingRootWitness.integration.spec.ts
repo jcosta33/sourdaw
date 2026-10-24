@@ -74,21 +74,15 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => {
 // Delegates to the real commit by default (the beforeEach installs the
 // delegation); a case can arm one hold to park the dispatch across a root
 // replacement, so the resume refusal is observed against the real dispatch.
+type CommitRecordingFn = (typeof import('../commitRecording'))['commitRecording'];
 const commitRecording = vi.hoisted(() =>
-    vi.fn<
-        (
-            clip: unknown,
-            capture?: unknown,
-            options?: { shouldExecute?: () => boolean },
-            real?: (clip: unknown, capture?: unknown, options?: unknown) => Promise<void>
-        ) => Promise<void>
-    >()
+    vi.fn<(...args: [...Parameters<CommitRecordingFn>, real: CommitRecordingFn]) => Promise<void>>()
 );
 vi.mock('../commitRecording', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../commitRecording')>();
     return {
-        commitRecording: (clip: unknown, capture?: unknown, options?: { shouldExecute?: () => boolean }) =>
-            commitRecording(clip, capture, options, actual.commitRecording),
+        commitRecording: (...args: Parameters<CommitRecordingFn>): Promise<void> =>
+            commitRecording(...args, actual.commitRecording),
     };
 });
 
