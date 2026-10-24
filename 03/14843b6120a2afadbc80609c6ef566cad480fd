@@ -1,0 +1,24 @@
+src/infra/logger/createConsoleWriter.ts
+  s_59e31a5c6f3e31::t_cf2a762c6cfc8d 30-34,57,77-80,90,101-102,104,106-110,136-138
+  s_59e31a5c6f3e31::t_c8dd6f217f1d0b 105
+src/infra/logger/__tests__/createConsoleWriter.spec.ts
+  s_59e31a5c6f3e31::t_ece49db0c62a84 108-117
+  s_59e31a5c6f3e31::t_d310431cbb0a33 84,105-107,118-147
+  s_59e31a5c6f3e31::t_3d75fa1480b987 67-83,85-104,148-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0314843b6120a2afadbc80609c6ef566cad480fd",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
