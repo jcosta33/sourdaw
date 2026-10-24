@@ -22,6 +22,20 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-24 — supersession bypassed its trusted process-tool launcher (introduced by PR #5639)
+
+PR #5639 added a process-fenced supersession owner without routing its native package command
+through the trusted write bootstrap. Its injected-fence lock tests passed while the real command
+had no trusted `ps` pin and refused before PR I/O. Strongest-tier review was present; native CLI
+and platform-tool admission was the missed stance.
+
+Require the command registry, static source closure, risk-classification union and fenced-command
+set to cover the actual package route. Drive its default process-fence consumer with a launcher-
+resolved POSIX `ps`; verify Windows PowerShell selection independently. Inherited forged pins
+must not survive snapshot isolation, and a missing platform tool must refuse rather than fall
+back to ambient execution. A direct-script route and removal from the fenced set must each break
+the real admission probe before any remote port call.
+
 ### 2026-10-24 — Linux cleanup proof went stale across process arrival, exit settlement, and output attribution (introduced by PR #5274, retained by PR #5443)
 
 PR #5274 introduced two Linux whole-account observations, terminal file release only after an
