@@ -13,7 +13,10 @@ import {
     readCheckpointAudioVersionKey,
 } from '../models/CheckpointAudioRetention';
 
-import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
+import {
+    fetchDurableOwnedAudioBufferIds,
+    type DurableAudioBufferOwnershipSnapshot,
+} from './durableAudioBufferOwnership';
 import {
     createPreparedAudioBufferLifecycle,
     PreparedAudioStoragePhaseUnavailableError,
@@ -1290,6 +1293,7 @@ async function removeFromIdb(id: string, sourceAtRemoval: CachedAudioDurabilityS
                 return;
             }
             const db = await openDb();
+            requireCurrentAudioOwnership(durableOwnedIds);
             if (persistenceGenerationById.get(id) !== generation) {
                 return;
             }
@@ -1297,8 +1301,13 @@ async function removeFromIdb(id: string, sourceAtRemoval: CachedAudioDurabilityS
             // its record keeps counting bytes that are no longer there.
             const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
             const retainedIds = await readCheckpointRetainedBufferIds(tx);
+            requireCurrentAudioOwnership(durableOwnedIds, tx);
             let removed = false;
-            if (persistenceGenerationById.get(id) === generation && !durableOwnedIds.has(id) && !retainedIds.has(id)) {
+            if (
+                persistenceGenerationById.get(id) === generation &&
+                !durableOwnedIds.ids.has(id) &&
+                !retainedIds.has(id)
+            ) {
                 tx.objectStore(STORE_NAME).delete(id);
                 tx.objectStore(META_STORE_NAME).delete(id);
                 removed = true;
@@ -1306,6 +1315,7 @@ async function removeFromIdb(id: string, sourceAtRemoval: CachedAudioDurabilityS
             await awaitTransaction(tx);
             if (
                 removed &&
+                isAudioOwnershipCurrent(durableOwnedIds) &&
                 persistenceGenerationById.get(id) === generation &&
                 durabilitySourceById.get(id) === sourceAtRemoval
             ) {
@@ -2053,14 +2063,59 @@ function ensureDurableAudioBuffers(
 /** The durable owned-id set is fetched before any deletion decision in every
  * collection run (issue #3777). A missing or rejected provider leaves the
  * owned set unknown, so no entry can be proven unowned and nothing is deleted. */
-async function readDurableOwnedIdsOrAbort(): Promise<Set<string> | null> {
+type AudioBufferOwnershipCensus = {
+    ids: ReadonlySet<string>;
+    isCurrent: () => boolean;
+};
+
+function isOwnershipSnapshot(
+    value: readonly string[] | DurableAudioBufferOwnershipSnapshot
+): value is DurableAudioBufferOwnershipSnapshot {
+    return !Array.isArray(value);
+}
+
+function isAudioOwnershipCurrent(census: AudioBufferOwnershipCensus): boolean {
+    try {
+        return census.isCurrent() === true;
+    } catch (error) {
+        logger.warn('[audioBufferCache] Audio ownership currentness check failed; collection refused', { error });
+        return false;
+    }
+}
+
+function requireCurrentAudioOwnership(census: AudioBufferOwnershipCensus, transaction?: IDBTransaction): void {
+    if (isAudioOwnershipCurrent(census)) {
+        return;
+    }
+    // The age sweep can already have queued deletes before its next legacy
+    // record read. Abort those too when the local owner census changes.
+    transaction?.abort();
+    throw new Error('Audio buffer ownership census is no longer current; collection refused.');
+}
+
+async function readDurableOwnedIdsOrAbort(): Promise<AudioBufferOwnershipCensus | null> {
     const pending = fetchDurableOwnedAudioBufferIds();
     if (pending === null) {
         logger.warn('[audioBufferCache] Durable ownership provider is unavailable; deletion refused');
         return null;
     }
     try {
-        return new Set(await pending);
+        const value = await pending;
+        const snapshot = isOwnershipSnapshot(value);
+        const ids = snapshot ? value.ids : value;
+        if (
+            !Array.isArray(ids) ||
+            ids.some((id) => typeof id !== 'string' || id.trim().length === 0) ||
+            (snapshot && typeof value.isCurrent !== 'function')
+        ) {
+            throw new Error('Audio buffer ownership census is invalid.');
+        }
+        const census = {
+            ids: new Set<string>(ids),
+            isCurrent: snapshot ? () => value.isCurrent() : () => true,
+        };
+        requireCurrentAudioOwnership(census);
+        return census;
     } catch (error) {
         logger.warn('[audioBufferCache] Durable ownership enumeration failed; collection aborted without deleting', {
             error,
@@ -2270,21 +2325,24 @@ export const audioBufferCache = {
                 return;
             }
             const db = await openDb();
+            requireCurrentAudioOwnership(durableOwnedIds);
             const tx = db.transaction(
                 [STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
                 'readwrite'
             );
             const retainedIds = await readCheckpointRetainedBufferIds(tx);
+            requireCurrentAudioOwnership(durableOwnedIds, tx);
             const bufferStore = tx.objectStore(STORE_NAME);
             const metadataStore = tx.objectStore(META_STORE_NAME);
             const [bufferKeys, metadataKeys] = await Promise.all([
                 awaitRequest(bufferStore.getAllKeys()),
                 awaitRequest(metadataStore.getAllKeys()),
             ]);
+            requireCurrentAudioOwnership(durableOwnedIds, tx);
             for (const key of new Set([...bufferKeys, ...metadataKeys])) {
                 if (
                     typeof key === 'string' &&
-                    (durabilitySourceById.has(key) || durableOwnedIds.has(key) || retainedIds.has(key))
+                    (durabilitySourceById.has(key) || durableOwnedIds.ids.has(key) || retainedIds.has(key))
                 ) {
                     continue;
                 }
@@ -2709,6 +2767,7 @@ export const audioBufferCache = {
                     return;
                 }
                 const db = await openDb();
+                requireCurrentAudioOwnership(durableOwnedIds);
                 const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
                 const metaStore = tx.objectStore(META_STORE_NAME);
@@ -2717,6 +2776,7 @@ export const audioBufferCache = {
                     awaitRequest(metaStore.getAllKeys()),
                     readCheckpointRetainedBufferIds(tx),
                 ]);
+                requireCurrentAudioOwnership(durableOwnedIds, tx);
                 const collectedKeys = new Set<string>();
                 const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
                 const protectedKeys = new Set<string>();
@@ -2740,7 +2800,7 @@ export const audioBufferCache = {
                         typeof key !== 'string' ||
                         !key.startsWith('freeze-') ||
                         persistenceGenerationById.has(key) ||
-                        durableOwnedIds.has(key) ||
+                        durableOwnedIds.ids.has(key) ||
                         activeIds.has(key) ||
                         freezeProjectId !== projectId
                     ) {
@@ -2753,7 +2813,7 @@ export const audioBufferCache = {
                         key.startsWith('freeze-') &&
                         !persistenceGenerationById.has(key) &&
                         !activeIds.has(key) &&
-                        !durableOwnedIds.has(key) &&
+                        !durableOwnedIds.ids.has(key) &&
                         !protectedKeys.has(key) &&
                         !checkpointRetainedIds.has(key) &&
                         !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
@@ -2768,6 +2828,9 @@ export const audioBufferCache = {
                     metaStore.delete(key);
                 }
                 await awaitTransaction(tx);
+                if (!isAudioOwnershipCurrent(durableOwnedIds)) {
+                    return;
+                }
                 for (const key of collectedKeys) {
                     if (durabilitySourceById.get(key) === collectedSources.get(key)) {
                         evictCachedBuffer(key);
@@ -2792,7 +2855,9 @@ export const audioBufferCache = {
                     staleBeforeMs: threshold,
                 });
                 deletedCount += recoveryCollection.count;
+                requireCurrentAudioOwnership(durableOwnedIds);
                 const db = await openDb();
+                requireCurrentAudioOwnership(durableOwnedIds);
                 const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
                 const metaStore = tx.objectStore(META_STORE_NAME);
@@ -2814,6 +2879,7 @@ export const audioBufferCache = {
                     awaitRequest(store.getAllKeys()),
                     readCheckpointRetainedBufferIds(tx),
                 ]);
+                requireCurrentAudioOwnership(durableOwnedIds, tx);
 
                 const migratedIds = new Set<IDBValidKey>(keys);
                 const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
@@ -2822,7 +2888,7 @@ export const audioBufferCache = {
                     const meta = metas[index]!;
                     const key = keys[index]! as string;
                     if (
-                        durableOwnedIds.has(key) ||
+                        durableOwnedIds.ids.has(key) ||
                         checkpointRetainedIds.has(key) ||
                         persistenceGenerationById.has(key) ||
                         preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
@@ -2874,11 +2940,12 @@ export const audioBufferCache = {
                         migratedIds.has(key) ||
                         checkpointRetainedIds.has(key) ||
                         persistenceGenerationById.has(key) ||
-                        durableOwnedIds.has(key)
+                        durableOwnedIds.ids.has(key)
                     ) {
                         continue;
                     }
                     const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
+                    requireCurrentAudioOwnership(durableOwnedIds, tx);
                     if (!record) {
                         continue;
                     }
@@ -2923,12 +2990,15 @@ export const audioBufferCache = {
 
                 // The count is reported only for deletes that committed.
                 await awaitTransaction(tx);
+                deletedCount += pendingDeletedCount;
+                if (!isAudioOwnershipCurrent(durableOwnedIds)) {
+                    return;
+                }
                 for (const [key, source] of collectedSources) {
                     if (durabilitySourceById.get(key) === source) {
                         evictCachedBuffer(key);
                     }
                 }
-                deletedCount += pendingDeletedCount;
             });
         } catch (error) {
             logger.warn('[audioBufferCache] Age-based collection failed', { error });
@@ -2952,8 +3022,10 @@ export function garbageCollectAudioBufferCacheBySize(
             }
             const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
             deletedCount += recoveryCollection.count;
+            requireCurrentAudioOwnership(durableOwnedIds);
             const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
             const db = await openDb();
+            requireCurrentAudioOwnership(durableOwnedIds);
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const metaStore = tx.objectStore(META_STORE_NAME);
@@ -2978,6 +3050,7 @@ export function garbageCollectAudioBufferCacheBySize(
                 awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
                 awaitRequest(metaStore.getAllKeys()),
             ]);
+            requireCurrentAudioOwnership(durableOwnedIds, tx);
 
             // Sort by access time ascending (oldest first)
             const entries = metas
@@ -2985,7 +3058,7 @@ export function garbageCollectAudioBufferCacheBySize(
                     id: keys[index]! as string,
                     lastAccessed: meta.lastAccessed,
                     protected:
-                        durableOwnedIds.has(keys[index]! as string) ||
+                        durableOwnedIds.ids.has(keys[index]! as string) ||
                         checkpointRetainedIds.has(keys[index]! as string) ||
                         isProtectedFromCollection(meta),
                     size: meta.sizeInBytes,
@@ -3016,12 +3089,15 @@ export function garbageCollectAudioBufferCacheBySize(
             }
             // The count is reported only for deletes that committed.
             await awaitTransaction(tx);
+            deletedCount += pendingDeletedCount;
+            if (!isAudioOwnershipCurrent(durableOwnedIds)) {
+                return deletedCount;
+            }
             for (const [key, source] of collectedSources) {
                 if (durabilitySourceById.get(key) === source) {
                     evictCachedBuffer(key);
                 }
             }
-            deletedCount += pendingDeletedCount;
         } catch (error) {
             logger.warn('[audioBufferCache] Size-based collection failed', { error });
             return deletedCount;
