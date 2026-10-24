@@ -291,14 +291,10 @@ describe('createDecodedBankResource', () => {
         });
 
         const bankPromise = loadBank(resource);
-        await flushPromises();
-
-        expect(loadSample).toHaveBeenCalledTimes(2);
+        await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(2));
 
         deferredSamples[0]?.resolve(createSample(1));
-        await flushPromises();
-
-        expect(loadSample).toHaveBeenCalledTimes(3);
+        await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(3));
 
         deferredSamples[1]?.resolve(createSample(2));
         deferredSamples[2]?.resolve(createSample(3));
@@ -326,9 +322,7 @@ describe('createDecodedBankResource', () => {
         });
 
         const bankPromise = loadBank(resource);
-        await flushPromises();
-
-        expect(loadSample).toHaveBeenCalledTimes(2);
+        await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(2));
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 2, queuedSampleLoads: 0 });
 
         firstSample.resolve(createSample(1));
@@ -408,11 +402,10 @@ describe('createDecodedBankResource', () => {
         const controller = new AbortController();
 
         const abandoned = loadBank(resource, { ...DEFAULT_INPUT, signal: controller.signal });
-        await flushPromises();
+        await vi.waitFor(() => expect(observedSignals).toHaveLength(1));
         controller.abort();
 
         await expect(abandoned).rejects.toMatchObject({ name: 'AbortError' });
-        await flushPromises();
         expect(observedSignals[0]?.aborted).toBe(true);
         expect(resource.getDiagnostics()).toMatchObject({ inFlightBanks: 0, resolvedBanks: 0 });
         expect(loadManifest).toHaveBeenCalledTimes(1);
@@ -611,7 +604,7 @@ describe('createDecodedBankResource', () => {
         });
 
         const staleLoad = loadBank(resource);
-        await flushPromises();
+        await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(1));
         resource.invalidate(DEFAULT_INPUT);
 
         await expect(staleLoad).rejects.toMatchObject({ name: 'AbortError' });
@@ -622,9 +615,9 @@ describe('createDecodedBankResource', () => {
         });
 
         const retry = loadBank(resource);
-        await flushPromises();
-        expect(loadSample).toHaveBeenCalledTimes(1);
-        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, queuedSampleLoads: 1 });
+        await vi.waitFor(() =>
+            expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, queuedSampleLoads: 1 })
+        );
 
         sample.resolve(createSample(1));
         await expect(retry).resolves.toMatchObject({ decodedByteLength: 4 });
@@ -672,11 +665,15 @@ describe('createDecodedBankResource', () => {
         });
 
         const cancelledLoad = loadBank(resource);
-        await flushPromises();
+        await vi.waitFor(() =>
+            expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 2, inFlightBanks: 1 })
+        );
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 2, decodedBytes: 0, inFlightBanks: 1 });
 
         decodedSample.resolve(createSample(1));
-        await flushPromises();
+        await vi.waitFor(() =>
+            expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 4, inFlightBanks: 1 })
+        );
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 4, inFlightBanks: 1 });
 
         resource.invalidate(DEFAULT_INPUT);
@@ -687,7 +684,7 @@ describe('createDecodedBankResource', () => {
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 4, resolvedBanks: 1 });
 
         pendingSample.resolve(createSample(2));
-        await flushPromises();
+        await vi.waitFor(() => expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0 }));
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, decodedBytes: 4, resolvedBanks: 1 });
     });
 
