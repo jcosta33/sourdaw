@@ -173,7 +173,7 @@ const SUPERSESSION_RECEIPT_PREFIX = 'Superseded by #';
 type ProofMarker = Pick<IssueComment, 'id' | 'fullDatabaseId' | 'body' | 'authorNodeId' | 'authorType'>;
 type PullRequestProof = Pick<
     SupersededPullRequest,
-    'number' | 'state' | 'head' | 'headRefName' | 'repository' | 'base' | 'merged' | 'closedAt'
+    'number' | 'state' | 'head' | 'headRefName' | 'headRepository' | 'repository' | 'base' | 'merged' | 'closedAt'
 >;
 type StackedParentProof = {
     parent: PullRequestProof;
@@ -189,6 +189,7 @@ function pullRequestProof(value: SupersededPullRequest): PullRequestProof {
         state: value.state,
         head: value.head,
         headRefName: value.headRefName,
+        headRepository: value.headRepository,
         repository: value.repository,
         base: value.base,
         merged: value.merged,
@@ -284,6 +285,11 @@ function inspectStackedParentProof(
     if (parent.headRefName !== old.base) {
         fail(`superseded parent PR #${parentNumber} does not own old base ${old.base}`);
     }
+    if (parent.headRepository !== old.repository) {
+        fail(
+            `superseded parent PR #${parentNumber} head repository does not match child base repository ${old.repository}`
+        );
+    }
     if (parent.base !== replacement.base) {
         fail(`superseded parent PR #${parentNumber} does not target replacement base ${replacement.base}`);
     }
@@ -378,6 +384,15 @@ export function supersedePullRequest(
             lineageMarker.id,
             closeReceipt
         );
+        if (stackedParentProof !== undefined) {
+            try {
+                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+            } catch (error) {
+                fail(
+                    `stacked supersession authority is ambiguous after closing PR #${oldNumber}: ${errorMessage(error)}`
+                );
+            }
+        }
     } catch (error) {
         compensateSupersession(oldNumber, before, transaction, closeAttempted, closeReceipt, port, error);
     }
