@@ -60,12 +60,13 @@ const {
         return { persist: () => Promise.resolve(true), publish: () => 0 };
     }
     const engineGraph = { value: 'old-project' };
-    const crdtAuthority = { value: 'Old Project' };
+    const crdtAuthority = { value: 'Old Project', epoch: 0 };
     const resetAudioGraph = vi.fn(() => {
         engineGraph.value = 'empty';
     });
     const resetCrdtProject = vi.fn((name: string, onAuthorityReplaced?: () => void) => {
         crdtAuthority.value = name;
+        crdtAuthority.epoch += 1;
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     });
@@ -139,6 +140,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${crdtAuthority.epoch}`),
     captureProjectRevision: vi.fn(),
     compactProject,
     createCrdtDoc: vi.fn(),
@@ -332,6 +334,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
+        crdtAuthority.epoch = 0;
         importCachedAudioBuffers.mockClear();
         notifyUser.mockClear();
         prepareCachedAudioBuffersFromIdb.mockClear();

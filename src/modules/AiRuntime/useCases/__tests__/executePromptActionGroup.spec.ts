@@ -69,9 +69,11 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
     captureProjectRevision: () => mocks.projectRevision.value,
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: vi.fn(() => undefined),
+    getCrdtDocIds: vi.fn(() => []),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     subscribeToCrdtChanges: vi.fn<typeof import('#/modules/CrdtDocument/useCases').subscribeToCrdtChanges>(() =>
         vi.fn()
