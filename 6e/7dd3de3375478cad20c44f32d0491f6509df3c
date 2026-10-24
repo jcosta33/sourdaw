@@ -1,0 +1,21 @@
+crates/daw-dsp/tests/true_peak_tech3341_reference.rs
+  s_59e31a5c6f3e31::t_7d9043e02459d4 1-115
+src/utils/audioMetering/__tests__/measureTruePeak.spec.ts
+  s_59e31a5c6f3e31::t_7d9043e02459d4 22-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e7dd3de3375478cad20c44f32d0491f6509df3c",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
