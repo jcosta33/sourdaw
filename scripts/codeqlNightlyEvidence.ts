@@ -1,8 +1,14 @@
 /**
  * Trusted consumer for `nightly-evidence-v1`. The future Nightly producer must
  * upload one ZIP named `nightly-evidence-v1` containing exactly `evidence.json`.
- * The JSON binds the run identity; jobs and CodeQL analysis are read again from
- * GitHub. This consumer is deliberately inert until that producer exists.
+ * Its JSON must bind `codeqlSarifId` to the actual `sarif-id` output from this
+ * run attempt's successful `github/codeql-action/analyze` step, never a lookup
+ * by SHA or time. The default-branch producer is trusted for that mapping:
+ * GitHub's analysis `sarif_id` proves upload identity, not workflow-run identity.
+ * IDs are opaque ASCII letters, digits, underscores or hyphens, 1–128 characters.
+ * Jobs and the declared upload's analysis are read again from GitHub. A missing
+ * artifact remains unsupported; a present artifact without the ID is invalid.
+ * This consumer is deliberately inert until that producer exists.
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -16,6 +22,7 @@ const WORKFLOW = '.github/workflows/nightly.yml';
 const ARTIFACT = 'nightly-evidence-v1';
 const ANALYSIS_KEY = `${WORKFLOW}:codeql`;
 const SHA = /^[0-9a-f]{40}$/;
+const SARIF_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_LEG = /^[A-Za-z0-9 ()/.-]{1,90}$/;
 const UNSUCCESSFUL_CONCLUSIONS = ['failure', 'cancelled', 'timed_out'];
 const SUPPORTED_JOB_CONCLUSIONS = ['success', 'neutral', 'skipped', ...UNSUCCESSFUL_CONCLUSIONS];
@@ -106,10 +113,14 @@ async function loadScheduledRun(eventValue: unknown, port: EvidencePort): Promis
     return { run, runId, headSha };
 }
 
-function assertEvidenceIdentity(evidence: RecordValue, runId: number, headSha: string): void {
+function assertEvidenceIdentity(evidence: RecordValue, runId: number, headSha: string): string {
+    const codeqlSarifId = evidence.codeqlSarifId;
+    if (typeof codeqlSarifId !== 'string' || !SARIF_ID.test(codeqlSarifId)) {
+        throw new Error('Invalid CodeQL SARIF upload ID');
+    }
     if (
         Object.keys(evidence).sort().join(',') !==
-            'attempt,baseSha,event,headRepositoryId,headSha,pullRequest,repositoryId,runId,version,workflowPath' ||
+            'attempt,baseSha,codeqlSarifId,event,headRepositoryId,headSha,pullRequest,repositoryId,runId,version,workflowPath' ||
         evidence.version !== 1 ||
         evidence.repositoryId !== REPOSITORY_ID ||
         evidence.workflowPath !== WORKFLOW ||
@@ -123,14 +134,15 @@ function assertEvidenceIdentity(evidence: RecordValue, runId: number, headSha: s
     ) {
         throw new Error('Evidence identity disagrees with fetched run');
     }
+    return codeqlSarifId;
 }
 
-async function hasValidEvidence(port: EvidencePort, runId: number, headSha: string): Promise<boolean> {
+async function loadEvidenceUploadId(port: EvidencePort, runId: number, headSha: string): Promise<string | undefined> {
     // The unfiltered, fully paginated list is required: a second same-name
     // artifact hidden on another page is an ambiguity, not a replacement.
     const artifacts = (await port.listArtifacts(runId)).filter((entry) => record(entry, 'artifact').name === ARTIFACT);
     if (artifacts.length === 0) {
-        return false;
+        return undefined;
     }
     if (artifacts.length !== 1) {
         throw new Error('Duplicate nightly evidence artifacts');
@@ -167,15 +179,15 @@ async function hasValidEvidence(port: EvidencePort, runId: number, headSha: stri
         throw new Error('Evidence JSON exceeds bound');
     }
     const evidence = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), 'evidence');
-    assertEvidenceIdentity(evidence, runId, headSha);
-    return true;
+    return assertEvidenceIdentity(evidence, runId, headSha);
 }
 
 async function observedResult(
     port: EvidencePort,
     run: RecordValue,
     runId: number,
-    headSha: string
+    headSha: string,
+    codeqlSarifId: string
 ): Promise<{ failedLegs: string[]; analysisId: number }> {
     const jobs = (await port.listJobs(runId, 1)).map((job) => record(job, 'job'));
     if (
@@ -201,10 +213,14 @@ async function observedResult(
     if (run.conclusion !== 'success' && failedLegs.length === 0) {
         throw new Error('Unsuccessful run has no unsuccessful job evidence');
     }
+    if (run.conclusion === 'success' && failedLegs.length > 0) {
+        throw new Error('Successful run has unsuccessful job evidence');
+    }
     const analyses = (await port.listAnalyses('refs/heads/main'))
         .map((analysis) => record(analysis, 'CodeQL analysis'))
         .filter(
             (analysis) =>
+                analysis.sarif_id === codeqlSarifId &&
                 analysis.analysis_key === ANALYSIS_KEY &&
                 analysis.commit_sha === headSha &&
                 analysis.ref === 'refs/heads/main' &&
@@ -233,10 +249,11 @@ export async function validateNightlyEvidence(eventValue: unknown, port: Evidenc
         return selected;
     }
     const { run, runId, headSha } = selected;
-    if (!(await hasValidEvidence(port, runId, headSha))) {
+    const codeqlSarifId = await loadEvidenceUploadId(port, runId, headSha);
+    if (codeqlSarifId === undefined) {
         return { kind: 'unsupported', reason: 'legacy-producer' };
     }
-    const result = await observedResult(port, run, runId, headSha);
+    const result = await observedResult(port, run, runId, headSha, codeqlSarifId);
     return { kind: 'validated', runId, attempt: 1, ...result };
 }
 

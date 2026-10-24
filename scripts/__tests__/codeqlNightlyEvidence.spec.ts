@@ -11,6 +11,8 @@ import { type EvidencePort, githubEvidencePort, validateNightlyEvidence } from '
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
 const ID = 1183242917;
+const SARIF_ID = '6c81cd8e-b078-4ac3-a3be-1dad7dbd0b53';
+const OTHER_SARIF_ID = '47177e22-5596-11eb-80a1-c1e54ef945c6';
 const zip = (body: unknown) =>
     Buffer.from(zipSync({ 'evidence.json': new TextEncoder().encode(JSON.stringify(body)) }));
 const evidence = () => ({
@@ -24,6 +26,7 @@ const evidence = () => ({
     headRepositoryId: ID,
     baseSha: null,
     pullRequest: null,
+    codeqlSarifId: SARIF_ID,
 });
 
 function fixture() {
@@ -80,6 +83,7 @@ function fixture() {
             ref: 'refs/heads/main',
             tool: { name: 'CodeQL' },
             created_at: '2026-10-11T01:30:00Z',
+            sarif_id: SARIF_ID,
         },
     ];
     const calls = { downloads: 0, jobs: 0, analyses: 0, ancestry: 0 };
@@ -104,6 +108,13 @@ function fixture() {
         },
     };
     return { event, run, artifact, jobs, analyses, calls, port, bytes };
+}
+
+function replaceEvidence(f: ReturnType<typeof fixture>, body: unknown): void {
+    const bytes = zip(body);
+    f.port.downloadArtifact = async () => bytes;
+    f.artifact.size_in_bytes = bytes.length;
+    f.artifact.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 }
 
 describe('trusted nightly evidence consumer', () => {
@@ -263,6 +274,48 @@ describe('trusted nightly evidence consumer', () => {
         expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
     });
 
+    it('refuses another overlapping run upload with the same SHA, workflow, ref and timestamps', async () => {
+        const f = fixture();
+        f.port.listAnalyses = async () => f.analyses.map((analysis) => ({ ...analysis, sarif_id: OTHER_SARIF_ID }));
+
+        await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('run-bound CodeQL analysis');
+    });
+
+    it('selects only the declared upload when overlapping runs have otherwise identical analyses', async () => {
+        const f = fixture();
+        f.port.listAnalyses = async () => [
+            ...f.analyses.map((analysis) => ({ ...analysis, id: 124, sarif_id: OTHER_SARIF_ID })),
+            ...f.analyses.map((analysis) => ({ ...analysis, sarif_id: SARIF_ID })),
+        ];
+
+        await expect(validateNightlyEvidence(f.event, f.port)).resolves.toMatchObject({
+            kind: 'validated',
+            analysisId: 123,
+        });
+    });
+
+    it.each([undefined, null, 123, '', ' ', 'id\n', 'id/other', 'x'.repeat(129), {}, []])(
+        'refuses missing or invalid producer upload identity: %j',
+        async (codeqlSarifId) => {
+            const f = fixture();
+            replaceEvidence(f, { ...evidence(), codeqlSarifId });
+
+            await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('Invalid CodeQL SARIF upload ID');
+            expect(f.calls.jobs).toBe(0);
+            expect(f.calls.analyses).toBe(0);
+        }
+    );
+
+    it.each([undefined, null, 123, '', OTHER_SARIF_ID])(
+        'refuses a server analysis without the declared upload identity: %j',
+        async (sarif_id) => {
+            const f = fixture();
+            f.port.listAnalyses = async () => f.analyses.map((analysis) => ({ ...analysis, sarif_id }));
+
+            await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('run-bound CodeQL analysis');
+        }
+    );
+
     it.each(['failure', 'timed_out', 'cancelled'])('reports an unsuccessful %s terminal leg', async (conclusion) => {
         const f = fixture();
         f.run.conclusion = conclusion;
@@ -320,6 +373,20 @@ describe('trusted nightly evidence consumer', () => {
         });
         expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
     });
+
+    it.each(['failure', 'timed_out', 'cancelled'])(
+        'refuses a successful run with an unsuccessful %s terminal leg before it can publish a failure',
+        async (conclusion) => {
+            const f = fixture();
+            f.run.conclusion = 'success';
+            f.jobs.splice(1, 1, { id: 2, name: 'End-to-end report', status: 'completed', conclusion });
+
+            await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow(
+                'Successful run has unsuccessful job evidence'
+            );
+            expect(f.calls.analyses).toBe(0);
+        }
+    );
 
     it.each([
         { status: 'in_progress', conclusion: null },
@@ -449,6 +516,7 @@ describe('trusted nightly evidence consumer', () => {
             ref: 'refs/heads/main',
             tool: { name: 'CodeQL' },
             created_at: '2026-10-11T01:30:00Z',
+            sarif_id: SARIF_ID,
         });
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('CodeQL analysis');
         const analysis = f.analyses.at(0);
