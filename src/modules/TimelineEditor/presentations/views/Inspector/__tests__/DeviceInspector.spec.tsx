@@ -297,6 +297,7 @@ describe('DeviceInspector', () => {
                 'decay',
                 'sustain',
                 'release',
+                'gain',
                 'freq',
                 'gate',
             ].join(',')
