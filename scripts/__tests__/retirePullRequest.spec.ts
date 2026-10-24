@@ -167,7 +167,7 @@ describe('native obsolete pull-request retirement', () => {
         expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual(['comment', 'close']);
     });
 
-    it.each([
+    const refusalCases: [string, string, RetirementRecord, RetirementReviewState, string, string][] = [
         ['wrong actor', REVIEWER_BOT_NODE_ID, record, reviewState(), head, 'main'],
         ['moved head', AUTHOR_BOT_NODE_ID, record, reviewState(), 'b'.repeat(40), 'main'],
         ['moved base', AUTHOR_BOT_NODE_ID, record, reviewState(), head, 'other'],
@@ -188,7 +188,9 @@ describe('native obsolete pull-request retirement', () => {
             head,
             'main',
         ],
-    ] as const)('refuses %s before any remote write', (_label, actor, input, reviews, actualHead, base) => {
+    ];
+
+    it.each(refusalCases)('refuses %s before any remote write', (_label, actor, input, reviews, actualHead, base) => {
         const { calls, port } = fixture({ head: actualHead, base, reviewState: reviews });
 
         expect(() => retirePullRequest(pr, head, input, actor, port)).toThrow();
