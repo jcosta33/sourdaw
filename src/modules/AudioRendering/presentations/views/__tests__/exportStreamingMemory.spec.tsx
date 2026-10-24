@@ -1,3 +1,8 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve as resolvePath } from 'node:path';
+
 import { type ReactNode } from 'react';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -14,6 +19,178 @@ import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings } from '../exportSettings';
+
+const GC_CASE_NAME = 'observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems';
+const GC_FULL_NAME = `connected stem export output ownership ${GC_CASE_NAME}`;
+const GC_FILTER_NAME = `connected stem export output ownership > ${GC_CASE_NAME}`;
+const GC_SPEC = 'src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx';
+const GC_CHILD_MARKER = 'SOURDAW_EXPORT_STREAMING_GC_CHILD';
+const GC_CHILD_DEADLINE_MS = 150_000;
+const GC_CHILD_OUTPUT_LIMIT = 1024 * 1024;
+const GC_CASE_TIMEOUT_MS =
+    process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function' ? 120_000 : 180_000;
+
+function stopGcChild(pid: number | undefined): void {
+    if (pid === undefined) {
+        return;
+    }
+    if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000, stdio: 'ignore' });
+        return;
+    }
+    try {
+        process.kill(-pid, 'SIGKILL');
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return;
+        }
+        throw error;
+    }
+}
+
+async function runGcChild(cwd: string, reportPath: string): Promise<string> {
+    const child = spawn(
+        process.execPath,
+        [
+            join(cwd, 'node_modules/vitest/vitest.mjs'),
+            'run',
+            GC_SPEC,
+            '--pool=forks',
+            '--execArgv=--expose-gc',
+            '--maxWorkers=1',
+            `--testNamePattern=^${GC_FILTER_NAME}$`,
+            '--reporter=default',
+            '--reporter=json',
+            `--outputFile=${reportPath}`,
+        ],
+        { cwd, env: { ...process.env, [GC_CHILD_MARKER]: '1' }, detached: process.platform !== 'win32' }
+    );
+    let stdout = '';
+    let stderr = '';
+    let failure: Error | undefined;
+    const collect = (chunk: Buffer, stream: 'stdout' | 'stderr') => {
+        if (stream === 'stdout') {
+            stdout += chunk.toString();
+        } else {
+            stderr += chunk.toString();
+        }
+        if (stdout.length + stderr.length > GC_CHILD_OUTPUT_LIMIT && !failure) {
+            failure = new Error('GC child output exceeded its limit.');
+            stopGcChild(child.pid);
+        }
+    };
+    child.stdout.on('data', (chunk: Buffer) => collect(chunk, 'stdout'));
+    child.stderr.on('data', (chunk: Buffer) => collect(chunk, 'stderr'));
+    const timer = setTimeout(() => {
+        failure = new Error('GC child exceeded its 150-second deadline.');
+        stopGcChild(child.pid);
+    }, GC_CHILD_DEADLINE_MS);
+    try {
+        await new Promise<void>((resolve, reject) => {
+            child.once('error', (error) => {
+                failure = error;
+            });
+            child.once('close', (code, signal) => {
+                if (failure || code !== 0 || signal) {
+                    stopGcChild(child.pid);
+                    reject(
+                        new Error(`GC child failed (${String(code)}, ${String(signal)}): ${failure?.message ?? stderr}`)
+                    );
+                    return;
+                }
+                resolve();
+            });
+        });
+    } finally {
+        clearTimeout(timer);
+    }
+    return stdout;
+}
+
+function assertGcChildEvidence(cwd: string, reportPath: string, stdout: string): void {
+    const report: unknown = JSON.parse(readFileSync(reportPath, 'utf8'));
+    if (report === null || typeof report !== 'object') {
+        throw new TypeError('GC child returned no test report.');
+    }
+    const files: unknown = Reflect.get(report, 'testResults');
+    if (
+        Reflect.get(report, 'success') !== true ||
+        Reflect.get(report, 'numPassedTests') !== 1 ||
+        Reflect.get(report, 'numFailedTests') !== 0 ||
+        !Array.isArray(files) ||
+        files.length !== 1
+    ) {
+        throw new Error('GC child did not report one passed focused case.');
+    }
+    const file: unknown = files[0];
+    const fileName: unknown = file !== null && typeof file === 'object' ? Reflect.get(file, 'name') : undefined;
+    if (
+        file === null ||
+        typeof file !== 'object' ||
+        typeof fileName !== 'string' ||
+        realpathSync(fileName) !== realpathSync(resolvePath(cwd, GC_SPEC)) ||
+        Reflect.get(file, 'status') !== 'passed'
+    ) {
+        throw new Error('GC child report did not come from the current spec.');
+    }
+    const assertions: unknown = Reflect.get(file, 'assertionResults');
+    if (!Array.isArray(assertions)) {
+        throw new TypeError('GC child report has no assertions.');
+    }
+    const passed = assertions.filter(
+        (assertion: unknown) =>
+            assertion !== null &&
+            typeof assertion === 'object' &&
+            Reflect.get(assertion, 'status') === 'passed' &&
+            Reflect.get(assertion, 'fullName') === GC_FULL_NAME
+    );
+    if (
+        passed.length !== 1 ||
+        assertions.some(
+            (assertion: unknown) =>
+                assertion !== null && typeof assertion === 'object' && Reflect.get(assertion, 'status') === 'failed'
+        )
+    ) {
+        throw new Error('GC child did not execute the named measurement case exactly once.');
+    }
+    const receiptLine = stdout.split('\n').find((line) => line.includes('"sampledLiveExportBytesPeak":'));
+    const receipt: unknown = receiptLine && JSON.parse(receiptLine.slice(receiptLine.indexOf('{')));
+    if (receipt === null || typeof receipt !== 'object') {
+        throw new Error('GC child emitted no ownership receipt.');
+    }
+    const b = 44100 * 3 * 2 * Float32Array.BYTES_PER_ELEMENT;
+    const peak = Reflect.get(receipt, 'sampledLiveExportBytesPeak');
+    const writes = Reflect.get(receipt, 'sinkWrites');
+    const samples = Reflect.get(receipt, 'ownershipCheckpoints');
+    if (
+        Reflect.get(receipt, 'pcmBytesB') !== b ||
+        typeof peak !== 'number' ||
+        !Number.isInteger(peak) ||
+        peak <= b ||
+        peak > 2 * b ||
+        typeof writes !== 'number' ||
+        !Number.isInteger(writes) ||
+        writes <= 64 * 3 ||
+        typeof samples !== 'number' ||
+        !Number.isInteger(samples) ||
+        samples <= 64
+    ) {
+        throw new Error('GC child ownership receipt violates the measurement bounds.');
+    }
+    process.stdout.write(`${JSON.stringify(receipt)}\n`);
+}
+
+async function runGcMeasurementInChild(): Promise<void> {
+    const cwd = process.cwd();
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-export-gc-'));
+    try {
+        const reportPath = join(directory, 'report.json');
+        const stdout = await runGcChild(cwd, reportPath);
+        assertGcChildEvidence(cwd, reportPath, stdout);
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+}
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
 
@@ -573,131 +750,140 @@ describe('connected stem export output ownership', () => {
         }
         vi.unstubAllGlobals();
     }, 20000);
-    it('observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems', async () => {
-        const gc: unknown = Reflect.get(globalThis, 'gc');
-        if (typeof gc !== 'function') {
-            throw new TypeError('Run this ownership probe with node --expose-gc.');
-        }
-        stemRender.frames = 44100 * 3;
-        const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;
-        vi.mocked(loadExportSettings).mockReturnValueOnce({
-            formats: ['wav', 'mp3', 'flac'],
-            sampleRate: 44100,
-            bitDepth: 24,
-            mp3BitRate: 128,
-            dither: 'seeded',
-            normalization: 'off',
-        });
-        const observed = new WeakSet<ArrayBufferLike>();
-        const allocations: WeakRef<ArrayBufferLike>[] = [];
-        const track = (buffer: ArrayBufferLike) => {
-            if (!observed.has(buffer)) {
-                observed.add(buffer);
-                allocations.push(new WeakRef(buffer));
+    it(
+        GC_CASE_NAME,
+        async () => {
+            const gc: unknown = Reflect.get(globalThis, 'gc');
+            if (typeof gc !== 'function') {
+                if (process.env[GC_CHILD_MARKER] === '1') {
+                    throw new TypeError('Run this ownership probe with node --expose-gc.');
+                }
+                await runGcMeasurementInChild();
+                return;
             }
-        };
-        let collecting = true;
-        let peak = 0;
-        const constructors = [
-            'ArrayBuffer',
-            'Float32Array',
-            'Int32Array',
-            'Int16Array',
-            'Int8Array',
-            'Uint8Array',
-            'Uint16Array',
-            'Uint32Array',
-        ] as const;
-        for (const name of constructors) {
-            const Original = globalThis[name];
-            vi.stubGlobal(
-                name,
-                new Proxy(Original, {
-                    construct(target, args) {
-                        const value = Reflect.construct(target, args);
-                        if (collecting) {
-                            if (ArrayBuffer.isView(value)) {
-                                track(value.buffer);
-                            } else if (value instanceof ArrayBuffer) {
-                                track(value);
+            stemRender.frames = 44100 * 3;
+            const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;
+            vi.mocked(loadExportSettings).mockReturnValueOnce({
+                formats: ['wav', 'mp3', 'flac'],
+                sampleRate: 44100,
+                bitDepth: 24,
+                mp3BitRate: 128,
+                dither: 'seeded',
+                normalization: 'off',
+            });
+            const observed = new WeakSet<ArrayBufferLike>();
+            const allocations: WeakRef<ArrayBufferLike>[] = [];
+            const track = (buffer: ArrayBufferLike) => {
+                if (!observed.has(buffer)) {
+                    observed.add(buffer);
+                    allocations.push(new WeakRef(buffer));
+                }
+            };
+            let collecting = true;
+            let peak = 0;
+            const constructors = [
+                'ArrayBuffer',
+                'Float32Array',
+                'Int32Array',
+                'Int16Array',
+                'Int8Array',
+                'Uint8Array',
+                'Uint16Array',
+                'Uint32Array',
+            ] as const;
+            for (const name of constructors) {
+                const Original = globalThis[name];
+                vi.stubGlobal(
+                    name,
+                    new Proxy(Original, {
+                        construct(target, args) {
+                            const value = Reflect.construct(target, args);
+                            if (collecting) {
+                                if (ArrayBuffer.isView(value)) {
+                                    track(value.buffer);
+                                } else if (value instanceof ArrayBuffer) {
+                                    track(value);
+                                }
                             }
-                        }
-                        return value;
-                    },
-                })
-            );
-        }
-        zipAllocation.observe = (bytes) => {
-            if (collecting) {
-                track(bytes.buffer);
+                            return value;
+                        },
+                    })
+                );
             }
-        };
-        let closed = false;
-        let writes = 0;
-        let samples = 0;
-        let resolveFinished: () => void = () => {};
-        let rejectFinished: (reason: unknown) => void = () => {};
-        const finished = new Promise<void>((resolve, reject) => {
-            resolveFinished = resolve;
-            rejectFinished = reject;
-        });
-        vi.stubGlobal('showSaveFilePicker', async () => ({
-            createWritable: async () => ({
-                write: async (bytes: Uint8Array) => {
+            zipAllocation.observe = (bytes) => {
+                if (collecting) {
                     track(bytes.buffer);
-                    writes++;
-                    // Sample at fixed ownership checkpoints. Full collections for every small MPEG
-                    // packet dominated the test itself; each checkpoint still includes every observed buffer.
-                    if (writes % 32 !== 1) {
-                        return;
-                    }
-                    samples++;
-                    // WeakRef targets are kept alive for the job that observed them. Advance a real
-                    // turn before GC; no fixed microtask count stands in for collection completion.
-                    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-                    gc();
-                    let live = 0;
-                    for (const reference of allocations) {
-                        live += reference.deref()?.byteLength ?? 0;
-                    }
-                    peak = Math.max(peak, live);
-                    expect(live).toBeLessThanOrEqual(2 * b);
-                },
-                close: async () => {
-                    closed = true;
-                    resolveFinished();
-                },
-                abort: async () => {
-                    rejectFinished(
-                        mocks.loggerError.mock.calls.at(-1)?.[0] ?? new Error('Streaming export aborted before commit.')
-                    );
-                },
-            }),
-        }));
-        try {
-            render(<ExportDialog open onClose={() => {}} />);
-            fireEvent.click(screen.getByTestId('export-mode-stems'));
-            fireEvent.click(screen.getByTestId('export-start'));
-            await finished;
-            expect(closed).toBe(true);
-            expect(ownership.rendered).toBe(64);
-            expect(ownership.peakRetained).toBe(1);
-            expect(writes).toBeGreaterThan(64 * 3);
-            expect(samples).toBeGreaterThan(64);
-            process.stdout.write(
-                `${JSON.stringify({
-                    pcmBytesB: b,
-                    sampledLiveExportBytesPeak: peak,
-                    sinkWrites: writes,
-                    ownershipCheckpoints: samples,
-                })}\n`
-            );
-            expect(peak).toBeGreaterThan(b);
-            expect(peak).toBeLessThanOrEqual(2 * b);
-        } finally {
-            collecting = false;
-            zipAllocation.observe = () => {};
-            vi.unstubAllGlobals();
-        }
-    }, 120000);
+                }
+            };
+            let closed = false;
+            let writes = 0;
+            let samples = 0;
+            let resolveFinished: () => void = () => {};
+            let rejectFinished: (reason: unknown) => void = () => {};
+            const finished = new Promise<void>((resolve, reject) => {
+                resolveFinished = resolve;
+                rejectFinished = reject;
+            });
+            vi.stubGlobal('showSaveFilePicker', async () => ({
+                createWritable: async () => ({
+                    write: async (bytes: Uint8Array) => {
+                        track(bytes.buffer);
+                        writes++;
+                        // Sample at fixed ownership checkpoints. Full collections for every small MPEG
+                        // packet dominated the test itself; each checkpoint still includes every observed buffer.
+                        if (writes % 32 !== 1) {
+                            return;
+                        }
+                        samples++;
+                        // WeakRef targets are kept alive for the job that observed them. Advance a real
+                        // turn before GC; no fixed microtask count stands in for collection completion.
+                        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                        gc();
+                        let live = 0;
+                        for (const reference of allocations) {
+                            live += reference.deref()?.byteLength ?? 0;
+                        }
+                        peak = Math.max(peak, live);
+                        expect(live).toBeLessThanOrEqual(2 * b);
+                    },
+                    close: async () => {
+                        closed = true;
+                        resolveFinished();
+                    },
+                    abort: async () => {
+                        rejectFinished(
+                            mocks.loggerError.mock.calls.at(-1)?.[0] ??
+                                new Error('Streaming export aborted before commit.')
+                        );
+                    },
+                }),
+            }));
+            try {
+                render(<ExportDialog open onClose={() => {}} />);
+                fireEvent.click(screen.getByTestId('export-mode-stems'));
+                fireEvent.click(screen.getByTestId('export-start'));
+                await finished;
+                expect(closed).toBe(true);
+                expect(ownership.rendered).toBe(64);
+                expect(ownership.peakRetained).toBe(1);
+                expect(writes).toBeGreaterThan(64 * 3);
+                expect(samples).toBeGreaterThan(64);
+                process.stdout.write(
+                    `${JSON.stringify({
+                        pcmBytesB: b,
+                        sampledLiveExportBytesPeak: peak,
+                        sinkWrites: writes,
+                        ownershipCheckpoints: samples,
+                    })}\n`
+                );
+                expect(peak).toBeGreaterThan(b);
+                expect(peak).toBeLessThanOrEqual(2 * b);
+            } finally {
+                collecting = false;
+                zipAllocation.observe = () => {};
+                vi.unstubAllGlobals();
+            }
+        },
+        GC_CASE_TIMEOUT_MS
+    );
 });
