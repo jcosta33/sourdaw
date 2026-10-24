@@ -2,83 +2,83 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
-    toLevainDeviceState: vi.fn(),
-    levainStore: { value: null as Record<string, { patch: unknown }> | null },
+    trackStore: {
+        value: {
+            tracks: [] as {
+                id: string;
+                devices: {
+                    id: string;
+                    type: string;
+                    deviceState?: { version: number; data: Record<string, string> };
+                }[];
+            }[],
+        },
+    },
 }));
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
+vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
 
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
-    executeUserAppAction: vi.fn(),
-}));
-
-vi.mock('../../models/LevainDeviceState', () => ({
-    toLevainDeviceState: mocks.toLevainDeviceState,
-}));
-
-vi.mock('../../stores/levainStore', () => ({
-    levainStore: mocks.levainStore,
-}));
-
+import { createDefaultPatch } from '../../models/LevainPatch';
+import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { commitLevainDeviceState } from '../commitLevainDeviceState';
 
 describe('commitLevainDeviceState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.levainStore.value = null;
-    });
-
-    it('is a no-op when the store is null', () => {
-        mocks.levainStore.value = null;
-
-        commitLevainDeviceState('dev-1');
-
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
-    });
-
-    it('is a no-op when the device has no patch', () => {
-        mocks.levainStore.value = {};
-
-        commitLevainDeviceState('dev-1');
-
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
-    });
-
-    it('serializes the patch and fires setDeviceState via executeAppAction', () => {
-        const patch = { instrument: 'piano' };
-        const serialized = { version: 1, instrument: 'piano' };
-        mocks.levainStore.value = { 'dev-1': { patch } };
-        mocks.toLevainDeviceState.mockReturnValue(serialized);
-
-        commitLevainDeviceState('dev-1');
-
-        expect(mocks.toLevainDeviceState).toHaveBeenCalledWith(patch);
-        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
-        const [action, options] = mocks.executeAppAction.mock.calls[0]!;
-        expect(action).toEqual({ type: 'setDeviceState', payload: { deviceId: 'dev-1', state: serialized } });
-        expect(options).toEqual({ skipMacroRecording: true });
-    });
-
-    it('fire-and-forget: does not await executeAppAction (void)', () => {
-        mocks.levainStore.value = { 'dev-1': { patch: {} } };
-        mocks.toLevainDeviceState.mockReturnValue({});
-
-        // The function returns void — no promise to await.
-        const result = commitLevainDeviceState('dev-1');
-
-        expect(result).toBeUndefined();
-    });
-
-    it('does not commit other devices when targeting a specific one', () => {
-        mocks.levainStore.value = {
-            'dev-1': { patch: { instrument: 'piano' } },
-            'dev-2': { patch: { instrument: 'strings' } },
+        levainStore.set({ a: { ...defaultLevainState, patch: createDefaultPatch('cello') } });
+        mocks.trackStore.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    devices: [
+                        {
+                            id: 'a',
+                            type: 'levain',
+                            deviceState: {
+                                version: 1,
+                                data: {
+                                    instrumentId: 'violin-1',
+                                    currentArticulation: 'sustain',
+                                    disclosureTier: 'expert',
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
         };
-        mocks.toLevainDeviceState.mockReturnValue({ instrument: 'piano' });
+    });
 
-        commitLevainDeviceState('dev-1');
+    it('carries the current peer tier through an identity write even before its session projection', () => {
+        commitLevainDeviceState('a');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceState',
+                payload: {
+                    deviceId: 'a',
+                    state: {
+                        version: 1,
+                        data: { instrumentId: 'cello', currentArticulation: 'sustain', disclosureTier: 'expert' },
+                    },
+                },
+            },
+            { skipMacroRecording: true, shouldExecute: expect.any(Function) }
+        );
+    });
 
-        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
-        const action = mocks.executeAppAction.mock.calls[0]?.[0];
-        expect(action.payload.deviceId).toBe('dev-1');
+    it('does not echo already projected identity or overwrite unknown versions', () => {
+        mocks.trackStore.value.tracks[0]!.devices[0]!.deviceState!.data.instrumentId = 'cello';
+        commitLevainDeviceState('a');
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        mocks.trackStore.value.tracks[0]!.devices[0]!.deviceState!.version = 2;
+        commitLevainDeviceState('a');
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('does not resurrect missing project or session devices', () => {
+        commitLevainDeviceState('missing');
+        mocks.trackStore.value = { tracks: [] };
+        commitLevainDeviceState('a');
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 });
