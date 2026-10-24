@@ -6,8 +6,8 @@
 //! responses.
 //!
 //! Cost is O(N) multiply-accumulates per sample per channel, with N the
-//! response length — 23.2 ms of it, capped at 4096 samples. There is no
-//! partitioning and no FFT here; a longer response would need one.
+//! response length — 23.2 ms of it through 192 kHz, capped at 4458 samples.
+//! There is no partitioning or FFT; this bound does not prove a render deadline.
 
 /// Duration of the built-in body IRs, in seconds.
 ///
@@ -15,9 +15,9 @@
 /// kept as a duration so the shape survives a change of rate.
 const BUILTIN_IR_SECONDS: f32 = 1024.0 / 44_100.0;
 
-/// Longest response the direct convolution runs: the per-sample cost is the
-/// length.
-const MAX_IR_LENGTH: usize = 4096;
+/// Rounded 1024/44100-second duration at 192 kHz. Keep the direct-form work
+/// bounded while retaining the full built-in response at the highest session rate.
+const MAX_IR_LENGTH: usize = 4_458;
 
 /// Rate at which a built-in body IR carries unit energy. Its energy at any
 /// other rate scales by this over the session rate, which keeps the body's
@@ -287,6 +287,61 @@ mod tests {
         &body.bodies[index]
     }
 
+    /// Render the selected response through the fully wet stereo path.
+    fn impulse_pcm(index: f32, sample_rate: f32, frames: usize) -> Vec<f32> {
+        let mut body = builtin_body_at(index, sample_rate);
+        (0..frames)
+            .map(|n| {
+                let impulse = if n == 0 { 1.0 } else { 0.0 };
+                let (left, right) = body.process_stereo(impulse, impulse);
+                assert_eq!(
+                    left, right,
+                    "identical inputs must not acquire a side signal"
+                );
+                left
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_high_rate_body_spans_the_physical_duration() {
+        let mut complete = true;
+        for (index, name) in BUILTIN_BODIES {
+            let body = builtin_body_at(index, 192_000.0);
+            let length = response(&body).len();
+            eprintln!("{name}: 192 kHz response length {length}, required 4458");
+            complete &= length == 4_458;
+            complete &= (length as f64 / 192_000.0 - 1024.0 / 44_100.0).abs() <= 1.0 / 192_000.0;
+        }
+        assert!(
+            complete,
+            "each 192 kHz body must span 1024/44100 seconds (4458 frames)"
+        );
+    }
+
+    #[test]
+    fn every_high_rate_body_renders_the_tail_past_frame_4095() {
+        let mut complete = true;
+        for (index, name) in BUILTIN_BODIES {
+            let heard = impulse_pcm(index, 192_000.0, 4_459);
+            let tail_energy: f64 = heard[4_096..4_458]
+                .iter()
+                .map(|s| f64::from(*s).powi(2))
+                .sum();
+            eprintln!("{name}: 192 kHz rendered energy after frame 4095 = {tail_energy}");
+            complete &= tail_energy > 0.0;
+            complete &= heard[4_394..4_458].iter().any(|sample| *sample != 0.0);
+            assert_eq!(
+                heard[4_458], 0.0,
+                "{name} must finish after its physical duration"
+            );
+        }
+        assert!(
+            complete,
+            "each body's fully wet impulse must retain its high-rate tail"
+        );
+    }
+
     /// Mean power gain of `ir`, in dB, over the audible band: its squared
     /// magnitude read every 10 Hz from 20 Hz to 20 kHz. Ten hertz resolves
     /// every body's resonance, which the 23.2 ms response widens to a main
@@ -347,7 +402,7 @@ mod tests {
     fn a_builtin_body_keeps_its_audible_band_level_at_every_context_rate() {
         for (index, name) in BUILTIN_BODIES {
             let reference = audible_band_level_db(response(&builtin_body(index)), BODY_TEST_RATE);
-            for sample_rate in [44_100.0_f32, 96_000.0] {
+            for sample_rate in [44_100.0_f32, 96_000.0, 176_400.0, 192_000.0] {
                 let level = audible_band_level_db(
                     response(&builtin_body_at(index, sample_rate)),
                     sample_rate,
@@ -436,57 +491,105 @@ mod tests {
         }
     }
 
-    /// A "wood" body resonates at 800 Hz. It has to do that at whatever rate
-    /// the audio context runs at — synthesizing the IR against a hardcoded
-    /// 44.1 kHz puts the resonance at 800·fs/44100, which is 871 Hz at 48 kHz
-    /// and 1600 Hz at 88.2 kHz: the body changes pitch with the session rate.
+    /// The named resonances belong to the physical bodies, independent of rate.
     #[test]
     fn a_builtin_body_resonates_at_the_same_hz_at_every_context_rate() {
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
-            let convolution = builtin_body_at(1.0, sample_rate);
+        for ((index, name), resonance) in BUILTIN_BODIES.into_iter().zip([2_200, 800, 3_500, 3_500])
+        {
+            for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0, 176_400.0, 192_000.0] {
+                let convolution = builtin_body_at(index, sample_rate);
+                let peak = dominant_frequency(
+                    response(&convolution),
+                    sample_rate,
+                    resonance - 400,
+                    resonance + 400,
+                );
+                let error = (peak - resonance as f32).abs() / resonance as f32;
+                assert!(
+                    error < 0.03,
+                    "{name} resonates at {peak} Hz at {sample_rate} Hz, expected {resonance} Hz"
+                );
+            }
+        }
+    }
 
-            let peak = dominant_frequency(response(&convolution), sample_rate, 400, 1_200);
-            let error = (peak - 800.0).abs() / 800.0;
+    /// The last tenth of the rendered response must reach the same point on
+    /// each body's decay as at 48 kHz. Retain the existing 0.02 peak-ratio band.
+    #[test]
+    fn a_builtin_body_decays_over_the_same_milliseconds_at_every_context_rate() {
+        let peak = |slice: &[f32]| slice.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+        let tail_ratio = |ir: &[f32]| {
+            let window = ir.len() / 10;
+            peak(&ir[ir.len() - window..]) / peak(&ir[..window])
+        };
+        for (index, name) in BUILTIN_BODIES {
+            let reference = impulse_pcm(index, BODY_TEST_RATE, 1_115);
+            let reference_tail = tail_ratio(&reference);
+            for (sample_rate, frames) in [
+                (44_100.0_f32, 1_024),
+                (48_000.0, 1_115),
+                (96_000.0, 2_229),
+                (176_400.0, 4_096),
+                (192_000.0, 4_458),
+            ] {
+                let ir = impulse_pcm(index, sample_rate, frames);
+                let duration = response(&builtin_body_at(index, sample_rate)).len() as f64
+                    / f64::from(sample_rate);
+                assert!(
+                    (duration - 1024.0 / 44_100.0).abs() <= 1.0 / f64::from(sample_rate),
+                    "the {name} body lasts {duration} seconds at {sample_rate} Hz"
+                );
+                let tail = tail_ratio(&ir);
+                assert!(
+                    (tail - reference_tail).abs() < 0.02,
+                    "the {name} body ends at {tail} of its peak at {sample_rate} Hz, \
+                     against {reference_tail} at 48 kHz"
+                );
+            }
+        }
+    }
+
+    /// Rates unaffected by the cap change define the physical sampling
+    /// envelope. Deep notches vary more than broadband gain as sample times
+    /// move; retain the existing 0.05 dB shape precision around that envelope.
+    fn assert_high_rate_shape(index: f32, name: &str, frequencies: &[f32]) {
+        let reference = [
+            (44_100.0_f32, 1_024),
+            (48_000.0, 1_115),
+            (96_000.0, 2_229),
+            (176_400.0, 4_096),
+        ]
+        .map(|(rate, frames)| (rate, impulse_pcm(index, rate, frames)));
+        let heard = impulse_pcm(index, 192_000.0, 4_458);
+        for &hz in frequencies {
+            let mut low = f64::INFINITY;
+            let mut high = f64::NEG_INFINITY;
+            for (rate, pcm) in &reference {
+                let db = 20.0 * amplitude_at(pcm, hz, *rate).log10();
+                low = low.min(db);
+                high = high.max(db);
+            }
+            let db = 20.0 * amplitude_at(&heard, hz, 192_000.0).log10();
             assert!(
-                error < 0.03,
-                "wood body resonates at {peak} Hz when the context runs at \
-                 {sample_rate} Hz; it is named for 800 Hz"
+                db >= low - 0.05 && db <= high + 0.05,
+                "{name} at {hz} Hz: {db:.6} dB at 192 kHz, outside the unchanged-rate \
+                 sampling envelope [{low:.6}, {high:.6}] dB plus 0.05 dB shape precision"
             );
         }
     }
 
-    /// Frequency is only half of what a body is. Its envelope is written in
-    /// seconds too, so the IR has to span the same milliseconds and reach the
-    /// same point on its decay at every rate — a fixed 1024-sample length cuts
-    /// the wood body at 0.40 of its peak at 44.1 kHz and 0.65 at 96 kHz, which
-    /// is a different body.
     #[test]
-    fn a_builtin_body_decays_over_the_same_milliseconds_at_every_context_rate() {
-        let mut reference_tail = None;
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
-            let convolution = builtin_body_at(1.0, sample_rate);
-            let ir = response(&convolution);
-
-            let duration_ms = ir.len() as f32 / sample_rate * 1_000.0;
-            assert!(
-                (duration_ms - 23.22).abs() < 0.1,
-                "the wood body lasts {duration_ms} ms at {sample_rate} Hz"
-            );
-
-            // Envelope at the truncation point, against the normalized peak.
-            let window = ir.len() / 10;
-            let peak = |slice: &[f32]| slice.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
-            let tail = peak(&ir[ir.len() - window..]) / peak(&ir[..window]);
-            match reference_tail {
-                None => reference_tail = Some(tail),
-                Some(expected) => assert!(
-                    (tail - expected).abs() < 0.02,
-                    "the wood body is at {tail} of its peak when it ends at \
-                     {sample_rate} Hz, against {expected} at 44.1 kHz — the decay \
-                     still tracks the session rate"
-                ),
-            }
+    fn a_builtin_body_keeps_its_rendered_spectral_shape_at_192_khz() {
+        for ((index, name), (_, shape)) in BUILTIN_BODIES.into_iter().zip(PRE_CHANGE_SHAPE_DB) {
+            assert_high_rate_shape(index, name, &shape.map(|(hz, _)| hz));
         }
+    }
+
+    /// The original high-rate truncation moved this bin by about 2.15 dB.
+    /// Keep it separate so the spectral oracle runs even when length fails.
+    #[test]
+    fn the_192_khz_wood_body_keeps_its_one_khz_response() {
+        assert_high_rate_shape(1.0, "wood", &[1_000.0]);
     }
 
     /// Unit energy belongs to 48 kHz, where the guidance levels are measured,
@@ -497,7 +600,7 @@ mod tests {
     /// convolve with the one response read here.
     #[test]
     fn a_builtin_body_carries_unit_energy_at_48_khz_and_scales_it_with_the_rate() {
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0, 176_400.0, 192_000.0] {
             let expected = 48_000.0 / f64::from(sample_rate);
             for (index, name) in BUILTIN_BODIES {
                 let body = builtin_body_at(index, sample_rate);
