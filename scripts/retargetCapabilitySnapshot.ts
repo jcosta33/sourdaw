@@ -131,7 +131,9 @@ function assertClassicChecks(rule: RulesetDocument): void {
     }
     if (
         Array.isArray(rule.requiredStatusCheckContexts) &&
-        rule.requiredStatusCheckContexts.some((context) => !capturedContexts.has(context))
+        rule.requiredStatusCheckContexts.some(
+            (context) => typeof context !== 'string' || !capturedContexts.has(context)
+        )
     ) {
         throw new TypeError('classic status checks are incomplete');
     }

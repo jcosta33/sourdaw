@@ -728,6 +728,21 @@ describe('bounded capability capture', () => {
     });
 
     it.each([
+        ['number', ['Gate', 42]],
+        ['null', ['Gate', null]],
+    ])('refuses a non-string classic required context (%s) in the production CLI', (_label, contexts) => {
+        const capture = runStableClassicCli(
+            portWithClassicMetadata(CLASSIC_REPOSITORY, {
+                ...CLASSIC,
+                requiredStatusCheckContexts: contexts,
+            })
+        );
+        expect(capture.run).toThrow(/classic required context is incomplete/u);
+        expect(capture.printed).toEqual([]);
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
+    it.each([
         [
             'bound required contexts',
             ['Gate', 'Build'],
