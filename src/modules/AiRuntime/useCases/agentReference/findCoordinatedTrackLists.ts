@@ -46,7 +46,7 @@ const LIST_REFERENCE = String.raw`(?:"□+"|'□+'|“□+”|‘□+’|□+)`;
 
 /** The first clause: any words, an optional "both" and article, and a reference ending the clause. */
 const LIST_HEAD_PATTERN = new RegExp(
-    String.raw`^(?<lead>(?:.*?\s)?)(?<both>both\s+)?(?:(?:the|a|an)\s+)?(?<reference>${LIST_REFERENCE})\s*$`,
+    String.raw`^(?<lead>(?:.*?\s)??)(?<both>both\s+)?(?:(?:the|a|an)\s+)?(?<reference>${LIST_REFERENCE})\s*$`,
     'iu'
 );
 

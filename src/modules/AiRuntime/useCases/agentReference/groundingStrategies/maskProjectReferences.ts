@@ -3,7 +3,7 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import { escapeRegExp } from './escapeRegExp';
 import { normalizePromptText } from './normalizePromptText';
 
-const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
+export const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 
 function getProjectReferenceTexts(context: ProjectContext): string[] {
     const vcaReferences = (context.vcaGroups ?? [])

@@ -75,7 +75,7 @@ describe('serializeProjectMidi', () => {
                 'clip-1': [{ id: 'cc-x', controller: 1, value: 64, beat: 0, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-1': [{ id: 'pb-x', value: 8192, beat: 0, channel: 0 }],
+                'clip-1': [{ id: 'pb-x', value: 8191, beat: 0, channel: 0 }],
             },
         };
 
@@ -118,7 +118,7 @@ describe('serializeProjectMidi', () => {
                 'clip-1': [{ beat: 0, controller: 1, value: 64, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-1': [{ beat: 0, value: 8192, channel: 0 }],
+                'clip-1': [{ beat: 0, value: 8191, channel: 0 }],
             },
         });
     });
