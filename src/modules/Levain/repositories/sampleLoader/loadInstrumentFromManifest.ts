@@ -728,8 +728,8 @@ export async function loadInstrumentFromManifest({
     let ownerLoadToken: number | undefined;
     let uploadsPcm = false;
     let commitPosted = false;
-    // PCM is the only shared prerequisite. An independently stalled builder
-    // or zone upload must keep its own inactivity deadline.
+    // Fully staged followers still wait for their owner's bank publication.
+    // Each follower's own builder and zone upload keep independent deadlines.
     function joinOwnerShipment(): void {
         if (
             !commitPosted ||
