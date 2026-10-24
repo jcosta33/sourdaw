@@ -1,6 +1,8 @@
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
+import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -14,6 +16,8 @@ import { getPluginById } from '../getPluginById';
 import { detectSilentBake } from './detectSilentBake';
 import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
 import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
+import { captureFreezeStateSnapshot } from './freezeStateSnapshot';
+import { freezeStateSnapshotMatches } from './freezeStateSnapshotMatches';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
@@ -21,13 +25,23 @@ export const activeFreezeTasks = new Map<string, AbortController>();
 type FreezeTaskIdentity = {
     abortController: AbortController;
     projectId: number;
+    projectIdentity: string;
     trackId: string;
 };
 
-function isEligibleActiveProjectTrack({ projectId, trackId }: Omit<FreezeTaskIdentity, 'abortController'>): boolean {
+function isEligibleActiveProjectTrack({
+    projectId,
+    projectIdentity,
+    trackId,
+}: Omit<FreezeTaskIdentity, 'abortController'>): boolean {
     const activeProject = projectStore.value;
     const activeState = trackStore.value;
-    if (!activeProject || activeProject.createdAt !== projectId || !activeState) {
+    if (
+        !activeProject ||
+        activeProject.createdAt !== projectId ||
+        captureProjectIdentity() !== projectIdentity ||
+        !activeState
+    ) {
         return false;
     }
     const activeTrack = activeState.tracks.find((candidate) => candidate.id === trackId);
@@ -38,8 +52,8 @@ function isEligibleActiveProjectTrack({ projectId, trackId }: Omit<FreezeTaskIde
     );
 }
 
-function isCurrentFreezeTask({ abortController, projectId, trackId }: FreezeTaskIdentity): boolean {
-    return activeFreezeTasks.get(trackId) === abortController && isEligibleActiveProjectTrack({ projectId, trackId });
+function isCurrentFreezeTask(task: FreezeTaskIdentity): boolean {
+    return activeFreezeTasks.get(task.trackId) === task.abortController && isEligibleActiveProjectTrack(task);
 }
 
 function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
@@ -69,23 +83,31 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     if (!getTrackEligibility(track.kind).acceptsFreeze) {
         return false;
     }
+    const previousFreeze = captureFreezeStateSnapshot(track);
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
     }
     const abortController = new AbortController();
     activeFreezeTasks.set(trackId, abortController);
+    const taskIdentity = {
+        abortController,
+        projectId: project.createdAt,
+        projectIdentity: captureProjectIdentity(),
+        trackId,
+    };
+    const sourceRevision = captureProjectRevision();
 
     updateTrack(trackId, (time) => ({
         ...time,
         freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
+    const pendingTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    const pendingFreeze = pendingTrack ? captureFreezeStateSnapshot(pendingTrack) : null;
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
-        const taskIdentity = { abortController, projectId: project.createdAt, trackId };
         if (!isCurrentFreezeTask(taskIdentity)) {
-            clearFreezeTaskIfCurrent(trackId, abortController);
             return false;
         }
 
@@ -143,10 +165,8 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         });
 
         if (!isCurrentFreezeTask(taskIdentity)) {
-            clearFreezeTaskIfCurrent(trackId, abortController);
             return false;
         }
-        clearFreezeTaskIfCurrent(trackId, abortController);
 
         if (!renderedBuffer) {
             throw new Error('Render failed');
@@ -174,19 +194,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             operation: 'Freeze',
         });
         if (silentBake.silentBake) {
-            // `freezeState.status === 'error'` is rendered nowhere, so recording
-            // it alone would tell no one. Notify on the same channel a dropped
-            // offline device uses, and report the refusal as a non-write:
-            // `handleFreezeTrack` maps a `true` here to `{status: 'written'}`,
-            // which would file a refusal as an undoable edit.
-            notifyUser(silentBake.message, 'error');
-            scope(() => {
-                updateTrack(trackId, (time) => ({
-                    ...time,
-                    freezeState: { status: 'error', errorMessage: silentBake.message },
-                }));
-            });
-            return false;
+            throw new Error(silentBake.message);
         }
 
         const renderedAt = Date.now();
@@ -237,10 +245,9 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         });
     } catch (error) {
         const currentTask = activeFreezeTasks.get(trackId);
-        clearFreezeTaskIfCurrent(trackId, abortController);
         if (
             (currentTask !== undefined && currentTask !== abortController) ||
-            !isEligibleActiveProjectTrack({ projectId: project.createdAt, trackId })
+            !isEligibleActiveProjectTrack(taskIdentity)
         ) {
             return false;
         }
@@ -258,16 +265,45 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
 
         const errorMessage = error instanceof Error ? error.message : String(error);
         notifyUser(errorMessage, 'error');
-        scope(() => {
-            updateTrack(trackId, (time) => ({
-                ...time,
-                freezeState: {
-                    status: 'error',
-                    errorMessage,
+        const failedTrack = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+        if (!failedTrack || !pendingFreeze || !freezeStateSnapshotMatches(failedTrack, pendingFreeze)) {
+            return false;
+        }
+        const expected = captureFreezeStateSnapshot(failedTrack);
+        const expectedJson = JSON.stringify(expected);
+        // The refused Freeze aborts its captured transaction. Settle its diagnostic
+        // through a separate non-undoable typed action, never as a successful Freeze.
+        // A committed edit since this render started withdraws the diagnostic's
+        // authority, including deletion/recreation with identical ids and values.
+        await executeAppAction(
+            {
+                type: 'restoreFreezeState',
+                payload: {
+                    trackId,
+                    expected,
+                    replacement: {
+                        ...previousFreeze,
+                        freezeState: { ...previousFreeze.freezeState, status: 'error', errorMessage },
+                    },
                 },
-            }));
-        });
+            },
+            {
+                skipMacroRecording: true,
+                shouldExecute: () => {
+                    const current = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+                    return (
+                        !abortController.signal.aborted &&
+                        isCurrentFreezeTask(taskIdentity) &&
+                        captureProjectRevision() === sourceRevision &&
+                        current !== undefined &&
+                        JSON.stringify(captureFreezeStateSnapshot(current)) === expectedJson
+                    );
+                },
+            }
+        );
         return false;
+    } finally {
+        clearFreezeTaskIfCurrent(trackId, abortController);
     }
 
     return true;
