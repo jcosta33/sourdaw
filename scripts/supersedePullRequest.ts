@@ -435,6 +435,16 @@ export function supersedePullRequest(
         if (stackedParentProof !== undefined) {
             try {
                 assertStackedParentProofUnchanged(stackedParentProof, verified, port);
+                assertFinalSupersession(
+                    port.inspect(oldNumber),
+                    oldNumber,
+                    expectedHead,
+                    before.base,
+                    markers,
+                    receiptMarker.id,
+                    lineageMarker.id,
+                    closeReceipt
+                );
                 assertFindingsUnchanged(oldNumber, coveredFindings, port);
             } catch (error) {
                 fail(
