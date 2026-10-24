@@ -97,6 +97,7 @@ import {
     type AudioGraphWriteParameterCommand,
 } from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { armNativeLiveAutomationWriter } from '../../livePlayback/armNativeLiveAutomationWriter';
@@ -175,6 +176,7 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
 
 vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: {
+        readRuntimeMaterialPublication: () => undefined,
         get: (id: string) => mocks.audioBuffers.get(id),
         has: (id: string) => mocks.audioBuffers.has(id),
         set: () => undefined,
@@ -193,6 +195,15 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
 
 /** The napi surface the in-process transport drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -252,6 +263,16 @@ const capturedRenders: CapturedRender[] = [];
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -729,7 +750,9 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         const { matA, matB } = fixtureMaterial();
         mocks.audioBuffers.clear();
         mocks.audioBuffers.set('mat-a', matA);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-a', matA);
         mocks.audioBuffers.set('mat-b', matB);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-b', matB);
         mocks.lanes.length = 0;
         mocks.lanes.push(...fixtureLanes());
         mocks.renderContext = fixtureRenderContext();
@@ -865,8 +888,12 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         'renders mono clips panned $name the same way on both engines',
         async ({ name, storedPan }) => {
             const { matA, matB } = fixtureMaterial();
-            mocks.audioBuffers.set('mat-a', toMono(matA));
-            mocks.audioBuffers.set('mat-b', toMono(matB));
+            const monoA = toMono(matA);
+            mocks.audioBuffers.set('mat-a', monoA);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-a', monoA);
+            const monoB = toMono(matB);
+            mocks.audioBuffers.set('mat-b', monoB);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-b', monoB);
             mocks.lanes.length = 0;
             mocks.lanes.push(...fixtureLanes().filter((candidate) => candidate.parameterId !== 'pan'));
             mocks.renderContext = fixtureRenderContext({}, storedPan);
@@ -946,23 +973,44 @@ describe('renderOffline — native/web export parity (#2225)', () => {
                     ],
                 })
             );
-            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
-            await runLeg('native');
-            const [render] = capturedRenders;
-            if (!render) {
-                throw new Error('the native leg rendered nothing to compare against');
-            }
             const sparseEndSeconds = 0.1 * SECONDS_PER_BEAT;
             expect(sparseEndSeconds).toBeLessThan(AUTOMATION_WINDOW_SECONDS);
 
-            const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
             const host = requireNativeHost();
-            const fromExport = await host.renderGraphOffline(render.batch, render.frames, render.sampleRate);
-            const fromWriter = await host.renderGraphOffline(
-                withWriterAutomation(render, written),
-                render.frames,
-                render.sampleRate
-            );
+            const transport = inProcessNativeTransport(host);
+            const comparison: {
+                rendered?: Readonly<{
+                    render: CapturedRender;
+                    fromExport: Uint8Array;
+                    fromWriter: Uint8Array;
+                }>;
+            } = {};
+            mocks.probe.transport = {
+                ...transport,
+                async renderGraphOffline(input) {
+                    // Both renders borrow the backend's admitted lease, before
+                    // renderOffline's finally disposes that backend.
+                    const fromExport = await transport.renderGraphOffline(input);
+                    const render: CapturedRender = {
+                        batch: input.batch,
+                        frames: input.frames,
+                        sampleRate: input.sampleRate,
+                    };
+                    const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
+                    const fromWriter = await host.renderGraphOffline(
+                        withWriterAutomation(render, written),
+                        render.frames,
+                        render.sampleRate
+                    );
+                    comparison.rendered = { render, fromExport, fromWriter };
+                    return fromExport;
+                },
+            };
+            await runLeg('native');
+            if (!comparison.rendered) {
+                throw new Error('the native leg rendered nothing to compare against');
+            }
+            const { render, fromExport, fromWriter } = comparison.rendered;
 
             const result = nullTest({
                 a: toRenderedBuffer(fromExport, render),

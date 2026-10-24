@@ -177,6 +177,7 @@ import {
 } from '../../../models/AudioGraphBackend';
 import { type Device } from '../../../models/TrackViewTypes';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 
 import {
@@ -2546,6 +2547,15 @@ const { NATIVE_ADDON_FILE } = await import('../../../../../../electron/native');
 
 /** The napi surface this leg drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -2609,6 +2619,16 @@ function requireNativeHost(): NativeHostAddon {
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -2649,6 +2669,7 @@ function nativeLegClip(input: {
     playbackRate?: number;
     material?: HarnessAudioBuffer;
 }): AudioGraphCommand {
+    nativeTimelineMaterialLeases.ownSnapshot(NATIVE_LEG_SOURCE_ID, input.material ?? CLIP_MATERIAL);
     return {
         kind: 'schedule-clip',
         playback: {
