@@ -59,7 +59,23 @@ only with `--superseded-parent <pr>`. The named parent must be closed without
 merge, own the child's old base branch from the child's base repository, target
 the replacement's base, and carry exactly one canonical author-Bot supersession
 receipt and one total finding lineage marker naming the merged replacement. The
-command revalidates that live parent proof before the first child write, before
+child's live `baseRef` must name that parent branch in the child's repository and
+target the parent's final head commit; a reused branch name is insufficient. The
+cached `baseRefOid` may legitimately predate the current branch tip and does not
+establish this identity. The command snapshots the live ref's repository, name
+and target, re-reading the child after the parent proof at each mutation boundary.
+It checks the child's finding set after that last remote proof immediately before
+close, and again after the final post-close proof, so a finding added or removed
+during parent inspection cannot inherit an earlier coverage check.
+
+An already CLOSED child with exactly one matching author-Bot receipt and one
+canonical total lineage marker may replay without writes after its live base ref
+has been deleted. Its named parent's identity, canonical receipt and total live
+lineage are still checked; a present contradictory live ref still refuses. This
+replay distinction confirms an existing completion only and cannot admit a fresh
+closure with an absent ref. It does not reconstruct historical ref state.
+
+The command revalidates that live parent proof before the first child write, before
 closing, and after closing before reporting success. A refusal before writing
 leaves no child mutation, a refusal after adding child markers compensates those
 markers, and a post-close authority failure reports ambiguity while retaining

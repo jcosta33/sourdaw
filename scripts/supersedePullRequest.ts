@@ -181,6 +181,7 @@ type StackedParentProof = {
     receipt: ProofMarker;
     lineage: ProofMarker;
     findingIds: string[];
+    childBaseRef: SupersededPullRequest['baseRef'];
 };
 
 function pullRequestProof(value: SupersededPullRequest): PullRequestProof {
@@ -260,7 +261,8 @@ function inspectStackedParentProof(
     old: SupersededPullRequest,
     replacement: SupersededPullRequest,
     parentNumber: number,
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    completedReplay = false
 ): StackedParentProof {
     if (
         !Number.isSafeInteger(parentNumber) ||
@@ -295,13 +297,43 @@ function inspectStackedParentProof(
     }
     const receipt = parentReceipt(parent, replacement.number);
     const lineage = parentLineage(parent, replacement.number, port);
+    const child = port.inspect(old.number);
+    assertOldBinding(child, old.number, old.head);
+    if (child.base !== old.base || child.state !== old.state || child.closedAt !== old.closedAt) {
+        fail(`PR #${old.number} changed during stacked base proof`);
+    }
+    const childBaseRef = checkedChildBaseRef(child, parent, completedReplay);
     return {
         parent: pullRequestProof(parent),
         replacement: pullRequestProof(replacement),
         receipt,
         lineage: lineage.marker,
         findingIds: lineage.findingIds,
+        childBaseRef,
     };
+}
+
+function checkedChildBaseRef(
+    child: SupersededPullRequest,
+    parent: Pick<SupersededPullRequest, 'number' | 'head'>,
+    completedReplay: boolean
+): SupersededPullRequest['baseRef'] {
+    const ref = child.baseRef;
+    if (ref === undefined || ref === null) {
+        if (completedReplay) {
+            return null;
+        }
+        fail(`PR #${child.number} live base ref is missing`);
+    }
+    if (
+        ref.repository !== child.repository ||
+        ref.name !== child.base ||
+        !/^[0-9a-f]{40}$/.test(parent.head) ||
+        ref.target !== parent.head
+    ) {
+        fail(`PR #${child.number} live base ref does not identify superseded parent PR #${parent.number} final head`);
+    }
+    return { name: ref.name, repository: ref.repository, target: ref.target };
 }
 
 function assertStackedParentProofUnchanged(
@@ -338,22 +370,37 @@ export function supersedePullRequest(
     const before = port.inspect(oldNumber);
     const replacement = port.inspect(replacementNumber);
     assertOldBinding(before, oldNumber, expectedHead);
-    const stackedParentProof = assertReplacement(replacement, replacementNumber, before, supersededParentNumber, port);
     const markers: MarkerPair = [
         { body: supersessionCommentBody(replacementNumber), label: RECEIPT_LABEL },
         { body: renderFindingLineage(lineage), label: LINEAGE_LABEL },
     ];
     if (before.state === PR_STATE.CLOSED) {
         assertCompletedSupersession(before, oldNumber, expectedHead, before.base, markers);
+        const replayProof = assertReplacement(
+            replacement,
+            replacementNumber,
+            before,
+            supersededParentNumber,
+            port,
+            true
+        );
+        if (replayProof !== undefined) {
+            const completed = port.inspect(oldNumber);
+            assertCompletedSupersession(completed, oldNumber, expectedHead, before.base, markers);
+            checkedChildBaseRef(completed, replayProof.parent, true);
+            assertFindingsUnchanged(oldNumber, coveredFindings, port);
+        }
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
     assertOpen(before, oldNumber);
+    const stackedParentProof = assertReplacement(replacement, replacementNumber, before, supersededParentNumber, port);
     const transaction: CommentTransaction = { markers, attempts: 0, created: [] };
     let closeAttempted = false;
     let closeReceipt: PullRequestCloseReceipt | undefined;
     try {
         if (stackedParentProof !== undefined) {
             assertStackedParentProofUnchanged(stackedParentProof, before, port);
+            assertFindingsUnchanged(oldNumber, coveredFindings, port);
         }
         ensureMarker(oldNumber, markers[0], before.comments, transaction, port);
         ensureMarker(oldNumber, markers[1], before.comments, transaction, port);
@@ -368,6 +415,7 @@ export function supersedePullRequest(
         assertFindingsUnchanged(oldNumber, coveredFindings, port);
         if (stackedParentProof !== undefined) {
             assertStackedParentProofUnchanged(stackedParentProof, before, port);
+            assertFindingsUnchanged(oldNumber, coveredFindings, port);
         }
         closeAttempted = true;
         const closeResult = port.close(oldNumber);
@@ -386,7 +434,8 @@ export function supersedePullRequest(
         );
         if (stackedParentProof !== undefined) {
             try {
-                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+                assertStackedParentProofUnchanged(stackedParentProof, verified, port);
+                assertFindingsUnchanged(oldNumber, coveredFindings, port);
             } catch (error) {
                 fail(
                     `stacked supersession authority is ambiguous after closing PR #${oldNumber}: ${errorMessage(error)}`
@@ -520,7 +569,8 @@ function assertReplacement(
     number: number,
     old: SupersededPullRequest,
     supersededParentNumber: number | undefined,
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    completedReplay = false
 ): StackedParentProof | undefined {
     assertReplacementIdentityAndMerge(value, number, old);
     if (value.base === old.base) {
@@ -529,7 +579,7 @@ function assertReplacement(
     if (supersededParentNumber === undefined) {
         fail(`replacement PR #${number} does not target ${old.base}`);
     }
-    return inspectStackedParentProof(old, value, supersededParentNumber, port);
+    return inspectStackedParentProof(old, value, supersededParentNumber, port, completedReplay);
 }
 function assertStableOpen(value: SupersededPullRequest, number: number, head: string, base: string): void {
     if (
