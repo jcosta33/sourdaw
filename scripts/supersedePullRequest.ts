@@ -161,11 +161,11 @@ function formatFindingIds(ids: readonly string[]): string {
 }
 
 /** Which marker a comment must carry to be part of this transaction, and how a refusal names it. */
-type MarkerSpec = { body: string; label: string };
+export type MarkerSpec = { body: string; label: string };
 /** The two markers, in the order the transaction posts them: the receipt, then the lineage. */
 type MarkerPair = readonly [receipt: MarkerSpec, lineage: MarkerSpec];
 type CreatedMarker = { spec: MarkerSpec; id: string };
-type CommentTransaction = { markers: MarkerPair; attempts: number; created: CreatedMarker[] };
+type CommentTransaction = { markers: readonly MarkerSpec[]; attempts: number; created: CreatedMarker[] };
 const RECEIPT_LABEL = 'supersession comment marker';
 const LINEAGE_LABEL = 'finding lineage marker';
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
@@ -377,42 +377,62 @@ export async function serializedSupersedePullRequest(
     input: SupersessionInput,
     serialize: PullRequestMutationSerialization = withPullRequestMutationLock
 ): Promise<string> {
+    return serializedPullRequestClosure(
+        primaryRoot,
+        input.oldNumber,
+        'supersession',
+        input.port,
+        (port) =>
+            supersedePullRequest(
+                input.oldNumber,
+                input.expectedHead,
+                input.replacementNumber,
+                input.lineage,
+                input.authorNodeId,
+                port,
+                input.supersededParentNumber
+            ),
+        serialize
+    );
+}
+
+/** Native closures share ownership and the verified OPEN-compensation release rule. */
+export async function serializedPullRequestClosure(
+    primaryRoot: string,
+    number: number,
+    operation: 'supersession' | 'retirement',
+    inputPort: SupersedePullRequestPort,
+    close: (port: SupersedePullRequestPort) => string,
+    serialize: PullRequestMutationSerialization = withPullRequestMutationLock
+): Promise<string> {
     let attemptedOwner: string | undefined;
     let unsafeFailure = false;
     let outcome: SupersessionOutcome;
     try {
-        outcome = await serialize(primaryRoot, input.oldNumber, async (boundary): Promise<SupersessionOutcome> => {
+        outcome = await serialize(primaryRoot, number, async (boundary): Promise<SupersessionOutcome> => {
             const markMutation = () => {
                 boundary.markRemoteMutationAttempt();
                 attemptedOwner = boundary.ownerOid;
             };
             const port: SupersedePullRequestPort = {
-                ...input.port,
+                ...inputPort,
                 log: () => undefined,
                 comment: (number, body) => {
                     markMutation();
-                    return input.port.comment(number, body);
+                    return inputPort.comment(number, body);
                 },
                 deleteComment: (id) => {
                     markMutation();
-                    input.port.deleteComment(id);
+                    inputPort.deleteComment(id);
                 },
                 close: (number) => {
                     markMutation();
-                    return input.port.close(number);
+                    return inputPort.close(number);
                 },
             };
             try {
                 return {
-                    success: supersedePullRequest(
-                        input.oldNumber,
-                        input.expectedHead,
-                        input.replacementNumber,
-                        input.lineage,
-                        input.authorNodeId,
-                        port,
-                        input.supersededParentNumber
-                    ),
+                    success: close(port),
                 };
             } catch (error) {
                 if (error instanceof VerifiedSupersessionCompensationError) {
@@ -425,8 +445,8 @@ export async function serializedSupersedePullRequest(
     } catch (error) {
         if (unsafeFailure && attemptedOwner !== undefined) {
             throw new Error(
-                `${errorMessage(error)}; PR #${input.oldNumber} supersession preserved lock owner ${attemptedOwner}: ` +
-                    `pnpm deliver --recover-lock ${input.oldNumber} --owner ${attemptedOwner}`,
+                `${errorMessage(error)}; PR #${number} ${operation} preserved lock owner ${attemptedOwner}: ` +
+                    `pnpm deliver --recover-lock ${number} --owner ${attemptedOwner}`,
                 { cause: error }
             );
         }
@@ -435,7 +455,7 @@ export async function serializedSupersedePullRequest(
     if ('compensated' in outcome) {
         throwWithCompensation(outcome.compensated.refusal, []);
     }
-    input.port.log(outcome.success);
+    inputPort.log(outcome.success);
     return outcome.success;
 }
 
@@ -480,80 +500,112 @@ export function supersedePullRequest(
             checkedChildBaseRef(completed, replayProof.parent, true);
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
         }
+        port.assertCurrentPullRequest(oldNumber, before);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
     assertOpen(before, oldNumber);
     const stackedParentProof = assertReplacement(replacement, replacementNumber, before, supersededParentNumber, port);
+    closePullRequestWithMarkers(oldNumber, expectedHead, before, markers, port, {
+        beforeMarkers: () => {
+            if (stackedParentProof !== undefined) {
+                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+                assertFindingsUnchanged(oldNumber, coveredFindings, port);
+            }
+        },
+        beforeClose: (markerIds) => {
+            assertFindingsUnchanged(oldNumber, coveredFindings, port);
+            if (stackedParentProof !== undefined) {
+                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+                const beforeClose = port.inspect(oldNumber);
+                assertStableOpen(beforeClose, oldNumber, expectedHead, before.base);
+                checkedChildBaseRef(beforeClose, stackedParentProof.parent, false);
+                const currentReceipt = requireOneCommentMarker(beforeClose.comments, markers[0], markers, oldNumber);
+                const currentLineage = requireOneCommentMarker(beforeClose.comments, markers[1], markers, oldNumber);
+                if (currentReceipt.id !== markerIds[0] || currentLineage.id !== markerIds[1]) {
+                    fail(`PR #${oldNumber} supersession marker identity changed before close; compensating`);
+                }
+                assertFindingsUnchanged(oldNumber, coveredFindings, port);
+            }
+        },
+        afterClose: (verified, markerIds, closeReceipt) => {
+            assertFinalSupersession(
+                verified,
+                oldNumber,
+                expectedHead,
+                before.base,
+                markers,
+                markerIds[0]!,
+                markerIds[1]!,
+                closeReceipt
+            );
+            if (stackedParentProof !== undefined) {
+                try {
+                    assertStackedParentProofUnchanged(stackedParentProof, verified, port);
+                    assertFinalSupersession(
+                        port.inspect(oldNumber),
+                        oldNumber,
+                        expectedHead,
+                        before.base,
+                        markers,
+                        markerIds[0]!,
+                        markerIds[1]!,
+                        closeReceipt
+                    );
+                    assertFindingsUnchanged(oldNumber, coveredFindings, port);
+                } catch (error) {
+                    fail(
+                        `stacked supersession authority is ambiguous after closing PR #${oldNumber}: ${errorMessage(error)}`
+                    );
+                }
+            }
+        },
+    });
+    return logSupersessionSuccess(oldNumber, replacementNumber, port);
+}
+
+export function closePullRequestWithMarkers(
+    number: number,
+    expectedHead: string,
+    before: SupersededPullRequest,
+    markers: readonly MarkerSpec[],
+    port: SupersedePullRequestPort,
+    checks: {
+        beforeMarkers?: () => void;
+        beforeClose: (markerIds: string[]) => void;
+        afterClose: (verified: SupersededPullRequest, markerIds: string[], receipt: PullRequestCloseReceipt) => void;
+    }
+): void {
+    if (markers.length === 0) {
+        fail('closure requires at least one public marker');
+    }
     const transaction: CommentTransaction = { markers, attempts: 0, created: [] };
     let closeAttempted = false;
     let closeReceipt: PullRequestCloseReceipt | undefined;
     try {
-        if (stackedParentProof !== undefined) {
-            assertStackedParentProofUnchanged(stackedParentProof, before, port);
-            assertFindingsUnchanged(oldNumber, coveredFindings, port);
+        checks.beforeMarkers?.();
+        for (const marker of markers) {
+            ensureMarker(number, marker, before.comments, transaction, port);
         }
-        ensureMarker(oldNumber, markers[0], before.comments, transaction, port);
-        ensureMarker(oldNumber, markers[1], before.comments, transaction, port);
-        const afterMarkers = port.inspect(oldNumber);
-        assertStableOpen(afterMarkers, oldNumber, expectedHead, before.base);
-        convergeCommentMarkers(oldNumber, markers[0], afterMarkers, markers, port);
-        convergeCommentMarkers(oldNumber, markers[1], afterMarkers, markers, port);
-        const converged = port.inspect(oldNumber);
-        assertStableOpen(converged, oldNumber, expectedHead, before.base);
-        const receiptMarker = requireOneCommentMarker(converged.comments, markers[0], markers, oldNumber);
-        const lineageMarker = requireOneCommentMarker(converged.comments, markers[1], markers, oldNumber);
-        assertFindingsUnchanged(oldNumber, coveredFindings, port);
-        if (stackedParentProof !== undefined) {
-            assertStackedParentProofUnchanged(stackedParentProof, before, port);
-            const beforeClose = port.inspect(oldNumber);
-            assertStableOpen(beforeClose, oldNumber, expectedHead, before.base);
-            checkedChildBaseRef(beforeClose, stackedParentProof.parent, false);
-            const currentReceipt = requireOneCommentMarker(beforeClose.comments, markers[0], markers, oldNumber);
-            const currentLineage = requireOneCommentMarker(beforeClose.comments, markers[1], markers, oldNumber);
-            if (currentReceipt.id !== receiptMarker.id || currentLineage.id !== lineageMarker.id) {
-                fail(`PR #${oldNumber} supersession marker identity changed before close; compensating`);
-            }
-            assertFindingsUnchanged(oldNumber, coveredFindings, port);
+        const afterMarkers = port.inspect(number);
+        assertStableOpen(afterMarkers, number, expectedHead, before.base);
+        for (const marker of markers) {
+            convergeCommentMarkers(number, marker, afterMarkers, markers, port);
         }
+        const converged = port.inspect(number);
+        assertStableOpen(converged, number, expectedHead, before.base);
+        const markerIds = closureMarkerIds(converged, number, markers);
+        checks.beforeClose(markerIds);
+        port.assertCurrentPullRequest(number, before);
         closeAttempted = true;
-        const closeResult = port.close(oldNumber);
+        const closeResult = port.close(number);
         assertCloseReceipt(closeResult);
         closeReceipt = closeResult;
-        const verified = port.inspect(oldNumber);
-        assertFinalSupersession(
-            verified,
-            oldNumber,
-            expectedHead,
-            before.base,
-            markers,
-            receiptMarker.id,
-            lineageMarker.id,
-            closeReceipt
-        );
-        if (stackedParentProof !== undefined) {
-            try {
-                assertStackedParentProofUnchanged(stackedParentProof, verified, port);
-                assertFinalSupersession(
-                    port.inspect(oldNumber),
-                    oldNumber,
-                    expectedHead,
-                    before.base,
-                    markers,
-                    receiptMarker.id,
-                    lineageMarker.id,
-                    closeReceipt
-                );
-                assertFindingsUnchanged(oldNumber, coveredFindings, port);
-            } catch (error) {
-                fail(
-                    `stacked supersession authority is ambiguous after closing PR #${oldNumber}: ${errorMessage(error)}`
-                );
-            }
-        }
+        const verified = port.inspect(number);
+        checks.afterClose(verified, markerIds, closeReceipt);
+        port.assertCurrentPullRequest(number, verified);
     } catch (error) {
-        compensateSupersession(oldNumber, before, transaction, closeAttempted, closeReceipt, port, error);
+        compensateSupersession(number, before, transaction, closeAttempted, closeReceipt, port, error);
     }
-    return logSupersessionSuccess(oldNumber, replacementNumber, port);
 }
 
 function logSupersessionSuccess(oldNumber: number, replacementNumber: number, port: SupersedePullRequestPort): string {
@@ -822,7 +874,7 @@ function deleteCreatedNoncanonicalComments(
         attempt(failures, 'delete noncanonical supersession comment', () => port.deleteComment(created.id));
     }
 }
-/** Rolls this invocation's verified markers back, refusing as a whole when any of them was altered. */
+/** Every acknowledged marker must be observed exact before deletion can account for it. */
 function deleteCreatedComments(
     comments: IssueComment[],
     transaction: CommentTransaction,
@@ -837,6 +889,12 @@ function deleteCreatedComments(
     if (altered.length > 0) {
         failures.push(`${altered.length} created supersession marker(s) are no longer exact; refusing to roll back`);
         return;
+    }
+    const missing = transaction.created.filter((created) => !comments.some((comment) => comment.id === created.id));
+    if (missing.length > 0) {
+        failures.push(
+            `${missing.length} acknowledged supersession marker(s) are missing from observation; rollback remains unverified`
+        );
     }
     for (const created of transaction.created) {
         if (hasExpectedComment(comments, created.id, created.spec.body)) {
@@ -876,8 +934,9 @@ function assertFinalSupersession(
     if (!hasExpectedComment(value.comments, lineageId, markers[1].body)) {
         fail(`finding lineage marker ${lineageId} is not present on PR #${number}`);
     }
-    requireOneCommentMarker(value.comments, markers[0], markers, number);
-    requireOneCommentMarker(value.comments, markers[1], markers, number);
+    for (const marker of markers) {
+        requireOneCommentMarker(value.comments, marker, markers, number);
+    }
 }
 function assertCompletedSupersession(
     value: SupersededPullRequest,
@@ -885,6 +944,16 @@ function assertCompletedSupersession(
     head: string,
     base: string,
     markers: MarkerPair
+): void {
+    assertCompletedClosureWithMarkers(value, number, head, base, markers);
+}
+
+export function assertCompletedClosureWithMarkers(
+    value: SupersededPullRequest,
+    number: number,
+    head: string,
+    base: string,
+    markers: readonly MarkerSpec[]
 ): void {
     if (
         value.number !== number ||
@@ -895,8 +964,15 @@ function assertCompletedSupersession(
     ) {
         fail(`PR #${number} is not the expected completed supersession`);
     }
-    requireOneCommentMarker(value.comments, markers[0], markers, number);
-    requireOneCommentMarker(value.comments, markers[1], markers, number);
+    closureMarkerIds(value, number, markers);
+}
+
+export function closureMarkerIds(
+    value: Pick<SupersededPullRequest, 'comments'>,
+    number: number,
+    markers: readonly MarkerSpec[]
+): string[] {
+    return markers.map((marker) => requireOneCommentMarker(value.comments, marker, markers, number).id);
 }
 function assertCommentReceipt(value: AddedIssueCommentReceipt, expectedClientMutationId: string): string {
     if (
