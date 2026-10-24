@@ -1,0 +1,38 @@
+src/modules/Arrangement/handlers/track/soloTrack.ts
+  s_1c08b47ac3792f::t_b74972e58c0072 5-9,12-16,18-23,25-32,34-43,49,52-57
+src/modules/Arrangement/handlers/__tests__/mixerCompensationBatch.spec.ts
+  s_1c08b47ac3792f::t_49979a22f45241 1-185
+  s_1c08b47ac3792f::t_86a7804dff7cd5 186-205
+src/modules/AiRuntime/useCases/__tests__/materializeActionStateGuards.spec.ts
+  s_1c08b47ac3792f::t_bfbf3c994c3f2b 129-154
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_1c08b47ac3792f::t_2625d157de8a07 440-450
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_1c08b47ac3792f::t_48aae80846b3cf 247-267
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_1c08b47ac3792f::t_9e24413e2df2d7 19-20
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_1c08b47ac3792f::t_c76b39b685cbe1 75-76
+src/modules/Arrangement/handlers/track/__tests__/soloTrack.spec.ts
+  s_1c08b47ac3792f::t_b77907cef7c8b1 47-51,62,66-92
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_1c08b47ac3792f::t_e69d694e48851f 983,4234-4242,4245,4250-4251,4285,4297-4298,4314,4319-4320,4332,4349,4360,4370,4392,4397-4398,4435-4436,4470-4471,4479-4480,4569,4576,4582-4583,4590,4604,4619,4633,4638-4641,4670,4676,4690,4696,4741,4743,4758,4767-4768,4770,4783-4784,4787,4794,4799,4826,4831,4926,4933,4961,4969,4975,4983-4984,5024,5035,5043,5049,5056,5061,5069-5070,5281,5297,5314,5321-5322,5325,5356,5369-5372,5382-5383,5428,5442,5447,5449,5497,5502,5520,5525,5557,5562,5629,5638,5650,5662,5683,5695,5701,5707-5708,5733,5739-5740,5804,5810,5825,5827,5836,5838,5847,5895,5900,5919,5924,6169-6170,6172,6174-6184,6188-6190,6196,6198-6199,6201-6203,6206-6217,6219,6221-6223,6228,6231-6234,6238-6243,6248,6250-6251,6253-6254,6257-6269,6273-6274,6277,6279-6282,6286-6287,6289-6297,6299-6301
+src/utils/handlerContract.ts
+  s_1c08b47ac3792f::t_44d2199ff60923 1215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16c122818712396615b0dc40283f9fdc3b5110f8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
