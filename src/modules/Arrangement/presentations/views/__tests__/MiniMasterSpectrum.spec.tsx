@@ -279,6 +279,45 @@ describe('MiniMasterSpectrum', () => {
         expect(spectrum).toHaveAccessibleDescription('Second failure');
     });
 
+    it('retires hover intent when the pointer moved into tooltip content before recovery', async () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        const withError = (errorMessage: string) => ({
+            ...master,
+            freezeState: { status: 'error' as const, errorMessage },
+        });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('First failure')], selectedTrackId: 'master' });
+        const { rerender } = renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+
+        fireEvent.pointerMove(spectrum, { pointerType: 'mouse' });
+        const tooltip = await screen.findByRole('tooltip');
+        expect(tooltip).toHaveTextContent('First failure');
+
+        fireEvent.pointerLeave(spectrum, { pointerType: 'mouse' });
+        fireEvent.pointerMove(tooltip, { pointerType: 'mouse' });
+        expect(screen.getByRole('tooltip')).toHaveTextContent('First failure');
+        expect(document.activeElement).not.toBe(spectrum);
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('Second failure')], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeVisible();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+    });
+
     it('does not create an error description when the normal master receives focus', () => {
         renderWithImmediateTooltip(<MiniMasterSpectrum />);
         const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });

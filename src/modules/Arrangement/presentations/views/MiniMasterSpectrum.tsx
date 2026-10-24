@@ -13,6 +13,7 @@ import { useTracks } from '../hooks/useTracks';
 
 export const MiniMasterSpectrum = ({ className }: { className?: string }): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
     const schedulerId = useId();
     const [isTooltipOpen, setIsTooltipOpen] = useState(false);
     const { tracks, selectedTrackId } = useTracks();
@@ -22,6 +23,13 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     if (masterTrack?.freezeState.status === 'error') {
         freezeErrorMessage = masterTrack.freezeState.errorMessage || 'Freeze failed. Try again.';
     }
+
+    useEffect(() => {
+        const trigger = triggerRef.current;
+        if (!freezeErrorMessage && trigger?.ownerDocument.activeElement !== trigger) {
+            setIsTooltipOpen(false);
+        }
+    }, [freezeErrorMessage]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -121,6 +129,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
         <Tooltip open={Boolean(freezeErrorMessage) && isTooltipOpen} onOpenChange={setIsTooltipOpen}>
             <TooltipTrigger asChild>
                 <div
+                    ref={triggerRef}
                     role="button"
                     tabIndex={0}
                     onClick={() => selectTrack(masterTrack.id)}
