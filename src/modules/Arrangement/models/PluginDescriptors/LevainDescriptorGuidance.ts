@@ -26,7 +26,9 @@ export const LEVAIN_GUIDANCE = instrumentGuidance(
     [
         'humanize varies each new note, vibratoDepth sets the vibrato of every sounding voice, autoDivisi lowers each new note by the number of notes held, and masterGain scales every mic position before the realism and tone stages.',
     ],
-    ['ensembleTiming is stored but no engine stage reads it, so enabling it changes nothing audible.']
+    [
+        'ensembleTiming holds each fresh attack back by up to 12 ms, a fixed offset per pitch, so a part that must land exactly on the grid should leave it off.',
+    ]
 );
 
 export const LEVAIN_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterGuidance>> = {
@@ -94,15 +96,16 @@ export const LEVAIN_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterG
         noExternalModulation
     ),
     ensembleTiming: parameterGuidance(
-        'Ensemble timing switch with no engine consumer',
-        'Stores a flag the engine never reads: no attack spread, pitch convergence or bloom is applied, whatever its value.',
+        'Section attack-spread switch',
+        'When on, each fresh attack starts up to 12 ms late by an offset fixed for its pitch, so notes struck together land a few milliseconds apart like a section’s players; the offset depends on the pitch alone, so live playback and an export delay a note by the same amount.',
         0,
         0,
         [
-            'Use humanize for per-note timing and tuning variation; it is the control that actually offsets note starts and pitch.',
+            'Adds to humanize’s random start delay rather than replacing it, and applies only to fresh attacks: with legatoEnabled on, a note that slurs from a held one keeps the slur’s timing.',
+            'Only the attack spread is applied; it does not detune or swell the section.',
         ],
         [
-            'Turning it on changes nothing audible, so a part relying on it for ensemble looseness gets no timing spread from it.',
+            'Every note can start up to 12 ms after its grid position, which loosens tight rhythmic parts and shifts them against other tracks.',
         ],
         noExternalModulation
     ),
