@@ -25,12 +25,18 @@ const GC_FULL_NAME = `connected stem export output ownership ${GC_CASE_NAME}`;
 const GC_FILTER_NAME = `connected stem export output ownership > ${GC_CASE_NAME}`;
 const GC_SPEC = 'src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx';
 const GC_CHILD_MARKER = 'SOURDAW_EXPORT_STREAMING_GC_CHILD';
-const GC_CHILD_DEADLINE_MS = 150_000;
+const GC_BODY_DEADLINE_MS = 180_000;
+// Nested Vitest startup and child exit need time outside the measured GC body.
+const GC_CHILD_BOOTSTRAP_AND_EXIT_ALLOWANCE_MS = 120_000;
+const GC_CHILD_DEADLINE_MS = GC_BODY_DEADLINE_MS + GC_CHILD_BOOTSTRAP_AND_EXIT_ALLOWANCE_MS;
+const GC_PARENT_CASE_DEADLINE_MS = GC_CHILD_DEADLINE_MS + 30_000;
 const GC_CHILD_OUTPUT_LIMIT = 1024 * 1024;
 const GC_CHILD_OUTPUT_TAIL_LIMIT = 8 * 1024;
 const GC_ATTRIBUTION_LINE_LIMIT = 4096;
 const GC_CASE_TIMEOUT_MS =
-    process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function' ? 120_000 : 180_000;
+    process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function'
+        ? GC_BODY_DEADLINE_MS
+        : GC_PARENT_CASE_DEADLINE_MS;
 
 type BufferObservation = {
     origin: string;
@@ -167,7 +173,7 @@ async function runGcChild(cwd: string, reportPath: string): Promise<string> {
     child.stderr.on('data', (chunk: Buffer) => collect(chunk, 'stderr'));
     const timer = setTimeout(() => {
         if (!failure) {
-            failure = new Error('GC child exceeded its 150-second deadline.');
+            failure = new Error(`GC child exceeded its ${GC_CHILD_DEADLINE_MS / 1000}-second deadline.`);
             stopGcChild(child.pid);
         }
     }, GC_CHILD_DEADLINE_MS);
