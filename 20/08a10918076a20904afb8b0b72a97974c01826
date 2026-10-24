@@ -1,0 +1,59 @@
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/selectElasticMarkers.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 4
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/openElasticEditor.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 4
+src/modules/AudioEngine/handlers/finalFeature/handleDetectTransients.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 3
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_59e31a5c6f3e31::t_23b5fab137bcda 25
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 4
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/markElasticDetectionComplete.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 4
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_59e31a5c6f3e31::t_23b5fab137bcda 5
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/closeElasticEditor.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 4
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticTool.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 4
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 2
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_b3201877f50e8a::t_eecc39ae2ba147 17,102
+  s_b3201877f50e8a::t_b07747ff209667 125-156
+  s_7acdc945b846b6::t_37e2d5c88160e2 157-158
+src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts
+  s_59e31a5c6f3e31::t_23b5fab137bcda 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2008a10918076a20904afb8b0b72a97974c01826",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
