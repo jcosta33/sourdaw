@@ -140,20 +140,39 @@ function underDisposableRootPath(normalized: string): boolean {
 }
 
 /**
+ * Operational agent state under `.agents/` must survive removal and pruning: review bundles,
+ * guard storage, lane strands and their siblings hold receipts, evidence and recording lineage,
+ * and a build-product-named component inside them (`dist/x` in a review bundle) is data, not
+ * output. Only the specific `.agents/` forms `disposableIgnored` admits explicitly may pass.
+ */
+function underProtectedAgentState(normalized: string): boolean {
+    return normalized === '.agents' || normalized.startsWith('.agents/');
+}
+
+/**
  * The one shared definition of ignored output that is safe to discard: regenerable build and test
  * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
  * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
  */
 export function disposableIgnored(path: string): boolean {
     const normalized = path.replaceAll('\\', '/');
-    return (
+    // The explicit `.agents/` admissions run first: everything else under `.agents/` is protected
+    // agent state the component regex below must never reach (#5560).
+    if (
         normalized === '.DS_Store' ||
         normalized.endsWith('/.DS_Store') ||
-        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
         /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized) ||
-        /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
-        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(normalized) ||
         underDisposableRootPath(normalized)
+    ) {
+        return true;
+    }
+    if (underProtectedAgentState(normalized)) {
+        return false;
+    }
+    return (
+        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
+        /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
+        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(normalized)
     );
 }
 
