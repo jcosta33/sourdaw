@@ -1,0 +1,32 @@
+package.json
+  s_29d8df116c5b92::t_7d7d5ceb14a828 68
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_9fb9ae5ec0bf69 170
+  s_29d8df116c5b92::t_80b7d4f0ab3ba5 1743,2241-2251
+release/dependency-license-proofs.json
+  s_29d8df116c5b92::t_80b7d4f0ab3ba5 64
+scripts/__tests__/retargetCapabilityPlan.spec.ts
+  s_29d8df116c5b92::t_cfa9ec7073ffab 1-687
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_29d8df116c5b92::t_dbf680040fd119 1-1403
+scripts/retargetCapabilityPlan.ts
+  s_29d8df116c5b92::t_b210307957e72a 1-558
+scripts/retargetCapabilitySnapshot.ts
+  s_29d8df116c5b92::t_3c392ec5525c3f 1-563
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d02e918fbf6dd9623615c39b3ea16ea59ad6973",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
