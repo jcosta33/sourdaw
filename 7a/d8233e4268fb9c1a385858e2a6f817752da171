@@ -1,0 +1,30 @@
+src/modules/Arrangement/handlers/__tests__/mixerCompensationBatch.spec.ts
+  s_1c08b47ac3792f::t_596c8b6ee1a9ab 13,31,198,201-210,212-250,252-261,263,265-277
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_1c08b47ac3792f::t_9657dbf46cf165 122-126
+  s_1c08b47ac3792f::t_bb5319465fa541 121
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_228142dd0c2736 1212
+src/modules/Arrangement/handlers/track/__tests__/soloTrack.spec.ts
+  s_1c08b47ac3792f::t_4299fbfc026ecd 47,51,61-76,82-97
+  s_1c08b47ac3792f::t_544813a92ca38b 98
+src/modules/Arrangement/handlers/track/soloTrack.ts
+  s_1c08b47ac3792f::t_9657dbf46cf165 13-16
+  s_1c08b47ac3792f::t_6bf3740d9fbadf 46-51,57-59,65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ad8233e4268fb9c1a385858e2a6f817752da171",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
