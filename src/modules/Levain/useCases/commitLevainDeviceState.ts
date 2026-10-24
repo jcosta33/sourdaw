@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';
@@ -42,6 +43,7 @@ export function commitLevainDeviceState(deviceId: string): void {
     const tier = device.deviceState?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
     const encoded = toLevainDeviceState(patch, tier);
     const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
+    const projectIdentity = captureProjectIdentity();
     const capturedDevice = canonicalJson(device);
     void executeAppAction(
         { type: 'setDeviceState', payload: { deviceId, state } },
@@ -51,7 +53,11 @@ export function commitLevainDeviceState(deviceId: string): void {
                 const current = trackStore.value?.tracks
                     .find((track) => track.id === owner.id)
                     ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-                return current === device && canonicalJson(current) === capturedDevice;
+                return (
+                    captureProjectIdentity() === projectIdentity &&
+                    current === device &&
+                    canonicalJson(current) === capturedDevice
+                );
             },
         }
     );

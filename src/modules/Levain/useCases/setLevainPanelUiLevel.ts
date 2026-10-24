@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -25,6 +26,7 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
     }
     const request = Symbol();
     latestTierRequest.set(device, request);
+    const projectIdentity = captureProjectIdentity();
     const capturedDevice = canonicalJson(device);
     await executeUserAppAction(
         {
@@ -50,7 +52,11 @@ export async function setLevainPanelUiLevel(deviceId: string, level: 1 | 6): Pro
                 const current = trackStore.value?.tracks
                     .find((track) => track.id === owner.id)
                     ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-                if (current === device && canonicalJson(current) === capturedDevice) {
+                if (
+                    captureProjectIdentity() === projectIdentity &&
+                    current === device &&
+                    canonicalJson(current) === capturedDevice
+                ) {
                     return true;
                 }
                 notifyUser(

@@ -11,6 +11,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -117,6 +118,54 @@ async function requestDuringSnapshotEdit(
     releaseTransaction();
     await transaction;
     await request;
+}
+
+async function requestAcrossSuccessorProject(requestAction: () => Promise<void>): Promise<void> {
+    const originalState = trackStore.value!;
+    const originalOwner = originalState.tracks[0];
+    const originalDevice = originalOwner?.devices[0];
+    const originalProjectIdentity = captureProjectIdentity();
+    const originalDeviceState = structuredClone(rawProjectState('a'));
+    let markStarted!: () => void;
+    let releaseTransaction!: () => void;
+    const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+        releaseTransaction = resolve;
+    });
+    const transaction = transactSnapshot(async () => {
+        markStarted();
+        await release;
+    });
+    await started;
+
+    const request = requestAction();
+    let successorProjectIdentity = '';
+    let sameOwner = false;
+    let sameDevice = false;
+    let successorDeviceState: ReturnType<typeof rawProjectState>;
+    try {
+        const root = getCrdtDoc('root');
+        if (!root) {
+            throw new Error('Expected an authoritative root document');
+        }
+        replaceCrdtDoc({ id: 'root', doc: load(save(root)) });
+        successorProjectIdentity = captureProjectIdentity();
+        sameOwner = trackStore.value?.tracks[0] === originalOwner;
+        sameDevice = trackStore.value?.tracks[0]?.devices[0] === originalDevice;
+        successorDeviceState = rawProjectState('a');
+    } finally {
+        releaseTransaction();
+        await transaction;
+    }
+    await request;
+    expect(successorProjectIdentity).not.toBe(originalProjectIdentity);
+    expect(sameOwner).toBe(true);
+    expect(sameDevice).toBe(true);
+    expect(successorDeviceState).toEqual(originalDeviceState);
+    expect(rawProjectState('a')).toEqual(originalDeviceState);
+    expect(projectState('a')).toEqual(originalDeviceState);
 }
 
 const dispatched = vi.hoisted(() => [] as Promise<void>[]);
@@ -247,6 +296,11 @@ it('does not address a same-ID, byte-identical replacement after a snapshot wait
     expect(projectState('a')).toEqual(before);
 });
 
+it('does not carry a queued tier into a successor project retaining identical device objects and bytes', async () => {
+    await requestAcrossSuccessorProject(() => setLevainPanelUiLevel('a', 6));
+    expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+});
+
 it('commits the newest valid tier choice when two choices wait behind one snapshot', async () => {
     await requestDuringSnapshotEdit(null, async () => {
         const expert = setLevainPanelUiLevel('a', 6);
@@ -299,6 +353,14 @@ it('does not write an identity onto a same-ID replacement after a snapshot wait'
         }
     );
     expect(rawProjectState('a')).toEqual(before);
+});
+
+it('does not carry a queued identity into a successor project retaining identical device objects and bytes', async () => {
+    levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
+    await requestAcrossSuccessorProject(async () => {
+        commitLevainDeviceState('a');
+        await Promise.all(dispatched);
+    });
 });
 
 it('refuses unknown versions before a tier or identity request', async () => {
