@@ -345,15 +345,36 @@ function postedMessages(port: { postMessage: ReturnType<typeof vi.fn> }): Record
 }
 
 describe('loadInstrumentFromManifest', () => {
+    const activeChunkLoads = new Set<{
+        controller: AbortController;
+        port: FakePort;
+        promise: Promise<unknown>;
+    }>();
+
     beforeEach(() => {
         decodedBankResource.clear();
         mockFetchOk();
     });
 
-    afterEach(() => {
-        decodedBankResource.clear();
-        vi.unstubAllGlobals();
-        vi.clearAllMocks();
+    afterEach(async () => {
+        try {
+            for (const load of activeChunkLoads) {
+                load.controller.abort();
+                load.port.emit({ type: 'disposed' });
+            }
+            if (activeChunkLoads.size > 0) {
+                await vi.waitFor(() => {
+                    for (const load of activeChunkLoads) {
+                        load.port.drainWorklet();
+                    }
+                    expect(activeChunkLoads.size).toBe(0);
+                });
+            }
+        } finally {
+            decodedBankResource.clear();
+            vi.unstubAllGlobals();
+            vi.clearAllMocks();
+        }
     });
 
     it('reports only acknowledged current shipment activity and releases decoded admission after commit', async () => {
@@ -638,29 +659,103 @@ describe('loadInstrumentFromManifest', () => {
                 expect(postedTypes(port)).toContain('sealSample');
             });
 
-            /** A load of its own bank (its own `basePath`, so the decoded bank is not shared). */
-            function loadOwnBank(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {
-                return loadInstrumentFromManifest({
+            /** Share decoded PCM across ports so their worklet shipments compete for chunk credits. */
+            function loadChunkBank(
+                port: FakePort,
+                name: string,
+                signal?: AbortSignal,
+                mode: 'shared' | 'distinct' = 'shared',
+                onProgress?: (progress: number | { type: 'activity' }) => void
+            ): Promise<unknown> {
+                const controller = new AbortController();
+                const promise = loadInstrumentFromManifest({
                     manifestUrl: '/m.json',
                     buildZoneTables,
-                    basePath: `/${name}`,
+                    basePath: mode === 'shared' ? '/shared-chunk-budget' : `/${name}`,
                     expectedInstrumentId: 'violin-1',
                     nodePort: port,
-                    signal,
+                    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+                    onProgress,
                 });
+                const load = { controller, port, promise };
+                activeChunkLoads.add(load);
+                void promise.then(
+                    () => activeChunkLoads.delete(load),
+                    () => activeChunkLoads.delete(load)
+                );
+                return promise;
             }
 
             it('bounds the unacknowledged chunks of concurrent loads on different ports together', async () => {
                 const tally: ChunkTally = { unanswered: 0, peak: 0 };
-                const ports = [1, 2, 3].map(() => makePort({ chunkAnswers: 'later', chunkTally: tally }));
-                for (const _port of ports) {
-                    stubManyChunks();
+                const ports = [
+                    makePort({ chunkAnswers: 'later', chunkTally: tally, autoComplete: false }),
+                    makePort({ chunkAnswers: 'later', chunkTally: tally }),
+                    makePort({ chunkAnswers: 'later', chunkTally: tally }),
+                ];
+                stubManyChunks();
+                const loads = ports.map((port, index) => loadChunkBank(port, `bank-${index}`));
+                let firstSettled = false;
+                void loads[0]!.then(
+                    () => {
+                        firstSettled = true;
+                    },
+                    () => {
+                        firstSettled = true;
+                    }
+                );
+                try {
+                    await vi.waitFor(() => {
+                        expect(postedTypes(ports[0]!)).toContain('commitSampleBank');
+                        expect(chunkCount(ports[1]!)).toBeGreaterThan(0);
+                        expect(chunkCount(ports[2]!)).toBeGreaterThan(0);
+                    });
+                    expect(firstSettled).toBe(false);
+                    expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                } finally {
+                    const firstToken = postedMessages(ports[0]!)[0]?.loadToken;
+                    if (typeof firstToken === 'number' && postedTypes(ports[0]!).includes('commitSampleBank')) {
+                        ports[0]!.emit({ type: 'sampleBankLoaded', loadToken: firstToken });
+                    }
                 }
-
-                await Promise.all(ports.map((port, index) => loadOwnBank(port, `bank-${index}`)));
-
+                await Promise.all(loads);
                 expect(ports.map(chunkCount)).toEqual([8, 8, 8]);
-                expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+            });
+
+            it('keeps a distinct bank off its port until the predecessor shipment is acknowledged', async () => {
+                const firstPort = makePort({ autoComplete: false });
+                const secondPort = makePort();
+                const firstController = new AbortController();
+                const secondController = new AbortController();
+                const secondProgress = vi.fn();
+                stubManyChunks();
+                const first = loadChunkBank(firstPort, 'distinct-first', firstController.signal, 'distinct');
+                await vi.waitFor(() => expect(postedTypes(firstPort)).toContain('commitSampleBank'));
+                const firstToken = postedMessages(firstPort)[0]!.loadToken;
+                stubManyChunks();
+                const second = loadChunkBank(
+                    secondPort,
+                    'distinct-second',
+                    secondController.signal,
+                    'distinct',
+                    secondProgress
+                );
+                try {
+                    await vi.waitFor(() => expect(secondProgress).toHaveBeenCalledWith(0));
+                    expect(postedTypes(secondPort)).toEqual([]);
+                    expect(vi.mocked(fetchAndDecode)).toHaveBeenCalledTimes(1);
+                    firstPort.emit({ type: 'sampleBankLoaded', loadToken: firstToken });
+                    await first;
+                    await vi.waitFor(() => expect(postedTypes(secondPort)).toContain('beginSampleBank'));
+                    await second;
+                    expect(chunkCount(secondPort)).toBe(8);
+                } finally {
+                    firstController.abort();
+                    secondController.abort();
+                    firstPort.emit({ type: 'disposed' });
+                    secondPort.emit({ type: 'disposed' });
+                    await Promise.allSettled([first, second]);
+                }
             });
 
             it('frees the credits of a load that is aborted, so the loads queued behind it finish', async () => {
@@ -668,20 +763,18 @@ describe('loadInstrumentFromManifest', () => {
                 const holder = makePort({ chunkAnswers: 'never', chunkTally: tally });
                 const second = makePort({ chunkAnswers: 'now', chunkTally: tally });
                 const third = makePort({ chunkAnswers: 'now', chunkTally: tally });
-                for (let loads = 0; loads < 3; loads++) {
-                    stubManyChunks();
-                }
+                stubManyChunks();
                 const controller = new AbortController();
-                const holding = loadOwnBank(holder, 'holder', controller.signal);
+                const holding = loadChunkBank(holder, 'holder', controller.signal);
                 void holding.catch(() => {});
                 await vi.waitFor(() => {
                     expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
                 });
-                const secondLoad = loadOwnBank(second, 'second');
+                const secondLoad = loadChunkBank(second, 'second');
                 await vi.waitFor(() => {
                     expect(postedTypes(second)).toContain('beginSample');
                 });
-                const thirdLoad = loadOwnBank(third, 'third');
+                const thirdLoad = loadChunkBank(third, 'third');
                 await vi.waitFor(() => {
                     expect(postedTypes(third)).toContain('beginSample');
                 });
@@ -698,18 +791,16 @@ describe('loadInstrumentFromManifest', () => {
                 const holder = makePort({ chunkAnswers: 'never' });
                 const waiting = makePort({ chunkAnswers: 'never' });
                 const next = makePort({ chunkAnswers: 'never' });
-                for (let loads = 0; loads < 3; loads++) {
-                    stubManyChunks();
-                }
+                stubManyChunks();
                 const holderController = new AbortController();
                 const waitingController = new AbortController();
-                const holding = loadOwnBank(holder, 'budget-holder', holderController.signal);
+                const holding = loadChunkBank(holder, 'budget-holder', holderController.signal);
                 await vi.waitFor(() => {
                     expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
                 });
                 // The fake worklet answers this abort with a sampleBankError, so
                 // the load's wait is both aborted and failed.
-                const queued = loadOwnBank(waiting, 'budget-waiting', waitingController.signal);
+                const queued = loadChunkBank(waiting, 'budget-waiting', waitingController.signal);
                 await vi.waitFor(() => {
                     expect(postedTypes(waiting)).toContain('beginSample');
                 });
@@ -718,7 +809,8 @@ describe('loadInstrumentFromManifest', () => {
                 await Promise.allSettled([holding, queued]);
                 const controller = new AbortController();
 
-                const fresh = loadOwnBank(next, 'budget-next', controller.signal);
+                stubManyChunks();
+                const fresh = loadChunkBank(next, 'budget-next', controller.signal, 'distinct');
                 void fresh.catch(() => {});
                 await vi.waitFor(() => {
                     expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
@@ -735,14 +827,13 @@ describe('loadInstrumentFromManifest', () => {
                 const aborted = makePort({ chunkAnswers: 'queued', chunkTally: tally });
                 const waiting = makePort({ chunkAnswers: 'now', chunkTally: tally });
                 stubManyChunks();
-                stubManyChunks();
                 const controller = new AbortController();
-                const first = loadOwnBank(aborted, 'passed-a', controller.signal);
+                const first = loadChunkBank(aborted, 'passed-a', controller.signal);
                 void first.catch(() => {});
                 await vi.waitFor(() => {
                     expect(chunkCount(aborted)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
                 });
-                const second = loadOwnBank(waiting, 'passed-b');
+                const second = loadChunkBank(waiting, 'passed-b');
                 await vi.waitFor(() => {
                     expect(postedTypes(waiting)).toContain('beginSample');
                 });
@@ -765,14 +856,13 @@ describe('loadInstrumentFromManifest', () => {
                 const closed = makePort({ chunkAnswers: 'never', abortPostThrows: true });
                 const waiting = makePort({ chunkAnswers: 'now' });
                 stubManyChunks();
-                stubManyChunks();
                 const controller = new AbortController();
-                const first = loadOwnBank(closed, 'closed-a', controller.signal);
+                const first = loadChunkBank(closed, 'closed-a', controller.signal);
                 void first.catch(() => {});
                 await vi.waitFor(() => {
                     expect(chunkCount(closed)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
                 });
-                const second = loadOwnBank(waiting, 'closed-b');
+                const second = loadChunkBank(waiting, 'closed-b');
                 await vi.waitFor(() => {
                     expect(postedTypes(waiting)).toContain('beginSample');
                 });
@@ -801,18 +891,16 @@ describe('loadInstrumentFromManifest', () => {
                     channels: 1,
                     sampleRate: 44100,
                 });
-                stubManyChunks();
-                stubManyChunks();
                 const holder = makePort({ chunkAnswers: 'never', autoComplete: false });
                 const waiter = makePort({ chunkAnswers: 'never' });
                 const holderController = new AbortController();
                 const waiterController = new AbortController();
-                const holding = loadOwnBank(holder, 'handoff-holder', holderController.signal);
+                const holding = loadChunkBank(holder, 'handoff-holder', holderController.signal);
                 void holding.catch(() => {});
                 await vi.waitFor(() => {
                     expect(postedTypes(holder)).toContain('commitSampleBank');
                 });
-                const waiting = loadOwnBank(waiter, 'handoff-waiter', waiterController.signal);
+                const waiting = loadChunkBank(waiter, 'handoff-waiter', waiterController.signal);
                 void waiting.catch(() => {});
                 await vi.waitFor(() => {
                     expect(postedTypes(waiter)).toContain('beginSample');
@@ -827,7 +915,8 @@ describe('loadInstrumentFromManifest', () => {
                 await expect(holding).rejects.toBeDefined();
                 const next = makePort({ chunkAnswers: 'never' });
                 const controller = new AbortController();
-                const fresh = loadOwnBank(next, 'handoff-next', controller.signal);
+                stubManyChunks();
+                const fresh = loadChunkBank(next, 'handoff-next', controller.signal, 'distinct');
                 void fresh.catch(() => {});
                 await vi.waitFor(() => {
                     expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
@@ -859,15 +948,14 @@ describe('loadInstrumentFromManifest', () => {
                     const waiterController = new AbortController();
                     const nextController = new AbortController();
                     const settled: Promise<unknown>[] = [];
-                    const holding = loadOwnBank(holder, `grant-${terminal}-holder`, holderController.signal);
+                    const holding = loadChunkBank(holder, `grant-${terminal}-holder`, holderController.signal);
                     settled.push(holding);
                     void holding.catch(() => {});
                     try {
                         await vi.waitFor(() => {
                             expect(postedTypes(holder)).toContain('commitSampleBank');
                         });
-                        stubManyChunks();
-                        const waiting = loadOwnBank(waiter, `grant-${terminal}-waiter`, waiterController.signal);
+                        const waiting = loadChunkBank(waiter, `grant-${terminal}-waiter`, waiterController.signal);
                         settled.push(waiting);
                         void waiting.catch(() => {});
                         await vi.waitFor(() => {
@@ -892,7 +980,7 @@ describe('loadInstrumentFromManifest', () => {
                         await expect(holding).rejects.toBeDefined();
 
                         stubManyChunks();
-                        const fresh = loadOwnBank(next, `grant-${terminal}-next`, nextController.signal);
+                        const fresh = loadChunkBank(next, `grant-${terminal}-next`, nextController.signal, 'distinct');
                         settled.push(fresh);
                         void fresh.catch(() => {});
                         await vi.waitFor(() => {
@@ -916,21 +1004,19 @@ describe('loadInstrumentFromManifest', () => {
                 const holder = makePort({ chunkAnswers: 'never' });
                 const early = makePort({ chunkAnswers: 'never' });
                 const late = makePort({ chunkAnswers: 'never' });
-                for (let loads = 0; loads < 3; loads++) {
-                    stubManyChunks();
-                }
+                stubManyChunks();
                 const controller = new AbortController();
                 const earlyController = new AbortController();
                 const lateController = new AbortController();
-                const settled = [loadOwnBank(holder, 'fifo-holder', controller.signal)];
+                const settled = [loadChunkBank(holder, 'fifo-holder', controller.signal)];
                 await vi.waitFor(() => {
                     expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
                 });
-                settled.push(loadOwnBank(early, 'fifo-early', earlyController.signal));
+                settled.push(loadChunkBank(early, 'fifo-early', earlyController.signal));
                 await vi.waitFor(() => {
                     expect(postedTypes(early)).toContain('beginSample');
                 });
-                settled.push(loadOwnBank(late, 'fifo-late', lateController.signal));
+                settled.push(loadChunkBank(late, 'fifo-late', lateController.signal));
                 await vi.waitFor(() => {
                     expect(postedTypes(late)).toContain('beginSample');
                 });
