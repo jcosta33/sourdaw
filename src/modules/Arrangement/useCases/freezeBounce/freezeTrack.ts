@@ -2,7 +2,7 @@ import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/c
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -26,13 +26,13 @@ export const activeFreezeTasks = new Map<string, AbortController>();
 type FreezeTaskIdentity = {
     abortController: AbortController;
     projectId: number;
-    projectIdentity: string;
+    rootIdentity: string;
     trackId: string;
 };
 
 function isEligibleActiveProjectTrack({
     projectId,
-    projectIdentity,
+    rootIdentity,
     trackId,
 }: Omit<FreezeTaskIdentity, 'abortController'>): boolean {
     const activeProject = projectStore.value;
@@ -40,7 +40,7 @@ function isEligibleActiveProjectTrack({
     if (
         !activeProject ||
         activeProject.createdAt !== projectId ||
-        captureProjectIdentity() !== projectIdentity ||
+        captureProjectRootIdentity() !== rootIdentity ||
         !activeState
     ) {
         return false;
@@ -94,7 +94,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
     const taskIdentity = {
         abortController,
         projectId: project.createdAt,
-        projectIdentity: captureProjectIdentity(),
+        rootIdentity: captureProjectRootIdentity(),
         trackId,
     };
     const sourceRevision = captureProjectRevision();

@@ -18,6 +18,8 @@ import {
 } from '#/modules/Command/useCases';
 import { actionHistoryStore, agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectRevision,
+    captureProjectRootIdentity,
     clearActionHistory,
     createCrdtDoc,
     getCrdtDoc,
@@ -249,6 +251,51 @@ describe('registered Freeze failure settlement', () => {
         expect(captureFreezeStateSnapshot(rawTrack())).toEqual(produced);
         expect(captureFreezeStateSnapshot(projectedTrack())).toEqual(produced);
         expect(render).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps successful render authority when a non-root document is added', async () => {
+        const entered = Promise.withResolvers<void>();
+        const rendered = Promise.withResolvers<AudioBuffer | null>();
+        render.mockImplementation(() => {
+            entered.resolve();
+            return rendered.promise;
+        });
+        const pending = freeze();
+        await entered.promise;
+        const rootIdentity = captureProjectRootIdentity();
+        const revision = captureProjectRevision();
+        createCrdtDoc('unrelated-sync-document');
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+        expect(captureProjectRevision()).not.toBe(revision);
+        rendered.resolve(buffer(0.5));
+        await pending;
+        expect(rawTrack().freezeState.status).toBe('frozen');
+        expect(projectedTrack().freezeState.status).toBe('frozen');
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(activeFreezeTasks.size).toBe(0);
+    });
+
+    it('keeps the complete failure revision fence when a non-root document is added', async () => {
+        const entered = Promise.withResolvers<void>();
+        const rendered = Promise.withResolvers<AudioBuffer | null>();
+        render.mockImplementation(() => {
+            entered.resolve();
+            return rendered.promise;
+        });
+        const pending = freeze();
+        await entered.promise;
+        const rootIdentity = captureProjectRootIdentity();
+        createCrdtDoc('unrelated-sync-document');
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+        rendered.reject(new Error('Render refused after child sync'));
+        await pending;
+        expect(notices).toContainEqual({ message: 'Render refused after child sync', level: 'error' });
+        expect(rawTrack().freezeState.status).toBe('unfrozen');
+        expect(projectedTrack().freezeState.status).toBe('unfrozen');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(actionHistoryStore.value?.entries).toHaveLength(0);
+        expect(macroStore.value?.currentRecording).toHaveLength(0);
+        expect(activeFreezeTasks.size).toBe(0);
     });
 
     it('keeps a newer render task installed while the failed task awaits settlement', async () => {
