@@ -148,6 +148,7 @@ type Input = {
     parentThreads?: SupersededReviewThread[];
     parentThreadsByRead?: SupersededReviewThread[][];
     removeParentReceiptDuringClose?: boolean;
+    precloseParentProofChildComments?: (comments: IssueComment[]) => IssueComment[];
     finalParentProofChildComments?: (comments: IssueComment[]) => IssueComment[];
 };
 
@@ -224,6 +225,9 @@ function fakePort(input: Input = {}) {
         }
         if (number === parentNumber) {
             const inspection = parentInspections++;
+            if (inspection === 2 && input.precloseParentProofChildComments !== undefined) {
+                comments = input.precloseParentProofChildComments(comments);
+            }
             if (inspection === 3 && input.finalParentProofChildComments !== undefined) {
                 comments = input.finalParentProofChildComments(comments);
             }
@@ -1065,6 +1069,79 @@ describe('pull-request supersession', () => {
         expect(state().state).toBe('CLOSED');
         expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
         expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
+    });
+    describe.each([
+        ['receipt', receiptBody],
+        ['lineage', lineageBody],
+    ])('child %s marker during the last parent proof before close', (_marker, body) => {
+        it.each([
+            ['removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== body), false],
+            [
+                'body change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, body: `${body}\nEdited` })),
+                true,
+            ],
+            [
+                'identity replacement',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, () =>
+                        markerComment('IC_replacement_marker', String(databaseBase + 500n), body)
+                    ),
+                false,
+            ],
+            [
+                'actor change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID })),
+                true,
+            ],
+            [
+                'actor type change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, authorType: 'User' })),
+                true,
+            ],
+            [
+                'duplicate',
+                (comments: IssueComment[]) => [
+                    ...comments,
+                    markerComment('IC_duplicate_marker', String(databaseBase + 501n), body),
+                ],
+                false,
+            ],
+        ] satisfies [string, (comments: IssueComment[]) => IssueComment[], boolean][])(
+            'refuses %s before closing and preserves comments outside verified compensation',
+            (_case, change, retainsCreatedMarkers) => {
+                let changedComments: IssueComment[] | undefined;
+                const { port, calls, state, posted } = fakePort({
+                    bases: [parentBranch],
+                    precloseParentProofChildComments: (comments) => {
+                        changedComments = change(comments);
+                        return changedComments;
+                    },
+                });
+                expect(() => runWithParent(port)).toThrow(/marker|receipt/i);
+                expect(changedComments).toBeDefined();
+                expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+                expect(state().state).toBe('OPEN');
+                expect(state().closedAt).toBeNull();
+                expect(state().comments).toContainEqual(oldComment);
+                if (retainsCreatedMarkers) {
+                    expect(state().comments).toEqual(changedComments);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+                } else {
+                    expect(state().comments).toEqual(
+                        changedComments?.filter((comment) => !posted().includes(comment.id))
+                    );
+                    const expectedDeletes = posted()
+                        .filter((id) => changedComments?.some((comment) => comment.id === id))
+                        .map((id) => `delete:${id}`);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(expectedDeletes);
+                }
+                expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+            }
+        );
     });
     it.each([
         ['lineage removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== lineageBody)],

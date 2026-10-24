@@ -415,6 +415,14 @@ export function supersedePullRequest(
         assertFindingsUnchanged(oldNumber, coveredFindings, port);
         if (stackedParentProof !== undefined) {
             assertStackedParentProofUnchanged(stackedParentProof, before, port);
+            const beforeClose = port.inspect(oldNumber);
+            assertStableOpen(beforeClose, oldNumber, expectedHead, before.base);
+            checkedChildBaseRef(beforeClose, stackedParentProof.parent, false);
+            const currentReceipt = requireOneCommentMarker(beforeClose.comments, markers[0], markers, oldNumber);
+            const currentLineage = requireOneCommentMarker(beforeClose.comments, markers[1], markers, oldNumber);
+            if (currentReceipt.id !== receiptMarker.id || currentLineage.id !== lineageMarker.id) {
+                fail(`PR #${oldNumber} supersession marker identity changed before close; compensating`);
+            }
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
         }
         closeAttempted = true;
