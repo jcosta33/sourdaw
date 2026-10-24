@@ -1,0 +1,27 @@
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_9f91244f5dbae2 144-148,154-161,163-166
+  s_59e31a5c6f3e31::t_15b76e205e6780 14,123-143,162,167,169-170,299-303,358-364
+  s_59e31a5c6f3e31::t_cfe3b89249ec70 149-153
+  s_59e31a5c6f3e31::t_41daaade61c1a5 168
+  s_59e31a5c6f3e31::t_d02bec92d5eee0 365
+src/modules/Levain/useCases/setLevainPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_c39ca638e433a1 3,29,55-59
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_59e31a5c6f3e31::t_c39ca638e433a1 3,46,56-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10e7e6b438e577e8b4c5840af2d9fdbd6286d4e7",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
