@@ -867,6 +867,9 @@ impl LevainVoice {
         gain: f32,
         pool: &SamplePool,
     ) {
+        // Replacing an unheard incoming attack must not cut the earlier
+        // recording whose de-click fade still occupies the outgoing streams.
+        let keep_stolen_tail = self.steal_crossfading && self.delayed_attack_is_pending();
         self.cancel_pending_attack();
         let was_sounding = self.active
             && self.any_primary_active()
@@ -886,7 +889,7 @@ impl LevainVoice {
             self.crossfade_rate = crossfade_rate_for(0.001, self.sample_rate);
             self.crossfading = true;
             self.steal_crossfading = true;
-        } else {
+        } else if !keep_stolen_tail {
             self.crossfading = false;
             self.steal_crossfading = false;
             self.crossfade_amount = 0.0;
@@ -1008,6 +1011,13 @@ impl LevainVoice {
 
     pub fn attack_is_pending(&self) -> bool {
         self.pending_samples > 0 || self.realism_attack_pending
+    }
+
+    /// A queued zero-delay realism callback can still join a queued slur.
+    /// Once a delay has drained its last silent frame, the callback remains
+    /// pending until the incoming sample actually starts on the next tick.
+    pub fn delayed_attack_is_pending(&self) -> bool {
+        self.pending_samples > 0 || (self.realism_attack_pending && self.samples_since_on > 0)
     }
 
     pub fn is_sounding(&self) -> bool {
@@ -2012,6 +2022,78 @@ mod tests {
             );
             prev = curr;
         }
+    }
+
+    #[test]
+    fn delayed_attack_detection_distinguishes_queued_realism_and_the_last_silent_frame() {
+        let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
+        for stolen_tail in [false, true] {
+            let mut voice = LevainVoice::new(SAMPLE_RATE);
+            if stolen_tail {
+                voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+                for _ in 0..500 {
+                    voice.tick(&pool);
+                }
+            }
+            voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+            voice.defer_realism_attack();
+            assert!(voice.attack_is_pending());
+            assert!(!voice.delayed_attack_is_pending());
+            voice.delay_onset(2);
+            assert!(voice.delayed_attack_is_pending());
+            assert_eq!(voice.is_sounding(), stolen_tail);
+
+            for _ in 0..2 {
+                assert!(!voice.take_realism_attack());
+                voice.tick(&pool);
+                assert!(voice.delayed_attack_is_pending());
+            }
+            assert_eq!(voice.pending_samples, 0);
+            assert_eq!(voice.amp_env.current_level(), 0.0);
+            assert!(voice.take_realism_attack());
+            assert!(!voice.delayed_attack_is_pending());
+            voice.tick(&pool);
+            assert!(voice.amp_env.current_level() > 0.0);
+        }
+    }
+
+    #[test]
+    fn replacing_an_unheard_attack_keeps_its_stolen_predecessors_fade() {
+        fn prepared(pool: &SamplePool, zone: Zone) -> LevainVoice {
+            let mut voice = LevainVoice::new(SAMPLE_RATE);
+            voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, pool);
+            for _ in 0..500 {
+                voice.tick(pool);
+            }
+            voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, pool);
+            voice.delay_onset(128);
+            voice.defer_realism_attack();
+            for _ in 0..8 {
+                voice.tick(pool);
+            }
+            voice
+        }
+
+        let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
+        let mut reference = prepared(&pool, zone);
+        let mut replaced = prepared(&pool, zone);
+        replaced.trigger(69, 4, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+        replaced.delay_onset(128);
+        replaced.defer_realism_attack();
+        let mut peak = 0.0_f32;
+        for _ in 0..64 {
+            let expected = reference.tick(&pool);
+            let actual = replaced.tick(&pool);
+            peak = peak.max(expected[0].abs());
+            assert_eq!(actual, expected);
+        }
+        assert!(
+            peak > 0.001,
+            "the comparison must observe the outgoing fade"
+        );
+        assert_eq!((replaced.note, replaced.channel), (69, 4));
+        assert!(replaced.delayed_attack_is_pending());
+        assert!(!replaced.take_realism_attack());
     }
 
     #[test]

@@ -899,15 +899,15 @@ impl LevainEngine {
         };
 
         // Now allocate voice and check legato (after confirming we have a zone).
-        let voice_idx = self.voice_pool.allocate();
+        let mut voice_idx = self.voice_pool.allocate();
         let legato_result = self
             .legato
             .note_on(note, velocity, voice_idx, current_dynamic);
         // A held key can outlive its recording or remember a recycled slot.
-        // Only a matching voice that has started sounding can continue a line;
-        // every other result needs the complete fresh-attack setup below.
+        // A real delay needs a fresh attack even at its last silent frame;
+        // a zero-delay realism callback alone must not split a queued slur.
         let legato_result = match legato_result {
-            LegatoResult::TrueTransition {
+            result @ (LegatoResult::TrueTransition {
                 from_note,
                 from_voice,
                 ..
@@ -916,12 +916,21 @@ impl LevainEngine {
                 from_note,
                 from_voice,
                 ..
-            } if !self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
-                voice.note == from_note && voice.is_sounding() && !voice.attack_is_pending()
-            }) =>
-            {
-                LegatoResult::Normal
-            }
+            }) => match self.voice_pool.voices.get(from_voice) {
+                Some(voice) if voice.active && voice.note == from_note => {
+                    if voice.delayed_attack_is_pending() {
+                        // Trigger replaces this unheard attack in its own slot,
+                        // cancelling its pending PCM and realism callback.
+                        voice_idx = from_voice;
+                        LegatoResult::Normal
+                    } else if voice.is_sounding() {
+                        result
+                    } else {
+                        LegatoResult::Normal
+                    }
+                }
+                _ => LegatoResult::Normal,
+            },
             result => result,
         };
 
@@ -1059,8 +1068,12 @@ impl LevainEngine {
             has_pending_attack |= voice.attack_is_pending();
             has_started_attack |= !voice.attack_is_pending();
         }
-        let cancelled_attack = has_pending_attack && !has_started_attack;
-        if !cancelled_attack {
+        let has_fallback_attack = self.fallback.has_started_note(note);
+        let owns_attack = has_pending_attack || has_started_attack || has_fallback_attack;
+        let sounds_release = has_started_attack || has_fallback_attack;
+        // An obsolete key or member channel cannot lift the bow of the note
+        // that replaced it, or make a never-heard attack emit a release burst.
+        if sounds_release {
             for realism in self.realism.iter_mut() {
                 realism.note_off(note);
             }
@@ -1075,7 +1088,9 @@ impl LevainEngine {
         // Check sustain pedal — defer release until pedal is lifted.
         let cc1 = self.expression.crossfader.current_cc1();
         if self.expression.sustain_pedal {
-            self.pedal_deferred.defer_note_off(note, cc1);
+            if owns_attack {
+                self.pedal_deferred.defer_note_off(note, cc1);
+            }
             return;
         }
 
@@ -1084,10 +1099,15 @@ impl LevainEngine {
             .release_note_matching(note, self.pending_note_off_channel);
         // Fire release trigger if available (audit F5), after releasing sounding voices
         // so the new release-trigger voice is not immediately silenced by this note-off.
-        if cancelled_attack {
-            self.release_tracker.note_off(note, cc1);
-        } else {
+        if sounds_release {
             self.trigger_release_if_available(note, cc1);
+        } else if !self
+            .voice_pool
+            .voices
+            .iter()
+            .any(|voice| voice.active && voice.held && voice.note == note)
+        {
+            self.release_tracker.note_off(note, cc1);
         }
     }
 
@@ -3891,6 +3911,171 @@ mod tests {
         engine.set_param("humanize", 0.0);
         engine.set_param("ensemble_timing", 1.0);
         engine
+    }
+
+    #[test]
+    fn a_delayed_same_pitch_attack_replaces_its_predecessor_on_the_new_member_channel() {
+        for at_last_silent_frame in [false, true] {
+            let mut engine = ensemble_legato_engine(false, LoopMode::Forward);
+            engine.set_param("attack_spread", 3.23);
+            engine.note_on_with_channel(67, 100, 2);
+            if at_last_silent_frame {
+                assert!(render(&mut engine, 1).iter().all(|sample| *sample == 0.0));
+            }
+            engine.note_on_with_channel(67, 100, 3);
+            assert_eq!(engine.active_voice_count(), 1);
+            assert_eq!(active_voices_at(&engine, 67), vec![(3, true, 0.0)]);
+            engine.note_expression(67, 2, -12.0, 0.0, 0.0);
+            engine.note_expression(67, 3, 12.0, 0.0, 0.0);
+            assert_eq!(active_voices_at(&engine, 67), vec![(3, true, 12.0)]);
+            engine.note_off_on_channel(67, 2);
+            assert_eq!(active_voices_at(&engine, 67), vec![(3, true, 12.0)]);
+            engine.note_off_on_channel(67, 3);
+            assert!(render(&mut engine, 8).iter().all(|sample| *sample == 0.0));
+            assert_eq!(engine.active_voice_count(), 0);
+        }
+    }
+
+    #[test]
+    fn queued_legato_replacements_preserve_legacy_voicing_and_member_channel_ownership() {
+        for recorded_transition in [false, true] {
+            let mut reference = ensemble_legato_engine(recorded_transition, LoopMode::Forward);
+            reference.note_on_with_channel(64, 100, 4);
+            let expected = render(&mut reference, 8);
+
+            let mut engine = ensemble_legato_engine(recorded_transition, LoopMode::Forward);
+            engine.note_on_with_channel(60, 100, 2);
+            engine.note_on_with_channel(62, 100, 3);
+            engine.note_on_with_channel(64, 100, 4);
+            // Legato records its allocation candidate even when a slur reuses
+            // the source, so the third note retains the existing divisi voice.
+            assert_eq!(engine.active_voice_count(), 2);
+            assert_eq!(active_voices_at(&engine, 60), vec![]);
+            assert_eq!(active_voices_at(&engine, 62), vec![(3, true, 0.0)]);
+            assert_eq!(active_voices_at(&engine, 64), vec![(4, true, 0.0)]);
+            engine.note_expression(62, 2, -12.0, 0.0, 0.0);
+            engine.note_expression(62, 3, 12.0, 0.0, 0.0);
+            assert_eq!(active_voices_at(&engine, 62), vec![(3, true, 12.0)]);
+            engine.note_off_on_channel(60, 2);
+            assert_eq!(engine.active_voice_count(), 2);
+            engine.note_off_on_channel(62, 3);
+            assert_eq!(engine.active_voice_count(), 1);
+            assert_eq!(render(&mut engine, 8), expected);
+        }
+    }
+
+    #[test]
+    fn cancelling_a_queued_bowed_replacement_leaves_no_unheard_predecessor_or_burst() {
+        for recorded_transition in [false, true] {
+            let mut engine = ensemble_legato_engine(recorded_transition, LoopMode::Forward);
+            engine.set_instrument("violin-1");
+            engine.note_on_with_channel(60, 100, 2);
+            engine.note_on_with_channel(62, 100, 3);
+            assert_eq!(engine.active_voice_count(), 1);
+            engine.note_off_on_channel(60, 2);
+            engine.note_off_on_channel(62, 3);
+            assert!(render(&mut engine, 8).iter().all(|sample| *sample == 0.0));
+            assert_eq!(engine.active_voice_count(), 0);
+        }
+    }
+
+    #[test]
+    fn an_unheard_replaced_bowed_note_does_not_leave_a_deferred_release() {
+        for recorded_transition in [false, true] {
+            let mut engine = ensemble_legato_engine(recorded_transition, LoopMode::Forward);
+            engine.set_instrument("violin-1");
+            engine.note_on_with_channel(60, 100, 2);
+            engine.note_on_with_channel(62, 100, 3);
+            engine.handle_cc(64, 127);
+            engine.note_off_on_channel(60, 2);
+            assert!(!engine.pedal_deferred.has_deferred());
+            engine.note_off_on_channel(62, 3);
+            assert!(engine.pedal_deferred.has_deferred());
+            engine.handle_cc(64, 0);
+            assert!(render(&mut engine, 8).iter().all(|sample| *sample == 0.0));
+            assert_eq!(engine.active_voice_count(), 0);
+        }
+    }
+
+    fn sounding_bowed_legato_engine(recorded_transition: bool) -> LevainEngine {
+        let mut engine = ensemble_legato_engine(recorded_transition, LoopMode::Forward);
+        engine.set_instrument("violin-1");
+        engine.set_param("ensemble_timing", 0.0);
+        engine.note_on_with_channel(60, 100, 2);
+        render(&mut engine, 8);
+        engine.note_on_with_channel(62, 100, 3);
+        render(&mut engine, 8);
+        engine
+    }
+
+    #[test]
+    fn a_heard_bowed_legato_destination_keeps_its_realism_release() {
+        for recorded_transition in [false, true] {
+            let mut actual = sounding_bowed_legato_engine(recorded_transition);
+            let mut without_burst = sounding_bowed_legato_engine(recorded_transition);
+            actual.note_off_on_channel(62, 3);
+            without_burst.voice_pool.release_note(62);
+            let expected = render(&mut without_burst, 8);
+            let released = render(&mut actual, 8);
+            assert!(released
+                .iter()
+                .zip(&expected)
+                .any(|(sample, reference)| (sample - reference).abs() > 1e-6));
+        }
+    }
+
+    #[test]
+    fn a_repeated_bowed_note_off_does_not_restart_the_existing_legato_release_tail() {
+        for recorded_transition in [false, true] {
+            let mut once = sounding_bowed_legato_engine(recorded_transition);
+            let mut twice = sounding_bowed_legato_engine(recorded_transition);
+            once.note_off_on_channel(62, 3);
+            twice.note_off_on_channel(62, 3);
+            assert_eq!(render(&mut twice, 1), render(&mut once, 1));
+            twice.note_off_on_channel(62, 3);
+            let expected = render(&mut once, 8);
+            assert!(expected.iter().any(|sample| sample.abs() > 1e-6));
+            assert_eq!(render(&mut twice, 8), expected);
+        }
+    }
+
+    #[test]
+    fn a_heard_fallback_note_keeps_its_bowed_realism_release() {
+        fn prepared() -> LevainEngine {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+            engine.clear_zones();
+            engine.set_instrument("violin-1");
+            engine.note_on(60, 100);
+            assert!(render(&mut engine, 8)
+                .iter()
+                .any(|sample| sample.abs() > 1e-6));
+            assert!(engine.fallback.has_started_note(60));
+            assert!(!engine.fallback.has_started_note(62));
+            engine
+        }
+
+        let mut actual = prepared();
+        let mut without_burst = prepared();
+        actual.note_off(60);
+        without_burst.fallback.note_off(60);
+        let expected = render(&mut without_burst, 8);
+        assert!(!actual.fallback.has_started_note(60));
+        assert!(render(&mut actual, 8)
+            .iter()
+            .zip(&expected)
+            .any(|(sample, reference)| (sample - reference).abs() > 1e-6));
+    }
+
+    #[test]
+    fn seeded_humanized_queued_notes_keep_the_shipped_thirty_two_voice_workload() {
+        let mut engine = engine_with_sawtooth_zone_voices(64);
+        engine.set_instrument("violin-1");
+        for index in 0..64 {
+            engine.note_on((21 + index * 87 / 64) as u8, 100);
+        }
+        assert_eq!(engine.active_voice_count(), 32);
+        render(&mut engine, 128);
+        assert_eq!(engine.active_voice_count(), 32);
     }
 
     #[test]

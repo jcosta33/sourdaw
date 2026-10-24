@@ -10,7 +10,7 @@ type LevainProcessorLike = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
     process: (inputs: unknown[], outputs: unknown[]) => boolean;
     // The processor's engine, read to observe the shipped retired slot.
-    _instance: { has_retired_bank: () => boolean } | null;
+    _instance: { has_retired_bank: () => boolean; active_voices: () => number } | null;
 };
 
 const FRAMES = 128;
@@ -241,6 +241,114 @@ afterEach(() => {
 });
 
 describe('shipped LevainProcessor bank retirement', () => {
+    it('does not emit bowed realism for an unmatched note-off', async () => {
+        const { registry } = installWorkletGlobals<LevainProcessorLike>();
+        await import('../levainProcessor');
+        const Processor = registry.get('levain-processor');
+        if (!Processor) {
+            throw new TypeError('Expected levain-processor registration');
+        }
+        const processor = new Processor({ processorOptions: { wasmModule } });
+        send(processor, { type: 'init' });
+        loadBank(processor, 1, 'violin-1');
+        vi.stubGlobal('currentFrame', 0);
+        send(processor, { type: 'noteOff', note: 60, channel: 2, sampleFrame: 0 });
+        const output = makeChannels(2, FRAMES);
+        for (let quantum = 0; quantum < 8; quantum++) {
+            vi.stubGlobal('currentFrame', quantum * FRAMES);
+            expect(processor.process([], [output])).toBe(true);
+            expect(output[0]!.every((sample) => sample === 0)).toBe(true);
+            expect(output[1]!.every((sample) => sample === 0)).toBe(true);
+        }
+    });
+
+    it.each([62, 64])(
+        'keeps a bowed queued replacement silent when old and new notes %s are cancelled',
+        async (note) => {
+            const { registry } = installWorkletGlobals<LevainProcessorLike>();
+            await import('../levainProcessor');
+            const Processor = registry.get('levain-processor');
+            if (!Processor) {
+                throw new TypeError('Expected levain-processor registration');
+            }
+            const processor = new Processor({ processorOptions: { wasmModule } });
+            send(processor, { type: 'init' });
+            loadBank(processor, 1, 'violin-1');
+            send(processor, { type: 'param', name: 'humanize', value: 0 });
+            send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+            send(processor, { type: 'param', name: 'legatoEnabled', value: 1 });
+            vi.stubGlobal('currentFrame', 0);
+            send(processor, { type: 'noteOn', note: 60, velocity: 100, channel: 2, sampleFrame: 0 });
+            send(processor, { type: 'noteOn', note, velocity: 100, channel: 3, sampleFrame: 0 });
+            send(processor, { type: 'noteOff', note: 60, channel: 2, sampleFrame: 0 });
+            send(processor, { type: 'noteOff', note, channel: 3, sampleFrame: 0 });
+            const output = makeChannels(2, FRAMES);
+            for (let quantum = 0; quantum < 8; quantum++) {
+                vi.stubGlobal('currentFrame', quantum * FRAMES);
+                expect(processor.process([], [output])).toBe(true);
+                expect(output[0]!.every((sample) => sample === 0)).toBe(true);
+                expect(output[1]!.every((sample) => sample === 0)).toBe(true);
+            }
+            expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+        }
+    );
+
+    it.each([0, 1])('hands queued same-pitch notes to one member channel with ensemble timing %s', async (timing) => {
+        const { registry } = installWorkletGlobals<LevainProcessorLike>();
+        await import('../levainProcessor');
+        const Processor = registry.get('levain-processor');
+        if (!Processor) {
+            throw new TypeError('Expected levain-processor registration');
+        }
+        const processor = new Processor({ processorOptions: { wasmModule } });
+        send(processor, { type: 'init' });
+        loadBank(processor, 1, 'marimba');
+        send(processor, { type: 'param', name: 'humanize', value: 0 });
+        send(processor, { type: 'param', name: 'ensembleTiming', value: timing });
+        send(processor, { type: 'param', name: 'legatoEnabled', value: 1 });
+        vi.stubGlobal('currentFrame', 0);
+        send(processor, { type: 'noteOn', note: 60, velocity: 100, channel: 2, sampleFrame: 0 });
+        send(processor, { type: 'noteOn', note: 60, velocity: 100, channel: 3, sampleFrame: 0 });
+
+        const output = makeChannels(2, FRAMES);
+        expect(processor.process([], [output])).toBe(true);
+        if (!processor._instance) {
+            throw new TypeError('Expected an initialised engine');
+        }
+        expect(processor._instance.active_voices()).toBe(1);
+        expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+    });
+
+    it('keeps the shipped seeded 64-note workload at 32 occupied voices', async () => {
+        const { registry } = installWorkletGlobals<LevainProcessorLike>();
+        await import('../levainProcessor');
+        const Processor = registry.get('levain-processor');
+        if (!Processor) {
+            throw new TypeError('Expected levain-processor registration');
+        }
+        const processor = new Processor({ processorOptions: { wasmModule } });
+        send(processor, { type: 'init' });
+        loadBank(processor, 1, 'violin-1');
+        send(processor, { type: 'param', name: 'ensembleTiming', value: 0 });
+        send(processor, { type: 'param', name: 'legatoEnabled', value: 1 });
+        vi.stubGlobal('currentFrame', 0);
+        for (let index = 0; index < 64; index++) {
+            const note = 21 + Math.floor((index * 87) / 64);
+            send(processor, { type: 'noteOn', note, velocity: 100, sampleFrame: 0 });
+        }
+        const output = makeChannels(2, FRAMES);
+        for (let quantum = 0; quantum < 128; quantum++) {
+            vi.stubGlobal('currentFrame', quantum * FRAMES);
+            expect(processor.process([], [output])).toBe(true);
+        }
+        if (!processor._instance) {
+            throw new TypeError('Expected an initialised engine');
+        }
+        expect(output[0]!.some((sample) => Math.abs(sample) > 1e-6)).toBe(true);
+        expect(processor._instance.active_voices()).toBe(32);
+        expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+    });
+
     it.each([62, 64])('delays note %s after a held predecessor ran out of samples', async (note) => {
         async function renderSecond(withSpentPredecessor: boolean): Promise<Float32Array> {
             vi.resetModules();
