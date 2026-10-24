@@ -232,6 +232,49 @@ describe('trusted nightly evidence consumer', () => {
         expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
     });
 
+    it.each(['failure', 'timed_out', 'cancelled'])('reports an unsuccessful %s terminal leg', async (conclusion) => {
+        const f = fixture();
+        f.run.conclusion = conclusion;
+        f.jobs.splice(1, 1, { name: 'End-to-end report', conclusion });
+
+        await expect(validateNightlyEvidence(f.event, f.port)).resolves.toEqual({
+            kind: 'validated',
+            runId: 42,
+            attempt: 1,
+            failedLegs: ['End-to-end report'],
+            analysisId: 123,
+        });
+        expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
+    });
+
+    it.each(['failure', 'timed_out', 'cancelled'])(
+        'refuses an unsuccessful %s run without an unsuccessful terminal leg',
+        async (conclusion) => {
+            const f = fixture();
+            f.run.conclusion = conclusion;
+            f.jobs.splice(1, 1, { name: 'End-to-end report', conclusion: 'skipped' });
+
+            await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow(
+                'Unsuccessful run has no unsuccessful job evidence'
+            );
+        }
+    );
+
+    it('preserves a successful run with no unsuccessful terminal legs', async () => {
+        const f = fixture();
+        f.run.conclusion = 'success';
+        f.jobs.splice(1, 1, { name: 'End-to-end report', conclusion: 'success' });
+
+        await expect(validateNightlyEvidence(f.event, f.port)).resolves.toEqual({
+            kind: 'validated',
+            runId: 42,
+            attempt: 1,
+            failedLegs: [],
+            analysisId: 123,
+        });
+        expect(f.calls).toEqual({ downloads: 1, jobs: 1, analyses: 1, ancestry: 1 });
+    });
+
     it('leaves legacy scheduled producers inert without downloading or reading jobs', async () => {
         const f = fixture();
         f.port.listArtifacts = async () => [];

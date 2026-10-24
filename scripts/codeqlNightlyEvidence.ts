@@ -17,6 +17,7 @@ const ARTIFACT = 'nightly-evidence-v1';
 const ANALYSIS_KEY = `${WORKFLOW}:codeql`;
 const SHA = /^[0-9a-f]{40}$/;
 const SAFE_LEG = /^[A-Za-z0-9 ()/.-]{1,90}$/;
+const UNSUCCESSFUL_CONCLUSIONS = ['failure', 'cancelled', 'timed_out'];
 
 type RecordValue = Record<string, unknown>;
 
@@ -81,7 +82,7 @@ async function loadScheduledRun(eventValue: unknown, port: EvidencePort): Promis
         repository.full_name !== REPOSITORY ||
         run.path !== WORKFLOW ||
         run.status !== 'completed' ||
-        !['success', 'failure', 'cancelled', 'timed_out'].includes(String(run.conclusion))
+        !['success', ...UNSUCCESSFUL_CONCLUSIONS].includes(String(run.conclusion))
     ) {
         throw new Error('Event and fetched run identity disagree');
     }
@@ -182,10 +183,13 @@ async function observedResult(
         throw new Error('Missing successful CodeQL job for this run and attempt');
     }
     const checkedJobs = jobs.map((job) => record(job, 'job'));
-    const failedJobs = checkedJobs.filter((job) => job.conclusion === 'failure');
+    const failedJobs = checkedJobs.filter((job) => UNSUCCESSFUL_CONCLUSIONS.includes(String(job.conclusion)));
     const failedLegs = failedJobs.map((job) => job.name);
     if (failedLegs.some((name) => typeof name !== 'string' || !SAFE_LEG.test(name))) {
         throw new Error('Unsafe failed job name');
+    }
+    if (run.conclusion !== 'success' && failedLegs.length === 0) {
+        throw new Error('Unsuccessful run has no unsuccessful job evidence');
     }
     const analyses = (await port.listAnalyses('refs/heads/main'))
         .map((analysis) => record(analysis, 'CodeQL analysis'))
