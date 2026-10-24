@@ -1,0 +1,31 @@
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_1c08b47ac3792f::t_629153237b1be3 30-36
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_1c08b47ac3792f::t_2939731a7a197e 13
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_59e31a5c6f3e31::t_f0e7a46ea716aa 577-580,582-612,614,627-640,649-662,664-667,669-673,680
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55d5b4461967916448012f04b256279cc0a8cdb0",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
