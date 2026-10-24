@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:c24a822815b0556e5aa59b59a8a373425e08f7abc4c0ff1166a30f53e76038b0
+// @wasm-bindgen-dts crate-source: sha256:8727275c41cb99e666ceb0f5773306aae86a22a9599f2d02b8f45c6911120be7
 /* tslint:disable */
 /* eslint-disable */
 
@@ -1199,6 +1199,36 @@ export interface InitOutput {
     readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly proofinstance_reset_integrated: (a: number) => void;
     readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
+    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
+    readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
+    readonly bacteriainstance_clear_mod_assignments: (a: number) => void;
+    readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
+    readonly bacteriainstance_get_input_db: (a: number) => number;
+    readonly bacteriainstance_get_input_left_ptr: (a: number) => number;
+    readonly bacteriainstance_get_input_right_ptr: (a: number) => number;
+    readonly bacteriainstance_get_latency_samples: (a: number) => number;
+    readonly bacteriainstance_get_nan_flush_count: (a: number) => number;
+    readonly bacteriainstance_get_output_db: (a: number) => number;
+    readonly bacteriainstance_get_right_ptr: (a: number) => number;
+    readonly bacteriainstance_new: (a: number) => number;
+    readonly bacteriainstance_process: (a: number, b: number) => number;
+    readonly bacteriainstance_reset: (a: number) => void;
+    readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly kneadinstance_get_f0: (a: number) => number;
+    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
+    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
+    readonly kneadinstance_get_latency_samples: (a: number) => number;
+    readonly kneadinstance_get_periodicity: (a: number) => number;
+    readonly kneadinstance_get_right_ptr: (a: number) => number;
+    readonly kneadinstance_is_voiced: (a: number) => number;
+    readonly kneadinstance_new: (a: number) => number;
+    readonly kneadinstance_process: (a: number, b: number) => number;
+    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
+    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
+    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
     readonly __wbg_levainzonetablebuilder_free: (a: number, b: number) => void;
@@ -1278,7 +1308,6 @@ export interface InitOutput {
     readonly gluteninstance_new: (a: number) => number;
     readonly gluteninstance_process: (a: number, b: number) => number;
     readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
@@ -1323,6 +1352,7 @@ export interface InitOutput {
     readonly grinderinstance_process_automated: (a: number, b: number) => number;
     readonly grinderinstance_reset: (a: number) => void;
     readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly toasterinstance_advance_silence: (a: number, b: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
     readonly toasterinstance_get_right_ptr: (a: number) => number;
@@ -1338,36 +1368,6 @@ export interface InitOutput {
     readonly toasterinstance_set_pad_param_lock_by_id: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
-    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
-    readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
-    readonly bacteriainstance_clear_mod_assignments: (a: number) => void;
-    readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
-    readonly bacteriainstance_get_input_db: (a: number) => number;
-    readonly bacteriainstance_get_input_left_ptr: (a: number) => number;
-    readonly bacteriainstance_get_input_right_ptr: (a: number) => number;
-    readonly bacteriainstance_get_latency_samples: (a: number) => number;
-    readonly bacteriainstance_get_nan_flush_count: (a: number) => number;
-    readonly bacteriainstance_get_output_db: (a: number) => number;
-    readonly bacteriainstance_get_right_ptr: (a: number) => number;
-    readonly bacteriainstance_new: (a: number) => number;
-    readonly bacteriainstance_process: (a: number, b: number) => number;
-    readonly bacteriainstance_reset: (a: number) => void;
-    readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly kneadinstance_get_f0: (a: number) => number;
-    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
-    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
-    readonly kneadinstance_get_latency_samples: (a: number) => number;
-    readonly kneadinstance_get_periodicity: (a: number) => number;
-    readonly kneadinstance_get_right_ptr: (a: number) => number;
-    readonly kneadinstance_is_voiced: (a: number) => number;
-    readonly kneadinstance_new: (a: number) => number;
-    readonly kneadinstance_process: (a: number, b: number) => number;
-    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
-    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
-    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
-    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
