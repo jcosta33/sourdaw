@@ -626,17 +626,18 @@ function nativeSupersessionFixture(
             } else {
                 events.push('replacement-comments');
             }
+            let commentsToSerialize = [];
+            if (id === 'PR_old') {
+                commentsToSerialize = comments;
+            } else if (id === `PR_${parentNumber}`) {
+                commentsToSerialize = distinctParentComments;
+            }
             return JSON.stringify({
                 data: {
                     node: {
                         id,
                         comments: {
-                            nodes: (id === 'PR_old'
-                                ? comments
-                                : id === `PR_${parentNumber}`
-                                  ? distinctParentComments
-                                  : []
-                            ).map((entry) => ({
+                            nodes: commentsToSerialize.map((entry) => ({
                                 id: entry.id,
                                 fullDatabaseId: entry.fullDatabaseId,
                                 body: entry.body,
@@ -880,7 +881,9 @@ describe('pull-request supersession', () => {
                     lineageBody,
                 ]);
                 expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
-                const sideEffects = current.events.filter((event) => /^(?:delete|pull-request-superseded:)/.test(event));
+                const sideEffects = current.events.filter((event) =>
+                    /^(?:delete|pull-request-superseded:)/.test(event)
+                );
                 expect(sideEffects).toEqual([]);
                 expect(retainedOwner(root)).toBeDefined();
             });
