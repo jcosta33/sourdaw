@@ -447,6 +447,89 @@ describe('inactive retarget capability plan', () => {
         expect(plan.limitations).toEqual([]);
     });
 
+    it.each(
+        (['detail', 'effective', 'both'] as const).flatMap((surface) =>
+            [true, false, null].map((future_binding_control) => ({ surface, future_binding_control }))
+        )
+    )(
+        'does not certify unknown nested check controls on $surface: $future_binding_control',
+        ({ surface, future_binding_control }) => {
+            const input = observed();
+            const rule: Record<string, JsonValue> = {
+                type: 'required_status_checks',
+                parameters: {
+                    strict_required_status_checks_policy: false,
+                    required_status_checks: [{ context: 'Gate', integration_id: 42, future_binding_control }],
+                },
+            };
+            if (surface !== 'effective') {
+                requiredRuleset(input).rules = [rule];
+            }
+            if (surface !== 'detail') {
+                input.effectiveBranches.main = [effectiveRule(rule)];
+            }
+            const raw = canonicalJson(input);
+            const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+            expect(plan.completeObservedInventory).toBe(false);
+            expect(plan.limitations).toContain('an applicable ruleset has incomplete required status checks');
+            expect(canonicalJson(plan.baseline ?? null)).toBe(raw);
+            expect(plan.originalMainRollback).toEqual([canonicalJson(requiredRuleset(input))]);
+            expect(plan.baselineDigest).toBe(createHash('sha256').update(raw).digest('hex'));
+            expect(plan.proposal).toEqual(CAPABILITY_PROPOSAL);
+            expect(plan.activationEligible).toBe(false);
+            expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+        }
+    );
+
+    const supportedCheckBindings: Array<{ label: string; binding: Record<string, JsonValue> }> = [
+        { label: 'context only', binding: { context: 'Gate' } },
+        { label: 'optional integration', binding: { context: 'Gate', integration_id: 42 } },
+        { label: 'largest safe integration', binding: { context: 'Gate', integration_id: Number.MAX_SAFE_INTEGER } },
+    ];
+    it.each(supportedCheckBindings)('keeps a supported nested check binding complete: $label', ({ binding }) => {
+        const input = observed();
+        const rule: Record<string, JsonValue> = {
+            type: 'required_status_checks',
+            parameters: { strict_required_status_checks_policy: false, required_status_checks: [binding] },
+        };
+        requiredRuleset(input).rules = [rule];
+        input.effectiveBranches.main = [effectiveRule(rule)];
+        const raw = canonicalJson(input);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+        expect(canonicalJson(plan.baseline ?? null)).toBe(raw);
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    const invalidCheckBindings: Array<{ label: string; binding: Record<string, JsonValue> }> = [
+        { label: 'empty context', binding: { context: '', integration_id: 42 } },
+        { label: 'unsafe integration', binding: { context: 'Gate', integration_id: Number.MAX_SAFE_INTEGER + 1 } },
+    ];
+    it.each(
+        (['detail', 'effective', 'both'] as const).flatMap((surface) =>
+            invalidCheckBindings.map(({ label, binding }) => ({ surface, label, binding }))
+        )
+    )('keeps an invalid nested check binding incomplete on $surface: $label', ({ surface, binding }) => {
+        const input = observed();
+        const rule: Record<string, JsonValue> = {
+            type: 'required_status_checks',
+            parameters: { strict_required_status_checks_policy: false, required_status_checks: [binding] },
+        };
+        if (surface !== 'effective') {
+            requiredRuleset(input).rules = [rule];
+        }
+        if (surface !== 'detail') {
+            input.effectiveBranches.main = [effectiveRule(rule)];
+        }
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('an applicable ruleset has incomplete required status checks');
+        expect(requiredRecord(plan.baseline)).toEqual(input);
+        expect(plan.activationEligible).toBe(false);
+    });
+
     const invalidEffectiveSources: Array<{ label: string; source: Record<string, JsonValue> }> = [
         { label: 'absent provenance', source: {} },
         { label: 'missing ID', source: { ruleset_source_type: 'Repository', ruleset_source: 'jcosta33/sourdaw' } },

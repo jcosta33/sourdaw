@@ -105,6 +105,7 @@ function requiredStatusChecksParameter(value: JsonValue): boolean {
                 check !== null &&
                 !Array.isArray(check) &&
                 typeof check === 'object' &&
+                Object.keys(check).every((key) => key === 'context' || key === 'integration_id') &&
                 typeof check.context === 'string' &&
                 check.context.length > 0 &&
                 (check.integration_id === undefined || Number.isSafeInteger(check.integration_id))
