@@ -174,6 +174,12 @@ unresolved threads remain resolvable. `review:prepare` logs
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, and `review:repair` logs it
 only at or above the threshold.
 
+An obsolete pull request with no truthful merged replacement may use `pr:retire` only when every
+live review root is resolved by an author-App repair and reviewer-App confirmation on the named
+head, and every `REQUEST_CHANGES` review maps to those roots. Its public `retirement-v1` record
+attests the reason and evidence; the command verifies native review and closure facts, not semantic
+obsolescence. This route does not approve or deliver the PR.
+
 Every recorded value — draws, discards, and approval claims — is single-line, trimmed and bounded,
 and refused when it carries a credential-shaped value, a private-key header, a JWT, a bearer token,
 or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.

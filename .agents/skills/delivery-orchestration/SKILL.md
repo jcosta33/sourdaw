@@ -36,6 +36,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent>] --lineage <path-to-json>`                                                     |
+| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                   |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
@@ -52,6 +53,18 @@ invocation, and a missing, unreadable, or malformed file refuses with the path.
 The transaction then posts the receipt plus a second lineage marker, converges
 duplicates to exactly one of each, and closes only afterwards, so a re-run after
 a partial transaction repairs rather than duplicates.
+
+`pr:retire` closes an owner-released obsolete PR without asserting a merged replacement. The
+caller supplies a canonical `retirement-v1` JSON record with `pr`, `head`, `base`, a one-line
+`rationale`, 1–8 repository evidence URL/observation pairs, a total `findings` list of live root
+comment/thread IDs and native author repair/reviewer confirmation comment IDs, and `reviewBodies`
+mapping each `REQUEST_CHANGES` review ID to its inline roots. The command refuses an unconfirmed
+or unresolved root, unmatched review body, changed head/base/root set, or ambiguous role actor;
+it posts one author-App marker and closes through the native transaction. The reason, evidence,
+and mapping of review prose to inline roots are caller attestations, not machine proof of
+obsolescence. A review body with a distinct finding that cannot truthfully be mapped to a
+confirmed inline root remains a refusal; there is no discard or body-only admission in this
+version. This does not change `pr:supersede`, review, Gate, or delivery rules.
 
 The replacement normally targets the old pull request's base exactly. A child
 left behind after its stack parent was natively superseded may cross that base

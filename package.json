@@ -66,6 +66,7 @@
         "review:reconstruct": "node scripts/reconstructReviewRounds.ts",
         "ruleset:harden": "node scripts/trustedGithubWriteBootstrap.ts ruleset:harden",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
+        "pr:retire": "node scripts/trustedGithubWriteBootstrap.ts pr:retire",
         "branch:prune": "node scripts/pruneRemoteBranches.ts",
         "issue:reconcile": "node scripts/trustedGithubWriteBootstrap.ts issue:reconcile",
         "issue:claim": "node scripts/trustedGithubWriteBootstrap.ts issue:claim",

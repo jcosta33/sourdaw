@@ -160,11 +160,11 @@ function formatFindingIds(ids: readonly string[]): string {
 }
 
 /** Which marker a comment must carry to be part of this transaction, and how a refusal names it. */
-type MarkerSpec = { body: string; label: string };
+export type MarkerSpec = { body: string; label: string };
 /** The two markers, in the order the transaction posts them: the receipt, then the lineage. */
 type MarkerPair = readonly [receipt: MarkerSpec, lineage: MarkerSpec];
 type CreatedMarker = { spec: MarkerSpec; id: string };
-type CommentTransaction = { markers: MarkerPair; attempts: number; created: CreatedMarker[] };
+type CommentTransaction = { markers: readonly MarkerSpec[]; attempts: number; created: CreatedMarker[] };
 const RECEIPT_LABEL = 'supersession comment marker';
 const LINEAGE_LABEL = 'finding lineage marker';
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
@@ -342,46 +342,76 @@ export function supersedePullRequest(
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
     assertOpen(before, oldNumber);
+    closePullRequestWithMarkers(oldNumber, expectedHead, before, markers, port, {
+        beforeMarkers: () => {
+            if (stackedParentProof !== undefined) {
+                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+            }
+        },
+        beforeClose: () => {
+            assertFindingsUnchanged(oldNumber, coveredFindings, port);
+            if (stackedParentProof !== undefined) {
+                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+            }
+        },
+        afterClose: (verified, markerIds, closeReceipt) =>
+            assertFinalSupersession(
+                verified,
+                oldNumber,
+                expectedHead,
+                before.base,
+                markers,
+                markerIds[0]!,
+                markerIds[1]!,
+                closeReceipt
+            ),
+    });
+    return logSupersessionSuccess(oldNumber, replacementNumber, port);
+}
+
+export function closePullRequestWithMarkers(
+    number: number,
+    expectedHead: string,
+    before: SupersededPullRequest,
+    markers: readonly MarkerSpec[],
+    port: SupersedePullRequestPort,
+    checks: {
+        beforeMarkers?: () => void;
+        beforeClose: () => void;
+        afterClose: (verified: SupersededPullRequest, markerIds: string[], receipt: PullRequestCloseReceipt) => void;
+    }
+): void {
+    if (markers.length === 0) {
+        fail('closure requires at least one public marker');
+    }
     const transaction: CommentTransaction = { markers, attempts: 0, created: [] };
     let closeAttempted = false;
     let closeReceipt: PullRequestCloseReceipt | undefined;
     try {
-        if (stackedParentProof !== undefined) {
-            assertStackedParentProofUnchanged(stackedParentProof, before, port);
+        checks.beforeMarkers?.();
+        for (const marker of markers) {
+            ensureMarker(number, marker, before.comments, transaction, port);
         }
-        ensureMarker(oldNumber, markers[0], before.comments, transaction, port);
-        ensureMarker(oldNumber, markers[1], before.comments, transaction, port);
-        const afterMarkers = port.inspect(oldNumber);
-        assertStableOpen(afterMarkers, oldNumber, expectedHead, before.base);
-        convergeCommentMarkers(oldNumber, markers[0], afterMarkers, markers, port);
-        convergeCommentMarkers(oldNumber, markers[1], afterMarkers, markers, port);
-        const converged = port.inspect(oldNumber);
-        assertStableOpen(converged, oldNumber, expectedHead, before.base);
-        const receiptMarker = requireOneCommentMarker(converged.comments, markers[0], markers, oldNumber);
-        const lineageMarker = requireOneCommentMarker(converged.comments, markers[1], markers, oldNumber);
-        assertFindingsUnchanged(oldNumber, coveredFindings, port);
-        if (stackedParentProof !== undefined) {
-            assertStackedParentProofUnchanged(stackedParentProof, before, port);
+        const afterMarkers = port.inspect(number);
+        assertStableOpen(afterMarkers, number, expectedHead, before.base);
+        for (const marker of markers) {
+            convergeCommentMarkers(number, marker, afterMarkers, markers, port);
         }
+        const converged = port.inspect(number);
+        assertStableOpen(converged, number, expectedHead, before.base);
+        const markerIds = markers.map(
+            (marker) => requireOneCommentMarker(converged.comments, marker, markers, number).id
+        );
+        checks.beforeClose();
         closeAttempted = true;
-        const closeResult = port.close(oldNumber);
+        const closeResult = port.close(number);
         assertCloseReceipt(closeResult);
         closeReceipt = closeResult;
-        const verified = port.inspect(oldNumber);
-        assertFinalSupersession(
-            verified,
-            oldNumber,
-            expectedHead,
-            before.base,
-            markers,
-            receiptMarker.id,
-            lineageMarker.id,
-            closeReceipt
-        );
+        const verified = port.inspect(number);
+        checks.afterClose(verified, markerIds, closeReceipt);
     } catch (error) {
-        compensateSupersession(oldNumber, before, transaction, closeAttempted, closeReceipt, port, error);
+        compensateSupersession(number, before, transaction, closeAttempted, closeReceipt, port, error);
     }
-    return logSupersessionSuccess(oldNumber, replacementNumber, port);
 }
 
 function logSupersessionSuccess(oldNumber: number, replacementNumber: number, port: SupersedePullRequestPort): string {
