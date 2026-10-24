@@ -689,7 +689,7 @@ vi.mock('fflate', async (importOriginal) => {
     };
 });
 
-const ownership = vi.hoisted(() => ({ rendered: 0, consumed: 0, peakRetained: 0 }));
+const ownership = vi.hoisted(() => ({ rendered: 0, consumed: 0, peakRetained: 0, unexpectedDecodeCalls: 0 }));
 let reportFirstGcRender = () => {};
 const stemRender = vi.hoisted(() => ({
     frames: 44100,
@@ -739,6 +739,7 @@ describe('connected stem export output ownership', () => {
         ownership.rendered = 0;
         ownership.consumed = 0;
         ownership.peakRetained = 0;
+        ownership.unexpectedDecodeCalls = 0;
         reportFirstGcRender = () => {};
         zipAllocation.onEntry = () => {};
         stemRender.frames = 44100;
@@ -783,6 +784,11 @@ describe('connected stem export output ownership', () => {
             'OfflineAudioContext',
             vi.fn(function () {
                 const context = createMockAudioContext();
+                // The shared helper's eager decoder sample is outside this MIDI-only export budget.
+                context.decodeAudioData = vi.fn(async () => {
+                    ownership.unexpectedDecodeCalls++;
+                    throw new Error('Offline decoding is not configured for this MIDI-only export fixture.');
+                });
                 return {
                     ...context,
                     sampleRate: 44100,
@@ -833,6 +839,7 @@ describe('connected stem export output ownership', () => {
         fireEvent.click(screen.getByTestId('export-start'));
         await waitFor(() => expect(closed).toBe(true), { timeout: 15000 });
         expect(ownership.rendered).toBe(64);
+        expect(ownership.unexpectedDecodeCalls).toBe(0);
         expect(ownership.peakRetained).toBeLessThanOrEqual(1);
         expect(maxWrite).toBeLessThanOrEqual(1024 * 1024);
         const size = chunks.reduce((sum, bytes) => sum + bytes.length, 0);
@@ -868,6 +875,7 @@ describe('connected stem export output ownership', () => {
                     throw new TypeError('Run this ownership probe with node --expose-gc.');
                 }
                 await runGcMeasurementInChild();
+                expect(ownership.unexpectedDecodeCalls).toBe(0);
                 return;
             }
             stemRender.frames = 44100 * 3;
@@ -967,7 +975,7 @@ describe('connected stem export output ownership', () => {
                     lastWorkPhase = phase;
                     const now = Date.now();
                     process.stdout.write(
-                        `GC_PHASE ${phase} abs=${now} ms=${now - phaseStartedAt} fmt=${currentFormat} ew=${entryWrites} eb=${entryBytes} r=${ownership.rendered} c=${ownership.consumed} w=${writes} s=${samples} refs=${allocations.length} live=${live ?? '-'} peak=${peak}\n`
+                        `GC_PHASE ${phase} abs=${now} ms=${now - phaseStartedAt} fmt=${currentFormat} ew=${entryWrites} eb=${entryBytes} r=${ownership.rendered} c=${ownership.consumed} dc=${ownership.unexpectedDecodeCalls} w=${writes} s=${samples} refs=${allocations.length} live=${live ?? '-'} peak=${peak}\n`
                     );
                 } finally {
                     collecting = wasCollecting;
@@ -1097,6 +1105,7 @@ describe('connected stem export output ownership', () => {
                 reportGcPhase('act-resolved');
                 expect(closed).toBe(true);
                 expect(ownership.rendered).toBe(64);
+                expect(ownership.unexpectedDecodeCalls).toBe(0);
                 expect(ownership.peakRetained).toBe(1);
                 expect(writes).toBeGreaterThan(64 * 3);
                 expect(samples).toBeGreaterThan(64);
