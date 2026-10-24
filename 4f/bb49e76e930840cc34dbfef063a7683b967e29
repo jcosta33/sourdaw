@@ -1,0 +1,24 @@
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.depthRetirement.integration.spec.tsx
+  s_59e31a5c6f3e31::t_49df632ef166e2 12-17,62-70,98-100,152-159,162-165
+  s_59e31a5c6f3e31::t_d56d9b38c19398 1-11,18-61,71-97,101-151,160-161,166-182
+src/modules/Arrangement/models/PluginDescriptors/__tests__/CrumbsAndBacteriaDescriptors.spec.ts
+  s_59e31a5c6f3e31::t_0eecc491a60a38 40-45
+docs/manual/devices/13-bacteria.md
+  s_59e31a5c6f3e31::t_a4e339148222b9 140-141,390
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4fbb49e76e930840cc34dbfef063a7683b967e29",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
