@@ -1,0 +1,75 @@
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_59e31a5c6f3e31::t_7f9f81e34aad3b 1-100
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_59e31a5c6f3e31::t_361ea800d30ec7 1-8,13-16,18
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_59e31a5c6f3e31::t_6486bf181c0387 29,453,579-742
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_3ace3ed35faeaa 52,54,60-61,198-200,301-309,321,334,347,360,373-389,393-407,419-423,450-463,465-466,511-513,530-533,619,625,646-656,1034,1047,1072,1251-1299,1411,1430-1441
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_e3a1a7d026771c 8-9,13,111-113,522-578,603-816,2082-2164,2204-2231
+src/modules/AudioRendering/presentations/views/__tests__/deliveryPresets.spec.ts
+  s_59e31a5c6f3e31::t_8d0da2ef44899a 1-22
+src/modules/AudioRendering/presentations/views/__tests__/exportSettings.spec.ts
+  s_59e31a5c6f3e31::t_cb4f8a0f9dd16f 34,56,78,101,127,142,166,188-209
+src/modules/AudioRendering/presentations/views/deliveryPresets.ts
+  s_59e31a5c6f3e31::t_7b10bbe2d8ccfd 1-23
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_59e31a5c6f3e31::t_a475748047b40c 35,45-48,64,144-150
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/writePodcastId3.spec.ts
+  s_59e31a5c6f3e31::t_0280f4c93419f4 1-93
+src/modules/AudioRendering/repositories/audioEncoders/writePodcastId3.ts
+  s_59e31a5c6f3e31::t_09783368a0d353 1-69
+src/modules/AudioRendering/useCases/__tests__/audioBufferToMp3PodcastMetadata.spec.ts
+  s_59e31a5c6f3e31::t_ac274f450e4e3b 1-64
+src/modules/AudioRendering/useCases/audioBufferToMp3.ts
+  s_59e31a5c6f3e31::t_6bd2b29d984041 3,11,15-16,18-27
+src/modules/AudioRendering/useCases/validatePodcastMetadata.ts
+  s_59e31a5c6f3e31::t_3e3732f95a1afe 1-6
+src/modules/DawInterchange/useCases/__tests__/importDawProject.parseAuthority.integration.spec.ts
+  s_59e31a5c6f3e31::t_1172c0eef7615b 1-65
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  s_59e31a5c6f3e31::t_cf93b49f33116b 3-5,41-57,78-87,97,110,121,149,172,197-409
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  s_59e31a5c6f3e31::t_2ef2022e44defe 5,173,203,207-209,255,276,282,286,307,313-347
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_3168504f6ce387::t_af1400ac6e0a5a 3-6,144-152,244-358,369,388-400,485-515,524,535-558,567-579,621,634-2150
+src/modules/DawInterchange/useCases/__tests__/pickAndImportDawProject.spec.ts
+  s_3168504f6ce387::t_ebe1cd8dc0e91b 35,87-93
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  s_3168504f6ce387::t_7e4542194e5d56 18-43,59,62-63,103
+src/modules/DawInterchange/useCases/importDawProject.ts
+  s_3168504f6ce387::t_81bc6beb829638 5,17-35,46-48,50,53-54,60,70,72,84-85,87-89,92,94-96,98
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  s_3168504f6ce387::t_a986d246df01ad 4-9,27,80-82,86-96,109,129,145,148,155,173-198,245,259
+src/modules/DawInterchange/useCases/parseDawProject.ts
+  s_3168504f6ce387::t_d6047ff8b1f58e 21
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  s_3168504f6ce387::t_73e10d3492b641 4-5,45-48,58-60,70,73-91,125-171,188,212-214,218-221,227,230,243,248-254,264,268-294,298-300,306-307,326-353,357,359-361,363,366,372-377,380,385,390-396,405,410,416-425,429,434,440,454,457,464,468-469,475,485,513-522,524-525,541-545,548-563,567,572,575,583-613,619-650,653,657-658,661-667,669-769,783-896,902-903,905-934,937-939,941-948,950-977,979-982,986-993,1023-1025,1041,1052
+src/modules/DawInterchange/useCases/pickAndImportDawProject.ts
+  s_3168504f6ce387::t_d77c69dc49943c 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4d2db98177bba0f780caa29de1ad5664882852f",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
