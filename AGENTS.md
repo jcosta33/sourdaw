@@ -261,7 +261,7 @@ locally at other lanes' expense.
 | Generate one affected WASM package                | that package's own `wasm:*` script                   |
 | Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
 | Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
-| Restamp the WASM surface                          | `pnpm release:restamp:wasm`                          |
+| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
 | Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
 | Restamp a dependency bump                         | `pnpm release:restamp`                               |
 
