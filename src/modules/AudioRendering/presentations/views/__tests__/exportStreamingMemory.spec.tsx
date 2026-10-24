@@ -66,6 +66,7 @@ function stopGcChild(pid: number | undefined): void {
 }
 
 async function runGcChild(cwd: string, reportPath: string): Promise<string> {
+    process.stdout.write(`GC_PHASE parent-spawn abs=${Date.now()} parent=true child=false\n`);
     const child = spawn(
         process.execPath,
         [
@@ -608,7 +609,10 @@ vi.mock('../exportSettings', async (importOriginal) => ({
     saveExportSettings: vi.fn(),
 }));
 
-const zipAllocation = vi.hoisted(() => ({ observe: (_bytes: Uint8Array) => {} }));
+const zipAllocation = vi.hoisted(() => ({
+    observe: (_bytes: Uint8Array) => {},
+    onEntry: (_filename: string) => {},
+}));
 vi.mock('fflate', async (importOriginal) => {
     const actual = await importOriginal<typeof import('fflate')>();
     return {
@@ -619,6 +623,11 @@ vi.mock('fflate', async (importOriginal) => {
                     zipAllocation.observe(bytes);
                     handler?.(error, bytes, final);
                 });
+            }
+
+            add(file: Parameters<typeof actual.Zip.prototype.add>[0]) {
+                zipAllocation.onEntry(file.filename);
+                super.add(file);
             }
         },
     };
@@ -675,6 +684,7 @@ describe('connected stem export output ownership', () => {
         ownership.consumed = 0;
         ownership.peakRetained = 0;
         reportFirstGcRender = () => {};
+        zipAllocation.onEntry = () => {};
         stemRender.frames = 44100;
         mocks.trackStore.value = { tracks: stemRender.tracks, selectedTrackId: null, ghostClips: [] };
         vi.clearAllMocks();
@@ -793,7 +803,10 @@ describe('connected stem export output ownership', () => {
         async () => {
             const phaseStartedAt = Date.now();
             const gc: unknown = Reflect.get(globalThis, 'gc');
-            process.stdout.write(`GC_PHASE entry ms=0 gc=${typeof gc} child=${process.env[GC_CHILD_MARKER] === '1'}\n`);
+            const isGcChild = process.env[GC_CHILD_MARKER] === '1';
+            process.stdout.write(
+                `GC_PHASE entry abs=${phaseStartedAt} ms=0 gc=${typeof gc} parent=${!isGcChild} child=${isGcChild}\n`
+            );
             if (typeof gc !== 'function') {
                 if (process.env[GC_CHILD_MARKER] === '1') {
                     throw new TypeError('Run this ownership probe with node --expose-gc.');
@@ -858,6 +871,13 @@ describe('connected stem export output ownership', () => {
             let closed = false;
             let writes = 0;
             let samples = 0;
+            let currentFormat: 'wav' | 'mp3' | 'flac' | '-' = '-';
+            let entryWrites = 0;
+            let entryBytes = 0;
+            let lastWorkPhase = 'entry';
+            let lastSampledLive: number | undefined;
+            let lastSampledAt: number | undefined;
+            let heartbeat: ReturnType<typeof setInterval> | undefined;
             let resolveFinished: () => void = () => {};
             let rejectFinished: (reason: unknown) => void = () => {};
             const finished = new Promise<void>((resolve, reject) => {
@@ -869,19 +889,49 @@ describe('connected stem export output ownership', () => {
                 const wasCollecting = collecting;
                 collecting = false;
                 try {
+                    lastWorkPhase = phase;
+                    const now = Date.now();
                     process.stdout.write(
-                        `GC_PHASE ${phase} ms=${Date.now() - phaseStartedAt} r=${ownership.rendered} c=${ownership.consumed} w=${writes} s=${samples} refs=${allocations.length} live=${live ?? '-'} peak=${peak}\n`
+                        `GC_PHASE ${phase} abs=${now} ms=${now - phaseStartedAt} fmt=${currentFormat} ew=${entryWrites} eb=${entryBytes} r=${ownership.rendered} c=${ownership.consumed} w=${writes} s=${samples} refs=${allocations.length} live=${live ?? '-'} peak=${peak}\n`
+                    );
+                } finally {
+                    collecting = wasCollecting;
+                }
+            };
+            const reportGcHeartbeat = () => {
+                const wasCollecting = collecting;
+                collecting = false;
+                try {
+                    const now = Date.now();
+                    const memory = process.memoryUsage();
+                    process.stdout.write(
+                        `GC_HEARTBEAT abs=${now} ms=${now - phaseStartedAt} parent=${!isGcChild} child=${isGcChild} gc=${typeof gc} fmt=${currentFormat} ew=${entryWrites} eb=${entryBytes} r=${ownership.rendered} c=${ownership.consumed} w=${writes} s=${samples} last=${lastWorkPhase} staleLive=${lastSampledLive ?? '-'} stalePeak=${peak} sampleAgeMs=${lastSampledAt === undefined ? '-' : now - lastSampledAt} advisoryRss=${memory.rss} advisoryHeap=${memory.heapUsed} advisoryArrayBuffers=${memory.arrayBuffers}\n`
                     );
                 } finally {
                     collecting = wasCollecting;
                 }
             };
             reportFirstGcRender = () => reportGcPhase('render');
+            zipAllocation.onEntry = (filename) => {
+                if (filename.endsWith('.wav')) {
+                    currentFormat = 'wav';
+                } else if (filename.endsWith('.mp3')) {
+                    currentFormat = 'mp3';
+                } else if (filename.endsWith('.flac')) {
+                    currentFormat = 'flac';
+                } else {
+                    currentFormat = '-';
+                }
+                entryWrites = 0;
+                entryBytes = 0;
+            };
             vi.stubGlobal('showSaveFilePicker', async () => ({
                 createWritable: async () => ({
                     write: async (bytes: Uint8Array) => {
                         track(bytes.buffer);
                         writes++;
+                        entryWrites++;
+                        entryBytes += bytes.byteLength;
                         if (writes === 1) {
                             reportGcPhase('first-write');
                         }
@@ -900,6 +950,8 @@ describe('connected stem export output ownership', () => {
                         reportGcPhase('before-scan');
                         const live = sampleLiveExportBytes(allocations);
                         peak = Math.max(peak, live);
+                        lastSampledLive = live;
+                        lastSampledAt = Date.now();
                         reportGcPhase('before-bound', live);
                         expect(live).toBeLessThanOrEqual(2 * b);
                         reportGcPhase('after-bound', live);
@@ -920,6 +972,7 @@ describe('connected stem export output ownership', () => {
                 }),
             }));
             try {
+                heartbeat = setInterval(reportGcHeartbeat, 1000);
                 render(<ExportDialog open onClose={() => {}} />);
                 fireEvent.click(screen.getByTestId('export-mode-stems'));
                 try {
@@ -948,10 +1001,14 @@ describe('connected stem export output ownership', () => {
                 expect(peak).toBeGreaterThan(b);
                 expect(peak).toBeLessThanOrEqual(2 * b);
             } finally {
+                if (heartbeat !== undefined) {
+                    clearInterval(heartbeat);
+                }
                 reportGcPhase('finally');
                 collecting = false;
                 reportFirstGcRender = () => {};
                 zipAllocation.observe = () => {};
+                zipAllocation.onEntry = () => {};
                 vi.unstubAllGlobals();
             }
         },
