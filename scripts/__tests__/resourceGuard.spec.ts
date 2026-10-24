@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import {
     existsSync,
     type linkSync,
@@ -13,7 +12,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -42,6 +41,8 @@ import {
     type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
 import { parseArgs as parseLintArgs } from '../runLint';
+
+import { readSignalAcknowledgement, startSignalFixture } from './fixtures/resourceGuardSignalHarness';
 
 function fixtureRoot(label: string): string {
     return mkdtempSync(join(tmpdir(), `sourdaw-resource-${label}-`));
@@ -91,13 +92,6 @@ async function killAndWait(pid: number | undefined): Promise<void> {
         return;
     }
     await waitUntil(() => !isAlive(pid));
-}
-
-function observeClose(child: ChildProcess): Promise<number | null> {
-    return new Promise((resolve, reject) => {
-        child.once('error', reject);
-        child.once('close', resolve);
-    });
 }
 
 // Each real guarded command ends in a storage file proof that can spend its whole
@@ -482,126 +476,155 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         }
     }, 10_000);
 
+    for (const acknowledgement of ['ready', 'first-term'] as const) {
+        it(`does not admit a partial ${acknowledgement} acknowledgement`, async () => {
+            const fixture = startSignalFixture({
+                root: fixtureRoot('staged-signal'),
+                stagedAcknowledgement: acknowledgement,
+            });
+            try {
+                if (acknowledgement === 'first-term') {
+                    await fixture.barrier(() => existsSync(fixture.readyPath) && fixture.child() !== undefined);
+                    fixture.guard.kill('SIGTERM');
+                }
+                await fixture.barrier(() => existsSync(join(fixture.root, 'publication-staged')));
+                const pending = readdirSync(fixture.root).find(
+                    (name) => name.startsWith(`${acknowledgement}.json.`) && name.endsWith('.pending')
+                );
+                expect(pending).toBeDefined();
+                expect(readFileSync(join(fixture.root, pending!), 'utf8')).toBe('{');
+                const recordPath = join(fixture.root, `${acknowledgement}.json`);
+                expect(readSignalAcknowledgement(recordPath)).toBeUndefined();
+                writeFileSync(join(fixture.root, 'admit-publication'), 'admit');
+                await fixture.barrier(() => existsSync(recordPath) && fixture.child() !== undefined);
+                const child = fixture.child()!;
+                expect(readSignalAcknowledgement(recordPath)).toEqual(
+                    acknowledgement === 'ready'
+                        ? { pid: child.pid, tmp: child.tempDirectory }
+                        : { pid: child.pid, tempExists: true }
+                );
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            }
+        });
+    }
+
+    for (const holdIdentity of [false, true]) {
+        it(`retains failed-ready storage while child exit is unproved with ${holdIdentity ? 'unknown' : 'known'} identity`, async () => {
+            const fixture = startSignalFixture({
+                root: fixtureRoot('failed-ready-signal'),
+                stagedAcknowledgement: 'ready',
+                holdAbort: true,
+                holdIdentity,
+            });
+            try {
+                await fixture.barrier(
+                    () =>
+                        existsSync(join(fixture.root, 'publication-staged')) &&
+                        (holdIdentity || fixture.child() !== undefined)
+                );
+                await expect(
+                    fixture.barrier(() => {
+                        throw new Error('controlled failed-ready admission');
+                    })
+                ).rejects.toThrow('controlled failed-ready admission');
+                expect(readSignalAcknowledgement(fixture.readyPath)).toBeUndefined();
+                expect(fixture.child() === undefined).toBe(holdIdentity);
+                const child = fixture.child();
+                const cleanup = await fixture.cleanup();
+                expect(cleanup).toMatchObject({ removedRoot: false, childExitProved: false });
+                expect(cleanup.diagnostic).toContain(`signal fixture retained at ${fixture.root}`);
+                expect(existsSync(fixture.root)).toBe(true);
+                expect(fixture.hasEvent('storage-released')).toBe(false);
+                expect(isAlive(fixture.unrelated.pid!)).toBe(false);
+                if (child !== undefined) {
+                    expect(isAlive(child.pid)).toBe(true);
+                    expect(existsSync(child.tempDirectory)).toBe(true);
+                } else {
+                    expect(fixture.messages.find((message) => message.event === 'abort-held')).toMatchObject({
+                        childKnown: true,
+                        tempExists: true,
+                    });
+                }
+                fixture.send('publish-identity');
+                await fixture.barrier(() => fixture.child() !== undefined);
+                fixture.send('admit-abort');
+                expect(await fixture.completion).toBe(143);
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            }
+        });
+    }
+
     for (const repeatedSignal of [true, false]) {
         const name = repeatedSignal
             ? 'escalates a repeated signal and waits for child cleanup'
             : 'keeps a resistant child alive until the held fallback is admitted without a repeated signal';
         it(name, async () => {
-            const root = fixtureRoot('signal');
-            const readyPath = join(root, 'ready.json');
-            const termPath = join(root, 'first-term.json');
-            const unrelatedPath = join(root, 'unrelated');
-            const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
-            delete childEnv[RESOURCE_SESSION_ENV];
-            const messages: { event: string; [key: string]: unknown }[] = [];
-            let guardStderr = '';
-            let childPid: number | undefined;
-            let guardClosed = false;
-            const unrelated = spawn(
-                process.execPath,
-                [
-                    '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(unrelatedPath)}, 'ready'); setInterval(() => {}, 1000)`,
-                ],
-                { stdio: 'ignore' }
-            );
-            const unrelatedCompletion = observeClose(unrelated);
-            const guard = spawn(
-                process.execPath,
-                [
-                    resolve('scripts/__tests__/fixtures/resourceGuardSignal.ts'),
-                    '--profile',
-                    'focused',
-                    '--max-rss-mib',
-                    '512',
-                    '--',
-                    process.execPath,
-                    '-e',
-                    `const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(termPath)}, JSON.stringify({ pid: process.pid, tempExists: fs.existsSync(tmp) }))); fs.writeFileSync(${JSON.stringify(readyPath)}, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => {}, 1000)`,
-                ],
-                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }
-            );
-            const completion = observeClose(guard).then((code) => {
-                guardClosed = true;
-                return code;
-            });
-            guard.on('message', (message: (typeof messages)[number]) => messages.push(message));
-            guard.stderr?.on('data', (chunk: Buffer) => {
-                guardStderr = `${guardStderr}${chunk.toString()}`.slice(-8_192);
-            });
-            const hasEvent = (event: string) => messages.some((message) => message.event === event);
-            const lifecycleDeadline = Date.now() + GUARDED_CASE_TIMEOUT_MS - 5_000;
-            const barrier = async (predicate: () => boolean) => {
-                try {
-                    await waitUntil(
-                        () => {
-                            if (predicate()) {
-                                return true;
-                            }
-                            if (guardClosed) {
-                                throw new Error('guard closed before the lifecycle barrier');
-                            }
-                            return false;
-                        },
-                        Math.max(0, lifecycleDeadline - Date.now())
-                    );
-                } catch (error) {
-                    throw new Error(
-                        `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; events=${JSON.stringify(messages)}`,
-                        { cause: error }
-                    );
-                }
-            };
+            const fixture = startSignalFixture({ root: fixtureRoot('signal') });
             try {
-                await barrier(() => existsSync(readyPath) && existsSync(unrelatedPath));
-                const ready: { pid: number; tmp: string } = JSON.parse(readFileSync(readyPath, 'utf8'));
-                childPid = ready.pid;
-                expect(isAlive(childPid)).toBe(true);
-                expect(existsSync(ready.tmp)).toBe(true);
-                expect(guard.kill('SIGTERM')).toBe(true);
-                await barrier(() => existsSync(termPath) && hasEvent('fallback-scheduled'));
-                expect(JSON.parse(readFileSync(termPath, 'utf8'))).toEqual({ pid: childPid, tempExists: true });
-                expect(messages.filter((message) => message.event === 'fallback-scheduled')).toEqual([
+                await fixture.barrier(
+                    () =>
+                        existsSync(fixture.readyPath) &&
+                        existsSync(fixture.unrelatedPath) &&
+                        fixture.child() !== undefined
+                );
+                const child = fixture.child()!;
+                expect(readSignalAcknowledgement(fixture.readyPath)).toEqual({
+                    pid: child.pid,
+                    tmp: child.tempDirectory,
+                });
+                expect(isAlive(child.pid)).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(true);
+                expect(fixture.guard.kill('SIGTERM')).toBe(true);
+                await fixture.barrier(() => existsSync(fixture.termPath) && fixture.hasEvent('fallback-scheduled'));
+                expect(readSignalAcknowledgement(fixture.termPath)).toEqual({ pid: child.pid, tempExists: true });
+                expect(fixture.messages.filter((message) => message.event === 'fallback-scheduled')).toEqual([
                     { event: 'fallback-scheduled', capturedTimers: 1 },
                 ]);
                 if (repeatedSignal) {
-                    expect(guard.kill('SIGTERM')).toBe(true);
+                    expect(fixture.guard.kill('SIGTERM')).toBe(true);
                 } else {
-                    guard.send('inspect');
-                    await barrier(() => hasEvent('inspection'));
-                    expect(isAlive(childPid)).toBe(true);
-                    expect(hasEvent('storage-release-entered')).toBe(false);
-                    expect(hasEvent('fallback-invoked')).toBe(false);
-                    guard.send('admit-fallback');
+                    fixture.send('inspect');
+                    await fixture.barrier(() => fixture.hasEvent('inspection'));
+                    expect(isAlive(child.pid)).toBe(true);
+                    expect(fixture.hasEvent('storage-release-entered')).toBe(false);
+                    expect(fixture.hasEvent('fallback-invoked')).toBe(false);
+                    fixture.send('admit-fallback');
                 }
-                await barrier(() => hasEvent('storage-release-entered'));
-                expect(messages.find((message) => message.event === 'storage-release-entered')).toEqual({
+                await fixture.barrier(() => fixture.hasEvent('storage-release-entered'));
+                expect(fixture.messages.find((message) => message.event === 'storage-release-entered')).toEqual({
                     event: 'storage-release-entered',
+                    pid: child.pid,
+                    startedAt: child.startedAt,
                     treeStopped: true,
                     tempExists: true,
                     fallbackAdmitted: !repeatedSignal,
                 });
-                expect(hasEvent('fallback-invoked')).toBe(!repeatedSignal);
-                expect(() => process.kill(ready.pid, 0)).toThrow();
-                expect(unrelated.pid).toBeDefined();
-                expect(isAlive(unrelated.pid!)).toBe(true);
-                expect(existsSync(ready.tmp)).toBe(true);
-                expect(guardClosed).toBe(false);
-                expect(hasEvent('storage-released')).toBe(false);
-                guard.send('release-storage');
-                expect(await completion).toBe(143);
-                expect(messages).toContainEqual({ event: 'storage-released', removed: true });
-                expect(hasEvent('fallback-cleared')).toBe(true);
-                expect(existsSync(ready.tmp)).toBe(false);
-                expect(() => process.kill(ready.pid, 0)).toThrow();
-                expect(isAlive(unrelated.pid!)).toBe(true);
+                expect(fixture.hasEvent('fallback-invoked')).toBe(!repeatedSignal);
+                expect(() => process.kill(child.pid, 0)).toThrow();
+                expect(isAlive(fixture.unrelated.pid!)).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(true);
+                expect(fixture.isClosed()).toBe(false);
+                expect(fixture.hasEvent('storage-released')).toBe(false);
+                fixture.send('release-storage');
+                expect(await fixture.completion).toBe(143);
+                expect(fixture.messages).toContainEqual({
+                    event: 'storage-released',
+                    removed: true,
+                    treeStopped: true,
+                    pid: child.pid,
+                    startedAt: child.startedAt,
+                });
+                expect(fixture.hasEvent('fallback-cleared')).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(false);
+                expect(() => process.kill(child.pid, 0)).toThrow();
+                expect(isAlive(fixture.unrelated.pid!)).toBe(true);
             } finally {
-                guard.kill('SIGKILL');
-                await completion;
-                await killAndWait(childPid);
-                unrelated.kill('SIGKILL');
-                await unrelatedCompletion;
-                rmSync(root, { recursive: true, force: true });
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
             }
         });
     }

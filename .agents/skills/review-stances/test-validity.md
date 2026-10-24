@@ -24,6 +24,14 @@ storage, pending supervisor close, and a surviving unrelated process. Admit rele
 143 before removing fixture files, and require real storage removal. A sleep, larger deadline, or
 exit 143 alone cannot distinguish repeated-signal escalation from the fallback.
 
+PR #5661's initial fixture also treated file existence as a complete JSON acknowledgement.
+Stage a partial readiness record and first-TERM record before admission; each must remain
+unadmitted by the consumer until full same-directory publication by rename. Obtain child PID
+and start identity independently from the supervisor's storage process record, never from a
+readiness parse. Fail readiness while abort is held, with that identity present and withheld:
+clean the unrelated child, retain fixture and temporary storage, and report missing exit proof.
+Only matching affirmative supervisor-owned exit and storage-removal evidence admits root deletion.
+
 ### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
 
 Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420

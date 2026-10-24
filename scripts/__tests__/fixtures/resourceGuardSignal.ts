@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { main, runGuardedCommand } from '../../resourceGuard.ts';
-import { createGuardStorage } from '../../resourceGuardStorage.ts';
+import { createGuardStorage, type StorageProcessIdentity } from '../../resourceGuardStorage.ts';
 
 const originalSetTimeout = globalThis.setTimeout;
 const originalClearTimeout = globalThis.clearTimeout;
@@ -11,6 +11,11 @@ let capturedTimers = 0;
 let fallback: (() => void) | undefined;
 let fallbackHandle: NodeJS.Timeout | undefined;
 let fallbackAdmitted = false;
+let ownedChild: StorageProcessIdentity | undefined;
+let tempDirectory: string | undefined;
+let storageReleaseEntered = false;
+let holdAbort = process.env.SOURDAW_SIGNAL_HOLD_ABORT === '1';
+let holdIdentity = process.env.SOURDAW_SIGNAL_HOLD_IDENTITY === '1';
 let releaseStorage: (() => void) | undefined;
 const storageAdmission = new Promise<void>((resolve) => {
     releaseStorage = resolve;
@@ -18,6 +23,27 @@ const storageAdmission = new Promise<void>((resolve) => {
 
 function report(event: string, details: Record<string, unknown> = {}): void {
     process.send?.({ event, ...details });
+}
+
+function publishIdentity(): void {
+    if (ownedChild !== undefined && !holdIdentity) {
+        report('owned-child', { ...ownedChild, tempDirectory });
+    }
+}
+
+function abort(): void {
+    if (holdAbort) {
+        report('abort-held', {
+            childKnown: ownedChild !== undefined,
+            tempExists: tempDirectory !== undefined && existsSync(tempDirectory),
+        });
+        return;
+    }
+    releaseStorage?.();
+    if (!storageReleaseEntered && ownedChild !== undefined) {
+        process.emit('SIGTERM');
+        queueMicrotask(() => process.emit('SIGTERM'));
+    }
 }
 
 function captureFirstSignal(): void {
@@ -66,7 +92,15 @@ globalThis.clearTimeout = (handle) => {
 
 process.prependOnceListener('SIGTERM', captureFirstSignal);
 process.on('message', (message: string) => {
-    if (message === 'admit-fallback') {
+    if (message === 'abort') {
+        abort();
+    } else if (message === 'admit-abort') {
+        holdAbort = false;
+        abort();
+    } else if (message === 'publish-identity') {
+        holdIdentity = false;
+        publishIdentity();
+    } else if (message === 'admit-fallback') {
         fallbackAdmitted = true;
         originalClearTimeout(fallbackHandle);
         fallback?.();
@@ -86,17 +120,27 @@ try {
                 storageRoot: join(process.cwd(), 'storage'),
                 storageFactory: (options) => {
                     const storage = createGuardStorage(options);
+                    tempDirectory = storage.tempDirectory;
                     return {
                         ...storage,
+                        recordProcesses: (child, tracked) => {
+                            storage.recordProcesses(child, tracked);
+                            if (child !== undefined) {
+                                ownedChild = child;
+                                publishIdentity();
+                            }
+                        },
                         release: async (treeStopped) => {
+                            storageReleaseEntered = true;
                             report('storage-release-entered', {
+                                ...ownedChild,
                                 treeStopped,
                                 tempExists: existsSync(storage.tempDirectory),
                                 fallbackAdmitted,
                             });
                             await storageAdmission;
                             const removed = await storage.release(treeStopped);
-                            report('storage-released', { removed });
+                            report('storage-released', { removed, treeStopped, ...ownedChild });
                             return removed;
                         },
                     };
