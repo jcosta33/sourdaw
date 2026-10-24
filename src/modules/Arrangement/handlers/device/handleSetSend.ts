@@ -16,6 +16,8 @@ function requestedLevel(action: SetSendAction, currentLevel: number): LevelResol
 }
 
 export const handleSetSend = createHandler<'setSend'>({
+    canReapplyAfterDivergence: (action) =>
+        action.payload.expectedLevel !== undefined && action.payload.expectedPreFader !== undefined,
     validate: (action, context) => {
         const state = getTrackStoreState();
         const track = state?.tracks.find((candidate) => candidate.id === action.payload.trackId);

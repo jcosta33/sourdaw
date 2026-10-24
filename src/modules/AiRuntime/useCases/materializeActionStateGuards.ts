@@ -437,6 +437,17 @@ export function materializeActionStateGuards(
             });
             continue;
         }
+        if (action.type === 'soloTrack') {
+            const track = tracksById.get(action.payload.trackId);
+            if (!track) {
+                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
+            }
+            materialized.push({
+                type: 'soloTrack',
+                payload: { ...action.payload, expectedSoloed: track.soloed },
+            });
+            continue;
+        }
         if (action.type === 'addTrack' && action.payload.id) {
             if (tracksById.has(action.payload.id)) {
                 return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };

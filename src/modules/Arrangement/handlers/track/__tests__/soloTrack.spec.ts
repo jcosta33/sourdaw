@@ -44,7 +44,11 @@ describe('handleSoloTrack', () => {
         expect(desc1.label).toBe('Solo track');
         expect(desc1.inverseAction).toEqual({
             type: 'soloTrack',
-            payload: { trackId: 't1', soloed: false },
+            payload: { trackId: 't1', soloed: false, expectedSoloed: true },
+        });
+        expect(desc1.redoAction).toEqual({
+            type: 'soloTrack',
+            payload: { trackId: 't1', soloed: true, expectedSoloed: false },
         });
 
         mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
@@ -55,8 +59,35 @@ describe('handleSoloTrack', () => {
         expect(desc2.label).toBe('Unsolo track');
         expect(desc2.inverseAction).toEqual({
             type: 'soloTrack',
-            payload: { trackId: 't1', soloed: true },
+            payload: { trackId: 't1', soloed: true, expectedSoloed: false },
         });
+    });
+
+    it('refuses to write over a solo state that diverged from the expected one', () => {
+        mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
+
+        const result = handleSoloTrack.execute({
+            type: 'soloTrack',
+            payload: { trackId: 't1', soloed: true, expectedSoloed: false },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.soloTrack).not.toHaveBeenCalled();
+    });
+
+    it('certifies divergence reapplication only for a guarded payload', () => {
+        expect(
+            handleSoloTrack.canReapplyAfterDivergence?.({
+                type: 'soloTrack',
+                payload: { trackId: 't1', soloed: true, expectedSoloed: false },
+            })
+        ).toBe(true);
+        expect(
+            handleSoloTrack.canReapplyAfterDivergence?.({
+                type: 'soloTrack',
+                payload: { trackId: 't1', soloed: true },
+            })
+        ).toBe(false);
     });
 
     it('does not manufacture an inverse for a missing track', () => {

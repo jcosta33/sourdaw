@@ -244,6 +244,27 @@ describe('handleSetSend', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
+    it('certifies divergence reapplication only for a payload guarding level and pre-fader state', () => {
+        expect(
+            handleSetSend.canReapplyAfterDivergence?.({
+                type: 'setSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.2, expectedLevel: 0.5, expectedPreFader: false },
+            })
+        ).toBe(true);
+        expect(
+            handleSetSend.canReapplyAfterDivergence?.({
+                type: 'setSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.2, expectedLevel: 0.5 },
+            })
+        ).toBe(false);
+        expect(
+            handleSetSend.canReapplyAfterDivergence?.({
+                type: 'setSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.2 },
+            })
+        ).toBe(false);
+    });
+
     it('is undoable', () => {
         expect(handleSetSend.undoable).toBe(true);
     });
