@@ -22,6 +22,7 @@ import {
     spawnCapture,
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE, supersessionCommentBody } from './prContract.ts';
+import { withPullRequestMutationLock, type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
 import {
     commentClientMutationId,
     isDecimalId,
@@ -349,6 +350,95 @@ function assertStackedParentProofUnchanged(
     }
 }
 
+type SupersessionInput = {
+    oldNumber: number;
+    expectedHead: string;
+    replacementNumber: number;
+    supersededParentNumber?: number;
+    lineage: FindingLineage;
+    authorNodeId: string;
+    port: SupersedePullRequestPort;
+};
+
+class VerifiedSupersessionCompensationError extends Error {
+    readonly refusal: unknown;
+
+    constructor(refusal: unknown) {
+        super(errorMessage(refusal), { cause: refusal });
+        this.refusal = refusal;
+    }
+}
+
+type SupersessionOutcome = { success: string } | { compensated: VerifiedSupersessionCompensationError };
+
+/** The production entrypoint holds one shared per-PR owner through reads, writes, replay and compensation. */
+export async function serializedSupersedePullRequest(
+    primaryRoot: string,
+    input: SupersessionInput,
+    serialize: PullRequestMutationSerialization = withPullRequestMutationLock
+): Promise<string> {
+    let attemptedOwner: string | undefined;
+    let unsafeFailure = false;
+    let outcome: SupersessionOutcome;
+    try {
+        outcome = await serialize(primaryRoot, input.oldNumber, async (boundary): Promise<SupersessionOutcome> => {
+            const markMutation = () => {
+                boundary.markRemoteMutationAttempt();
+                attemptedOwner = boundary.ownerOid;
+            };
+            const port: SupersedePullRequestPort = {
+                ...input.port,
+                log: () => undefined,
+                comment: (number, body) => {
+                    markMutation();
+                    return input.port.comment(number, body);
+                },
+                deleteComment: (id) => {
+                    markMutation();
+                    input.port.deleteComment(id);
+                },
+                close: (number) => {
+                    markMutation();
+                    return input.port.close(number);
+                },
+            };
+            try {
+                return {
+                    success: supersedePullRequest(
+                        input.oldNumber,
+                        input.expectedHead,
+                        input.replacementNumber,
+                        input.lineage,
+                        input.authorNodeId,
+                        port,
+                        input.supersededParentNumber
+                    ),
+                };
+            } catch (error) {
+                if (error instanceof VerifiedSupersessionCompensationError) {
+                    return { compensated: error };
+                }
+                unsafeFailure = true;
+                throw error;
+            }
+        });
+    } catch (error) {
+        if (unsafeFailure && attemptedOwner !== undefined) {
+            throw new Error(
+                `${errorMessage(error)}; PR #${input.oldNumber} supersession preserved lock owner ${attemptedOwner}: ` +
+                    `pnpm deliver --recover-lock ${input.oldNumber} --owner ${attemptedOwner}`,
+                { cause: error }
+            );
+        }
+        throw error;
+    }
+    if ('compensated' in outcome) {
+        throwWithCompensation(outcome.compensated.refusal, []);
+    }
+    input.port.log(outcome.success);
+    return outcome.success;
+}
+
 export function supersedePullRequest(
     oldNumber: number,
     expectedHead: string,
@@ -401,10 +491,18 @@ export function supersedePullRequest(
                 assertFindingsUnchanged(oldNumber, coveredFindings, port);
             }
         },
-        beforeClose: () => {
+        beforeClose: (markerIds) => {
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
             if (stackedParentProof !== undefined) {
                 assertStackedParentProofUnchanged(stackedParentProof, before, port);
+                const beforeClose = port.inspect(oldNumber);
+                assertStableOpen(beforeClose, oldNumber, expectedHead, before.base);
+                checkedChildBaseRef(beforeClose, stackedParentProof.parent, false);
+                const currentReceipt = requireOneCommentMarker(beforeClose.comments, markers[0], markers, oldNumber);
+                const currentLineage = requireOneCommentMarker(beforeClose.comments, markers[1], markers, oldNumber);
+                if (currentReceipt.id !== markerIds[0] || currentLineage.id !== markerIds[1]) {
+                    fail(`PR #${oldNumber} supersession marker identity changed before close; compensating`);
+                }
                 assertFindingsUnchanged(oldNumber, coveredFindings, port);
             }
         },
@@ -452,7 +550,7 @@ export function closePullRequestWithMarkers(
     port: SupersedePullRequestPort,
     checks: {
         beforeMarkers?: () => void;
-        beforeClose: () => void;
+        beforeClose: (markerIds: string[]) => void;
         afterClose: (verified: SupersededPullRequest, markerIds: string[], receipt: PullRequestCloseReceipt) => void;
     }
 ): void {
@@ -477,7 +575,7 @@ export function closePullRequestWithMarkers(
         const markerIds = markers.map(
             (marker) => requireOneCommentMarker(converged.comments, marker, markers, number).id
         );
-        checks.beforeClose();
+        checks.beforeClose(markerIds);
         closeAttempted = true;
         const closeResult = port.close(number);
         assertCloseReceipt(closeResult);
@@ -543,13 +641,28 @@ function compensateSupersession(
             deleteCreatedComments(current.comments, transaction, port, failures);
         }
     }
-    if (current !== undefined && current.state === before.state && closeReceipt === undefined) {
+    if (
+        current !== undefined &&
+        current.state === before.state &&
+        !closeAttempted &&
+        transaction.attempts === transaction.created.length
+    ) {
         attempt(failures, 'verify supersession compensation', () => {
             const verified = port.inspect(number);
-            if (verified.state !== before.state || !sameCommentIds(verified.comments, before.comments)) {
+            const createdRemains = transaction.created.some((created) =>
+                verified.comments.some((comment) => comment.id === created.id)
+            );
+            if (
+                verified.state !== before.state ||
+                !sameCommentIds(verified.comments, before.comments) ||
+                createdRemains
+            ) {
                 fail(`PR #${number} compensation was not verified`);
             }
         });
+        if (failures.length === 0) {
+            throw new VerifiedSupersessionCompensationError(original);
+        }
     }
     throwWithCompensation(original, failures);
 }
@@ -846,8 +959,8 @@ function assertCommentBody(value: IssueComment, expectedBody: string): void {
     }
 }
 
-async function main(): Promise<number> {
-    const parsed = parseSupersedePullRequestArgs(process.argv.slice(2));
+export async function runSupersedePullRequestCli(args: string[]): Promise<number> {
+    const parsed = parseSupersedePullRequestArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -879,22 +992,22 @@ async function main(): Promise<number> {
             })
         );
         const lineage = readFindingLineageFile(parsed.lineagePath);
-        supersedePullRequest(
-            parsed.oldNumber,
-            parsed.head,
-            parsed.replacementNumber,
+        await serializedSupersedePullRequest(primaryRoot, {
+            oldNumber: parsed.oldNumber,
+            expectedHead: parsed.head,
+            replacementNumber: parsed.replacementNumber,
+            supersededParentNumber: parsed.supersededParentNumber,
             lineage,
-            auth.minted.actorNodeId,
-            shellPort(auth.session),
-            parsed.supersededParentNumber
-        );
+            authorNodeId: auth.minted.actorNodeId,
+            port: shellPort(auth.session),
+        });
         return 0;
     } finally {
         auth.session.dispose();
     }
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
+    void runSupersedePullRequestCli(process.argv.slice(2)).then(
         (code) => process.exit(code),
         (error: unknown) => {
             console.error(error instanceof Error ? error.message : error);
