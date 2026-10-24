@@ -350,7 +350,7 @@ describe('parseProjectXml — clip parsing', () => {
         expect(parsed.tracks[0]?.clips).toEqual([]);
         expect(parsed.warnings).toMatchObject([
             { kind: 'unsupported-clip', name: 'Opening', sourceType: 'Video', context: 'Picture' },
-            { kind: 'unsupported-clip', name: 'Wrapped video', sourceType: 'Clip', context: 'Picture' },
+            { kind: 'unsupported-clip', name: 'wrapped.mov', sourceType: 'Video', context: 'Picture' },
         ]);
         expect(parsed.warnings).toHaveLength(2);
     });
@@ -1568,6 +1568,132 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         const wrapped = drums?.[0];
         expect(wrapped && mapped.midi.notesByClipId[wrapped.id]).toMatchObject([{ pitch: 60, startBeat: 0 }]);
         expect(parsed.warnings).toEqual([]);
+    });
+
+    it('retains a muted Lanes/Notes phrase beside omitted automation on its nearest content owner', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip name="Mixed phrase" time="8" duration="4" enable="false"><Lanes track="keys">' +
+                    '<Notes track="drums"><Note time=".5" duration="1" key="60"/></Notes>' +
+                    '<Points id="cutoff" name="Cutoff"><Target expression="timbre"/><RealPoint time="0" value=".5"/></Points>' +
+                    '</Lanes></Clip><Clip name="Sibling" time="12" duration="1"><Notes/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Mixed', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'mixed.dawproject',
+        });
+        const drums = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+        expect(
+            mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)
+        ).toEqual(['Sibling']);
+        expect(drums).toMatchObject([{ name: 'Mixed phrase', startBeat: 8, endBeat: 12, muted: true, type: 'midi' }]);
+        const phrase = drums?.[0];
+        expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+            { pitch: 60, startBeat: 0.5, duration: 1 },
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-automation',
+                sourceType: 'Points',
+                sourceId: 'cutoff',
+                name: 'Cutoff',
+                context: 'Keys',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it.each([
+        { time: 'not-a-number', duration: 'still-not-a-number' },
+        { time: '100', duration: 'still-not-a-number' },
+        { time: 'not-a-number', duration: '100' },
+        { time: '0x10', duration: '1' },
+        { time: '0', duration: '' },
+    ])(
+        'drops malformed note timing $time / $duration without extending the seconds clip window',
+        ({ time, duration }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes track="drums"><Points target="tempo"><RealPoint time="4" value="60"/>' +
+                        '<RealPoint time="20" value="90"/></Points><Clips>' +
+                        '<Clip name="Phrase" time="8" duration="2" contentTimeUnit="seconds"><Notes>' +
+                        `<Note id="bad" name="Malformed note" key="60" time="${time}" duration="${duration}"/>` +
+                        '<Note key="64" time="5e-1" duration=".25"/><Note key="67"/>' +
+                        '</Notes></Clip></Clips></Lanes></Arrangement>'
+                )
+            );
+            expect(parsed.tracks[0]?.clips).toMatchObject([
+                {
+                    name: 'Phrase',
+                    startBeat: 8,
+                    endBeat: 10,
+                    notes: [
+                        { pitch: 64, startBeat: 0.5, duration: 0.25 },
+                        { pitch: 67, startBeat: 0, duration: 0.25 },
+                    ],
+                },
+            ]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'invalid-note',
+                    name: 'Malformed note',
+                    sourceId: 'bad',
+                    sourceType: 'Note',
+                    context: 'Drums / Phrase',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
+    it.each([
+        '<Notes><Note key="60"/></Notes><Notes><Note key="64"/></Notes>',
+        '<Lanes><Notes><Note key="60"/></Notes><Notes><Note key="64"/></Notes></Lanes>',
+        '<Notes><Note key="60"/></Notes><Lanes><Notes><Note key="64"/></Notes></Lanes>',
+    ])('reports ambiguous multiple Notes content without silently selecting a phrase: %s', (content) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    `<Arrangement><Lanes><Clips track="keys"><Clip name="Ambiguous" duration="2">${content}</Clip>` +
+                    '<Clip name="Sibling" time="2" duration="1"><Notes/></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Sibling']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Clip', name: 'Ambiguous', context: 'Keys', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('names Video and its file after substituting an unsupported video track', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="video" name="Picture" contentType="video"/></Structure>' +
+                    '<Arrangement><Lanes track="video"><Clips><Clip name="Picture clip" duration="2">' +
+                    '<Video id="picture"><File path="picture.mov"/></Video></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tracks[0]?.clips).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-track-type', name: 'video: Picture', context: 'Picture', handling: 'substituted' },
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Video',
+                sourceId: 'picture',
+                name: 'picture.mov',
+                context: 'Picture',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.warnings.map((warning) => warning.sourceOrder)).toEqual(
+            [...parsed.warnings.map((warning) => warning.sourceOrder)].sort((a, b) => a - b)
+        );
     });
 
     it('reports a warped Notes route without publishing an invented empty clip', () => {

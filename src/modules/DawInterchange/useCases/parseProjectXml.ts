@@ -265,6 +265,22 @@ function isValidMidiKey(key: number): boolean {
     return Number.isInteger(key) && key >= 0 && key <= 127;
 }
 
+function readTimingScalar(node: XmlQuery, attribute: string, fallback: number): number | null {
+    const value = node.attr(attribute);
+    if (value === null) {
+        return fallback;
+    }
+    const scalar = value.trim();
+    const timingScalarPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+    return timingScalarPattern.test(scalar) && Number.isFinite(Number(scalar)) ? Number(scalar) : null;
+}
+
+function readNoteTiming(note: XmlQuery): { start: number; duration: number } | null {
+    const start = readTimingScalar(note, 'time', 0);
+    const duration = readTimingScalar(note, 'duration', 0.25);
+    return start === null || duration === null ? null : { start, duration };
+}
+
 function parseNotesNode(
     notes: XmlQuery,
     unit: 'beats' | 'seconds',
@@ -275,17 +291,16 @@ function parseNotesNode(
     const result: DawProjectParsedMidiNote[] = [];
     for (const note of notes.children(NOTE)) {
         const key = note.attrNumber('key', -1);
-        if (!isValidMidiKey(key)) {
+        const timing = readNoteTiming(note);
+        if (!isValidMidiKey(key) || !timing) {
             warn(context, note, 'invalid-note', note.attr('name') ?? `key ${note.attr('key') ?? 'missing'}`, clipName);
             continue;
         }
-        const rawStart = note.attrNumber('time', 0);
-        const rawDuration = note.attrNumber('duration', 0.25);
         const velRaw = note.attrNumber('vel', 0.787);
         result.push({
             pitch: key,
-            startBeat: toBeats(rawStart, unit, tempo),
-            duration: toBeats(rawDuration, unit, tempo),
+            startBeat: toBeats(timing.start, unit, tempo),
+            duration: toBeats(timing.duration, unit, tempo),
             velocity: Math.round(Math.max(0, Math.min(1, velRaw)) * 127),
         });
     }
@@ -304,20 +319,20 @@ function resolveAudioAssetPath(clip: XmlQuery): string | undefined {
     return path ?? undefined;
 }
 
+function clipNotesNodes(clip: XmlQuery): XmlQuery[] {
+    return [...clip.children(NOTES), ...clip.children(LANES).flatMap((lanes) => lanes.children(NOTES))];
+}
+
 function clipNotesNode(clip: XmlQuery): XmlQuery | null {
-    const direct = clip.child(NOTES);
-    if (direct) {
-        return direct;
-    }
-    const lanes = clip.child(LANES);
-    return lanes?.children().length === 1 ? lanes.child(NOTES) : null;
+    const nodes = clipNotesNodes(clip);
+    return nodes.length === 1 ? (nodes[0] ?? null) : null;
 }
 
 function clipNotesUnit(clip: XmlQuery, notes: XmlQuery, contentUnit: TimelineUnit): TimelineUnit {
     if (clip.child(NOTES)) {
         return readTimeUnit(notes, contentUnit);
     }
-    const lanes = clip.child(LANES);
+    const lanes = clip.children(LANES).find((lane) => lane.element === notes.element.parentElement);
     return readTimeUnit(notes, lanes ? readTimeUnit(lanes, contentUnit) : contentUnit);
 }
 
@@ -340,6 +355,10 @@ function parseClip(
     const playStart = playStartBeat !== 0 ? { playStartBeat } : {};
 
     const notesNode = clipNotesNode(clip);
+    if (!notesNode && clipNotesNodes(clip).length > 1) {
+        warn(context, clip, 'unsupported-clip', name, trackName);
+        return null;
+    }
     if (notesNode) {
         return {
             id,
@@ -380,11 +399,11 @@ function parseClip(
     }
 
     const video = clip.child('Video');
-    if (video && ownerKind === 'midi') {
+    if (video) {
         warn(context, video, 'unsupported-clip', video.child(FILE)?.attr('path') ?? name, trackName);
         return null;
     }
-    if (video || clip.child('Warps')?.child(NOTES) || clip.child(LANES)?.child(NOTES)) {
+    if (clip.child('Warps')?.child(NOTES)) {
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;
     }
@@ -613,7 +632,6 @@ function parseArrangementClips(
 ): void {
     const trackById = new Map(tracks.map((track) => [track.id, track] as const));
     const sortedTempoChanges = [...tempoChanges].sort((a, b) => a.beat - b.beat);
-    const timingScalarPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
     type Scope = {
         ownerRef: string | null;
         unit: TimelineUnit;
@@ -653,14 +671,9 @@ function parseArrangementClips(
             return null;
         }
         if (
-            ['time', 'duration', 'playStart', 'playStop', 'loopStart', 'loopEnd'].some((attribute) => {
-                const value = clip.attr(attribute);
-                if (value === null) {
-                    return false;
-                }
-                const scalar = value.trim();
-                return !timingScalarPattern.test(scalar) || !Number.isFinite(Number(scalar));
-            })
+            ['time', 'duration', 'playStart', 'playStop', 'loopStart', 'loopEnd'].some(
+                (attribute) => readTimingScalar(clip, attribute, 0) === null
+            )
         ) {
             return null;
         }
@@ -703,15 +716,13 @@ function parseArrangementClips(
             let endBeat = Math.max(origin, timing.endBeat);
             if (notes && clipNotesUnit(clip, notes, timing.contentUnit) === 'seconds') {
                 for (const note of notes.children(NOTE)) {
-                    if (!isValidMidiKey(note.attrNumber('key', -1))) {
+                    const noteTiming = readNoteTiming(note);
+                    if (!isValidMidiKey(note.attrNumber('key', -1)) || !noteTiming) {
                         continue;
                     }
-                    const noteStart = origin + toBeats(note.attrNumber('time', 0), 'seconds', tempo);
+                    const noteStart = origin + toBeats(noteTiming.start, 'seconds', tempo);
                     startBeat = Math.min(startBeat, noteStart);
-                    endBeat = Math.max(
-                        endBeat,
-                        noteStart + toBeats(note.attrNumber('duration', 0.25), 'seconds', tempo)
-                    );
+                    endBeat = Math.max(endBeat, noteStart + toBeats(noteTiming.duration, 'seconds', tempo));
                 }
             }
             if (constantTempo(startBeat, endBeat) !== tempo) {
@@ -741,16 +752,14 @@ function parseArrangementClips(
     function consumedOwner(clip: XmlQuery, inherited: string | null): { reference: string | null; node: XmlQuery } {
         let reference = inherited;
         let node = clip;
-        const notes = clip.child(NOTES);
-        const lanes = clip.child(LANES);
+        const notes = clipNotesNode(clip);
+        const lanes = clip.children(LANES).find((lane) => lane.element === notes?.element.parentElement);
         const audio = clip.child(AUDIO);
         const warps = clip.child('Warps');
         const video = clip.child('Video');
         let route: (XmlQuery | null)[] = [];
         if (notes) {
-            route = [notes];
-        } else if (lanes?.child(NOTES)) {
-            route = [lanes, lanes.child(NOTES)];
+            route = lanes ? [lanes, notes] : [notes];
         } else if (audio) {
             route = [audio];
         } else if (warps) {
