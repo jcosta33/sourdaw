@@ -257,7 +257,8 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
-        isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId) &&
+        (!Object.hasOwn(value, 'retiredTakeLanes') ||
+            isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId)) &&
         ['midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'].every((key) => Object.hasOwn(value, key)) &&
         decodeMidiClipDataSnapshots({
             notesSnapshot: value.midiNotesSnapshot,
@@ -396,6 +397,19 @@ function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId:
     );
 }
 
+function splitLeftSourceMatches(left: unknown, otherLeft: unknown): boolean {
+    if (!isRecord(left) || !isRecord(otherLeft)) {
+        return false;
+    }
+    // prepareClipSplit changes only these three left-fragment fields. Every
+    // surviving source facet, including optional-field presence, stays exact.
+    const preservedFields = (clip: Record<string, unknown>): Record<string, unknown> =>
+        Object.fromEntries(
+            Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
+        );
+    return valuesEqual(preservedFields(left), preservedFields(otherLeft));
+}
+
 /** Capture ownership is structural; live owner freshness is checked at replay. */
 export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
     return (
@@ -413,6 +427,7 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
         typeof value.expected.trackId === 'string' &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
         splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId) &&
+        splitLeftSourceMatches(value.expected.leftClip, value.replacement.leftClip) &&
         isSplitTakeReKeyCapture(value.reKeyedTakeLanes, value.expected.trackId, value.clipId, value.rightClipId)
     );
 }

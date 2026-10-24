@@ -170,6 +170,40 @@ beforeEach(() => {
     mockedPlanRetirement.mockReturnValue(null);
 });
 
+describe('handleRestoreClipSplitState — surviving left source', () => {
+    it.each([
+        ['loop anchor', { loopOriginBeat: 4 }, { loopOriginBeat: 3 }],
+        ['absent loop anchor', {}, { loopOriginBeat: 0 }],
+        ['present loop anchor', { loopOriginBeat: 0 }, {}],
+        ['loop length', { loopLength: 4 }, { loopLength: 2 }],
+        ['loop enable', { loopEnabled: true }, { loopEnabled: false }],
+        ['audio offset', { audioOffsetBeats: 0.25 }, { audioOffsetBeats: 0.5 }],
+        ['MIDI offset', { midiOffsetBeats: 0.25 }, { midiOffsetBeats: 0.5 }],
+        ['stretch mode', { stretchMode: 'repitch' }, { stretchMode: 'timestretch' }],
+        ['stretch ratio', { stretchRatio: 1.25 }, { stretchRatio: 1.5 }],
+        ['audio buffer', { audioBufferId: 'source-buffer' }, { audioBufferId: 'other-buffer' }],
+        ['file', { fileId: 'source-file' }, { fileId: 'other-file' }],
+        ['asset', { assetHash: 'source-asset' }, { assetHash: 'other-asset' }],
+    ] satisfies [string, Partial<ClipStateSnapshot>, Partial<ClipStateSnapshot>][])(
+        'refuses a changed %s through session admission, preflight and execution before writes',
+        (_field, before, after) => {
+            const action = makeAction(
+                makeSnapshot({ leftClip: { ...makeClipSnapshot('c1'), ...before } }),
+                makeSnapshot({ leftClip: { ...makeClipSnapshot('c1'), ...after }, rightClip: null })
+            );
+            expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(false);
+            expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+            expect(handleRestoreClipSplitState.execute(action)).toEqual({ status: 'conflict' });
+            expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+            expect(mockedRestoreMidi).not.toHaveBeenCalled();
+            expect(mockedApplyLaneTransition).not.toHaveBeenCalled();
+            expect(mockedWriteSatellite).not.toHaveBeenCalled();
+            expect(mockedRestoreTakes).not.toHaveBeenCalled();
+            expect(mockedRemoveTakes).not.toHaveBeenCalled();
+        }
+    );
+});
+
 describe('handleRestoreClipSplitState — satellites', () => {
     it.each(['clipSatellites', 'clipAutomationLanes'] as const)(
         'refuses asymmetric %s presence during session admission, preflight and execution',
