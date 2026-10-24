@@ -8,9 +8,12 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    captureDurableDocumentWitness,
+    captureProjectIdentity,
     captureProjectMutationAuthorization,
     createCrdtDoc,
     getCrdtDoc,
+    getCrdtDocIds,
     mutateCrdtDoc,
     removeCrdtDoc,
     replaceCrdtDoc,
@@ -65,7 +68,29 @@ describe('committed Redo inverse capture publication', () => {
             const ownsPublication = captureProjectMutationAuthorization();
             ownsPublication();
             for (const [index, action] of actions.entries()) {
-                commitRedoInverseCapture({ phase: 'stage', action, inverseAction: fresh[index]!, ownsPublication });
+                commitRedoInverseCapture({
+                    phase: 'stage',
+                    action,
+                    inverseAction: fresh[index]!,
+                    ownsPublication,
+                    publicationAuthority: {
+                        captureIdentity: captureProjectIdentity,
+                        captureWitness: captureDurableDocumentWitness,
+                        captureCurrentGuard: () => {
+                            const identity = captureProjectIdentity();
+                            const documents = getCrdtDocIds().map((id) => ({
+                                id,
+                                heads: Automerge.getHeads(getCrdtDoc(id)!),
+                            }));
+                            return () =>
+                                captureProjectIdentity() === identity &&
+                                documents.every(({ id, heads }) => {
+                                    const document = getCrdtDoc(id);
+                                    return document !== undefined && Automerge.hasHeads(document, heads);
+                                });
+                        },
+                    },
+                });
             }
             storage.set({ revision: storage.get()!.revision + 1 });
         });
