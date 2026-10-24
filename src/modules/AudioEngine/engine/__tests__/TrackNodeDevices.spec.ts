@@ -255,6 +255,15 @@ function createLoadedDevice(deviceId = 'wasm-1') {
     return { device, node, controller, dispose };
 }
 
+function captureFailure(effect: () => void): unknown {
+    try {
+        effect();
+    } catch (error) {
+        return error;
+    }
+    throw new Error('expected a disposal failure');
+}
+
 describe('TrackNode — metering, devices, sends, and teardown', () => {
     let ctx: MockContext;
 
@@ -1461,6 +1470,107 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
         });
 
+        it('rejects a late wasm completion after disposal reported an early strip fault', async () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const onDeviceLoaded = vi.fn();
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode(
+                't1',
+                makeDeps(ctx, {
+                    pendingDevicePromises,
+                    readinessDiagnostics,
+                    onDeviceLoaded,
+                    onAsyncRuntimeGraphMutation,
+                })
+            );
+            track.addDevice('wasm-1', 'levain');
+            const capturedPromises = [...pendingDevicePromises];
+            expect(capturedPromises).toHaveLength(1);
+            const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
+            const fault = new Error('strip disconnect failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw fault;
+            });
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(deferred.signal?.aborted).toBe(true);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            deferred.settle();
+            await Promise.all(capturedPromises);
+
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(loaded.controller.destroy).not.toHaveBeenCalled();
+            expect(loaded.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+            expect(scheduleRebuild).not.toHaveBeenCalled();
+            expect(onDeviceLoaded).not.toHaveBeenCalled();
+            expect(onAsyncRuntimeGraphMutation).not.toHaveBeenCalled();
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 1, cancelled: 1 },
+                devices: [],
+            });
+        });
+
+        it('aborts every pending generation and clears ownership when readiness cancellation throws', async () => {
+            const first = installDeferredWasmDevice({ deviceId: 'wasm-1' });
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const onDeviceLoaded = vi.fn();
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode(
+                't1',
+                makeDeps(ctx, {
+                    pendingDevicePromises,
+                    readinessDiagnostics,
+                    onDeviceLoaded,
+                    onAsyncRuntimeGraphMutation,
+                })
+            );
+            track.addDevice('wasm-1', 'levain');
+            const second = installDeferredWasmDevice({ deviceId: 'wasm-2' });
+            track.addDevice('wasm-2', 'levain');
+            const capturedPromises = [...pendingDevicePromises];
+            expect(capturedPromises).toHaveLength(2);
+            const fault = new Error('readiness cancellation failed');
+            const cancel = vi.spyOn(readinessDiagnostics, 'cancel').mockImplementationOnce(() => {
+                throw fault;
+            });
+            const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(first.signal?.aborted).toBe(true);
+            expect(second.signal?.aborted).toBe(true);
+            expect(cancel).toHaveBeenCalledTimes(4);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+            const loadedFirst = createLoadedDevice('wasm-1');
+            const loadedSecond = createLoadedDevice('wasm-2');
+            first.resolve(loadedFirst.device);
+            second.resolve(loadedSecond.device);
+            first.settle();
+            second.settle();
+            await Promise.all(capturedPromises);
+
+            for (const loaded of [loadedFirst, loadedSecond]) {
+                expect(loaded.dispose).toHaveBeenCalledTimes(1);
+                expect(loaded.node.disconnect).toHaveBeenCalledTimes(1);
+            }
+            expect(track.strip.deviceNodes).toEqual([]);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+            expect(scheduleRebuild).not.toHaveBeenCalled();
+            expect(onDeviceLoaded).not.toHaveBeenCalled();
+            expect(onAsyncRuntimeGraphMutation).not.toHaveBeenCalled();
+        });
+
         it('does not report or resurrect an async device after its track node is disposed', () => {
             const deferred = installDeferredWasmDevice();
             const onAsyncRuntimeGraphMutation = vi.fn();
@@ -1537,6 +1647,60 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     });
 
     describe('dispose', () => {
+        it('disconnects a failed controller device and still releases later devices', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const dispose = vi.fn();
+            const first = pushControllerDevice(track, { deviceId: 'first', dispose });
+            const second = pushControllerDevice(track, { deviceId: 'second' });
+            const additionalNode = createMockAudioNode('gain');
+            track.strip.deviceNodes[0]!.nodes.push(additionalNode);
+            const fault = new Error('controller destroy failed');
+            vi.mocked(first.controller.destroy!).mockImplementationOnce(() => {
+                throw fault;
+            });
+            first.node.disconnect.mockImplementationOnce(() => {
+                throw new Error('already detached');
+            });
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(first.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(dispose).not.toHaveBeenCalled();
+            expect(first.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(additionalNode.disconnect).toHaveBeenCalledTimes(1);
+            expect(second.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(second.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+            track.dispose();
+            expect(first.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(second.controller.destroy).toHaveBeenCalledTimes(1);
+        });
+
+        it('disconnects a failed dispose-only device and reports later release faults in order', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const dispose = vi.fn();
+            const first = pushControllerDevice(track, { deviceId: 'first', controller: undefined, dispose });
+            const second = pushControllerDevice(track, { deviceId: 'second' });
+            const firstFault = new Error('factory dispose failed');
+            const secondFault = new Error('controller destroy failed');
+            dispose.mockImplementationOnce(() => {
+                throw firstFault;
+            });
+            vi.mocked(second.controller.destroy!).mockImplementationOnce(() => {
+                throw secondFault;
+            });
+
+            const failure = captureFailure(() => track.dispose());
+
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([firstFault, secondFault]);
+            expect((failure as AggregateError).errors[0]).toBe(firstFault);
+            expect((failure as AggregateError).errors[1]).toBe(secondFault);
+            expect(first.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(second.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+        });
+
         it('tears down strip nodes, closes the meter port, and destroys devices', () => {
             const track = new TrackNode('t1', makeDeps(ctx));
             const { node, controller } = pushControllerDevice(track);

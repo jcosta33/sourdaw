@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { getAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
@@ -23,6 +24,15 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: () => Promise.reject(new Error('unexpected Faust compile')),
     createFaustNode: () => Promise.reject(new Error('unexpected Faust node')),
 }));
+
+function captureFailure(effect: () => void): unknown {
+    try {
+        effect();
+    } catch (error) {
+        return error;
+    }
+    throw new Error('expected a disposal failure');
+}
 
 describe('TrackNode', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
@@ -716,6 +726,199 @@ describe('TrackNode', () => {
             expect(track.strip.midiFxNodes.some((f) => f.id === 'fx-1')).toBe(false);
         });
 
+        it('continues every independent disposal attempt after an early strip fault', () => {
+            const track = new TrackNode('t', deps);
+            const node = deps.context.createGain();
+            const destroy = vi.fn();
+            track.strip.deviceNodes.push({
+                deviceId: 'dispose-device',
+                type: 'effect',
+                nodes: [node],
+                inputNode: node,
+                outputNode: node,
+                controller: { setParam: vi.fn(), destroy },
+            });
+            const meter = track.strip.meterNode!;
+            const stripNodes = [
+                track.strip.preFaderTap,
+                track.strip.gainNode,
+                track.strip.faderNode,
+                track.strip.postFaderGain,
+                track.strip.panNode,
+                track.strip.analyserNode,
+                track.strip.carrierGate,
+                track.strip.preFaderSendGate,
+            ];
+            expect(track.strip.carrierGate.connect).toHaveBeenCalledWith(deps.masterGainNode);
+            for (const owned of stripNodes) {
+                vi.mocked(owned.disconnect).mockClear();
+            }
+            const fault = new Error('pre-fader disconnect failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw fault;
+            });
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            for (const owned of stripNodes) {
+                expect(owned.disconnect).toHaveBeenCalledTimes(1);
+            }
+            expect(meter.port.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
+            expect(meter.port.close).toHaveBeenCalledTimes(1);
+            expect(meter.disconnect).toHaveBeenCalledTimes(1);
+            expect(destroy).toHaveBeenCalledTimes(1);
+            expect(node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+            track.dispose();
+            for (const owned of stripNodes) {
+                expect(owned.disconnect).toHaveBeenCalledTimes(1);
+            }
+            expect(destroy).toHaveBeenCalledTimes(1);
+            expect(meter.port.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('reports strip and meter faults in effect order and still retires later devices', () => {
+            const track = new TrackNode('t', deps);
+            const node = deps.context.createGain();
+            const dispose = vi.fn();
+            track.strip.deviceNodes.push({
+                deviceId: 'dispose-device',
+                type: 'effect',
+                nodes: [node],
+                inputNode: node,
+                outputNode: node,
+                dispose,
+            });
+            const stripFault = new Error('strip failed');
+            const closeFault = new Error('port close failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw stripFault;
+            });
+            const meter = track.strip.meterNode!;
+            vi.mocked(meter.port.close).mockImplementationOnce(() => {
+                throw closeFault;
+            });
+
+            const failure = captureFailure(() => track.dispose());
+
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([stripFault, closeFault]);
+            expect((failure as AggregateError).errors[0]).toBe(stripFault);
+            expect((failure as AggregateError).errors[1]).toBe(closeFault);
+            expect(meter.port.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
+            expect(meter.disconnect).toHaveBeenCalledTimes(1);
+            expect(dispose).toHaveBeenCalledTimes(1);
+            expect(node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+        });
+
+        it('closes and disconnects the meter when its shutdown message throws', () => {
+            const track = new TrackNode('t', deps);
+            const meter = track.strip.meterNode!;
+            const fault = new Error('shutdown message failed');
+            vi.mocked(meter.port.postMessage).mockImplementationOnce(() => {
+                throw fault;
+            });
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(meter.port.close).toHaveBeenCalledTimes(1);
+            expect(meter.disconnect).toHaveBeenCalledTimes(1);
+        });
+
+        it('announces captured devices exactly once after failed project departure disposal', () => {
+            const track = new TrackNode('t', deps);
+            for (const deviceId of ['first', 'second']) {
+                const node = deps.context.createGain();
+                track.strip.deviceNodes.push({
+                    deviceId,
+                    type: 'effect',
+                    nodes: [node],
+                    inputNode: node,
+                    outputNode: node,
+                });
+            }
+            const removed = vi.spyOn(getAudioDeviceRuntimeSink(), 'emitDeviceRemoved');
+            const fault = new Error('strip failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw fault;
+            });
+            try {
+                expect(captureFailure(() => track.disposeLeavingProject())).toBe(fault);
+                track.disposeLeavingProject();
+                expect(removed.mock.calls).toEqual([
+                    [{ deviceId: 'first', deviceType: 'effect' }],
+                    [{ deviceId: 'second', deviceType: 'effect' }],
+                ]);
+            } finally {
+                removed.mockRestore();
+            }
+        });
+
+        it('keeps disposal aggregates nested before notification failures and attempts later announcements', () => {
+            const track = new TrackNode('t', deps);
+            for (const deviceId of ['first', 'second']) {
+                const node = deps.context.createGain();
+                track.strip.deviceNodes.push({
+                    deviceId,
+                    type: 'effect',
+                    nodes: [node],
+                    inputNode: node,
+                    outputNode: node,
+                });
+            }
+            const stripFault = new Error('strip failed');
+            const meterFault = new Error('meter failed');
+            const notificationFault = new Error('notification failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw stripFault;
+            });
+            vi.mocked(track.strip.meterNode!.port.close).mockImplementationOnce(() => {
+                throw meterFault;
+            });
+            const removed = vi.spyOn(getAudioDeviceRuntimeSink(), 'emitDeviceRemoved').mockImplementationOnce(() => {
+                throw notificationFault;
+            });
+            try {
+                const failure = captureFailure(() => track.disposeLeavingProject());
+                expect(failure).toBeInstanceOf(AggregateError);
+                const [disposalFailure, announcementFailure] = (failure as AggregateError).errors;
+                expect(disposalFailure).toBeInstanceOf(AggregateError);
+                expect(disposalFailure.errors).toEqual([stripFault, meterFault]);
+                expect(disposalFailure.errors[0]).toBe(stripFault);
+                expect(disposalFailure.errors[1]).toBe(meterFault);
+                expect(announcementFailure).toBe(notificationFault);
+                expect(removed).toHaveBeenCalledTimes(2);
+                track.disposeLeavingProject();
+                expect(removed).toHaveBeenCalledTimes(2);
+            } finally {
+                removed.mockRestore();
+            }
+        });
+
+        it('does not announce project departure during ordinary disposal even after a fault', () => {
+            const track = new TrackNode('t', deps);
+            const node = deps.context.createGain();
+            track.strip.deviceNodes.push({
+                deviceId: 'stays',
+                type: 'effect',
+                nodes: [node],
+                inputNode: node,
+                outputNode: node,
+            });
+            const removed = vi.spyOn(getAudioDeviceRuntimeSink(), 'emitDeviceRemoved');
+            const fault = new Error('strip failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw fault;
+            });
+            try {
+                expect(captureFailure(() => track.dispose())).toBe(fault);
+                expect(removed).not.toHaveBeenCalled();
+            } finally {
+                removed.mockRestore();
+            }
+        });
+
         it('rebuildChain and addDevice are no-ops after dispose', () => {
             const track = new TrackNode('t', deps);
             track.dispose();
@@ -1058,6 +1261,28 @@ describe('TrackNode', () => {
             // back alongside the analyser edge.
             expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
             expect(track.strip.panNode.connect).toHaveBeenCalledWith(splitter);
+        });
+
+        it('attempts every fallback meter owner after strip and splitter faults', () => {
+            const track = new TrackNode('t-nosab', deps);
+            const splitter = ctx.createChannelSplitter.mock.results[0]!.value;
+            const [, leftAnalyser, rightAnalyser] = ctx.createAnalyser.mock.results.map((result) => result.value);
+            const stripFault = new Error('strip failed');
+            const splitterFault = new Error('splitter failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw stripFault;
+            });
+            splitter.disconnect.mockImplementationOnce(() => {
+                throw splitterFault;
+            });
+
+            const failure = captureFailure(() => track.dispose());
+
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([stripFault, splitterFault]);
+            expect(splitter.disconnect).toHaveBeenCalledTimes(1);
+            expect(leftAnalyser.disconnect).toHaveBeenCalledTimes(1);
+            expect(rightAnalyser.disconnect).toHaveBeenCalledTimes(1);
         });
 
         it('disconnects the fallback splitter and its per-channel analysers on dispose', () => {
