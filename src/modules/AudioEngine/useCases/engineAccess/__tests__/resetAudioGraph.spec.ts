@@ -37,6 +37,18 @@ describe('resetAudioGraph', () => {
         expect(externalLatencyRegistry.size).toBe(0);
     });
 
+    it('clears reported external latency when graph reset fails and preserves the failure', () => {
+        const failure = new Error('monitor teardown failed');
+        externalLatencyRegistry.set('dev-a', 5);
+        resetGraphMock.mockImplementationOnce(() => {
+            throw failure;
+        });
+
+        expect(() => resetAudioGraph()).toThrow(failure);
+
+        expect(externalLatencyRegistry.size).toBe(0);
+    });
+
     it('should keep every latched live pedal, because a reset also happens inside one project', () => {
         // A graph reset is not a project boundary: repairRuntimeGraphFromProject
         // resets, rebuilds the strips and resumes playback in the same project,

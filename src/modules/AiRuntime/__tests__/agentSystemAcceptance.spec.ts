@@ -540,6 +540,10 @@ describe('agentAcceptanceScorer', () => {
         expect(classifyPlanningOutcome({ kind: 'no-match' }, 0)).toBeNull();
     });
 
+    it('places the undo of a chat commit in no frozen class until its corpus is sealed', () => {
+        expect(classifyPlanningOutcome({ kind: 'revert', runId: 'run-1', revertGroupId: 'group-1' }, 0)).toBeNull();
+    });
+
     it('requires both the class label and the oracle content to agree for an exact match', () => {
         const score = (expected: AgentAcceptanceOutcomeClass, observed: AgentAcceptanceOutcomeClass, ok: boolean) =>
             scoreAgentAcceptanceCase({

@@ -4,6 +4,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { notifyUser } from '../../../../utils/Notification/notifyUser';
+import { AdjustmentBusNode } from '../../engine/AdjustmentBusNode';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
 import { inputMonitoringSession } from '../audioRecorder/inputMonitoringSession';
 
@@ -99,6 +100,8 @@ vi.mock('../../engine/TrackNode', () => {
         private shouldFailNextRemoveDeviceRebuild = false;
         dispose = vi.fn();
         disposeLeavingProject = vi.fn();
+        getDefaultDestination = vi.fn(() => this.outputDestination);
+        routeOutput = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
@@ -367,6 +370,7 @@ function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
 }
 
 type MockTrackNode = {
+    dispose: Mock;
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
     completeAsyncDevicePromotion(application?: 'applied' | 'needs-reconcile'): void;
@@ -1867,6 +1871,414 @@ describe('AudioEngine', () => {
 
             expect(stripExistedAtStop).toBe(true);
             expect(engine.getTrackStrip('t1')).toBeUndefined();
+        });
+    });
+
+    describe('monitor fault continuation', () => {
+        function createFaultingMonitoredGraph() {
+            const firstStrip = engine.ensureTrackStrip('faulting-input');
+            const secondStrip = engine.ensureTrackStrip('healthy-input');
+            engine.ensureBusStrip('monitor-bus');
+            const bus = (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.get(
+                'monitor-bus'
+            )!;
+            const scheduled = mockCtx.createOscillator();
+            engine.registerScheduledSource(scheduled);
+            engine.setSend('healthy-input', 'monitor-bus', 0.5);
+            const send = mockCtx.createGain.mock.results.at(-1)!.value;
+            const trackNodes = ['faulting-input', 'healthy-input', 'monitor-bus'].map((id) =>
+                getMockTrackNode(engine, id)
+            );
+            const firstCapture = seedMonitorCapture('input-1', 'faulting-input', firstStrip.gainNode);
+            const secondCapture = seedMonitorCapture('input-2', 'healthy-input', secondStrip.gainNode);
+            inputMonitoringSession.pendingRequests.set('input-3', Promise.withResolvers<MediaStream>().promise);
+            const failure = new Error('monitor source refused disconnect');
+            // Fault the source's capture-wide disconnect, after the per-track
+            // edge was released. This leaves exactly one original failure.
+            firstCapture.sourceDisconnect.mockImplementation((...destinations) => {
+                if (destinations.length === 0) {
+                    throw failure;
+                }
+            });
+            expect(engine.getDiagnostics().graph).toMatchObject({ trackStrips: 2, busStrips: 1, sends: 1 });
+            return { firstCapture, secondCapture, failure, send, trackNodes, bus, scheduled };
+        }
+
+        function expectGraphReleased(graph: ReturnType<typeof createFaultingMonitoredGraph>) {
+            for (const capture of [graph.firstCapture, graph.secondCapture]) {
+                expect(capture.trackStop).toHaveBeenCalledTimes(1);
+                expect(capture.sourceDisconnect).toHaveBeenCalledWith();
+            }
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputMonitoringSession.trackKeys.size).toBe(0);
+            expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+            expect(graph.bus.dispose).toHaveBeenCalledTimes(1);
+            expect(graph.scheduled.stop).toHaveBeenCalledTimes(1);
+            expect(graph.send.disconnect).toHaveBeenCalledTimes(1);
+            for (const track of graph.trackNodes) {
+                expect(track.dispose).toHaveBeenCalledTimes(1);
+            }
+            expect(engine.getDiagnostics().graph).toMatchObject({ trackStrips: 0, busStrips: 0, sends: 0 });
+        }
+
+        it('rethrows the monitor failure after releasing both captures and the track, bus and send graph', () => {
+            const graph = createFaultingMonitoredGraph();
+
+            expect(() => engine.resetGraph()).toThrow(graph.failure);
+
+            expectGraphReleased(graph);
+            expect(mockCtx.close).not.toHaveBeenCalled();
+            engine.resetGraph();
+            expectGraphReleased(graph);
+        });
+
+        it('awaits one context close after a monitor failure and retains that terminal result on repeated disposal', async () => {
+            await engine.initialize();
+            const graph = createFaultingMonitoredGraph();
+            const master = engine as unknown as {
+                masterGainNode: { disconnect: Mock };
+                masterMeterNode: { disconnect: Mock };
+                masterAnalyser: { disconnect: Mock };
+                monitorMonoNode: { disconnect: Mock };
+                monitorDimNode: { disconnect: Mock };
+                masterStereoSplitter: { disconnect: Mock };
+                masterAnalyserLeft: { disconnect: Mock };
+                masterAnalyserRight: { disconnect: Mock };
+                masterStereoTapSink: { disconnect: Mock };
+            };
+            const masterNodes = Object.values({
+                gain: master.masterGainNode,
+                meter: master.masterMeterNode,
+                analyser: master.masterAnalyser,
+                mono: master.monitorMonoNode,
+                dim: master.monitorDimNode,
+                splitter: master.masterStereoSplitter,
+                left: master.masterAnalyserLeft,
+                right: master.masterAnalyserRight,
+                sink: master.masterStereoTapSink,
+            });
+            for (const node of masterNodes) {
+                node.disconnect.mockClear();
+            }
+            const closing = Promise.withResolvers<void>();
+            mockCtx.close.mockReturnValue(closing.promise);
+            let settled = false;
+
+            const disposal = engine.dispose();
+            const result = disposal.catch((error: unknown) => error);
+            void disposal.then(
+                () => {
+                    settled = true;
+                },
+                () => {
+                    settled = true;
+                }
+            );
+            expect(engine.dispose()).toBe(disposal);
+            await vi.waitFor(() => expect(mockCtx.close).toHaveBeenCalledTimes(1));
+            expect(settled).toBe(false);
+            expectGraphReleased(graph);
+            for (const node of masterNodes) {
+                expect(node.disconnect).toHaveBeenCalledTimes(1);
+            }
+            closing.resolve();
+            expect(await result).toBe(graph.failure);
+            await expect(engine.dispose()).rejects.toBe(graph.failure);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expectGraphReleased(graph);
+            for (const node of masterNodes) {
+                expect(node.disconnect).toHaveBeenCalledTimes(1);
+            }
+        });
+        it('retains both the monitor failure and a rejected context close without retrying teardown', async () => {
+            const graph = createFaultingMonitoredGraph();
+            const closeFailure = new Error('context close refused');
+            mockCtx.close.mockRejectedValueOnce(closeFailure);
+
+            const disposal = engine.dispose();
+            const failure: unknown = await disposal.catch((error: unknown) => error);
+
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([graph.failure, closeFailure]);
+            await expect(engine.dispose()).rejects.toBe(failure);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expectGraphReleased(graph);
+        });
+
+        it.each(['masterGainNode', 'masterMeterNode'] as const)(
+            'continues the remaining master teardown after the monitor and %s both fail',
+            async (nodeName) => {
+                await engine.initialize();
+                const graph = createFaultingMonitoredGraph();
+                const nodes = engine as unknown as {
+                    masterGainNode: { disconnect: Mock };
+                    masterMeterNode: { disconnect: Mock };
+                    masterStereoTapSink: { disconnect: Mock };
+                };
+                const nodeFailure = new Error('master disconnect refused');
+                nodes[nodeName].disconnect.mockImplementationOnce(() => {
+                    throw nodeFailure;
+                });
+
+                const disposal = engine.dispose();
+                const failure: unknown = await disposal.catch((error: unknown) => error);
+
+                expect(failure).toBeInstanceOf(AggregateError);
+                expect((failure as AggregateError).errors).toEqual([graph.failure, nodeFailure]);
+                expect(nodes.masterStereoTapSink.disconnect).toHaveBeenCalledTimes(1);
+                expect(mockCtx.close).toHaveBeenCalledTimes(1);
+                await expect(engine.dispose()).rejects.toBe(failure);
+                expectGraphReleased(graph);
+            }
+        );
+    });
+
+    describe('inner graph fault continuation', () => {
+        function createRetiringGraph() {
+            for (const id of ['source-1', 'source-2']) {
+                engine.ensureTrackStrip(id);
+            }
+            for (const id of ['bus-1', 'bus-2']) {
+                engine.ensureBusStrip(id);
+            }
+            engine.setSend('source-1', 'bus-1', 0.5);
+            const firstSend = mockCtx.createGain.mock.results.at(-1)!.value;
+            engine.setSend('source-2', 'bus-2', 0.5);
+            const secondSend = mockCtx.createGain.mock.results.at(-1)!.value;
+            const buses = Array.from(
+                (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.values()
+            );
+            const tracks = ['source-1', 'source-2', 'bus-1', 'bus-2'].map((id) => getMockTrackNode(engine, id));
+            const firstBus = buses[0];
+            if (!firstBus) {
+                throw new Error('Expected the retiring graph to contain a bus');
+            }
+            const firstTrack = tracks[0];
+            if (!firstTrack) {
+                throw new Error('Expected the retiring graph to contain a track');
+            }
+            const pending = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
+                .pendingDevicePromises;
+            pending.add(Promise.withResolvers().promise);
+            getPendingSidechainRoutes(engine).set('queued-route', {
+                sourceTrackId: 'source-1',
+                targetTrackId: 'source-2',
+                targetDeviceId: 'pending-device',
+            });
+            return { sends: [firstSend, secondSend], buses, tracks, firstBus, firstTrack, pending };
+        }
+
+        function expectRetired(graph: ReturnType<typeof createRetiringGraph>) {
+            for (const send of graph.sends) {
+                expect(send.disconnect).toHaveBeenCalledTimes(1);
+            }
+            for (const node of [...graph.buses, ...graph.tracks]) {
+                expect(node.dispose).toHaveBeenCalledTimes(1);
+            }
+            expect(graph.pending.size).toBe(0);
+            expect(getPendingSidechainRoutes(engine).size).toBe(0);
+            expect(getToasterPadRoutes(engine).size).toBe(0);
+            expect(engine.getDiagnostics().graph).toMatchObject({
+                trackStrips: 0,
+                busStrips: 0,
+                sends: 0,
+                sidechains: 0,
+            });
+        }
+
+        it.each(['send', 'bus', 'track'] as const)(
+            'retires every peer and advances one revision when a %s retirement fails',
+            (resource) => {
+                const graph = createRetiringGraph();
+                const failure = new Error(`${resource} retirement refused`);
+                const operation = {
+                    send: graph.sends[0].disconnect,
+                    bus: graph.firstBus.dispose,
+                    track: graph.firstTrack.dispose,
+                }[resource];
+                operation.mockImplementationOnce(() => {
+                    throw failure;
+                });
+                const revision = engine.getRuntimeGraphRevision();
+
+                let observed: unknown;
+                try {
+                    engine.resetGraph();
+                } catch (error) {
+                    observed = error;
+                }
+
+                expect(observed).toBe(failure);
+                expectRetired(graph);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+                expect(mockCtx.close).not.toHaveBeenCalled();
+                engine.resetGraph();
+                expectRetired(graph);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+                engine.ensureTrackStrip('next-project');
+                expect(engine.getTrackStrip('next-project')).toBeDefined();
+            }
+        );
+
+        it('reports independent send, bus and track failures in retirement order after clearing ownership', () => {
+            const graph = createRetiringGraph();
+            const sendFailure = new Error('send retirement refused');
+            const busFailure = new Error('bus retirement refused');
+            const trackFailure = new Error('track retirement refused');
+            const failures = [sendFailure, busFailure, trackFailure];
+            graph.sends[0].disconnect.mockImplementationOnce(() => {
+                throw sendFailure;
+            });
+            graph.firstBus.dispose.mockImplementationOnce(() => {
+                throw busFailure;
+            });
+            graph.firstTrack.dispose.mockImplementationOnce(() => {
+                throw trackFailure;
+            });
+            const revision = engine.getRuntimeGraphRevision();
+
+            let observed: unknown;
+            try {
+                engine.resetGraph();
+            } catch (error) {
+                observed = error;
+            }
+
+            expect(observed).toBeInstanceOf(AggregateError);
+            expect((observed as AggregateError).errors).toEqual(failures);
+            expectRetired(graph);
+            expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+        });
+
+        it.each(['delay', 'gain'] as const)(
+            'reports a sidechain %s fault and retires the remaining graph',
+            (resource) => {
+                const graph = createRetiringGraph();
+                getMockTrackNode(engine, 'source-2').notifyDeviceLoaded({
+                    deviceId: 'sidechain-device',
+                    type: 'builtin-sidechain-compressor',
+                    inputNode: makeStripNode(),
+                    nodes: [],
+                });
+                engine.wireSidechainRoute('source-1', 'source-2', 'sidechain-device');
+                const delay = mockCtx.createDelay.mock.results.at(-1)!.value;
+                const gain = mockCtx.createGain.mock.results.at(-1)!.value;
+                const failure = new Error(`sidechain ${resource} disconnect refused`);
+                const operation = resource === 'delay' ? delay.disconnect : gain.disconnect;
+                operation.mockImplementationOnce(() => {
+                    throw failure;
+                });
+
+                let observed: unknown;
+                try {
+                    engine.resetGraph();
+                } catch (error) {
+                    observed = error;
+                }
+
+                expect(observed).toBe(failure);
+                expect(delay.disconnect).toHaveBeenCalledTimes(1);
+                expect(gain.disconnect).toHaveBeenCalledTimes(1);
+                expectRetired(graph);
+            }
+        );
+
+        it('retains both Toaster retirement faults and still clears its route and peer ownership', () => {
+            const graph = createRetiringGraph();
+            const controls = loadToasterPadControls(engine, 'source-2');
+            setPadTrackOutput(engine, 'source-1', 'hw_out', 'source-2', 1);
+            const disconnectFailure = new Error('Toaster pad disconnect refused');
+            const dryRouteFailure = new Error('Toaster dry route release refused');
+            controls.disconnectPadOutput.mockImplementationOnce(() => {
+                throw disconnectFailure;
+            });
+            controls.setPadDryRouted.mockImplementationOnce(() => {
+                throw dryRouteFailure;
+            });
+
+            let observed: unknown;
+            try {
+                engine.resetGraph();
+            } catch (error) {
+                observed = error;
+            }
+
+            expect(observed).toBeInstanceOf(AggregateError);
+            expect((observed as AggregateError).errors).toEqual([disconnectFailure, dryRouteFailure]);
+            expectRetired(graph);
+        });
+
+        it('retires adjustment ownership and graph peers after an adjustment bus fault', () => {
+            const graph = createRetiringGraph();
+            engine.applyAdjustmentLayerTick?.([
+                { layerId: 'L1', trackId: 'source-1', effectType: 'eq', parameters: {}, blend: 1 },
+                { layerId: 'L2', trackId: 'source-2', effectType: 'filter', parameters: {}, blend: 1 },
+            ]);
+            expect(engine.getDiagnostics().graph.adjustmentLayerBuses).toBe(2);
+            const failure = new Error('adjustment bus disposal refused');
+            const dispose = vi.spyOn(AdjustmentBusNode.prototype, 'dispose').mockImplementationOnce(() => {
+                throw failure;
+            });
+            const revision = engine.getRuntimeGraphRevision();
+            try {
+                let observed: unknown;
+                try {
+                    engine.resetGraph();
+                } catch (error) {
+                    observed = error;
+                }
+
+                expect(observed).toBe(failure);
+                expect(dispose).toHaveBeenCalledTimes(2);
+                expect(engine.getDiagnostics().graph.adjustmentLayerBuses).toBe(0);
+                expect(engine.listLiveAdjustmentBusKeys?.()).toEqual([]);
+                expectRetired(graph);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+                expect(mockCtx.close).not.toHaveBeenCalled();
+                engine.resetGraph();
+                expect(dispose).toHaveBeenCalledTimes(2);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+            } finally {
+                dispose.mockRestore();
+            }
+        });
+
+        it('awaits one close and caches the combined monitor and inner graph failure', async () => {
+            const graph = createRetiringGraph();
+            const capture = seedMonitorCapture(null, 'source-1', engine.getTrackStrip('source-1')!.gainNode);
+            const monitorFailure = new Error('monitor disconnect refused');
+            capture.sourceDisconnect.mockImplementation((...destinations) => {
+                if (destinations.length === 0) {
+                    throw monitorFailure;
+                }
+            });
+            const sendFailure = new Error('send disconnect refused');
+            graph.sends[0].disconnect.mockImplementationOnce(() => {
+                throw sendFailure;
+            });
+            const closing = Promise.withResolvers<void>();
+            mockCtx.close.mockReturnValue(closing.promise);
+            let settled = false;
+
+            const disposal = engine.dispose();
+            const result = disposal.catch((error: unknown) => {
+                settled = true;
+                return error;
+            });
+            expect(engine.dispose()).toBe(disposal);
+            await vi.waitFor(() => expect(mockCtx.close).toHaveBeenCalledTimes(1));
+            expect(settled).toBe(false);
+            expectRetired(graph);
+            expect(capture.trackStop).toHaveBeenCalledTimes(1);
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            closing.resolve();
+            const failure: unknown = await result;
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([monitorFailure, sendFailure]);
+            await expect(engine.dispose()).rejects.toBe(failure);
+            expect(engine.dispose()).toBe(disposal);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expectRetired(graph);
         });
     });
 
