@@ -142,8 +142,8 @@ transcript with exit zero; widening admission to 101 or zero must fail that case
 The immutable event base can precede both synthetic integration parents when main advances. Drive
 the native job's configured checkout depth through a tiny real Git fetch topology; require the
 event base, candidate head and integration commit to resolve. A literal depth assertion alone does
-not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
-and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+not prove object availability. Require PR CI typecheck evidence to cover the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type. Preserve recognition of coded ESRCH from a foreign Error realm.
 
 Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
 termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
