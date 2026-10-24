@@ -1,0 +1,57 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_567a084d0540c4::t_d7bd3abe3bcecb 130-132,147-149
+.github/workflows/health-gates.yml
+  s_567a084d0540c4::t_91c95ceac1a0b7 4-5,8,14,16,23,108,124
+.github/workflows/pr-checks.yml
+  s_567a084d0540c4::t_e78c3656f78c90 3-5,20
+AGENTS.md
+  s_29d8df116c5b92::t_4084513eab0a60 463-467,469-473,481,486
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_29d8df116c5b92::t_cf15b28484c1a4 709,1039,1041
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_b3201877f50e8a::t_054f0fd7a61472 19-22,36,153,169,197
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_567a084d0540c4::t_23d2665fdfe90d 38,134,244,1789,3167-3182,3204,3207,3216,3224-3226,3229,3232-3242,3244-3246,3248-3251,3255,3257,5016-5017,5675,5687,5692-5693,5699,5801,5805
+scripts/__tests__/publishReview.spec.ts
+  s_567a084d0540c4::t_250c9c72fd429c 250-253,1346,4934,5316-5319,5968-5969,6011,6015,6304,6320,6336-6337,6343-6351,6353-6370,6373
+scripts/publishReview.ts
+  s_567a084d0540c4::t_c7bcfec8d5e7e0 555
+scripts/pullRequestGateWorkflowContract.ts
+  s_567a084d0540c4::t_cd7d56db4df8a5 2-3,6,9-12,14,39,50,53-54,59-61,63,67,73-74,77,82,89-92
+scripts/test-health-gate-scripts.sh
+  s_29d8df116c5b92::t_24d35896463846 199-200,403,447-449,454,456,467,469-470,573,727,735,1251,1269,1336
+scripts/workflowSecuritySurfaceContract.ts
+  s_567a084d0540c4::t_3f58740dbf42cc 13,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88d5a562f54a19f0b84bdab21c30300740fdbee9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
