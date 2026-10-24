@@ -644,7 +644,30 @@ registry can violate a data contract no spec observes.
 Probe that would have caught it: when a diff adds type or name strings to registries (device types,
 plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
-any hit in the same change.
+any hit in the same change. The tracked-set digest variant of this gap, where no digest moves
+at all, is the 2026-10-24 entry below.
+
+### 2026-10-24 — a tracked-set source edit left its release digest unrestamped (escaped via PR #5568, caught by the nightly)
+
+PR #5568 added the overdub controller command handlers and their argument keys. It changed
+`src/modules/Command/useCases/versionedCommandArgumentKeys.ts` and `src/utils/handlerContract.ts`,
+both inside the Grand Boule project-state tracked set in `scripts/checkReleaseInventory.ts`, and did
+not restamp `release/open-source-inventory.json`. Its checks were green. `main` then failed
+`pnpm test:release-inventory` with a digest mismatch until a follow-up restamp, and the nightly
+caught it.
+
+Blind spot: no pull-request check runs `pnpm test:release-inventory`; release provenance runs in
+`nightly.yml` and in `release:proof:assemble`. A diff can therefore change a tracked-set source while
+its recorded digest goes stale unobserved. Stances that attack the change's behavior never touch the
+digest, so the escape reaches `main` unless a reviewer checks for it.
+
+Probe that would have caught it: for each diff, test whether any changed path matches the
+`paths` or `gitPathspecs` of a surface boundary in `scripts/checkReleaseInventory.ts`. The
+project-state boundary sits around lines 1677-1697. When a path matches, require
+`release/open-source-inventory.json` to move in the same diff, and require `pnpm test:release-inventory`
+to pass in the lane. A missing digest move is a finding for the reviewer, not something to leave to
+the author's run. If the author must restamp, `pnpm release:restamp:tracked-set` refuses while
+tracked-set source changes are uncommitted, so the source commit comes first.
 
 ### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
 
