@@ -21,7 +21,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 
 | Need                                                        | Command                                                                                                                                                                                       |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                                                 | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                           |
 | Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                    |
 | Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
 | Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
@@ -139,11 +139,25 @@ resolved, and refuses `BLOCKED`, non-`main` bases, and unstable reads (below).
 
 ## lane:publish mechanics
 
-An issue number resolves its lane by branch prefix; `--lane` names an exact
-absolute lane root, which is what disambiguates write-disjoint lanes sharing
-one issue.
+A lane branch is `<type>/<issue>/<slug>` or `<type>/<slug>`, where `<type>` is a
+conventional-commit type (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`,
+`perf`, `build`, `ci`; never `style`) chosen at `lane:open --type`. The legacy
+`agent/<issue>/<slug>` and `agent/<slug>` shapes of lanes opened earlier are
+recognized by every script exactly as typed ones are; new lanes never use
+`agent/`. `parseLaneBranch` in `scripts/prContract.ts` is the one reader: only
+the first segment is the type, a numeric middle segment without a leading zero
+is the issue (a number inside a slug is never an issue), and a slug is
+dash-joined lowercase words that is never purely numeric, so `fix/12-beat` is an
+issueless slug and `fix/12/34` is refused. A name is at most 100 characters
+(`MAX_LANE_BRANCH_LENGTH`). Any other name, an unknown type included, is not a
+lane branch.
 
-For conforming `agent/` lanes, `lane:publish` opens a PR titled from the newest
+An issue number resolves its lane by that parsed issue segment, across types and
+legacy prefixes alike (two lanes carrying the same issue need `--lane`); `--lane`
+names an exact absolute lane root, which is what disambiguates write-disjoint
+lanes sharing one issue.
+
+For conforming lanes (typed or legacy `agent/`), `lane:publish` opens a PR titled from the newest
 non-merge commit above `origin/main`; it refuses lanes lacking one and never
 retitles existing PRs, including after follow-up commits or merges. The body
 follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
@@ -191,7 +205,13 @@ membership to the operator backfill — the rest of the publish still lands. An
 issueless lane derives its project from its derived type label and keeps it only
 when the live listing names that project.
 
-Author-locked off-convention branches may publish via `--lane <absolute-path>`
+When a typed branch's type differs from the type of the title the PR will show
+(the newest commit on a first publish, the frozen title afterwards),
+`lane:publish` logs a `warning:` line and publishes anyway: the branch name
+cannot change after `lane:open`, and a `feat` lane routinely ends on a `test:`
+or `chore:` follow-up. `agent/` lanes name no type and never warn.
+
+Author-locked off-convention branches (any name `parseLaneBranch` rejects) may publish via `--lane <absolute-path>`
 only with an already open PR for that exact branch, proving it a genuine
 stranded lane. This path only pushes; it never writes PR title or body and
 refuses if the PR is no longer open when the push lands.
@@ -561,6 +581,28 @@ or already-merged recovery and tracker completion. Validate and refuse existing
 owners without waiting or automatic takeover, regardless of liveness. Crashes
 leave the ref; only `deliver --recover-lock` clears it.
 
+`pr:supersede` uses this same per-PR owner for every live PR read, replay, comment,
+delete, close and compensation. A pre-close refusal releases only after verified
+rollback restores the original OPEN comment-ID set and removes every comment the
+invocation created; the overall command still fails. This permits corrected
+lineage on a later invocation without letting another native closer adopt markers
+while their creator can still roll them back. Retaining stale lineage alone would
+prevent such a corrected retry.
+
+Ambiguous comment results, altered markers, attempted closure and unverified or
+failed compensation retain the journaled owner and print its exact recovery
+command. After that owner's process fence is dead, use the existing
+`deliver --recover-lock <pr> --owner <oid>` route. It can reconcile stable OPEN or
+CLOSED unmerged observations, but recovery does not prove supersession complete:
+rerun `pr:supersede` with the verified head, replacement and complete lineage.
+Supersession success is logged only after its mutation owner releases.
+
+Launch supersession through the protected primary package route. Its pinned
+snapshot closure includes the CLI, transaction, GitHub adapter and lineage parser;
+the launcher freezes POSIX `ps` or Windows PowerShell before the default process
+fence is acquired. POSIX snapshots own a detached process group. Calling the
+transaction script directly does not supply this trusted process-tool boundary.
+
 Recovery refuses a live recorded process fence, adopts the lock under its own
 fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
@@ -624,7 +666,7 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+Run `lane:publish`, `deliver`, `pr:supersede`, `issue:claim`, and `issue:reconcile` through the
 protected primary checkout's package route; `review:accept` remains only for
 legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure

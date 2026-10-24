@@ -1,6 +1,7 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { mergeImportedMidiClipNotes, readMidiFile } from '#/modules/MIDI/useCases';
+import { readNextPhysicalBarBoundary } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
@@ -126,21 +127,48 @@ export async function importMidiFile(
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};
     const newCCData: Record<string, (typeof parsedTracks)[number]['ccs']> = {};
 
-    const tracksWithClips = parsedTracks.map((parsedTrack) => {
-        const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
-        let endBeat = 4;
+    const firstBarEnd = readNextPhysicalBarBoundary({ beat: 0, includeCurrent: false });
+    const clipEnds = parsedTracks.map((parsedTrack) => {
+        let latestNoteEnd = 0;
+        let latestCcBeat = 0;
         for (const note of parsedTrack.notes) {
-            const noteEndBeat = Math.ceil((note.startBeat + note.duration) / 4) * 4;
-            if (noteEndBeat > endBeat) {
-                endBeat = noteEndBeat;
+            if (
+                !Number.isFinite(note.startBeat) ||
+                note.startBeat < 0 ||
+                !Number.isFinite(note.duration) ||
+                note.duration < 0
+            ) {
+                return null;
             }
+            latestNoteEnd = Math.max(latestNoteEnd, note.startBeat + note.duration);
         }
         for (const cc of parsedTrack.ccs) {
-            const ccEndBeat = (Math.floor(cc.beat / 4) + 1) * 4;
-            if (ccEndBeat > endBeat) {
-                endBeat = ccEndBeat;
+            if (!Number.isFinite(cc.beat) || cc.beat < 0) {
+                return null;
             }
+            latestCcBeat = Math.max(latestCcBeat, cc.beat);
         }
+        let noteBoundary = firstBarEnd;
+        if (parsedTrack.notes.length > 0) {
+            noteBoundary = readNextPhysicalBarBoundary({ beat: latestNoteEnd, includeCurrent: true });
+        }
+        let ccBoundary = firstBarEnd;
+        if (parsedTrack.ccs.length > 0) {
+            ccBoundary = readNextPhysicalBarBoundary({ beat: latestCcBeat, includeCurrent: false });
+        }
+        if (firstBarEnd === null || noteBoundary === null || ccBoundary === null) {
+            return null;
+        }
+        return Math.max(firstBarEnd, noteBoundary, ccBoundary);
+    });
+    if (clipEnds.some((endBeat) => endBeat === null)) {
+        notifyUser(`Failed to import "${file.name}" - project meter or MIDI position is invalid`, 'error');
+        return 'completed';
+    }
+
+    const tracksWithClips = parsedTracks.map((parsedTrack, index) => {
+        const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
+        const endBeat = clipEnds[index]!;
         const clip: Clip = {
             id: getNextClipId(),
             trackId: track.id,

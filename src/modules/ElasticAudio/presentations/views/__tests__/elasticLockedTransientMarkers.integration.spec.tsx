@@ -254,7 +254,7 @@ describe('locked transient markers through the real Elastic editor', () => {
                 beat: first.originalBeat + offset,
             });
             updateWarpMarkerBeat({ clipId: CLIP_ID, markerId: first.id, field: 'warpedBeat', beat: 1.1 });
-            toggleMarkerLock(first.id);
+            toggleMarkerLock(CLIP_ID, first.id);
             const retained = structuredClone(getWarpState(CLIP_ID).markers[0]);
             expect(retained).toEqual({
                 ...first,
@@ -271,7 +271,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(rawWarpState().markers).toEqual([retained]);
             expect(getWarpState(CLIP_ID).markers).toEqual([retained]);
             expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 0 user, 1 locked');
-            act(() => toggleMarkerLock(first.id));
+            act(() => toggleMarkerLock(CLIP_ID, first.id));
             fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
             flushAutomergeStorageWrites();
 
