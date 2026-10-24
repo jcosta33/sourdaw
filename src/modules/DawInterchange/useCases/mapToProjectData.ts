@@ -106,7 +106,7 @@ function mapClip(
             gain: 1,
             color: '',
             locked: false,
-            muted: false,
+            muted: parsedClip.muted ?? false,
             bufferId,
             sampleStartBeat: parsedClip.playStartBeat ?? 0,
         };
@@ -126,7 +126,7 @@ function mapClip(
         gain: 1,
         color: '',
         locked: false,
-        muted: false,
+        muted: parsedClip.muted ?? false,
         notes,
     };
     if (parsedClip.playStartBeat !== undefined) {

@@ -1161,6 +1161,85 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toEqual([]);
     });
 
+    it('keeps disabled MIDI and audio material muted through nested clip scopes', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Application name="Fixture DAW" version="1"/>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                    '<Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip id="midi-container" name="MIDI container" time="8" duration="8" enable="true"><Clips>' +
+                    '<Clip id="midi-off" name="MIDI off" time="0" duration="1" enable="false"><Notes/></Clip>' +
+                    '<Clip id="midi-zero" name="MIDI zero" time="1" duration="1" enable="0"><Notes/></Clip>' +
+                    '<Clip id="midi-on" name="MIDI on" time="2" duration="1" enable="1"><Notes/></Clip>' +
+                    '<Clip id="midi-default" name="MIDI default" time="3" duration="1"><Notes/></Clip>' +
+                    '</Clips></Clip>' +
+                    '<Clip id="midi-disabled-parent" name="Disabled parent" time="16" duration="4" enable="false"><Clips>' +
+                    '<Clip id="midi-child-on" name="MIDI child on" time="1" duration="1" enable="true"><Notes/></Clip>' +
+                    '</Clips></Clip></Clips>' +
+                    '<Clips track="audio">' +
+                    '<Clip id="audio-container" name="Audio container" time="8" duration="8"><Clips>' +
+                    '<Clip id="audio-off" name="Audio off" time="0" duration="1" enable="0">' +
+                    '<Audio channels="2" sampleRate="48000" duration="1"><File path="audio/off.wav"/></Audio></Clip>' +
+                    '<Clip id="audio-on" name="Audio on" time="1" duration="1" enable="true">' +
+                    '<Audio channels="2" sampleRate="48000" duration="1"><File path="audio/on.wav"/></Audio></Clip>' +
+                    '</Clips></Clip>' +
+                    '<Clip id="audio-disabled-parent" name="Audio disabled parent" time="16" duration="4" enable="0"><Clips>' +
+                    '<Clip id="audio-child-on" name="Audio child on" time="1" duration="1" enable="1">' +
+                    '<Audio channels="2" sampleRate="48000" duration="1"><File path="audio/child.wav"/></Audio></Clip>' +
+                    '</Clips></Clip></Clips></Lanes></Arrangement>',
+                ''
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Disabled clips', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map([
+                ['audio/off.wav', 'off-buffer'],
+                ['audio/on.wav', 'on-buffer'],
+                ['audio/child.wav', 'child-buffer'],
+            ]),
+            fileName: 'disabled.dawproject',
+        });
+        const keys = parsed.tracks.find((track) => track.name === 'Keys');
+        const audio = parsed.tracks.find((track) => track.name === 'Audio');
+        expect(keys?.clips.map((clip) => [clip.sourceId, clip.startBeat, clip.endBeat])).toEqual([
+            ['midi-container', 8, 16],
+            ['midi-off', 8, 9],
+            ['midi-zero', 9, 10],
+            ['midi-on', 10, 11],
+            ['midi-default', 11, 12],
+            ['midi-disabled-parent', 16, 20],
+            ['midi-child-on', 17, 18],
+        ]);
+        expect(audio?.clips.map((clip) => [clip.sourceId, clip.startBeat, clip.endBeat])).toEqual([
+            ['audio-off', 8, 9],
+            ['audio-on', 9, 10],
+            ['audio-child-on', 17, 18],
+        ]);
+        const mappedKeys = mapped.arrangement.tracks.find((track) => track.name === 'Keys');
+        const mappedAudio = mapped.arrangement.tracks.find((track) => track.name === 'Audio');
+        expect(mappedKeys?.clips.map((clip) => [clip.name, clip.muted])).toEqual([
+            ['MIDI container', false],
+            ['MIDI off', true],
+            ['MIDI zero', true],
+            ['MIDI on', false],
+            ['MIDI default', false],
+            ['Disabled parent', true],
+            ['MIDI child on', true],
+        ]);
+        expect(mappedAudio?.clips.map((clip) => [clip.name, clip.muted])).toEqual([
+            ['Audio off', true],
+            ['Audio on', false],
+            ['Audio child on', true],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'audio-container', context: 'Audio' },
+            { kind: 'unsupported-clip', sourceId: 'audio-disabled-parent', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
+    });
+
     it('warns once and omits a nested repeat that cannot be placed without its loop transform', () => {
         const xml = project(
             '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +

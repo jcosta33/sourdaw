@@ -56,6 +56,7 @@ export type DawProjectParsedClip = {
     startBeat: number;
     endBeat: number;
     type: 'audio' | 'midi';
+    muted?: boolean;
     audioAssetPath?: string;
     notes?: DawProjectParsedMidiNote[];
     sourceId?: string;

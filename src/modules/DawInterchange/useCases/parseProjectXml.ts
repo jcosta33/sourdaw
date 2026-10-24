@@ -310,7 +310,8 @@ function parseClip(
     timing: ClipTiming,
     context: ParseContext,
     index: number,
-    trackName: string
+    trackName: string,
+    muted: boolean
 ): DawProjectParsedClip | null {
     const { startBeat, endBeat, contentUnit, playStartBeat, tempo } = timing;
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
@@ -330,6 +331,7 @@ function parseClip(
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
             type: 'midi',
+            muted,
             // Notes are clip content: per the DAWproject Reference,
             // contentTimeUnit governs the content while `time` and `duration`
             // stay in the timeline unit. A Notes `timeUnit` attribute still
@@ -354,6 +356,7 @@ function parseClip(
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
             type: 'audio',
+            muted,
             audioAssetPath: assetPath,
             ...playStart,
         };
@@ -367,6 +370,7 @@ function parseClip(
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
             type: 'midi',
+            muted,
             notes: [],
             ...playStart,
         };
@@ -815,11 +819,14 @@ function parseArrangementClips(
         return;
     }
 
-    function walkClips(node: XmlQuery, scope: Scope, clipMediaHandled = false): void {
+    function walkClips(node: XmlQuery, scope: Scope, clipMediaHandled = false, ancestorMuted = false): void {
         let clipIndex = 0;
         for (const laneOrClips of node.children()) {
             const reference = ownerRef(laneOrClips, scope.ownerRef);
             const laneScope = timelineScope(laneOrClips, scope);
+            const enabled = laneOrClips.attr('enable')?.trim();
+            const muted =
+                ancestorMuted || (laneOrClips.element.tagName === CLIP && (enabled === 'false' || enabled === '0'));
             if (laneOrClips.element.tagName === AUDIO || laneOrClips.element.tagName === 'Video') {
                 if (!clipMediaHandled) {
                     const name =
@@ -847,7 +854,7 @@ function parseArrangementClips(
                 const targetTrackId = resolveTrackId(contentOwner.reference);
                 const target = targetTrackId ? trackById.get(targetTrackId) : null;
                 if (target) {
-                    const clip = parseClip(laneOrClips, target.kind, timing, context, index, target.name);
+                    const clip = parseClip(laneOrClips, target.kind, timing, context, index, target.name, muted);
                     if (clip) {
                         target.clips.push(clip);
                     }
@@ -870,7 +877,8 @@ function parseArrangementClips(
                         visibleEndBeat: timing.visibleEndBeat,
                         tempo: timing.tempo,
                     },
-                    true
+                    true,
+                    muted
                 );
                 continue;
             }
@@ -891,7 +899,7 @@ function parseArrangementClips(
             const childMediaHandled =
                 laneOrClips.element.tagName === CLIP ||
                 (node.element.tagName === CLIP && laneOrClips.element.tagName === 'Warps');
-            walkClips(laneOrClips, { ...laneScope, ownerRef: reference }, childMediaHandled);
+            walkClips(laneOrClips, { ...laneScope, ownerRef: reference }, childMediaHandled, muted);
         }
     }
 
