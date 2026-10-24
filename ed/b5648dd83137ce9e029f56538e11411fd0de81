@@ -1,0 +1,28 @@
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_59e31a5c6f3e31::t_d13f1a7000621e 439-444,707-709,711,713-714
+  s_59e31a5c6f3e31::t_31dbb6a434ccd8 702
+  s_59e31a5c6f3e31::t_c80777c83c77eb 703-706
+  s_59e31a5c6f3e31::t_f32b6ad31bda09 656-701,710,712,715-722
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_59e31a5c6f3e31::t_d08ae9a79fb767 381,386,390,396,442-447
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_59e31a5c6f3e31::t_e10af9b60a82f7 952-953,958
+  s_59e31a5c6f3e31::t_63e90fe266a2da 955-956,962,964,969-970
+  s_59e31a5c6f3e31::t_2ee93e7d7a62bb 921-951,954,957,959-961,963,965-968,971-975
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "edb5648dd83137ce9e029f56538e11411fd0de81",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
