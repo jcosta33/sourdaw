@@ -1656,6 +1656,8 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         '<Notes><Note key="60"/></Notes><Notes><Note key="64"/></Notes>',
         '<Lanes><Notes><Note key="60"/></Notes><Notes><Note key="64"/></Notes></Lanes>',
         '<Notes><Note key="60"/></Notes><Lanes><Notes><Note key="64"/></Notes></Lanes>',
+        '<Lanes><Lanes><Notes><Note key="60"/></Notes><Notes><Note key="64"/></Notes></Lanes></Lanes>',
+        '<Lanes><Notes><Note key="60"/></Notes><Lanes><Notes><Note key="64"/></Notes></Lanes></Lanes>',
     ])('reports ambiguous multiple Notes content without silently selecting a phrase: %s', (content) => {
         const parsed = parseProjectXml(
             project(
@@ -1669,6 +1671,178 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             { kind: 'unsupported-clip', sourceType: 'Clip', name: 'Ambiguous', context: 'Keys', handling: 'dropped' },
         ]);
         expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it.each([2, 4])(
+        'preserves a muted Notes phrase through %i recursive Lanes with its owner and seconds unit',
+        (depth) => {
+            let content =
+                '<Notes><Note time=".5" duration=".5" key="60"/></Notes>' +
+                '<Points id="cutoff" name="Cutoff"><Target expression="timbre"/><RealPoint time="0" value=".5"/></Points>';
+            content = `<Lanes track="drums" timeUnit="seconds">${content}</Lanes>`;
+            for (let level = 1; level < depth; level++) {
+                content = `<Lanes track="keys" timeUnit="beats">${content}</Lanes>`;
+            }
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes><Clips track="keys">' +
+                        `<Clip name="Recursive phrase" time="8" duration="4" enable="false">${content}</Clip>` +
+                        '<Clip name="Sibling" time="12" duration="1"><Notes><Note key="64"/></Notes></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Recursive', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map(),
+                fileName: 'recursive.dawproject',
+            });
+            expect(
+                mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)
+            ).toEqual(['Sibling']);
+            const drums = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+            expect(drums).toMatchObject([
+                { name: 'Recursive phrase', startBeat: 8, endBeat: 12, muted: true, type: 'midi' },
+            ]);
+            const phrase = drums?.[0];
+            expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+                { pitch: 60, startBeat: 1, duration: 1 },
+            ]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'unsupported-automation',
+                    sourceType: 'Points',
+                    sourceId: 'cutoff',
+                    name: 'Cutoff',
+                    context: 'Drums',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
+    it.each([
+        { unit: '', supported: false },
+        { unit: 'timeUnit="beats"', supported: true },
+    ])('checks the recursive Notes extent with its effective unit $unit', ({ unit, supported }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Points target="tempo"><RealPoint time="10" value="60"/></Points><Clips track="keys">' +
+                    '<Clip name="Recursive phrase" time="8" duration="1"><Lanes><Lanes timeUnit="seconds">' +
+                    `<Notes ${unit}><Note key="60" time="1" duration="1"/></Notes></Lanes></Lanes></Clip>` +
+                    '<Clip name="Sibling" time="12" duration="1"><Notes/></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(
+            supported ? ['Recursive phrase', 'Sibling'] : ['Sibling']
+        );
+        expect(parsed.warnings.map((warning) => warning.name)).toEqual(supported ? [] : ['Recursive phrase']);
+    });
+
+    it.each(['missing', ''])('does not inherit past an explicit recursive Notes owner %s', (owner) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys"><Clip name="Unassigned" duration="2">' +
+                    `<Lanes><Lanes track="${owner}"><Notes><Note key="60"/></Notes></Lanes></Lanes></Clip>` +
+                    '<Clip name="Sibling" time="2" duration="1"><Notes/></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Sibling']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', name: 'Unassigned', context: owner, sourceType: 'Lanes' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('keeps recursive Notes separate from nested child Clips and Warps timelines', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys"><Clip name="Parent" time="8" duration="4" enable="false">' +
+                    '<Lanes><Lanes><Notes><Note key="60"/></Notes>' +
+                    '<Clips><Clip name="Child" time="1" duration="1"><Notes><Note key="64"/></Notes></Clip></Clips>' +
+                    '<Warps><Notes><Note key="67"/></Notes></Warps>' +
+                    '</Lanes></Lanes></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tracks[0]?.clips).toMatchObject([
+            { name: 'Parent', startBeat: 8, endBeat: 12, muted: true, notes: [{ pitch: 60 }] },
+            { name: 'Child', startBeat: 9, endBeat: 10, muted: true, notes: [{ pitch: 64 }] },
+        ]);
+        expect(parsed.tracks[0]?.clips).toHaveLength(2);
+        expect(parsed.warnings).toEqual([]);
+    });
+
+    it.each([
+        { time: 'not-a-number', unit: 'beats' },
+        { time: '1e309', unit: 'beats' },
+        { time: 'not-a-number', unit: 'seconds' },
+        { time: '1e309', unit: 'seconds' },
+    ])('omits a malformed $unit tempo point at $time before converting valid seconds notes', ({ time, unit }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    `<Arrangement><Lanes><Points name="Tempo shape" target="tempo" timeUnit="${unit}">` +
+                    `<RealPoint id="bad-tempo" time="${time}" value="60"/></Points>` +
+                    '<Clips track="keys"><Clip name="Seconds phrase" duration="4"><Lanes><Lanes timeUnit="seconds">' +
+                    '<Notes><Note key="60" time="1" duration=".5"/></Notes></Lanes></Lanes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tempoChanges).toEqual([]);
+        expect(parsed.tracks[0]?.clips).toMatchObject([
+            { name: 'Seconds phrase', notes: [{ pitch: 60, startBeat: 2, duration: 1 }] },
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-automation',
+                sourceType: 'RealPoint',
+                sourceId: 'bad-tempo',
+                name: 'Tempo shape',
+                context: 'Arrangement',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('validates both present tempo scalars while retaining decimal, scientific, default and ramp siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure/><Arrangement><Lanes><Points name="Tempo shape" target="tempo">' +
+                    '<RealPoint id="bad-value" time="0" value="not-a-number"/>' +
+                    '<RealPoint id="bad-both" time="1e309" value="1e309"/>' +
+                    '<RealPoint id="empty-time" time="" value="60"/>' +
+                    '<RealPoint id="hex-value" time="0" value="0x40"/>' +
+                    '<RealPoint/>' +
+                    '<RealPoint time="+2.5e0" value="1.3e2" interpolation="linear"/>' +
+                    '<RealPoint time="4." value="140"/>' +
+                    '</Points></Lanes></Arrangement>'
+            )
+        );
+        expect(parsed.tempoChanges).toEqual([
+            { beat: 0, tempo: 120, curve: 'instant' },
+            { beat: 2.5, tempo: 130, curve: 'linear' },
+            { beat: 4, tempo: 140, curve: 'instant' },
+        ]);
+        expect(parsed.warnings.map((warning) => warning.sourceId)).toEqual([
+            'bad-value',
+            'bad-both',
+            'empty-time',
+            'hex-value',
+        ]);
+        expect(
+            parsed.warnings.every(
+                (warning) =>
+                    warning.kind === 'unsupported-automation' &&
+                    warning.sourceType === 'RealPoint' &&
+                    warning.name === 'Tempo shape'
+            )
+        ).toBe(true);
+        expect(parsed.warnings.map((warning) => warning.sourceOrder)).toEqual(
+            [...parsed.warnings.map((warning) => warning.sourceOrder)].sort((a, b) => a - b)
+        );
     });
 
     it('names Video and its file after substituting an unsupported video track', () => {

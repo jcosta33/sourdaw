@@ -319,21 +319,32 @@ function resolveAudioAssetPath(clip: XmlQuery): string | undefined {
     return path ?? undefined;
 }
 
-function clipNotesNodes(clip: XmlQuery): XmlQuery[] {
-    return [...clip.children(NOTES), ...clip.children(LANES).flatMap((lanes) => lanes.children(NOTES))];
-}
+type ClipNotesContent = { notes: XmlQuery; route: XmlQuery[] };
 
-function clipNotesNode(clip: XmlQuery): XmlQuery | null {
-    const nodes = clipNotesNodes(clip);
-    return nodes.length === 1 ? (nodes[0] ?? null) : null;
-}
-
-function clipNotesUnit(clip: XmlQuery, notes: XmlQuery, contentUnit: TimelineUnit): TimelineUnit {
-    if (clip.child(NOTES)) {
-        return readTimeUnit(notes, contentUnit);
+function clipNotesContents(clip: XmlQuery): ClipNotesContent[] {
+    const contents: ClipNotesContent[] = [];
+    function visit(node: XmlQuery, route: XmlQuery[]): void {
+        for (const child of node.children()) {
+            if (child.element.tagName === NOTES) {
+                contents.push({ notes: child, route: [...route, child] });
+            } else if (child.element.tagName === LANES) {
+                visit(child, [...route, child]);
+            }
+        }
     }
-    const lanes = clip.children(LANES).find((lane) => lane.element === notes.element.parentElement);
-    return readTimeUnit(notes, lanes ? readTimeUnit(lanes, contentUnit) : contentUnit);
+    // Only Lanes transparently groups this Clip's content. Notes below child
+    // Clips or Warps belong to independent timelines.
+    visit(clip, []);
+    return contents;
+}
+
+function clipNotesContent(clip: XmlQuery): ClipNotesContent | null {
+    const contents = clipNotesContents(clip);
+    return contents.length === 1 ? (contents[0] ?? null) : null;
+}
+
+function clipNotesUnit(content: ClipNotesContent, contentUnit: TimelineUnit): TimelineUnit {
+    return content.route.reduce((unit, node) => readTimeUnit(node, unit), contentUnit);
 }
 
 function parseClip(
@@ -354,12 +365,12 @@ function parseClip(
     // clip left of its media start.
     const playStart = playStartBeat !== 0 ? { playStartBeat } : {};
 
-    const notesNode = clipNotesNode(clip);
-    if (!notesNode && clipNotesNodes(clip).length > 1) {
+    const notesContent = clipNotesContent(clip);
+    if (!notesContent && clipNotesContents(clip).length > 1) {
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;
     }
-    if (notesNode) {
+    if (notesContent) {
         return {
             id,
             ...source,
@@ -373,8 +384,8 @@ function parseClip(
             // stay in the timeline unit. A Notes `timeUnit` attribute still
             // wins via readTimeUnit.
             notes: parseNotesNode(
-                notesNode,
-                clipNotesUnit(clip, notesNode, contentUnit),
+                notesContent.notes,
+                clipNotesUnit(notesContent, contentUnit),
                 context,
                 `${trackName} / ${name}`,
                 tempo
@@ -495,10 +506,15 @@ function parseStructure(structure: XmlQuery, context: ParseContext): DawProjectP
     return flat;
 }
 
-function parseTempoAutomation(point: XmlQuery, unit: 'beats' | 'seconds', tempo: number): DawProjectTempoChange {
+function parseTempoAutomation(point: XmlQuery, unit: 'beats' | 'seconds', tempo: number): DawProjectTempoChange | null {
+    const time = readTimingScalar(point, 'time', 0);
+    const value = readTimingScalar(point, 'value', tempo);
+    if (time === null || value === null) {
+        return null;
+    }
     return {
-        beat: toBeats(point.attrNumber('time', 0), unit, tempo),
-        tempo: point.attrNumber('value', tempo),
+        beat: toBeats(time, unit, tempo),
+        tempo: value,
         curve: point.attr('interpolation') === 'linear' ? 'linear' : 'instant',
     };
 }
@@ -556,10 +572,21 @@ function parseMasterTrackAutomation(
             if (child.element.tagName === POINTS || child.element.tagName === 'Automation') {
                 if (target === 'tempo') {
                     for (const point of child.children(REAL_POINT)) {
+                        const change = parseTempoAutomation(point, childUnit, context.tempo);
+                        if (!change) {
+                            warn(
+                                context,
+                                point,
+                                'unsupported-automation',
+                                child.attr('name') ?? 'Tempo automation',
+                                'Arrangement'
+                            );
+                            continue;
+                        }
                         if (childUnit === 'seconds') {
                             tempoPointsUseBeats = false;
                         }
-                        tempoChanges.push(parseTempoAutomation(point, childUnit, context.tempo));
+                        tempoChanges.push(change);
                     }
                     for (const point of child
                         .children()
@@ -680,7 +707,7 @@ function parseArrangementClips(
         const rawUnit = clip.attr('timeUnit');
         const unit = rawUnit === 'beats' || rawUnit === 'seconds' ? rawUnit : scope.unit;
         const initialTiming = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo);
-        const notes = clipNotesNode(clip);
+        const notes = clipNotesContent(clip);
         const audioSourceOffsetOnly =
             notes === null &&
             Boolean(resolveAudioAssetPath(clip)) &&
@@ -689,7 +716,7 @@ function parseArrangementClips(
             clip.attr('playStop') === null;
         const secondsContent =
             (!audioSourceOffsetOnly && initialTiming.contentUnit === 'seconds') ||
-            (notes !== null && clipNotesUnit(clip, notes, initialTiming.contentUnit) === 'seconds');
+            (notes !== null && clipNotesUnit(notes, initialTiming.contentUnit) === 'seconds');
         // Seconds-addressed tempo points still use the initial-tempo parser.
         // Their beat positions cannot prove a local seconds transform.
         if (!tempoPointsUseBeats && (unit === 'seconds' || secondsContent)) {
@@ -714,8 +741,8 @@ function parseArrangementClips(
             const origin = timing.startBeat - timing.playStartBeat;
             let startBeat = Math.min(origin, timing.startBeat);
             let endBeat = Math.max(origin, timing.endBeat);
-            if (notes && clipNotesUnit(clip, notes, timing.contentUnit) === 'seconds') {
-                for (const note of notes.children(NOTE)) {
+            if (notes && clipNotesUnit(notes, timing.contentUnit) === 'seconds') {
+                for (const note of notes.notes.children(NOTE)) {
                     const noteTiming = readNoteTiming(note);
                     if (!isValidMidiKey(note.attrNumber('key', -1)) || !noteTiming) {
                         continue;
@@ -752,14 +779,13 @@ function parseArrangementClips(
     function consumedOwner(clip: XmlQuery, inherited: string | null): { reference: string | null; node: XmlQuery } {
         let reference = inherited;
         let node = clip;
-        const notes = clipNotesNode(clip);
-        const lanes = clip.children(LANES).find((lane) => lane.element === notes?.element.parentElement);
+        const notes = clipNotesContent(clip);
         const audio = clip.child(AUDIO);
         const warps = clip.child('Warps');
         const video = clip.child('Video');
         let route: (XmlQuery | null)[] = [];
         if (notes) {
-            route = lanes ? [lanes, notes] : [notes];
+            route = notes.route;
         } else if (audio) {
             route = [audio];
         } else if (warps) {
