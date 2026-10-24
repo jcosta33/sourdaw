@@ -1,0 +1,50 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_29d8df116c5b92::t_378826ca457dae 19,228
+  s_29d8df116c5b92::t_61c43dcb9e916a 20-21,110,222-227,229-231,233-357,378,395,398,404,406,411,414,426,430,440,443
+  s_29d8df116c5b92::t_c0a139abaa73cc 232
+  s_29d8df116c5b92::t_5ed97b90499ab1 2,30,46,53-54,86,99-102,109,187
+  s_29d8df116c5b92::t_0d95b0bd98a516 185
+  s_29d8df116c5b92::t_65748ae4b573a0 111,186,189,358-377,379-394,396-397,399-403,405,407-410,412-413,415-425,427-429,431-439,441-442,444-459
+scripts/supersedePullRequest.ts
+  s_29d8df116c5b92::t_37ad9b4695dda4 595,958-966
+  s_29d8df116c5b92::t_5b196a9db6d2f9 380-406,412,418,422,426,430,435,448-449,458
+  s_29d8df116c5b92::t_f2200759a5dc84 379
+scripts/trustedGithubWriteBootstrap.ts
+  s_29d8df116c5b92::t_92796c0ab9ffea 114
+scripts/retirementRecord.ts
+  s_29d8df116c5b92::t_e37814dcb258f9 1,27,30-34,146
+  s_29d8df116c5b92::t_4c41bdeca96bc0 35-40,148
+.agents/skills/delivery-orchestration/SKILL.md
+  s_29d8df116c5b92::t_dc9c998897887c 39,64-65
+  s_29d8df116c5b92::t_84878c2a235d83 61-63,66,73-74,632,645-648,650-651,719
+scripts/__tests__/retirePullRequest.spec.ts
+  s_29d8df116c5b92::t_2e4d2589f6327e 398-400,514-516
+  s_29d8df116c5b92::t_cc4d240418e17e 393-397,401-407
+  s_29d8df116c5b92::t_361f9aba71631d 19-23
+  s_29d8df116c5b92::t_b408a0385c9787 8,385
+  s_29d8df116c5b92::t_1c7ccfe8b5765c 1-4,6-7,11-18,28,177-202,377-384,389-392,408-410,416-431,435-436,445-468,472-480,494
+  s_29d8df116c5b92::t_7b8509efeb8cb2 72-74,268-270,356-371,386-388,411-415,432-434,437-444,469-471,481-493,495-513,517-539
+  s_29d8df116c5b92::t_287acd5ea17c3e 262-267,271-311
+  s_29d8df116c5b92::t_73ca966a378523 203
+  s_29d8df116c5b92::t_1190070e3d08a6 540
+scripts/retirePullRequest.ts
+  s_29d8df116c5b92::t_54b988b6607616 29,206,209-210,213-216,220-221
+  s_29d8df116c5b92::t_e6f3881813d656 17,22,26-28,30-31,133-135,140,149,152-154,160-161,205,254-272,300-301
+  s_29d8df116c5b92::t_99606d6a782405 222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "971b4e1b3b71cc80f2326954d6c658d5a18f5944",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
