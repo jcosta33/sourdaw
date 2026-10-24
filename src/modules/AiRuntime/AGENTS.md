@@ -56,6 +56,8 @@ LLM orchestration, provider routing (WebLLM vs hosted cloud), prompt planning in
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/AiRuntime
+pnpm test:run <changed-spec>
 ```
