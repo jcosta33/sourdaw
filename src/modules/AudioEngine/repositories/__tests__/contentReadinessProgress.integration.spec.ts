@@ -249,10 +249,31 @@ async function installRealShipment(stall?: 'builder' | 'zone-ack') {
         const processor = new Constructor({ processorOptions: { wasmModule } });
         const index = processors.length;
         processors.push(processor);
-        const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+        let closed = false;
+        const port: MessagePort = Object.assign(new EventTarget(), {
+            onmessage: null,
+            onmessageerror: null,
+            postMessage: (data: unknown) => {
+                if (closed) {
+                    return;
+                }
+                queueMicrotask(() => {
+                    if (!closed) {
+                        processor.port.onmessage?.({ data });
+                        notify();
+                    }
+                });
+            },
+            start() {},
+            close() {
+                closed = true;
+            },
+        });
+        port.addEventListener('message', (event) => port.onmessage?.call(port, event));
+        port.addEventListener('messageerror', (event) => port.onmessageerror?.call(port, event));
         const emit = (data: unknown) => {
-            for (const listener of listeners) {
-                listener({ data } as MessageEvent<unknown>);
+            if (!closed) {
+                port.dispatchEvent(new MessageEvent('message', { data }));
             }
             notify();
         };
@@ -274,18 +295,6 @@ async function installRealShipment(stall?: 'builder' | 'zone-ack') {
             }
         });
         processor.port.onmessage?.({ data: { type: 'init' } });
-        const port = {
-            postMessage: (data: unknown) =>
-                queueMicrotask(() => {
-                    processor.port.onmessage?.({ data });
-                    notify();
-                }),
-            addEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) =>
-                listeners.add(listener),
-            removeEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) =>
-                listeners.delete(listener),
-            close() {},
-        } as MessagePort;
         return Promise.resolve(createLevainResult(port));
     });
     levainStore.set(
