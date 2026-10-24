@@ -1,0 +1,34 @@
+src/modules/DawInterchange/useCases/__tests__/importDawProject.parseAuthority.integration.spec.ts
+  s_59e31a5c6f3e31::t_6090354b9780f9 1-61
+  s_59e31a5c6f3e31::t_818add9d2b7690 62-65
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  s_59e31a5c6f3e31::t_1a6a08a20b195b 109,129
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  s_59e31a5c6f3e31::t_d03ca11c6aabd1 313-314,334,359,373,822,827-829,857,880
+  s_59e31a5c6f3e31::t_a4d5d77353cf9c 881,902
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_59e31a5c6f3e31::t_bbdb9b8ecbce85 1164-1166,1169-1189,1192-1234,1241-1242
+  s_59e31a5c6f3e31::t_428ade54866198 1235-1238
+  s_59e31a5c6f3e31::t_e7a0ca82b79d2e 1167-1168,1190-1191
+  s_59e31a5c6f3e31::t_c707108581182e 1239-1240
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  s_59e31a5c6f3e31::t_1a6a08a20b195b 59
+src/modules/DawInterchange/useCases/importDawProject.ts
+  s_59e31a5c6f3e31::t_1a6a08a20b195b 46-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c500cf563af9178fe661a57c9fccee9504aae108",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
