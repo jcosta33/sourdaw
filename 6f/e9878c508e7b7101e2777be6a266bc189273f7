@@ -1,0 +1,39 @@
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_883fb5e9f74189::t_749398576d2015 1-3,20-21,160,204-357,1074-1163
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_883fb5e9f74189::t_acd6dbe00152ce 551,596-615
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_883fb5e9f74189::t_2fd59d97cd9004 50-52,397-406,420-424
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_883fb5e9f74189::t_b079a1d3342434 1031-1130
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_883fb5e9f74189::t_71a7b681428d27 436-581
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_59e31a5c6f3e31::t_45e83032c59b87 55-58,136,391-396,406-412,438,458,496-512,849-850,967-968,971
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_883fb5e9f74189::t_89e401ef3b92f6 20-25,27,98,118,162-173,175,342-343,346-347,428-429,431,438,450-451,476-483,485-489,505,509,533,539,583,632,726-745,766-772,782-784,786-788,906-907,915-918
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fe9878c508e7b7101e2777be6a266bc189273f7",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_883fb5e9f74189": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7907d49b-6081-44f4-9b8e-87177897af4e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
