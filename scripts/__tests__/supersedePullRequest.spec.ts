@@ -16,18 +16,25 @@ import {
     commentClientMutationId,
     deleteComment,
     inspectIssueComments,
+    inspectPullRequest,
     inspectReviewThreads,
+    inspectCommitAncestry,
     type IssueComment,
     type SupersedePullRequestPort,
     type SupersededReviewThread,
+    type SupersededPullRequest,
 } from '../supersedePullRequestGh.ts';
 
 const oldNumber = 2244;
 const parentNumber = 2245;
+const parentReplacementNumber = 2247;
 const replacementNumber = 2246;
 const head = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
 const parentHead = 'd'.repeat(40);
+const replacementHead = 'c'.repeat(40);
+const parentMerge = 'e'.repeat(40);
+const childMerge = 'f'.repeat(40);
 const parentBranch = 'fix/4380/refine-pending-proposal';
 const findingA = '1001';
 const findingB = '1002';
@@ -345,6 +352,79 @@ const run = (
 const runWithParent = (port: SupersedePullRequestPort) =>
     supersedePullRequest(oldNumber, head, replacementNumber, repairedLineage, AUTHOR_BOT_NODE_ID, port, parentNumber);
 
+const distinctParentLineage: FindingLineage = { ...parentLineage, replacementPr: parentReplacementNumber };
+const distinctParentComments = [
+    markerComment('IC_parent_receipt', String(databaseBase + 20n), supersessionCommentBody(parentReplacementNumber)),
+    markerComment('IC_parent_lineage', String(databaseBase + 21n), renderFindingLineage(distinctParentLineage)),
+];
+
+function distinctPort(
+    input: Input = {},
+    changes: {
+        snapshots?: Partial<Record<number, Partial<SupersededPullRequest>[]>>;
+        ancestry?: (boolean | Error)[];
+    } = {}
+) {
+    const fixture = fakePort({
+        bases: Array.from({ length: 8 }, () => parentBranch),
+        parentComments: distinctParentComments,
+        ...input,
+    });
+    const reads = new Map<number, number>();
+    let ancestryReads = 0;
+    const port: SupersedePullRequestPort = {
+        ...fixture.port,
+        inspect: (number) => {
+            const read = reads.get(number) ?? 0;
+            reads.set(number, read + 1);
+            let value: SupersededPullRequest;
+            if (number === parentReplacementNumber) {
+                fixture.calls.push(`inspect:${number}`);
+                value = {
+                    number,
+                    repository: 'jcosta33/sourdaw',
+                    state: 'MERGED',
+                    merged: true,
+                    head: '1'.repeat(40),
+                    headRefName: 'fix/parent-replacement',
+                    headRepository: null,
+                    base: 'main',
+                    mergeCommit: parentMerge,
+                    closedAt: '2026-08-19T11:00:00Z',
+                    comments: [],
+                };
+            } else {
+                value = {
+                    ...fixture.port.inspect(number),
+                    mergeCommit: number === replacementNumber ? childMerge : null,
+                };
+            }
+            return { ...value, ...changes.snapshots?.[number]?.[read] };
+        },
+        isAncestor: (repository, ancestor, descendant) => {
+            fixture.calls.push(`ancestor:${repository}:${ancestor}:${descendant}`);
+            const result = changes.ancestry?.[ancestryReads++] ?? true;
+            if (result instanceof Error) {
+                throw result;
+            }
+            return result;
+        },
+    };
+    return { ...fixture, port };
+}
+
+const runWithDistinctParent = (port: SupersedePullRequestPort) =>
+    supersedePullRequest(
+        oldNumber,
+        head,
+        replacementNumber,
+        repairedLineage,
+        AUTHOR_BOT_NODE_ID,
+        port,
+        parentNumber,
+        parentReplacementNumber
+    );
+
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
 
 function lineagePayloadOf(body: string): string {
@@ -432,6 +512,54 @@ describe('pull-request supersession', () => {
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
     });
+    it.each([null, undefined, { oid: childMerge }])(
+        'reads optional merge commit %j without a replacement branch liveness check',
+        (mergeCommit) => {
+            const calls: string[][] = [];
+            const value = inspectPullRequest(
+                replacementNumber,
+                (args) => {
+                    calls.push(args);
+                    if (args.includes(`number=${replacementNumber}`)) {
+                        return JSON.stringify({
+                            data: {
+                                repository: {
+                                    nameWithOwner: 'jcosta33/sourdaw',
+                                    pullRequest: {
+                                        id: 'PR_replacement',
+                                        number: replacementNumber,
+                                        state: 'MERGED',
+                                        merged: true,
+                                        headRefOid: replacementHead,
+                                        headRefName: 'fix/deleted',
+                                        headRepository: null,
+                                        baseRefName: 'main',
+                                        closedAt: '2026-08-20T12:00:00Z',
+                                        mergeCommit,
+                                    },
+                                },
+                            },
+                        });
+                    }
+                    return JSON.stringify({
+                        data: {
+                            node: {
+                                id: 'PR_replacement',
+                                comments: {
+                                    nodes: [],
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                },
+                            },
+                        },
+                    });
+                },
+                new Map()
+            );
+            expect(value.mergeCommit).toBe(mergeCommit?.oid ?? null);
+            expect(value.headRepository).toBeNull();
+            expect(calls).toHaveLength(2);
+        }
+    );
     it.each([
         ['missing', { data: { deleteIssueComment: { clientMutationId: null } } }],
         ['mismatched', { data: { deleteIssueComment: { clientMutationId: 'IC_other' } } }],
@@ -635,6 +763,161 @@ describe('pull-request supersession', () => {
         }
     });
 
+    it('accepts an explicitly named distinct parent replacement', () => {
+        expect(
+            parseSupersedePullRequestArgs([
+                '2244',
+                '--head',
+                head,
+                '--replacement',
+                '2246',
+                '--superseded-parent',
+                '2245',
+                '--parent-replacement',
+                '2247',
+                '--lineage',
+                '/tmp/lineage.json',
+            ])
+        ).toMatchObject({
+            oldNumber: 2244,
+            replacementNumber: 2246,
+            supersededParentNumber: 2245,
+            parentReplacementNumber: 2247,
+        });
+    });
+
+    it.each(['2244', '2245', '2246', '0', 'NaN', '9007199254740992'])(
+        'refuses an invalid distinct parent replacement identity %s',
+        (identity) => {
+            expect(() =>
+                parseSupersedePullRequestArgs([
+                    '2244',
+                    '--head',
+                    head,
+                    '--replacement',
+                    '2246',
+                    '--superseded-parent',
+                    '2245',
+                    '--parent-replacement',
+                    identity,
+                    '--lineage',
+                    '/tmp/lineage.json',
+                ])
+            ).toThrow(/usage/i);
+        }
+    );
+    it('does not admit a parent replacement without an explicit parent', () => {
+        expect(() =>
+            parseSupersedePullRequestArgs([
+                '2244',
+                '--head',
+                head,
+                '--replacement',
+                '2246',
+                '--parent-replacement',
+                '2247',
+                '--lineage',
+                '/tmp/lineage.json',
+            ])
+        ).toThrow(/usage/i);
+        const { port, calls } = fakePort();
+        expect(() => runWithDistinctParent(port)).toThrow(/requires a cross-base/i);
+        expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+    });
+
+    it('binds remote ancestry to repository, ordered full commit objects and merge base', () => {
+        const calls: string[][] = [];
+        expect(
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, replacementHead, (args) => {
+                calls.push(args);
+                return JSON.stringify({
+                    url: `https://api.github.com/repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`,
+                    base_commit: { sha: parentMerge },
+                    merge_base_commit: { sha: parentMerge },
+                    status: 'ahead',
+                    ahead_by: 3,
+                    behind_by: 0,
+                });
+            })
+        ).toBe(true);
+        expect(calls).toEqual([['api', `repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`]]);
+    });
+    it.each([
+        ['reversed', 'behind', replacementHead, 0, 3],
+        ['unrelated', 'diverged', movedHead, 3, 2],
+    ])('does not treat %s ancestry as containment', (_case, status, mergeBase, aheadBy, behindBy) => {
+        expect(
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, replacementHead, () =>
+                JSON.stringify({
+                    url: `https://api.github.com/repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`,
+                    base_commit: { sha: parentMerge },
+                    merge_base_commit: { sha: mergeBase },
+                    status,
+                    ahead_by: aheadBy,
+                    behind_by: behindBy,
+                })
+            )
+        ).toBe(false);
+    });
+    it.each([
+        ['status-only', { status: 'ahead' }],
+        [
+            'wrong repository',
+            { url: `https://api.github.com/repos/fork/sourdaw/compare/${parentMerge}...${replacementHead}` },
+        ],
+        [
+            'wrong descendant',
+            { url: `https://api.github.com/repos/jcosta33/sourdaw/compare/${parentMerge}...${movedHead}` },
+        ],
+        ['wrong base object', { base_commit: { sha: movedHead } }],
+        ['missing merge base', { merge_base_commit: null }],
+        ['malformed merge base', { merge_base_commit: { sha: 'main' } }],
+        ['ahead but unrelated', { merge_base_commit: { sha: movedHead } }],
+        ['unknown status', { status: 'unknown' }],
+        ['missing counts', { ahead_by: null }],
+        ['contradictory counts', { behind_by: 1 }],
+    ])('fails closed on %s ancestry evidence', (label, patch) => {
+        let response: unknown = patch;
+        if (label !== 'status-only') {
+            response = {
+                url: `https://api.github.com/repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`,
+                base_commit: { sha: parentMerge },
+                merge_base_commit: { sha: parentMerge },
+                status: 'ahead',
+                ahead_by: 3,
+                behind_by: 0,
+                ...patch,
+            };
+        }
+        expect(() =>
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, replacementHead, () => JSON.stringify(response))
+        ).toThrow(/ancestry/i);
+    });
+    it.each([
+        ['fork/sourdaw', parentMerge, replacementHead],
+        ['jcosta33/sourdaw', 'main', replacementHead],
+        ['jcosta33/sourdaw', parentMerge, 'main'],
+    ])('rejects nonimmutable ancestry inputs without querying %s %s %s', (repository, ancestor, descendant) => {
+        const calls: string[][] = [];
+        expect(() =>
+            inspectCommitAncestry(repository, ancestor, descendant, (args) => {
+                calls.push(args);
+                return '';
+            })
+        ).toThrow(/full commit SHAs/i);
+        expect(calls).toEqual([]);
+    });
+    it('refuses unavailable and malformed remote ancestry instead of substituting branch status', () => {
+        expect(() =>
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, replacementHead, () => {
+                throw new Error('HTTP 404');
+            })
+        ).toThrow('HTTP 404');
+        expect(() =>
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, replacementHead, () => 'not json')
+        ).toThrow();
+    });
+
     it('refuses a missing lineage file by naming it', () => {
         const missing = join(tmpdir(), 'sourdaw-lineage-3001-does-not-exist.json');
         expect(() => readFindingLineageFile(missing)).toThrow(/cannot read finding lineage file/i);
@@ -753,9 +1036,245 @@ describe('pull-request supersession', () => {
         expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
     });
+    it('closes a distinct dependency chain only after proving the parent merge in the child source head', () => {
+        const { port, calls, state } = distinctPort();
+        expect(runWithDistinctParent(port)).toBe('pull-request-superseded:2244:2246');
+        const ancestry = `ancestor:jcosta33/sourdaw:${parentMerge}:${replacementHead}`;
+        expect(calls.filter((call) => call.startsWith('ancestor:'))).toEqual(Array(4).fill(ancestry));
+        expect(calls.indexOf(ancestry)).toBeLessThan(calls.findIndex((call) => call.startsWith('comment:')));
+        expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
+        expect(state().state).toBe('CLOSED');
+        const writes = calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+        expect(runWithDistinctParent(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+    });
+
+    it('never infers the distinct replacement from the parent receipt', () => {
+        const { port, calls } = distinctPort();
+        expect(() => runWithParent(port)).toThrow(/does not name replacement PR #2246/i);
+        expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+    });
+
+    it('reports ambiguity when the closed child head moves, retaining both markers', () => {
+        const { port, calls, state } = distinctPort(
+            {},
+            {
+                snapshots: { [oldNumber]: [{}, {}, {}, {}, {}, { head: movedHead }] },
+            }
+        );
+        expect(() => runWithDistinctParent(port)).toThrow(/ambiguous/i);
+        expect(state().state).toBe('CLOSED');
+        expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
+        expect(calls.filter((call) => /^(?:delete|log):/.test(call))).toEqual([]);
+    });
+
+    it.each([
+        ['parent has another identity', parentNumber, { number: 9999 }, /required repository/i],
+        ['parent owns another branch', parentNumber, { headRefName: 'fix/unrelated' }, /does not own old base/i],
+        ['parent is forked', parentNumber, { headRepository: 'fork/sourdaw' }, /head repository/i],
+        ['parent is open', parentNumber, { state: 'OPEN' }, /not closed without merge/i],
+        ['parent was merged', parentNumber, { merged: true }, /not closed without merge/i],
+        ['parent targets another base', parentNumber, { base: 'release' }, /does not target replacement base/i],
+        ['parent replacement is another PR', parentReplacementNumber, { number: 9999 }, /required repository/i],
+        [
+            'parent replacement is foreign',
+            parentReplacementNumber,
+            { repository: 'fork/sourdaw' },
+            /required repository/i,
+        ],
+        ['parent replacement is not merged', parentReplacementNumber, { state: 'OPEN' }, /not merged/i],
+        ['parent replacement denies merge', parentReplacementNumber, { merged: false }, /both be merged into main/i],
+        [
+            'parent replacement has another base',
+            parentReplacementNumber,
+            { base: 'release' },
+            /both be merged into main/i,
+        ],
+        ['parent replacement merge is absent', parentReplacementNumber, { mergeCommit: null }, /full commit SHA/i],
+        ['parent replacement merge is malformed', parentReplacementNumber, { mergeCommit: 'main' }, /full commit SHA/i],
+        ['child replacement merge is absent', replacementNumber, { mergeCommit: null }, /full commit SHA/i],
+        ['child source head is malformed', replacementNumber, { head: 'main' }, /full commit SHA/i],
+        [
+            'parent receipt names the child replacement',
+            parentNumber,
+            { comments: validParentComments },
+            /does not name replacement PR #2247/i,
+        ],
+        [
+            'parent receipt is foreign',
+            parentNumber,
+            {
+                comments: [
+                    { ...distinctParentComments[0]!, authorNodeId: REVIEWER_BOT_NODE_ID },
+                    distinctParentComments[1]!,
+                ],
+            },
+            /exact author-bot marker/i,
+        ],
+        [
+            'parent receipt is duplicated',
+            parentNumber,
+            { comments: [...distinctParentComments, { ...distinctParentComments[0]!, id: 'duplicate' }] },
+            /exactly one supersession receipt/i,
+        ],
+        [
+            'parent lineage names another parent',
+            parentNumber,
+            {
+                comments: [
+                    distinctParentComments[0]!,
+                    {
+                        ...distinctParentComments[1]!,
+                        body: renderFindingLineage({ ...distinctParentLineage, oldPr: 9999 }),
+                    },
+                ],
+            },
+            /does not match old pull request/i,
+        ],
+        [
+            'parent lineage names another replacement',
+            parentNumber,
+            { comments: [distinctParentComments[0]!, { ...distinctParentComments[1]!, body: parentLineageBody }] },
+            /does not match replacement pull request/i,
+        ],
+    ] satisfies [string, number, Partial<SupersededPullRequest>, RegExp][])(
+        'refuses distinct proof when %s before any child write',
+        (_case, number, patch, error) => {
+            const { port, calls } = distinctPort({}, { snapshots: { [number]: [patch] } });
+            expect(() => runWithDistinctParent(port)).toThrow(error);
+            expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+        }
+    );
+
+    it('requires total live parent finding coverage for the distinct parent replacement', () => {
+        const { port, calls } = distinctPort({ parentThreads: [{ threadId: 'PRRT_parent', rootCommentId: '3001' }] });
+        expect(() => runWithDistinctParent(port)).toThrow(/has no entry for finding 3001/i);
+        expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+    });
+    it.each(['old child', 'old parent'])(
+        'revalidates the %s finding set before writing, before close and after close',
+        (subject) => {
+            const number = subject === 'old child' ? oldNumber : parentNumber;
+            for (const boundary of [1, 2, 3]) {
+                const { port, calls, state } = distinctPort();
+                const baseRead = port.inspectReviewThreads;
+                let reads = 0;
+                port.inspectReviewThreads = (pr) => {
+                    const findings = baseRead(pr);
+                    if (pr === number && reads++ === boundary) {
+                        return [...findings, { threadId: 'PRRT_added', rootCommentId: '9001' }];
+                    }
+                    return findings;
+                };
+                expect(() => runWithDistinctParent(port)).toThrow(boundary === 3 ? /ambiguous/i : /finding/i);
+                expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+                if (boundary === 1) {
+                    expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+                } else if (boundary === 2) {
+                    expect(state().comments).toEqual([oldComment]);
+                    expect(state().state).toBe('OPEN');
+                } else {
+                    expect(state().state).toBe('CLOSED');
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+                }
+            }
+        }
+    );
+
+    it.each([false, new Error('comparison unavailable')])(
+        'refuses absent or unrelated ancestry %s before writes',
+        (result) => {
+            const { port, calls } = distinctPort({}, { ancestry: [result] });
+            expect(() => runWithDistinctParent(port)).toThrow(
+                result instanceof Error ? /comparison unavailable/ : /not proven/
+            );
+            expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+        }
+    );
+
+    it('fails closed without an ancestry reader', () => {
+        const { port, calls } = distinctPort();
+        const { isAncestor: _isAncestor, ...withoutAncestry } = port;
+        expect(() => runWithDistinctParent(withoutAncestry)).toThrow(/not proven/i);
+        expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+    });
+
+    it.each([
+        ['old child identity', oldNumber, { headRefName: 'fix/moved' }],
+        ['child replacement source', replacementNumber, { head: movedHead }],
+        ['child replacement merge', replacementNumber, { mergeCommit: movedHead }],
+        ['old parent identity', parentNumber, { head: movedHead }],
+        ['parent replacement source', parentReplacementNumber, { head: movedHead }],
+        ['parent replacement merge', parentReplacementNumber, { mergeCommit: movedHead }],
+        ['parent replacement merge state', parentReplacementNumber, { state: 'OPEN' }],
+        [
+            'parent receipt identity',
+            parentNumber,
+            { comments: [{ ...distinctParentComments[0]!, id: 'IC_changed' }, distinctParentComments[1]!] },
+        ],
+        ['parent marker loss', parentNumber, { comments: [] }],
+    ] satisfies [string, number, Partial<SupersededPullRequest>][])(
+        'revalidates %s at every mutation boundary',
+        (_case, number, patch) => {
+            for (const boundary of ['before-write', 'before-close', 'after-close'] as const) {
+                // Child reads include the two marker convergence inspections between write and close.
+                let inspection = { 'before-write': 1, 'before-close': 2, 'after-close': 3 }[boundary];
+                if (number === oldNumber) {
+                    inspection = { 'before-write': 1, 'before-close': 4, 'after-close': 5 }[boundary];
+                }
+                const snapshots = Array.from({ length: inspection + 1 }, (_, index) =>
+                    index === inspection ? patch : {}
+                );
+                const { port, calls, state } = distinctPort({}, { snapshots: { [number]: snapshots } });
+                expect(() => runWithDistinctParent(port), `${_case}: ${boundary}`).toThrow();
+                expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+                if (boundary === 'before-write') {
+                    expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+                } else if (boundary === 'before-close') {
+                    expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+                    expect(state().comments).toEqual([oldComment]);
+                } else {
+                    expect(state().state).toBe('CLOSED');
+                    expect(state().comments.map((comment) => comment.body)).toEqual([
+                        oldComment.body,
+                        receiptBody,
+                        lineageBody,
+                    ]);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+                }
+            }
+        }
+    );
+
+    it.each([1, 2, 3])('revalidates ancestry at boundary %i', (inspection) => {
+        const ancestry = Array.from({ length: inspection + 1 }, (_, index) => index !== inspection);
+        const { port, calls, state } = distinctPort({}, { ancestry });
+        expect(() => runWithDistinctParent(port)).toThrow(inspection === 3 ? /ambiguous/i : /not proven/i);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+        if (inspection === 1) {
+            expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+        } else if (inspection === 2) {
+            expect(state().comments).toEqual([oldComment]);
+            expect(state().state).toBe('OPEN');
+        } else {
+            expect(state().state).toBe('CLOSED');
+            expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        }
+    });
     it.each([null, 'fork-owner/sourdaw'])('does not require a %s replacement head repository', (headRepository) => {
         const { port, calls } = fakePort({ replacementHeadRepository: headRepository });
         expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('keeps a historical same-replacement parent path without merge-commit or replacement-head liveness proof', () => {
+        const { port, calls } = fakePort({
+            bases: [parentBranch, parentBranch, parentBranch, parentBranch],
+            replacementHeadRepository: null,
+        });
+        port.isAncestor = () => {
+            throw new Error('legacy path must not request ancestry');
+        };
+        expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
     });
     it.each([

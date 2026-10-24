@@ -12,6 +12,7 @@
 import {
     REQUIRED_REPOSITORY,
     parseGraphqlResponse,
+    parseJson,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
@@ -36,6 +37,7 @@ export type SupersededPullRequest = {
     repository: string;
     base: string;
     merged: boolean;
+    mergeCommit?: string | null;
     closedAt: string | null;
     comments: IssueComment[];
 };
@@ -46,6 +48,7 @@ export type SupersededReviewThread = { threadId: string; rootCommentId: string }
 export type SupersedePullRequestPort = {
     inspect: (number: number) => SupersededPullRequest;
     inspectReviewThreads: (number: number) => SupersededReviewThread[];
+    isAncestor?: (repository: string, ancestor: string, descendant: string) => boolean;
     comment: (number: number, body: string) => AddedIssueCommentReceipt;
     close: (number: number) => PullRequestCloseReceipt;
     deleteComment: (id: string) => void;
@@ -71,6 +74,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Supe
     return {
         inspect: (number) => inspectPullRequest(number, gh, ids),
         inspectReviewThreads: (number) => inspectReviewThreads(number, gh),
+        isAncestor: (repository, ancestor, descendant) => inspectCommitAncestry(repository, ancestor, descendant, gh),
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),
         close: (number) => closePullRequest(nodeId(number), gh),
         deleteComment: (id) => deleteComment(id, gh),
@@ -78,6 +82,86 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Supe
     };
 }
 type Gh = (args: string[]) => string;
+type CommitComparison = { status: unknown; aheadBy: number; behindBy: number; mergeBase: string };
+
+/** Compare immutable objects remotely; neither a mutable branch nor status alone proves containment. */
+export function inspectCommitAncestry(repository: string, ancestor: string, descendant: string, gh: Gh): boolean {
+    if (repository !== REQUIRED_REPOSITORY || !isCommit(ancestor) || !isCommit(descendant)) {
+        fail('ancestry requires the required repository and full commit SHAs');
+    }
+    const endpoint = `repos/${repository}/compare/${ancestor}...${descendant}`;
+    const comparison = readCommitComparison(gh(['api', endpoint]), endpoint, ancestor);
+    switch (comparison.status) {
+        case 'identical':
+            assertComparisonCounts(comparison, false, false);
+            if (ancestor !== descendant || comparison.mergeBase !== ancestor) {
+                fail('contradictory identical supersession commit ancestry');
+            }
+            return true;
+        case 'ahead':
+            assertComparisonCounts(comparison, true, false);
+            if (ancestor === descendant || comparison.mergeBase !== ancestor) {
+                fail('contradictory ahead supersession commit ancestry');
+            }
+            return true;
+        case 'behind':
+            assertComparisonCounts(comparison, false, true);
+            if (ancestor === descendant || comparison.mergeBase !== descendant) {
+                fail('contradictory behind supersession commit ancestry');
+            }
+            return false;
+        case 'diverged':
+            assertComparisonCounts(comparison, true, true);
+            if (comparison.mergeBase === ancestor || comparison.mergeBase === descendant) {
+                fail('contradictory diverged supersession commit ancestry');
+            }
+            return false;
+        default:
+            return fail('unavailable supersession commit ancestry');
+    }
+}
+
+function isCommit(value: unknown): value is string {
+    return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+}
+
+function assertComparisonCounts(value: CommitComparison, ahead: boolean, behind: boolean): void {
+    const isAhead = value.aheadBy > 0;
+    const isBehind = value.behindBy > 0;
+    if (isAhead !== ahead || isBehind !== behind) {
+        fail('contradictory supersession commit ancestry counts');
+    }
+}
+
+function readCommitComparison(output: string, endpoint: string, ancestor: string): CommitComparison {
+    const value = parseJson(output, 'supersession commit ancestry') as {
+        url?: unknown;
+        status?: unknown;
+        ahead_by?: unknown;
+        behind_by?: unknown;
+        base_commit?: { sha?: unknown };
+        merge_base_commit?: { sha?: unknown };
+    };
+    if (
+        value?.url !== `https://api.github.com/${endpoint}` ||
+        value.base_commit?.sha !== ancestor ||
+        !isCommit(value.merge_base_commit?.sha) ||
+        typeof value.ahead_by !== 'number' ||
+        !Number.isSafeInteger(value.ahead_by) ||
+        value.ahead_by < 0 ||
+        typeof value.behind_by !== 'number' ||
+        !Number.isSafeInteger(value.behind_by) ||
+        value.behind_by < 0
+    ) {
+        fail('cannot bind supersession ancestry to the requested commit objects');
+    }
+    return {
+        status: value.status,
+        aheadBy: value.ahead_by,
+        behindBy: value.behind_by,
+        mergeBase: value.merge_base_commit.sha,
+    };
+}
 function isUnknownArray(value: unknown): value is readonly unknown[] {
     return Array.isArray(value);
 }
@@ -101,9 +185,9 @@ function readHeadRepository(value: unknown, number: number): string | null {
     }
     return repository.nameWithOwner;
 }
-function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
+export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt mergeCommit{oid}}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -117,6 +201,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
                     headRepository?: { nameWithOwner?: unknown } | null;
                     baseRefName?: unknown;
                     merged?: unknown;
+                    mergeCommit?: { oid?: unknown } | null;
                     closedAt?: unknown;
                 };
             };
@@ -139,6 +224,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         fail(`cannot inspect PR #${number}`);
     }
     const headRepository = readHeadRepository(pullRequest.headRepository, number);
+    const mergeCommit = pullRequest.mergeCommit?.oid;
     ids.set(number, pullRequest.id);
     return {
         number: pullRequest.number,
@@ -149,6 +235,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         repository: repository.nameWithOwner,
         base: pullRequest.baseRefName,
         merged: pullRequest.merged,
+        mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
         closedAt: pullRequest.closedAt,
         comments: inspectIssueComments(pullRequest.id, gh),
     };

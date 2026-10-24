@@ -12,6 +12,7 @@ import {
 } from './findingLineage.ts';
 import {
     AUTHOR_BOT_NODE_ID,
+    REQUIRED_BASE_BRANCH,
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
@@ -38,11 +39,12 @@ export type SupersedePullRequestArgs = {
     head?: string;
     replacementNumber?: number;
     supersededParentNumber?: number;
+    parentReplacementNumber?: number;
     lineagePath?: string;
     help: boolean;
 };
 const usage =
-    'usage: pnpm pr:supersede <old-pr-number> --head <40-hex-sha> --replacement <merged-pr-number> [--superseded-parent <closed-pr-number>] --lineage <path-to-json>';
+    'usage: pnpm pr:supersede <old-pr-number> --head <40-hex-sha> --replacement <merged-pr-number> [--superseded-parent <closed-pr-number> [--parent-replacement <merged-parent-replacement-pr-number>]] --lineage <path-to-json>';
 
 export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequestArgs {
     if (args[0] === '--help') {
@@ -51,14 +53,16 @@ export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequ
         }
         return { help: true };
     }
-    const carriesParent = args.length === 9;
-    const lineageFlagIndex = carriesParent ? 7 : 5;
-    const lineagePathIndex = carriesParent ? 8 : 6;
+    const carriesParentReplacement = args.length === 11;
+    const carriesParent = args.length === 9 || carriesParentReplacement;
+    const lineageFlagIndex = args.length - 2;
+    const lineagePathIndex = args.length - 1;
     if (
         (args.length !== 7 && !carriesParent) ||
         args[1] !== '--head' ||
         args[3] !== '--replacement' ||
         (carriesParent && args[5] !== '--superseded-parent') ||
+        (carriesParentReplacement && args[7] !== '--parent-replacement') ||
         args[lineageFlagIndex] !== '--lineage' ||
         args[0] === undefined ||
         args[2] === undefined ||
@@ -68,13 +72,15 @@ export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequ
         !/^[1-9][0-9]*$/.test(args[0]) ||
         !/^[0-9a-f]{40}$/i.test(args[2]) ||
         !/^[1-9][0-9]*$/.test(args[4]) ||
-        (carriesParent && (args[6] === undefined || !/^[1-9][0-9]*$/.test(args[6])))
+        (carriesParent && (args[6] === undefined || !/^[1-9][0-9]*$/.test(args[6]))) ||
+        (carriesParentReplacement && (args[8] === undefined || !/^[1-9][0-9]*$/.test(args[8])))
     ) {
         fail(usage);
     }
     const oldNumber = Number(args[0]);
     const replacementNumber = Number(args[4]);
     const supersededParentNumber = carriesParent ? Number(args[6]) : undefined;
+    const parentReplacementNumber = carriesParentReplacement ? Number(args[8]) : undefined;
     if (
         !Number.isSafeInteger(oldNumber) ||
         !Number.isSafeInteger(replacementNumber) ||
@@ -82,7 +88,12 @@ export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequ
         (supersededParentNumber !== undefined &&
             (!Number.isSafeInteger(supersededParentNumber) ||
                 supersededParentNumber === oldNumber ||
-                supersededParentNumber === replacementNumber))
+                supersededParentNumber === replacementNumber)) ||
+        (parentReplacementNumber !== undefined &&
+            (!Number.isSafeInteger(parentReplacementNumber) ||
+                parentReplacementNumber === oldNumber ||
+                parentReplacementNumber === replacementNumber ||
+                parentReplacementNumber === supersededParentNumber))
     ) {
         fail(usage);
     }
@@ -91,6 +102,7 @@ export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequ
         head: args[2],
         replacementNumber,
         supersededParentNumber,
+        parentReplacementNumber,
         lineagePath: args[lineagePathIndex],
         help: false,
     };
@@ -173,7 +185,16 @@ const SUPERSESSION_RECEIPT_PREFIX = 'Superseded by #';
 type ProofMarker = Pick<IssueComment, 'id' | 'fullDatabaseId' | 'body' | 'authorNodeId' | 'authorType'>;
 type PullRequestProof = Pick<
     SupersededPullRequest,
-    'number' | 'state' | 'head' | 'headRefName' | 'headRepository' | 'repository' | 'base' | 'merged' | 'closedAt'
+    | 'number'
+    | 'state'
+    | 'head'
+    | 'headRefName'
+    | 'headRepository'
+    | 'repository'
+    | 'base'
+    | 'merged'
+    | 'mergeCommit'
+    | 'closedAt'
 >;
 type StackedParentProof = {
     parent: PullRequestProof;
@@ -181,6 +202,10 @@ type StackedParentProof = {
     receipt: ProofMarker;
     lineage: ProofMarker;
     findingIds: string[];
+    dependency?: {
+        old: Omit<PullRequestProof, 'state' | 'closedAt'>;
+        parentReplacement: PullRequestProof;
+    };
 };
 
 function pullRequestProof(value: SupersededPullRequest): PullRequestProof {
@@ -193,8 +218,58 @@ function pullRequestProof(value: SupersededPullRequest): PullRequestProof {
         repository: value.repository,
         base: value.base,
         merged: value.merged,
+        mergeCommit: value.mergeCommit,
         closedAt: value.closedAt,
     };
+}
+
+function oldDependencyIdentity(value: SupersededPullRequest): Omit<PullRequestProof, 'state' | 'closedAt'> {
+    const { state: _state, closedAt: _closedAt, ...identity } = pullRequestProof(value);
+    return identity;
+}
+
+function assertFullCommit(value: unknown, label: string): asserts value is string {
+    if (typeof value !== 'string' || !/^[0-9a-f]{40}$/.test(value)) {
+        fail(`${label} must be a full commit SHA`);
+    }
+}
+
+function inspectDependencyProof(
+    old: SupersededPullRequest,
+    replacement: SupersededPullRequest,
+    parent: SupersededPullRequest,
+    parentReplacementNumber: number,
+    port: SupersedePullRequestPort
+): NonNullable<StackedParentProof['dependency']> {
+    if (
+        !Number.isSafeInteger(parentReplacementNumber) ||
+        parentReplacementNumber <= 0 ||
+        [old.number, replacement.number, parent.number].includes(parentReplacementNumber)
+    ) {
+        fail('parent replacement must differ from the old, replacement and parent pull requests');
+    }
+    const parentReplacement = port.inspect(parentReplacementNumber);
+    assertReplacementIdentityAndMerge(parentReplacement, parentReplacementNumber, old);
+    if (
+        !replacement.merged ||
+        !parentReplacement.merged ||
+        replacement.base !== REQUIRED_BASE_BRANCH ||
+        parentReplacement.base !== replacement.base
+    ) {
+        fail('distinct replacements must both be merged into main');
+    }
+    assertFullCommit(old.head, 'old child head');
+    assertFullCommit(parent.head, 'old parent head');
+    assertFullCommit(replacement.head, 'child replacement source head');
+    assertFullCommit(replacement.mergeCommit, 'child replacement merge commit');
+    assertFullCommit(parentReplacement.head, 'parent replacement source head');
+    assertFullCommit(parentReplacement.mergeCommit, 'parent replacement merge commit');
+    if (port.isAncestor?.(old.repository, parentReplacement.mergeCommit, replacement.head) !== true) {
+        fail(
+            `parent replacement PR #${parentReplacementNumber} merge commit is not proven in child replacement source head`
+        );
+    }
+    return { old: oldDependencyIdentity(old), parentReplacement: pullRequestProof(parentReplacement) };
 }
 
 function proofMarker(comment: IssueComment, label: string): ProofMarker {
@@ -260,7 +335,8 @@ function inspectStackedParentProof(
     old: SupersededPullRequest,
     replacement: SupersededPullRequest,
     parentNumber: number,
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    parentReplacementNumber?: number
 ): StackedParentProof {
     if (
         !Number.isSafeInteger(parentNumber) ||
@@ -293,14 +369,20 @@ function inspectStackedParentProof(
     if (parent.base !== replacement.base) {
         fail(`superseded parent PR #${parentNumber} does not target replacement base ${replacement.base}`);
     }
-    const receipt = parentReceipt(parent, replacement.number);
-    const lineage = parentLineage(parent, replacement.number, port);
+    let dependency: StackedParentProof['dependency'];
+    if (parentReplacementNumber !== undefined) {
+        dependency = inspectDependencyProof(old, replacement, parent, parentReplacementNumber, port);
+    }
+    const parentSuccessor = parentReplacementNumber ?? replacement.number;
+    const receipt = parentReceipt(parent, parentSuccessor);
+    const lineage = parentLineage(parent, parentSuccessor, port);
     return {
         parent: pullRequestProof(parent),
         replacement: pullRequestProof(replacement),
         receipt,
         lineage: lineage.marker,
         findingIds: lineage.findingIds,
+        dependency,
     };
 }
 
@@ -311,7 +393,13 @@ function assertStackedParentProofUnchanged(
 ): void {
     const replacement = port.inspect(initial.replacement.number);
     assertReplacementIdentityAndMerge(replacement, initial.replacement.number, old);
-    const current = inspectStackedParentProof(old, replacement, initial.parent.number, port);
+    const current = inspectStackedParentProof(
+        old,
+        replacement,
+        initial.parent.number,
+        port,
+        initial.dependency?.parentReplacement.number
+    );
     if (JSON.stringify(current) !== JSON.stringify(initial)) {
         fail(`superseded parent PR #${initial.parent.number} proof changed during supersession; compensating`);
     }
@@ -324,7 +412,8 @@ export function supersedePullRequest(
     lineage: FindingLineage,
     authorNodeId: string,
     port: SupersedePullRequestPort,
-    supersededParentNumber?: number
+    supersededParentNumber?: number,
+    parentReplacementNumber?: number
 ): string {
     if (!isAuthorBotNodeId(authorNodeId)) {
         fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
@@ -338,7 +427,14 @@ export function supersedePullRequest(
     const before = port.inspect(oldNumber);
     const replacement = port.inspect(replacementNumber);
     assertOldBinding(before, oldNumber, expectedHead);
-    const stackedParentProof = assertReplacement(replacement, replacementNumber, before, supersededParentNumber, port);
+    const stackedParentProof = assertReplacement(
+        replacement,
+        replacementNumber,
+        before,
+        supersededParentNumber,
+        port,
+        parentReplacementNumber
+    );
     const markers: MarkerPair = [
         { body: supersessionCommentBody(replacementNumber), label: RECEIPT_LABEL },
         { body: renderFindingLineage(lineage), label: LINEAGE_LABEL },
@@ -351,34 +447,49 @@ export function supersedePullRequest(
     closePullRequestWithMarkers(oldNumber, expectedHead, before, markers, port, {
         beforeMarkers: () => {
             if (stackedParentProof !== undefined) {
-                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+                const current = stackedParentProof.dependency === undefined ? before : port.inspect(oldNumber);
+                if (stackedParentProof.dependency !== undefined) {
+                    assertStableOpen(current, oldNumber, expectedHead, before.base);
+                    assertFindingsUnchanged(oldNumber, coveredFindings, port);
+                }
+                assertStackedParentProofUnchanged(stackedParentProof, current, port);
             }
         },
         beforeClose: () => {
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
             if (stackedParentProof !== undefined) {
-                assertStackedParentProofUnchanged(stackedParentProof, before, port);
+                const current = stackedParentProof.dependency === undefined ? before : port.inspect(oldNumber);
+                if (stackedParentProof.dependency !== undefined) {
+                    assertStableOpen(current, oldNumber, expectedHead, before.base);
+                }
+                assertStackedParentProofUnchanged(stackedParentProof, current, port);
             }
         },
         afterClose: (verified, markerIds, closeReceipt) => {
-            assertFinalSupersession(
-                verified,
-                oldNumber,
-                expectedHead,
-                before.base,
-                markers,
-                markerIds[0]!,
-                markerIds[1]!,
-                closeReceipt
-            );
-            if (stackedParentProof !== undefined) {
-                try {
-                    assertStackedParentProofUnchanged(stackedParentProof, before, port);
-                } catch (error) {
+            try {
+                assertFinalSupersession(
+                    verified,
+                    oldNumber,
+                    expectedHead,
+                    before.base,
+                    markers,
+                    markerIds[0]!,
+                    markerIds[1]!,
+                    closeReceipt
+                );
+                if (stackedParentProof !== undefined) {
+                    if (stackedParentProof.dependency !== undefined) {
+                        assertFindingsUnchanged(oldNumber, coveredFindings, port);
+                    }
+                    assertStackedParentProofUnchanged(stackedParentProof, verified, port);
+                }
+            } catch (error) {
+                if (stackedParentProof !== undefined) {
                     fail(
                         `stacked supersession authority is ambiguous after closing PR #${oldNumber}: ${errorMessage(error)}`
                     );
                 }
+                throw error;
             }
         },
     });
@@ -551,16 +662,20 @@ function assertReplacement(
     number: number,
     old: SupersededPullRequest,
     supersededParentNumber: number | undefined,
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    parentReplacementNumber?: number
 ): StackedParentProof | undefined {
     assertReplacementIdentityAndMerge(value, number, old);
     if (value.base === old.base) {
+        if (parentReplacementNumber !== undefined) {
+            fail('parent replacement requires a cross-base superseded parent');
+        }
         return undefined;
     }
     if (supersededParentNumber === undefined) {
         fail(`replacement PR #${number} does not target ${old.base}`);
     }
-    return inspectStackedParentProof(old, value, supersededParentNumber, port);
+    return inspectStackedParentProof(old, value, supersededParentNumber, port, parentReplacementNumber);
 }
 function assertStableOpen(value: SupersededPullRequest, number: number, head: string, base: string): void {
     if (
@@ -826,7 +941,8 @@ async function main(): Promise<number> {
             lineage,
             auth.minted.actorNodeId,
             shellPort(auth.session),
-            parsed.supersededParentNumber
+            parsed.supersededParentNumber,
+            parsed.parentReplacementNumber
         );
         return 0;
     } finally {

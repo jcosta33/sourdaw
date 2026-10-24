@@ -35,8 +35,8 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent>] --lineage <path-to-json>`                                                     |
-| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                   |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`  |
+| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                               |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
@@ -77,6 +77,25 @@ closing, and after closing before reporting success. A refusal before writing
 leaves no child mutation, a refusal after adding child markers compensates those
 markers, and a post-close authority failure reports ambiguity while retaining
 the closed child's two markers as durable evidence.
+
+When the parent was superseded by a different merged PR, name it explicitly with
+`--parent-replacement <pr>` after `--superseded-parent`. All four PR identities
+must differ. Both replacements and the old parent must target `main`; the old
+parent's canonical receipt and total live finding lineage must name its own
+replacement, while the child keeps its independent lineage to the child
+replacement. The parent's replacement merge commit must be an ancestor of the
+child replacement's source head. The read-only comparison binds the repository,
+ordered full commit SHAs, base object and merge-base object; a branch match or
+status alone is insufficient, and unavailable evidence refuses. This path
+snapshots and revalidates all four identities, merge commits, parent markers and
+both old PR finding sets before the first child write, immediately before close,
+and after close. Pre-close refusals use the same marker compensation; post-close
+failure reports ambiguity and preserves the closed child's markers. The option
+does not infer a new parent from prose, retarget a branch, or change a registered
+stack. Ancestry proves dependency containment, not semantic replacement or product
+acceptance; those remain independently reviewed caller obligations. Historical
+same-base supersessions and the existing same-replacement parent path do not
+require this additional merge-commit proof.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a
