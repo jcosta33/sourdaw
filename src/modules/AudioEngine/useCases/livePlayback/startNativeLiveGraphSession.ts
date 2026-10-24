@@ -100,6 +100,7 @@ import {
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
 import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
+import { type NativeRecordingGeometry } from '../../models/NativeRecordingCapture';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
@@ -117,6 +118,7 @@ import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { latchedPedalCommands } from './latchedPedalCommands';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import {
     projectLiveGraphTopology,
@@ -190,6 +192,7 @@ export type NativeSessionTransport =
     | Readonly<{ kind: 'rolling'; anchoredAtContextSeconds: number }>;
 
 export type StartNativeLiveGraphSessionInput = Readonly<{
+    recordingGeometry?: NativeRecordingGeometry;
     /** Where playback begins, on the engine's clock. */
     positionSeconds: number;
     /**
@@ -744,6 +747,7 @@ async function rollNativeTransport(
  * steps is the one that failed.
  */
 async function rollSessionTransport(input: {
+    recordingGeometry?: NativeRecordingGeometry;
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     stripTracks: readonly Track[];
     /** The attach state the topology this session installed was built from. */
@@ -763,8 +767,16 @@ async function rollSessionTransport(input: {
     // must not render a frame the region does not govern. Before the feed
     // too, because a position read against no maps reports the engine's
     // default tempo rather than the arrangement's.
-    const maps = await setEngineTransportMaps(input.transportMaps);
+    const captureMutation = nativeRecordingCaptureClockState.beginMutation('start');
+    let maps: Awaited<ReturnType<typeof setEngineTransportMaps>>;
+    try {
+        maps = await setEngineTransportMaps(input.transportMaps);
+    } catch (error) {
+        nativeRecordingCaptureClockState.settleMutation(captureMutation, 'unknown');
+        throw error;
+    }
     if (maps.outcome === 'declined') {
+        nativeRecordingCaptureClockState.settleMutation(captureMutation, 'rejected');
         // The engine keeps whatever pair the *previous* session installed:
         // nothing between sessions clears its maps or its loop region, and the
         // install that would have replaced them is the one that just failed.
@@ -783,6 +795,10 @@ async function rollSessionTransport(input: {
     // engine can say which this one is.
     nativeLiveGraphSession.loopRegion = input.transportMaps.loopRegion;
     nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
+    nativeRecordingCaptureClockState.retainAdmission(
+        input.recordingGeometry && { ...input.recordingGeometry, isLooping: maps.applied.loopEnabled },
+        maps.applied.admittedBatch
+    );
     // Before the roll, and awaited — the opposite order to the automation
     // writer's, for a reason that belongs to the note store rather than to
     // preference. `apply_due_midi_notes` delivers nothing while the transport
@@ -842,6 +858,13 @@ async function rollSessionTransport(input: {
         rollPositionSeconds !== input.positionSeconds
     );
     nativeLiveGraphSession.rolling = rolled.rolling;
+    nativeRecordingCaptureClockState.settleMutation(captureMutation, rolled.rolling ? 'applied' : 'unknown');
+    nativeRecordingCaptureClockState.retainAdmission(
+        input.recordingGeometry && { ...input.recordingGeometry, isLooping: maps.applied.loopEnabled },
+        rolled.provenAfterBatch,
+        true,
+        captureMutation
+    );
     if (!rolled.rolling) {
         // The notes went out ahead of a roll that never happened. A parked
         // engine delivers none of them, and the next play arms afresh; leaving
@@ -1031,6 +1054,7 @@ async function installRolledSession(input: {
     const reboundStripIds = carriedStripIds(rebound.commands);
     nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
     nativeLiveGraphSession.rolling = false;
+    nativeLiveGraphSession.captureAdmissions = [];
     disarmNativeLiveAutomationWriter();
     disarmNativeLiveMidiWriter();
     const parkedReason = await rollSessionTransport({
@@ -1039,6 +1063,7 @@ async function installRolledSession(input: {
         attachedInstanceIds: installed.attachedInstanceIds,
         carriedStripIds: reboundStripIds,
         transportMaps: session.transportMaps,
+        recordingGeometry: session.recordingGeometry,
         positionSeconds: session.positionSeconds,
         transport: session.transport,
         sampleRate: session.sampleRate,
