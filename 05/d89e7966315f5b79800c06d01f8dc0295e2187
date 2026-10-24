@@ -1,0 +1,34 @@
+docs/modern-primitives.md
+  s_993e8cd4f5fad8::t_ae5b8675ffa642 21-23
+.agents/skills/desktop-platform/SKILL.md
+  s_993e8cd4f5fad8::t_213989fe6b3828 59
+AGENTS.md
+  s_993e8cd4f5fad8::t_213989fe6b3828 230-232
+  s_993e8cd4f5fad8::t_ae5b8675ffa642 236
+.agents/skills/review-stances/correctness.md
+  s_993e8cd4f5fad8::t_213989fe6b3828 646
+.agents/skills/review-stances/test-validity.md
+  s_993e8cd4f5fad8::t_213989fe6b3828 722-724
+  s_993e8cd4f5fad8::t_b21835fe90e327 725-726
+docs/06-testing.md
+  s_993e8cd4f5fad8::t_213989fe6b3828 884
+  s_993e8cd4f5fad8::t_ae5b8675ffa642 710-714
+.agents/skills/architecture-violations/SKILL.md
+  s_993e8cd4f5fad8::t_213989fe6b3828 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05d89e7966315f5b79800c06d01f8dc0295e2187",
+  "prompts": {},
+  "sessions": {
+    "s_993e8cd4f5fad8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffd-2641-7f40-9221-3bd2de725b9b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
