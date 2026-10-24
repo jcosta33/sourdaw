@@ -174,9 +174,8 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             operation: 'Freeze',
         });
         if (silentBake.silentBake) {
-            // `freezeState.status === 'error'` is rendered nowhere, so recording
-            // it alone would tell no one. Notify on the same channel a dropped
-            // offline device uses, and report the refusal as a non-write:
+            // Keep the immediate notification as well as the visible track-header
+            // error, and report the refusal as a non-write:
             // `handleFreezeTrack` maps a `true` here to `{status: 'written'}`,
             // which would file a refusal as an undoable edit.
             notifyUser(silentBake.message, 'error');
