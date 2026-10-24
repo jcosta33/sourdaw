@@ -6,6 +6,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DEFAULT_PATCH, ENGINE_NAMES } from '../models/FermenterPatch';
 
+const pendingChoices = new Map<string, { superseded: boolean }>();
+
 export async function selectFermenterOscillatorEngine(deviceId: string, engine: number): Promise<void> {
     if (!Number.isInteger(engine) || engine < 0 || engine >= ENGINE_NAMES.length) {
         return;
@@ -21,6 +23,10 @@ export async function selectFermenterOscillatorEngine(deviceId: string, engine: 
     }
     const valuePresent = Object.hasOwn(device.parameterValues, 'oscEngine');
     const previousValue = device.parameterValues.oscEngine;
+    const olderChoice = pendingChoices.get(deviceId);
+    if (olderChoice) {
+        olderChoice.superseded = true;
+    }
     if ((previousValue ?? DEFAULT_PATCH.oscEngine) === engine) {
         return;
     }
@@ -28,6 +34,8 @@ export async function selectFermenterOscillatorEngine(deviceId: string, engine: 
     // A queued choice must not retarget a replacement that reuses every visible ID.
     const authority = captureProjectTransitionAuthority();
     const revision = captureProjectRevision();
+    const pendingChoice = { superseded: false };
+    pendingChoices.set(deviceId, pendingChoice);
     try {
         await executeUserAppAction(
             {
@@ -45,9 +53,16 @@ export async function selectFermenterOscillatorEngine(deviceId: string, engine: 
                     automationRecordingPolicy: 'suppressed',
                 },
             },
-            { shouldExecute: () => authority.isCurrent() && captureProjectRevision() === revision }
+            {
+                shouldExecute: () =>
+                    !pendingChoice.superseded && authority.isCurrent() && captureProjectRevision() === revision,
+            }
         );
     } catch (error) {
         notifyUser(error instanceof Error ? error.message : 'Fermenter Engine change failed', 'error');
+    } finally {
+        if (pendingChoices.get(deviceId) === pendingChoice) {
+            pendingChoices.delete(deviceId);
+        }
     }
 }

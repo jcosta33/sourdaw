@@ -349,6 +349,49 @@ describe('Fermenter Engine selection through Command', () => {
         expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'oscEngine', 2);
     });
 
+    it.each([0, 3])('settles on the latest queued Engine choice %i while a snapshot is held', async (latest) => {
+        renderPanel();
+        const hold = await holdSnapshot();
+        const first = selectFermenterOscillatorEngine(DEVICE_ID, 2);
+        const second = selectFermenterOscillatorEngine(DEVICE_ID, latest);
+        await expectEngine(0, 0);
+        expect(audio.updateDeviceParam).not.toHaveBeenCalled();
+        await act(async () => {
+            await hold.finish();
+            await Promise.all([first, second]);
+        });
+        await waitFor(() => {
+            expect(rawValues().oscEngine).toBe(latest);
+            expect(projectedTrack().devices[0]?.parameterValues.oscEngine).toBe(latest);
+            expect(getFermenterState(DEVICE_ID).patch.oscEngine).toBe(latest);
+            expect(screen.getByRole('button', { name: ENGINE_NAMES[latest] })).toHaveAttribute('aria-pressed', 'true');
+        });
+        expect(audio.updateDeviceParam).toHaveBeenCalledTimes(latest === 0 ? 0 : 1);
+        if (latest !== 0) {
+            expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'oscEngine', latest);
+        }
+        expect(depth()).toBe(latest === 0 ? 0 : 1);
+        expect(actionHistoryStore.value?.entries).toHaveLength(latest === 0 ? 0 : 1);
+        expect(notices).toEqual([]);
+        if (latest !== 0) {
+            await act(() => undo());
+            await expectEngine(0, 0);
+        }
+    });
+
+    it('does not let an invalid later Engine choice cancel a valid queued choice', async () => {
+        renderPanel();
+        const hold = await holdSnapshot();
+        const pending = selectFermenterOscillatorEngine(DEVICE_ID, 2);
+        await selectFermenterOscillatorEngine(DEVICE_ID, 7);
+        await act(async () => {
+            await hold.finish();
+            await pending;
+        });
+        await expectEngine(2, 1);
+        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'oscEngine', 2);
+    });
+
     it.each(['project', 'same-id-owner', 'same-id-device', 'chain', 'value', 'frozen', 'exact-state-aba'] as const)(
         'refuses a snapshot-held selection after %s replacement',
         async (change) => {
