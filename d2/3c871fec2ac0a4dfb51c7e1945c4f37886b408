@@ -1,0 +1,36 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_29d8df116c5b92::t_bf4bee3bbec1eb 26,30-31,57-63,193,195-196,268,271,333,335,736-737,886,888
+  s_29d8df116c5b92::t_9f585ae1cc0039 64-79,81-83,98-99,121-131,145-147,185,188,194,197-207,210,212,214-215,269-270
+  s_29d8df116c5b92::t_45bf6c0c0afe41 419,585-603,610-620,738-740,747-752,754-774,776-784,786-789,791-804,806-820,822-834,836-849,858-867,869-885,887,889-890
+  s_29d8df116c5b92::t_9dd3296c517d55 741-746
+  s_29d8df116c5b92::t_50bcfdfea53c67 753,790
+  s_29d8df116c5b92::t_04f41b9ed29a65 80,775,785,805,821,835,868
+  s_29d8df116c5b92::t_1364291780c94f 334,850-857
+scripts/supersedePullRequestGh.ts
+  s_29d8df116c5b92::t_486b388f2f00f5 34,37,95,105,107,122,124,134,137
+.agents/skills/delivery-orchestration/SKILL.md
+  s_29d8df116c5b92::t_1890affcfdd69a 38,56-64
+  s_29d8df116c5b92::t_a2731f7456289e 65
+scripts/supersedePullRequest.ts
+  s_29d8df116c5b92::t_59020f58518df7 7,40,45,54-56,58,61-62,66-67,70-71,77,81-85,89-96
+  s_29d8df116c5b92::t_22d0908d974ce6 170-312,320-321,349-351,363-365
+  s_29d8df116c5b92::t_1364291780c94f 335
+  s_29d8df116c5b92::t_8b9477499df8ae 770-771
+  s_29d8df116c5b92::t_062b5dc62f94d5 491-495,502-514,517
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d23c871fec2ac0a4dfb51c7e1945c4f37886b408",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
