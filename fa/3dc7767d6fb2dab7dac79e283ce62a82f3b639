@@ -6,6 +6,8 @@ src/modules/TimelineEditor/presentations/views/Inspector/__tests__/MasterVisuali
 src/modules/TimelineEditor/presentations/views/Inspector/MasterVisualizationsSection.tsx
   s_59e31a5c6f3e31::t_f915d352f27dea 33-39,48-51,54-55,57-59,65-66,70-79,86-111
   s_59e31a5c6f3e31::t_8af2621f8cc854 60-62,69
+src/modules/Toaster/presentations/components/PadMixer.tsx
+  s_59e31a5c6f3e31::t_8764f1240bec28 133
 ---
 {
   "schema_version": "authorship/3.0.0",

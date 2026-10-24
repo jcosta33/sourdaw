@@ -2,6 +2,8 @@ scripts/__tests__/resourceGuard.spec.ts
   s_3e7dea5cde3f9e::t_42fa77ece749a5 1908-1950,2800-3003,3078-3081
 scripts/resourceGuard.ts
   s_3e7dea5cde3f9e::t_a09a59cffdefd4 2583-2690,3047,3075-3085
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_59e31a5c6f3e31::t_e876083f2fd1c6 523,740,743
 ---
 {
   "schema_version": "authorship/3.0.0",
