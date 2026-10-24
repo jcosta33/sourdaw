@@ -1,13 +1,15 @@
 import { type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
-import { Ellipsis } from 'lucide-react';
+import { Ellipsis, List } from 'lucide-react';
 
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { voiceInputAvailabilityStore, voiceModelSetupStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { downloadWhisperModel, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
+import { TimelineClipNavigator } from '#/modules/Arrangement/presentations/views';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
@@ -60,11 +62,15 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
     const moreTriggerRef = useRef<HTMLButtonElement>(null);
     const moreSurfaceRef = useRef<HTMLDivElement>(null);
     const moreOpenRef = useRef(false);
+    const browseButtonRef = useRef<HTMLButtonElement>(null);
+    const clipNavigatorOpenRef = useRef(false);
     const restoreFocusAfterModeChangeRef = useRef(false);
     const [moreOpen, setMoreOpen] = useState(false);
+    const [isClipNavigatorOpen, setIsClipNavigatorOpen] = useState(false);
     const [compactMode, setCompactMode] = useState(isCompactLayoutViewport);
     const compactModeRef = useRef(compactMode);
     const {
+        mode,
         sidebarOpen,
         inspectorOpen,
         mixerOpen,
@@ -82,6 +88,16 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
     const project = useProjectState();
 
     const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
+    const hasTimelineSurface =
+        mode !== 'automation' && tracks.some((track) => track.kind !== 'master' && track.kind !== 'folder');
+
+    useEffect(() => {
+        if (!hasTimelineSurface) {
+            clipNavigatorOpenRef.current = false;
+            setIsClipNavigatorOpen(false);
+        }
+    }, [hasTimelineSurface]);
+
     const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
     const voiceInputAvailable = useStore(voiceInputAvailabilityStore, {
         hasVerifiedLocalModel: false,
@@ -163,8 +179,25 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
     }, [compactMode]);
 
     const setMorePopoverOpen = (open: boolean): void => {
+        if (open) {
+            clipNavigatorOpenRef.current = false;
+            setIsClipNavigatorOpen(false);
+        }
         moreOpenRef.current = open;
         setMoreOpen(open);
+    };
+
+    const setClipNavigatorOpen = (open: boolean): void => {
+        if (open) {
+            setMorePopoverOpen(false);
+        }
+        clipNavigatorOpenRef.current = open;
+        setIsClipNavigatorOpen(open);
+    };
+
+    const closeClipNavigator = (): void => {
+        setClipNavigatorOpen(false);
+        browseButtonRef.current?.focus();
     };
 
     useEffect(() => {
@@ -343,48 +376,94 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
                     compact={compactMode}
                 />
 
-                {!compactMode ? (
-                    <Row justify="end" gap={1} className="transport-bar__action-right">
-                        <AutoScrollToggle />
-                        <Sep />
-                        <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
-                        <Sep />
-                        <SoloModeSelector soloMode={soloMode} />
-                        <Sep />
-                        <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-                    </Row>
-                ) : (
-                    <div className="transport-bar__action-more">
-                        <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    ref={moreTriggerRef}
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label="More transport controls"
-                                >
-                                    <Ellipsis className="size-3.5" aria-hidden="true" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent ref={moreSurfaceRef} align="end" aria-label="More transport controls">
-                                <div className="space-y-2">
-                                    <TempoEditor />
-                                    <PunchRecordingControls compact />
-                                    <div className="flex items-center gap-1 border-t border-border-soft pt-2">
-                                        <AutoScrollToggle />
-                                        <ToolSelector
-                                            rippleEditing={rippleEditing}
-                                            onToggleRipple={toggleRippleEditing}
-                                            compact
-                                        />
-                                        <SoloModeSelector soloMode={soloMode} compact />
-                                        <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-                                    </div>
-                                </div>
+                <Row justify="end" gap={1} className="transport-bar__action-right">
+                    {hasTimelineSurface ? (
+                        <Popover open={isClipNavigatorOpen} onOpenChange={setClipNavigatorOpen}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            ref={browseButtonRef}
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label="Browse timeline clips"
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.stopPropagation();
+                                                }
+                                            }}
+                                        >
+                                            <List className="size-3.5" aria-hidden="true" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Browse timeline clips</TooltipContent>
+                            </Tooltip>
+                            <PopoverContent
+                                align="end"
+                                aria-label="Timeline clip browser"
+                                onCloseAutoFocus={(event) => {
+                                    if (moreOpenRef.current) {
+                                        event.preventDefault();
+                                    }
+                                }}
+                            >
+                                <TimelineClipNavigator onClose={closeClipNavigator} />
                             </PopoverContent>
                         </Popover>
-                    </div>
-                )}
+                    ) : null}
+                    {!compactMode ? (
+                        <>
+                            <AutoScrollToggle />
+                            <Sep />
+                            <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
+                            <Sep />
+                            <SoloModeSelector soloMode={soloMode} />
+                            <Sep />
+                            <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                        </>
+                    ) : (
+                        <div className="transport-bar__action-more">
+                            <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        ref={moreTriggerRef}
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label="More transport controls"
+                                    >
+                                        <Ellipsis className="size-3.5" aria-hidden="true" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                    ref={moreSurfaceRef}
+                                    align="end"
+                                    aria-label="More transport controls"
+                                    onCloseAutoFocus={(event) => {
+                                        if (clipNavigatorOpenRef.current) {
+                                            event.preventDefault();
+                                        }
+                                    }}
+                                >
+                                    <div className="space-y-2">
+                                        <TempoEditor />
+                                        <PunchRecordingControls compact />
+                                        <div className="flex items-center gap-1 border-t border-border-soft pt-2">
+                                            <AutoScrollToggle />
+                                            <ToolSelector
+                                                rippleEditing={rippleEditing}
+                                                onToggleRipple={toggleRippleEditing}
+                                                compact
+                                            />
+                                            <SoloModeSelector soloMode={soloMode} compact />
+                                            <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                                        </div>
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+                    )}
+                </Row>
             </div>
         </Stack>
     );

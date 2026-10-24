@@ -7,6 +7,7 @@ export { BeatRulerBar, BEAT_RULER_HEIGHT } from './BeatRulerBar';
 export { ClipContextMenu } from './ClipContextMenu';
 export { MarkerLane, MARKER_LANE_HEIGHT } from './MarkerLane';
 export { TimelineChromeSurface } from './TimelineChromeSurface';
+export { TimelineClipNavigator } from './TimelineClipNavigator';
 export { TimelineMinimap } from './TimelineMinimap';
 export { TakeLanesView } from './TakeLanesView';
 export { TimelineSurface } from './TimelineSurface';
