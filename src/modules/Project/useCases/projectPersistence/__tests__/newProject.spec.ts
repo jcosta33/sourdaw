@@ -289,6 +289,56 @@ describe('newProject injectable', () => {
         expect(forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
+    // Choosing the open project's Recent entry starts no transaction of its own,
+    // so a New that has already activated stays current: only its caller's
+    // check can tell it the user chose to stay.
+    it('hands the previous project back when its caller withdraws it during native teardown', async () => {
+        const unloading = createDeferred<void>();
+        let isStillChosen = true;
+        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        const activation = newProject('Withdrawn Project', { shouldProceed: () => isStillChosen });
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        isStillChosen = false;
+        unloading.resolve(undefined);
+
+        await expect(activation).resolves.toBe(false);
+        expect(resetCrdtProject).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(projectStore.value).toMatchObject({
+            name: 'Existing Project',
+            loading: false,
+            initialized: true,
+        });
+    });
+
+    it('does not activate a project its caller withdrew before it began', async () => {
+        await expect(newProject('Withdrawn Project', { shouldProceed: () => false })).resolves.toBe(false);
+
+        expect(stopPlayback).not.toHaveBeenCalled();
+        expect(resetCrdtProject).not.toHaveBeenCalled();
+        expect(projectStore.value).toMatchObject({ name: 'Existing Project', loading: false, initialized: true });
+    });
+
+    it('hands the reset a switch check that reads its caller withdrawal', async () => {
+        let isStillChosen = true;
+        resetMocks.resetCrdtProject.mockImplementationOnce(
+            (_name: string, _onAuthorityReplaced?: () => void, isQuietAtSwitch?: () => boolean) => {
+                isStillChosen = false;
+                if (isQuietAtSwitch?.() === false) {
+                    return Promise.resolve({ status: 'transport-active' });
+                }
+                return Promise.resolve({ status: 'replaced', finalize: resetMocks.finalize });
+            }
+        );
+
+        await expect(newProject('Withdrawn Project', { shouldProceed: () => isStillChosen })).resolves.toBe(false);
+
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
+        expect(forgetProjectLatchedPedals).not.toHaveBeenCalled();
+        expect(projectStore.value).toMatchObject({ name: 'Existing Project', loading: false, initialized: true });
+    });
+
     // A Play or Record pressed while the reset awaits its durable steps is
     // rolling at the switch, and only the reset can see that; it refuses, and
     // this caller stops the transport and asks again.
@@ -424,6 +474,45 @@ describe('newProject injectable', () => {
         expect(clearRuntimeCachedAudioBuffers).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('leaves the previous project dirty when a take its stop committed was not saved and the reset then fails', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            // `loading` hides this commit from `markDirty`, as the take's own commit is.
+            expect(projectStore.value?.loading).toBe(true);
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+        takeMocks.saveProject.mockResolvedValue(false);
+        vi.mocked(resetCrdtProject).mockImplementationOnce(() => {
+            throw new Error('CRDT setup failed');
+        });
+
+        await expect(newProject('Broken Project')).resolves.toBe(false);
+
+        expect(projectStore.value).toMatchObject({
+            name: 'Existing Project',
+            loading: false,
+            dirty: true,
+        });
+    });
+
+    it('leaves the previous project clean when its save kept the take and the reset then fails', async () => {
+        vi.mocked(stopPlayback).mockImplementationOnce(() => {
+            takeMocks.state.settled++;
+            return Promise.resolve();
+        });
+        takeMocks.saveProject.mockImplementation(() => {
+            unsavedClosedTakes.markSavedThrough(takeMocks.state.settled);
+            return Promise.resolve(true);
+        });
+        vi.mocked(resetCrdtProject).mockImplementationOnce(() => {
+            throw new Error('CRDT setup failed');
+        });
+
+        await expect(newProject('Broken Project')).resolves.toBe(false);
+
+        expect(projectStore.value).toMatchObject({ name: 'Existing Project', loading: false, dirty: false });
     });
 
     // C1 — every refusal is decided before the switch, so the previous project
