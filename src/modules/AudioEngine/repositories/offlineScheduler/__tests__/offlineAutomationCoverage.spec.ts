@@ -290,20 +290,15 @@ describe('offline device-param automation capability coverage', () => {
         // restoration in `Voice::render` now read them.
         // Grand Boule's five automatable parameters now share its offline
         // worklet scheduling path, so 109 covered pairs becomes 114.
-        expect(census.verdicts).toBe(114);
+        expect(census.verdicts).toBe(135);
         // Moving Grand Boule out of the device-level class removes its five
         // parameter pairs from that count.
         // 182 → 180: #2076 removed the bacteria `morphX`/`morphY` descriptor
         // entries, taking their two device-level-exempt pairs with them.
         expect(census.deviceLevelExemptions).toBe(180);
-        // 17 → 23: #1539's six `decay_eq_*` bands on `dutch-oven`. They land in
-        // this class rather than in `verdicts` because the Dutch Oven declares
-        // exactly two offline ordinals (`mix`, `decay`) and always has — the
-        // fifteen rows they join say the same thing — so a new automatable
-        // parameter on this device arrives exempt by default. A verdict total
-        // that had moved instead would mean someone wired ordinals, which is a
-        // change to a wire format the crate shares and is not what that PR did.
-        expect(census.parameterLevelExemptions).toBe(23);
+        // Dutch Oven's 21 named residuals now carry pinned additive ordinals.
+        // Toaster swing remains in the distinct host note-timing route.
+        expect(census.parameterLevelExemptions).toBe(2);
 
         // (v) Every native factory now has a descriptor. This stays a separate
         // census class because an undescribed factory falls outside both the
@@ -338,6 +333,11 @@ describe('offline device-param automation capability coverage', () => {
         expect(Object.keys(PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS.fermenter ?? {}).sort()).toEqual([
             'activeLayer',
         ]);
+    });
+
+    it('covers all 23 Dutch Oven automatable parameters without an exemption', () => {
+        const census = walkNativeDspCensus();
+        expect(census.perDevice.get('dutch-oven')).toEqual({ covered: 23, exempt: 0, deviceLevel: false });
     });
 
     it('resolves every Faust family’s automatable params through its AudioParam map', () => {
