@@ -1,0 +1,40 @@
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  s_59e31a5c6f3e31::t_548eea71ca1ad6 174
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_59e31a5c6f3e31::t_e9b989a6727ce4 15,302-316,322-323,498
+  s_59e31a5c6f3e31::t_edf6baacb221ac 3-4,9-14,19-20,206-256,298,300-301,321,324-343,346-366,376,380-392,394-402,407-415,432-466,470-480,486-488,504-506
+  s_59e31a5c6f3e31::t_6d3f0a6b793b01 317-320,367-370,377-379,393,403-406,416-431,467-469,481-485,489-497,499-503
+  s_59e31a5c6f3e31::t_7b290ec815b993 299,344-345
+  s_59e31a5c6f3e31::t_1d44d3d80b45ab 507
+  s_59e31a5c6f3e31::t_1c299e5c5987b8 374-375
+  s_59e31a5c6f3e31::t_b7c0a466a2c711 371-373
+tests/e2e/timelineClipAccessibility.spec.ts
+  s_59e31a5c6f3e31::t_6d3f0a6b793b01 48-50,62-66,73-74,80-89,113-114,117
+  s_59e31a5c6f3e31::t_994a6b4e083997 46-47,51-61,67-72,75-79,90-112,115-116,118-119,121-130
+  s_59e31a5c6f3e31::t_7b290ec815b993 120
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_59e31a5c6f3e31::t_548eea71ca1ad6 1
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_59e31a5c6f3e31::t_548eea71ca1ad6 3,8,12,65-66,69,73,93-100,182-185,190-202,379-384,396-416,424-425,465-466
+  s_59e31a5c6f3e31::t_6d3f0a6b793b01 91-92,385-395,417-423,426-440,442-446,448-460,462-464
+src/modules/Arrangement/presentations/views/index.ts
+  s_59e31a5c6f3e31::t_548eea71ca1ad6 10
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_59e31a5c6f3e31::t_edf6baacb221ac 291-292,294-296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05c385768f63b9ff0afd092028b898f8f09a8e6e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
