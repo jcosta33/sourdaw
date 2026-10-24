@@ -1,0 +1,23 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_1c08b47ac3792f::t_bdea24a0f6ded6 746-747,749-754,876-877,945,1254,1263
+  s_1c08b47ac3792f::t_996ccda2166c55 276-283,508,729,735,755,757,857,859,863,869,879
+  s_1c08b47ac3792f::t_58fe8779b9dd3c 4,25,472-507,531,533,535,537,721-728,730-734,736-745,748,756,758-762,769-771,781-783,786,792-796,825,840-847,849,851-852,855-856,858,860-862,864-868,870-875,878,880,903-904,906-914,916,920-921,923,926-930,932-936,938-942,944,958,960-964,977,985-986,996,1004,1006-1007,1212,1217,1237,1242-1253,1255-1262,1264-1318
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_09588823bee08a 816
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db1978d65518350a6b0dfbc2587485524fd48ca1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
