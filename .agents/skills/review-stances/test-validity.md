@@ -6,6 +6,38 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
+
+Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
+(`789351350ae323da1bac0aa68fc35b80a294c328`) shows core metadata read before comments and a
+node-ID-only close. A controlled production-adapter probe moved the head during the final comment
+response; CLOSE happened before later refusal. Exact historical reviewer prompts are unavailable,
+so whether the missed composition risk lacked a stance, was mis-prompted or was mis-tiered remains
+unestablished. No live GitHub occurrence is claimed.
+
+Use actual inspection and close adapters over controlled provider responses. A stable head must
+close once; movement between core and comment responses must yield zero CLOSE mutations, while
+prior legitimate marker creation/compensation remains allowed. Prove the final witness contains no
+comment read, is bound to the same repository/PR/node/head/source/base, and directly precedes the
+mutation. Require malformed/missing witnesses to refuse and post-close/CLOSED replay movement to
+preserve the appropriate no-write or uncertain-owner result. A fake close that bypasses this native
+boundary cannot carry the claim; the final observation is not server-side compare-and-swap.
+
+### 2026-10-24 — an empty rollback projection hid an acknowledged remote marker (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) introduced the serializer and
+`VerifiedSupersessionCompensationError` release path around preexisting cleanup that only deleted
+visible markers. Fixtures covered unknown writes and altered rollback markers, but omitted a valid
+receipt followed by reads that hid the still-present marker. The final review record carried a
+strongest-tier ambiguous-write/altered-rollback stance; its exact historical raw prompt is
+unestablished. No physical or API-lag production occurrence is established.
+
+Separate actual remote marker state from the inspection projection. After acknowledged creation,
+omit that ID from every later read without deleting it. Both real serialized closure callers must
+retain the journaled owner, print recovery, and send zero unverified deletes; inspect the actual
+marker collection as well as the projected OPEN state. Preserve the observed-delete rollback and
+read-only release controls. The original comment-ID set alone is not proof of compensation.
+
 ### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
 
 PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but
@@ -51,6 +83,8 @@ markers, attempted closes and unavailable rollback verification must retain the 
 only proven compensation or a read-only refusal may release. Exercise the existing native
 recovery route with stable OPEN and CLOSED unmerged observations, and require no false success
 after refusal or lock-release failure. A second PR and completed replay are positive controls.
+Inspect the recovery output on fresh reconciliation and receipt replay: it must guide the original
+operation with its original bound inputs, without selecting one consumer of the shared owner.
 
 ### 2026-10-24 — cold stylesheet work consumed a composition spec's deadline (PR #5363 repair)
 
