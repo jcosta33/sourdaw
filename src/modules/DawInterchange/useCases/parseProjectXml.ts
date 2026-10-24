@@ -963,8 +963,8 @@ function parseArrangementClips(
             }
             if (
                 laneOrClips.element.tagName === 'Warps' &&
-                laneOrClips.children('Warp').length > 0 &&
-                hasNestedClips(laneOrClips)
+                ((laneOrClips.children('Warp').length > 0 && hasNestedClips(laneOrClips)) ||
+                    (node.element.tagName !== CLIP && laneOrClips.child(NOTES) !== null))
             ) {
                 warn(
                     context,

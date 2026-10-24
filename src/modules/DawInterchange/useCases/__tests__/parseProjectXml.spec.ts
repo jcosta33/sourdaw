@@ -1775,7 +1775,67 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             { name: 'Child', startBeat: 9, endBeat: 10, muted: true, notes: [{ pitch: 64 }] },
         ]);
         expect(parsed.tracks[0]?.clips).toHaveLength(2);
-        expect(parsed.warnings).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Warps', name: 'Warps', context: 'Keys', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('warns for dropped warped Notes beside a supported muted phrase and an outside child', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                    '<Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip name="Parent" time="8" duration="4" enable="false"><Lanes track="drums">' +
+                    '<Notes><Note time=".5" duration="1" channel="0" key="60"/></Notes>' +
+                    '<Warps id="warped" track="drums" contentTimeUnit="beats"><Notes>' +
+                    '<Note time="0" duration="1" channel="0" key="67"/></Notes>' +
+                    '<Warp time="0" contentTime="0"/><Warp time="4" contentTime="2"/></Warps>' +
+                    '<Clips><Clip name="Outside" time="5" duration="1"><Notes>' +
+                    '<Note time="0" duration="1" channel="0" key="64"/></Notes></Clip></Clips>' +
+                    '</Lanes></Clip>' +
+                    '<Clip name="Independent" time="20" duration="1"><Notes>' +
+                    '<Note time="0" duration=".5" channel="0" key="72"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Nested', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'nested.dawproject',
+        });
+        const keys = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+        const drums = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+
+        expect(keys).toMatchObject([{ name: 'Independent', startBeat: 20, endBeat: 21 }]);
+        expect(drums).toMatchObject([{ name: 'Parent', startBeat: 8, endBeat: 12, muted: true }]);
+        const phrase = drums?.[0];
+        expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
+            { pitch: 60, startBeat: 0.5, duration: 1 },
+        ]);
+        const independent = keys?.[0];
+        expect(independent && mapped.midi.notesByClipId[independent.id]).toMatchObject([{ pitch: 72 }]);
+        expect(
+            Object.values(mapped.midi.notesByClipId)
+                .flat()
+                .map((note) => note.pitch)
+                .sort((left, right) => left - right)
+        ).toEqual([60, 72]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Warps',
+                sourceId: 'warped',
+                name: 'Warps',
+                context: 'Drums',
+                handling: 'dropped',
+            },
+            { kind: 'unsupported-clip', sourceType: 'Clip', name: 'Outside', context: 'Drums', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.warnings[0]!.sourceOrder).toBeGreaterThan(0);
+        expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
     });
 
     it('keeps a muted recursive Notes phrase when its only child Clip falls outside the parent window', () => {
