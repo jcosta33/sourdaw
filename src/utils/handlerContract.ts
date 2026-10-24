@@ -1212,7 +1212,7 @@ export type AppAction =
       }
     | { type: 'selectTrack'; payload: { trackId: string } }
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
-    | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
+    | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean; expectedSoloed?: boolean } }
     | {
           /** Guarded self-inverse of comp take selection. Fresh intent carries a
            *  non-null `takeId`; replay also binds the captured lane owner and may

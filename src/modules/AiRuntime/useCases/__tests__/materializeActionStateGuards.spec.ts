@@ -126,6 +126,32 @@ describe('materializeActionStateGuards', () => {
         });
     });
 
+    it('guards a solo change with the solo state the track holds now', () => {
+        const result = materializeActionStateGuards(
+            [{ type: 'soloTrack', payload: { trackId: 'track-existing', soloed: true } }],
+            { ...context, tracks: [createExistingTrack()] }
+        );
+
+        expect(result).toEqual({
+            status: 'accepted',
+            actions: [
+                {
+                    type: 'soloTrack',
+                    payload: { trackId: 'track-existing', soloed: true, expectedSoloed: false },
+                },
+            ],
+        });
+    });
+
+    it('refuses a solo change on a track the project does not hold', () => {
+        const result = materializeActionStateGuards(
+            [{ type: 'soloTrack', payload: { trackId: 'track-missing', soloed: true } }],
+            context
+        );
+
+        expect(result).toEqual({ status: 'rejected', reason: 'Track is unavailable: track-missing' });
+    });
+
     it('refuses a projected track identity that already exists in project truth', () => {
         const existingTrack = {
             id: 'track-ai-00000000-0000-4000-8000-000000000001',
