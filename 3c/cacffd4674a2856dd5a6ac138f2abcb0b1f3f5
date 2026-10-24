@@ -1,0 +1,65 @@
+src/modules/Crust/presentations/components/__tests__/CrustControlZone.spec.tsx
+  s_59e31a5c6f3e31::t_f0ff687a6a7f01 8,21-42,58,70,81,97,104,120
+src/modules/Crust/useCases/setCrustPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_84ecce126e0440 2
+  s_59e31a5c6f3e31::t_dd370cbdfd17da 4,16-19,31,40-42,46-48,54-59
+  s_59e31a5c6f3e31::t_ba0c7d051af0d9 20
+  s_59e31a5c6f3e31::t_605b708966db49 8-9,28-29,43-45
+  s_59e31a5c6f3e31::t_2971a90d5d4bf3 3,30,49-53
+src/utils/UI/effectDisclosureTier.ts
+  s_59e31a5c6f3e31::t_8b69003e160407 25
+src/modules/Crust/useCases/__tests__/setCrustPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_84ecce126e0440 1,11,108,117-118,123-124,200-208,214
+  s_59e31a5c6f3e31::t_8b69003e160407 213
+  s_59e31a5c6f3e31::t_ac9e8dd107c61b 215-216
+  s_59e31a5c6f3e31::t_e3ca5e4e3f34cd 3-7,12-19,59-100,103-107,114,119-122,218-272
+  s_59e31a5c6f3e31::t_99305f728f50e1 28
+  s_59e31a5c6f3e31::t_36bd97fa08ec71 29
+  s_59e31a5c6f3e31::t_36839872326e18 142-177
+  s_59e31a5c6f3e31::t_e4bd4cfa1c2089 273-300
+tests/e2e/crustAttackAutoTestId.spec.ts
+  s_59e31a5c6f3e31::t_32215c46a90a8b 29,33-39
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 30-32
+tests/e2e/crustReleaseAutoTestId.spec.ts
+  s_59e31a5c6f3e31::t_32215c46a90a8b 30,34-40
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 31-33
+tests/e2e/crustOversamplingTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 33-36
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 30-32
+tests/e2e/crustAttackTimeTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 39-42
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 36-38
+tests/e2e/crustUnityDeltaTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 32-35
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 29-31
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  s_59e31a5c6f3e31::t_f11864c48ea54a 27-30,32,35,61,74,90,122,130,154
+  s_59e31a5c6f3e31::t_208e964ee54015 13-16,20-24,58,75,91,131,155
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 17-19,55-57
+tests/e2e/crustReleaseLookaheadTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 45-48
+  s_59e31a5c6f3e31::t_96efeb02a48b1d 79
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 42-44
+tests/e2e/crustChannelLinkTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 35-38
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 32-34
+tests/e2e/crustLevelChipsTestId.spec.ts
+  s_59e31a5c6f3e31::t_208e964ee54015 13-15,35,38,42-46,48,50-52,54-68
+  s_59e31a5c6f3e31::t_1ba4eb6ff7cb08 32-34,39-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ccacffd4674a2856dd5a6ac138f2abcb0b1f3f5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
