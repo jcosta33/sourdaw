@@ -35,12 +35,27 @@ function clipMidiBucketsAreAbsent(clipId: string): boolean {
     );
 }
 
-function targetOwnersAreAbsent(action: RestoreClipAction): boolean {
+function targetOwnersAreAbsent(
+    action: RestoreClipAction,
+    priorActions: readonly AppAction[],
+    projected: NonNullable<ReturnType<typeof projectClipReplayPrefix>>
+): boolean {
     const { clipId, ripplePlan } = action.payload;
+    // These admitted predecessors retire every clip-owned bucket. Their
+    // execution is still checked against live owners before this restore writes.
+    const retiredByPrefix = priorActions.some(
+        (prior) =>
+            ((prior.type === 'removeClip' || prior.type === 'discardDuplicatedClip') &&
+                prior.payload.clipId === clipId) ||
+            (prior.type === 'restoreClipSplitState' &&
+                prior.payload.rightClipId === clipId &&
+                !prior.payload.replacement.rightClip)
+    );
     return (
-        clipMidiBucketsAreAbsent(clipId) &&
-        clipSatelliteEntriesMatchSnapshot([{ clipId, gainEnvelope: null, warpState: null }]) &&
-        clipAutomationLaneTransitionMatchesStore([clipId], [], ripplePlan?.clipAutomationLanes ?? [])
+        (retiredByPrefix ||
+            (clipMidiBucketsAreAbsent(clipId) &&
+                clipSatelliteEntriesMatchSnapshot([{ clipId, gainEnvelope: null, warpState: null }], priorActions))) &&
+        clipAutomationLaneTransitionMatchesStore([clipId], [], ripplePlan?.clipAutomationLanes ?? [], projected.lanes)
     );
 }
 
@@ -136,10 +151,12 @@ function restoreStateMatches(
     // recreate the same identity under another owner after removal.
     const tracks = getTrackStoreState()?.tracks ?? [];
     const priorActions = context?.actions.slice(0, context.actionIndex);
-    const projectedPriorActions = completedPrefix ? [] : priorActions;
+    const projectedPriorActions = completedPrefix ? [] : (priorActions ?? []);
+    const projected = projectClipReplayPrefix(projectedPriorActions);
     if (
+        !projected ||
         !tracks.some((track) => track.id === action.payload.trackId) ||
-        tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId)) ||
+        projected.clips.some((owner) => owner.clip.id === action.payload.clipId) ||
         !capturedMidiIdentitiesAreAvailable(action, priorActions, completedPrefix) ||
         !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], projectedPriorActions) ||
         !rippleDeleteShiftStateMatchesStore(
@@ -153,7 +170,7 @@ function restoreStateMatches(
     }
     // Removal retires these target-owned records. A later owner is a conflict,
     // even when the capture was empty; peer records under other ids stay free.
-    return targetOwnersAreAbsent(action);
+    return targetOwnersAreAbsent(action, projectedPriorActions, projected);
 }
 
 /**

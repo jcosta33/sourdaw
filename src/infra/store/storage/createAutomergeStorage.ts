@@ -2141,7 +2141,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             settleStaleCommittedWrite(pending, claimRevision);
             return;
         }
-        const localValue = cachedValue;
+        // A later owner may already be visible. Only this owner's view (with
+        // explicit local edits projected into it) belongs in its committed baseline.
+        const localValue = preserveLocalRuntimeStateOnRecompute ? pending.value : cachedValue;
         const projectionPurpose = pending.revision === cachedRevision ? 'visible' : 'baseline';
         let projected: TData | null;
         if (decoded === undefined) {
@@ -2155,7 +2157,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 settleStaleCommittedWrite(pending, claimRevision);
                 return;
             }
-            const currentLocalValue = cachedValue;
+            const currentLocalValue = preserveLocalRuntimeStateOnRecompute ? pending.value : cachedValue;
             if (projected !== null && currentLocalValue !== null && projectCommittedLocalState) {
                 projected = projectCommittedLocalState({ authorityValue: projected, localValue: currentLocalValue });
             }

@@ -26,6 +26,7 @@ import { registerActionReplayCapabilities, revokeActionReplayCapability } from '
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
+import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntries } from './commitUndoEntries';
 import { compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
@@ -902,6 +903,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             );
             if (storageTransaction.status === 'threw') {
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 const reason = failureReason(storageTransaction.error);
                 logger.error(
@@ -922,6 +924,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 const baseReason = failureReason(error);
                 const reason = appendAbortFailures(baseReason, compensationFailure, rollbackFailure);
@@ -944,6 +947,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
 
             if (executedActions.length === 0) {
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 return { status: 'no-op', actions: [] };
             }
@@ -954,6 +958,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 if (compensationFailure || rollbackFailure) {
                     return {
@@ -973,6 +978,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             const committedActions = executedActions.map(({ requestedAction }) => requestedAction);
+            const captureActions = executedActions.map(({ action }) => action);
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
 
             try {
@@ -988,11 +994,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 });
                 storageTransaction.commit();
             } catch (error) {
+                if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    commitRedoInverseCapture({ phase: 'published', actions: captureActions });
+                }
                 const cleanupWarning = clearBatchSemanticContext();
                 const reason = failureReason(error);
                 logger.error(new Error('Action batch storage commit failed', { cause: error }));
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
                     const reconciliationWarning = await reconcileAmbiguousRuntime(executedActions);
+                    commitRedoInverseCapture({ phase: 'settle', actions: captureActions });
                     const warnings = [cleanupWarning, reconciliationWarning].filter(
                         (warning): warning is string => warning !== null
                     );
@@ -1006,6 +1016,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 if (compensationFailure || rollbackFailure) {
                     return {
                         status: 'failed',
@@ -1019,6 +1030,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'failed', reason, actions: [] };
             }
 
+            commitRedoInverseCapture({ phase: 'published', actions: captureActions });
             const warningDetails: BatchWarningDetail[] = [];
             const semanticCleanupWarning = clearBatchSemanticContext();
             if (semanticCleanupWarning) {
@@ -1081,6 +1093,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
             }
 
+            commitRedoInverseCapture({ phase: 'settle', actions: captureActions });
             if (warningDetails.length > 0) {
                 return {
                     status: 'committed-with-warning',
