@@ -611,7 +611,9 @@ describe('a measured preview through proposal and approval', () => {
         };
         const ADOPTED_CALL_IDS = ['measure-preview'];
         scriptTurns(revision, [
-            // The target is resolved by the interpretation turn above. The loop admits five turns in all.
+            // The target is resolved from the project context, so no project.query turn is spent. The
+            // measure and the discovery need no earlier receipt and share a turn: four tool turns, after
+            // the interpretation turn above.
             [
                 {
                     id: 'measure-target',
@@ -623,19 +625,13 @@ describe('a measured preview through proposal and approval', () => {
                         subject: 'project',
                     },
                 },
-            ],
-            [
                 {
                     id: 'discover-1',
                     name: 'recipe.discover',
                     arguments: { descriptors: ['punchy'], targetId: 'drums' },
                 },
-                {
-                    id: 'expand-1',
-                    name: 'recipe.expand',
-                    arguments: { recipeId: 'drums-punchy', targetId: 'drums' },
-                },
             ],
+            [{ id: 'expand-1', name: 'recipe.expand', arguments: { recipeId: 'drums-punchy', targetId: 'drums' } }],
             [measureCallFor('measure-preview', plannedList)],
             [proposeCall({ commands: [], compiledCallIds: ADOPTED_CALL_IDS })],
         ]);
@@ -653,6 +649,10 @@ describe('a measured preview through proposal and approval', () => {
             failedReads: [],
         });
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        const turnOf = (callId: string) => receipts.find((receipt) => receipt.callId === callId)?.turn;
+        expect(turnOf('discover-1')).toBe(turnOf('measure-target'));
+        expect(turnOf('expand-1')).toBeGreaterThan(turnOf('discover-1') ?? Number.POSITIVE_INFINITY);
+        expect(turnOf('measure-preview')).toBeGreaterThan(turnOf('expand-1') ?? Number.POSITIVE_INFINITY);
         expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
             expect.arrayContaining(
                 ['measure-target', 'discover-1', 'expand-1', 'measure-preview'].map((callId) => ({

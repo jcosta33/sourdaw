@@ -15,7 +15,10 @@ const METHOD_STEPS: readonly MethodStep[] = [
         name: 'the method applies to a mix outcome without values',
         clause: 'When the request asks for a mix outcome without naming values, such as warmer or less muddy, ',
     },
-    { name: 'resolve the target', clause: 'work in this order: (1) resolve the target with project.query; ' },
+    {
+        name: 'resolve the target',
+        clause: 'work in this order: (1) resolve the target from the project context, calling project.query only when that context is insufficient; ',
+    },
     { name: 'measure the target', clause: '(2) measure it with analysis.measure; ' },
     {
         name: 'discover and expand a recipe',
@@ -29,6 +32,10 @@ const METHOD_STEPS: readonly MethodStep[] = [
     {
         name: 'propose adopting only the preview call id',
         clause: "(6) propose with command.batch.propose, adopting only the preview's callId in compiledCallIds, because its list already carries the recipe's commands. ",
+    },
+    {
+        name: 'reads needing no earlier receipt share a turn',
+        clause: 'Reads that need no earlier receipt share one turn, such as analysis.measure on the target beside recipe.discover; recipe.expand, the preview and the propose each wait for the receipt before them. ',
     },
     { name: 'propose ends the run', clause: 'command.batch.propose ends the run, so measure before it. ' },
     {
