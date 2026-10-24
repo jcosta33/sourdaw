@@ -652,7 +652,7 @@ function nativeSupersessionFixture(
             } else {
                 events.push('replacement-comments');
             }
-            let commentsToSerialize = [];
+            let commentsToSerialize: IssueComment[] = [];
             if (id === 'PR_old') {
                 commentsToSerialize = comments;
             } else if (id === `PR_${parentNumber}`) {
