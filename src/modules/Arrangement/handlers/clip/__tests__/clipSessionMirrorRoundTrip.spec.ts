@@ -5857,6 +5857,103 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(midiStore.value?.notesByClipId['clip-a']).toEqual([peerNote]);
     });
 
+    it.each([false, true])('saved remove Undo refuses hidden peer owners grouped=%s', async (grouped) => {
+        const capturedNote = { id: 'captured-hidden-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
+        midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [capturedNote] } });
+        const { original } = await persistRemovalWithDistinctOwners(grouped);
+        const mirrorWrite = vi.spyOn(Storage.prototype, 'setItem');
+        try {
+            reloadSavedProject();
+            await vi.waitFor(() => expect(mirrorWrite).toHaveBeenCalledWith(UNDO_SESSION_KEY, expect.any(String)));
+        } finally {
+            mirrorWrite.mockRestore();
+        }
+        expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+        const capturedGain = original.gain?.envelopes['clip-a'];
+        const capturedWarp = original.warp?.states['clip-a'];
+        if (!capturedGain || !capturedWarp) {
+            throw new Error('Expected genuine removed clip satellites');
+        }
+        const peerGain = {
+            ...capturedGain,
+            points: capturedGain.points.map((point) => ({ ...point, gainDb: -3 })),
+        };
+        const peerWarp = { ...capturedWarp, originalTempo: 123 };
+        const peerNote = { ...capturedNote, id: 'peer-hidden-note', pitch: 72 };
+        const peerLane = automationLane('peer-hidden-lane', 'clip-a');
+        syncPeerProject((project) => {
+            project.gainEnvelopes.envelopes['clip-a'] = peerGain;
+            project.warpStates.states['clip-a'] = peerWarp;
+            project.midi.notesByClipId['clip-a'] = [peerNote];
+            project.automation.lanes.push(peerLane);
+        });
+        expect(getCrdtDoc<PeerProject>('root')?.gainEnvelopes.envelopes['clip-a']?.points[0]?.gainDb).toBe(-3);
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']).toEqual(peerGain);
+        const pending = runWithAutomergeStorageTransaction(undefined, () => {
+            const envelopes = { ...gainEnvelopeStore.value!.envelopes };
+            const states = { ...warpStateStore.value!.states };
+            const notesByClipId = { ...midiStore.value!.notesByClipId };
+            delete envelopes['clip-a'];
+            delete states['clip-a'];
+            delete notesByClipId['clip-a'];
+            gainEnvelopeStore.set({ ...gainEnvelopeStore.value!, envelopes });
+            warpStateStore.set({ ...warpStateStore.value!, states });
+            midiStore.set({ ...midiStore.value!, notesByClipId });
+            automationStore.set({
+                ...automationStore.value!,
+                lanes: automationStore.value!.lanes.filter((lane) => lane.clipId !== 'clip-a'),
+            });
+        });
+        expect(pending.status).toBe('returned');
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']).toBeUndefined();
+        expect(warpStateStore.value?.states['clip-a']).toBeUndefined();
+        expect(midiStore.value?.notesByClipId['clip-a']).toBeUndefined();
+        expect(automationStore.value?.lanes.some((lane) => lane.clipId === 'clip-a')).toBe(false);
+        const raw = structuredClone(getCrdtDoc('root'));
+        const heads = Automerge.getHeads(getCrdtDoc('root')!);
+        const owners = ownerProjections();
+        const history = structuredClone(undoHistoryStore.value);
+        const mirror = sessionStorage.getItem(UNDO_SESSION_KEY);
+        const writes = [
+            vi.spyOn(trackStore, 'set'),
+            vi.spyOn(midiStore, 'set'),
+            vi.spyOn(gainEnvelopeStore, 'set'),
+            vi.spyOn(warpStateStore, 'set'),
+            vi.spyOn(automationStore, 'set'),
+            vi.spyOn(takeLaneStore, 'set'),
+            vi.spyOn(undoHistoryStore, 'set'),
+            vi.spyOn(Storage.prototype, 'setItem'),
+        ];
+        try {
+            expect.soft((await undo()).headConsumed).toBe(false);
+            expect.soft(getCrdtDoc('root')).toEqual(raw);
+            expect.soft(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+            expect.soft(ownerProjections()).toEqual(owners);
+            expect.soft(undoHistoryStore.value).toEqual(history);
+            expect.soft(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(mirror);
+            expect.soft(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+            for (const write of writes) {
+                expect.soft(write).not.toHaveBeenCalled();
+            }
+        } finally {
+            for (const write of writes) {
+                write.mockRestore();
+            }
+            pending.abort();
+        }
+        projectCrdtToStores();
+        expect(getCrdtDoc('root')).toEqual(raw);
+        expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(mirror);
+        expect(getCrdtDoc<PeerProject>('root')?.gainEnvelopes.envelopes['clip-a']).toEqual(peerGain);
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']).toEqual(peerGain);
+        expect(warpStateStore.value?.states['clip-a']).toEqual(peerWarp);
+        expect(midiStore.value?.notesByClipId['clip-a']).toEqual([peerNote]);
+        expect(automationStore.value?.lanes).toContainEqual(peerLane);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+    });
+
     it.each([false, true].flatMap((grouped) => ['abort', 'commit'].map((settle) => ({ grouped, settle }))))(
         'saved remove Redo refuses a foreign pending capture then retries grouped=$grouped settle=$settle',
         async ({ grouped, settle }) => {

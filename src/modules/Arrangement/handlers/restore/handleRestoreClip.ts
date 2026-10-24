@@ -1,3 +1,4 @@
+import { hasForeignPendingProjectWrites } from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -31,6 +32,15 @@ function clipMidiBucketsAreAbsent(clipId: string): boolean {
         (!Object.hasOwn(midi.notesByClipId, clipId) &&
             !Object.hasOwn(midi.ccByClipId, clipId) &&
             !Object.hasOwn(midi.pitchBendByClipId, clipId))
+    );
+}
+
+function targetOwnersAreAbsent(action: RestoreClipAction): boolean {
+    const { clipId, ripplePlan } = action.payload;
+    return (
+        clipMidiBucketsAreAbsent(clipId) &&
+        clipSatelliteEntriesMatchSnapshot([{ clipId, gainEnvelope: null, warpState: null }]) &&
+        clipAutomationLaneTransitionMatchesStore([clipId], [], ripplePlan?.clipAutomationLanes ?? [])
     );
 }
 
@@ -116,6 +126,11 @@ function restoreStateMatches(
     context?: HandlerValidationContext,
     completedPrefix = false
 ): boolean {
+    // Projected absence cannot authorize a restore while another owner has
+    // unpublished root writes; that projection may hide committed peer data.
+    if (hasForeignPendingProjectWrites()) {
+        return false;
+    }
     // The restore inserts `clipSnapshot` as-is, so it assumes the owning track
     // is present and the removed clip is absent from every track. A peer may
     // recreate the same identity under another owner after removal.
@@ -136,16 +151,9 @@ function restoreStateMatches(
     ) {
         return false;
     }
-    const { clipId, ripplePlan } = action.payload;
     // Removal retires these target-owned records. A later owner is a conflict,
     // even when the capture was empty; peer records under other ids stay free.
-    if (!clipMidiBucketsAreAbsent(clipId)) {
-        return false;
-    }
-    return (
-        clipSatelliteEntriesMatchSnapshot([{ clipId, gainEnvelope: null, warpState: null }]) &&
-        clipAutomationLaneTransitionMatchesStore([clipId], [], ripplePlan?.clipAutomationLanes ?? [])
-    );
+    return targetOwnersAreAbsent(action);
 }
 
 /**
