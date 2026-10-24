@@ -27,6 +27,7 @@ const GC_SPEC = 'src/modules/AudioRendering/presentations/views/__tests__/export
 const GC_CHILD_MARKER = 'SOURDAW_EXPORT_STREAMING_GC_CHILD';
 const GC_CHILD_DEADLINE_MS = 150_000;
 const GC_CHILD_OUTPUT_LIMIT = 1024 * 1024;
+const GC_CHILD_OUTPUT_TAIL_LIMIT = 8 * 1024;
 const GC_CASE_TIMEOUT_MS =
     process.env[GC_CHILD_MARKER] === '1' || typeof Reflect.get(globalThis, 'gc') === 'function' ? 120_000 : 180_000;
 
@@ -67,14 +68,24 @@ async function runGcChild(cwd: string, reportPath: string): Promise<string> {
     );
     let stdout = '';
     let stderr = '';
+    let stdoutLength = 0;
+    let stderrLength = 0;
+    let stdoutTail = '';
+    let stderrTail = '';
     let failure: Error | undefined;
     const collect = (chunk: Buffer, stream: 'stdout' | 'stderr') => {
+        const content = chunk.toString();
+        const captured = content.slice(0, Math.max(0, GC_CHILD_OUTPUT_LIMIT - stdout.length - stderr.length));
         if (stream === 'stdout') {
-            stdout += chunk.toString();
+            stdoutLength += content.length;
+            stdout += captured;
+            stdoutTail = (stdoutTail + content).slice(-GC_CHILD_OUTPUT_TAIL_LIMIT);
         } else {
-            stderr += chunk.toString();
+            stderrLength += content.length;
+            stderr += captured;
+            stderrTail = (stderrTail + content).slice(-GC_CHILD_OUTPUT_TAIL_LIMIT);
         }
-        if (stdout.length + stderr.length > GC_CHILD_OUTPUT_LIMIT && !failure) {
+        if (stdoutLength + stderrLength > GC_CHILD_OUTPUT_LIMIT && !failure) {
             failure = new Error('GC child output exceeded its limit.');
             stopGcChild(child.pid);
         }
@@ -82,8 +93,10 @@ async function runGcChild(cwd: string, reportPath: string): Promise<string> {
     child.stdout.on('data', (chunk: Buffer) => collect(chunk, 'stdout'));
     child.stderr.on('data', (chunk: Buffer) => collect(chunk, 'stderr'));
     const timer = setTimeout(() => {
-        failure = new Error('GC child exceeded its 150-second deadline.');
-        stopGcChild(child.pid);
+        if (!failure) {
+            failure = new Error('GC child exceeded its 150-second deadline.');
+            stopGcChild(child.pid);
+        }
     }, GC_CHILD_DEADLINE_MS);
     try {
         await new Promise<void>((resolve, reject) => {
@@ -94,7 +107,11 @@ async function runGcChild(cwd: string, reportPath: string): Promise<string> {
                 if (failure || code !== 0 || signal) {
                     stopGcChild(child.pid);
                     reject(
-                        new Error(`GC child failed (${String(code)}, ${String(signal)}): ${failure?.message ?? stderr}`)
+                        new Error(
+                            `GC child failed (${String(code)}, ${String(signal)}): ${failure?.message ?? 'nonzero exit or signal'}. ` +
+                                `stdout length=${stdoutLength}, tail=${JSON.stringify(stdoutTail)}; ` +
+                                `stderr length=${stderrLength}, tail=${JSON.stringify(stderrTail)}`
+                        )
                     );
                     return;
                 }
