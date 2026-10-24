@@ -9,6 +9,7 @@
 export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/agentWorkspace.spec.ts',
     'tests/e2e/aiConfirmApplyUndo.spec.ts',
+    'tests/e2e/aiProviderToolAuthority.spec.ts',
     'tests/e2e/audioOwnership.native.spec.ts',
     'tests/e2e/browserAiWebGpuAdmission.spec.ts',
     'tests/e2e/browserDisplayScale.spec.ts',
