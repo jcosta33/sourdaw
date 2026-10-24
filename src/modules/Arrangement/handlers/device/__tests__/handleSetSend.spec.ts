@@ -260,6 +260,12 @@ describe('handleSetSend', () => {
         expect(
             handleSetSend.canReapplyAfterDivergence?.({
                 type: 'setSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.2, expectedPreFader: false },
+            })
+        ).toBe(false);
+        expect(
+            handleSetSend.canReapplyAfterDivergence?.({
+                type: 'setSend',
                 payload: { trackId: 't1', busId: 'bus-1', level: 0.2 },
             })
         ).toBe(false);

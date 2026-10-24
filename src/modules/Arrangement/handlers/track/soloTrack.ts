@@ -10,10 +10,9 @@ function liveSoloed(trackId: string): boolean | undefined {
 
 export const handleSoloTrack = createHandler<'soloTrack'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedSoloed !== undefined,
-    // Conflicts when `expectedSoloed` no longer matches the live track, as muteTrack
-    // does; undo step-over (#2881) relies on it, because a plain-click exclusive
-    // solo rewrites solo flags without an undo entry.
-    canReportConflict: true,
+    // Deliberately not `canReportConflict`: a manual solo's inverse and redo carry
+    // no expectation and cannot refuse, so undo step-over (#2881) must never land
+    // on one and overwrite a solo the user set since.
     validate: (action, context) => {
         const currentSoloed = getPlannedTrackState(context, action.payload.trackId)?.soloed;
         return action.payload.expectedSoloed === undefined || currentSoloed === action.payload.expectedSoloed;
