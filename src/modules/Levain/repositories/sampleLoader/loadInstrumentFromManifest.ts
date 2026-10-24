@@ -375,12 +375,13 @@ type BudgetWaiter = { resolve: (granted: boolean) => void; granted: boolean };
  *
  * A credit is held from posting a chunk until the worklet acknowledges it. A
  * load that ends with chunks unacknowledged (aborted, failed) keeps those
- * credits: its chunks are still queued ahead of its abort on the port, and the
- * worklet still copies them. They return one per acknowledgement, and all at
- * once at the ordered retired-bank release fence, or when the port is closed
- * or the processor ends. Waiters are served first come, first served: a
- * returned credit goes straight to the oldest waiter, and a new reservation
- * never takes a free credit past a queue.
+ * credits: transferred chunks may still hold buffers while queued ahead of
+ * abort and release. The worklet may process them before abort, while a
+ * refusal can leave later queued chunks with no ACK. Credits return one per
+ * acknowledgement, and all at once at the ordered retired-bank release fence,
+ * or when the port is closed or the processor ends. Waiters are served first
+ * come, first served: a returned credit goes straight to the oldest waiter,
+ * and a new reservation never takes a free credit past a queue.
  */
 const chunkBudget = { credits: LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT, waiters: [] as BudgetWaiter[] };
 
