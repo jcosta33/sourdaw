@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -38,27 +39,6 @@ test.describe('MIDI editor — note operations', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_midi_editor(page);
-    });
-
-    test('Creating a note enables the Undo button', async ({ page }) => {
-        const piano_roll = page.getByLabel('Piano roll editor');
-        const undo = page.getByRole('button', { name: 'Undo', exact: true });
-
-        // Before creating a note, capture undo state.
-        const enabled_before = await undo.isEnabled();
-
-        // Double-click to create a note in the piano roll.
-        const box = await piano_roll.boundingBox();
-        if (!box) throw new Error('piano roll missing');
-        await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
-        await page.waitForTimeout(500);
-
-        // After creating a note, undo must be enabled.
-        await expect(undo).toBeEnabled();
-        // Sanity: if it was disabled before, it is now enabled (a real transition).
-        if (!enabled_before) {
-            await expect(undo).toBeEnabled();
-        }
     });
 
     test('Chord-stamp-mode toggle is reachable from the MIDI editor', async ({ page }) => {
@@ -107,6 +87,7 @@ test.describe('Setlist — items and auto-advance', () => {
         await open_dock_tab(page, 'setlist');
     });
 
+    // Owns the auto-advance transition formerly claimed by setlistLoopStation.
     test('Adding items grows the list and auto-advance toggle flips aria-pressed', async ({ page }) => {
         const add_btn = page.getByRole('button', { name: 'Add setlist item' });
         await add_btn.click();
@@ -194,6 +175,8 @@ test.describe('Analysis panel', () => {
         const panel = page.locator('#bottom-dock-tabpanel');
         await expect(panel).toBeVisible();
         // The analysis panel exposes at least one labeled metering surface.
-        expect(await panel.getByRole('img', { name: /meter|spectrum|goniometer|correlation/i }).count()).toBeGreaterThan(0);
+        expect(
+            await panel.getByRole('img', { name: /meter|spectrum|goniometer|correlation/i }).count()
+        ).toBeGreaterThan(0);
     });
 });

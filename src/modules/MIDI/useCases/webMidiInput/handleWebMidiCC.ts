@@ -7,6 +7,7 @@ import {
     isDataEntryCc,
     MPE_FIRST_MEMBER_CHANNEL,
 } from '../../models/MidiControllerState';
+import { type MidiCC } from '../../models/MidiNote';
 import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
@@ -14,8 +15,13 @@ import { ingestChannelControlChange } from '../../repositories/webMidi/ingestCha
 import { memberExpressionState, setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
 import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
+import { isRegisteredParameterController } from '../../services/registeredParameterState';
+import { readLiveRegisteredStateRows } from '../recordedControllerTake/readLiveRegisteredStateRows';
 
+import { isCapturedByMidiLearn } from './isCapturedByMidiLearn';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordChannelEvent } from './recordChannelEvent';
+import { admitsRecordedControlChange } from './recordedControlChangeAdmission';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
@@ -36,7 +42,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             timeStamp?: number | CapturedInputEventTime
         ): void {
             const learnState = deps.getMidiLearnState();
-            if (learnState?.isLearning && learnState.learningTarget) {
+            if (isCapturedByMidiLearn(learnState)) {
                 deps.completeMidiLearn(channel, cc);
                 return;
             }
@@ -64,6 +70,12 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             ) {
                 earlierBendRange = resolveBendRangeSemitones({ channel, mpeEnabled });
             }
+            // Only a message to the RPN/NRPN machine moves the registered-parameter state, and a take's
+            // first row into a clip needs the state from before that row's own message.
+            let registeredStateBefore: MidiCC[] | undefined;
+            if (isRegisteredParameterController(cc)) {
+                registeredStateBefore = readLiveRegisteredStateRows();
+            }
             const controlChange = ingestChannelControlChange({ channel, cc, value });
             if (controlChange.consumed && earlierBendRange !== undefined) {
                 const bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
@@ -87,6 +99,28 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         });
                     }
                 }
+            }
+
+            // The raw controller and byte, before anything below consumes them:
+            // a replayed RPN/NRPN sequence or pedal needs the wire messages, not
+            // the decoded meaning. What the take admits is decided by the one
+            // rule the take's starting pedal state is read by as well.
+            if (
+                admitsRecordedControlChange({
+                    learnState,
+                    mpeEnabled,
+                    channel,
+                    cc,
+                    resolvedCc: controlChange.cc,
+                    consumed: controlChange.consumed,
+                })
+            ) {
+                recordChannelEvent(deps, {
+                    trackId: getTargetTrackId(),
+                    channel,
+                    event: { kind: 'controlChange', controller: cc, value, registeredStateBefore },
+                    timeStamp,
+                });
             }
             if (controlChange.consumed) {
                 return;

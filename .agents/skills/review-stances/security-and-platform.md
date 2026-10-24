@@ -22,26 +22,25 @@ dispatch.
 
 ## Lessons from escapes
 
-### 2026-10-21 — the Linux census treated busy-account transients as live users (introduced by PR #5274)
+### 2026-10-21 — a capped catalog count could not converge on a busy Mac (introduced by PR #5274, retained by PR #5331)
 
-The third escape of one guard lesson. PRs #5345 and #5355 repaired only the long-lived denied
-process, so the runner-account "Review tooling unit suite" still failed six rows whenever guard
-specs ran beside other workers. Three transients remained. A second same-UID arrival during the one
-permitted replacement, often a concurrent census's own `ps`, gave `proc-live-pid-uninspected`. An
-exiting task denies `/proc/<pid>/fd` once its memory map is gone; reaped before its status read, it
-gave `phase=fd-list:error=EACCES` with unknown status, and the guard never sampled it as gone again.
-A release attempt that a later proof superseded still wrote its diagnostic into the child's parsed
-output. Both prior fixes were verified only beside a quiet account, never under concurrent churn.
+PR #5274 allowed two Darwin `lsof` observations and PR #5331 three, within one five-second
+deadline. `lsof` intermittently omits live same-UID processes, newborn or already listed, so under
+real load every allowed catalog could miss one: guarded runs whose own work succeeded ended
+`FAILED (leak)` and stopped their lanes (issue #5337). Both reviews accepted a fixed catalog count
+as the conservative bound; no stance measured availability under natural process churn. This
+supersedes the three-observation limit in the 2026-10-12 Darwin lesson below.
 
-Probe: inject a second live arrival and require reclamation after a complete third inspection, and
-endless arrivals that end retained at the observation bound. Deny an FD list while status reads
-running or a multithreaded zombie, then report the PID gone or a single-thread zombie on a later
-paced sample, and require release; a status still live at the deadline or a denied cwd retains.
-Let a process inspected before that wait hold storage afterwards, and require the waited
-observation to lead to a fresh complete one that sees it rather than to proof.
-Make the first release proof unavailable and a later one succeed, and require byte-identical child
-output; persistent unavailability must keep only this run's diagnostic beside the retention notice,
-even after startup recovery reported on an earlier run.
+Probe: omit a listed live same-UID process from one whole catalog and require reclamation from a
+fresh one; omit it from every catalog and require retention naming it at the deadline; alternate
+the omission of two processes and require retention, never pooled coverage. For a missed holder
+that forks into storage and exits before its liveness check, state sample, or scoped read, require
+a fresh whole observation that finds the heir; one that forks after the closing process list and
+stays an unreaped zombie must still reach the closing parent listing. Require a missed process gone
+before the closing list to cost no fresh observation. Require the closing parent listing to catch a
+heir handed storage by a live missed holder, including one reparented to launchd, and to ignore an
+unrelated newcomer and another account's launchd children. Measure convergence with repeated
+guarded real specs beside the base guard.
 
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 

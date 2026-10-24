@@ -31,9 +31,12 @@ function fixtureGit(repository: string, args: string[]): string {
 function primaryFixture(): {
     root: string;
     authorLane: string;
+    typedIssueLane: string;
+    typedIssuelessLane: string;
     scratchLane: string;
     foreignLockLane: string;
     strayLockLane: string;
+    unknownTypeLane: string;
 } {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-identity-')));
     scratchRoots.push(root);
@@ -61,7 +64,27 @@ function primaryFixture(): {
     const strayLockLane = join(root, '.agents', 'worktrees', 'stray-author-lock');
     fixtureGit(root, ['worktree', 'add', '-b', 'collab/session', strayLockLane]);
     fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, strayLockLane]);
-    return { root, authorLane, scratchLane, foreignLockLane, strayLockLane };
+    // Typed lanes are author lanes exactly as `agent/` lanes are: the branch type is the prefix.
+    const typedIssueLane = join(root, '.agents', 'worktrees', 'fix-14-typed');
+    fixtureGit(root, ['worktree', 'add', '-b', 'fix/14/typed', typedIssueLane]);
+    fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, typedIssueLane]);
+    const typedIssuelessLane = join(root, '.agents', 'worktrees', 'docs--typed');
+    fixtureGit(root, ['worktree', 'add', '-b', 'docs/typed', typedIssuelessLane]);
+    fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, typedIssuelessLane]);
+    // `style` is not a lane type, so a locked worktree on it is no author lane.
+    const unknownTypeLane = join(root, '.agents', 'worktrees', 'style--typed');
+    fixtureGit(root, ['worktree', 'add', '-b', 'style/typed', unknownTypeLane]);
+    fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, unknownTypeLane]);
+    return {
+        root,
+        authorLane,
+        typedIssueLane,
+        typedIssuelessLane,
+        scratchLane,
+        foreignLockLane,
+        strayLockLane,
+        unknownTypeLane,
+    };
 }
 
 /** The per-worktree config file a `--worktree` write lands in; its existence is the scoped state. */
@@ -75,7 +98,17 @@ describe('lane identity stamping', () => {
 
         const stamps = stampLaneIdentities(shellPort(f.root));
 
-        expect(stamps).toEqual([{ lane: f.authorLane, changedKeys: ['user.name', 'user.email', 'commit.gpgsign'] }]);
+        const changedKeys = ['user.name', 'user.email', 'commit.gpgsign'];
+        expect([...stamps].sort((a, b) => a.lane.localeCompare(b.lane))).toEqual(
+            [
+                { lane: f.authorLane, changedKeys },
+                { lane: f.typedIssueLane, changedKeys },
+                { lane: f.typedIssuelessLane, changedKeys },
+            ].sort((a, b) => a.lane.localeCompare(b.lane))
+        );
+        expect(existsSync(worktreeConfigFile(f.root, 'fix-14-typed'))).toBe(true);
+        expect(existsSync(worktreeConfigFile(f.root, 'docs--typed'))).toBe(true);
+        expect(existsSync(worktreeConfigFile(f.root, 'style--typed'))).toBe(false);
         expect(fixtureGit(f.authorLane, ['config', 'user.name'])).toBe(AUTHOR_BOT_COMMIT_NAME);
         expect(fixtureGit(f.authorLane, ['config', 'user.email'])).toBe(AUTHOR_BOT_COMMIT_EMAIL);
         expect(fixtureGit(f.authorLane, ['config', 'commit.gpgsign'])).toBe('false');
@@ -91,7 +124,11 @@ describe('lane identity stamping', () => {
 
         const second = stampLaneIdentities(shellPort(f.root));
 
-        expect(second).toEqual([{ lane: f.authorLane, changedKeys: [] }]);
+        expect([...second].sort((a, b) => a.lane.localeCompare(b.lane))).toEqual(
+            [f.authorLane, f.typedIssueLane, f.typedIssuelessLane]
+                .map((lane) => ({ lane, changedKeys: [] }))
+                .sort((a, b) => a.lane.localeCompare(b.lane))
+        );
         expect(fixtureGit(f.authorLane, ['config', 'user.email'])).toBe(AUTHOR_BOT_COMMIT_EMAIL);
     });
 });

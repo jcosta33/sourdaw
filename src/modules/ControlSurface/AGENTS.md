@@ -25,7 +25,7 @@ Owns hardware MIDI controller integrations, controller surface profiles, MIDI Le
 ## Invariants & Traps
 
 - **DI Seam for parameter writes**: `setMidiLearnDependencies` in `src/app/bootstrap.ts` connects parameter update use cases to MIDI Learn dispatch without creating circular module dependencies.
-- **Mapping schema validation**: Hardware mapping export and import must validate against `ControllerMappingSchema` with schema versioning to prevent corrupt controller bindings.
+- **Mapping formats**: Legacy `ControllerProfile` mapping files use a separately checked bare `ControllerMapping[]` array. Import validates IDs, MIDI ranges and action shapes before replacing a profile's mappings; export preserves that portable format. Versioned binding bundles are distinct and must validate against `ControllerMappingSchemaV1` with schema versioning; never reinterpret either format as the other.
 - **Push display protocol backpressure**: Push display frame rendering over USB bulk/MIDI endpoints requires packet framing and rate limiting to avoid dropped frames or main-thread rendering lag.
 - **Intercepted MIDI isolation**: Hardware messages captured by active MIDI Learn bindings mutate targeted parameters directly and must not be forwarded into track recording MIDI streams.
 

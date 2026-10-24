@@ -8,6 +8,11 @@ test.describe('Toaster per-pad Tone isolation', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Toaster' });
+        const view = page.getByRole('combobox', { name: 'Toaster view', exact: true });
+        await expect(view).toBeVisible();
+        await expect(view).toHaveValue('simple');
+        await view.selectOption('full');
+        await expect(view).toHaveValue('full');
     });
 
     test('Kick Tone step does not change Snare Tone and survives reselect', async ({ page }) => {

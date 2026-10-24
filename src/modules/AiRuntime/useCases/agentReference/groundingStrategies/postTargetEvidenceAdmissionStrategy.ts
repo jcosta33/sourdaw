@@ -15,7 +15,7 @@ import { isDirectGlueClipPairScope } from './isDirectGlueClipPairScope';
 import { normalizePromptText } from './normalizePromptText';
 import { type ActionPromptScope } from './promptScope';
 
-export const postTargetEvidenceActionNames = ['moveClip', 'glueClips', 'splitClip', 'addClip'] as const;
+export const postTargetEvidenceActionNames = ['moveClip', 'glueClips', 'splitClip', 'addClip', 'setTrackGain'] as const;
 
 export type PostTargetEvidenceActionName = (typeof postTargetEvidenceActionNames)[number];
 
@@ -126,6 +126,26 @@ function isDirectAddClipTarget(targetText: string, trackId: unknown, context: Pr
     return allowed.has(normalizedTarget);
 }
 
+/**
+ * A referenced level phrase ("set {reference} to") acts on the track its reference slot names. A device,
+ * parameter, VCA group or clip in the slot selects no fader, and a call on another track is not that
+ * phrase's. A scope that continued the phrase onto further tracks answers for each of them, so there the
+ * slot must still name a track.
+ */
+function isReferencedSlotTheTrack(actionScope: ActionPromptScope, trackId: unknown, context: ProjectContext): boolean {
+    if (actionScope.referencedSlot === undefined) {
+        return true;
+    }
+    const slot = normalizePromptText(actionScope.referencedSlot);
+    const namedTracks = context.tracks.filter((track) =>
+        [track.id, track.name].some((reference) => normalizePromptText(reference) === slot)
+    );
+    if ((actionScope.referenceSlots ?? 1) > 1) {
+        return namedTracks.length > 0;
+    }
+    return namedTracks.some((track) => track.id === trackId);
+}
+
 export const postTargetEvidenceAdmissionStrategyDefinitions = [
     {
         name: 'moveClip',
@@ -169,6 +189,13 @@ export const postTargetEvidenceAdmissionStrategyDefinitions = [
             }
             return null;
         },
+    },
+    {
+        name: 'setTrackGain',
+        transform: ({ actionScope, context, groundedArguments }) =>
+            isReferencedSlotTheTrack(actionScope, groundedArguments.trackId, context)
+                ? null
+                : 'Provider track is not the reference the level phrase names',
     },
 ] satisfies readonly PostTargetEvidenceAdmissionStrategyDefinition<PostTargetEvidenceActionName>[];
 
