@@ -304,6 +304,23 @@ function resolveAudioAssetPath(clip: XmlQuery): string | undefined {
     return path ?? undefined;
 }
 
+function clipNotesNode(clip: XmlQuery): XmlQuery | null {
+    const direct = clip.child(NOTES);
+    if (direct) {
+        return direct;
+    }
+    const lanes = clip.child(LANES);
+    return lanes?.children().length === 1 ? lanes.child(NOTES) : null;
+}
+
+function clipNotesUnit(clip: XmlQuery, notes: XmlQuery, contentUnit: TimelineUnit): TimelineUnit {
+    if (clip.child(NOTES)) {
+        return readTimeUnit(notes, contentUnit);
+    }
+    const lanes = clip.child(LANES);
+    return readTimeUnit(notes, lanes ? readTimeUnit(lanes, contentUnit) : contentUnit);
+}
+
 function parseClip(
     clip: XmlQuery,
     ownerKind: DawProjectParsedTrack['kind'],
@@ -322,7 +339,7 @@ function parseClip(
     // clip left of its media start.
     const playStart = playStartBeat !== 0 ? { playStartBeat } : {};
 
-    const notesNode = clip.child(NOTES);
+    const notesNode = clipNotesNode(clip);
     if (notesNode) {
         return {
             id,
@@ -338,7 +355,7 @@ function parseClip(
             // wins via readTimeUnit.
             notes: parseNotesNode(
                 notesNode,
-                readTimeUnit(notesNode, contentUnit),
+                clipNotesUnit(clip, notesNode, contentUnit),
                 context,
                 `${trackName} / ${name}`,
                 tempo
@@ -360,6 +377,16 @@ function parseClip(
             audioAssetPath: assetPath,
             ...playStart,
         };
+    }
+
+    const video = clip.child('Video');
+    if (video && ownerKind === 'midi') {
+        warn(context, video, 'unsupported-clip', video.child(FILE)?.attr('path') ?? name, trackName);
+        return null;
+    }
+    if (video || clip.child('Warps')?.child(NOTES) || clip.child(LANES)?.child(NOTES)) {
+        warn(context, clip, 'unsupported-clip', name, trackName);
+        return null;
     }
 
     if (ownerKind === 'midi') {
@@ -499,9 +526,10 @@ function parseMasterTrackAutomation(
 
     const containerUnit = readTimeUnit(lanesRoot, context.defaultTimeUnit);
 
-    function walkAutomation(node: XmlQuery, unit: 'beats' | 'seconds'): void {
+    function walkAutomation(node: XmlQuery, unit: 'beats' | 'seconds', inheritedOwner: string | null): void {
         for (const child of node.children()) {
             const childUnit = readTimeUnit(child, unit);
+            const ownerRef = child.attr('track') ?? child.attr('channel') ?? inheritedOwner;
             const target = child.attr('target');
             // `<Automation>` is a foreign-writer sibling of `<Points>` the
             // writer never emits, so it stays inline rather than joining the
@@ -554,8 +582,7 @@ function parseMasterTrackAutomation(
                     const targetNode = child.child('Target');
                     const targetName =
                         targetNode?.attr('parameter') ?? targetNode?.attr('expression') ?? target ?? null;
-                    const trackRef = child.attr('track') ?? child.attr('channel');
-                    const owner = (trackRef && context.trackNames.get(trackRef)) ?? 'Arrangement';
+                    const owner = ownerRef === null ? 'Arrangement' : (context.trackNames.get(ownerRef) ?? ownerRef);
                     warn(
                         context,
                         child,
@@ -569,11 +596,11 @@ function parseMasterTrackAutomation(
                     }
                 }
             }
-            walkAutomation(child, childUnit);
+            walkAutomation(child, childUnit, ownerRef);
         }
     }
 
-    walkAutomation(lanesRoot, containerUnit);
+    walkAutomation(lanesRoot, containerUnit, lanesRoot.attr('track') ?? lanesRoot.attr('channel'));
     return { tempoChanges, timeSignatureChanges, tempoPointsUseBeats };
 }
 
@@ -626,7 +653,6 @@ function parseArrangementClips(
             return null;
         }
         if (
-            (scope.visibleStartBeat !== null || hasNestedClips(clip)) &&
             ['time', 'duration', 'playStart', 'playStop', 'loopStart', 'loopEnd'].some((attribute) => {
                 const value = clip.attr(attribute);
                 if (value === null) {
@@ -641,7 +667,7 @@ function parseArrangementClips(
         const rawUnit = clip.attr('timeUnit');
         const unit = rawUnit === 'beats' || rawUnit === 'seconds' ? rawUnit : scope.unit;
         const initialTiming = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo);
-        const notes = clip.child(NOTES);
+        const notes = clipNotesNode(clip);
         const audioSourceOffsetOnly =
             notes === null &&
             Boolean(resolveAudioAssetPath(clip)) &&
@@ -650,7 +676,7 @@ function parseArrangementClips(
             clip.attr('playStop') === null;
         const secondsContent =
             (!audioSourceOffsetOnly && initialTiming.contentUnit === 'seconds') ||
-            (notes !== null && readTimeUnit(notes, initialTiming.contentUnit) === 'seconds');
+            (notes !== null && clipNotesUnit(clip, notes, initialTiming.contentUnit) === 'seconds');
         // Seconds-addressed tempo points still use the initial-tempo parser.
         // Their beat positions cannot prove a local seconds transform.
         if (!tempoPointsUseBeats && (unit === 'seconds' || secondsContent)) {
@@ -675,7 +701,7 @@ function parseArrangementClips(
             const origin = timing.startBeat - timing.playStartBeat;
             let startBeat = Math.min(origin, timing.startBeat);
             let endBeat = Math.max(origin, timing.endBeat);
-            if (notes && readTimeUnit(notes, timing.contentUnit) === 'seconds') {
+            if (notes && clipNotesUnit(clip, notes, timing.contentUnit) === 'seconds') {
                 for (const note of notes.children(NOTE)) {
                     if (!isValidMidiKey(note.attrNumber('key', -1))) {
                         continue;
@@ -716,15 +742,21 @@ function parseArrangementClips(
         let reference = inherited;
         let node = clip;
         const notes = clip.child(NOTES);
+        const lanes = clip.child(LANES);
         const audio = clip.child(AUDIO);
         const warps = clip.child('Warps');
+        const video = clip.child('Video');
         let route: (XmlQuery | null)[] = [];
         if (notes) {
             route = [notes];
+        } else if (lanes?.child(NOTES)) {
+            route = [lanes, lanes.child(NOTES)];
         } else if (audio) {
             route = [audio];
         } else if (warps) {
-            route = [warps, warps.child(AUDIO)];
+            route = [warps, warps.child(AUDIO) ?? warps.child(NOTES)];
+        } else if (video) {
+            route = [video];
         }
         for (const content of route) {
             if (content && (content.attr('track') !== null || content.attr('channel') !== null)) {

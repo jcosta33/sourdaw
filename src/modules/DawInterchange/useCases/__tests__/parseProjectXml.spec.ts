@@ -1445,4 +1445,159 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         ]);
         expect(parsed.warnings).toEqual([]);
     });
+
+    it.each([
+        { name: 'blank time', attributes: 'time="" duration="1"' },
+        { name: 'invalid duration', attributes: 'time="0" duration="bad"' },
+        { name: 'hex playStart', attributes: 'time="0" duration="1" playStart="0x1"' },
+        { name: 'blank playStop', attributes: 'time="0" playStop=" "' },
+        { name: 'invalid loopStart', attributes: 'time="0" duration="1" loopStart="bad"' },
+        { name: 'invalid loopEnd', attributes: 'time="0" duration="1" loopEnd="bad"' },
+    ])('reports a top-level Clip with present malformed $name without losing siblings', ({ attributes }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Application name="Fixture DAW" version="1"/>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    `<Clip name="Malformed" ${attributes}><Notes/></Clip>` +
+                    '<Clip name="Valid" time="2" duration="1"><Notes/></Clip>' +
+                    '<Clip name="Scientific" time="3e0" duration=".5"><Notes/></Clip>' +
+                    '<Clip name="Absent optional" time="4"><Notes/></Clip>' +
+                    '</Clips></Lanes></Arrangement>',
+                ''
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
+            ['Valid', 2, 3],
+            ['Scientific', 3, 3.5],
+            ['Absent optional', 4, 4.25],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceType: 'Clip', name: 'Malformed', context: 'Keys', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('reports video-only MIDI clips once while preserving truly empty MIDI and a playable sibling', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Application name="Fixture DAW" version="1"/>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip name="Video phrase" time="0" duration="2"><Video channels="2" sampleRate="48000" duration="2">' +
+                    '<File path="wrapped.mov"/></Video></Clip>' +
+                    '<Clip name="Empty phrase" time="2" duration="1"/>' +
+                    '<Clip name="Playable" time="3" duration="1"><Notes><Note time="0" duration="1" channel="0" key="60"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>',
+                ''
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Video', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'video.dawproject',
+        });
+        const clips = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+
+        expect(clips?.map((clip) => clip.name)).toEqual(['Empty phrase', 'Playable']);
+        const playable = clips?.find((clip) => clip.name === 'Playable');
+        expect(playable && mapped.midi.notesByClipId[playable.id]).toMatchObject([{ pitch: 60 }]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Video',
+                name: 'wrapped.mov',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('names the inherited and overridden owners of unsupported automation in source order', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Application name="Fixture DAW" version="1"/>' +
+                    '<Structure><Track id="lead" name="Lead" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes track="lead">' +
+                    '<Points name="Cutoff"><Target expression="timbre"/><RealPoint time="0" value="0.5"/></Points>' +
+                    '<Lanes track="drums"><Points name="Resonance"><Target expression="formant"/>' +
+                    '<RealPoint time="1" value="0.6"/></Points></Lanes>' +
+                    '<Points name="Unknown" track="missing"><Target expression="pressure"/>' +
+                    '<RealPoint time="2" value="0.7"/></Points>' +
+                    '</Lanes></Arrangement>',
+                ''
+            )
+        );
+
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-automation', name: 'Cutoff', sourceType: 'Points', context: 'Lead' },
+            { kind: 'unsupported-automation', name: 'Resonance', sourceType: 'Points', context: 'Drums' },
+            { kind: 'unsupported-automation', name: 'Unknown', sourceType: 'Points', context: 'missing' },
+        ]);
+        expect(parsed.warnings).toHaveLength(3);
+        expect(parsed.warnings.map((warning) => warning.sourceOrder)).toEqual(
+            [...parsed.warnings.map((warning) => warning.sourceOrder)].sort((a, b) => a - b)
+        );
+    });
+
+    it('maps a disabled Clip through a single Lanes/Notes owner without an empty inherited clip', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Application name="Fixture DAW" version="1"/>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip name="Wrapped" time="8" duration="4" enable="false"><Lanes track="drums"><Notes>' +
+                    '<Note time="0" duration="1" channel="0" key="60"/></Notes></Lanes></Clip>' +
+                    '<Clip name="Sibling" time="12" duration="1"><Notes><Note time="0" duration="1" channel="0" key="64"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>',
+                ''
+            )
+        );
+        const mapped = mapToProjectData({
+            parsed: { ...parsed, meta: { title: 'Wrapped', artist: '', comment: '' }, audioAssets: new Map() },
+            bufferIdsByPath: new Map(),
+            fileName: 'wrapped.dawproject',
+        });
+        const keys = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
+        const drums = mapped.arrangement.tracks.find((track) => track.name === 'Drums')?.clips;
+
+        expect(keys?.map((clip) => clip.name)).toEqual(['Sibling']);
+        expect(drums).toMatchObject([{ name: 'Wrapped', startBeat: 8, endBeat: 12, muted: true, type: 'midi' }]);
+        const wrapped = drums?.[0];
+        expect(wrapped && mapped.midi.notesByClipId[wrapped.id]).toMatchObject([{ pitch: 60, startBeat: 0 }]);
+        expect(parsed.warnings).toEqual([]);
+    });
+
+    it('reports a warped Notes route without publishing an invented empty clip', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Application name="Fixture DAW" version="1"/>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="drums" name="Drums" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip name="Warped notes" time="4" duration="4"><Warps track="drums" contentTimeUnit="beats"><Notes>' +
+                    '<Note time="0" duration="1" channel="0" key="67"/></Notes>' +
+                    '<Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip name="Sibling" time="8" duration="1"><Notes><Note time="0" duration="1" channel="0" key="64"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>',
+                ''
+            )
+        );
+
+        expect(parsed.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)).toEqual([
+            'Sibling',
+        ]);
+        expect(parsed.tracks.find((track) => track.name === 'Drums')?.clips).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                name: 'Warped notes',
+                context: 'Drums',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
 });
