@@ -247,12 +247,14 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
         commitRecording.mockImplementationOnce(
             (clip, _capture, options, real) =>
                 new Promise<void>((resolve) => {
+                    // The case must fail on its own if the wrapper ever stops
+                    // handing the real commit over (call-shape drift): a
+                    // vacuous resolve would observe nothing.
+                    if (typeof real !== 'function') {
+                        throw new Error('parked mock: the real commit was not provided');
+                    }
                     landed = () => {
-                        if (real) {
-                            resolve(real(clip, undefined, options));
-                        } else {
-                            resolve();
-                        }
+                        resolve(real(clip, undefined, options));
                     };
                 })
         );
@@ -269,7 +271,7 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
         // is told the branch moved.
         installRootReplacement();
         landed?.();
-        await stopping;
+        await expect(stopping).resolves.toBe('refused');
 
         expect(committedEntryCount()).toBe(0);
         expect(notifyUser).toHaveBeenCalledWith(

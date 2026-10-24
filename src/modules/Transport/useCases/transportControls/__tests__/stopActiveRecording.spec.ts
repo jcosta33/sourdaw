@@ -67,7 +67,7 @@ describe('stopActiveRecording', () => {
         activeRecordingRef.current = ['clip-1'];
         activeRecordingRef.capturedRootIdentity = 'replaced-root';
         vi.mocked(takeOwnsRecordingRoot).mockReturnValue(false);
-        vi.mocked(stopRecording).mockResolvedValue(undefined);
+        vi.mocked(stopRecording).mockResolvedValue('refused');
         vi.mocked(stopAudioRecording).mockResolvedValue(undefined);
         const before = recordingLifecycle.settledCommitCount;
 
@@ -125,7 +125,7 @@ describe('stopActiveRecording', () => {
 
         it('is registered as closing until the take it closes has committed, and counts that take', async () => {
             activeRecordingRef.current = ['clip-1'];
-            const commit = Promise.withResolvers<void>();
+            const commit = Promise.withResolvers<'refused' | 'closed'>();
             vi.mocked(stopRecording).mockReturnValue(commit.promise);
             const settledBefore = recordingLifecycle.settledCommitCount;
 
@@ -133,7 +133,7 @@ describe('stopActiveRecording', () => {
             expect(recordingLifecycle.isClosingRecording()).toBe(true);
             expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
 
-            commit.resolve();
+            commit.resolve('closed');
             await stopping;
 
             expect(recordingLifecycle.isClosingRecording()).toBe(false);

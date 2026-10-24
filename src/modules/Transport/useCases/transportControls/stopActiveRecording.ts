@@ -23,7 +23,7 @@ async function closeActiveRecording(): Promise<void> {
         // know that the project it is leaving gained a take. A stop the root
         // guard will refuse closes no take (#5517): counting it would owe the
         // next replacement a save for a take this project never gained.
-        recordingLifecycle.trackCommit(recordingCommit);
+        recordingLifecycle.trackTakeCommit(recordingCommit);
     }
 
     const timerId = recordingLifecycle.countInTimerId;

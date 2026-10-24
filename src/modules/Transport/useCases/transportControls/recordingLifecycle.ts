@@ -16,6 +16,13 @@ type RecordingLifecycle = {
     trackClosing: (closing: Promise<void>) => void;
     /** Own the commit a capture terminal started, so a stop can await it. */
     trackCommit: (commit: Promise<void>) => void;
+    /**
+     * Track a stop's promise for the settled-TAKE count: a stop that resolved
+     *  (#5517) closed nothing, so it must not read as a take this
+     * project gained. Failures still count — a discarded take is a settled
+     * gesture the #4439 semantics keep counting.
+     */
+    trackTakeCommit: (commit: Promise<'refused' | 'closed'>) => void;
     /** Resolve once every closing stop has settled, including ones registered while waiting. */
     waitForClosing: () => Promise<void>;
     /**
@@ -58,6 +65,25 @@ const closingStops = new Set<Promise<void>>();
  */
 function isClosingRecording(): boolean {
     return closingStops.size > 0 || commitsInFlight.size > 0 || isOverdubLanding();
+}
+
+function trackTakeCommit(commit: Promise<'refused' | 'closed'>): void {
+    const onSettled = (outcome?: 'refused' | 'closed'): void => {
+        commitsInFlight.delete(settled);
+        if (outcome !== 'refused') {
+            settledCommitCount++;
+        }
+    };
+    const settled = commit.then(
+        (outcome) => onSettled(outcome),
+        () => onSettled()
+    );
+    commitsInFlight.add(settled);
+    pendingCommits.add(
+        commit.then((outcome) => {
+            void outcome;
+        }) as Promise<void>
+    );
 }
 
 function trackCommit(commit: Promise<void>): void {
@@ -133,6 +159,7 @@ export const recordingLifecycle: RecordingLifecycle = {
     },
     trackClosing,
     trackCommit,
+    trackTakeCommit,
     waitForClosing,
     waitForCommits,
 };

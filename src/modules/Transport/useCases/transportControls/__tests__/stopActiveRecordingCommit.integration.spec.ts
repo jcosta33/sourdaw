@@ -257,6 +257,78 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         removeCrdtDoc('root');
     });
 
+    it('counts no settled take when the root moves while the commit is parked', async () => {
+        // The parked window this change centers on (#5517): the stop passes
+        // the ownership pre-check, the dispatch parks, the root moves, and
+        // the refused resume must not read as a take this project gained.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = recordingLifecycle.settledCommitCount;
+
+        const release = gateNextCommit();
+        const stopping = stopActiveRecording();
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('expected the root document to be installed');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        release();
+        await stopping;
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+        expect(committedEntryCount()).toBe(0);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+            'warning'
+        );
+    });
+
+    it('counts no settled take for an automatic punch-out the root guard refuses', async () => {
+        // The scheduler route (#5517): a fork mid-take, then the punch-out
+        // finaliser runs under the successor root and must count nothing.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = recordingLifecycle.settledCommitCount;
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('expected the root document to be installed');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+
+        finalizeAutomaticRecording(8);
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalled();
+        });
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+        expect(committedEntryCount()).toBe(0);
+    });
+
+    it('counts no settled take for an automatic finalize after the refs are cleared', async () => {
+        // The double-stop route (#5517): the user Stop already closed the
+        // take; the scheduler teardown's later finalize is a no-op and must
+        // not count a second take.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = recordingLifecycle.settledCommitCount;
+        await stopActiveRecording();
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1);
+
+        finalizeAutomaticRecording(8);
+        await Promise.resolve();
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1);
+    });
+
     it('counts no settled take for a stop the root guard refuses', async () => {
         // The ownership helper must answer against the real root identity epoch
         // (#5517): a take staged under one root, moved to another, stops
