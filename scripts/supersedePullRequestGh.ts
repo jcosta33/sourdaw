@@ -35,6 +35,7 @@ export type SupersededPullRequest = {
     headRepository: string | null;
     repository: string;
     base: string;
+    baseRef?: { name: string; repository: string; target: string } | null;
     merged: boolean;
     closedAt: string | null;
     comments: IssueComment[];
@@ -101,9 +102,24 @@ function readHeadRepository(value: unknown, number: number): string | null {
     }
     return repository.nameWithOwner;
 }
-function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
+function readBaseRef(value: unknown, number: number): SupersededPullRequest['baseRef'] {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    const ref = value as { name?: unknown; repository?: { nameWithOwner?: unknown }; target?: { oid?: unknown } };
+    if (
+        typeof ref.name !== 'string' ||
+        typeof ref.repository?.nameWithOwner !== 'string' ||
+        typeof ref.target?.oid !== 'string' ||
+        !/^[0-9a-f]{40}$/.test(ref.target.oid)
+    ) {
+        fail(`cannot inspect PR #${number} live base ref`);
+    }
+    return { name: ref.name, repository: ref.repository.nameWithOwner, target: ref.target.oid };
+}
+export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt baseRef{name repository{nameWithOwner} target{oid}}}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -116,6 +132,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
                     headRefName?: unknown;
                     headRepository?: { nameWithOwner?: unknown } | null;
                     baseRefName?: unknown;
+                    baseRef?: unknown;
                     merged?: unknown;
                     closedAt?: unknown;
                 };
@@ -148,6 +165,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         headRepository,
         repository: repository.nameWithOwner,
         base: pullRequest.baseRefName,
+        baseRef: readBaseRef(pullRequest.baseRef, number),
         merged: pullRequest.merged,
         closedAt: pullRequest.closedAt,
         comments: inspectIssueComments(pullRequest.id, gh),

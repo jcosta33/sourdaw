@@ -16,10 +16,12 @@ import {
     commentClientMutationId,
     deleteComment,
     inspectIssueComments,
+    inspectPullRequest,
     inspectReviewThreads,
     type IssueComment,
     type SupersedePullRequestPort,
     type SupersededReviewThread,
+    type SupersededPullRequest,
 } from '../supersedePullRequestGh.ts';
 
 const oldNumber = 2244;
@@ -98,6 +100,7 @@ type Input = {
     replacementStates?: string[];
     replacementBases?: string[];
     replacementHeadRepository?: string | null;
+    oldHeadRepository?: string | null;
     initialState?: string;
     throwAfterComment?: boolean;
     concurrentCommentOnThrow?: boolean;
@@ -109,6 +112,7 @@ type Input = {
     failDelete?: boolean;
     returnedCommentBody?: string;
     bases?: string[];
+    baseRefs?: SupersededPullRequest['baseRef'][];
     changedClosedAtAfterClose?: boolean;
     deleteCommentAfterClose?: boolean;
     editCommentAfterComment?: boolean;
@@ -142,7 +146,7 @@ function fakePort(input: Input = {}) {
     let closeFailures = 0;
     let commentCalled = false;
     let concurrentCommentAdded = false;
-    let closedAt: string | null = null;
+    let closedAt: string | null = state === 'CLOSED' ? '2026-08-20T12:00:00Z' : null;
     let postedCount = 0;
     let threadReads = 0;
     let parentInspections = 0;
@@ -182,14 +186,24 @@ function fakePort(input: Input = {}) {
     const snapshot = (number: number) => {
         if (number === oldNumber) {
             const inspection = index++;
+            let baseRef = input.baseRefs?.[inspection];
+            if (baseRef === undefined) {
+                baseRef = input.baseRefs?.at(-1);
+            }
+            if (baseRef === undefined) {
+                baseRef = { name: parentBranch, repository: 'jcosta33/sourdaw', target: parentHead };
+            }
             return {
                 number,
                 state,
                 head: input.heads?.[inspection] ?? head,
                 headRefName: 'fix/old-pull-request',
-                headRepository: 'jcosta33/sourdaw',
+                headRepository: input.oldHeadRepository === undefined ? 'jcosta33/sourdaw' : input.oldHeadRepository,
                 repository: 'jcosta33/sourdaw',
-                base: input.bases?.[inspection] ?? 'main',
+                base: input.bases?.[inspection] ?? input.bases?.at(-1) ?? 'main',
+                baseRef,
+                // GitHub may retain a historical baseRefOid while baseRef.target has moved.
+                baseRefOid: 'e'.repeat(40),
                 merged: false,
                 closedAt,
                 comments,
@@ -431,6 +445,63 @@ describe('pull-request supersession', () => {
         expect(source).toContain('headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
+    });
+    it.each([
+        null,
+        {
+            name: parentBranch,
+            repository: { nameWithOwner: 'jcosta33/sourdaw' },
+            target: { oid: parentHead },
+        },
+    ])('reads the live base ref %j rather than a cached base SHA', (baseRef) => {
+        const calls: string[][] = [];
+        const value = inspectPullRequest(
+            oldNumber,
+            (args) => {
+                calls.push(args);
+                if (args.includes(`number=${oldNumber}`)) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                nameWithOwner: 'jcosta33/sourdaw',
+                                pullRequest: {
+                                    id: 'PR_old',
+                                    number: oldNumber,
+                                    state: 'OPEN',
+                                    merged: false,
+                                    headRefOid: head,
+                                    headRefName: 'fix/old',
+                                    headRepository: null,
+                                    baseRefName: parentBranch,
+                                    baseRefOid: movedHead,
+                                    baseRef,
+                                    closedAt: null,
+                                },
+                            },
+                        },
+                    });
+                }
+                return JSON.stringify({
+                    data: {
+                        node: {
+                            id: 'PR_old',
+                            comments: {
+                                nodes: [],
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        },
+                    },
+                });
+            },
+            new Map()
+        );
+        if (baseRef === null) {
+            expect(value.baseRef).toBeNull();
+        } else {
+            expect(value.baseRef).toEqual({ name: parentBranch, repository: 'jcosta33/sourdaw', target: parentHead });
+        }
+        expect(calls[0]?.join(' ')).toContain('baseRef{name repository{nameWithOwner} target{oid}}');
+        expect(calls).toHaveLength(2);
     });
     it.each([
         ['missing', { data: { deleteIssueComment: { clientMutationId: null } } }],
@@ -753,6 +824,202 @@ describe('pull-request supersession', () => {
         expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
     });
+    it('accepts a stale cached child base SHA when the live base ref identifies the parent final head', () => {
+        const { port, calls } = fakePort({ bases: Array.from({ length: 12 }, () => parentBranch) });
+        expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('replays exact closed child markers after legitimate base-ref deletion without writes', () => {
+        const { port, calls } = fakePort({
+            initialState: 'CLOSED',
+            bases: [parentBranch],
+            baseRefs: [null],
+            existingCommentCount: 1,
+            existingLineageCount: 1,
+        });
+        expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+    });
+    it('does not admit an incomplete closed replay after base-ref deletion', () => {
+        const { port, calls } = fakePort({
+            initialState: 'CLOSED',
+            bases: [parentBranch],
+            baseRefs: [null],
+            existingCommentCount: 1,
+        });
+        expect(() => runWithParent(port)).toThrow(/lineage marker/i);
+        expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+    });
+    it.each(['markers', 'findings'])('refuses closed replay when %s change during parent proof', (change) => {
+        const { port, calls } = fakePort({
+            initialState: 'CLOSED',
+            bases: [parentBranch],
+            baseRefs: [null],
+            existingCommentCount: 1,
+            existingLineageCount: 1,
+        });
+        const originalInspect = port.inspect;
+        const originalThreads = port.inspectReviewThreads;
+        let parentRead = false;
+        port.inspect = (number) => {
+            const value = originalInspect(number);
+            if (number === parentNumber) {
+                parentRead = true;
+            }
+            if (number === oldNumber && parentRead && change === 'markers') {
+                return { ...value, comments: value.comments.filter((comment) => comment.body !== lineageBody) };
+            }
+            return value;
+        };
+        port.inspectReviewThreads = (number) => {
+            const findings = originalThreads(number);
+            if (number === oldNumber && parentRead && change === 'findings') {
+                return [...findings, { threadId: 'PRRT_late', rootCommentId: findingB }];
+            }
+            return findings;
+        };
+        expect(() => runWithParent(port)).toThrow();
+        expect(calls.filter((call) => /^(?:comment|delete|close|log):/.test(call))).toEqual([]);
+    });
+    it('does not ignore a contradictory present base ref during completed replay', () => {
+        const { port, calls } = fakePort({
+            initialState: 'CLOSED',
+            bases: [parentBranch],
+            baseRefs: [{ name: parentBranch, repository: 'jcosta33/sourdaw', target: movedHead }],
+            existingCommentCount: 1,
+            existingLineageCount: 1,
+        });
+        expect(() => runWithParent(port)).toThrow(/live base ref/i);
+        expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+    });
+    it('keeps same-base supersession independent of live base and head repositories', () => {
+        const { port, calls } = fakePort({
+            baseRefs: [null],
+            oldHeadRepository: null,
+            replacementHeadRepository: null,
+        });
+        expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it.each([
+        ['target', { name: parentBranch, repository: 'jcosta33/sourdaw', target: movedHead }],
+        ['repository', { name: parentBranch, repository: 'fork/sourdaw', target: parentHead }],
+        ['name', { name: 'fix/reused', repository: 'jcosta33/sourdaw', target: parentHead }],
+        ['missing', null],
+    ] satisfies [string, SupersededPullRequest['baseRef']][])(
+        'revalidates live base ref %s during each last parent proof',
+        (_case, changedRef) => {
+            for (const phase of ['before-write', 'before-close', 'after-close'] as const) {
+                const { port, calls, state } = fakePort({ bases: [parentBranch] });
+                const originalInspect = port.inspect;
+                let parentReads = 0;
+                let changed = false;
+                const parentRead = { 'before-write': 2, 'before-close': 3, 'after-close': 4 }[phase];
+                port.inspect = (number) => {
+                    const value = originalInspect(number);
+                    if (number === parentNumber && ++parentReads === parentRead) {
+                        changed = true;
+                    }
+                    if (number === oldNumber && changed) {
+                        return { ...value, baseRef: changedRef };
+                    }
+                    return value;
+                };
+                expect(() => runWithParent(port)).toThrow(phase === 'after-close' ? /ambiguous/i : /live base ref/i);
+                expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+                if (phase === 'before-write') {
+                    expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+                } else if (phase === 'before-close') {
+                    expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+                    expect(state().comments).toEqual([oldComment]);
+                } else {
+                    expect(state().state).toBe('CLOSED');
+                    expect(state().comments.map((comment) => comment.body)).toEqual([
+                        oldComment.body,
+                        receiptBody,
+                        lineageBody,
+                    ]);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+                }
+            }
+        }
+    );
+    it.each([
+        ['reused branch name', { name: parentBranch, repository: 'jcosta33/sourdaw', target: movedHead }],
+        ['foreign base ref', { name: parentBranch, repository: 'fork/sourdaw', target: parentHead }],
+        ['another ref name', { name: 'fix/another-parent', repository: 'jcosta33/sourdaw', target: parentHead }],
+        ['missing live base ref', null],
+    ] satisfies [string, SupersededPullRequest['baseRef']][])(
+        'refuses a %s before admitting a fresh stacked closure',
+        (_case, baseRef) => {
+            const { port, calls } = fakePort({ bases: [parentBranch], baseRefs: [baseRef] });
+            expect(() => runWithParent(port)).toThrow(/live base ref/i);
+            expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+        }
+    );
+    it.each(['added', 'removed'])('refuses child findings %s during the last parent proof before close', (change) => {
+        const { port, calls, state } = fakePort({ bases: Array.from({ length: 12 }, () => parentBranch) });
+        const originalInspect = port.inspect;
+        const originalThreads = port.inspectReviewThreads;
+        let parentReads = 0;
+        let changed = false;
+        port.inspect = (number) => {
+            const value = originalInspect(number);
+            if (number === parentNumber && ++parentReads === 3) {
+                changed = true;
+            }
+            return value;
+        };
+        port.inspectReviewThreads = (number) => {
+            const findings = originalThreads(number);
+            if (number === oldNumber && changed) {
+                if (change === 'removed') {
+                    return [];
+                }
+                return [...findings, { threadId: 'PRRT_late', rootCommentId: findingB }];
+            }
+            return findings;
+        };
+        expect(() => runWithParent(port)).toThrow(/finding set changed/i);
+        expect(state().state).toBe('OPEN');
+        expect(state().comments).toEqual([oldComment]);
+        expect(calls.filter((call) => /^(?:close|log):/.test(call))).toEqual([]);
+    });
+    it.each(['added', 'removed'])(
+        'reports ambiguity for child findings %s during the final parent proof after close',
+        (change) => {
+            const { port, calls, state } = fakePort({ bases: Array.from({ length: 12 }, () => parentBranch) });
+            const originalInspect = port.inspect;
+            const originalThreads = port.inspectReviewThreads;
+            let parentReads = 0;
+            let changed = false;
+            port.inspect = (number) => {
+                const value = originalInspect(number);
+                if (number === parentNumber && ++parentReads === 4) {
+                    changed = true;
+                }
+                return value;
+            };
+            port.inspectReviewThreads = (number) => {
+                const findings = originalThreads(number);
+                if (number === oldNumber && changed) {
+                    if (change === 'removed') {
+                        return [];
+                    }
+                    return [...findings, { threadId: 'PRRT_late', rootCommentId: findingB }];
+                }
+                return findings;
+            };
+            expect(() => runWithParent(port)).toThrow(/ambiguous.*finding set changed/i);
+            expect(state().state).toBe('CLOSED');
+            expect(state().comments.map((comment) => comment.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                lineageBody,
+            ]);
+            expect(calls.filter((call) => /^(?:delete|log):/.test(call))).toEqual([]);
+        }
+    );
     it.each([null, 'fork-owner/sourdaw'])('does not require a %s replacement head repository', (headRepository) => {
         const { port, calls } = fakePort({ replacementHeadRepository: headRepository });
         expect(run(port)).toBe('pull-request-superseded:2244:2246');
@@ -905,7 +1172,7 @@ describe('pull-request supersession', () => {
             bases: [parentBranch],
             parentHeads: [parentHead, movedHead],
         });
-        expect(() => runWithParent(port)).toThrow(/proof changed during supersession/i);
+        expect(() => runWithParent(port)).toThrow(/live base ref does not identify superseded parent/i);
         expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
     });
     it('compensates child markers when the parent proof changes before close', () => {
