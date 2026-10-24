@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_30cce0a4999386 982-983,1247,1257-1276
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_1c08b47ac3792f::t_646f71e615862f 98,173-176
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_1c08b47ac3792f::t_05da8c2d8770a2 129,131-143,184-188,280
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_b7c65435d7d69a 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8bcd24016504bd20bd89bd2288d707f5bc5747e3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
