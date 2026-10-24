@@ -2132,6 +2132,29 @@ describe('pull-request supersession', () => {
             await expect(runSerialized(root, fakePort().port)).resolves.toBe('pull-request-superseded:2244:2246');
         });
     });
+    it('retains the owner when acknowledged created markers are omitted from rollback observations', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort();
+            const inspect = port.inspect;
+            port.inspect = (number) => {
+                const snapshot = inspect(number);
+                return number === oldNumber ? { ...snapshot, comments: [oldComment] } : snapshot;
+            };
+            const failure = runSerialized(root, port);
+
+            await expect(failure).rejects.toThrow(/preserved lock owner/u);
+            expect(state()).toMatchObject({ state: 'OPEN' });
+            expect(state().comments).toHaveLength(3);
+            expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('close:'))).toEqual([]);
+            const oid = retainedOwner(root);
+            expect(readPullRequestMutationLockOwner(root, oid, oldNumber)).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+            await expect(failure).rejects.toThrow(`pnpm deliver --recover-lock ${oldNumber} --owner ${oid}`);
+        });
+    });
     it('does not log success when the actual lock release loses ownership', async () => {
         await withLockRoot(async (root) => {
             const { port, calls, state } = fakePort();

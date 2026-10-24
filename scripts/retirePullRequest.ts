@@ -22,14 +22,20 @@ import {
     retirementReviewBodyDigest,
     type RetirementRecord,
 } from './retirementRecord.ts';
-import { parseReviewRepairReplyForRole, reviewRepairRecordDigest } from './reviewRepair.ts';
+import {
+    authorRepairRecords,
+    assertReviewRepairRecord,
+    parseReviewRepairReplyForRole,
+    readCommentDatabaseId,
+    reviewerConfirmationState,
+} from './reviewRepair.ts';
 import {
     assertCompletedClosureWithMarkers,
     closePullRequestWithMarkers,
     closureMarkerIds,
     serializedPullRequestClosure,
 } from './supersedePullRequest.ts';
-import { shellPort, type SupersedePullRequestPort } from './supersedePullRequestGh.ts';
+import { shellPort, type SupersedePullRequestPort, type SupersededPullRequest } from './supersedePullRequestGh.ts';
 
 export type RetirementReviewState = {
     threads: {
@@ -43,6 +49,7 @@ export type RetirementReviewState = {
 };
 export type RetirePullRequestPort = SupersedePullRequestPort & {
     inspectRetirementReviewState: (number: number) => RetirementReviewState;
+    isAncestor: (commit: string, head: string) => boolean;
 };
 
 const usage = 'usage: pnpm pr:retire <pr-number> --head <40-hex-sha> --record <path-to-json>';
@@ -68,7 +75,11 @@ export function parseRetirePullRequestArgs(args: string[]): RetirePullRequestArg
     return { number, head: args[2], recordPath: args[4], help: false };
 }
 
-function assertReviewProof(record: RetirementRecord, state: RetirementReviewState): void {
+function assertReviewProof(
+    record: RetirementRecord,
+    state: RetirementReviewState,
+    isAncestor: RetirePullRequestPort['isAncestor']
+): void {
     const roots = new Map(record.findings.map((finding) => [finding.rootCommentId, finding]));
     if (
         state.threads.length !== roots.size ||
@@ -79,7 +90,7 @@ function assertReviewProof(record: RetirementRecord, state: RetirementReviewStat
     const liveByRoot = new Map(state.threads.map((thread) => [thread.rootCommentId, thread]));
     for (const [rootId, finding] of roots) {
         const thread = liveByRoot.get(rootId);
-        assertConfirmedRoot(record, rootId, finding, thread);
+        assertConfirmedRoot(record, rootId, finding, thread, isAncestor);
     }
     assertReviewBodies(record, state);
 }
@@ -88,7 +99,8 @@ function assertConfirmedRoot(
     record: RetirementRecord,
     rootId: string,
     finding: RetirementRecord['findings'][number],
-    thread: RetirementReviewState['threads'][number] | undefined
+    thread: RetirementReviewState['threads'][number] | undefined,
+    isAncestor: RetirePullRequestPort['isAncestor']
 ): void {
     if (thread === undefined || thread.threadId !== finding.threadId || !thread.resolved) {
         fail(`retirement root ${rootId} is missing, moved, or unresolved`);
@@ -98,17 +110,38 @@ function assertConfirmedRoot(
     const reviewer = parseReviewRepairReplyForRole(confirmationReply.body, 'reviewer');
     if (
         author?.kind !== 'repair' ||
-        reviewer?.kind !== 'confirmation' ||
+        reviewer === undefined ||
+        reviewer.kind === 'repair' ||
         author.record.pr !== record.pr ||
         author.record.thread !== thread.threadId ||
         String(author.record.finding.commentId) !== rootId ||
         author.record.head !== record.head ||
-        reviewer.confirmation.pr !== record.pr ||
-        reviewer.confirmation.thread !== thread.threadId ||
-        reviewer.confirmation.confirmationHead !== record.head ||
-        reviewer.confirmation.recordDigest !== reviewRepairRecordDigest(author.record)
+        (reviewer.kind === 'confirmation' && reviewer.confirmation.confirmationHead !== record.head)
     ) {
         fail(`retirement root ${rootId} lacks a current-head native repair confirmation`);
+    }
+    assertReviewRepairRecord(author.record);
+    const nativeThread = {
+        thread: thread.threadId,
+        replies: thread.replies.map((reply) => ({
+            ...reply,
+            id: readCommentDatabaseId(Number(reply.id), 'retirement reply'),
+        })),
+    };
+    const selected = authorRepairRecords(nativeThread, AUTHOR_BOT_NODE_ID, isAncestor);
+    if (selected.kind !== 'one' || String(selected.candidate.replyId) !== repairReply.id) {
+        fail(`retirement root ${rootId} does not name the sole authoritative author repair`);
+    }
+    const confirmation = reviewerConfirmationState(nativeThread, selected.candidate.record, REVIEWER_BOT_NODE_ID, {
+        pr: record.pr,
+        head: record.head,
+        isAncestor,
+        authorReplyId: selected.candidate.replyId,
+    });
+    if (!confirmation.alreadyPosted || confirmation.refusal !== undefined) {
+        fail(
+            `retirement root ${rootId} lacks a sole native confirmation: ${confirmation.refusal ?? 'confirmation missing'}`
+        );
     }
 }
 
@@ -190,19 +223,20 @@ export function retirePullRequest(
     ) {
         fail(`PR #${number} does not match the retirement record`);
     }
-    assertReviewProof(record, port.inspectRetirementReviewState(number));
+    assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor);
     const marker = { body: renderRetirementMarker(record), label: 'retirement-v1 marker' };
     if (before.state === PR_STATE.CLOSED) {
         if (!before.closedAt) {
             fail(`PR #${number} has no closure timestamp`);
         }
         assertCompletedClosureWithMarkers(before, number, head, record.base, [marker]);
+        assertClosedReplayUnchanged(before, port.inspect(number), record, marker);
     } else {
         if (before.state !== PR_STATE.OPEN) {
             fail(`PR #${number} is ${before.state.toLowerCase()}`);
         }
         closePullRequestWithMarkers(number, head, before, [marker], port, {
-            beforeMarkers: () => assertReviewProof(record, port.inspectRetirementReviewState(number)),
+            beforeMarkers: () => assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor),
             beforeClose: (ids) => {
                 const current = port.inspect(number);
                 if (
@@ -220,7 +254,7 @@ export function retirePullRequest(
                 if (closureMarkerIds(current, number, [marker])[0] !== ids[0]) {
                     fail(`PR #${number} retirement marker identity changed before close`);
                 }
-                assertReviewProof(record, port.inspectRetirementReviewState(number));
+                assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor);
             },
             afterClose: (verified, ids, receipt) => {
                 if (
@@ -242,13 +276,48 @@ export function retirePullRequest(
                     fail(`PR #${number} retirement close was not verified`);
                 }
                 assertCompletedClosureWithMarkers(verified, number, head, record.base, [marker]);
-                assertReviewProof(record, port.inspectRetirementReviewState(number));
+                assertReviewProof(record, port.inspectRetirementReviewState(number), port.isAncestor);
             },
         });
     }
     const message = `pull-request-retired:${number}`;
     port.log(message);
     return message;
+}
+
+function assertClosedReplayUnchanged(
+    before: SupersededPullRequest,
+    current: SupersededPullRequest,
+    record: RetirementRecord,
+    marker: { body: string; label: string }
+): void {
+    assertCompletedClosureWithMarkers(current, record.pr, record.head, record.base, [marker]);
+    const proof = (value: SupersededPullRequest) => {
+        const markerId = closureMarkerIds(value, record.pr, [marker])[0];
+        return {
+            number: value.number,
+            repository: value.repository,
+            headRepository: value.headRepository,
+            head: value.head,
+            headRefName: value.headRefName,
+            base: value.base,
+            state: value.state,
+            merged: value.merged,
+            closedAt: value.closedAt,
+            markers: value.comments
+                .filter((comment) => comment.id === markerId)
+                .map((comment) => ({
+                    id: comment.id,
+                    fullDatabaseId: comment.fullDatabaseId,
+                    body: comment.body,
+                    authorNodeId: comment.authorNodeId,
+                    authorType: comment.authorType,
+                })),
+        };
+    };
+    if (JSON.stringify(proof(current)) !== JSON.stringify(proof(before))) {
+        fail(`PR #${record.pr} closed retirement proof changed during replay`);
+    }
 }
 
 export function serializedRetirePullRequest(
@@ -319,11 +388,32 @@ function retirementShellPort(session: Parameters<typeof shellPort>[0]): RetirePu
             inspectRetirementReviewState(number, (args) =>
                 spawnCapture('gh', args, { cwd: primaryRoot, env: session.env })
             ),
+        isAncestor: (commit, head) =>
+            retirementIsAncestor(commit, head, (args) =>
+                spawnCapture('gh', args, { cwd: primaryRoot, env: session.env })
+            ),
     };
 }
 
 type ReviewConnection = { nodes: unknown[]; pageInfo: { hasNextPage: boolean; endCursor?: string } };
 type ReadGh = (args: string[]) => string;
+
+export function retirementIsAncestor(commit: string, head: string, gh: ReadGh): boolean {
+    if (!/^[0-9a-f]{40}$/u.test(commit) || !/^[0-9a-f]{40}$/u.test(head)) {
+        fail('retirement ancestry requires exact lower-case commit SHAs');
+    }
+    if (commit === head) {
+        return true;
+    }
+    const status = gh(['api', `repos/${REQUIRED_REPOSITORY}/compare/${commit}...${head}`, '--jq', '.status']).trim();
+    if (status === 'ahead' || status === 'identical') {
+        return true;
+    }
+    if (status === 'behind' || status === 'diverged') {
+        return false;
+    }
+    return fail('cannot verify retirement repair-head ancestry');
+}
 
 function readReviewPage(
     number: number,

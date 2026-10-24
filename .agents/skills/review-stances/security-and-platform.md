@@ -22,6 +22,21 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-24 — an acknowledged marker vanished from reads and released its owner (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) added the serialized owner and
+`VerifiedSupersessionCompensationError` release path around preexisting visibility-dependent
+cleanup. An acknowledged comment ID omitted from later inspections received no delete, yet an
+apparently original OPEN comment set certified rollback and released ownership. The final review
+record included a strongest-tier ambiguous-write/altered-rollback stance; the acknowledged-write,
+omitted-read input was missed. Exact historical raw prompts are unestablished. This is a controlled
+source/reproduction escape, not evidence of a physical or API-lag production occurrence.
+
+Keep a real marker after a valid creation receipt while every later inspection omits its ID. Drive
+both serialized retirement and supersession; require zero unverified deletes, the real journaled
+owner retained, and its exact native recovery command. Pair that with observed exact deletion and
+verified OPEN rollback release. A missing read cannot discharge a known remote write.
+
 ### 2026-10-24 — supersession bypassed its trusted process-tool launcher (introduced by PR #5639)
 
 PR #5639 added a process-fenced supersession owner without routing its native package command

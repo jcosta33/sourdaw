@@ -25,6 +25,7 @@ import {
     inspectRetirementReviewState,
     parseRetirePullRequestArgs,
     retirePullRequest,
+    retirementIsAncestor,
     serializedRetirePullRequest,
     type RetirePullRequestPort,
     type RetirementReviewState,
@@ -138,6 +139,7 @@ function fixture(options: FixtureOptions = {}) {
     });
     const port: RetirePullRequestPort = {
         inspect: () => inspect(),
+        isAncestor: (commit, target) => commit === target,
         inspectReviewThreads: () => [],
         inspectRetirementReviewState: () => {
             calls.push('reviews');
@@ -257,6 +259,192 @@ describe('native obsolete pull-request retirement', () => {
 
         expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, port)).toThrow();
         expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual([]);
+    });
+
+    it.each(['unconfirmed author record', 'duplicate reviewer confirmation'] as const)(
+        'refuses a caller-selected pair that hides another %s',
+        (extra) => {
+            const reviews = reviewState();
+            if (extra === 'unconfirmed author record') {
+                reviews.threads[0]!.replies.push({
+                    id: '1004',
+                    body: renderReviewRepairReply({ ...repair, summary: 'A second distinct repair claim.' }),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                });
+            } else {
+                reviews.threads[0]!.replies.push({
+                    id: '1004',
+                    body: renderConfirmationReply(repair, head),
+                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                });
+            }
+            const { calls, port, state } = fixture({ reviewState: reviews });
+
+            expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, port)).toThrow();
+            expect(state()).toMatchObject({ state: 'OPEN', comments: [] });
+            expect(calls.filter((call) => ['comment', 'delete', 'close'].includes(call))).toEqual([]);
+        }
+    );
+
+    it.each(['head', 'marker'] as const)(
+        'refuses closed replay %s movement during its review proof',
+        async (movement) => {
+            await withLockRoot(async (root) => {
+                const current = fixture();
+                await runSerialized(root, current.port);
+                const inspect = current.port.inspect;
+                let moved = false;
+                current.port.inspectRetirementReviewState = () => {
+                    moved = true;
+                    return reviewState();
+                };
+                current.port.inspect = (number) => {
+                    const snapshot = inspect(number);
+                    if (!moved) {
+                        return snapshot;
+                    }
+                    if (movement === 'head') {
+                        return { ...snapshot, head: 'b'.repeat(40) };
+                    }
+                    return {
+                        ...snapshot,
+                        comments: snapshot.comments.map((entry) => ({
+                            ...entry,
+                            id: 'IC_replacement',
+                            fullDatabaseId: '2002',
+                        })),
+                    };
+                };
+                const before = [...current.calls];
+
+                await expect(runSerialized(root, current.port)).rejects.toThrow();
+                expect(current.calls).toEqual(before);
+                expect(ownerOid(root)).toBeUndefined();
+            });
+        }
+    );
+
+    it('retains the owner when acknowledged created markers disappear only from subsequent observations', async () => {
+        await withLockRoot(async (root) => {
+            const current = fixture();
+            const inspect = current.port.inspect;
+            current.port.inspect = (number) => ({ ...inspect(number), comments: [] });
+            const attempt = runSerialized(root, current.port);
+
+            await expect(attempt).rejects.toThrow(/preserved lock owner/u);
+            expect(current.state()).toMatchObject({ state: 'OPEN' });
+            expect(current.state().comments).toHaveLength(1);
+            expect(current.calls).not.toContain('delete');
+            expect(current.calls).not.toContain('close');
+            const oid = ownerOid(root);
+            expect(oid).toBeDefined();
+            expect(readPullRequestMutationLockOwner(root, oid!, pr)).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+            await expect(attempt).rejects.toThrow(`pnpm deliver --recover-lock ${pr} --owner ${oid}`);
+        });
+    });
+
+    it.each(['compact', 'legacy'] as const)(
+        'keeps whole-thread %s replay compatible with superseded repairs and unrelated replies',
+        (kind) => {
+            const reviews = reviewState();
+            const olderHead = 'b'.repeat(40);
+            reviews.threads[0]!.replies.unshift({
+                id: '999',
+                body: renderReviewRepairReply({ ...repair, head: olderHead }),
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+            });
+            reviews.threads[0]!.replies.push(
+                { id: '1004', body: 'Unrelated discussion.', authorNodeId: AUTHOR_BOT_NODE_ID },
+                { id: '1005', body: 'Unrelated reviewer discussion.', authorNodeId: REVIEWER_BOT_NODE_ID },
+                { id: '1006', body: 'sourdaw-repair-v1 malformed foreign marker', authorNodeId: 'BOT_foreign' }
+            );
+            if (kind === 'legacy') {
+                reviews.threads[0]!.replies[2]!.body = renderReviewRepairReply(repair);
+            }
+            const { calls, port, state } = fixture({ reviewState: reviews });
+            port.isAncestor = (commit, target) => commit === target || (commit === olderHead && target === head);
+
+            expect(retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, port)).toBe('pull-request-retired:5361');
+            expect(state().state).toBe('CLOSED');
+            const writes = calls.filter((call) => ['comment', 'delete', 'close'].includes(call));
+            expect(retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, port)).toBe('pull-request-retired:5361');
+            expect(calls.filter((call) => ['comment', 'delete', 'close'].includes(call))).toEqual(writes);
+        }
+    );
+
+    it('requires caller IDs to name the native authoritative repair after identical duplicate replies', () => {
+        const reviews = reviewState();
+        reviews.threads[0]!.replies.splice(1, 0, {
+            id: '1004',
+            body: renderReviewRepairReply(repair),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+        });
+        const input = {
+            ...record,
+            findings: [
+                { ...record.findings[0]!, authorRepairCommentId: '1004', reviewerConfirmationCommentId: '1005' },
+            ],
+        };
+        reviews.threads[0]!.replies[2]!.id = '1005';
+        const { port, calls } = fixture({ reviewState: reviews });
+
+        expect(() => retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toThrow(/authoritative/u);
+        expect(calls.filter((call) => ['comment', 'delete', 'close'].includes(call))).toEqual([]);
+    });
+
+    it('keeps confirmed roots from non-requested reviews alongside the separately total requested-body map', () => {
+        const reviews = reviewState();
+        const otherRepair = { ...repair, thread: 'PRRT_other', finding: { ...repair.finding, commentId: 1007 } };
+        reviews.threads.push({
+            threadId: 'PRRT_other',
+            rootCommentId: '1007',
+            rootReviewId: 'PRR_comment',
+            resolved: true,
+            replies: [
+                { id: '1008', body: renderReviewRepairReply(otherRepair), authorNodeId: AUTHOR_BOT_NODE_ID },
+                { id: '1009', body: renderConfirmationReply(otherRepair), authorNodeId: REVIEWER_BOT_NODE_ID },
+            ],
+        });
+        const input = {
+            ...record,
+            findings: [
+                ...record.findings,
+                {
+                    rootCommentId: '1007',
+                    threadId: 'PRRT_other',
+                    authorRepairCommentId: '1008',
+                    reviewerConfirmationCommentId: '1009',
+                },
+            ],
+        };
+        const { port, state } = fixture({ reviewState: reviews });
+        expect(retirePullRequest(pr, head, input, AUTHOR_BOT_NODE_ID, port)).toBe('pull-request-retired:5361');
+        expect(state().state).toBe('CLOSED');
+    });
+
+    it('uses exact-head comparison for older author selection and refuses unavailable ancestry', () => {
+        const calls: string[][] = [];
+        const olderHead = 'b'.repeat(40);
+        expect(
+            retirementIsAncestor(head, head, () => {
+                throw new Error('no comparison needed');
+            })
+        ).toBe(true);
+        for (const status of ['ahead', 'identical', 'behind', 'diverged']) {
+            expect(
+                retirementIsAncestor(olderHead, head, (args) => {
+                    calls.push(args);
+                    return status;
+                })
+            ).toBe(['ahead', 'identical'].includes(status));
+        }
+        expect(calls[0]).toEqual(['api', `repos/jcosta33/sourdaw/compare/${olderHead}...${head}`, '--jq', '.status']);
+        expect(() => retirementIsAncestor(olderHead, head, () => 'unknown')).toThrow(/ancestry/u);
+        expect(() => retirementIsAncestor('invalid', head, () => 'ahead')).toThrow(/SHAs/u);
     });
 
     it('refuses a confirmation that predates the selected repair before any mutation', () => {

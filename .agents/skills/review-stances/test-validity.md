@@ -6,6 +6,21 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — an empty rollback projection hid an acknowledged remote marker (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) introduced the serializer and
+`VerifiedSupersessionCompensationError` release path around preexisting cleanup that only deleted
+visible markers. Fixtures covered unknown writes and altered rollback markers, but omitted a valid
+receipt followed by reads that hid the still-present marker. The final review record carried a
+strongest-tier ambiguous-write/altered-rollback stance; its exact historical raw prompt is
+unestablished. No physical or API-lag production occurrence is established.
+
+Separate actual remote marker state from the inspection projection. After acknowledged creation,
+omit that ID from every later read without deleting it. Both real serialized closure callers must
+retain the journaled owner, print recovery, and send zero unverified deletes; inspect the actual
+marker collection as well as the projected OPEN state. Preserve the observed-delete rollback and
+read-only release controls. The original comment-ID set alone is not proof of compensation.
+
 ### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
 
 PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but

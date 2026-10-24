@@ -72,6 +72,14 @@ confirmed inline root remains a refusal; there is no discard or body-only admiss
 version. This does not change `pr:supersede`, review, Gate, or delivery rules.
 The selected reviewer confirmation's decimal comment ID must strictly follow the selected author
 repair's ID; identity and a matching repair digest alone do not establish that chronology.
+Caller-selected IDs must identify the whole thread's authoritative native repair and sole
+confirmation. Retirement reuses native author-record supersession and reviewer replay selection,
+including historical full-record confirmations; another authorized conflicting repair or duplicate
+confirmation refuses. Older author records require verified ancestry before a descending record
+can supersede them. Plain or foreign replies do not gain authority. This does not restrict the
+original finding's actor or require every root to originate in a requested-changes review.
+Closed replay refreshes PR identity and canonical marker identity after the review proof and
+refuses movement between those observations. It cannot fence changes arriving after its last read.
 
 The replacement normally targets the old pull request's base exactly. A child
 left behind after its stack parent was natively superseded may cross that base
@@ -636,6 +644,9 @@ invocation created; the overall command still fails. This permits corrected
 lineage on a later invocation without letting another native closer adopt markers
 while their creator can still roll them back. Retaining stale lineage alone would
 prevent such a corrected retry.
+An acknowledged created comment ID must be observed with its exact owned marker before deletion
+and must be absent after the acknowledged deletion. Omission from a later read alone cannot prove
+rollback; missing or altered created markers retain the owner without an unverified deletion.
 
 Ambiguous comment results, altered markers, attempted closure and unverified or
 failed compensation retain the journaled owner and print its exact recovery

@@ -871,7 +871,7 @@ function deleteCreatedNoncanonicalComments(
         attempt(failures, 'delete noncanonical supersession comment', () => port.deleteComment(created.id));
     }
 }
-/** Rolls this invocation's verified markers back, refusing as a whole when any of them was altered. */
+/** Every acknowledged marker must be observed exact before deletion can account for it. */
 function deleteCreatedComments(
     comments: IssueComment[],
     transaction: CommentTransaction,
@@ -886,6 +886,12 @@ function deleteCreatedComments(
     if (altered.length > 0) {
         failures.push(`${altered.length} created supersession marker(s) are no longer exact; refusing to roll back`);
         return;
+    }
+    const missing = transaction.created.filter((created) => !comments.some((comment) => comment.id === created.id));
+    if (missing.length > 0) {
+        failures.push(
+            `${missing.length} acknowledged supersession marker(s) are missing from observation; rollback remains unverified`
+        );
     }
     for (const created of transaction.created) {
         if (hasExpectedComment(comments, created.id, created.spec.body)) {
