@@ -93,16 +93,11 @@ async function killAndWait(pid: number | undefined): Promise<void> {
     await waitUntil(() => !isAlive(pid));
 }
 
-async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<number | null> {
-    if (child.exitCode !== null) {
-        return child.exitCode;
-    }
-    return Promise.race([
-        new Promise<number | null>((resolve) => child.once('close', resolve)),
-        new Promise<never>((_resolve, reject) =>
-            setTimeout(() => reject(new Error('child close timed out')), timeoutMs)
-        ),
-    ]);
+function observeClose(child: ChildProcess): Promise<number | null> {
+    return new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', resolve);
+    });
 }
 
 // Each real guarded command ends in a storage file proof that can spend its whole
@@ -487,19 +482,34 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         }
     }, 10_000);
 
-    it('escalates a repeated signal and waits for child cleanup', async () => {
-        const root = fixtureRoot('signal');
-        const pidPath = join(root, 'pid');
-        let guard: ChildProcess | undefined;
-        let childPid: number | undefined;
-        try {
+    for (const repeatedSignal of [true, false]) {
+        const name = repeatedSignal
+            ? 'escalates a repeated signal and waits for child cleanup'
+            : 'keeps a resistant child alive until the held fallback is admitted without a repeated signal';
+        it(name, async () => {
+            const root = fixtureRoot('signal');
+            const readyPath = join(root, 'ready.json');
+            const termPath = join(root, 'first-term.json');
+            const unrelatedPath = join(root, 'unrelated');
             const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
             delete childEnv[RESOURCE_SESSION_ENV];
+            const messages: { event: string; [key: string]: unknown }[] = [];
             let guardStderr = '';
-            guard = spawn(
+            let childPid: number | undefined;
+            let guardClosed = false;
+            const unrelated = spawn(
                 process.execPath,
                 [
-                    resolve('scripts/resourceGuard.ts'),
+                    '-e',
+                    `require('node:fs').writeFileSync(${JSON.stringify(unrelatedPath)}, 'ready'); setInterval(() => {}, 1000)`,
+                ],
+                { stdio: 'ignore' }
+            );
+            const unrelatedCompletion = observeClose(unrelated);
+            const guard = spawn(
+                process.execPath,
+                [
+                    resolve('scripts/__tests__/fixtures/resourceGuardSignal.ts'),
                     '--profile',
                     'focused',
                     '--max-rss-mib',
@@ -507,44 +517,94 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                     '--',
                     process.execPath,
                     '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`,
+                    `const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(termPath)}, JSON.stringify({ pid: process.pid, tempExists: fs.existsSync(tmp) }))); fs.writeFileSync(${JSON.stringify(readyPath)}, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => {}, 1000)`,
                 ],
-                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] }
+                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }
             );
+            const completion = observeClose(guard).then((code) => {
+                guardClosed = true;
+                return code;
+            });
+            guard.on('message', (message: (typeof messages)[number]) => messages.push(message));
             guard.stderr?.on('data', (chunk: Buffer) => {
                 guardStderr = `${guardStderr}${chunk.toString()}`.slice(-8_192);
             });
+            const hasEvent = (event: string) => messages.some((message) => message.event === event);
+            const lifecycleDeadline = Date.now() + GUARDED_CASE_TIMEOUT_MS - 5_000;
+            const barrier = async (predicate: () => boolean) => {
+                try {
+                    await waitUntil(
+                        () => {
+                            if (predicate()) {
+                                return true;
+                            }
+                            if (guardClosed) {
+                                throw new Error('guard closed before the lifecycle barrier');
+                            }
+                            return false;
+                        },
+                        Math.max(0, lifecycleDeadline - Date.now())
+                    );
+                } catch (error) {
+                    throw new Error(
+                        `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; events=${JSON.stringify(messages)}`,
+                        { cause: error }
+                    );
+                }
+            };
             try {
-                await waitUntil(() => existsSync(pidPath));
-            } catch (error) {
-                const reservationsRoot = join(root, 'sourdaw-validation.reservations');
-                const reservations = existsSync(reservationsRoot)
-                    ? readdirSync(reservationsRoot)
-                          .slice(0, 8)
-                          .map(
-                              (name) => `${name}: ${readFileSync(join(reservationsRoot, name), 'utf8').slice(0, 1_024)}`
-                          )
-                    : [];
-                throw new Error(
-                    `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; admission=${JSON.stringify(reservations)}`,
-                    { cause: error }
-                );
+                await barrier(() => existsSync(readyPath) && existsSync(unrelatedPath));
+                const ready: { pid: number; tmp: string } = JSON.parse(readFileSync(readyPath, 'utf8'));
+                childPid = ready.pid;
+                expect(isAlive(childPid)).toBe(true);
+                expect(existsSync(ready.tmp)).toBe(true);
+                expect(guard.kill('SIGTERM')).toBe(true);
+                await barrier(() => existsSync(termPath) && hasEvent('fallback-scheduled'));
+                expect(JSON.parse(readFileSync(termPath, 'utf8'))).toEqual({ pid: childPid, tempExists: true });
+                expect(messages.filter((message) => message.event === 'fallback-scheduled')).toEqual([
+                    { event: 'fallback-scheduled', capturedTimers: 1 },
+                ]);
+                if (repeatedSignal) {
+                    expect(guard.kill('SIGTERM')).toBe(true);
+                } else {
+                    guard.send('inspect');
+                    await barrier(() => hasEvent('inspection'));
+                    expect(isAlive(childPid)).toBe(true);
+                    expect(hasEvent('storage-release-entered')).toBe(false);
+                    expect(hasEvent('fallback-invoked')).toBe(false);
+                    guard.send('admit-fallback');
+                }
+                await barrier(() => hasEvent('storage-release-entered'));
+                expect(messages.find((message) => message.event === 'storage-release-entered')).toEqual({
+                    event: 'storage-release-entered',
+                    treeStopped: true,
+                    tempExists: true,
+                    fallbackAdmitted: !repeatedSignal,
+                });
+                expect(hasEvent('fallback-invoked')).toBe(!repeatedSignal);
+                expect(() => process.kill(ready.pid, 0)).toThrow();
+                expect(unrelated.pid).toBeDefined();
+                expect(isAlive(unrelated.pid!)).toBe(true);
+                expect(existsSync(ready.tmp)).toBe(true);
+                expect(guardClosed).toBe(false);
+                expect(hasEvent('storage-released')).toBe(false);
+                guard.send('release-storage');
+                expect(await completion).toBe(143);
+                expect(messages).toContainEqual({ event: 'storage-released', removed: true });
+                expect(hasEvent('fallback-cleared')).toBe(true);
+                expect(existsSync(ready.tmp)).toBe(false);
+                expect(() => process.kill(ready.pid, 0)).toThrow();
+                expect(isAlive(unrelated.pid!)).toBe(true);
+            } finally {
+                guard.kill('SIGKILL');
+                await completion;
+                await killAndWait(childPid);
+                unrelated.kill('SIGKILL');
+                await unrelatedCompletion;
+                rmSync(root, { recursive: true, force: true });
             }
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
-            childPid = recordedPid;
-            guard.kill('SIGTERM');
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            guard.kill('SIGTERM');
-            const code = await waitForClose(guard);
-
-            expect(code).toBe(143);
-            expect(() => process.kill(recordedPid, 0)).toThrow();
-        } finally {
-            guard?.kill('SIGKILL');
-            await killAndWait(childPid);
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
+        });
+    }
 
     it('kills commands that exceed the RSS cap', async () => {
         const result = await runIsolatedGuardedCommand({
