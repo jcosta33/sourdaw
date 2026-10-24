@@ -327,7 +327,6 @@ describe('MasterChannelStrip', () => {
         fader.removeAttribute('data-transient');
         await act(async () => {
             fireEvent.change(fader, { target: { value: '0.6' } });
-            await Promise.resolve();
         });
 
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
@@ -775,6 +774,79 @@ describe('MasterChannelStrip', () => {
             },
             { coalesceWithPrevious: true }
         );
+    });
+
+    it('records menu Reset separately from a completed master-gain drag', async () => {
+        storeMocks.useStore.mockReturnValue({ masterGain: 50 });
+        storeMocks.transportStoreValue = { masterGain: 50 };
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
+            storeMocks.transportStoreValue = { masterGain: 60 };
+            return Promise.resolve();
+        });
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.55' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(1, {
+            type: 'setMasterGain',
+            payload: { gain: 0.6, expectedPercent: 50 },
+        });
+
+        fireEvent.contextMenu(fader);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'setMasterGain',
+            payload: { gain: 0.8, expectedPercent: 60 },
+        });
+    });
+
+    it('keeps menu Reset separate when the prior drag records after Reset queues', async () => {
+        storeMocks.useStore.mockReturnValue({ masterGain: 50 });
+        storeMocks.transportStoreValue = { masterGain: 50 };
+        let releaseDragCommit: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            (action) =>
+                new Promise<void>((resolve) => {
+                    releaseDragCommit = () => {
+                        undoStoreMocks.stackTop = makeRecordedEntry(action);
+                        storeMocks.transportStoreValue = { masterGain: 60 };
+                        resolve();
+                    };
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.55' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+        });
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            releaseDragCommit?.();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'setMasterGain',
+            payload: { gain: 0.8, expectedPercent: 60 },
+        });
     });
 
     it('arms the double-click reset to coalesce when the groove tap settle recorded an undo entry', async () => {

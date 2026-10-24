@@ -41,9 +41,10 @@ async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?
 type MasterGainControlProps = {
     value: number;
     onChange: (value: number, isTransient?: boolean) => void;
+    onResetToDefault: () => void;
 };
 
-const MasterGainControl = ({ value, onChange }: MasterGainControlProps): ReactElement => {
+const MasterGainControl = ({ value, onChange, onResetToDefault }: MasterGainControlProps): ReactElement => {
     const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
     const masterGainControlRef = useRef<HTMLDivElement>(null);
     const masterGainMenuRef = useRef<HTMLDivElement>(null);
@@ -106,7 +107,7 @@ const MasterGainControl = ({ value, onChange }: MasterGainControlProps): ReactEl
                     <DawMenuButton
                         role="menuitem"
                         onClick={() => {
-                            onChange(defaultTransportState.masterGain / 100, false);
+                            onResetToDefault();
                             closeMasterGainMenu();
                         }}
                     >
@@ -198,9 +199,16 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
-    const commitMasterGain = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
+    const commitMasterGain = async (
+        value: number,
+        token: number,
+        wasGestureSettle: boolean,
+        fromMenu: boolean
+    ): Promise<void> => {
         let coalesceWithPrevious = false;
-        if (!wasGestureSettle && performance.now() - lastGrooveSettleTime.current <= 500) {
+        if (fromMenu) {
+            lastGrooveSettleTime.current = 0;
+        } else if (!wasGestureSettle && performance.now() - lastGrooveSettleTime.current <= 500) {
             coalesceWithPrevious = true;
             lastGrooveSettleTime.current = 0;
         }
@@ -231,7 +239,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
-    const handleFaderChange = (value: number, isTransient?: boolean): void => {
+    const handleFaderChange = (value: number, isTransient?: boolean, fromMenu = false): void => {
         if (isTransient === true) {
             if (!gestureOpen.current) {
                 gestureToken.current += 1;
@@ -250,7 +258,11 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         setGestureGain(value);
         setMasterGain(value * 100, true);
 
-        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token, wasOpen));
+        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token, wasOpen, fromMenu));
+    };
+
+    const resetMasterGainFromMenu = (): void => {
+        handleFaderChange(defaultTransportState.masterGain / 100, false, true);
     };
 
     const displayGain = gestureGain ?? masterGain / 100;
@@ -266,7 +278,13 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             <MixerLevelReadout
                 trackId={null}
                 clusterClassName="mt-1"
-                control={<MasterGainControl value={displayGain} onChange={handleFaderChange} />}
+                control={
+                    <MasterGainControl
+                        value={displayGain}
+                        onChange={handleFaderChange}
+                        onResetToDefault={resetMasterGainFromMenu}
+                    />
+                }
                 value={`${formatGainDb(displayGain)} dB`}
             />
         </DawChannelStripShell>
