@@ -44,6 +44,8 @@ function isRecordedAtBeatZero(rows: readonly MidiCC[], seed: MidiCC): boolean {
  * The rows a commit of `clip` will write: the take's buffered rows, led by
  * the pitch-bend range the input had declared and the pedals that were already
  * held when the take began (except those the take records at beat 0 itself), and
+ * its bend lane led by the wheels held off centre, which a bend the take records
+ * at beat 0 follows and so overrides, and
  * closed by a lift for each pedal the take leaves
  * engaged (`planPedalLifts`), on the clip's closing line. Empty for a clip with nothing buffered or whose commit already
  * took its buffer.
@@ -52,13 +54,14 @@ function isRecordedAtBeatZero(rows: readonly MidiCC[], seed: MidiCC): boolean {
  * snapshot, ahead of the write that lands the same rows with the same ids.
  */
 export function planRecordedControllers({ clip }: PlanRecordedControllersInput): RecordedControllerPlan {
-    const { buffers, openedClipIds, heldPedalSeeds, bendRangeSeeds } = recordedControllerTakeState;
+    const { buffers, openedClipIds, heldPedalSeeds, bendRangeSeeds, pitchBendSeeds } = recordedControllerTakeState;
     const buffer = buffers.get(clip.id);
     const recordedCc = buffer?.cc ?? [];
     const recordedPitchBend = buffer?.pitchBend ?? [];
     const seed = openedClipIds.has(clip.id) ? heldPedalSeeds.get(clip.id) : undefined;
     const seedRows = (seed ?? []).filter((row) => !isRecordedAtBeatZero(recordedCc, row));
     const bendRangeRows = (openedClipIds.has(clip.id) ? bendRangeSeeds.get(clip.id) : undefined) ?? [];
+    const wheelRows = (openedClipIds.has(clip.id) ? pitchBendSeeds.get(clip.id) : undefined) ?? [];
     const takenRows = [...bendRangeRows, ...seedRows, ...recordedCc];
 
     const lifts = planPedalLifts({
@@ -68,6 +71,6 @@ export function planRecordedControllers({ clip }: PlanRecordedControllersInput):
 
     return {
         cc: [...takenRows, ...lifts],
-        pitchBend: [...recordedPitchBend],
+        pitchBend: [...wheelRows, ...recordedPitchBend],
     };
 }
