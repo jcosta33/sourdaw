@@ -97,28 +97,51 @@ const KNOWN_RULE_TYPES = new Set([
     'max_file_size',
     'copilot_code_review',
 ]);
-const KNOWN_RULE_PARAMETERS: Readonly<Record<string, readonly string[]>> = {
-    creation: [],
-    update: ['update_allows_fetch_and_merge'],
-    deletion: [],
-    pull_request: [
-        'dismiss_stale_reviews_on_push',
-        'require_code_owner_review',
-        'require_last_push_approval',
-        'required_approving_review_count',
-        'required_review_thread_resolution',
-        'allowed_merge_methods',
-    ],
-    required_status_checks: [
-        'strict_required_status_checks_policy',
-        'required_status_checks',
-        'do_not_enforce_on_create',
-    ],
-};
-
 function jsonArray(value: JsonValue | undefined): value is JsonValue[] {
     return Array.isArray(value);
 }
+
+function booleanParameter(value: JsonValue): boolean {
+    return typeof value === 'boolean';
+}
+
+function requiredStatusChecksParameter(value: JsonValue): boolean {
+    return (
+        jsonArray(value) &&
+        value.every(
+            (check) =>
+                check !== null &&
+                !Array.isArray(check) &&
+                typeof check === 'object' &&
+                typeof check.context === 'string' &&
+                check.context.length > 0 &&
+                (check.integration_id === undefined || Number.isSafeInteger(check.integration_id))
+        )
+    );
+}
+
+const KNOWN_RULE_PARAMETERS: Readonly<Record<string, Readonly<Record<string, (value: JsonValue) => boolean>>>> = {
+    creation: {},
+    update: { update_allows_fetch_and_merge: booleanParameter },
+    deletion: {},
+    pull_request: {
+        dismiss_stale_reviews_on_push: booleanParameter,
+        require_code_owner_review: booleanParameter,
+        require_last_push_approval: booleanParameter,
+        required_approving_review_count: (value) =>
+            typeof value === 'number' && Number.isSafeInteger(value) && value >= 0,
+        required_review_thread_resolution: booleanParameter,
+        allowed_merge_methods: (value) =>
+            jsonArray(value) &&
+            value.length > 0 &&
+            value.every((method) => typeof method === 'string' && ['merge', 'squash', 'rebase'].includes(method)),
+    },
+    required_status_checks: {
+        strict_required_status_checks_policy: booleanParameter,
+        required_status_checks: requiredStatusChecksParameter,
+        do_not_enforce_on_create: booleanParameter,
+    },
+};
 
 function nullableRecord(value: JsonValue | undefined): value is RulesetDocument | null {
     return value === null || (typeof value === 'object' && !Array.isArray(value));
@@ -234,29 +257,23 @@ function ruleLimitations(rule: JsonValue): string[] {
     }
     const parameters = record(details.parameters, 'ruleset rule parameters');
     const known = KNOWN_RULE_PARAMETERS[type];
-    if (known === undefined || Object.keys(parameters).some((key) => !known.includes(key))) {
+    if (known === undefined || Object.keys(parameters).some((key) => !Object.hasOwn(known, key))) {
         return ['an applicable ruleset has unknown parameter semantics'];
     }
-    if (type === 'required_status_checks') {
-        const checks = parameters.required_status_checks;
-        if (
-            typeof parameters.strict_required_status_checks_policy !== 'boolean' ||
-            (parameters.do_not_enforce_on_create !== undefined &&
-                typeof parameters.do_not_enforce_on_create !== 'boolean') ||
-            !jsonArray(checks) ||
-            checks.some((check) => {
-                if (check === null || Array.isArray(check) || typeof check !== 'object') {
-                    return true;
-                }
-                return (
-                    typeof check.context !== 'string' ||
-                    check.context.length === 0 ||
-                    (check.integration_id !== undefined && !Number.isSafeInteger(check.integration_id))
-                );
-            })
-        ) {
-            return ['an applicable ruleset has incomplete required status checks'];
-        }
+    const unsupportedValues = Object.entries(parameters).some(([key, value]) => {
+        const validate = known[key];
+        return validate === undefined || !validate(value);
+    });
+    if (
+        type === 'required_status_checks' &&
+        (parameters.strict_required_status_checks_policy === undefined ||
+            parameters.required_status_checks === undefined ||
+            unsupportedValues)
+    ) {
+        return ['an applicable ruleset has incomplete required status checks'];
+    }
+    if (unsupportedValues) {
+        return ['an applicable ruleset has unsupported parameter values'];
     }
     return [];
 }
@@ -316,6 +333,7 @@ function policyLimitations(observation: CapabilityObservation, mainApplicability
             continue;
         }
         if (ruleset.target !== 'branch') {
+            limitations.push('non-branch ruleset semantics are unsupported');
             continue;
         }
         if (ruleset.source_type !== 'Repository' || ruleset.source !== 'jcosta33/sourdaw') {

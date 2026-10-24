@@ -231,6 +231,88 @@ describe('inactive retarget capability plan', () => {
         expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
     });
 
+    const unsupportedParameterValues: Array<{ type: string; parameters: Record<string, JsonValue> }> = [
+        { type: 'update', parameters: { update_allows_fetch_and_merge: 'false' } },
+        ...[
+            'dismiss_stale_reviews_on_push',
+            'require_code_owner_review',
+            'require_last_push_approval',
+            'required_review_thread_resolution',
+        ].map((field) => ({ type: 'pull_request', parameters: { [field]: 'false' } })),
+        ...[-1, 1.5, '1', null, Number.MAX_SAFE_INTEGER + 1].map((value) => ({
+            type: 'pull_request',
+            parameters: { required_approving_review_count: value },
+        })),
+        ...[[], ['unrecognized-merge-method'], ['squash', 'unknown'], 'squash', [false], null].map((value) => ({
+            type: 'pull_request',
+            parameters: { allowed_merge_methods: value },
+        })),
+    ];
+    it.each(
+        (['detail', 'effective'] as const).flatMap((surface) =>
+            unsupportedParameterValues.map((rule) => ({ surface, rule }))
+        )
+    )('does not certify unsupported $surface parameter values: $rule', ({ surface, rule }) => {
+        const input = observed();
+        if (surface === 'detail') {
+            requiredRuleset(input).rules = [rule];
+        } else {
+            input.effectiveBranches.main = [rule];
+        }
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('an applicable ruleset has unsupported parameter values');
+        expect(plan.activationEligible).toBe(false);
+        expect(requiredRecord(plan.baseline)).toEqual(input);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    it.each(['detail', 'effective'] as const)('accepts supported %s parameter values', (surface) => {
+        const input = observed();
+        const rules: JsonValue[] = [
+            { type: 'update', parameters: { update_allows_fetch_and_merge: false } },
+            {
+                type: 'pull_request',
+                parameters: {
+                    dismiss_stale_reviews_on_push: true,
+                    require_code_owner_review: false,
+                    require_last_push_approval: true,
+                    required_review_thread_resolution: false,
+                    required_approving_review_count: 0,
+                    allowed_merge_methods: ['merge', 'squash', 'rebase'],
+                },
+            },
+        ];
+        if (surface === 'detail') {
+            requiredRuleset(input).rules = rules;
+        } else {
+            input.effectiveBranches.main = rules;
+        }
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+    });
+
+    it.each(['push', 'tag'] as const)('retains an unparsed %s ruleset without certifying its policy', (target) => {
+        const input = observed();
+        const extra = {
+            ...requiredRuleset(input),
+            id: 2,
+            name: 'other-policy',
+            target,
+            rules: [{ type: 'future_push_restriction' }],
+            bypass_actors: [{ actor_id: 7, actor_type: 'UnknownActor', bypass_mode: 'always' }],
+        };
+        input.rulesets.push(extra);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('non-branch ruleset semantics are unsupported');
+        expect(requiredRecord(plan.baseline).rulesets).toEqual(input.rulesets);
+        expect(plan.originalMainRollback).toEqual([canonicalJson(requiredRuleset(input))]);
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
     const unreadableEffectiveMain: JsonValue[][] = [
         [
             {

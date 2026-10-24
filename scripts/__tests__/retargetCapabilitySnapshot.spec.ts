@@ -896,6 +896,85 @@ describe('bounded capability capture', () => {
         expect(capture.disposed).toHaveBeenCalledOnce();
     });
 
+    it.each([
+        {
+            scenario: 'unknown merge method',
+            rulesets: [
+                {
+                    ...RULE,
+                    rules: [
+                        {
+                            type: 'pull_request',
+                            parameters: { allowed_merge_methods: ['unrecognized-merge-method'] },
+                        },
+                    ],
+                },
+            ],
+            limitation: 'an applicable ruleset has unsupported parameter values',
+        },
+        {
+            scenario: 'unparsed push policy',
+            rulesets: [
+                RULE,
+                {
+                    ...RULE,
+                    id: 6,
+                    name: 'push-policy',
+                    target: 'push',
+                    rules: [{ type: 'future_push_restriction' }],
+                    bypass_actors: [{ actor_id: 7, actor_type: 'UnknownActor', bypass_mode: 'always' }],
+                },
+            ],
+            limitation: 'non-branch ruleset semantics are unsupported',
+        },
+    ])('retains two stable CLI captures of $scenario as incomplete inactive output', ({ rulesets, limitation }) => {
+        const { port } = fakePort();
+        const listings: JsonValue[][] = [];
+        const details: JsonValue[] = [];
+        const capture = runStableClassicCli({
+            ...port,
+            rulesetPage: () => {
+                listings.push(structuredClone(rulesets));
+                return rest(rulesets);
+            },
+            ruleset: (id) => {
+                const detail = rulesets.find((ruleset) => ruleset.id === id);
+                if (detail === undefined) {
+                    throw new Error('unexpected ruleset detail read');
+                }
+                details.push(structuredClone(detail));
+                return detail;
+            },
+        });
+        expect(capture.run()).toBe(0);
+        expect(listings).toEqual([rulesets, rulesets]);
+        expect(details).toEqual([...rulesets, ...rulesets]);
+        expect(capture.classicReads()).toBe(2);
+        expect(capture.printed).toHaveLength(1);
+        const output = capture.printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const plan = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+        expect(plan).toMatchObject({
+            completeObservedInventory: false,
+            activationEligible: false,
+            datedGrantEvidence: { currentGrantClaim: false },
+            futureActorOperationIntent: { observedEnforcement: false },
+            claims: {
+                atomicServerSnapshot: false,
+                repairedDestinationBoundary: false,
+                operatorGrantPresent: false,
+            },
+        });
+        expect(plan.limitations).toEqual([limitation]);
+        const baseline = requiredRecord(plan.baseline, 'captured baseline');
+        expect(baseline.rulesets).toEqual(rulesets);
+        expect(plan.baselineDigest).toBe(createHash('sha256').update(canonicalJson(baseline)).digest('hex'));
+        expect(output).toBe(canonicalJson(plan));
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
     const allowanceActors = (['User', 'Team', 'App'] as const).flatMap((typename) =>
         [42, null].map((databaseId) => ({ typename, databaseId }))
     );
