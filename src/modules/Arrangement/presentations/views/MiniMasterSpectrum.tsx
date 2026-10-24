@@ -133,6 +133,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
                     role="button"
                     tabIndex={0}
                     onClick={() => selectTrack(masterTrack.id)}
+                    onBlur={() => setIsTooltipOpen(false)}
                     onPointerLeave={(event) => {
                         if (
                             !freezeErrorMessage &&

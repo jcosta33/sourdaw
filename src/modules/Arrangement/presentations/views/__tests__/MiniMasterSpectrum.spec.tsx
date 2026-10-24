@@ -240,6 +240,86 @@ describe('MiniMasterSpectrum', () => {
         expect(spectrum).toHaveAccessibleDescription(reason);
     });
 
+    it('retires focus intent after recovery when focus moves outside the master', async () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        const withError = (errorMessage: string) => ({
+            ...master,
+            freezeState: { status: 'error' as const, errorMessage },
+        });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('First failure')], selectedTrackId: 'master' });
+        const { rerender } = renderWithImmediateTooltip(
+            <>
+                <MiniMasterSpectrum />
+                <button type="button">Outside control</button>
+            </>
+        );
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        const outside = screen.getByRole('button', { name: 'Outside control' });
+        act(() => spectrum.focus());
+        expect(document.activeElement).toBe(spectrum);
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('First failure');
+        expect(spectrum).toHaveAccessibleDescription('First failure');
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+                <button type="button">Outside control</button>
+            </TooltipProvider>
+        );
+        expect(document.activeElement).toBe(spectrum);
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+
+        act(() => outside.focus());
+        expect(document.activeElement).toBe(outside);
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('Second failure')], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+                <button type="button">Outside control</button>
+            </TooltipProvider>
+        );
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeVisible();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+
+        act(() => spectrum.focus());
+        expect(document.activeElement).toBe(spectrum);
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('Second failure');
+        expect(spectrum).toHaveAccessibleDescription('Second failure');
+    });
+
+    it('does not carry healthy focus intent into the first error after focus departs', () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        const { rerender } = renderWithImmediateTooltip(
+            <>
+                <MiniMasterSpectrum />
+                <button type="button">Outside control</button>
+            </>
+        );
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        const outside = screen.getByRole('button', { name: 'Outside control' });
+        act(() => spectrum.focus());
+        expect(document.activeElement).toBe(spectrum);
+        act(() => outside.focus());
+        expect(document.activeElement).toBe(outside);
+
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...master, freezeState: { status: 'error', errorMessage: 'First failure' } }],
+            selectedTrackId: 'master',
+        });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+                <button type="button">Outside control</button>
+            </TooltipProvider>
+        );
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeVisible();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+    });
+
     it('retires hover intent on pointer exit during recovery and accepts a renewed hover', async () => {
         const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
         const withError = (errorMessage: string) => ({
