@@ -134,4 +134,40 @@ describe('projectClipPitchBendEvents', () => {
             projectClipPitchBendEvents({ pitchBends: [], clip: { startBeat: 0, endBeat: 4 }, fromBeat: 0, toBeat: 4 })
         ).toEqual([]);
     });
+
+    describe('with the loop window anchored across a start trim (#5198)', () => {
+        // Loop [0,4) anchored at 0, then the start trimmed to 2: the offset
+        // advanced with the trim, so the anchored region is content [0, 4),
+        // entered two beats in — the pass head plays content [2, 4) and the
+        // region head wraps onto the pass tail. The last pass's tail ends on
+        // the clip end, so a row of the region head plays inside the final
+        // wrapped pass (#5528).
+        const clip = {
+            startBeat: 2,
+            endBeat: 10,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        };
+
+        it('plays a region-head row on the wrapped tail of every pass, through the closing one', () => {
+            const events = projectClipPitchBendEvents({
+                pitchBends: [bend('out', 1.5, 4_096)],
+                clip,
+                fromBeat: 0,
+                toBeat: 12,
+            });
+
+            expect(placed(events)).toEqual([
+                { beat: 2, value: 4_096 },
+                { beat: 5.5, value: 4_096 },
+                { beat: 6, value: 4_096 },
+                { beat: 9.5, value: 4_096 },
+            ]);
+            // The head sits are carries of the one row; each tail replay is
+            // the row where the pass that plays it was recorded.
+            expect(events.map((event) => event.recordedBeat)).toEqual([1.5, 5.5, 5.5, 9.5]);
+        });
+    });
 });
