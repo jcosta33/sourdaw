@@ -1,12 +1,7 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
-import { canonicalJson } from '#/utils/canonicalDigest';
-
 import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
 
-const latestIdentityRequest = new Map<string, symbol>();
+import { coordinateLevainDeviceState } from './coordinateLevainDeviceState';
 
 /**
  * Mirror a device's selected instrument into project truth.
@@ -29,56 +24,13 @@ export function commitLevainDeviceState(deviceId: string): void {
     if (!patch) {
         return;
     }
-
-    const owner = trackStore.value?.tracks.find((track) =>
-        track.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'levain')
-    );
-    const device = owner?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-    if (!owner || !device || (device.deviceState && device.deviceState.version !== 1)) {
-        return;
-    }
-    const request = Symbol();
-    latestIdentityRequest.set(deviceId, request);
-    const clearRequest = () => {
-        if (latestIdentityRequest.get(deviceId) === request) {
-            latestIdentityRequest.delete(deviceId);
+    void coordinateLevainDeviceState(deviceId, 'identity', (current) => {
+        const prior = fromLevainDeviceState(current);
+        if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
+            return undefined;
         }
-    };
-    const prior = fromLevainDeviceState(device.deviceState);
-    if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
-        clearRequest();
-        return;
-    }
-    // Carry current peer fields, then refuse if snapshot admission made this capture stale.
-    const tier = device.deviceState?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
-    const encoded = toLevainDeviceState(patch, tier);
-    const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
-    const projectIdentity = captureProjectIdentity();
-    const capturedDeviceState = canonicalJson(device.deviceState ?? null);
-    const action = executeAppAction(
-        { type: 'setDeviceState', payload: { deviceId, state } },
-        {
-            skipMacroRecording: true,
-            shouldExecute: () => {
-                if (latestIdentityRequest.get(deviceId) !== request) {
-                    return false;
-                }
-                const current = trackStore.value?.tracks
-                    .find((track) => track.id === owner.id)
-                    ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-                return (
-                    captureProjectIdentity() === projectIdentity &&
-                    current !== undefined &&
-                    canonicalJson(current.deviceState ?? null) === capturedDeviceState
-                );
-            },
-        }
-    );
-    void (async () => {
-        try {
-            await action;
-        } finally {
-            clearRequest();
-        }
-    })();
+        const tier = current?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
+        const encoded = toLevainDeviceState(patch, tier);
+        return { ...encoded, data: { ...current?.data, ...encoded.data } };
+    });
 }

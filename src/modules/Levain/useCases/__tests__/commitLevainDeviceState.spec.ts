@@ -69,7 +69,7 @@ describe('commitLevainDeviceState', () => {
                     },
                 },
             },
-            { skipMacroRecording: true, shouldExecute: expect.any(Function) }
+            { skipMacroRecording: true, shouldExecute: expect.any(Function), onCommitted: expect.any(Function) }
         );
     });
 
