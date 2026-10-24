@@ -6,6 +6,7 @@ import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDo
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
@@ -270,7 +271,6 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             return false;
         }
         const expected = captureFreezeStateSnapshot(failedTrack);
-        const expectedJson = JSON.stringify(expected);
         // The refused Freeze aborts its captured transaction. Settle its diagnostic
         // through a separate non-undoable typed action, never as a successful Freeze.
         // A committed edit since this render started withdraws the diagnostic's
@@ -296,7 +296,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
                         isCurrentFreezeTask(taskIdentity) &&
                         captureProjectRevision() === sourceRevision &&
                         current !== undefined &&
-                        JSON.stringify(captureFreezeStateSnapshot(current)) === expectedJson
+                        valuesEqual(captureFreezeStateSnapshot(current), expected)
                     );
                 },
             }

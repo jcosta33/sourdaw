@@ -462,6 +462,26 @@ describe('freezeTrack', () => {
         expect(didWrite).toBe(false);
     });
 
+    it('keeps failure admission when only freeze metadata key order changes', async () => {
+        trackStore.set({ tracks: [createTrack({ id: 't1', kind: 'audio', name: 'Track' })], selectedTrackId: null });
+        vi.mocked(renderTrackOffline).mockRejectedValue(new Error('Render refused'));
+        vi.mocked(executeAppAction).mockImplementationOnce(async (_action, options) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected the pending Freeze state');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => ({
+                    ...track,
+                    freezeState: { renderProgress: 0, status: 'freezing' },
+                })),
+            });
+            expect(options?.shouldExecute?.()).toBe(true);
+        });
+        await expect(freezeTrack('t1')).resolves.toBe(false);
+    });
+
     it('uses defaults 0 and 1 if track has no clips', async () => {
         trackStore.set({
             tracks: [
