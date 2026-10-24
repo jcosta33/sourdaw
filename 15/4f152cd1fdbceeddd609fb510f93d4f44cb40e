@@ -1,0 +1,20 @@
+tests/e2e/audioOwnership.native.spec.ts
+  s_59e31a5c6f3e31::t_34231e3bd4eb71 178-185,187-199,371-374,377-380,461,478
+  s_59e31a5c6f3e31::t_f3a6ca31c3b3fd 186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "154f152cd1fdbceeddd609fb510f93d4f44cb40e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
