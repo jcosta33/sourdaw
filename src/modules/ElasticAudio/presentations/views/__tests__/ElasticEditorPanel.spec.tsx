@@ -1,8 +1,8 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
 

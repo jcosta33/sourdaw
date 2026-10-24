@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { markElasticDetectionComplete } from '../markElasticDetectionComplete';

@@ -21,8 +21,8 @@ import {
     updateWarpMarkerBeat,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 

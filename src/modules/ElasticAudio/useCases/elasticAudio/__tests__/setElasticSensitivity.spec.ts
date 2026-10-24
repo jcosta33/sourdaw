@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 
 const mocks = vi.hoisted(() => ({
     detectTransientsForClip: vi.fn().mockReturnValue({ ok: true, added: 0, kept: 0, removed: 0 }),

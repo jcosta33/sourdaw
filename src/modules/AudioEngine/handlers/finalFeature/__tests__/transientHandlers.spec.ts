@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { detectTransientsForClip, quantizeTransients } from '#/modules/ElasticAudio/useCases';
-import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { handleDetectTransients } from '../handleDetectTransients';

@@ -1,5 +1,5 @@
-import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 
 import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasticAudio';
 

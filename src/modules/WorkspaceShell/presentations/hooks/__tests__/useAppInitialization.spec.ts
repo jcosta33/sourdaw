@@ -14,6 +14,7 @@ import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProjec
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { setSoloMode } from '../../../useCases/togglePanel/panelToggles/setSoloMode';
 import { useAppInitialization } from '../useAppInitialization';
 
 const projectStoreMock = vi.hoisted(() => ({
@@ -98,6 +99,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('../../../useCases/togglePanel/panelToggles/setSoloMode', () => ({ setSoloMode: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
 const preferenceListeners = vi.hoisted(() => new Set<() => void>());
 // Mock the preferences store the hook imports from #/modules/Preferences/stores,
@@ -118,6 +120,40 @@ beforeEach(() => {
     transportStateMock.current = null;
     preferenceListeners.clear();
     identityTransitionReady.reset();
+});
+
+describe('useAppInitialization — solo mode preference projection', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'afl', autoSave: false };
+        try {
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        } catch {
+            // localStorage may be unavailable in the test environment
+        }
+    });
+
+    it('applies the saved mode and later preference writes synchronously, then unsubscribes', () => {
+        const { unmount } = renderHook(() => useAppInitialization());
+        expect(setSoloMode).toHaveBeenCalledWith('afl');
+
+        vi.mocked(setSoloMode).mockClear();
+        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'pfl', autoSave: false };
+        act(() => {
+            for (const listener of preferenceListeners) {
+                listener();
+            }
+            expect(setSoloMode).toHaveBeenCalledWith('pfl');
+        });
+
+        vi.mocked(setSoloMode).mockClear();
+        unmount();
+        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'sip', autoSave: false };
+        for (const listener of preferenceListeners) {
+            listener();
+        }
+        expect(setSoloMode).not.toHaveBeenCalled();
+    });
 });
 
 describe('useAppInitialization — first-gesture engine resume', () => {

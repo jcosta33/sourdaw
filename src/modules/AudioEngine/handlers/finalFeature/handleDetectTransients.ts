@@ -1,6 +1,6 @@
 import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
-import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
