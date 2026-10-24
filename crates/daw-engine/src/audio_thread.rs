@@ -6,10 +6,11 @@
 //! IAudioClient3/WASAPI backend on Windows (ADR 0027).
 
 use crate::capture::{capture_ring, CaptureRingReader, CaptureShape};
+use crate::capture_clock::CaptureClock;
 use crate::device::{
     CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest, OpenInput,
-    OpenOutput, OutputBackend, PlatformInputBackend, PlatformInputStream, PlatformOutputBackend,
-    PlatformStream, RenderFn, StreamErrorFn,
+    OpenOutput, OutputBackend, OutputTiming, PlatformInputBackend, PlatformInputStream,
+    PlatformOutputBackend, PlatformStream, RenderFn, StreamErrorFn,
 };
 use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
 use crate::midi::diagnostics::{
@@ -63,13 +64,13 @@ const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// OS rerouted and kept running — and the WASAPI backend fires it after a
 /// successful reopen, with the stream still rendering — so a kind alone
 /// cannot say whether callbacks continued. The render callback itself is the
-/// only honest witness: [`DeviceRenderer::render`] advances
+/// only honest witness: [`DeviceRenderer::render_with_timing`] advances
 /// `callbacks_rendered` on every call, and the liveness thread
 /// ([`spawn_render_stall_watch`]) is what turns a stalled counter into
 /// `rendering: false`.
 #[derive(Clone)]
 pub(crate) struct RenderLiveness {
-    /// Advanced by [`DeviceRenderer::render`] on every callback, whatever the
+    /// Advanced by [`DeviceRenderer::render_with_timing`] on every callback, whatever the
     /// channel count — a zero-channel callback is still a callback.
     pub callbacks_rendered: Arc<AtomicU64>,
     /// Whether the stream is presently believed to be rendering. Starts
@@ -493,6 +494,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
 /// What a successful spawn hands back to the control side.
 pub(crate) struct SpawnedAudioThread {
     pub handle: AudioThreadHandle,
+    pub capture_clock: CaptureClock,
     /// The rate the stream actually opened at.
     pub sample_rate: f32,
     /// What the capture side published as its settled latency, or zero when
@@ -541,6 +543,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
 ) -> Result<SpawnedAudioThread, String> {
+    let capture_clock = CaptureClock::new();
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
@@ -581,6 +584,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             &output_stream_fault_slot,
             &build_liveness,
             retrospective_writer,
+            capture_clock,
         ) {
             Ok(streams) => Ok(StreamWithReclaimerShutdown(
                 Some(streams),
@@ -610,6 +614,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
     Ok(SpawnedAudioThread {
         handle,
+        capture_clock,
         sample_rate,
         input_latency_frames,
         output_buffer_frames,
@@ -861,7 +866,7 @@ impl CaptureFeed {
 /// the engine's audio becomes the device's — the monitor gate included — and a
 /// boundary that exists in exactly one place has to be drivable without a
 /// device to be provable at all. The callback the backend carries is
-/// [`Self::render`] and nothing else, so a test driving this drives the
+/// [`Self::render_with_timing`] and nothing else, so a test driving this drives the
 /// production path: same command drain, same timeline render, same device
 /// write.
 ///
@@ -870,6 +875,8 @@ impl CaptureFeed {
 /// wait-free.
 pub(crate) struct DeviceRenderer {
     scheduler: AudioScheduler,
+    capture_clock: CaptureClock,
+    sample_rate: f64,
     left_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
     right_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
     /// The one-slot handoff the capture side pushes its feed through. The
@@ -882,15 +889,15 @@ pub(crate) struct DeviceRenderer {
     /// block on, and it belongs to the renderer because nothing else sees
     /// every chunk.
     capture_position_frames: u64,
-    /// Advanced on every call to [`Self::render`]. The liveness thread polls
+    /// Advanced on every call to [`Self::render_with_timing`]. The liveness thread polls
     /// this to decide [`RenderLiveness::rendering`] — see that type's doc for
     /// why the callback itself, not the error kind, is what has to answer
     /// whether the stream is still calling back.
     callbacks_rendered: Arc<AtomicU64>,
-    /// The slot [`Self::render`] publishes this callback's frame count into.
+    /// The slot [`Self::render_with_timing`] publishes this callback's frame count into.
     /// See [`new_output_buffer_frames_slot`].
     output_buffer_frames: Arc<AtomicUsize>,
-    /// The slot [`Self::render`] publishes the backend's whole output-path
+    /// The slot [`Self::render_with_timing`] publishes the backend's whole output-path
     /// figure into, once two consecutive callbacks agree. See
     /// [`new_output_path_frames_slot`].
     output_path_frames: Arc<AtomicUsize>,
@@ -908,9 +915,13 @@ impl DeviceRenderer {
         callbacks_rendered: Arc<AtomicU64>,
         output_buffer_frames: Arc<AtomicUsize>,
         output_path_frames: Arc<AtomicUsize>,
+        capture_clock: CaptureClock,
+        sample_rate: f32,
     ) -> Self {
         Self {
             scheduler,
+            capture_clock,
+            sample_rate: f64::from(sample_rate),
             left_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             right_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             capture_rx,
@@ -971,7 +982,25 @@ impl DeviceRenderer {
     /// is the backend's own figure for this callback — see [`RenderFn`] — and
     /// is never decided once: a default-output reroute cpal refreshes mid
     /// stream lands on the very next callback that carries it.
-    pub(crate) fn render(&mut self, data: &mut [f32], channels: usize, output_path_frames: usize) {
+    #[cfg(test)]
+    fn render(&mut self, data: &mut [f32], channels: usize, output_path_frames: usize) {
+        self.render_with_timing(
+            data,
+            channels,
+            OutputTiming {
+                output_path_frames,
+                presentation_end: None,
+            },
+        );
+    }
+
+    pub(crate) fn render_with_timing(
+        &mut self,
+        data: &mut [f32],
+        channels: usize,
+        timing: OutputTiming,
+    ) {
+        let output_path_frames = timing.output_path_frames;
         // One lock-free atomic increment, no allocation, no lock: this is the
         // one witness the liveness thread trusts to say the stream is still
         // calling back. Counted before the channel guard below — a
@@ -1087,7 +1116,11 @@ impl DeviceRenderer {
         // The cursor's channel, published on the same edge and for the same
         // reason: one write per callback, after every block of it, so a reader
         // between callbacks sees a position the engine actually reached.
-        self.scheduler.publish_transport_position();
+        self.scheduler.publish_transport_position(
+            timing.presentation_end.and_then(|presentation| {
+                self.capture_clock.snapshot(presentation, self.sample_rate)
+            }),
+        );
         // The meter's channel, on the same edge and for the same reason. It
         // carries the whole callback's frame count because the hold window is
         // measured in frames the device consumed, not in blocks this loop
@@ -1410,6 +1443,7 @@ fn build_audio_stream(
     output_stream_fault_slot: &Arc<AtomicU8>,
     liveness: &RenderLiveness,
     retrospective: RetrospectiveWriter,
+    capture_clock: CaptureClock,
 ) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -1447,10 +1481,12 @@ fn build_audio_stream(
         Arc::clone(&liveness.callbacks_rendered),
         Arc::clone(output_buffer_frames_slot),
         Arc::clone(output_path_frames_slot),
+        capture_clock,
+        sample_rate,
     );
     let render: RenderFn = Box::new(
-        move |data: &mut [f32], channels: usize, output_path_frames: usize| {
-            renderer.render(data, channels, output_path_frames);
+        move |data: &mut [f32], channels: usize, timing: OutputTiming| {
+            renderer.render_with_timing(data, channels, timing);
         },
     );
 
@@ -2854,7 +2890,7 @@ mod tests {
 
 /// The native input path, driven through the production render callback.
 ///
-/// [`DeviceRenderer::render`] is where a capture ring becomes a block on the
+/// [`DeviceRenderer::render_with_timing`] is where a capture ring becomes a block on the
 /// scheduler's input bus, so these drive that method with a device buffer of
 /// their own and a feed handed over exactly as the capture side hands one over.
 #[cfg(test)]
@@ -2975,6 +3011,8 @@ mod capture_render_tests {
                     Arc::clone(&callbacks_rendered),
                     Arc::new(AtomicUsize::new(0)),
                     Arc::new(AtomicUsize::new(0)),
+                    crate::capture_clock::CaptureClock::new(),
+                    SAMPLE_RATE,
                 ),
                 diagnostics,
                 callbacks_rendered,
@@ -3012,7 +3050,7 @@ mod capture_render_tests {
 
     /// The one witness the owner thread's watchdog trusts: every call to
     /// `render` advances the counter, whatever the block asked it to do.
-    /// Mutation: remove the `fetch_add` at the top of `DeviceRenderer::render`
+    /// Mutation: remove the `fetch_add` at the top of `DeviceRenderer::render_with_timing`
     /// — this goes red at zero after two callbacks.
     #[test]
     fn a_render_callback_advances_the_liveness_counter() {
@@ -3295,7 +3333,20 @@ mod capture_render_tests {
                 // its deinterleave, the delivery, and the starved reads after
                 // the ring runs dry.
                 for _ in 0..CALLBACKS {
-                    harness.renderer.render(&mut data, OUTPUT_CHANNELS, 0);
+                    harness.renderer.render_with_timing(
+                        &mut data,
+                        OUTPUT_CHANNELS,
+                        crate::device::OutputTiming {
+                            output_path_frames: CALLBACK_FRAMES,
+                            presentation_end: Some(crate::capture_clock::PresentationTime {
+                                at: std::time::Instant::now()
+                                    + std::time::Duration::from_millis(10),
+                                stream_epoch: 1,
+                                quality: crate::CaptureClockQuality::Estimated,
+                                uncertainty_seconds: None,
+                            }),
+                        },
+                    );
                 }
             });
 
@@ -3312,7 +3363,7 @@ mod capture_render_tests {
 
 /// What the device is handed, driven through the production render callback.
 ///
-/// [`DeviceRenderer::render`] is the callback the device seam carries. The
+/// [`DeviceRenderer::render_with_timing`] is the callback the device seam carries. The
 /// shadow gate is applied there and nowhere else, and the master meter
 /// measures the same buffer that gate decides the contents of, so both are
 /// properties of this one method — these drive it directly with a device
@@ -3359,6 +3410,7 @@ mod device_output_tests {
         retired_rx: Consumer<RetiredGraphObjects>,
         renderer: DeviceRenderer,
         progress: GraphProgressReader,
+        position: crate::scheduler::TransportPositionReader,
         meter: MeterReader,
         output_buffer_frames: Arc<AtomicUsize>,
         output_path_frames: Arc<AtomicUsize>,
@@ -3371,7 +3423,7 @@ mod device_output_tests {
             let (midi_diagnostics_tx, _midi_reader) = active_midi_rt_diagnostics_channel();
             let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
             let (graph_progress_tx, progress) = graph_progress_channel();
-            let (transport_position_tx, _position_reader) = transport_position_channel();
+            let (transport_position_tx, position) = transport_position_channel();
             let (meter_tx, meter) = meter_channel();
             let scheduler = AudioScheduler::with_rt_diagnostics(
                 command_rx,
@@ -3399,8 +3451,11 @@ mod device_output_tests {
                     Arc::new(AtomicU64::new(0)),
                     output_buffer_frames,
                     output_path_frames,
+                    crate::capture_clock::CaptureClock::new(),
+                    SAMPLE_RATE,
                 ),
                 progress,
+                position,
                 meter,
             }
         }
@@ -3429,7 +3484,7 @@ mod device_output_tests {
 
         /// One device callback of `frames`, with the backend reporting
         /// `output_path_frames` as this callback's whole output-path figure —
-        /// what [`DeviceRenderer::render`]'s `output_path_frames` argument
+        /// what [`DeviceRenderer::render_with_timing`]'s timing argument
         /// carries in production.
         fn render_with_path(&mut self, frames: usize, output_path_frames: usize) -> Vec<f32> {
             self.render_full(frames, DEVICE_CHANNELS, output_path_frames)
@@ -3534,6 +3589,57 @@ mod device_output_tests {
             is_playing: true,
             ..TransportState::default()
         }));
+    }
+
+    #[test]
+    fn capture_clock_callback_dates_the_final_chunk_with_its_wrap_and_batch() {
+        use crate::capture_clock::{CaptureClockQuality, PresentationTime};
+        use crate::device::OutputTiming;
+        use std::time::{Duration, Instant};
+        let mut harness = DeviceHarness::new();
+        let frames = super::MAX_CALLBACK_FRAMES + 512;
+        harness.send(GraphCommand::BeginBatch { commands: 2 });
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: super::MAX_CALLBACK_FRAMES as u64,
+        }));
+        let presentation = PresentationTime {
+            at: Instant::now() + Duration::from_secs(1),
+            stream_epoch: 4,
+            quality: CaptureClockQuality::Estimated,
+            uncertainty_seconds: None,
+        };
+        let expected = harness
+            .renderer
+            .capture_clock
+            .snapshot(presentation, f64::from(SAMPLE_RATE));
+        let mut data = vec![0.0; frames * DEVICE_CHANNELS];
+        harness.renderer.render_with_timing(
+            &mut data,
+            DEVICE_CHANNELS,
+            OutputTiming {
+                output_path_frames: 512,
+                presentation_end: Some(presentation),
+            },
+        );
+        let position = harness.position.snapshot();
+        assert_eq!(position.playhead_frame, 512);
+        assert_eq!(position.loop_wraps, 1);
+        assert_eq!(position.batches_applied, 1);
+        assert_eq!(position.capture_clock, expected);
+        harness
+            .renderer
+            .render(&mut data[..512 * DEVICE_CHANNELS], DEVICE_CHANNELS, 0);
+        assert!(
+            harness.position.snapshot().capture_clock.is_none(),
+            "an unavailable callback must not retain the preceding callback's date"
+        );
+        while harness.retired_rx.pop().is_ok() {}
     }
 
     /// The gate's whole claim, against the one schedule that proves both
@@ -3969,6 +4075,8 @@ mod compensation_render_alloc_guards {
                     Arc::new(AtomicU64::new(0)),
                     Arc::new(AtomicUsize::new(0)),
                     Arc::new(AtomicUsize::new(0)),
+                    crate::capture_clock::CaptureClock::new(),
+                    SAMPLE_RATE,
                 ),
             }
         }

@@ -31,6 +31,11 @@ type TransportMaps = {
 
 type MapsUpdate = (input: {
     transportMaps: TransportMaps;
+    recordingGeometry?: NonNullable<
+        Parameters<
+            typeof import('#/modules/AudioEngine/useCases').updateNativeLiveGraphSessionTransportMaps
+        >[0]['recordingGeometry']
+    >;
 }) => Promise<{ outcome: 'updated' } | { outcome: 'declined'; reason: string }>;
 
 const mocks = vi.hoisted(() => ({
@@ -179,6 +184,8 @@ describe('a native session that cannot take the maps', () => {
 
         setTransport({ tempo: 140 });
         await vi.waitFor(() => expect(mocks.updateTransportMaps).toHaveBeenCalledTimes(1));
+        const issuedGeometry = mocks.updateTransportMaps.mock.lastCall![0].recordingGeometry!;
+        expect(issuedGeometry.secondsAtBeat(14)).toBe(6);
 
         setTransport({ tempo: 150 });
         await vi.waitFor(() => expect(mocks.updateTransportMaps).toHaveBeenCalledTimes(2));
@@ -249,11 +256,14 @@ describe('a store change that lands while a send is in flight', () => {
 
         setTransport({ tempo: 140 });
         await vi.waitFor(() => expect(mocks.updateTransportMaps).toHaveBeenCalledTimes(1));
+        const issuedGeometry = mocks.updateTransportMaps.mock.lastCall![0].recordingGeometry!;
+        expect(issuedGeometry.secondsAtBeat(14)).toBe(6);
 
         // Revert to the original 120 while the first send is still in
         // flight. A gate that only diffed against lastSent (still 120, not
         // yet advanced) would read this as "already synced" and drop it.
         setTransport({ tempo: 120 });
+        expect(issuedGeometry.secondsAtBeat(14)).toBe(6);
         // Give the microtask flush a chance to run and prove it does NOT
         // start a second overlapping round trip while one is in flight.
         await Promise.resolve();
@@ -264,6 +274,7 @@ describe('a store change that lands while a send is in flight', () => {
 
         await vi.waitFor(() => expect(mocks.updateTransportMaps).toHaveBeenCalledTimes(2));
         expect(lastSentMaps()?.tempo[0]?.beatsPerMinute).toBe(120);
+        expect(mocks.updateTransportMaps.mock.lastCall![0].recordingGeometry!.secondsAtBeat(14)).toBe(7);
 
         // lastSent now tracks the store: a subsequent no-op write sends
         // nothing further.

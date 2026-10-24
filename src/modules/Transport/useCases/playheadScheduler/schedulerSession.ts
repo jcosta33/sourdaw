@@ -1,3 +1,5 @@
+import type { TempoChange } from '../../stores/tempoMapStore';
+
 /**
  * A buffer source the scheduler tracks, with the handle its fade rides and —
  * for sources scheduled on the compensated clock (#4784) — the compensation it
@@ -90,6 +92,8 @@ export const schedulerSession = {
     pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
+    /** Observe a terminal audio pass on the audible carrier before capture readers detach. */
+    observeNativeRecordingClock: null as (() => boolean) | null,
     // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
     // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
     // (`scheduleGrainMs`, default 10ms), the next worker message would start a
@@ -109,7 +113,7 @@ export const schedulerSession = {
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.
-    lastTempoMapChanges: null as unknown[] | null,
+    lastTempoMapChanges: null as TempoChange[] | null,
     lastLoopSignature: '',
     // The loop seam the scheduler has scheduled but the playhead has not
     // reached yet (#4656): the audio instant both passes pivot on, plus where
@@ -120,6 +124,9 @@ export const schedulerSession = {
     // startPlayheadScheduler).
     pendingSeam: null as {
         seamAudioTime: number;
+        destinationBeat: number;
+        /** Song time from the map that emitted this seam, retained until it sounds. */
+        destinationSongSeconds?: number;
         anchorAudioTime: number;
         anchorPosition: number;
     } | null,

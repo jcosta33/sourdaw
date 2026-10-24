@@ -1204,3 +1204,12 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### Tempo inverse probes must cross a complete excursion (escaped via PR #4987)
+
+A single tempo rise or drop did not expose `renderTempoTimeline` alternating
+between segments. Use 180 to 60 to 180 BPM at beats 0.25 and 0.5 and a physical
+source end of frame 8320 at 48 kHz; read the ending through the actual live and
+offline comp consumers. The old inverse returns frame 320. Restoring that inverse
+must fail both the owning numerical case and source-end parity; see
+`audio-source-time.md` for the traced escape and preservation obligations.

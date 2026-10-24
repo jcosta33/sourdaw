@@ -253,3 +253,40 @@ describe('takeLaneWriteJournal', () => {
         expect(replayTakeLaneWriteJournal(authorityWithOutsideSelection, journal)).toEqual({ status: 'conflict' });
     });
 });
+
+describe('finite captured pass field ownership', () => {
+    it('retains the exclusive source end through journal replay beside a peer edit', () => {
+        const take = {
+            ...firstLane.takes[0]!,
+            sourceOffsetBeats: 0,
+            passAnchorSeconds: 0,
+            passDepthSeconds: 0,
+            passSourceEndSeconds: 1,
+        };
+        const before = { lanes: [{ ...firstLane, takes: [take, firstLane.takes[1]!] }] };
+        const next = {
+            lanes: [{ ...before.lanes[0]!, takes: [{ ...take, passSourceEndSeconds: 2 }, firstLane.takes[1]!] }],
+        };
+        const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: next });
+        expect(journal).toContainEqual({
+            kind: 'take-optional-number-field',
+            laneId: firstLane.id,
+            takeId: take.id,
+            field: 'passSourceEndSeconds',
+            expected: { present: true, value: 1 },
+            replacement: { present: true, value: 2 },
+        });
+        const peer = structuredClone(before);
+        peer.lanes[0]!.takes[1]!.name = 'Peer phrase';
+        const replay = replayTakeLaneWriteJournal(peer, journal);
+        expect(replay.status).toBe('applied');
+        if (replay.status !== 'applied') {
+            throw new Error('Expected finite pass replay');
+        }
+        expect(replay.value!.lanes[0]!.takes[0]!.passSourceEndSeconds).toBe(2);
+        expect(replay.value!.lanes[0]!.takes[1]!.name).toBe('Peer phrase');
+        const conflict = structuredClone(before);
+        conflict.lanes[0]!.takes[0]!.passSourceEndSeconds = 1.5;
+        expect(replayTakeLaneWriteJournal(conflict, journal).status).toBe('conflict');
+    });
+});
