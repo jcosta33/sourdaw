@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { stopRecording } from '#/modules/Arrangement/useCases';
+import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
@@ -10,6 +10,7 @@ import { stopActiveRecording } from '../stopActiveRecording';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAudioRecording: vi.fn(),
@@ -22,6 +23,9 @@ describe('stopActiveRecording', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
+        // restoreAllMocks wipes the factory default, so the owning-root default
+        // is re-armed for every case; the refusal case overrides it.
+        vi.mocked(takeOwnsRecordingRoot).mockReturnValue(true);
         recordingLifecycle.cancelPendingRecordingStart();
         recordingLifecycle.setCountInTimerId(null);
     });
@@ -31,6 +35,25 @@ describe('stopActiveRecording', () => {
         recordingLifecycle.setCountInTimerId(null);
         vi.useRealTimers();
         vi.restoreAllMocks();
+    });
+
+    it('does not count a settled take for a stop the root guard will refuse', async () => {
+        // A take whose root was replaced mid-recording closes nothing (#5517):
+        // counting it would owe the next project replacement a save for a take
+        // this project never gained.
+        activeRecordingRef.current = ['clip-1'];
+        activeRecordingRef.capturedRootIdentity = 'replaced-root';
+        vi.mocked(takeOwnsRecordingRoot).mockReturnValue(false);
+        vi.mocked(stopRecording).mockResolvedValue(undefined);
+        vi.mocked(stopAudioRecording).mockResolvedValue(undefined);
+        const before = recordingLifecycle.settledCommitCount;
+
+        await stopActiveRecording();
+
+        expect(stopRecording).toHaveBeenCalledTimes(1);
+        expect(recordingLifecycle.settledCommitCount).toBe(before);
+        activeRecordingRef.current = [];
+        activeRecordingRef.capturedRootIdentity = null;
     });
 
     it('should clear a pending count-in timer exactly once when stopping recording', () => {

@@ -230,6 +230,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
             sourceStartBeat: clip.startBeat,
         })),
     getSynthParamsForTrack: () => ({}),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     startFaustNote: vi.fn(),

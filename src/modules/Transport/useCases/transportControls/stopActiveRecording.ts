@@ -1,5 +1,5 @@
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { stopRecording } from '#/modules/Arrangement/useCases';
+import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
@@ -15,11 +15,13 @@ async function closeActiveRecording(): Promise<void> {
     // store still holds the beat playback started at (it is written on discrete
     // events only), which would truncate the take back to its own start beat.
     const rolling = getTransportState()?.isPlaying === true;
-    const closesTake = activeRecordingRef.current.length > 0;
+    const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
     const recordingCommit = stopRecording(rolling ? playheadPositionRef.current : undefined);
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
-        // know that the project it is leaving gained a take.
+        // know that the project it is leaving gained a take. A stop the root
+        // guard will refuse closes no take (#5517): counting it would owe the
+        // next replacement a save for a take this project never gained.
         recordingLifecycle.trackCommit(recordingCommit);
     }
 

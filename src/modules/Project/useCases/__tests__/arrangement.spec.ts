@@ -180,6 +180,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         startRecording: vi.fn(),
         stopRecording: vi.fn(),
         updateClip: vi.fn(),
+        takeOwnsRecordingRoot: vi.fn(() => true),
     };
 });
 // loadSnapshot imports restoreAutomationSnapshot.

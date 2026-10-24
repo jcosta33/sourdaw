@@ -56,6 +56,7 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: mocks.resolveClipsWithComping,
+    takeOwnsRecordingRoot: vi.fn(() => true),
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
     startRecording: mocks.startRecording,
