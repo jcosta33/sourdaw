@@ -420,6 +420,11 @@ function distinctPort(
     changes: {
         snapshots?: Partial<Record<number, Partial<SupersededPullRequest>[]>>;
         ancestry?: (boolean | Error)[];
+        atBoundary?: {
+            phase: 'before-write' | 'before-close' | 'after-close';
+            number: number;
+            patch: Partial<SupersededPullRequest>;
+        };
     } = {}
 ) {
     const fixture = fakePort({
@@ -429,6 +434,8 @@ function distinctPort(
     });
     const reads = new Map<number, number>();
     let ancestryReads = 0;
+    let dependencyCompared = false;
+    let initialParentProofRead = false;
     const port: SupersedePullRequestPort = {
         ...fixture.port,
         inspect: (number) => {
@@ -456,7 +463,23 @@ function distinctPort(
                     mergeCommit: number === replacementNumber ? childMerge : null,
                 };
             }
-            return { ...value, ...changes.snapshots?.[number]?.[read] };
+            let phase: 'before-write' | 'before-close' | 'after-close' | undefined;
+            if (fixture.state().state === 'CLOSED') {
+                phase = 'after-close';
+            } else if (fixture.posted().length > 0) {
+                phase = 'before-close';
+            } else if (initialParentProofRead) {
+                phase = 'before-write';
+            }
+            // Initial admission ends with the child-ref read after its dependency comparison.
+            if (number === oldNumber && dependencyCompared) {
+                initialParentProofRead = true;
+            }
+            const snapshot = { ...value, ...changes.snapshots?.[number]?.[read] };
+            if (changes.atBoundary?.phase === phase && changes.atBoundary?.number === number) {
+                return { ...snapshot, ...changes.atBoundary.patch };
+            }
+            return snapshot;
         },
         isCommitAncestor: (repository, ancestor, descendant) => {
             fixture.calls.push(`ancestor:${repository}:${ancestor}:${descendant}`);
@@ -464,6 +487,7 @@ function distinctPort(
             if (result instanceof Error) {
                 throw result;
             }
+            dependencyCompared = true;
             return result;
         },
     };
@@ -534,8 +558,14 @@ function retainedOwner(root: string): string {
     return oid;
 }
 
-function nativeSupersessionFixture(root: string, moveAtRead?: number, distinctParent = false) {
+function nativeSupersessionFixture(
+    root: string,
+    moveAtRead?: number,
+    distinctParent = false,
+    afterCloseIdentity: Partial<Pick<SupersededPullRequest, 'head' | 'headRefName'>> = {}
+) {
     let currentHead = head;
+    let currentHeadRefName = 'fix/old';
     let state = 'OPEN';
     let closedAt: string | null = null;
     let commentReads = 0;
@@ -566,7 +596,7 @@ function nativeSupersessionFixture(root: string, moveAtRead?: number, distinctPa
                             number,
                             state: old ? state : parent ? 'CLOSED' : 'MERGED',
                             headRefOid: old ? currentHead : parent ? parentHead : replacementHead,
-                            headRefName: old ? 'fix/old' : parent ? parentBranch : 'fix/replacement',
+                            headRefName: old ? currentHeadRefName : parent ? parentBranch : 'fix/replacement',
                             headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
                             baseRefName: old && distinctParent ? parentBranch : 'main',
                             baseRef:
@@ -626,10 +656,16 @@ function nativeSupersessionFixture(root: string, moveAtRead?: number, distinctPa
             events.push('close');
             state = 'CLOSED';
             closedAt = '2026-10-24T00:00:00Z';
+            currentHead = afterCloseIdentity.head ?? currentHead;
+            currentHeadRefName = afterCloseIdentity.headRefName ?? currentHeadRefName;
             const clientMutationId = args.find((arg) => arg.startsWith('clientMutationId='))?.slice(17);
             return JSON.stringify({
                 data: { closePullRequest: { clientMutationId, pullRequest: { id: 'PR_old', state, closedAt } } },
             });
+        }
+        if (query.includes('deleteIssueComment(input:')) {
+            events.push('delete');
+            throw new Error('unexpected native supersession marker deletion');
         }
         const endpoint = `repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`;
         if (args[0] === 'api' && args[1] === endpoint) {
@@ -654,6 +690,7 @@ function nativeSupersessionFixture(root: string, moveAtRead?: number, distinctPa
         port,
         events,
         state: () => state,
+        comments: () => comments,
         moveOnReplay: () => {
             moveAt = commentReads + 1;
         },
@@ -818,6 +855,37 @@ describe('pull-request supersession', () => {
             expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
         });
     });
+    it.each([
+        ['head', { head: movedHead }],
+        ['head branch', { headRefName: 'fix/moved' }],
+    ] satisfies [string, Partial<Pick<SupersededPullRequest, 'head' | 'headRefName'>>][])(
+        'rejects native child %s movement after close and retains both markers',
+        async (_case, patch) => {
+            await withLockRoot(async (root) => {
+                const current = nativeSupersessionFixture(root, undefined, true, patch);
+                await expect(
+                    runSerialized(
+                        root,
+                        current.port,
+                        repairedLineage,
+                        serializeFixture,
+                        parentNumber,
+                        parentReplacementNumber
+                    )
+                ).rejects.toThrow(/ambiguous/i);
+                expect(current.state()).toBe('CLOSED');
+                expect(current.comments().map((comment) => comment.body)).toEqual([
+                    oldComment.body,
+                    receiptBody,
+                    lineageBody,
+                ]);
+                expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+                const sideEffects = current.events.filter((event) => /^(?:delete|pull-request-superseded:)/.test(event));
+                expect(sideEffects).toEqual([]);
+                expect(retainedOwner(root)).toBeDefined();
+            });
+        }
+    );
     it('uses client mutation receipts for forward comment and close mutations', () => {
         const source = readFileSync(join(import.meta.dirname, '../supersedePullRequestGh.ts'), 'utf8');
         expect(source).toContain(
@@ -1456,11 +1524,12 @@ describe('pull-request supersession', () => {
         const { port, calls, state } = distinctPort(
             {},
             {
-                snapshots: { [oldNumber]: [{}, {}, {}, {}, {}, {}, { head: movedHead }] },
+                atBoundary: { phase: 'after-close', number: oldNumber, patch: { head: movedHead } },
             }
         );
         expect(() => runWithDistinctParent(port)).toThrow(/ambiguous/i);
         expect(state().state).toBe('CLOSED');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([`close:${oldNumber}`]);
         expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
         expect(calls.filter((call) => /^(?:delete|log):/.test(call))).toEqual([]);
     });
@@ -1623,22 +1692,21 @@ describe('pull-request supersession', () => {
         'revalidates %s at every mutation boundary',
         (_case, number, patch) => {
             for (const boundary of ['before-write', 'before-close', 'after-close'] as const) {
-                // The child is read after each complete parent proof and at marker convergence.
-                let inspection = { 'before-write': 1, 'before-close': 2, 'after-close': 3 }[boundary];
-                if (number === oldNumber) {
-                    inspection = { 'before-write': 2, 'before-close': 5, 'after-close': 7 }[boundary];
+                const { port, calls, state } = distinctPort({}, { atBoundary: { phase: boundary, number, patch } });
+                const execute = () => runWithDistinctParent(port);
+                if (boundary === 'after-close') {
+                    expect(execute, `${_case}: ${boundary}`).toThrow(/ambiguous/i);
+                } else {
+                    expect(execute, `${_case}: ${boundary}`).toThrow();
                 }
-                const snapshots = Array.from({ length: inspection + 1 }, (_, index) =>
-                    index === inspection ? patch : {}
-                );
-                const { port, calls, state } = distinctPort({}, { snapshots: { [number]: snapshots } });
-                expect(() => runWithDistinctParent(port), `${_case}: ${boundary}`).toThrow();
                 expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
                 if (boundary === 'before-write') {
                     expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+                    expect(state().state).toBe('OPEN');
                 } else if (boundary === 'before-close') {
                     expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
                     expect(state().comments).toEqual([oldComment]);
+                    expect(state().state).toBe('OPEN');
                 } else {
                     expect(state().state).toBe('CLOSED');
                     expect(state().comments.map((comment) => comment.body)).toEqual([
