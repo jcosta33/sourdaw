@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { canonicalJson, parseMarkerPayload } from './canonicalRecord.ts';
@@ -23,8 +24,19 @@ export type RetirementRecord = {
         authorRepairCommentId: string;
         reviewerConfirmationCommentId: string;
     }[];
-    reviewBodies: { reviewId: string; rootCommentIds: string[] }[];
+    reviewBodies: { reviewId: string; bodyDigest: string; rootCommentIds: string[] }[];
 };
+
+/** Bind the exact attested UTF-8 body without interpreting its findings. */
+export function retirementReviewBodyDigest(body: string): string {
+    return createHash('sha256').update(body, 'utf8').digest('hex');
+}
+
+function assertBodyDigest(value: unknown): void {
+    if (typeof value !== 'string' || !/^[0-9a-f]{64}$/u.test(value)) {
+        fail('retirement review body digest must be a lower-case SHA-256 digest');
+    }
+}
 
 function object(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -131,8 +143,9 @@ export function assertRetirementRecord(value: unknown): asserts value is Retirem
     }
     const reviews = new Set<string>();
     for (const item of bodies) {
-        const entry = object(item, ['reviewId', 'rootCommentIds'], 'retirement review body');
+        const entry = object(item, ['reviewId', 'bodyDigest', 'rootCommentIds'], 'retirement review body');
         const reviewId = nodeId(entry.reviewId, 'retirement review ID');
+        assertBodyDigest(entry.bodyDigest);
         if (reviews.has(reviewId)) {
             fail('retirement review body repeats a review');
         }

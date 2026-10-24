@@ -240,6 +240,16 @@ describe('planReviewRisk', () => {
         expect([...GOVERNANCE_TRANSITION_PATHS].sort()).toEqual(closurePaths);
     });
 
+    it.each(['supersedePullRequest', 'supersedePullRequestGh', 'findingLineage'])(
+        'requires native-security review for supersession closure member %s',
+        (name) => {
+            const result = reviewPlan([handwritten(`scripts/${name}.ts`, 1, 1)]);
+
+            expect(result.riskClasses).toEqual(['native-security']);
+            expect(result.requiredStances).toEqual(['correctness', 'security-platform', 'test-validity']);
+        }
+    );
+
     it('should classify every trusted GitHub-write closure path native-security, proving the wiring', () => {
         const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();
 

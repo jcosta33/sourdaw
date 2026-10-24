@@ -32,6 +32,7 @@ export type TrustedGithubWriteCommand =
     | 'issue:reconcile'
     | 'lane:publish'
     | 'lane:sync-parent'
+    | 'pr:supersede'
     | 'review:accept'
     | 'review:publish'
     | 'review:publish:recover'
@@ -109,6 +110,8 @@ type SnapshotRunner = (
 function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefined): boolean {
     return (
         command === 'deliver' ||
+        command === 'pr:supersede' ||
+        command === 'pr:retire' ||
         command === 'review:accept' ||
         command === 'review:publish' ||
         command === 'review:publish:recover'
@@ -149,6 +152,18 @@ export function forwardTrustedSnapshotSignal(
 }
 
 export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
+    'pr:supersede': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/supersedePullRequest.ts',
+        'scripts/supersedePullRequestGh.ts',
+        'scripts/findingLineage.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/canonicalRecord.ts',
+        'scripts/evidenceSafety.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
@@ -390,6 +405,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/supersedePullRequest.ts',
         'scripts/supersedePullRequestGh.ts',
         'scripts/findingLineage.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/reviewRepair.ts',
         'scripts/evidenceSafety.ts',
         'scripts/canonicalRecord.ts',
@@ -399,6 +415,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
 };
 
 export const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
+    'pr:supersede': { path: 'scripts/supersedePullRequest.ts', runner: 'runSupersedePullRequestCli' },
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:claim': { path: 'scripts/claimTrackerIssue.ts', runner: 'runClaimTrackerIssueCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
@@ -6222,6 +6239,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'lane:sync-parent' ||
+        value === 'pr:supersede' ||
         value === 'review:accept' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||
@@ -6235,7 +6253,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden> [args...]'
     );
 }
 

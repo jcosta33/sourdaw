@@ -1,17 +1,31 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { runDeliverCli } from '../deliverPullRequest.ts';
 import { parseFindingLineage, renderFindingLineage, type FindingLineage } from '../findingLineage.ts';
+import * as githubIdentity from '../githubAppIdentity.ts';
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { supersessionCommentBody } from '../prContract.ts';
+import * as mutationOwnership from '../pullRequestMutationLock.ts';
+import {
+    pullRequestMutationLockRef,
+    readPullRequestMutationLockOid,
+    readPullRequestMutationLockOwner,
+    withPullRequestMutationLock,
+    type PullRequestMutationSerialization,
+} from '../pullRequestMutationLock.ts';
 import {
     parseSupersedePullRequestArgs,
     readFindingLineageFile,
+    runSupersedePullRequestCli,
+    serializedSupersedePullRequest,
     supersedePullRequest,
 } from '../supersedePullRequest.ts';
+import * as githubPort from '../supersedePullRequestGh.ts';
 import {
     commentClientMutationId,
     deleteComment,
@@ -19,6 +33,7 @@ import {
     inspectPullRequest,
     inspectReviewThreads,
     inspectCommitAncestry,
+    shellPort,
     type IssueComment,
     type SupersedePullRequestPort,
     type SupersededReviewThread,
@@ -111,6 +126,7 @@ const lineageBody =
 const defaultThreads: SupersededReviewThread[] = [{ threadId: 'PRRT_1', rootCommentId: findingA }];
 
 type Input = {
+    observeOperation?: (operation: string) => void;
     heads?: string[];
     authorNodeId?: string;
     replacementState?: string;
@@ -153,6 +169,7 @@ type Input = {
     parentThreads?: SupersededReviewThread[];
     parentThreadsByRead?: SupersededReviewThread[][];
     removeParentReceiptDuringClose?: boolean;
+    precloseParentProofChildComments?: (comments: IssueComment[]) => IssueComment[];
     finalParentProofChildComments?: (comments: IssueComment[]) => IssueComment[];
 };
 
@@ -229,6 +246,9 @@ function fakePort(input: Input = {}) {
         }
         if (number === parentNumber) {
             const inspection = parentInspections++;
+            if (inspection === 2 && input.precloseParentProofChildComments !== undefined) {
+                comments = input.precloseParentProofChildComments(comments);
+            }
             if (inspection === 3 && input.finalParentProofChildComments !== undefined) {
                 comments = input.finalParentProofChildComments(comments);
             }
@@ -262,7 +282,9 @@ function fakePort(input: Input = {}) {
         };
     };
     const port: SupersedePullRequestPort = {
+        assertCurrentPullRequest: () => undefined,
         inspect: (number) => {
+            input.observeOperation?.(`inspect:${number}`);
             calls.push(`inspect:${number}`);
             if (
                 number === oldNumber &&
@@ -308,6 +330,7 @@ function fakePort(input: Input = {}) {
             return snapshot(number);
         },
         inspectReviewThreads: (number) => {
+            input.observeOperation?.(`threads:${number}`);
             calls.push(`threads:${number}`);
             if (number === parentNumber) {
                 const inspection = parentThreadReads++;
@@ -320,6 +343,7 @@ function fakePort(input: Input = {}) {
             return input.threads ?? defaultThreads;
         },
         comment: (number, body) => {
+            input.observeOperation?.(`comment:${number}`);
             calls.push(`comment:${number}:${body}`);
             commentCalled = true;
             const created = allocate(input.returnedCommentBody ?? body);
@@ -337,6 +361,7 @@ function fakePort(input: Input = {}) {
             };
         },
         close: (number) => {
+            input.observeOperation?.(`close:${number}`);
             calls.push(`close:${number}`);
             closeCalled = true;
             if (input.throwCloseWithConcurrentState) {
@@ -354,13 +379,17 @@ function fakePort(input: Input = {}) {
             return { closedAt };
         },
         deleteComment: (id) => {
+            input.observeOperation?.(`delete:${id}`);
             calls.push(`delete:${id}`);
             if (input.failDelete) {
                 throw new Error('delete denied');
             }
             comments = comments.filter((comment) => comment.id !== id);
         },
-        log: (message) => calls.push(`log:${message}`),
+        log: (message) => {
+            input.observeOperation?.(`log:${message}`);
+            calls.push(`log:${message}`);
+        },
     };
     return {
         port,
@@ -429,7 +458,7 @@ function distinctPort(
             }
             return { ...value, ...changes.snapshots?.[number]?.[read] };
         },
-        isAncestor: (repository, ancestor, descendant) => {
+        isCommitAncestor: (repository, ancestor, descendant) => {
             fixture.calls.push(`ancestor:${repository}:${ancestor}:${descendant}`);
             const result = changes.ancestry?.[ancestryReads++] ?? true;
             if (result instanceof Error) {
@@ -452,6 +481,184 @@ const runWithDistinctParent = (port: SupersedePullRequestPort) =>
         parentNumber,
         parentReplacementNumber
     );
+
+async function withLockRoot(operation: (root: string) => Promise<void>): Promise<void> {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-supersession-lock-'));
+    vi.stubEnv('GIT_CONFIG_GLOBAL', '/dev/null');
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('GIT_TRACE2_EVENT', '0');
+    try {
+        execFileSync('git', ['init', '--quiet'], { cwd: root });
+        await operation(root);
+    } finally {
+        vi.unstubAllEnvs();
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+const serializeFixture: PullRequestMutationSerialization = (root, number, operation) =>
+    withPullRequestMutationLock(root, number, operation, {
+        ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'supersession-fixture-process' },
+    });
+
+function runSerialized(
+    root: string,
+    port: SupersedePullRequestPort,
+    lineage: FindingLineage = repairedLineage,
+    serialization: PullRequestMutationSerialization = serializeFixture,
+    supersededParentNumber?: number,
+    parentReplacementNumber?: number
+) {
+    return serializedSupersedePullRequest(
+        root,
+        {
+            oldNumber: lineage.oldPr,
+            expectedHead: head,
+            replacementNumber,
+            supersededParentNumber,
+            parentReplacementNumber,
+            lineage,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            port,
+        },
+        serialization
+    );
+}
+
+function retainedOwner(root: string): string {
+    const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber);
+    expect(oid).toBeDefined();
+    if (oid === undefined) {
+        throw new Error('expected a retained supersession lock');
+    }
+    return oid;
+}
+
+function nativeSupersessionFixture(root: string, moveAtRead?: number, distinctParent = false) {
+    let currentHead = head;
+    let state = 'OPEN';
+    let closedAt: string | null = null;
+    let commentReads = 0;
+    let moveAt = moveAtRead;
+    const comments = [
+        oldComment,
+        markerComment('IC_receipt', '2001', receiptBody),
+        markerComment('IC_lineage', '2002', lineageBody),
+    ];
+    const events: string[] = [];
+    const capture = (command: string, args: string[]): string => {
+        if (command === 'git') {
+            return join(root, '.git');
+        }
+        const query = args.find((arg) => arg.startsWith('query=')) ?? '';
+        if (query.includes('headRefOid')) {
+            const number = Number(args.find((arg) => arg.startsWith('number='))?.slice(7));
+            events.push(number === oldNumber ? 'old-core' : 'replacement-core');
+            const old = number === oldNumber;
+            const parent = number === parentNumber;
+            const parentReplacement = number === parentReplacementNumber;
+            return JSON.stringify({
+                data: {
+                    repository: {
+                        nameWithOwner: 'jcosta33/sourdaw',
+                        pullRequest: {
+                            id: old ? 'PR_old' : `PR_${number}`,
+                            number,
+                            state: old ? state : parent ? 'CLOSED' : 'MERGED',
+                            headRefOid: old ? currentHead : parent ? parentHead : replacementHead,
+                            headRefName: old ? 'fix/old' : parent ? parentBranch : 'fix/replacement',
+                            headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
+                            baseRefName: old && distinctParent ? parentBranch : 'main',
+                            baseRef:
+                                old && distinctParent
+                                    ? {
+                                          name: parentBranch,
+                                          repository: { nameWithOwner: 'jcosta33/sourdaw' },
+                                          target: { oid: parentHead },
+                                      }
+                                    : null,
+                            merged: !old && !parent,
+                            mergeCommit: old || parent ? null : { oid: parentReplacement ? parentMerge : childMerge },
+                            closedAt: old ? closedAt : '2026-10-24T00:00:00Z',
+                        },
+                    },
+                },
+            });
+        }
+        if (query.includes('node(id:$subjectId)')) {
+            const id = args.find((arg) => arg.startsWith('subjectId='))?.slice(10);
+            if (id === 'PR_old') {
+                events.push('old-comments');
+                commentReads += 1;
+                if (commentReads === moveAt) {
+                    currentHead = movedHead;
+                }
+            } else {
+                events.push('replacement-comments');
+            }
+            return JSON.stringify({
+                data: {
+                    node: {
+                        id,
+                        comments: {
+                            nodes: (id === 'PR_old'
+                                ? comments
+                                : id === `PR_${parentNumber}`
+                                  ? distinctParentComments
+                                  : []
+                            ).map((entry) => ({
+                                id: entry.id,
+                                fullDatabaseId: entry.fullDatabaseId,
+                                body: entry.body,
+                                author: {
+                                    id: entry.authorNodeId,
+                                    login: entry.authorLogin,
+                                    __typename: entry.authorType,
+                                },
+                            })),
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    },
+                },
+            });
+        }
+        if (query.includes('closePullRequest(input:')) {
+            events.push('close');
+            state = 'CLOSED';
+            closedAt = '2026-10-24T00:00:00Z';
+            const clientMutationId = args.find((arg) => arg.startsWith('clientMutationId='))?.slice(17);
+            return JSON.stringify({
+                data: { closePullRequest: { clientMutationId, pullRequest: { id: 'PR_old', state, closedAt } } },
+            });
+        }
+        const endpoint = `repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`;
+        if (args[0] === 'api' && args[1] === endpoint) {
+            events.push('parent-merge-ancestry');
+            return JSON.stringify({
+                url: `https://api.github.com/${endpoint}`,
+                status: 'ahead',
+                ahead_by: 1,
+                behind_by: 0,
+                base_commit: { sha: parentMerge },
+                merge_base_commit: { sha: parentMerge },
+            });
+        }
+        throw new Error(`unexpected native supersession query: ${query}`);
+    };
+    const port: SupersedePullRequestPort = {
+        ...shellPort({ configDir: root, env: {}, dispose: () => undefined }, root, capture),
+        inspectReviewThreads: (number) => (number === parentNumber ? [] : defaultThreads),
+        log: (message) => events.push(message),
+    };
+    return {
+        port,
+        events,
+        state: () => state,
+        moveOnReplay: () => {
+            moveAt = commentReads + 1;
+        },
+    };
+}
 
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
 
@@ -528,6 +735,89 @@ function sortedKeysEverywhere(value: unknown): boolean {
 }
 
 describe('pull-request supersession', () => {
+    it('carries the native eleven-argument CLI through serialization and distinct-parent ancestry proof', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true);
+            const lineagePath = join(root, 'lineage.json');
+            writeFileSync(lineagePath, JSON.stringify(repairedLineage));
+            const nativeSerialize = withPullRequestMutationLock;
+            const dispose = vi.fn();
+            vi.spyOn(githubIdentity, 'originMainBlob').mockReturnValue(undefined);
+            vi.spyOn(githubIdentity, 'resolvePrimaryRoot').mockReturnValue(root);
+            vi.spyOn(githubIdentity, 'authenticateRole').mockResolvedValue({
+                credentials: { appId: 'fixture', installationId: 'fixture', privateKey: '', sourcePath: root },
+                minted: { token: '', login: 'author[bot]', actorNodeId: AUTHOR_BOT_NODE_ID, permissions: {} },
+                session: { configDir: root, env: {}, dispose },
+            });
+            vi.spyOn(githubIdentity, 'spawnCapture').mockImplementation((command, args) => {
+                if (command === 'gh' && args[0] === 'repo') {
+                    return 'jcosta33/sourdaw';
+                }
+                throw new Error(`unexpected CLI command: ${command}`);
+            });
+            vi.spyOn(githubPort, 'shellPort').mockReturnValue(current.port);
+            vi.spyOn(mutationOwnership, 'withPullRequestMutationLock').mockImplementation(
+                (directory, number, operation) =>
+                    nativeSerialize(directory, number, operation, {
+                        ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'supersession-cli-fixture' },
+                    })
+            );
+            try {
+                await expect(
+                    runSupersedePullRequestCli([
+                        String(oldNumber),
+                        '--head',
+                        head,
+                        '--replacement',
+                        String(replacementNumber),
+                        '--superseded-parent',
+                        String(parentNumber),
+                        '--parent-replacement',
+                        String(parentReplacementNumber),
+                        '--lineage',
+                        lineagePath,
+                    ])
+                ).resolves.toBe(0);
+                expect(current.state()).toBe('CLOSED');
+                expect(current.events.filter((event) => event === 'parent-merge-ancestry')).toHaveLength(4);
+                expect(current.events[current.events.indexOf('close') - 1]).toBe('old-core');
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
+                expect(dispose).toHaveBeenCalledOnce();
+            } finally {
+                vi.restoreAllMocks();
+            }
+        });
+    });
+    it('keeps the real supersession inspection and close adapters valid on an unchanged head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root);
+            await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-superseded:2244:2246');
+            await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-superseded:2244:2246');
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            expect(current.events[current.events.indexOf('close') - 1]).toBe('old-core');
+        });
+    });
+
+    it('keeps a moved native head from closing after the final composite marker read', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, 3);
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events).not.toContain('close');
+            expect(current.state()).toBe('OPEN');
+        });
+    });
+
+    it('rejects CLOSED supersession replay when native comments follow a moved head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root);
+            await runSerialized(root, current.port);
+            current.moveOnReplay();
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+        });
+    });
     it('uses client mutation receipts for forward comment and close mutations', () => {
         const source = readFileSync(join(import.meta.dirname, '../supersedePullRequestGh.ts'), 'utf8');
         expect(source).toContain(
@@ -1310,7 +1600,7 @@ describe('pull-request supersession', () => {
 
     it('fails closed without an ancestry reader', () => {
         const { port, calls } = distinctPort();
-        const { isAncestor: _isAncestor, ...withoutAncestry } = port;
+        const { isCommitAncestor: _isCommitAncestor, ...withoutAncestry } = port;
         expect(() => runWithDistinctParent(withoutAncestry)).toThrow(/not proven/i);
         expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
     });
@@ -1583,7 +1873,7 @@ describe('pull-request supersession', () => {
             bases: [parentBranch, parentBranch, parentBranch, parentBranch],
             replacementHeadRepository: null,
         });
-        port.isAncestor = () => {
+        port.isCommitAncestor = () => {
             throw new Error('legacy path must not request ancestry');
         };
         expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
@@ -1613,6 +1903,79 @@ describe('pull-request supersession', () => {
         expect(state().state).toBe('CLOSED');
         expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
         expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
+    });
+    describe.each([
+        ['receipt', receiptBody],
+        ['lineage', lineageBody],
+    ])('child %s marker during the last parent proof before close', (_marker, body) => {
+        it.each([
+            ['removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== body), false],
+            [
+                'body change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, body: `${body}\nEdited` })),
+                true,
+            ],
+            [
+                'identity replacement',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, () =>
+                        markerComment('IC_replacement_marker', String(databaseBase + 500n), body)
+                    ),
+                false,
+            ],
+            [
+                'actor change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID })),
+                true,
+            ],
+            [
+                'actor type change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, authorType: 'User' })),
+                true,
+            ],
+            [
+                'duplicate',
+                (comments: IssueComment[]) => [
+                    ...comments,
+                    markerComment('IC_duplicate_marker', String(databaseBase + 501n), body),
+                ],
+                false,
+            ],
+        ] satisfies [string, (comments: IssueComment[]) => IssueComment[], boolean][])(
+            'refuses %s before closing and preserves comments outside verified compensation',
+            (_case, change, retainsCreatedMarkers) => {
+                let changedComments: IssueComment[] | undefined;
+                const { port, calls, state, posted } = fakePort({
+                    bases: [parentBranch],
+                    precloseParentProofChildComments: (comments) => {
+                        changedComments = change(comments);
+                        return changedComments;
+                    },
+                });
+                expect(() => runWithParent(port)).toThrow(/marker|receipt/i);
+                expect(changedComments).toBeDefined();
+                expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+                expect(state().state).toBe('OPEN');
+                expect(state().closedAt).toBeNull();
+                expect(state().comments).toContainEqual(oldComment);
+                if (retainsCreatedMarkers) {
+                    expect(state().comments).toEqual(changedComments);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+                } else {
+                    expect(state().comments).toEqual(
+                        changedComments?.filter((comment) => !posted().includes(comment.id))
+                    );
+                    const expectedDeletes = posted()
+                        .filter((id) => changedComments?.some((comment) => comment.id === id))
+                        .map((id) => `delete:${id}`);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(expectedDeletes);
+                }
+                expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+            }
+        );
     });
     it.each([
         ['lineage removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== lineageBody)],
@@ -2057,6 +2420,7 @@ describe('pull-request supersession', () => {
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
         expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
     });
     it('refuses a finding removed during the transaction before the close', () => {
@@ -2066,7 +2430,35 @@ describe('pull-request supersession', () => {
         );
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
         expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
+    });
+    it('recovers with a complete updated lineage after a finding arrives before close', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort({
+                threadsBeforeClose: [...defaultThreads, { threadId: 'PRRT_2', rootCommentId: findingB }],
+            });
+            await expect(runSerialized(root, port)).rejects.toThrow(
+                /finding set changed after finding lineage: added 1002/i
+            );
+            expect(state().state).toBe('OPEN');
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+            const updatedLineage: FindingLineage = {
+                ...repairedLineage,
+                entries: [repairedEntry, { ...repairedEntry, findingId: findingB }],
+            };
+
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+            await expect(runSerialized(root, port, updatedLineage)).resolves.toBe('pull-request-superseded:2244:2246');
+            expect(state().state).toBe('CLOSED');
+            expect(state().comments.map((comment) => comment.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                renderFindingLineage(updatedLineage),
+            ]);
+        });
     });
 
     it('refuses a wrong-body comment receipt before checking stability or closing', () => {
@@ -2169,11 +2561,47 @@ describe('pull-request supersession', () => {
             `comment:2244:${lineageBody}`,
         ]);
     });
-    it('rolls back both markers after a post-comment head move', () => {
+    it('rolls back verified pre-close markers and reruns idempotently', () => {
         const { port, authorNodeId, state, calls } = fakePort({ heads: [head, movedHead] });
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(/head moved/i);
-        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+        expect(state().state).toBe('OPEN');
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+
+        expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(state().state).toBe('CLOSED');
+        expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
+        const completedCalls = [...calls];
+        expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.slice(completedCalls.length)).toEqual([
+            'threads:2244',
+            'inspect:2244',
+            'inspect:2246',
+            'log:pull-request-superseded:2244:2246',
+        ]);
+        expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([
+            `comment:2244:${receiptBody}`,
+            `comment:2244:${lineageBody}`,
+            `comment:2244:${receiptBody}`,
+            `comment:2244:${lineageBody}`,
+        ]);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('removes only owned noncanonical duplicates on an OPEN refusal', () => {
+        const { port, calls, state } = fakePort({
+            heads: [head, movedHead],
+            foreignLowerCommentBeforeConvergence: true,
+        });
+        expect(() => run(port)).toThrow(/head moved/i);
+        expect(state().state).toBe('OPEN');
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([
+            oldComment.id,
+            'IC_foreign',
+            'IC_foreign_lineage',
+        ]);
+        expect(calls.filter((call) => call.startsWith('close:') || call.startsWith('log:'))).toEqual([]);
     });
     it('posts only the missing lineage marker when a crash left the receipt behind', () => {
         const { port, calls, authorNodeId } = fakePort({ existingCommentCount: 1 });
@@ -2200,6 +2628,199 @@ describe('pull-request supersession', () => {
         expect(state().comments.filter((comment) => comment.body === receiptBody)).toEqual([
             expect.objectContaining({ id: 'IC_post_1' }),
         ]);
+    });
+    it.each(['fresh', 'completed replay'])(
+        'holds the serialized owner through every parent and child proof on %s supersession',
+        async (mode) => {
+            await withLockRoot(async (root) => {
+                const input: Input = {
+                    bases: [parentBranch],
+                    observeOperation: (operation) => {
+                        const owner = readPullRequestMutationLockOid(
+                            root,
+                            pullRequestMutationLockRef(oldNumber),
+                            oldNumber
+                        );
+                        if (operation.startsWith('log:')) {
+                            expect(owner).toBeUndefined();
+                        } else {
+                            expect(owner).toBeDefined();
+                        }
+                    },
+                };
+                if (mode === 'completed replay') {
+                    input.initialState = 'CLOSED';
+                    input.existingCommentCount = 1;
+                    input.existingLineageCount = 1;
+                }
+                const { port, calls, state } = fakePort(input);
+                const originalInspect = port.inspect;
+                let competingCheck: Promise<void> | undefined;
+                port.inspect = (number) => {
+                    if (number === parentNumber && competingCheck === undefined) {
+                        const beforeCompeting = [...calls];
+                        competingCheck = expect(
+                            runSerialized(root, port, repairedLineage, serializeFixture, parentNumber)
+                        ).rejects.toThrow(/already being delivered/i);
+                        expect(calls).toEqual(beforeCompeting);
+                    }
+                    return originalInspect(number);
+                };
+
+                await expect(runSerialized(root, port, repairedLineage, serializeFixture, parentNumber)).resolves.toBe(
+                    'pull-request-superseded:2244:2246'
+                );
+                expect(competingCheck).toBeDefined();
+                await competingCheck;
+                expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(
+                    mode === 'fresh' ? 4 : 1
+                );
+                expect(calls.filter((call) => call === `threads:${parentNumber}`)).toHaveLength(
+                    mode === 'fresh' ? 4 : 1
+                );
+                expect(state().state).toBe('CLOSED');
+                expect(calls.filter((call) => /^(?:comment|close):/.test(call))).toHaveLength(mode === 'fresh' ? 3 : 0);
+                expect(calls.at(-1)).toBe('log:pull-request-superseded:2244:2246');
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
+            });
+        }
+    );
+    it.each(['before close', 'after close'])(
+        'keeps parent-proof refusal compensation under the serialized owner %s',
+        async (stage) => {
+            await withLockRoot(async (root) => {
+                const input: Input = {
+                    bases: [parentBranch],
+                    observeOperation: () => {
+                        expect(
+                            readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                        ).toBeDefined();
+                    },
+                };
+                if (stage === 'before close') {
+                    input.parentCommentsByInspection = [validParentComments, validParentComments, []];
+                } else {
+                    input.removeParentReceiptDuringClose = true;
+                }
+                const { port, calls, state } = fakePort(input);
+
+                const failure = runSerialized(root, port, repairedLineage, serializeFixture, parentNumber);
+                await expect(failure).rejects.toThrow(/parent.*exactly one supersession receipt/i);
+                expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+                if (stage === 'before close') {
+                    expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([
+                        'delete:IC_post_1',
+                        'delete:IC_post_2',
+                    ]);
+                    expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+                    expect(
+                        readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                    ).toBeUndefined();
+                } else {
+                    expect(state().state).toBe('CLOSED');
+                    expect(state().comments.map((comment) => comment.body)).toEqual([
+                        oldComment.body,
+                        receiptBody,
+                        lineageBody,
+                    ]);
+                    expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+                    const owner = retainedOwner(root);
+                    await expect(failure).rejects.toThrow(`pnpm deliver --recover-lock ${oldNumber} --owner ${owner}`);
+                }
+            });
+        }
+    );
+    it('blocks a concurrent native closer during compensation, then lets its later invocation keep both proofs', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort({ heads: [head, movedHead] });
+            const events: string[] = [];
+            const serializeObserved: PullRequestMutationSerialization = (directory, number, operation) =>
+                serializeFixture(directory, number, (boundary) =>
+                    operation({
+                        ...boundary,
+                        get ownerOid() {
+                            return boundary.ownerOid;
+                        },
+                        markRemoteMutationAttempt: () => {
+                            events.push('boundary');
+                            boundary.markRemoteMutationAttempt();
+                        },
+                    })
+                );
+            const originalComment = port.comment;
+            port.comment = (number, body) => {
+                events.push('comment');
+                return originalComment(number, body);
+            };
+            const originalDelete = port.deleteComment;
+            port.deleteComment = (id) => {
+                events.push('delete');
+                originalDelete(id);
+            };
+            const originalClose = port.close;
+            port.close = (number) => {
+                events.push('close');
+                return originalClose(number);
+            };
+            const originalInspect = port.inspect;
+            let oldInspections = 0;
+            let competingCheck: Promise<void> | undefined;
+            port.inspect = (number) => {
+                const snapshot = originalInspect(number);
+                if (number === oldNumber && oldInspections++ === 2) {
+                    expect(snapshot.state).toBe('OPEN');
+                    const beforeCompeting = [...calls];
+                    competingCheck = expect(
+                        runSerialized(root, port, repairedLineage, serializeObserved)
+                    ).rejects.toThrow(/already being delivered/i);
+                    expect(calls).toEqual(beforeCompeting);
+                }
+                return snapshot;
+            };
+
+            await expect(runSerialized(root, port, repairedLineage, serializeObserved)).rejects.toThrow(/head moved/i);
+            expect(competingCheck).toBeDefined();
+            if (competingCheck === undefined) {
+                throw new Error('the competitor never attempted the compensation window');
+            }
+            await competingCheck;
+            expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+
+            await expect(runSerialized(root, port, repairedLineage, serializeObserved)).resolves.toBe(
+                'pull-request-superseded:2244:2246'
+            );
+            expect(state().state).toBe('CLOSED');
+            expect(state().comments.map((comment) => comment.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                lineageBody,
+            ]);
+            expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_3', 'IC_post_4']);
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual(['log:pull-request-superseded:2244:2246']);
+            expect(events).toEqual([
+                'boundary',
+                'comment',
+                'boundary',
+                'comment',
+                'boundary',
+                'delete',
+                'boundary',
+                'delete',
+                'boundary',
+                'comment',
+                'boundary',
+                'comment',
+                'boundary',
+                'close',
+            ]);
+        });
     });
     it("deletes only this invocation's noncanonical markers when another invocation closes first", () => {
         const { port, calls, authorNodeId, state } = fakePort({
@@ -2246,12 +2867,189 @@ describe('pull-request supersession', () => {
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(/exact author-bot/i);
         expect(calls.filter((call) => !call.startsWith('inspect') && !call.startsWith('threads:'))).toEqual([]);
     });
-    it('surfaces compensation failure', () => {
-        const { port, authorNodeId, state, calls } = fakePort({ heads: [head, movedHead], failDelete: true });
+    it('surfaces failure to delete an owned noncanonical marker', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [head, movedHead],
+            foreignLowerCommentBeforeConvergence: true,
+            failDelete: true,
+        });
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(
             /head moved[\s\S]*compensation failed[\s\S]*delete denied/i
         );
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
-        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([
+            oldComment.id,
+            'IC_post_1',
+            'IC_post_2',
+            'IC_foreign',
+            'IC_foreign_lineage',
+        ]);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+    });
+    it('releases a read-only refusal without claiming a completed supersession', async () => {
+        await withLockRoot(async (root) => {
+            const refused = fakePort({ replacementState: 'OPEN' });
+            await expect(runSerialized(root, refused.port)).rejects.toThrow(/replacement.*merged/i);
+            expect(refused.calls.filter((call) => /^(comment|delete|close|log):/.test(call))).toEqual([]);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+            await expect(runSerialized(root, fakePort().port)).resolves.toBe('pull-request-superseded:2244:2246');
+        });
+    });
+    it('retains the owner when acknowledged created markers are omitted from rollback observations', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort();
+            const inspect = port.inspect;
+            port.inspect = (number) => {
+                const snapshot = inspect(number);
+                return number === oldNumber ? { ...snapshot, comments: [oldComment] } : snapshot;
+            };
+            const failure = runSerialized(root, port);
+
+            await expect(failure).rejects.toThrow(/preserved lock owner/u);
+            expect(state()).toMatchObject({ state: 'OPEN' });
+            expect(state().comments).toHaveLength(3);
+            expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('close:'))).toEqual([]);
+            const oid = retainedOwner(root);
+            expect(readPullRequestMutationLockOwner(root, oid, oldNumber)).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+            await expect(failure).rejects.toThrow(`pnpm deliver --recover-lock ${oldNumber} --owner ${oid}`);
+        });
+    });
+    it('does not log success when the actual lock release loses ownership', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort();
+            const originalClose = port.close;
+            port.close = (number) => {
+                const result = originalClose(number);
+                execFileSync('git', ['update-ref', '-d', pullRequestMutationLockRef(oldNumber), retainedOwner(root)], {
+                    cwd: root,
+                });
+                return result;
+            };
+            await expect(runSerialized(root, port)).rejects.toThrow(/ownership changed before release/i);
+            expect(state().state).toBe('CLOSED');
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+        });
+    });
+    it('keeps the shared lock scoped to one pull request', async () => {
+        await withLockRoot(async (root) => {
+            await serializeFixture(root, oldNumber, async () => {
+                const second = fakePort();
+                const secondNumber = oldNumber + 1;
+                const originalInspect = second.port.inspect;
+                second.port.inspect = (number) => {
+                    if (number === secondNumber) {
+                        return { ...originalInspect(oldNumber), number };
+                    }
+                    return originalInspect(number);
+                };
+                const originalThreads = second.port.inspectReviewThreads;
+                second.port.inspectReviewThreads = (number) =>
+                    originalThreads(number === secondNumber ? oldNumber : number);
+                await expect(
+                    runSerialized(root, second.port, { ...repairedLineage, oldPr: secondNumber })
+                ).resolves.toBe('pull-request-superseded:2245:2246');
+                expect(second.state().state).toBe('CLOSED');
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeDefined();
+            });
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+        });
+    });
+    it.each([
+        { label: 'an ambiguous comment', input: { throwAfterComment: true }, message: /comment transport lost/i },
+        { label: 'an attempted close', input: { throwCloseOnceWithoutState: true }, message: /close transport lost/i },
+        { label: 'failed rollback', input: { heads: [head, movedHead], failDelete: true }, message: /delete denied/i },
+        {
+            label: 'an altered marker',
+            input: { heads: [head, movedHead], editCommentAfterComment: true },
+            message: /no longer exact/i,
+        },
+    ])('retains the journal and recovery instructions after $label', async ({ input, message }) => {
+        await withLockRoot(async (root) => {
+            const { port, calls } = fakePort(input);
+            const failure = runSerialized(root, port);
+            await expect(failure).rejects.toThrow(message);
+            const ownerOid = retainedOwner(root);
+            expect(readPullRequestMutationLockOwner(root, ownerOid, oldNumber)).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+            await expect(failure).rejects.toThrow(`pnpm deliver --recover-lock ${oldNumber} --owner ${ownerOid}`);
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+            const beforeRetry = [...calls];
+            await expect(runSerialized(root, port)).rejects.toThrow(/already being delivered/i);
+            expect(calls).toEqual(beforeRetry);
+            expect(retainedOwner(root)).toBe(ownerOid);
+        });
+    });
+    it('retains the journal when rollback cannot be verified', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort({ heads: [head, movedHead] });
+            const originalInspect = port.inspect;
+            let oldInspections = 0;
+            port.inspect = (number) => {
+                if (number === oldNumber && oldInspections++ === 3) {
+                    throw new Error('compensation verification unavailable');
+                }
+                return originalInspect(number);
+            };
+            await expect(runSerialized(root, port)).rejects.toThrow(/compensation verification unavailable/i);
+            expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+            expect(retainedOwner(root)).toBeDefined();
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+        });
+    });
+    it.each([
+        { label: 'OPEN', input: { throwCloseOnceWithoutState: true } },
+        { label: 'CLOSED', input: { changedClosedAtAfterClose: true } },
+    ])('reuses native deliver recovery for a stable $label unmerged pull request', async ({ label, input }) => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort(input);
+            await expect(runSerialized(root, port)).rejects.toThrow(/preserved lock owner/i);
+            expect(state().state).toBe(label);
+            const ownerOid = retainedOwner(root);
+            let reads = 0;
+            await expect(
+                runDeliverCli(['--recover-lock', String(oldNumber), '--owner', ownerOid], {
+                    recovery: {
+                        trustedLauncher: { primaryRoot: root, gitPath: 'git', ghPath: 'gh' },
+                        authenticateAuthor: async () => ({
+                            minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                            session: { configDir: root, env: {}, dispose: () => undefined },
+                        }),
+                        repositoryName: () => 'jcosta33/sourdaw',
+                        ownerFenceIsLive: () => false,
+                        currentOwnerFence: () => ({
+                            kind: 'pid',
+                            pid: process.pid,
+                            startedAt: 'recovery-fixture-process',
+                        }),
+                        readJournaledRemoteState: () => {
+                            reads += 1;
+                            return { state: state().state.toLowerCase(), head, merged: false, receipts: [] };
+                        },
+                    },
+                })
+            ).resolves.toBe(0);
+            expect(reads).toBe(2);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+            expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+            await expect(runSerialized(root, port)).resolves.toBe('pull-request-superseded:2244:2246');
+            expect(state().state).toBe('CLOSED');
+            expect(calls.filter((call) => call.startsWith('comment:'))).toHaveLength(2);
+            expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        });
     });
 });

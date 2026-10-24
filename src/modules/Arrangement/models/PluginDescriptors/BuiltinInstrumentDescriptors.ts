@@ -330,17 +330,22 @@ const BUILTIN_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
                 automatable: false,
                 hasAutomation: false,
             },
+            // The kit's output level. It replaces a unitless `gain` that no
+            // scheduler ever read and that is no longer declared: projects
+            // still store that value, and reading it would change mixes that
+            // were made without it. The kit has no audio node for an
+            // automation lane to drive, so the level is not automatable.
             {
-                id: 'gain',
+                id: 'level',
                 deviceId: 'builtin-drum-kit',
-                name: 'Gain',
+                name: 'Level',
                 type: 'float',
-                value: 0.8,
-                defaultValue: 0.8,
-                minValue: 0,
-                maxValue: 1,
-                unit: '',
-                automatable: true,
+                value: 0,
+                defaultValue: 0,
+                minValue: -60,
+                maxValue: 6,
+                unit: 'dB',
+                automatable: false,
                 hasAutomation: false,
             },
         ],
@@ -365,9 +370,9 @@ const BUILTIN_INSTRUMENT_DESCRIPTORS_GUIDANCE = [
     descriptorGuidance(
         'builtin-drum-kit',
         instrumentGuidance(
-            'Choose one of six synthesized kits and play it from MIDI notes; level is set on the track, not on the kit.',
+            'Choose one of six synthesized kits and play it from MIDI notes; level sets the whole kit’s output in dB.',
             [
-                'Set drum level with track or clip gain: the kit gain parameter is not read by any drum scheduler, and each hit is scaled only by its kit voice level and note velocity.',
+                'Each hit is scaled by its kit voice level, note velocity, clip gain and then the kit level, so level trims the whole kit without changing the balance between its voices; the kit has no gain parameter.',
             ],
             [
                 'The kit choice decides which MIDI notes sound: kit 0 answers fifteen notes from 36 to 75, kits 1 to 5 answer eight notes from 36 to 48.',

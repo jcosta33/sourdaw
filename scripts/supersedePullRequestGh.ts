@@ -48,8 +48,9 @@ export type AddedIssueCommentReceipt = IssueComment & { clientMutationId: string
 export type SupersededReviewThread = { threadId: string; rootCommentId: string };
 export type SupersedePullRequestPort = {
     inspect: (number: number) => SupersededPullRequest;
+    assertCurrentPullRequest: (number: number, expected: SupersededPullRequest) => void;
     inspectReviewThreads: (number: number) => SupersededReviewThread[];
-    isAncestor?: (repository: string, ancestor: string, descendant: string) => boolean;
+    isCommitAncestor?: (repository: string, ancestor: string, descendant: string) => boolean;
     comment: (number: number, body: string) => AddedIssueCommentReceipt;
     close: (number: number) => PullRequestCloseReceipt;
     deleteComment: (id: string) => void;
@@ -64,18 +65,24 @@ export function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): SupersedePullRequestPort {
+export function shellPort(
+    session: GhSession,
+    cwd: string = process.cwd(),
+    capture: typeof spawnCapture = spawnCapture
+): SupersedePullRequestPort {
     const primaryRoot = resolvePrimaryRoot(
-        (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
+        (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
-    const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     const ids = new Map<number, string>();
     const nodeId = (number: number) => ids.get(number) ?? fail(`PR #${number} was not inspected`);
     return {
         inspect: (number) => inspectPullRequest(number, gh, ids),
+        assertCurrentPullRequest: (number, expected) => assertCurrentPullRequest(number, expected, nodeId(number), gh),
         inspectReviewThreads: (number) => inspectReviewThreads(number, gh),
-        isAncestor: (repository, ancestor, descendant) => inspectCommitAncestry(repository, ancestor, descendant, gh),
+        isCommitAncestor: (repository, ancestor, descendant) =>
+            inspectCommitAncestry(repository, ancestor, descendant, gh),
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),
         close: (number) => closePullRequest(nodeId(number), gh),
         deleteComment: (id) => deleteComment(id, gh),
@@ -202,6 +209,14 @@ function readBaseRef(value: unknown, number: number): SupersededPullRequest['bas
     return { name: ref.name, repository: ref.repository.nameWithOwner, target: ref.target.oid };
 }
 export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
+    const core = readPullRequestCore(number, gh);
+    ids.set(number, core.id);
+    return { ...core.value, comments: inspectIssueComments(core.id, gh) };
+}
+
+type PullRequestCore = Omit<SupersededPullRequest, 'comments'>;
+
+function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullRequestCore } {
     const query =
         'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt mergeCommit{oid} baseRef{name repository{nameWithOwner} target{oid}}}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
@@ -229,10 +244,13 @@ export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, stri
     if (
         repository?.nameWithOwner !== REQUIRED_REPOSITORY ||
         typeof pullRequest?.id !== 'string' ||
+        pullRequest.id === '' ||
         typeof pullRequest.number !== 'number' ||
         !Number.isSafeInteger(pullRequest.number) ||
+        pullRequest.number !== number ||
         typeof pullRequest.state !== 'string' ||
         typeof pullRequest.headRefOid !== 'string' ||
+        !/^[0-9a-f]{40}$/u.test(pullRequest.headRefOid) ||
         typeof pullRequest.headRefName !== 'string' ||
         typeof pullRequest.baseRefName !== 'string' ||
         typeof pullRequest.merged !== 'boolean' ||
@@ -242,21 +260,48 @@ export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, stri
     }
     const headRepository = readHeadRepository(pullRequest.headRepository, number);
     const mergeCommit = pullRequest.mergeCommit?.oid;
-    ids.set(number, pullRequest.id);
     return {
-        number: pullRequest.number,
-        state: pullRequest.state,
-        head: pullRequest.headRefOid,
-        headRefName: pullRequest.headRefName,
-        headRepository,
-        repository: repository.nameWithOwner,
-        base: pullRequest.baseRefName,
-        baseRef: readBaseRef(pullRequest.baseRef, number),
-        merged: pullRequest.merged,
-        mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
-        closedAt: pullRequest.closedAt,
-        comments: inspectIssueComments(pullRequest.id, gh),
+        id: pullRequest.id,
+        value: {
+            number: pullRequest.number,
+            state: pullRequest.state,
+            head: pullRequest.headRefOid,
+            headRefName: pullRequest.headRefName,
+            headRepository,
+            repository: repository.nameWithOwner,
+            base: pullRequest.baseRefName,
+            baseRef: readBaseRef(pullRequest.baseRef, number),
+            merged: pullRequest.merged,
+            mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
+            closedAt: pullRequest.closedAt,
+        },
     };
+}
+
+function coreIdentity(value: PullRequestCore) {
+    return {
+        number: value.number,
+        repository: value.repository,
+        head: value.head,
+        headRefName: value.headRefName,
+        headRepository: value.headRepository,
+        base: value.base,
+        state: value.state,
+        merged: value.merged,
+        mergeCommit: value.mergeCommit,
+        closedAt: value.closedAt,
+    };
+}
+
+/** Bound the split-read composition gap; GitHub's close input has no expected-head CAS. */
+function assertCurrentPullRequest(number: number, expected: SupersededPullRequest, expectedId: string, gh: Gh): void {
+    const current = readPullRequestCore(number, gh);
+    if (
+        current.id !== expectedId ||
+        JSON.stringify(coreIdentity(current.value)) !== JSON.stringify(coreIdentity(expected))
+    ) {
+        fail(`PR #${number} core identity changed before completion`);
+    }
 }
 /**
  * The old pull request's live review threads, each reduced to the finding the lineage binds: the
