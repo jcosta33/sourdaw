@@ -51,6 +51,8 @@ export type Slot = {
     closer: string | null;
     /** Whether the slot only exempts what it names from a protection beside it ("leave Bass alone except Keys"). */
     exempts: boolean;
+    /** Whether `otherwise` closes or follows the protection: it keeps everything but the request's own targets. */
+    otherwise: boolean;
 };
 export type Range = { start: number; end: number };
 
@@ -143,10 +145,17 @@ function readSlot(masked: string, piece: Piece): Slot | null {
         const withEnd = LAST_WITH.exec(before);
         const start = piece.start + (withEnd === null ? 0 : withEnd.index + withEnd[0].length);
         const end = closer.start - (STATE_VERBS.exec(before)?.[0].length ?? 0);
-        return { start, end: Math.max(start, end), strict: true, closer: closer.word, exempts: false };
+        return {
+            start,
+            end: Math.max(start, end),
+            strict: true,
+            closer: closer.word,
+            exempts: false,
+            otherwise: false,
+        };
     }
     if (lead.kind === 'carve-out') {
-        return { start: lead.end, end: piece.end, strict: true, closer: null, exempts: false };
+        return { start: lead.end, end: piece.end, strict: true, closer: null, exempts: false, otherwise: false };
     }
     if (lead.kind === 'prohibition') {
         const closer = findCloser(masked, lead.end, piece.end, closerPattern, null);
@@ -156,6 +165,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
             strict: true,
             closer: closer?.word ?? null,
             exempts: false,
+            otherwise: false,
         };
     }
     const closer = findCloser(masked, lead.end, piece.end, closerPattern, lead.text);
@@ -165,6 +175,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
         strict: closer !== null,
         closer: closer?.word ?? null,
         exempts: false,
+        otherwise: false,
     };
 }
 
@@ -179,7 +190,8 @@ function readSlots(masked: string): Slot[] {
             continue;
         }
         const isCarveOut = piece.lead?.kind === 'carve-out';
-        slots.push({ ...slot, exempts: isCarveOut && previousProtects });
+        const otherwise = /\botherwise\b/iu.test(masked.slice(piece.start, piece.end));
+        slots.push({ ...slot, exempts: isCarveOut && previousProtects, otherwise });
         previousProtects = piece.lead?.kind === 'verb' || piece.lead?.kind === 'prohibition';
     }
     return slots;

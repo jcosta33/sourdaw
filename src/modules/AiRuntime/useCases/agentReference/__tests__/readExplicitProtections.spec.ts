@@ -26,6 +26,7 @@ function createTrack(id: string, name: string, overrides: Partial<ProjectContext
 const keys = createTrack('track-keys', 'Keys');
 const bass = createTrack('track-bass', 'Bass');
 const drums = createTrack('track-drums', 'Drums');
+const vocals = createTrack('track-vocals', 'Vocals');
 const rockAndRoll = createTrack('track-rock', 'Rock and Roll');
 const drumBus = createTrack('track-drum-bus', 'Drum Bus');
 const subBoost = createTrack('track-sub-boost', 'Sub Boost');
@@ -60,7 +61,7 @@ const context: ProjectContext = {
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
-    tracks: [keys, bass, drums, rockAndRoll, drumBus, subBoost, homeAlone, drBeat, guitar],
+    tracks: [keys, bass, drums, vocals, rockAndRoll, drumBus, subBoost, homeAlone, drBeat, guitar],
     markers: [{ id: 'marker-chorus', name: 'Chorus', beat: 32 }],
     sections: [{ id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 32 }],
     selectedTrackId: null,
@@ -88,8 +89,15 @@ describe('readExplicitProtections', () => {
             ["don't change the pan of Ghost", ['Ghost']],
             ['turn Keys down 3 dB; the pan of Ghost stays as is', ['Ghost']],
             ['leave the volume or the fader of the Kick alone', ['Kick']],
+            ['keep the fader of Ghost as is', ['Ghost']],
+            ['leave the pan on Kick alone', ['Kick']],
             // a possessive control
             ["leave Ghost's fader alone", ['Ghost']],
+            ["leave Mike's fader alone", ['Mike']],
+            ['leave the Kick fader alone', ['Kick']],
+            ['keep the Kick pan as is', ['Kick']],
+            ['leave the Kick VCA alone', ['Kick']],
+            ['leave the Ghost audio track alone', ['Ghost audio']],
             ['leave Ghost’s fader alone', ['Ghost']],
             ["don't touch Ghost's pan", ['Ghost']],
             // a singular kind of it
@@ -170,6 +178,21 @@ describe('readExplicitProtections', () => {
             'leave the Audio tracks alone',
             'leave the Backing tracks alone',
             'leave the audio track alone',
+            // a control of a description, not of a name
+            'keep the level of the mix the same',
+            "don't change the volume of the song",
+            'keep the gain of each track the same',
+            'keep the level of detail as is',
+            "keep the song's level as is",
+            "keep everyone's levels the same",
+            "keep the singer's pan as is",
+            'keep the fader of everything else as is',
+            // conventional terms are the project's own routing
+            'leave the Mix bus alone',
+            'keep the Stereo bus as is',
+            'leave the FX return alone',
+            'leave the Click track alone',
+            'leave the Master track alone',
             "don't touch the drum group",
             'leave the vocal bus alone',
             "don't change the master bus",
@@ -457,5 +480,57 @@ describe('readExplicitProtections', () => {
                 )
             ).toEqual({ ...NOTHING, protectedTrackIds: [bass.id], namedTrackIds: [bass.id] });
         });
+    });
+
+    describe('a kind form whose name is a variant of one project object binds to it', () => {
+        it.each(['leave the Vocal track alone', "don't touch the Vocal track", 'leave the vocal track alone'])(
+            'protects Vocals in "%s"',
+            (protection) => {
+                expect(readExplicitProtections(`turn Keys down 3 dB; ${protection}`, context)).toEqual({
+                    ...NOTHING,
+                    protectedTrackIds: [vocals.id],
+                    namedTrackIds: [vocals.id],
+                });
+            }
+        );
+
+        it('binds a VCA group variant to its member tracks', () => {
+            expect(readExplicitProtections('turn Drums down 3 dB; leave the String group alone', context)).toEqual({
+                ...NOTHING,
+                protectedTrackIds: [keys.id, bass.id],
+                namedTrackIds: [keys.id, bass.id],
+            });
+        });
+
+        it('leaves a bare word that is a variant alone', () => {
+            expect(readExplicitProtections('turn Keys down 3 dB; leave the Vocal alone', context)).toEqual(NOTHING);
+        });
+    });
+
+    describe("otherwise exempts the request's own targets", () => {
+        it.each([
+            'turn Drums down 3 dB; leave the Drums untouched otherwise',
+            'lower the Drums by 2 dB and leave the Drums alone otherwise',
+        ])('protects nothing in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context)).toEqual(NOTHING);
+        });
+
+        it('still protects what the request does not target', () => {
+            expect(
+                readExplicitProtections('turn Drums down 3 dB; leave Keys alone otherwise', context).protectedTrackIds
+            ).toEqual([keys.id]);
+            expect(
+                readExplicitProtections('turn Drums down 3 dB; leave the Drums alone', context).protectedTrackIds
+            ).toEqual([drums.id]);
+        });
+    });
+
+    describe('a capital at a sentence start carries no signal in a kind form', () => {
+        it.each(['Ghost track stays as is, turn Keys down 3 dB', 'turn Keys down 3 dB. Ghost track stays as is.'])(
+            'finds nothing unresolved in "%s"',
+            (prompt) => {
+                expect(unresolvedIn(prompt)).toEqual([]);
+            }
+        );
     });
 });

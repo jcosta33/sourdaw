@@ -1274,6 +1274,109 @@ describe('an explicit protection naming a reference that binds to nothing refuse
         );
     });
 
+    describe('a control or kind of a description grounds, of a written name refuses', () => {
+        it.each([
+            'keep the level of the mix the same',
+            "don't change the volume of the song",
+            'keep the gain of each track the same',
+            'keep the level of detail as is',
+            "keep the song's level as is",
+            "keep everyone's levels the same",
+            "keep the singer's pan as is",
+            'keep the fader of everything else as is',
+            'leave the Mix bus alone',
+            'keep the Stereo bus as is',
+            'leave the FX return alone',
+            'leave the Click track alone',
+        ])('grounds the asked change over "%s"', (protection) => {
+            for (const prompt of [
+                `turn the Drums down 3 dB; ${protection}`,
+                `${protection}, turn the Drums down 3 dB`,
+            ]) {
+                const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+                expect(result.rejections).toEqual([]);
+                expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+            }
+        });
+
+        it('grounds a kind form of a name at a sentence start', () => {
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 })],
+                'Ghost track stays as is, turn the Drums down 3 dB'
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        });
+
+        it('grounds the master output with no Master track', () => {
+            const noMaster = { ...projectContext, tracks: projectContext.tracks.filter(({ id }) => id !== 'master') };
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 })],
+                'turn the Drums down 3 dB; leave the Master track alone',
+                noMaster
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        });
+
+        it.each([
+            ['keep the fader of Ghost as is', 'Ghost'],
+            ["leave Ghost's fader alone", 'Ghost'],
+            ["leave Mike's fader alone", 'Mike'],
+            ['leave the Kick VCA alone', 'Kick'],
+            ['leave the Kick fader alone', 'Kick'],
+            ['keep the Kick pan as is', 'Kick'],
+            ['leave the pan on Kick alone', 'Kick'],
+            ['leave the Ghost audio track alone', 'Ghost audio'],
+        ])('still refuses "%s"', (protection, reference) => {
+            expectRefusedNamingReference(
+                bridge([gainCall(drums.id, { deltaDb: -3 })], `turn the Drums down 3 dB; ${protection}`),
+                reference
+            );
+        });
+    });
+
+    describe('a kind form whose name is a variant of one project object protects it', () => {
+        it.each(['leave the Vocal track alone', "don't touch the Vocal track"])(
+            'refuses a change to Vocals in "%s"',
+            (protection) => {
+                const result = bridge(
+                    [gainCall(vocals.id, { deltaDb: -3 })],
+                    `turn the Vocals down 3 dB; ${protection}`
+                );
+
+                expect(result.actions).toEqual([]);
+                expect(result.rejections).toEqual([
+                    { index: 0, name: '<batch>', reason: expect.stringContaining('Request changes "Vocals"') },
+                ]);
+            }
+        );
+
+        it('grounds a change to another track', () => {
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 })],
+                'turn the Drums down 3 dB; leave the Vocal track alone'
+            );
+
+            expect(result.rejections).toEqual([]);
+        });
+    });
+
+    describe("otherwise exempts the request's own targets", () => {
+        it.each([
+            ['turn the Drums down 3 dB; leave the Drums untouched otherwise', drums, -3],
+            ['lower the Vocals by 2 dB and leave the Vocals alone otherwise', vocals, -2],
+        ])('grounds the change in "%s"', (prompt, track, deltaDb) => {
+            const result = bridge([gainCall(track.id, { deltaDb })], prompt);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(track.id, { deltaDb })]);
+        });
+    });
+
     describe('a track named by its exact name', () => {
         it.each([
             'turn the Vocals down 3 dB; leave Vocals alone',
