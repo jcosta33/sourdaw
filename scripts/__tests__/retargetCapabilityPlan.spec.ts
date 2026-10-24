@@ -256,14 +256,16 @@ describe('inactive retarget capability plan', () => {
             parameters: { strict_required_status_checks_policy: false, required_status_checks: [] },
         },
     ];
-    const incompleteParameterRules = requiredParameterRules.flatMap(({ type, parameters }) => [
-        { type },
-        { type, parameters: {} },
-        ...Object.keys(parameters).map((field) => ({
-            type,
-            parameters: Object.fromEntries(Object.entries(parameters).filter(([key]) => key !== field)),
-        })),
-    ]);
+    const incompleteParameterRules = requiredParameterRules.flatMap<Record<string, JsonValue>>(
+        ({ type, parameters }) => [
+            { type },
+            { type, parameters: {} },
+            ...Object.keys(parameters).map((field) => ({
+                type,
+                parameters: Object.fromEntries(Object.entries(parameters).filter(([key]) => key !== field)),
+            })),
+        ]
+    );
     it.each(
         (['detail', 'effective'] as const).flatMap((surface) =>
             incompleteParameterRules.map((rule) => ({ surface, rule }))
@@ -300,10 +302,12 @@ describe('inactive retarget capability plan', () => {
     ];
     it.each(
         (['detail', 'effective'] as const).flatMap((surface) =>
-            unsupportedParameterizedTypes.flatMap((type) => [
-                { surface, rule: { type } },
-                { surface, rule: { type, parameters: {} } },
-            ])
+            unsupportedParameterizedTypes.flatMap<{ surface: 'detail' | 'effective'; rule: Record<string, JsonValue> }>(
+                (type) => [
+                    { surface, rule: { type } },
+                    { surface, rule: { type, parameters: {} } },
+                ]
+            )
         )
     )('does not infer unsupported $surface parameter semantics: $rule', ({ surface, rule }) => {
         const input = observed();
@@ -537,7 +541,7 @@ describe('inactive retarget capability plan', () => {
 
     it('binds multiple effective rules on every branch to the same complete source without rewriting raw observations', () => {
         const input = observed();
-        const rules = [
+        const rules: Array<Record<string, JsonValue>> = [
             { type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS },
             { type: 'update', parameters: { update_allows_fetch_and_merge: false } },
             { type: 'deletion' },

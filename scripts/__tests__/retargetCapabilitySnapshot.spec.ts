@@ -505,17 +505,18 @@ function emittedClassicBaseline(output: string): {
 }
 
 describe('bounded capability capture', () => {
+    const incompletePolicies: Array<{ label: string; rule: Record<string, JsonValue> }> = [
+        { label: 'absent pull request parameters', rule: { type: 'pull_request' } },
+        { label: 'empty pull request parameters', rule: { type: 'pull_request', parameters: {} } },
+        {
+            label: 'partial pull request parameters',
+            rule: { type: 'pull_request', parameters: { required_approving_review_count: 1 } },
+        },
+        { label: 'unsupported parameterless merge queue', rule: { type: 'merge_queue' } },
+    ];
     it.each(
         (['detail', 'effective'] as const).flatMap((surface) =>
-            [
-                { label: 'absent pull request parameters', rule: { type: 'pull_request' } },
-                { label: 'empty pull request parameters', rule: { type: 'pull_request', parameters: {} } },
-                {
-                    label: 'partial pull request parameters',
-                    rule: { type: 'pull_request', parameters: { required_approving_review_count: 1 } },
-                },
-                { label: 'unsupported parameterless merge queue', rule: { type: 'merge_queue' } },
-            ].map(({ label, rule }) => ({ surface, label, rule }))
+            incompletePolicies.map(({ label, rule }) => ({ surface, label, rule }))
         )
     )('retains two stable captures with $label in $surface as incomplete', ({ surface, rule }) => {
         const { port } = fakePort();
@@ -574,36 +575,42 @@ describe('bounded capability capture', () => {
         expect(capture.disposed).toHaveBeenCalledOnce();
     });
 
+    const effectivePolicySources: Array<{ label: string; source: Record<string, JsonValue> }> = [
+        { label: 'missing ID', source: { ruleset_source_type: RULE.source_type, ruleset_source: RULE.source } },
+        { label: 'missing source type', source: { ruleset_id: RULE.id, ruleset_source: RULE.source } },
+        {
+            label: 'missing source name',
+            source: { ruleset_id: RULE.id, ruleset_source_type: RULE.source_type },
+        },
+        {
+            label: 'uncaptured organization source',
+            source: {
+                ruleset_id: 999,
+                ruleset_source_type: 'Organization',
+                ruleset_source: 'another-organization',
+            },
+        },
+        {
+            label: 'mismatched detail provenance',
+            source: {
+                ruleset_id: RULE.id,
+                ruleset_source_type: 'Repository',
+                ruleset_source: 'another/repository',
+            },
+        },
+        {
+            label: 'matching source',
+            source: { ruleset_id: RULE.id, ruleset_source_type: RULE.source_type, ruleset_source: RULE.source },
+        },
+    ];
     it.each(
         ['main', 'agent/retarget-capability-planner', 'release/v1.0', 'Case.Mixed'].flatMap((branch) =>
-            [
-                { label: 'missing ID', source: { ruleset_source_type: RULE.source_type, ruleset_source: RULE.source } },
-                { label: 'missing source type', source: { ruleset_id: RULE.id, ruleset_source: RULE.source } },
-                {
-                    label: 'missing source name',
-                    source: { ruleset_id: RULE.id, ruleset_source_type: RULE.source_type },
-                },
-                {
-                    label: 'uncaptured organization source',
-                    source: {
-                        ruleset_id: 999,
-                        ruleset_source_type: 'Organization',
-                        ruleset_source: 'another-organization',
-                    },
-                },
-                {
-                    label: 'mismatched detail provenance',
-                    source: {
-                        ruleset_id: RULE.id,
-                        ruleset_source_type: 'Repository',
-                        ruleset_source: 'another/repository',
-                    },
-                },
-                {
-                    label: 'matching source',
-                    source: { ruleset_id: RULE.id, ruleset_source_type: RULE.source_type, ruleset_source: RULE.source },
-                },
-            ].map(({ label, source }) => ({ branch, label, source, complete: label === 'matching source' }))
+            effectivePolicySources.map(({ label, source }) => ({
+                branch,
+                label,
+                source,
+                complete: label === 'matching source',
+            }))
         )
     )(
         'binds two stable effective captures of $label on $branch without changing raw bytes',
