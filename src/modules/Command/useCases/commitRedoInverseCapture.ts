@@ -1,21 +1,20 @@
-import { getHeads, hasHeads } from '@automerge/automerge';
-
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
-import {
-    captureDurableDocumentWitness,
-    captureProjectIdentity,
-    getCrdtDoc,
-    getCrdtDocIds,
-} from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionUndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
+// Project owners supply this read capability; Command must not import their
+// document/runtime composition back into its execution kernel.
+type PublicationAuthority = {
+    captureIdentity: () => string;
+    captureWitness: () => string;
+    captureCurrentGuard: () => () => boolean;
+};
+
 type Publication = {
     actions: readonly AppAction[];
-    identity: string;
-    documents: { id: string; heads: string[] }[];
+    guards: readonly (() => boolean)[];
 };
 
 type StagedCapture = {
@@ -25,11 +24,18 @@ type StagedCapture = {
     identity: string;
     before: string;
     ownsPublication: () => boolean;
+    authority: PublicationAuthority;
     publication?: Publication;
 };
 
 type CaptureLifecycle =
-    | { phase: 'stage'; action: AppAction; inverseAction: AppAction; ownsPublication: () => boolean }
+    | {
+          phase: 'stage';
+          action: AppAction;
+          inverseAction: AppAction;
+          ownsPublication: () => boolean;
+          publicationAuthority: PublicationAuthority;
+      }
     | { phase: 'published' | 'settle' | 'discard'; actions: readonly AppAction[] };
 
 // Execution-local intents only. They never enter the document or session mirror.
@@ -44,14 +50,39 @@ function findEntry(replayAction: AppAction): ActionUndoEntry | undefined {
 
 function publicationIsCurrent(publication: Publication, actions: readonly AppAction[]): boolean {
     return (
-        captureProjectIdentity() === publication.identity &&
         publication.actions.length === actions.length &&
         publication.actions.every((action, index) => action === actions[index]) &&
-        publication.documents.every(({ id, heads }) => {
-            const document = getCrdtDoc(id);
-            return document !== undefined && hasHeads(document, heads);
-        })
+        publication.guards.every((isCurrent) => isCurrent())
     );
+}
+
+function captureOwnedPublication(
+    captures: readonly StagedCapture[],
+    actions: readonly AppAction[]
+): Publication | null {
+    const first = captures[0];
+    if (!first) {
+        return null;
+    }
+    const identity = first.authority.captureIdentity();
+    const witness = first.authority.captureWitness();
+    if (
+        !captures.every(
+            (capture) =>
+                capture.owner === first.owner &&
+                capture.identity === identity &&
+                capture.authority.captureIdentity() === identity &&
+                capture.before !== witness &&
+                capture.authority.captureWitness() === witness &&
+                capture.ownsPublication()
+        )
+    ) {
+        return null;
+    }
+    return {
+        actions: [...actions],
+        guards: captures.map((capture) => capture.authority.captureCurrentGuard()),
+    };
 }
 
 function discardStagedCaptures(actions: readonly AppAction[], captures: readonly StagedCapture[]): void {
@@ -65,6 +96,26 @@ function discardStagedCaptures(actions: readonly AppAction[], captures: readonly
     }
     for (const action of discardedActions) {
         stagedCaptures.delete(action);
+    }
+}
+
+function settleStagedCaptures(actions: readonly AppAction[], captures: readonly StagedCapture[]): void {
+    const publication = captures[0]?.publication;
+    if (
+        publication === undefined ||
+        !publicationIsCurrent(publication, actions) ||
+        !captures.every(
+            (capture) =>
+                capture.publication === publication &&
+                undoStore.value?.future.includes(capture.entry) === true &&
+                capture.entry.inverseAction?.type === capture.inverseAction.type
+        )
+    ) {
+        return;
+    }
+    // Validate the entire group before changing any of its paired captures.
+    for (const capture of captures) {
+        capture.entry.inverseAction = capture.inverseAction;
     }
 }
 
@@ -90,9 +141,10 @@ export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, in
             entry,
             inverseAction: input.inverseAction,
             owner,
-            identity: captureProjectIdentity(),
-            before: captureDurableDocumentWitness(),
+            identity: input.publicationAuthority.captureIdentity(),
+            before: input.publicationAuthority.captureWitness(),
             ownsPublication: input.ownsPublication,
+            authority: input.publicationAuthority,
         });
         return;
     }
@@ -102,44 +154,16 @@ export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, in
         return capture ? [capture] : [];
     });
     if (input.phase === 'published' && captures.length > 0) {
-        const identity = captureProjectIdentity();
-        const witness = captureDurableDocumentWitness();
-        const first = captures[0]!;
-        if (
-            captures.every(
-                (capture) =>
-                    capture.owner === first.owner &&
-                    capture.identity === identity &&
-                    capture.before !== witness &&
-                    capture.ownsPublication()
-            )
-        ) {
-            const publication: Publication = {
-                actions: [...actions],
-                identity,
-                documents: getCrdtDocIds().map((id) => ({ id, heads: getHeads(getCrdtDoc(id)!) })),
-            };
+        const publication = captureOwnedPublication(captures, actions);
+        if (publication) {
             for (const capture of captures) {
                 capture.publication = publication;
             }
             return;
         }
     }
-    if (
-        input.phase === 'settle' &&
-        captures.length > 0 &&
-        captures.every(
-            (capture) =>
-                capture.publication !== undefined &&
-                publicationIsCurrent(capture.publication, actions) &&
-                undoStore.value?.future.includes(capture.entry) === true &&
-                capture.entry.inverseAction?.type === capture.inverseAction.type
-        )
-    ) {
-        // Validate the entire group before changing any of its paired captures.
-        for (const capture of captures) {
-            capture.entry.inverseAction = capture.inverseAction;
-        }
+    if (input.phase === 'settle') {
+        settleStagedCaptures(actions, captures);
     }
     discardStagedCaptures(actions, captures);
 }

@@ -1955,7 +1955,11 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             ccByClipId: { 'clip-b': [{ id: 'copy-cc', controller: 1, value: 64, beat: 1, channel: 0 }] },
             pitchBendByClipId: { 'clip-b': [{ id: 'copy-bend', value: 256, beat: 2, channel: 0 }] },
         });
-        setEnvelope('clip-b', { clipId: 'clip-b', enabled: true, points: [{ beatOffset: 0, gainDb: -3 }] });
+        setEnvelope('clip-b', {
+            clipId: 'clip-b',
+            enabled: true,
+            points: [{ id: 'copy-envelope-point', beatOffset: 0, gainDb: -3 }],
+        });
         setWarpState('clip-b', {
             enabled: true,
             markers: [{ id: 'copy-marker', originalBeat: 0, warpedBeat: 0.5 }],

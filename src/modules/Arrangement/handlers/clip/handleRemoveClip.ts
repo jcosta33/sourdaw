@@ -1,9 +1,13 @@
+import { getHeads, hasHeads } from '@automerge/automerge';
+
 import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import {
     captureDurableDocumentWitness,
+    captureProjectIdentity,
     captureProjectMutationAuthorization,
     getCrdtDoc,
+    getCrdtDocIds,
     hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
@@ -36,6 +40,18 @@ type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
 const pendingInverseCaptures = new WeakMap<object, RestoreClipAction>();
 const pendingRedoCaptures = new WeakMap<object, RemoveClipAction>();
 const preflightRedoTargets = new WeakMap<object, { owningTrackId: string; clip: unknown }>();
+
+/** The inverse producer owns document authority; Command only settles its staged history. */
+function captureRemovalPublicationGuard(): () => boolean {
+    const identity = captureProjectIdentity();
+    const documents = getCrdtDocIds().map((id) => ({ id, heads: getHeads(getCrdtDoc(id)!) }));
+    return () =>
+        captureProjectIdentity() === identity &&
+        documents.every(({ id, heads }) => {
+            const document = getCrdtDoc(id);
+            return document !== undefined && hasHeads(document, heads);
+        });
+}
 
 function findOwningTrackId(clipId: string): string | undefined {
     return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
@@ -187,7 +203,17 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         // owner is visible. Later group members publish under this same owner.
         ownsPublication?.();
         if (fresh && ownsPublication) {
-            commitRedoInverseCapture({ phase: 'stage', action: alpha, inverseAction: fresh, ownsPublication });
+            commitRedoInverseCapture({
+                phase: 'stage',
+                action: alpha,
+                inverseAction: fresh,
+                ownsPublication,
+                publicationAuthority: {
+                    captureIdentity: captureProjectIdentity,
+                    captureWitness: captureDurableDocumentWitness,
+                    captureCurrentGuard: captureRemovalPublicationGuard,
+                },
+            });
         }
         const installCapture = () => {
             // Publish the resolved preference only for its producer's own write.
