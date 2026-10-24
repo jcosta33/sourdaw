@@ -1,0 +1,61 @@
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_59e31a5c6f3e31::t_75ffa7ce304a4d 46-47,53-54,62,108,126-133,214-216,339-340,369-408,413-476,478-480,805,888-905,908-929,935-939,956,958-961,978-979
+  s_59e31a5c6f3e31::t_21b00fb5e0baf8 409-412
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_59e31a5c6f3e31::t_8eef6d0ba84590 18
+  s_59e31a5c6f3e31::t_21b00fb5e0baf8 9,45,96,178-183,189-194,210,262-269,281,321-323,328,368-628,637,646,681-683
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_59e31a5c6f3e31::t_a200f46e19b203 459,461-462,761-762,766,790,797-806,808-825,828-834,837-929,932-933,936-951,953-981
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_59e31a5c6f3e31::t_a04cfbcae0d8e3 1257-1260
+src/modules/AudioEngine/engine/__tests__/deviceReadinessDiagnostics.spec.ts
+  s_59e31a5c6f3e31::t_50632e6f7eb76a 12-42
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_59e31a5c6f3e31::t_a1d8a75eaed86b 423-429,451
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_59e31a5c6f3e31::t_396ccfae7645e0 60
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  s_59e31a5c6f3e31::t_2e18a36e3a679d 205-223
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_59e31a5c6f3e31::t_bc7f3e8ec953e7 58
+src/modules/AudioEngine/models/NativeSampleBank.ts
+  s_59e31a5c6f3e31::t_1a84bfba645243 128-129
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/registerNativeSampleBanks.spec.ts
+  s_59e31a5c6f3e31::t_000fd978c8f404 174-204,207,212,223
+src/modules/AudioEngine/repositories/nativeGraph/registerNativeSampleBanks.ts
+  s_59e31a5c6f3e31::t_b95c20202d9854 87,96,110
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_59e31a5c6f3e31::t_7a07b87af2733d 359-392
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_59e31a5c6f3e31::t_aa4dcff2f82513 403-408,455-457,614,712,841
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_59e31a5c6f3e31::t_55d8a4c1cfc2d4 69-88
+src/modules/Levain/useCases/acquireLevainNativeBank.ts
+  s_59e31a5c6f3e31::t_fd7f90315f3b8a 47-51
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_59e31a5c6f3e31::t_ed8ce9d5bba9ad 67,99-101
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_59e31a5c6f3e31::t_4400b38d853240 19,469,472,484-485,487,489-490,493
+src/modules/Levain/useCases/levainParamBridge/__tests__/registerLevainDevice.spec.ts
+  s_59e31a5c6f3e31::t_8d61af5c841099 20,24-25,29
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_59e31a5c6f3e31::t_d9919c23b3e8f3 86,362
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  s_59e31a5c6f3e31::t_cf157c28cbdbd6 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "efdb3035bb85f58967086783beaef455d602b36d",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
