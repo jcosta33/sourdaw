@@ -59,6 +59,7 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { id: 'automation' },
     modulationStore: { id: 'modulation' },
     modulationRuntimeStore: { id: 'modulationRuntime' },
+    modulationDragPreviewStore: { id: 'modulationDragPreview' },
 }));
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({

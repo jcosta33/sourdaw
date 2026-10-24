@@ -1,9 +1,26 @@
 import { Profiler, type ProfilerOnRenderCallback } from 'react';
 
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import { modulationDragPreviewStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
+const mockProjectCurrent = vi.hoisted(() => ({ value: true }));
+const mockSetDeviceParameter = vi.hoisted(() => vi.fn());
+
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: () => ({ isCurrent: () => mockProjectCurrent.value }),
+}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    setDeviceParameter: mockSetDeviceParameter,
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
+}));
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
 
@@ -34,8 +51,12 @@ vi.mock('#/components/ui/bipolar-slider', () => ({
 vi.mock('#/modules/ControlSurface/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/ControlSurface/presentations/views')>()),
     MidiLearnButton: () => <button data-testid="midi-learn-btn">Learn</button>,
-    MidiLearnRotaryKnob: (props: { modulations?: Array<{ amount: number }> }) => (
-        <button data-testid="rotary-knob" data-modulations={JSON.stringify(props.modulations ?? null)}>
+    MidiLearnRotaryKnob: (props: { modulations?: Array<{ amount: number }>; onChange: (value: number) => void }) => (
+        <button
+            data-testid="rotary-knob"
+            data-modulations={JSON.stringify(props.modulations ?? null)}
+            onClick={() => props.onChange(0.75)}
+        >
             Knob
         </button>
     ),
@@ -71,6 +92,10 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
 
     beforeEach(() => {
         renderCount = 0;
+        vi.mocked(executeUserAppAction).mockClear();
+        mockSetDeviceParameter.mockClear();
+        mockProjectCurrent.value = true;
+        modulationDragPreviewStore.set({ modulatorId: null });
         modulationStore.set({
             modulators: [
                 {
@@ -128,7 +153,8 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
             </Profiler>
         );
         const rendersAfterMount = renderCount;
-        expect(getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        const initial = JSON.parse(getByTestId('rotary-knob').dataset.modulations!);
+        expect(initial).toEqual([expect.objectContaining({ id: 'mod-related', amount: 1, activity: 0 })]);
 
         act(() => {
             modulationRuntimeStore.set({ runtimeValues: { 'mod-related': 0.6, 'mod-unrelated': 0 } });
@@ -136,7 +162,207 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
 
         expect(renderCount).toBeGreaterThan(rendersAfterMount);
         expect(JSON.parse(getByTestId('rotary-knob').dataset.modulations!)).toEqual([
-            { id: 'Gain', amount: 0.6, color: 'var(--color-accent-cyan)' },
+            expect.objectContaining({
+                id: 'mod-related',
+                amount: 1,
+                activity: 0.6,
+                color: expect.stringContaining('oklch'),
+            }),
         ]);
+    });
+
+    it('keeps two source colors distinct and stable when the mappings reorder', () => {
+        const second = {
+            // This ID hashes to the same palette slot as mod-related.
+            id: 'mod-1',
+            name: 'Second LFO',
+            trackId: 'track-1',
+            kind: 'lfo' as const,
+            config: { kind: 'lfo' as const, waveform: 'sine' as const, rate: 1, sync: true, phase: 0, depth: 1 },
+            mappings: [{ targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'gain', amount: -0.4 }],
+            enabled: true,
+        };
+        const first = modulationStore.value!.modulators[0]!;
+        act(() => modulationStore.set({ modulators: [first, second] }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const before = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!);
+        expect(before).toHaveLength(2);
+        expect(before[0].color).not.toBe(before[1].color);
+        act(() => modulationStore.set({ modulators: [second, first] }));
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const after = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!);
+        expect(Object.fromEntries(after.map((halo: { id: string; color: string }) => [halo.id, halo.color]))).toEqual(
+            Object.fromEntries(before.map((halo: { id: string; color: string }) => [halo.id, halo.color]))
+        );
+        view.unmount();
+        render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const reloaded = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!);
+        expect(
+            Object.fromEntries(reloaded.map((halo: { id: string; color: string }) => [halo.id, halo.color]))
+        ).toEqual(Object.fromEntries(before.map((halo: { id: string; color: string }) => [halo.id, halo.color])));
+    });
+
+    it('gives every admitted halo a distinct effective color after the preset palette is exhausted', () => {
+        const sources = Array.from({ length: 71 }, (_, index) => ({
+            ...modulationStore.value!.modulators[0]!,
+            id: `mod-${String(index).padStart(4, '0')}`,
+        }));
+        act(() => modulationStore.set({ modulators: sources }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const before = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!) as Array<{
+            id: string;
+            color: string;
+        }>;
+        expect(before).toHaveLength(71);
+        expect(new Set(before.map((halo) => halo.color)).size).toBe(71);
+        expect(before.find((halo) => halo.id === 'mod-0036')?.color).not.toBe(
+            before.find((halo) => halo.id === 'mod-0070')?.color
+        );
+        act(() => modulationStore.set({ modulators: sources.toReversed() }));
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const after = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!) as typeof before;
+        expect(Object.fromEntries(after.map((halo) => [halo.id, halo.color]))).toEqual(
+            Object.fromEntries(before.map((halo) => [halo.id, halo.color]))
+        );
+    });
+
+    it('does not reuse a drag entered for another target, even when the same control instance survives', () => {
+        act(() =>
+            modulationStore.set({
+                modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
+            })
+        );
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-related' }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        fireEvent.dragEnter(target);
+        expect(JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!)).toEqual([
+            expect.objectContaining({ id: 'mod-related', preview: true }),
+        ]);
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-2" />);
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        fireEvent.drop(target);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        fireEvent.drop(target);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                payload: expect.objectContaining({ mapping: expect.objectContaining({ targetTrackId: 'track-1' }) }),
+            }),
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
+        const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]![1] as { shouldExecute: () => boolean };
+        expect(shouldExecute.shouldExecute()).toBe(true);
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-2" />);
+        expect(shouldExecute.shouldExecute()).toBe(false);
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        expect(shouldExecute.shouldExecute()).toBe(false);
+    });
+
+    it('refuses a drop and a queued action when project authority expires', () => {
+        act(() =>
+            modulationStore.set({
+                modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
+            })
+        );
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-related' }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        fireEvent.dragEnter(target);
+        mockProjectCurrent.value = false;
+        fireEvent.drop(target);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        mockProjectCurrent.value = true;
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]![1] as { shouldExecute: () => boolean };
+        mockProjectCurrent.value = false;
+        expect(shouldExecute.shouldExecute()).toBe(false);
+        view.unmount();
+    });
+
+    it('refuses a queued mapping after the source disappears or the control unmounts', () => {
+        act(() =>
+            modulationStore.set({
+                modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
+            })
+        );
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-related' }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+        const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]![1] as { shouldExecute: () => boolean };
+        expect(shouldExecute.shouldExecute()).toBe(true);
+        act(() =>
+            modulationStore.set({
+                modulators: modulationStore.value!.modulators.filter((mod) => mod.id !== 'mod-related'),
+            })
+        );
+        expect(shouldExecute.shouldExecute()).toBe(false);
+        view.unmount();
+        expect(shouldExecute.shouldExecute()).toBe(false);
+    });
+
+    it('does not announce or draw a stored mapping that the engine rejects as ineligible', () => {
+        render(<DeviceParameterControl param={{ ...param, automatable: false }} device={device} trackId="track-1" />);
+        expect(screen.queryByRole('region', { name: 'Modulation target for Gain' })).not.toBeInTheDocument();
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        fireEvent.click(screen.getByTestId('rotary-knob'));
+        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 0.75);
+    });
+
+    it('previews a zero-runtime source over an unconnected knob, then commits only on drop', () => {
+        const unmapped = modulationStore.value!.modulators.map((modulator) =>
+            modulator.id === 'mod-related' ? { ...modulator, mappings: [] } : modulator
+        );
+        act(() => modulationStore.set({ modulators: unmapped }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-unrelated' }));
+        fireEvent.dragEnter(target);
+        expect(JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!)).toEqual([
+            expect.objectContaining({ id: 'mod-unrelated', amount: 0.5, activity: 0, preview: true }),
+        ]);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.dragLeave(target);
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        fireEvent.dragEnter(target);
+        act(() => modulationDragPreviewStore.set({ modulatorId: null }));
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-unrelated' }));
+        fireEvent.drop(target);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'addMapping',
+                payload: {
+                    modulatorId: 'mod-unrelated',
+                    mapping: {
+                        targetTrackId: 'track-1',
+                        targetDeviceId: 'device-1',
+                        targetParamId: 'gain',
+                        amount: 0.5,
+                    },
+                },
+            },
+            { shouldExecute: expect.any(Function) }
+        );
+        // The source owns drag teardown. The target only owns hover and the command.
+        expect(modulationDragPreviewStore.value?.modulatorId).toBe('mod-unrelated');
+        act(() => modulationDragPreviewStore.set({ modulatorId: null }));
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        view.unmount();
     });
 });

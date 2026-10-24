@@ -673,6 +673,27 @@ describe('RotaryKnob', () => {
         expect(container.querySelector('span')).toBeNull();
     });
 
+    it('keeps simultaneous modulation ranges visible on separate source-colored rings', () => {
+        const modulations = [
+            { id: 'mod-a', amount: 0.5, color: 'oklch(0.7 0.1 20)', activity: 0 },
+            { id: 'mod-b', amount: -0.4, color: 'oklch(0.7 0.1 200)', activity: 0.8 },
+        ];
+        const { container, rerender } = render(<RotaryKnob value={50} onChange={vi.fn()} modulations={modulations} />);
+
+        const halos = [...container.querySelectorAll('[data-modulation-halo]')] as HTMLElement[];
+        expect(halos).toHaveLength(2);
+        expect(halos.map((halo) => halo.dataset.modulationHalo)).toEqual(['mod-a', 'mod-b']);
+        expect(halos[0]!.style.inset).not.toBe(halos[1]!.style.inset);
+        expect(halos[0]!.style.background).toContain(modulations[0]!.color);
+        expect(halos[1]!.style.background).toContain(modulations[1]!.color);
+        expect(halos[0]!.style.background).toContain('135deg');
+
+        rerender(<RotaryKnob value={50} onChange={vi.fn()} modulations={modulations} />);
+        expect(
+            Array.from(container.querySelectorAll('[data-modulation-halo]'), (halo) => halo.getAttribute('style'))
+        ).toEqual(halos.map((halo) => halo.getAttribute('style')));
+    });
+
     it('should render arc with every tone variant', () => {
         const tones = [
             'neutral',

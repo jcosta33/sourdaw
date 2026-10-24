@@ -45,6 +45,9 @@ type ModulationHalo = {
     amount: number;
     /** CSS color string for this modulation source */
     color: string;
+    /** Current source output, used for emphasis without hiding its mapped range at zero. */
+    activity?: number;
+    preview?: boolean;
 };
 
 export type GestureAuthority = {
@@ -488,27 +491,31 @@ export const RotaryKnob = ({
                 />
 
                 {/* R-C1: Modulation halo arcs — one layer per connected modulator */}
-                {modulations?.map((mod) => {
-                    const amountDeg = mod.amount * 270;
+                {modulations?.map((mod, index) => {
+                    const sweepDeg = Math.max(2, Math.min(270, Math.abs(mod.amount * 270)));
                     let haloBg: string;
-                    if (amountDeg >= 0) {
-                        const lo = arcAngleDeg;
-                        const hi = Math.min(lo + amountDeg, 270);
+                    if (mod.amount >= 0) {
+                        const lo = Math.min(arcAngleDeg, 270 - sweepDeg);
+                        const hi = lo + sweepDeg;
                         haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
                     } else {
-                        const hi = arcAngleDeg;
-                        const lo = Math.max(0, hi + amountDeg);
+                        const hi = Math.max(arcAngleDeg, sweepDeg);
+                        const lo = hi - sweepDeg;
                         haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
                     }
                     return (
                         <div
                             key={mod.id}
-                            className="absolute inset-0 rounded-full pointer-events-none"
+                            data-modulation-halo={mod.id}
+                            data-preview={mod.preview || undefined}
+                            className="absolute rounded-full pointer-events-none"
                             style={{
+                                inset: -(index + 1) * 5,
                                 background: haloBg,
-                                mask: 'radial-gradient(circle, transparent 55%, black 57%)',
-                                WebkitMask: 'radial-gradient(circle, transparent 55%, black 57%)',
-                                opacity: 0.8,
+                                mask: 'radial-gradient(circle, transparent 63%, black 66%, black 70%, transparent 73%)',
+                                WebkitMask:
+                                    'radial-gradient(circle, transparent 63%, black 66%, black 70%, transparent 73%)',
+                                opacity: mod.preview ? 0.65 : 0.65 + 0.3 * Math.abs(mod.activity ?? 0),
                             }}
                         />
                     );

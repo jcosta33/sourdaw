@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
+import { modulationDragPreviewStore } from '../../../stores/modulationDragPreviewStore';
 import { mappingAmountDragState } from '../../../useCases/modulation/mappingAmountDragState';
 import { ModulationMatrix } from '../ModulationMatrix';
 
@@ -138,6 +139,7 @@ describe('ModulationMatrix', () => {
         vi.clearAllMocks();
         mocks.modState = { modulators: [] };
         mocks.trackState = { tracks: [] };
+        modulationDragPreviewStore.set({ modulatorId: null });
     });
 
     afterEach(() => {
@@ -177,6 +179,36 @@ describe('ModulationMatrix', () => {
         render(<ModulationMatrix />);
         expect(screen.getByLabelText('Rename modulator mod-1')).toBeInTheDocument();
         expect(screen.getByLabelText('Rename modulator mod-2')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Drag modulator LFO 1 to a parameter' })).toHaveAttribute(
+            'draggable',
+            'true'
+        );
+        expect(screen.getByRole('button', { name: 'Drag modulator Env 1 to a parameter' })).toHaveAttribute(
+            'draggable',
+            'true'
+        );
+    });
+
+    it('starts and clears a transient source drag without changing a mapping', () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        const view = render(<ModulationMatrix />);
+        const handle = screen.getByRole('button', { name: 'Drag modulator LFO 1 to a parameter' });
+        const dataTransfer = { setData: vi.fn(), effectAllowed: '' };
+
+        fireEvent.dragStart(handle, { dataTransfer });
+        expect(modulationDragPreviewStore.value?.modulatorId).toBe('mod-1');
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-sourdaw-modulator', 'mod-1');
+
+        fireEvent.dragEnd(handle);
+        expect(modulationDragPreviewStore.value?.modulatorId).toBeNull();
+        fireEvent.dragStart(handle, { dataTransfer });
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(modulationDragPreviewStore.value?.modulatorId).toBeNull();
+        fireEvent.dragStart(handle, { dataTransfer });
+        view.unmount();
+        expect(modulationDragPreviewStore.value?.modulatorId).toBeNull();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('should open the new modulator form on clicking New Modulator', () => {
