@@ -1,11 +1,19 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { adjustmentLayerStore, trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    trackStore,
+    vcaGroupStore,
+    type AdjustmentLayer,
+    type Device,
+    type Track,
+} from '#/modules/Arrangement/stores';
 // Statically imported so the barrel load is paid once at module init rather
 // than inside a test's time budget.
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import { defaultTransportState } from '#/modules/Transport/stores';
+import { beatAtSecondsFromAnchor, projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
@@ -100,9 +108,11 @@ const createdContexts: RenderHarnessContext[] = [];
 
 /** What the tests read back off a strip the real builder produced. */
 type HarnessStrip = {
-    outputNode: { connect: { calls: unknown[][] } };
+    outputNode: { connect: { mock: { calls: unknown[][] } } };
     inputNode: Record<string, unknown>;
     postFaderGain: { gain: { value: number } };
+    faderNode: { gain: ReturnType<typeof createParam> };
+    panNode: { pan: ReturnType<typeof createParam> };
 };
 
 class RenderHarnessBuffer {
@@ -190,6 +200,14 @@ class RenderHarnessContext {
     createStereoPanner() {
         return { ...createNode(), pan: createParam(0) };
     }
+
+    readonly createBiquadFilter = vi.fn(() => ({
+        ...createNode(),
+        type: 'lowpass',
+        frequency: createParam(350),
+        Q: createParam(1),
+        gain: createParam(0),
+    }));
 
     createDelay() {
         return { ...createNode(), delayTime: createParam(0) };
@@ -688,6 +706,43 @@ describe('renderTrackSubgraphOffline', () => {
         expect(createdGains.filter((node) => node.gain.value === 0)).toEqual([]);
         const note = buffer!.getChannelData(0).subarray(0, Math.round(0.5 * SAMPLE_RATE));
         expect(magnitudeAt(note, 440)).toBeGreaterThan(0.4);
+    });
+
+    it('bends the baked notes by the channel bend projection the render was configured with', async () => {
+        const { configureOfflineMidiEventProjection } = await import('../../configureOfflineMidiEventProjection');
+        configureOfflineMidiEventProjection({
+            createProjector: () => (input) => input.events,
+            selectProbability: () => true,
+            createChordPitchProjector: () => (input) => input.pitch,
+            evaluateAutomationValue: () => 0,
+            projectChannelBend: ({ frameAtBeat }) => [
+                { beat: 0.25, frame: frameAtBeat(0.25), recordedBeat: 0.25, value: 4_096, rangeSemitones: 12 },
+            ],
+        });
+        const { midiStore } = await import('#/modules/MIDI/stores');
+        midiStore.set({
+            ...midiStore.value!,
+            pitchBendByClipId: { 'clip-1': [{ id: 'pb-1', value: 4_096, beat: 0.25, channel: 0 }] },
+        });
+        const bends: number[] = [];
+        const entry = createInstrumentEntry('fermenter-1', 'fermenter');
+        entry.strategy.noteExpression = ({ bendSemitones }) => {
+            bends.push(bendSemitones);
+        };
+        mocks.buildDeviceChain.mockResolvedValue([entry]);
+        const track = TrackDummy.create({
+            id: 'track-1',
+            kind: 'midi',
+            clips: [midiClip()],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
+        });
+
+        await renderTrackSubgraphOffline({ targetTrackId: track.id, renderTracks: [track], startBeat: 0, endBeat: 4 });
+
+        // 4096 of 8192 over a 12-semitone range.
+        expect(bends).toEqual([6]);
     });
 
     it('rejects an already-aborted render instead of returning a buffer', async () => {
@@ -2164,6 +2219,247 @@ describe('renderTrackSubgraphOffline', () => {
         afterEach(() => {
             setAudioDeviceRuntimeSink({});
         });
+
+        it.each([
+            { effectType: 'volume' as const, movingDsp: false },
+            { effectType: 'pan' as const, movingDsp: false },
+            { effectType: 'volume' as const, movingDsp: true },
+        ])(
+            'keeps contributor EQ in a keepLive crop with historical $effectType and moving DSP=$movingDsp',
+            async ({ effectType, movingDsp }) => {
+                const { configureOfflinePpqEndpointProjection } =
+                    await import('../../configureOfflinePpqEndpointProjection');
+                configureOfflinePpqEndpointProjection({
+                    project: projectPpqEndpoints,
+                    resolveTempoAtBeat,
+                    beatAtSecondsFromAnchor,
+                });
+                const contributor = TrackDummy.create({ id: 'contributor', outputId: 'target' });
+                const target = TrackDummy.create({ id: 'target', kind: 'bus', gain: 0.4, pan: 20 });
+                const earlyLayer: AdjustmentLayer = {
+                    id: 'early-mixer',
+                    name: 'Early mixer change',
+                    effectType,
+                    parameters: [
+                        {
+                            name: effectType === 'volume' ? 'Gain' : 'Pan',
+                            value: -12,
+                            min: -100,
+                            max: 100,
+                            unit: effectType === 'volume' ? 'dB' : '%',
+                        },
+                    ],
+                    affectedTrackIds: [contributor.id, target.id],
+                    insertionIndex: 0,
+                    regions: [{ id: 'early', startBeat: 0, endBeat: 4, blend: 1, fadeInBeats: 0, fadeOutBeats: 4 }],
+                    enabled: true,
+                    mix: 1,
+                    color: '#fff',
+                };
+                const eq: AdjustmentLayer = {
+                    ...earlyLayer,
+                    id: 'steady-eq',
+                    effectType: 'eq',
+                    parameters: [{ name: 'Low Gain', value: 6, min: -24, max: 24, unit: 'dB' }],
+                    regions: [],
+                };
+                const secondEq: AdjustmentLayer = {
+                    ...eq,
+                    id: 'second-eq',
+                    parameters: [{ name: 'High Gain', value: -4, min: -24, max: 24, unit: 'dB' }],
+                };
+                const movingFilter: AdjustmentLayer = { ...earlyLayer, id: 'moving-filter', effectType: 'filter' };
+                const layers = movingDsp ? [earlyLayer, eq, movingFilter, secondEq] : [earlyLayer, eq, secondEq];
+                adjustmentLayerStore.set({ layers });
+                try {
+                    const onWarning = vi.fn();
+                    const buffer = await renderTrackSubgraphOffline({
+                        targetTrackId: target.id,
+                        renderTracks: [contributor, target],
+                        startBeat: 4,
+                        endBeat: 8,
+                        targetMixer: 'keepLive',
+                        source: { project: suppliedDocument([contributor, target]) },
+                        onWarning,
+                    });
+                    const context = createdContexts.at(-1)!;
+                    const filters = context.createBiquadFilter.mock.results.map(({ value }) => value);
+                    // The real EQ factories must run only for the contributor,
+                    // with its saved gain, while the target remains live.
+                    expect(filters).toHaveLength(6);
+                    expect(filters.map((filter) => filter.gain.value)).toEqual([6, 0, 0, 0, 0, -4]);
+                    const contributorStrip = mocks.builtStripsById.get(contributor.id)!;
+                    const targetStrip = mocks.builtStripsById.get(target.id)!;
+                    const busInput = contributorStrip.outputNode.connect.mock.calls[0]![0] as ReturnType<
+                        typeof createNode
+                    >;
+                    expect(busInput.connect).toHaveBeenCalledWith(filters[0]);
+                    const wetGain = filters[2]!.connect.mock.calls[0]![0] as ReturnType<
+                        RenderHarnessContext['createGain']
+                    >;
+                    const busOutput = wetGain.connect.mock.calls[0]![0] as ReturnType<typeof createNode>;
+                    const secondBusInput = busOutput.connect.mock.calls[0]![0] as ReturnType<typeof createNode>;
+                    expect(secondBusInput.connect).toHaveBeenCalledWith(filters[3]);
+                    const secondWetGain = filters[5]!.connect.mock.calls[0]![0] as ReturnType<
+                        RenderHarnessContext['createGain']
+                    >;
+                    const secondBusOutput = secondWetGain.connect.mock.calls[0]![0] as ReturnType<typeof createNode>;
+                    expect(secondBusOutput.connect).toHaveBeenCalledWith(targetStrip.inputNode);
+                    expect(targetStrip.faderNode.gain.value).toBe(1);
+                    expect(targetStrip.panNode.pan.value).toBe(0);
+                    expect(targetStrip.faderNode.gain.setValueAtTime).not.toHaveBeenCalled();
+                    expect(targetStrip.panNode.pan.setValueAtTime).not.toHaveBeenCalled();
+                    const mixerWrites =
+                        effectType === 'volume'
+                            ? contributorStrip.faderNode.gain.setValueAtTime.mock.calls
+                            : contributorStrip.panNode.pan.setValueAtTime.mock.calls;
+                    expect(mixerWrites.length).toBeGreaterThan(1);
+                    expect(buffer!.length).toBe(2 * SAMPLE_RATE);
+                    if (movingDsp) {
+                        expect(onWarning).toHaveBeenCalledExactlyOnceWith(
+                            'A DSP adjustment layer that fades across this bounce is skipped; only steady layers render offline.'
+                        );
+                    } else {
+                        expect(onWarning).not.toHaveBeenCalled();
+                    }
+                } finally {
+                    adjustmentLayerStore.set({ layers: [] });
+                }
+            }
+        );
+
+        it.each([
+            { layerScope: 'crop', compensationDelay: 0 },
+            { layerScope: 'crop', compensationDelay: 0.125 },
+            { layerScope: 'crossing', compensationDelay: 0 },
+            { layerScope: 'crossing', compensationDelay: 0.125 },
+            { layerScope: 'history-only', compensationDelay: 0 },
+            { layerScope: 'history-only', compensationDelay: 0.125 },
+        ])(
+            'emits history-origin gain/pan with $layerScope layers and delay $compensationDelay',
+            async ({ layerScope, compensationDelay }) => {
+                const tickSeconds = 4.8 * Math.log(175 / 150);
+                const historySeconds = 4.8 * Math.log(150 / 100);
+                const changes = [
+                    { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+                    { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+                ];
+                const { configureOfflinePpqEndpointProjection } =
+                    await import('../../configureOfflinePpqEndpointProjection');
+                configureOfflinePpqEndpointProjection({
+                    project: projectPpqEndpoints,
+                    resolveTempoAtBeat,
+                    beatAtSecondsFromAnchor,
+                });
+                const compensation = await import('../../latencyCompensation/compensation/getCompensationDelay');
+                const delay = vi.spyOn(compensation, 'getCompensationDelay');
+                const track = TrackDummy.create({ id: 'track-1', gain: 0.8, clips: [], devices: [] });
+                const fade = {
+                    id: 'fade',
+                    name: 'Fade',
+                    effectType: 'volume' as const,
+                    enabled: true,
+                    mix: 1,
+                    parameters: [{ name: 'Gain', value: -12, min: -60, max: 12, unit: 'dB' }],
+                    affectedTrackIds: [track.id],
+                    insertionIndex: 0,
+                    color: 'red',
+                    regions: [{ id: 'region', startBeat: 4, endBeat: 8, blend: 1, fadeInBeats: 4, fadeOutBeats: 0 }],
+                };
+                const pan = {
+                    ...fade,
+                    id: 'pan',
+                    effectType: 'pan' as const,
+                    parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
+                };
+                // The history-only fade has finished by the crop, but its
+                // writes must still reach the graph during history warmup.
+                const historyEndBeat = layerScope === 'history-only' ? 4 : 8;
+                const historyFade = {
+                    ...fade,
+                    id: 'history-fade',
+                    regions: [
+                        {
+                            id: 'history',
+                            startBeat: 0,
+                            endBeat: historyEndBeat,
+                            blend: 1,
+                            fadeInBeats: 0,
+                            fadeOutBeats: historyEndBeat,
+                        },
+                    ],
+                };
+                const historyPan = { ...pan, id: 'history-pan', regions: historyFade.regions };
+                const layers: AdjustmentLayer[] = [];
+                if (layerScope !== 'history-only') {
+                    layers.push(fade, pan);
+                }
+                if (layerScope !== 'crop') {
+                    layers.push(historyFade, historyPan);
+                }
+                adjustmentLayerStore.set({ layers });
+                const project = suppliedDocument([track], {
+                    tempoMap: { changes },
+                    transport: { ...defaultTransportState, tempo: TEMPO, scheduleGrainMs: tickSeconds * 1000 },
+                });
+                const gainAtBeat = (beat: number): number => {
+                    const fadeBlend = layerScope === 'history-only' || beat < 4 ? 0 : (beat - 4) / 4;
+                    const historyBlend = layerScope === 'crop' ? 0 : Math.max(0, 1 - beat / historyEndBeat);
+                    return 0.8 * (1 + (10 ** (-12 / 20) - 1) * fadeBlend) * (1 + (10 ** (-12 / 20) - 1) * historyBlend);
+                };
+                const panAtBeat = (beat: number): number =>
+                    (layerScope === 'history-only' || beat < 4 ? 0 : (beat - 4) / 4) +
+                    (layerScope === 'crop' ? 0 : Math.max(0, 1 - beat / historyEndBeat));
+                try {
+                    delay.mockReturnValue(compensationDelay);
+                    const render = async (startBeat: number, targetMixer: 'bake' | 'keepLive' = 'bake') => {
+                        const buffer = await renderTrackSubgraphOffline({
+                            targetTrackId: track.id,
+                            renderTracks: [track],
+                            startBeat,
+                            endBeat: 8,
+                            targetMixer,
+                            source: { project },
+                        });
+                        expect(buffer).not.toBeNull();
+                        const strip = mocks.builtStripsById.get(track.id)!;
+                        return {
+                            buffer: buffer!,
+                            gain: strip.faderNode.gain.setValueAtTime.mock.calls,
+                            pan: strip.panNode.pan.setValueAtTime.mock.calls,
+                        };
+                    };
+                    const whole = await render(0);
+                    const cropped = await render(4);
+                    expect({ gain: cropped.gain, pan: cropped.pan }).toEqual({ gain: whole.gain, pan: whole.pan });
+                    expect(cropped.buffer.length).toBeLessThan(whole.buffer.length);
+                    expect(cropped.buffer.duration).toBeCloseTo(4.8 * Math.log(200 / 150), 4);
+                    expect(cropped.gain[0]).toEqual([gainAtBeat(0), 0]);
+                    expect(cropped.pan[0]).toEqual([panAtBeat(0), 0]);
+                    const seedCount = compensationDelay > 0 ? 1 : 0;
+                    // The analytical ramp integral is t = 4.8 ln((100 +
+                    // 12.5 beat) / 100). These ticks straddle the crop.
+                    expect(2 * tickSeconds).toBeLessThan(historySeconds);
+                    expect(3 * tickSeconds).toBeGreaterThan(historySeconds);
+                    for (const tick of [1, 2, 3, 4]) {
+                        const beat = 8 * ((175 / 150) ** tick - 1);
+                        const gainWrite = cropped.gain[seedCount + tick]!;
+                        const panWrite = cropped.pan[seedCount + tick]!;
+                        expect(gainWrite[0]).toBeCloseTo(gainAtBeat(beat), 10);
+                        expect(panWrite[0]).toBeCloseTo(panAtBeat(beat), 10);
+                        expect(gainWrite[1]).toBeCloseTo(tick * tickSeconds + compensationDelay, 10);
+                        expect(panWrite[1]).toBeCloseTo(tick * tickSeconds + compensationDelay, 10);
+                    }
+                    const keepLive = await render(4, 'keepLive');
+                    expect(keepLive.gain).toEqual([]);
+                    expect(keepLive.pan).toEqual([]);
+                    expect(keepLive.buffer.length).toBe(cropped.buffer.length);
+                } finally {
+                    delay.mockRestore();
+                    adjustmentLayerStore.set({ layers: [] });
+                }
+            }
+        );
 
         it('plays the supplied document’s notes at its VCA levels, never the live project’s', async () => {
             const track = TrackDummy.create({

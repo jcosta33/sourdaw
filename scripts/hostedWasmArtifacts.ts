@@ -24,12 +24,12 @@ import {
 import { assertCanonicalArtifactPath, hostedWasmOutputLimit, readHostedArtifactZip } from './hostedWasmZip.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
-const supportedIds = ['scoring', 'proof-chamber'] as const;
+const supportedIds = ['scoring', 'proof-chamber', 'daw-dsp'] as const;
 const manifestPath = 'public/wasm/manifest.json';
 const outputLimit = hostedWasmOutputLimit;
 const hashPattern = /^sha256:[a-f0-9]{64}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
-const sharedInputs = new Set([
+export const sharedInputs: ReadonlySet<string> = new Set([
     '.cargo/config.toml',
     '.github/workflows/wasm-artifacts.yml',
     'scripts/hostedWasmArtifacts.ts',
@@ -47,9 +47,10 @@ const sharedInputs = new Set([
     'package.json',
     'pnpm-lock.yaml',
 ]);
-const generators: Record<string, string> = {
+export const generators: Readonly<Record<string, string>> = {
     scoring: 'scripts/gen-scoring-worklet.ts',
     'proof-chamber': 'scripts/gen-proof-chamber-worklet.ts',
+    'daw-dsp': 'scripts/gen-daw-dsp-worklet.ts',
 };
 type Command = (command: string, args: string[]) => void;
 type Capture = (command: string, args: string[]) => string;

@@ -14,6 +14,8 @@ import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
+    configureOfflineMidiEventProjection,
+    configureOfflinePpqEndpointProjection,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
@@ -99,6 +101,9 @@ type TunerReadingUnderTest = {
 
 const {
     noop,
+    configureOfflineMidiProjectionMock,
+    configureOfflinePpqProjectionMock,
+    beatAtSecondsFromAnchorMock,
     sentinelHandlers,
     assertCanonicalLlmActionStrategiesMock,
     getExecutableAppActionGroundingCatalogMock,
@@ -135,6 +140,8 @@ const {
     nativeBankKeyForLevainDeviceStateMock,
     acquireLevainNativeBankMock,
     getLevainEngineParameterNameMock,
+    buildLevainZoneTablesMock,
+    configureLevainZoneTableBuilderMock,
     initBranchStateMock,
     initGrandBouleDocumentReconciliationMock,
     recoverInterruptedAgentRunsMock,
@@ -177,12 +184,16 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
+    initInputMonitoringProjectAccessMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
     const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
+        configureOfflineMidiProjectionMock: vi.fn<typeof configureOfflineMidiEventProjection>(),
+        configureOfflinePpqProjectionMock: vi.fn<typeof configureOfflinePpqEndpointProjection>(),
+        beatAtSecondsFromAnchorMock: vi.fn(() => -1),
         sentinelHandlers,
         assertCanonicalLlmActionStrategiesMock: vi.fn(),
         getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
@@ -229,6 +240,10 @@ const {
         getLevainEngineParameterNameMock: vi.fn<(input: { paramId: string }) => string | null>(({ paramId }) =>
             paramId === 'masterGain' ? 'master_gain' : null
         ),
+        // Distinguishable from the shared noop: the Levain builder wiring
+        // assertion pins this exact reference.
+        buildLevainZoneTablesMock: vi.fn(),
+        configureLevainZoneTableBuilderMock: vi.fn(),
         initBranchStateMock: vi.fn(),
         initGrandBouleDocumentReconciliationMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
@@ -265,6 +280,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
+        initInputMonitoringProjectAccessMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -375,6 +391,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    buildLevainZoneTables: buildLevainZoneTablesMock,
     updateDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
@@ -389,8 +406,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     commitPitchEdit: noop,
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineDeviceParameterLaw: noop,
-    configureOfflineMidiEventProjection: noop,
-    configureOfflinePpqEndpointProjection: noop,
+    configureOfflineMidiEventProjection: configureOfflineMidiProjectionMock,
+    configureOfflinePpqEndpointProjection: configureOfflinePpqProjectionMock,
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
     compileAudioGraphTopology: noop,
@@ -554,6 +571,7 @@ vi.mock('#/modules/Knead/useCases', () => ({
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
+    configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
     initLevainDeviceStatePersistence: () => noop,
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
@@ -579,6 +597,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     projectClipControllerEvents: noop,
+    projectChannelBend: noop,
     resolveMidiNoteArticulationId: () => null,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
@@ -674,6 +693,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     createMusicalPositionProjector: noop,
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
+    beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
     resolveTempoAtBeat: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
@@ -742,6 +762,9 @@ vi.mock('../initCrumbsModePush', () => ({
 vi.mock('../initDeviceStateReconciliation', () => ({
     initDeviceStateReconciliation: initDeviceStateReconciliationMock,
 }));
+vi.mock('../initInputMonitoringProjectAccess', () => ({
+    initInputMonitoringProjectAccess: initInputMonitoringProjectAccessMock,
+}));
 
 // Side-effect import: this is what runs the composition root under test.
 // `vi.mock` calls above are hoisted above this import by Vitest, so every
@@ -764,6 +787,9 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('binds committed project access during bootstrap', () => {
+        expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+    });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
     // This list IS the assertion: every module bootstrap wires into the shared
     // handler registry must appear here
@@ -815,6 +841,20 @@ describe('bootstrap', () => {
         );
         expect(assertCanonicalLlmActionStrategiesMock.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
             registerProductionCommandHandlersMock.mock.invocationCallOrder[0] ?? Infinity
+        );
+    });
+
+    it('configures both offline tempo directions through Transport', () => {
+        expect(configureOfflinePpqProjectionMock).toHaveBeenCalledExactlyOnceWith({
+            project: noop,
+            resolveTempoAtBeat: noop,
+            beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
+        });
+    });
+
+    it('hands the offline render the MIDI module’s own stored-controller and channel-bend projections', () => {
+        expect(configureOfflineMidiProjectionMock).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ projectClipControllers: noop, projectChannelBend: noop })
         );
     });
 
@@ -1046,6 +1086,17 @@ describe('bootstrap', () => {
         expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
             collectDurableOwnedAudioBufferIdsMock
         );
+    });
+
+    /**
+     * Levain loads every bank's zone tables through a builder it is handed, not
+     * one it imports, and the composition root is the only place that can hand
+     * it AudioEngine's Worker-backed `buildLevainZoneTables`. Pinned by
+     * reference: dropping the registration leaves every bank load rejecting
+     * with "builder is not configured".
+     */
+    it("wires the Levain zone table builder to AudioEngine's off-render-thread build", () => {
+        expect(configureLevainZoneTableBuilderMock).toHaveBeenCalledExactlyOnceWith(buildLevainZoneTablesMock);
     });
 
     /**

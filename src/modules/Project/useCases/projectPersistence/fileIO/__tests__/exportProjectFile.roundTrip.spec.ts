@@ -33,6 +33,8 @@ vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+// The save reads the settled-take count with its snapshot; no take is recorded here.
+vi.mock('#/modules/Transport/useCases', () => ({ countSettledTakes: () => 0 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRouteSnapshot: vi.fn(),
     ensureBusStrip: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

@@ -4,6 +4,7 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
+import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -16,7 +17,6 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
-    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -31,13 +31,13 @@ const REVIEW_TOOLING = new Set([
     'repairReviewFinding',
     'resolveThread',
     'reviewApprovalFormat',
+    'reviewApprovalLabel',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -157,6 +157,21 @@ function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
 }
 
+/**
+ * Repository tooling and prose never select browser execution, though they keep broad non-browser
+ * validation. Generator and build scripts reach the browser only through their outputs, which land
+ * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
+ * stays classified with them.
+ */
+function isRepositoryTooling(path: string): boolean {
+    return (
+        path.startsWith('scripts/') ||
+        path.startsWith('.agents/') ||
+        /^release\/[^/]+\.json$/.test(path) ||
+        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+    );
+}
+
 function needsCodeql(path: string): boolean {
     return (
         /\.(?:[cm]?[jt]sx?)$/.test(path) ||
@@ -166,6 +181,9 @@ function needsCodeql(path: string): boolean {
 }
 
 function isReviewTooling(path: string): boolean {
+    if (path === 'scripts/e2eCollectorInventory.ts') {
+        return true;
+    }
     if (RELEASE_TOOLING_METADATA.has(path)) {
         return true;
     }
@@ -366,6 +384,13 @@ function browserPathSelection(
     };
 }
 
+function planProfile(broad: boolean, tooling: boolean): ValidationPlan['profile'] {
+    if (broad) {
+        return 'broad';
+    }
+    return tooling ? 'tooling' : 'docs';
+}
+
 export function selectValidationPlan(
     paths: readonly string[],
     availableSpecs: readonly string[],
@@ -388,6 +413,7 @@ export function selectValidationPlan(
     let browserAi = false;
     let codeql = false;
     let tooling = false;
+    let nonBrowser = false;
     for (const path of paths) {
         if (isDocumentation(path)) {
             reasons.push({ path, reason: 'documentation; no browser execution' });
@@ -398,6 +424,14 @@ export function selectValidationPlan(
         if (reason !== null) {
             tooling = true;
             reasons.push({ path, reason });
+            continue;
+        }
+        if (isRepositoryTooling(path)) {
+            nonBrowser = true;
+            reasons.push({
+                path,
+                reason: 'repository tooling; broad non-browser validation without browser execution',
+            });
             continue;
         }
         browser = true;
@@ -417,12 +451,7 @@ export function selectValidationPlan(
         throw new Error('Full browser coverage has no specs');
     }
     const matrix = browserMatrix(specs, durations);
-    let profile: ValidationPlan['profile'] = 'docs';
-    if (browser) {
-        profile = 'broad';
-    } else if (tooling) {
-        profile = 'tooling';
-    }
+    const profile = planProfile(browser || nonBrowser, tooling);
     return { version: 1, profile, browser, browserAi, codeql, matrix, reasons };
 }
 
@@ -460,6 +489,39 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
+/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
+export function productPathsOf(
+    paths: readonly string[],
+    specs: readonly string[],
+    packageScriptOnly: boolean
+): string[] {
+    return paths.filter(
+        (path) =>
+            !isDocumentation(path) &&
+            toolingReason(path, packageScriptOnly) === null &&
+            !isRepositoryTooling(path) &&
+            !(isSpec(path) && specs.includes(path))
+    );
+}
+
+const HISTORICAL_STATUS = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/;
+
+/** The planner narrows only live product sources under src/modules/; a deleted, renamed, copied, or retyped path widens. */
+export function canNarrow(input: {
+    productPaths: readonly string[];
+    candidateDiff: string;
+    integrationDiff: string;
+}): boolean {
+    const historicalChange = [input.candidateDiff, input.integrationDiff].some((value) =>
+        HISTORICAL_STATUS.test(value)
+    );
+    return (
+        !historicalChange &&
+        input.productPaths.length > 0 &&
+        input.productPaths.every((path) => path.startsWith('src/modules/'))
+    );
+}
+
 async function affectedFromCheckout(
     root: string,
     base: string,
@@ -493,13 +555,7 @@ async function affectedFromCheckout(
         paths.includes('package.json') &&
         packageUnchangedAtCheckout &&
         isOperationalPackageScriptChange(diff, base, head);
-    const productPaths = paths.filter(
-        (path) =>
-            !isDocumentation(path) &&
-            toolingReason(path, packageScriptOnly) === null &&
-            !(isSpec(path) && specs.includes(path))
-    );
-    const historicalChange = [diff, integrationDiff].some((value) => /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(value));
+    const productPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
         [
@@ -517,13 +573,7 @@ async function affectedFromCheckout(
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
     let affected: AffectedSelection | undefined;
-    if (
-        integrated &&
-        cleanGraphInputs &&
-        !historicalChange &&
-        productPaths.length > 0 &&
-        productPaths.every((path) => path.startsWith('src/modules/'))
-    ) {
+    if (integrated && cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
             affected = await loadAffectedE2e(root, productPaths, specs);
@@ -569,6 +619,12 @@ async function main(): Promise<void> {
     const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
     if (affected?.kind === 'full') {
         plan.reasons.push({ path: 'affected graph', reason: affected.reason });
+    }
+    if (plan.browser) {
+        assertCollectedBrowserInventory(root, specs, [
+            SMOKE_SPEC,
+            ...plan.matrix.include.flatMap((group) => group.specs),
+        ]);
     }
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(

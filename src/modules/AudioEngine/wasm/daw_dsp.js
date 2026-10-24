@@ -1694,8 +1694,15 @@ export class LevainInstance {
         wasm.levaininstance_add_legato_transition(this.__wbg_ptr, interval, transition_type, dynamic, sample_id, crossfade_out_ms);
     }
     /**
-     * Add a sample to the uniquely-owned loading bank. `data` is interleaved
-     * f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
+     * Add a whole sample to the uniquely-owned loading bank in one call. `data`
+     * is interleaved f32 PCM. Returns `None` if the bank is already shared or
+     * exceeds limits.
+     *
+     * Not what the worklet calls: copying a whole sample is one message-sized
+     * cost on the render thread, which `begin_sample`, `sample_write_ptr` and
+     * `commit_sample_frames` bound to one chunk. The native host (which builds
+     * banks on a control thread) and the pinned wasm measurement recipes
+     * (`benches/wasm/deviceRecipes.js`) still use this one.
      * @param {Float32Array} data
      * @param {number} frame_count
      * @param {number} channels
@@ -1765,6 +1772,24 @@ export class LevainInstance {
         return ret !== 0;
     }
     /**
+     * Start uploading a sample into the staged bank, reserving storage for
+     * all of its PCM. Returns the id the sample will have once sealed, or
+     * `None` when the engine refuses (no staged bank, a sample already open,
+     * a shared bank, or limits exceeded).
+     *
+     * This is the one allocation of the upload: the chunks that follow
+     * (`sample_write_ptr`, `commit_sample_frames`) allocate nothing and each
+     * copies at most `LEVAIN_SAMPLE_CHUNK_FLOATS` floats.
+     * @param {number} frame_count
+     * @param {number} channels
+     * @param {number} sample_rate
+     * @returns {number | undefined}
+     */
+    begin_sample(frame_count, channels, sample_rate) {
+        const ret = wasm.levaininstance_begin_sample(this.__wbg_ptr, frame_count, channels, sample_rate);
+        return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
+    }
+    /**
      * Reset this device to a uniquely-owned empty loading bank.
      * @param {string} instrument_id
      */
@@ -1775,6 +1800,14 @@ export class LevainInstance {
     }
     /**
      * Build the zone lookup table after all zones and samples are loaded.
+     *
+     * Not what the worklet calls: building the tables allocates and walks
+     * every zone, a cost that scales with the bank, so the browser host
+     * computes them off the render thread (`LevainZoneTableBuilder`) and
+     * stages them with `reserve_zone_tables`, the chunk commits and
+     * `seal_zone_tables`. The native host (which builds banks on a control
+     * thread) and the pinned wasm measurement recipes
+     * (`benches/wasm/deviceRecipes.js`) still use this one.
      * @param {number} num_articulations
      * @param {number} num_mics
      * @returns {boolean}
@@ -1799,6 +1832,51 @@ export class LevainInstance {
      */
     commit_sample_bank() {
         const ret = wasm.levaininstance_commit_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Count `float_count` floats the host wrote at `sample_write_ptr` as part
+     * of the open sample. Allocates nothing. Refuses (false) for another
+     * sample id or a count above `sample_write_floats`.
+     *
+     * # Safety
+     *
+     * The caller must have written `float_count` floats at the address
+     * `sample_write_ptr` returned for this sample. Nothing in Rust can check
+     * that the host did.
+     * @param {number} sample_id
+     * @param {number} float_count
+     * @returns {boolean}
+     */
+    commit_sample_frames(sample_id, float_count) {
+        const ret = wasm.levaininstance_commit_sample_frames(this.__wbg_ptr, sample_id, float_count);
+        return ret !== 0;
+    }
+    /**
+     * Append the `entries` zone ids the host wrote at `zone_table_write_ptr`
+     * to the reserved arena, starting at `start`. Allocates nothing. Refuses
+     * (false), appending nothing, for a chunk out of order, past the arena or
+     * longer than one chunk, or an id the staged bank holds no zone for.
+     * @param {number} start
+     * @param {number} entries
+     * @returns {boolean}
+     */
+    commit_zone_arena_chunk(start, entries) {
+        const ret = wasm.levaininstance_commit_zone_arena_chunk(this.__wbg_ptr, start, entries);
+        return ret !== 0;
+    }
+    /**
+     * Append the `entries` LUT entries the host wrote at
+     * `zone_table_write_ptr` to the reserved LUT, starting at slot `start`.
+     * Allocates nothing. Refuses (false), appending nothing, for a chunk out
+     * of order, past the LUT or longer than one chunk, or an entry that would
+     * reach past the declared arena.
+     * @param {number} start
+     * @param {number} entries
+     * @returns {boolean}
+     */
+    commit_zone_lut_chunk(start, entries) {
+        const ret = wasm.levaininstance_commit_zone_lut_chunk(this.__wbg_ptr, start, entries);
         return ret !== 0;
     }
     /**
@@ -1940,6 +2018,22 @@ export class LevainInstance {
         return ret !== 0;
     }
     /**
+     * Reserve the staged bank's zone tables: `lut_entries` LUT slots, which
+     * must be the size the dimensions imply, and `arena_entries` arena
+     * entries. The staging's only allocation. Refuses (false), reserving
+     * nothing, with no staged bank, a sample open, tables already reserved or
+     * built, or sizes past the DSP limits.
+     * @param {number} num_articulations
+     * @param {number} num_mics
+     * @param {number} lut_entries
+     * @param {number} arena_entries
+     * @returns {boolean}
+     */
+    reserve_zone_tables(num_articulations, num_mics, lut_entries, arena_entries) {
+        const ret = wasm.levaininstance_reserve_zone_tables(this.__wbg_ptr, num_articulations, num_mics, lut_entries, arena_entries);
+        return ret !== 0;
+    }
+    /**
      * Move the sounding bank into the retired slot so `release_retired_bank`
      * can free it in bounded steps before the instance is freed. For a
      * disposed instance that will never render again. Frees nothing. Returns
@@ -1957,6 +2051,51 @@ export class LevainInstance {
     sample_bank_bytes() {
         const ret = wasm.levaininstance_sample_bank_bytes(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Floats the host may write at `sample_write_ptr` next: what the open
+     * sample still needs, at most `LEVAIN_SAMPLE_CHUNK_FLOATS`. Zero when
+     * `sample_id` is not the open sample.
+     * @param {number} sample_id
+     * @returns {number}
+     */
+    sample_write_floats(sample_id) {
+        const ret = wasm.levaininstance_sample_write_floats(this.__wbg_ptr, sample_id);
+        return ret >>> 0;
+    }
+    /**
+     * Address in this module's linear memory where the next chunk of the open
+     * sample goes, or 0 when `sample_id` is not the open sample. Write at most
+     * `sample_write_floats` floats there, then call `commit_sample_frames`.
+     * Read the module's `memory.buffer` after this call: growing it
+     * elsewhere detaches earlier buffers.
+     * @param {number} sample_id
+     * @returns {number}
+     */
+    sample_write_ptr(sample_id) {
+        const ret = wasm.levaininstance_sample_write_ptr(this.__wbg_ptr, sample_id);
+        return ret >>> 0;
+    }
+    /**
+     * Publish the open sample once every one of its floats is written.
+     * Allocates and frees nothing. Returns false, leaving the sample open,
+     * for another id or a short sample.
+     * @param {number} sample_id
+     * @returns {boolean}
+     */
+    seal_sample(sample_id) {
+        const ret = wasm.levaininstance_seal_sample(this.__wbg_ptr, sample_id);
+        return ret !== 0;
+    }
+    /**
+     * Install the staged zone tables once every entry is written, as
+     * `build_zone_map` would have built them. O(1); allocates and frees
+     * nothing. Refuses (false) while any entry is missing.
+     * @returns {boolean}
+     */
+    seal_zone_tables() {
+        const ret = wasm.levaininstance_seal_zone_tables(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Tell the engine which instrument id is now loaded (e.g. `violin-1`,
@@ -1979,8 +2118,102 @@ export class LevainInstance {
         const len0 = WASM_VECTOR_LEN;
         wasm.levaininstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
+    /**
+     * Address in this module's linear memory where the host writes the next
+     * zone-table chunk: a LUT chunk as interleaved (offset, count) words, an
+     * arena chunk as zone ids. At most `zone_table_write_words` words. Read
+     * the module's `memory.buffer` after this call: growing it elsewhere
+     * detaches earlier buffers.
+     * @returns {number}
+     */
+    zone_table_write_ptr() {
+        const ret = wasm.levaininstance_zone_table_write_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Words the zone-table write window holds: one full LUT chunk.
+     * @returns {number}
+     */
+    zone_table_write_words() {
+        const ret = wasm.levaininstance_zone_table_write_words(this.__wbg_ptr);
+        return ret >>> 0;
+    }
 }
 if (Symbol.dispose) LevainInstance.prototype[Symbol.dispose] = LevainInstance.prototype.free;
+
+/**
+ * Computes a bank's zone tables away from the render thread.
+ *
+ * The browser host runs this in a Worker on its own module instance, then
+ * stages the result into the worklet's `LevainInstance` in bounded chunks.
+ * It runs the same `zone::build_zone_tables` the engine's own
+ * `build_zone_map` runs, so there is one table algorithm.
+ */
+export class LevainZoneTableBuilder {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LevainZoneTableBuilderFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_levainzonetablebuilder_free(ptr, 0);
+    }
+    /**
+     * Add one zone's place in the map, with the fields `LevainInstance::add_zone`
+     * takes for it.
+     * @param {number} zone_id
+     * @param {number} articulation_id
+     * @param {number} mic_id
+     * @param {number} lo_key
+     * @param {number} hi_key
+     * @param {number} lo_vel
+     * @param {number} hi_vel
+     */
+    add_zone(zone_id, articulation_id, mic_id, lo_key, hi_key, lo_vel, hi_vel) {
+        wasm.levainzonetablebuilder_add_zone(this.__wbg_ptr, zone_id, articulation_id, mic_id, lo_key, hi_key, lo_vel, hi_vel);
+    }
+    /**
+     * The built arena of zone ids. Empty before a successful `build`.
+     * @returns {Uint32Array}
+     */
+    arena() {
+        const ret = wasm.levainzonetablebuilder_arena(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Compute the tables for the zones added so far. Returns false, keeping
+     * no tables, for the dimensions or capacities `build_zone_map` refuses.
+     * @param {number} num_articulations
+     * @param {number} num_mics
+     * @returns {boolean}
+     */
+    build(num_articulations, num_mics) {
+        const ret = wasm.levainzonetablebuilder_build(this.__wbg_ptr, num_articulations, num_mics);
+        return ret !== 0;
+    }
+    /**
+     * The built LUT as interleaved (offset, count) words, the layout a LUT
+     * chunk travels in. Empty before a successful `build`.
+     * @returns {Uint32Array}
+     */
+    lut() {
+        const ret = wasm.levainzonetablebuilder_lut(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    constructor() {
+        const ret = wasm.levainzonetablebuilder_new();
+        this.__wbg_ptr = ret;
+        LevainZoneTableBuilderFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) LevainZoneTableBuilder.prototype[Symbol.dispose] = LevainZoneTableBuilder.prototype.free;
 
 /**
  * WASM-exported Proof mastering suite instance for AudioWorklet.
@@ -2464,6 +2697,9 @@ const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
 const LevainInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr, 1));
+const LevainZoneTableBuilderFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_levainzonetablebuilder_free(ptr, 1));
 const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr, 1));
@@ -2474,6 +2710,11 @@ const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined'
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+function getArrayU32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 function getArrayU8FromWasm0(ptr, len) {
@@ -2499,6 +2740,14 @@ function getFloat32ArrayMemory0() {
 
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -2595,6 +2844,7 @@ function __wbg_finalize_init(instance, module) {
     wasmModule = module;
     cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

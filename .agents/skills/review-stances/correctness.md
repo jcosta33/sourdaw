@@ -68,6 +68,70 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
+
+PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
+take of a pedal or mod wheel with no notes committed its rows but never a note list. Every
+playback and export reader admits a MIDI clip by its note list (`scheduleMidiNotes`,
+`resolveStoredControllerClips`, the Yeast route, `scheduleTrackClips`), so the take was stored,
+visible and silent. The blind spot was reading the recording writers and their redo snapshot
+without reading the readers' admission gates; the specs always recorded a note beside the
+controllers. The historical review stance, prompt and tier are unestablished.
+
+A recording change that stores a new kind of row must be checked against every playback
+reader's admission gate, including a take made of only that kind of row. Enumerate the readers
+of the stored kind on the live head and read each one's skip condition, then drive a take of
+that kind alone through commit, undo, redo, live playback and export, and require the take to
+be heard. Restoring any reader's skip must fail a case that drives a controller-only clip with no
+note list through that reader.
+
+Fix a playback reader's admission rather than write a structural placeholder (an empty note
+list) into shared CRDT state: the placeholder races with a peer's concurrent first write to the
+same key, and a clip derived by split, copy, duplicate or paste (#5470) never carries it.
+
+### 2026-10-21 — final cleanup changed storage state after result construction
+
+PR #5274 (`40baa0716b`) set a storage-only leak reason and retained message before its
+existing `finally` cleanup attempt. Complete proof on that final attempt could delete the
+owned payload while the returned result still said it was retained. The historical review
+stance, prompt, and tier are unestablished. A result assembled before finalization was not
+an oracle for the final state.
+
+Probe a real guarded child and owned payload with the first release refused and the final
+direct and claimed release permitted. Assert exact owner and claim removal alongside the
+reported reason and output. Persistent refusal must still report retention, and an earlier
+process or resource failure must remain a failure after storage removal.
+
+### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
+
+The orchestrator packet prescribed the requested beat-four anchor without tracing
+`resolveHistoryAwareRenderContext`, which expands bounded renders to beat zero for device
+history. The resulting moving-layer inverse sampled the crop's future during warmup and
+lost the fade in the retained crop; its positive-compensation seed also used the wrong beat.
+This was a dispatch-origin error as well as an implementation and review gap.
+
+Trace the actual render origin through history expansion before prescribing an anchor.
+Require terminal gain and pan writes to match a whole render on both sides of the crop under
+a tempo ramp. Add a layer whose beat-zero value differs from its requested-start value,
+and prove positive compensation changes only write times while its zero-time seed uses the
+actual render origin. Keep crop selection distinct from the scheduling clock.
+
+### 2026-10-11 — offline modulation retained a second tempo inverse (#5209, exposed by #5243)
+
+PR #5209 (`54ff77cd1`) sampled modulation and moving adjustment layers through a private,
+step-only seconds-to-beat helper with inverted units. PR #5243's Transport ramp integration
+removed the modulation caller's `defaultTempo` and `projectBeat` aliases at its actual landing
+(`83a92c4005`), leaving a runtime ReferenceError as well as ramp and subregion drift.
+The historical reviewer prompts and tiers are unestablished; the missed probe is established.
+
+Trace both projection directions from captured tempo state to every terminal binding: AudioParam,
+segment writer and curve writer, with track, clip and absent automation lanes. Drive a flat tempo
+and a linear ramp from a nonzero region anchor; independently integrate the ramp and require the
+actual delivered value, quantisation, slew and compensated write clock. Include both moving-layer
+schedulers and both stem branches. Replacing the Transport inverse or losing the region anchor
+must fail the terminal-output cases. Require the inverse only for moving consumers so lane-only
+native recorders remain valid, and preserve native refusal of enabled modulation and layers.
+
 ### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
 
 The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.
@@ -510,3 +574,40 @@ Probe: render a mono buffer through each real factory in Chromium OfflineAudioCo
 must produce a right-channel peak; Widener at non-unity width must emit equal left and right
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
+
+### 2026-10-12 — near-zero tempo identity escape (PR #5199)
+
+Commit `77f11923e6bb9906c14d84d3709dac4c97dd5a61` relocated the projected opening
+boundary to zero but lost the selected authored governing beat. Three instant changes at
+`2e-7`, `4e-7`, `6e-7` beats with 90, 120, 160 BPM projected a 90 BPM tail instead of 160.
+Public review `5472288669` flagged the opening fold without a case; final review
+`5474617910` missed multiple positive changes in the origin bucket. Missing input coverage
+is established; private prompt and tier are unavailable.
+
+Relocate the engine coordinate independently of authored tempo identity. Probe several distinct
+values within the origin tolerance, both with an exact-zero member and entirely positive starts;
+require the last value to govern the terminal segment. Separately preserve each sampled ramp
+boundary's beat integral and final tail. Restoring the zero-coordinate lookup must fail the
+cluster cases without requiring a renderer sample rate.
+
+### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
+
+PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
+but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
+the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
+is unverified. The missing failure mode was an admitted, audible device failing after admission.
+
+Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
+named track/device refusal with no buffer, then require the dialog to perform no encode, write or
+download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
+whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
+and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
+later runtime load failure.
+
+### 2026-10-11 — the validated head was not the merged tree (introduced by PR #5243)
+
+PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — its validated head held zero references. Between its last validation and the merge, another PR landed modulator work in the same file on `main`; the squash merge took the three-way merge result against the advanced base, which combined the head-side removals with base-side additions and re-introduced `defaultTempo`/`projectBeat` references whose bindings no longer existed. `main` stopped typechecking (TS18004/TS2304 in `automationScheduling.ts`) although every validated tree was green: the required Gate ran on the earlier merge ref, and GitHub created the squash from the never-validated new one.
+
+Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
+
+Probe: before merging, when the base tip has moved since the head's last Gate, verify the actual merge ref (base tip + head) compiles — `pnpm typecheck` and `typecheck:e2e` — not just the head. Reverting the base-side hunk or the head-side removal must each fail to compile in the combined tree when the other side stays, which is what no validated run observed here.

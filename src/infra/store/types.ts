@@ -1,6 +1,6 @@
 import { type Logger } from '#/infra/logger/types';
 
-import { type StorageAdapter } from './storage/types';
+import { type StorageAdapter, type StorageHydrateOptions } from './storage/types';
 
 export type StoreOptions<TData> = {
     storage?: StorageAdapter<TData>;
@@ -72,5 +72,5 @@ export type Store<TData> = ReadableStore<TData> & {
      * Hydrate the store from its backing storage without triggering a write-back.
      * Used after loading Automerge documents to populate the in-memory cache.
      */
-    hydrate(): void;
+    hydrate(options?: StorageHydrateOptions): void;
 };

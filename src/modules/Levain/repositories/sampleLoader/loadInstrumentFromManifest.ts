@@ -1,7 +1,10 @@
+import { LEVAIN_SAMPLE_CHUNK_FLOATS, LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT } from '#/infra/audioWorklet/levainSampleChunk';
+import { LEVAIN_ZONE_TABLE_CHUNK_ENTRIES } from '#/infra/audioWorklet/levainZoneTableChunk';
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
+import { SharedBankOwnerEndedError } from './sharedBankOwnerEnded';
 
 import type { DecodedBank, DecodedBankLease } from './createDecodedBankResource';
 
@@ -17,15 +20,40 @@ let bankLoadSequence = 0;
 type SampleBankHandshake = {
     uploadRequired: Promise<boolean>;
     completed: Promise<void>;
-    cancel: () => void;
+    /** Cancel the load on the worklet; false when the abort could not be posted because the port is closed. */
+    cancel: () => boolean;
     /**
-     * Tell the handshake that `buildZoneMap` has been posted for this load —
+     * Tell the handshake that `commitSampleBank` has been posted for this load —
      * the point from which the worklet may commit the bank before it ever
      * sees a later abort. Must be called right after that `postMessage`, and
      * only then: see `onAbort`'s use of the flag it sets.
      */
-    markZoneMapPosted: () => void;
+    markCommitPosted: () => void;
 };
+
+/** One zone's place in the lookup tables, numbered as its `addZone` message is. */
+export type LevainZoneSpan = {
+    zoneId: number;
+    articulationId: number;
+    micId: number;
+    loKey: number;
+    hiKey: number;
+    loVel: number;
+    hiVel: number;
+};
+
+/** The LUT as interleaved (offset, count) words, and the arena of zone ids it indexes. */
+export type LevainZoneTables = { lut: Uint32Array; arena: Uint32Array };
+
+/**
+ * Computes a bank's zone tables away from the render thread (in production, a
+ * Worker running its own daw-dsp instance). Rejects when the build fails, and
+ * at once on `signal`.
+ */
+export type LevainZoneTableBuilder = (
+    request: { zones: readonly LevainZoneSpan[]; numArticulations: number; numMics: number },
+    signal?: AbortSignal
+) => Promise<LevainZoneTables>;
 
 function allocateBankLoadToken(): number {
     if (bankLoadSequence >= Number.MAX_SAFE_INTEGER) {
@@ -49,6 +77,13 @@ function processorEndedError(message: Record<string, unknown>): Error {
     return new Error(`Levain processor ended during sample-bank loading${detail}`);
 }
 
+/** The worklet's refusal of a load; `ownerEnded` marks a follower failed only because the load it waited on ended. */
+function sampleBankFailure(message: Record<string, unknown>): Error {
+    const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+    const text = `Levain sample-bank load failed${detail}`;
+    return message.ownerEnded === true ? new SharedBankOwnerEndedError(text) : new Error(text);
+}
+
 function createSampleBankHandshake(
     nodePort: MessagePort,
     loadToken: number,
@@ -60,10 +95,10 @@ function createSampleBankHandshake(
 
     let uploadSettled = false;
     let completedSettled = false;
-    // Set once `buildZoneMap` has been posted for this load (see
-    // `markZoneMapPosted`) — from that point the worklet may already be
+    // Set once `commitSampleBank` has been posted for this load (see
+    // `markCommitPosted`) — from that point the worklet may already be
     // committing, so `onAbort` stops settling this handshake locally.
-    let zoneMapPosted = false;
+    let commitPosted = false;
     // Set once `onAbort` has deferred to the worklet instead of rejecting
     // locally, so a later `sampleBankError` for this token is known to be the
     // abort's own answer (reject with the abort's reason) rather than an
@@ -145,10 +180,11 @@ function createSampleBankHandshake(
                 reject(resolveAbortReason());
                 return;
             }
-            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
-            reject(new Error(`Levain sample-bank load failed${detail}`));
+            reject(sampleBankFailure(message));
         }
     }
+    // False once an `abortSampleBank` post found the port closed.
+    let abortDelivered = true;
     function onAbort(): void {
         if (uploadSettled && completedSettled) {
             return;
@@ -159,16 +195,16 @@ function createSampleBankHandshake(
         } catch {
             // The port is already closed: no terminal message can ever
             // arrive, so local cancellation must settle here regardless of
-            // whether `buildZoneMap` was posted.
+            // whether `commitSampleBank` was posted.
             delivered = false;
+            abortDelivered = false;
         }
-        if (zoneMapPosted && delivered) {
-            // Once `buildZoneMap` is posted the worklet may already be
-            // committing: `_buildZoneMap`/`_completeSampleBankLoad`
-            // (levainProcessor.ts ~:293-343, ~:285-291) clear
-            // `_bankLoadToken` and reply before this `abortSampleBank` is even
-            // dispatched, and a matched abort that lands after commit is
-            // already a no-op there too (~:513-517). Settling this promise
+        if (commitPosted && delivered) {
+            // Once `commitSampleBank` is posted the worklet may already be
+            // committing: `_commitSampleBank`/`_completeSampleBankLoad`
+            // (levainProcessor.ts) clear `_bankLoadToken` and reply before
+            // this `abortSampleBank` is even dispatched, and a matched abort
+            // that lands after commit is already a no-op there too. Settling this promise
             // locally now could report a rejection for a bank the engine goes
             // on to commit, so only the worklet's own terminal answer —
             // `sampleBankLoaded` (resolve), or `sampleBankError`/`error`/
@@ -189,9 +225,12 @@ function createSampleBankHandshake(
     return {
         uploadRequired,
         completed,
-        cancel: onAbort,
-        markZoneMapPosted: () => {
-            zoneMapPosted = true;
+        cancel: () => {
+            onAbort();
+            return abortDelivered;
+        },
+        markCommitPosted: () => {
+            commitPosted = true;
         },
     };
 }
@@ -282,11 +321,287 @@ function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: 
     request();
 }
 
+type ChunkPacer = {
+    /** Resolve when a chunk may be posted; reject if the load was aborted, the worklet refused it or the processor ended. */
+    reserve: () => Promise<void>;
+    /**
+     * Aborts, with the error, once the worklet refuses the load, the processor
+     * ends or the pacer is disposed: no answer will come for anything the load
+     * stages after that, so a wait outside the pacer (the zone-table build)
+     * stops on it too.
+     */
+    stopped: AbortSignal;
+    /**
+     * The load is over. Its unacknowledged chunks are still queued on the
+     * worklet's port, ahead of any abort, so it keeps their credits until the
+     * worklet has passed them (see `createChunkPacer`); `abortDelivered` false
+     * means the port is closed and nothing more will be answered.
+     */
+    dispose: (abortDelivered: boolean) => void;
+};
+
+type BudgetWaiter = { resolve: (granted: boolean) => void; granted: boolean };
+
+/**
+ * The credits that bound every Levain chunk upload on this main-thread realm.
+ * All Levain processors of one `AudioContext` share one worklet render thread,
+ * and devices load in parallel, so a per-load limit would let N loads queue N
+ * times the limit on that thread. The loader cannot derive a context from the
+ * `MessagePort` it is handed, so this one budget covers every context in the
+ * realm: the app has exactly one live context, and an offline render's loads
+ * only share it conservatively (they queue behind each other, they never get
+ * more than the limit).
+ *
+ * A credit is held from posting a chunk until the worklet acknowledges it. A
+ * load that ends with chunks unacknowledged (aborted, failed) keeps those
+ * credits: its chunks are still queued ahead of its abort on the port, and the
+ * worklet still copies them. They return one per acknowledgement, and all at
+ * once at the first answer that must follow those chunks, or when the port is
+ * closed or the processor ends. Waiters are served first come, first served: a
+ * returned credit goes straight to the oldest waiter, and a new reservation
+ * never takes a free credit past a queue.
+ */
+const chunkBudget = { credits: LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT, waiters: [] as BudgetWaiter[] };
+
+function giveBackChunkCredit(): void {
+    const next = chunkBudget.waiters.shift();
+    if (next) {
+        next.granted = true;
+        next.resolve(true);
+        return;
+    }
+    chunkBudget.credits += 1;
+}
+
+/** Take `waiter` out of the queue; false when it was already served. */
+function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
+    const index = chunkBudget.waiters.indexOf(waiter);
+    if (index === -1) {
+        return false;
+    }
+    chunkBudget.waiters.splice(index, 1);
+    return true;
+}
+
+/**
+ * Hold a load to the shared `chunkBudget` of `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT`
+ * chunks the worklets have not yet acknowledged with `sampleChunkWritten` or,
+ * for a zone-table chunk, `zoneTableChunkWritten`.
+ * A wait ends on a credit, and just as promptly on the abort signal, a
+ * `sampleBankError` for this load, or the processor's `error`/`disposed`: a
+ * processor that stops answering must not leave the load waiting for an
+ * acknowledgement that will never come. Messages carrying another load's
+ * token are not this load's to act on. A load makes its pacer before it posts
+ * `beginSampleBank`, whatever its role, so the pacer hears every answer to it.
+ *
+ * The pacer outlives its load while it still holds credits. The worklet reads
+ * its port in order, so once the load's chunks are passed it answers the
+ * token's `sampleBankError` (the abort's reply), or the `retiredBankReleased`
+ * the loader asks for next; the first of those, or the processor ending, hands
+ * back whatever is still held, and the listener is removed.
+ */
+function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: AbortSignal): ChunkPacer {
+    let held = 0;
+    let failure: Error | null = null;
+    let queued: BudgetWaiter | null = null;
+    let ended = false;
+    const stop = new AbortController();
+
+    function stopListeningWhenDone(): void {
+        if (ended && held === 0) {
+            nodePort.removeEventListener('message', onMessage);
+        }
+    }
+    function fail(error: Error): void {
+        failure ??= error;
+        stop.abort(failure);
+        if (queued && withdrawFromChunkBudget(queued)) {
+            queued.resolve(false);
+        }
+    }
+    function passedAllChunks(): void {
+        for (; held > 0; held -= 1) {
+            giveBackChunkCredit();
+        }
+        stopListeningWhenDone();
+    }
+    function throwIfStopped(): void {
+        if (failure) {
+            throw failure;
+        }
+        signal?.throwIfAborted();
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (isProcessorEnd(message)) {
+            fail(processorEndedError(message));
+            passedAllChunks();
+            return;
+        }
+        if (message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.type === 'sampleChunkWritten' || message.type === 'zoneTableChunkWritten') {
+            if (held > 0) {
+                held -= 1;
+                giveBackChunkCredit();
+            }
+            stopListeningWhenDone();
+            return;
+        }
+        if (message.type === 'sampleBankError') {
+            fail(sampleBankFailure(message));
+            passedAllChunks();
+            return;
+        }
+        if (message.type === 'retiredBankReleased') {
+            passedAllChunks();
+        }
+    }
+    async function reserve(): Promise<void> {
+        throwIfStopped();
+        if (chunkBudget.credits > 0 && chunkBudget.waiters.length === 0) {
+            chunkBudget.credits -= 1;
+            held += 1;
+            return;
+        }
+        const answered = Promise.withResolvers<boolean>();
+        const waiter: BudgetWaiter = { resolve: answered.resolve, granted: false };
+        queued = waiter;
+        chunkBudget.waiters.push(waiter);
+        try {
+            const granted = await raceAbortSignal(answered.promise, signal);
+            if (!granted) {
+                throw failure ?? new Error('Levain sample upload stopped waiting for a chunk credit');
+            }
+            throwIfStopped();
+        } catch (error) {
+            // A load can end after a credit was handed over but before this
+            // continuation used it. Pass that unused credit on exactly once.
+            // A waiter a failure removed was handed none, so it has nothing to pass on.
+            if (!withdrawFromChunkBudget(waiter) && waiter.granted) {
+                giveBackChunkCredit();
+            }
+            throw error;
+        } finally {
+            queued = null;
+        }
+        held += 1;
+    }
+
+    nodePort.addEventListener('message', onMessage);
+    return {
+        reserve,
+        stopped: stop.signal,
+        dispose: (abortDelivered) => {
+            ended = true;
+            fail(new Error('Levain sample upload ended'));
+            if (!abortDelivered) {
+                passedAllChunks();
+            }
+            stopListeningWhenDone();
+        },
+    };
+}
+
+/**
+ * Post one decoded sample as `beginSample`, its PCM in `sampleChunk` messages
+ * of at most `LEVAIN_SAMPLE_CHUNK_FLOATS` floats, then `sealSample`, in that
+ * order on one port. The worklet reserves the sample's storage once at begin
+ * and copies one chunk per message, so no message holds the render thread for a
+ * whole sample's copy.
+ *
+ * Each chunk is a copy of its slice, transferred: posting a view of the bank's
+ * shared buffer would clone the whole underlying buffer, and the decoded bank
+ * stays cached for later loads, so its own buffer cannot be handed away.
+ *
+ * Each chunk waits for a slot from `pacer`, so the worklet never holds more
+ * than `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT` queued chunks and cannot drain a long
+ * run of them between two render quanta.
+ */
+async function uploadSampleInChunks(
+    nodePort: MessagePort,
+    loadToken: number,
+    sampleId: number,
+    decoded: { data: Float32Array; frameCount: number; channels: number; sampleRate: number },
+    pacer: ChunkPacer
+): Promise<void> {
+    nodePort.postMessage({
+        type: 'beginSample',
+        loadToken,
+        sampleId,
+        frameCount: decoded.frameCount,
+        channels: decoded.channels,
+        sampleRate: decoded.sampleRate,
+    });
+    for (let offset = 0; offset < decoded.data.length; offset += LEVAIN_SAMPLE_CHUNK_FLOATS) {
+        await pacer.reserve();
+        const data = decoded.data.slice(offset, offset + LEVAIN_SAMPLE_CHUNK_FLOATS);
+        nodePort.postMessage({ type: 'sampleChunk', loadToken, sampleId, data }, [data.buffer]);
+    }
+    nodePort.postMessage({ type: 'sealSample', loadToken, sampleId });
+}
+
+/**
+ * Post a bank's zone tables as `reserveZoneTables`, then the LUT and the arena
+ * in `zoneTableChunk` messages of at most `LEVAIN_ZONE_TABLE_CHUNK_ENTRIES`
+ * entries, then `sealZoneTables`, in that order on one port. The worklet
+ * reserves the tables once and appends one checked chunk per message, so no
+ * message builds or copies whole tables on the render thread. Each chunk is a
+ * transferred copy of its slice and waits for a credit from `pacer`, the
+ * budget the sample chunks share.
+ */
+async function uploadZoneTables(
+    nodePort: MessagePort,
+    loadToken: number,
+    dimensions: { numArticulations: number; numMics: number },
+    tables: LevainZoneTables,
+    pacer: ChunkPacer
+): Promise<void> {
+    if (tables.lut.length % 2 !== 0) {
+        throw new Error('Levain zone-table builder returned a LUT that is not (offset, count) pairs');
+    }
+    nodePort.postMessage({
+        type: 'reserveZoneTables',
+        loadToken,
+        numArticulations: dimensions.numArticulations,
+        numMics: dimensions.numMics,
+        lutEntries: tables.lut.length / 2,
+        arenaEntries: tables.arena.length,
+    });
+    await uploadZoneTableInChunks(nodePort, loadToken, 'lut', tables.lut, 2, pacer);
+    await uploadZoneTableInChunks(nodePort, loadToken, 'arena', tables.arena, 1, pacer);
+    nodePort.postMessage({ type: 'sealZoneTables', loadToken });
+}
+
+async function uploadZoneTableInChunks(
+    nodePort: MessagePort,
+    loadToken: number,
+    table: 'lut' | 'arena',
+    words: Uint32Array,
+    wordsPerEntry: number,
+    pacer: ChunkPacer
+): Promise<void> {
+    const chunkWords = LEVAIN_ZONE_TABLE_CHUNK_ENTRIES * wordsPerEntry;
+    for (let offset = 0; offset < words.length; offset += chunkWords) {
+        await pacer.reserve();
+        const data = words.slice(offset, offset + chunkWords);
+        nodePort.postMessage({ type: 'zoneTableChunk', loadToken, table, start: offset / wordsPerEntry, data }, [
+            data.buffer,
+        ]);
+    }
+}
+
 export type LoadInstrumentFromManifestInput = {
     manifestUrl: string;
     basePath: string;
     expectedInstrumentId: string;
     nodePort: MessagePort;
+    /** Computes the bank's zone tables off the render thread; there is no fallback. */
+    buildZoneTables: LevainZoneTableBuilder;
     lod?: SampleLodConfig;
     onProgress?: (progress: number) => void;
     signal?: AbortSignal;
@@ -299,6 +614,7 @@ export type LoadInstrumentFromManifestInput = {
 /**
  * Load a complete instrument from a manifest file.
  * Negotiates shared-bank ownership, uploads PCM only for the elected owner,
+ * stages the zone tables `buildZoneTables` computed (every role stages its own),
  * and resolves only after the worklet commits the bank.
  *
  * @param manifestUrl URL to the JSON manifest
@@ -312,7 +628,7 @@ export type LoadInstrumentFromManifestInput = {
  * @returns The decoded bank the worklet committed, or undefined when the
  *   caller's own pre-flight checks abort this load before it ever asks the
  *   worklet to negotiate a bank (a superseded load resolves rather than
- *   throwing; see the `signal` fencing above). Once `buildZoneMap` has been
+ *   throwing; see the `signal` fencing above). Once `commitSampleBank` has been
  *   posted, an abort no longer settles this promise locally — the worklet may
  *   already be delivering its commit — so only the worklet's own terminal
  *   answer settles it from there: `sampleBankLoaded` resolves with the bank
@@ -324,6 +640,7 @@ export async function loadInstrumentFromManifest({
     basePath,
     expectedInstrumentId,
     nodePort,
+    buildZoneTables,
     lod = DEFAULT_LOD,
     onProgress,
     signal,
@@ -362,6 +679,8 @@ export async function loadInstrumentFromManifest({
     let releaseStarted = false;
     let handshake: SampleBankHandshake | null = null;
     let completed = false;
+    // Paces the chunk uploads of this load; made with its handshake.
+    let chunkPacer: ChunkPacer | null = null;
     try {
         // Hold this load's `beginSampleBank` until every earlier load on the
         // port is over, the bank the last one displaced fully freed a bounded
@@ -379,6 +698,11 @@ export async function loadInstrumentFromManifest({
         }
         const loadToken = allocateBankLoadToken();
         handshake = createSampleBankHandshake(nodePort, loadToken, signal);
+        // Made before the begin whatever the role: a load that uploads no PCM
+        // still stages its zone tables, and must hear the processor end or
+        // the worklet refuse the load while they are being built.
+        const pacer = createChunkPacer(nodePort, loadToken, signal);
+        chunkPacer = pacer;
         nodePort.postMessage({
             type: 'beginSampleBank',
             bankKey: bank.bankKey,
@@ -398,18 +722,11 @@ export async function loadInstrumentFromManifest({
             }
             sampleIdMap.set(file, sampleId);
             if (uploadRequired) {
-                nodePort.postMessage({
-                    type: 'addSample',
-                    loadToken,
-                    sampleId,
-                    data: decoded.data,
-                    frameCount: decoded.frameCount,
-                    channels: decoded.channels,
-                    sampleRate: decoded.sampleRate,
-                });
+                await uploadSampleInChunks(nodePort, loadToken, sampleId, decoded, pacer);
             }
         }
 
+        const zoneSpans: LevainZoneSpan[] = [];
         let zoneId = 0;
         for (const { zone, articulationId } of bank.zones) {
             signal?.throwIfAborted();
@@ -457,6 +774,15 @@ export async function loadInstrumentFromManifest({
                 sustain: zone.sustain,
                 release: zone.release,
             });
+            zoneSpans.push({
+                zoneId,
+                articulationId,
+                micId: zone.micId,
+                loKey: zone.loKey,
+                hiKey: zone.hiKey,
+                loVel: zone.loVel,
+                hiVel: zone.hiVel,
+            });
             zoneId++;
         }
 
@@ -468,7 +794,7 @@ export async function loadInstrumentFromManifest({
         // the position matters: `LevainEngine::add_legato_transition` adds to
         // the pending bank's transition store the same way `add_zone` adds to
         // its zone map, and `commit_sample_bank` swaps that store in, so a
-        // message landing either side of `buildZoneMap` still takes.
+        // message landing either side of the zone tables still takes.
         // `loadToken` is what makes a transition from an abandoned load stale.
         for (const transition of bank.legatoTransitions) {
             signal?.throwIfAborted();
@@ -489,26 +815,30 @@ export async function loadInstrumentFromManifest({
             });
         }
 
-        nodePort.postMessage({
-            type: 'buildZoneMap',
-            loadToken,
-            numArticulations: bank.numArticulations,
-            numMics: bank.numMics,
-        });
+        const dimensions = { numArticulations: bank.numArticulations, numMics: bank.numMics };
+        // The build stops at once on an abort, on this load's refusal or on the
+        // processor ending, and nothing is staged once any of them has come.
+        const building = signal ? AbortSignal.any([signal, pacer.stopped]) : pacer.stopped;
+        const tables = await raceAbortSignal(buildZoneTables({ zones: zoneSpans, ...dimensions }, building), building);
+        building.throwIfAborted();
+        await uploadZoneTables(nodePort, loadToken, dimensions, tables, pacer);
+
+        nodePort.postMessage({ type: 'commitSampleBank', loadToken });
         // From here the worklet may commit before it ever sees a later abort
         // (see `onAbort`'s use of this flag) — tell the handshake so a
         // superseding abort waits for the worklet's own terminal message
         // instead of rejecting a load the engine goes on to commit.
-        handshake.markZoneMapPosted();
+        handshake.markCommitPosted();
         await handshake.completed;
         completed = true;
         releaseStarted = true;
         releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
         return bank;
     } finally {
-        if (handshake && !completed) {
-            handshake.cancel();
-        }
+        // The abort goes out before the pacer is told the load is over: it
+        // learns from it whether the worklet will still answer.
+        const abortDelivered = handshake && !completed ? handshake.cancel() : true;
+        chunkPacer?.dispose(abortDelivered);
         if (!releaseStarted) {
             if (postedLoadToken === null) {
                 // It never posted a begin: it is over once the loads before it are.

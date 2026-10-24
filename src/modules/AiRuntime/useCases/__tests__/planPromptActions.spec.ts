@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectIdentity: vi.fn(() => 'project-identity'),
@@ -200,6 +201,8 @@ describe('planPromptActions', () => {
             requests: ['make the bass louder'],
             pendingProposal: {
                 runId: 'agent-run-pending',
+                confirmationId: 'prompt-confirmation-pending',
+                batchPosition: null,
                 commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
             },
             lastCommit: null,

@@ -48,19 +48,33 @@ const crdt = vi.hoisted(() => ({
         };
     }),
 }));
+const withdrawals = vi.hoisted(() => ({ count: 0 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     saveProjectBeforeReplacement: vi.fn<ProjectUseCases['saveProjectBeforeReplacement']>(async () => true),
     quiesceProjectSession: vi.fn<ProjectUseCases['quiesceProjectSession']>(async () => 'success'),
     cancelProjectSessionQuiesce: vi.fn<ProjectUseCases['cancelProjectSessionQuiesce']>(async () => 'rejected'),
     discardProjectChanges: vi.fn(async () => true),
-    newProject: vi.fn(),
+    newProject: vi.fn<ProjectUseCases['newProject']>(),
     pickAndImportProjectFile: vi.fn(async () => true),
     exportProjectFile: vi.fn(async () => undefined),
     getRecentProjects: vi.fn<ProjectUseCases['getRecentProjects']>(() => []),
     getProjectSnapshotKey: vi.fn((createdAt: number) => `sourdaw:project:${createdAt}`),
-    loadRecentProject: vi.fn(async () => 'committed'),
+    isOpenProjectKey: vi.fn((key: string) => key === `sourdaw:project:${projectState.createdAt}`),
+    loadRecentProject: vi.fn<ProjectUseCases['loadRecentProject']>(async () => 'committed'),
     recentProjectChanges: { subscribe: vi.fn((_listener: () => void) => () => undefined) },
+    // The registry's contract, kept behind spies: a withdrawal turns false every
+    // check captured before it. Importing the real module from here would cross
+    // the Project barrel and importing the barrel loads half the app.
+    pendingProjectReplacements: {
+        capture: vi.fn<ProjectUseCases['pendingProjectReplacements']['capture']>(() => {
+            const captured = withdrawals.count;
+            return () => withdrawals.count === captured;
+        }),
+        withdraw: vi.fn<ProjectUseCases['pendingProjectReplacements']['withdraw']>(() => {
+            withdrawals.count += 1;
+        }),
+    },
 }));
 
 vi.mock('#/modules/Project/stores', () => ({
@@ -84,11 +98,13 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 vi.mock('#/modules/Project/useCases', () => ({
+    pendingProjectReplacements: projectActions.pendingProjectReplacements,
     cancelProjectSessionQuiesce: projectActions.cancelProjectSessionQuiesce,
     discardProjectChanges: projectActions.discardProjectChanges,
     exportProjectFile: projectActions.exportProjectFile,
     getProjectSnapshotKey: projectActions.getProjectSnapshotKey,
     getRecentProjects: projectActions.getRecentProjects,
+    isOpenProjectKey: projectActions.isOpenProjectKey,
     loadRecentProject: projectActions.loadRecentProject,
     newProject: projectActions.newProject,
     pickAndImportProjectFile: projectActions.pickAndImportProjectFile,
@@ -253,6 +269,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue('rejected');
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
+        projectActions.pendingProjectReplacements.withdraw.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
         arrangement.zoomTimelineBy.mockClear();
         arrangement.clearClipSelection.mockClear();
@@ -1184,16 +1201,183 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
-        expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project');
+        expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything());
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
+    });
+
+    // Opening the open project would read its named save before a closing
+    // take's own save lands and hydrate that stale read (#5536).
+    it('leaves the session untouched when Open Recent names the open project', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+
+        await vi.waitFor(() =>
+            expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything())
+        );
+        expect(projectActions.loadRecentProject).not.toHaveBeenCalledWith('sourdaw:project:1', expect.anything());
+        expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1);
+    });
+
+    // The store keeps the open project until a pending replacement activates, so
+    // the open project's entry must withdraw that replacement, whichever route
+    // started it.
+    it('withdraws a pending Recent load when Open Recent names the open project', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
+
+        await vi.waitFor(() => expect(projectActions.pendingProjectReplacements.withdraw).toHaveBeenCalledTimes(1));
+        expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
+    });
+
+    describe('when the open project is chosen while a native replacement is pending', () => {
+        const openProject: Parameters<typeof useNativeApplicationMenu>[0] = {
+            projectId: 'project',
+            name: 'Song',
+            createdAt: 1,
+            updatedAt: 2,
+            dirty: false,
+            loading: false,
+            keyRoot: 0,
+            scaleName: 'chromatic',
+            tuning: { name: 'Equal Temperament', frequencies: [] },
+            productionBrief: {} as never,
+            initialized: true,
+        };
+
+        it('does not load the Recent project whose pre-save finishes after the withdrawal', async () => {
+            const save = Promise.withResolvers<boolean>();
+            projectActions.saveProjectBeforeReplacement.mockImplementationOnce(() => save.promise);
+            renderHook(() => useNativeApplicationMenu(openProject));
+
+            desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+            await vi.waitFor(() => expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+            projectActions.pendingProjectReplacements.withdraw();
+            save.resolve(true);
+
+            // A macrotask turn lets the route's continuation run to its end.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
+        });
+
+        it('hands the load a check that turns false when the withdrawal lands during its read', async () => {
+            const read = Promise.withResolvers<'committed'>();
+            projectActions.loadRecentProject.mockImplementationOnce(() => read.promise);
+            renderHook(() => useNativeApplicationMenu(openProject));
+
+            desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+            await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledTimes(1));
+            const [, options] = projectActions.loadRecentProject.mock.calls[0] ?? [];
+            expect(options?.shouldProceed?.()).toBe(true);
+            projectActions.pendingProjectReplacements.withdraw();
+            expect(options?.shouldProceed?.()).toBe(false);
+            read.resolve('committed');
+        });
+
+        it('does not create the new project whose pre-save finishes after the withdrawal', async () => {
+            const save = Promise.withResolvers<boolean>();
+            projectActions.saveProjectBeforeReplacement.mockImplementationOnce(() => save.promise);
+            renderHook(() => useNativeApplicationMenu(openProject));
+
+            desktop.listener?.({ action: 'project:new' });
+            await vi.waitFor(() => expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+            projectActions.pendingProjectReplacements.withdraw();
+            save.resolve(true);
+
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(projectActions.newProject).not.toHaveBeenCalled();
+        });
+
+        it('hands the new project a check that turns false when the withdrawal lands during its teardown', async () => {
+            const creation = Promise.withResolvers<boolean>();
+            projectActions.newProject.mockImplementationOnce(() => creation.promise);
+            renderHook(() => useNativeApplicationMenu(openProject));
+
+            desktop.listener?.({ action: 'project:new' });
+            await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
+            const [, options] = projectActions.newProject.mock.calls[0] ?? [];
+            expect(options?.shouldProceed?.()).toBe(true);
+            projectActions.pendingProjectReplacements.withdraw();
+            expect(options?.shouldProceed?.()).toBe(false);
+            creation.resolve(false);
+        });
+    });
+
+    it('opens a project chosen after a pending native replacement through the queue', async () => {
+        let releaseSave: ((saved: boolean) => void) | undefined;
+        projectActions.saveProjectBeforeReplacement.mockImplementationOnce(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    releaseSave = resolve;
+                })
+        );
+        projectActions.loadRecentProject.mockImplementationOnce(async () => {
+            projectState.createdAt = 2;
+            return 'committed';
+        });
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
+        await vi.waitFor(() => expect(releaseSave).toBeDefined());
+        releaseSave?.(true);
+
+        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledTimes(2));
+        expect(projectActions.loadRecentProject.mock.calls.map(([key]) => key)).toEqual([
+            'recent-project',
+            'sourdaw:project:1',
+        ]);
     });
 
     it('serializes native project transitions in menu delivery order', async () => {
         let releaseNewProject: (() => void) | undefined;
         projectActions.newProject.mockImplementation(
             () =>
-                new Promise<void>((resolve) => {
-                    releaseNewProject = resolve;
+                new Promise<boolean>((resolve) => {
+                    releaseNewProject = () => resolve(true);
                 })
         );
         renderHook(() =>
@@ -1221,7 +1405,9 @@ describe('useNativeApplicationMenu', () => {
 
         releaseNewProject?.();
 
-        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
+        await vi.waitFor(() =>
+            expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything())
+        );
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
     });
 
@@ -1230,11 +1416,11 @@ describe('useNativeApplicationMenu', () => {
         let releaseNewProject: (() => void) | undefined;
         projectActions.newProject.mockImplementation(
             () =>
-                new Promise<void>((resolve) => {
+                new Promise<boolean>((resolve) => {
                     order.push('new:start');
                     releaseNewProject = () => {
                         order.push('new:end');
-                        resolve();
+                        resolve(true);
                     };
                 })
         );

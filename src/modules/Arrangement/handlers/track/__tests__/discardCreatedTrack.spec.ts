@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: mocks.wireSidechainRoutes,
     getAllSidechainRoutes: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
 }));
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,

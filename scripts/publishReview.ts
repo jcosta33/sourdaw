@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+    CI_APPROVAL_LABEL,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     ORCHESTRATOR_USER_NODE_ID,
@@ -44,6 +45,7 @@ import {
     readLiveApprovalContext,
 } from './reviewApprovalContext.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
+import { applyApprovalLabel, removeApprovalLabel } from './reviewApprovalLabel.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
 import {
     assertPublicationEvidence,
@@ -54,12 +56,12 @@ import {
     type ReviewDocument,
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
-import { readDossierStanceDraws } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import {
     assertAcceptanceAuthorization,
     assertAcceptanceDossierAccounting,
     assertReviewRoundPublicationAdmitted,
+    bundleReplaysRecordedPublication,
     prepareReviewDossierPublication,
     recordAcceptanceAuthorization,
     recordedPublicationReplay,
@@ -71,8 +73,6 @@ import {
     type PublishedReviewComment,
     type RemotePublishedReview,
 } from './reviewPublicationRemoteInspection.ts';
-
-import type { ReviewReassessment } from './reviewRoundEscalation.ts';
 
 export type { PublishedReviewComment } from './reviewPublicationRemoteInspection.ts';
 
@@ -127,10 +127,18 @@ export type PublishReviewPort = {
     remoteReview?: (number: number, reviewId: number) => RemotePublishedReview | undefined;
     /**
      * The pull request's whole public review history and review comments, needed to count reviewer
-     * request-changes rounds for the escalation gate (#4584).
+     * request-changes rounds for the round freeze (ADR 0054).
      */
     publicReviews?: (number: number) => PublicReview[];
     publicReviewComments?: (number: number) => PublicReviewComment[];
+    /**
+     * Freshly applies `CI_APPROVAL_LABEL`, so its `labeled` event signals approval-gated CI for the
+     * approved head; `scripts/ciApprovalAdmission.ts` admits it only for this App's approval of that
+     * exact head.
+     */
+    applyApprovalLabel: (number: number) => void;
+    /** Takes `CI_APPROVAL_LABEL` off, succeeding when it was not applied. */
+    removeApprovalLabel: (number: number) => void;
     log: (message: string) => void;
 };
 
@@ -203,8 +211,6 @@ export type PreparedReviewPublication = {
     document: ReviewDocument;
     payloadDigest: string;
     approvalContext?: ReviewBundleContext;
-    /** The escalation reassessment the dossier gate consumed, when the round threshold required one. */
-    reviewReassessment?: ReviewReassessment;
 };
 
 function prepareReviewPublication(
@@ -225,30 +231,33 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
-    // The acceptance identity never reads the dossier, and its diversity check is exempt anyway.
-    const stanceDraws = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? undefined : readDossierStanceDraws(port, bundle);
-    assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
-    // The round escalation decision precedes approval context and comment preflight so a missing
-    // reassessment is named even when the manifest cannot be read (#4754).
-    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+    // Reviewer diversity and the round freeze bound fresh posts; a recorded replay posts nothing. The
+    // freeze precedes approval context and comment preflight so a frozen pull request is named even
+    // when the manifest cannot be read (#4754).
+    const replaysRecordedPublication = bundleReplaysRecordedPublication(bundle, port);
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID && !replaysRecordedPublication) {
+        assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
         assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
     }
     // The approval context and the comment preflight run before the dossier publication, and the
-    // order matters: a refusal here must not have written the canonical dossier, because a comment
-    // whose position is wrong is repaired by moving it, and a dossier that already pinned the old
-    // position refuses the repair. The escalation gate runs above and again inside the dossier
-    // publication.
+    // order matters: a refusal here must not have written the canonical dossier.
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
-    const reviewReassessment =
-        actorNodeId !== ORCHESTRATOR_USER_NODE_ID
-            ? prepareReviewDossierPublication({ number, head, bundle, document, port })
-            : undefined;
+    // A fresh reviewer APPROVE over unresolved review threads can never authorize its head, and the
+    // persisted publication then replays forever without an authorization, stranding the head until
+    // a new commit and a full fresh round (#5436). Refused here, on the preflight route every
+    // publication takes, before the dossier is written; replays and the orchestrator acceptance
+    // route (which carries its own thread gate) stay ungated.
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID && !replaysRecordedPublication && document.event === 'APPROVE') {
+        assertApprovalWithoutOpenThreads(number, head, port);
+    }
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+        prepareReviewDossierPublication({ number, head, bundle, document, port });
+    }
     return {
         head,
         document,
         approvalContext,
-        reviewReassessment,
         payloadDigest: reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: head,
@@ -329,12 +338,34 @@ function publishPreparedReviewForActor(
         fail('orchestrator acceptance response does not match the User actor and prepared head');
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        recordPublicationBindings(number, prepared.head, document, posted.id, port, prepared.reviewReassessment);
+        recordPublicationBindings(number, prepared.head, document, posted.id, port);
     } else {
         recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
     }
     port.log(String(posted.id));
     return posted.id;
+}
+
+/**
+ * Runs once the publication lock is released, after a fresh review and its dossier binding or an
+ * exact replay, so a failed label write cannot strand the lock behind a review that already stands:
+ * a plain re-run replays the recorded publication and retries the label. The orchestrator's legacy
+ * acceptance never labels: admission requires the reviewer App's own approval.
+ */
+function syncApprovalLabel(number: number, reviewId: number, event: ReviewEvent, port: PublishReviewPort): void {
+    try {
+        if (event === 'APPROVE') {
+            port.applyApprovalLabel(number);
+        } else {
+            port.removeApprovalLabel(number);
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fail(
+            `review ${reviewId} stands on PR #${number}, but the ${CI_APPROVAL_LABEL} label write failed (${message}); ` +
+                `re-run pnpm review:publish ${number} to replay the review and retry the label`
+        );
+    }
 }
 
 function assertAcceptancePreconditions(
@@ -350,6 +381,25 @@ function assertAcceptancePreconditions(
     assertIndependentReviewerApproval(number, state);
     assertAcceptanceDossierAccounting(number, head, port);
     assertAcceptanceAuthorization(number, head, document.authorization, state.unresolvedThreads, port);
+}
+
+/**
+ * A reviewer APPROVE is the delivery authorization (#4584), and the authorization binds only when
+ * no review threads remain unresolved — an approval posted over open threads can never authorize
+ * its head, and the persisted publication then replays forever without one, stranding the head
+ * until a new commit and a full fresh round (#5436). Refuse before any remote write, naming the
+ * open threads; resolve them and publish again.
+ */
+function assertApprovalWithoutOpenThreads(number: number, head: string, port: PublishReviewPort): void {
+    if (port.reviewState === undefined) {
+        fail(`an approval of pull request ${String(number)} requires a review-state reader to prove no open threads`);
+    }
+    const state = port.reviewState(number, head);
+    if (state.unresolvedThreads > 0) {
+        fail(
+            `pull request ${String(number)} head ${head.slice(0, 9)} has ${String(state.unresolvedThreads)} unresolved review thread(s); an approval cannot authorize delivery over open threads — resolve them and publish again`
+        );
+    }
 }
 
 export function publishPreparedReview(
@@ -375,7 +425,10 @@ export function publishReview(
     port: PublishReviewPort,
     boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
-    return publishPreparedReview(number, prepareReviewPublication(number, port), port, boundary);
+    // The open-thread approval gate lives in prepareReviewPublication, on the route every
+    // publication takes (#5436); this wrapper only pairs prepare with the reviewer post.
+    const prepared = prepareReviewPublication(number, port);
+    return publishPreparedReview(number, prepared, port, boundary);
 }
 
 export function shellPort(
@@ -475,6 +528,8 @@ export function shellPort(
         remoteReview: (number, reviewId) => readRemoteReview(gh, number, reviewId),
         publicReviews: (number) => readPublicReviews(gh, number),
         publicReviewComments: (number) => readPublicReviewComments(gh, number),
+        applyApprovalLabel: (number) => applyApprovalLabel(gh, number),
+        removeApprovalLabel: (number) => removeApprovalLabel(gh, number),
         log: (message) => {
             console.log(message);
         },
@@ -531,7 +586,7 @@ async function coordinateReviewPublication(
                     preflightPort
                 );
             }
-            await dependencies.serializeMutation(
+            const reviewId = await dependencies.serializeMutation(
                 primaryRoot,
                 number,
                 async (boundary) =>
@@ -555,6 +610,9 @@ async function coordinateReviewPublication(
                     },
                 }
             );
+            if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+                syncApprovalLabel(number, reviewId, prepared.document.event, preflightPort);
+            }
         } finally {
             auth.session.dispose();
         }

@@ -13,7 +13,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -55,7 +55,11 @@ afterAll(() => rmSync(enforcementAdmissionRoot, { recursive: true, force: true }
 function runIsolatedGuardedCommand(
     input: Parameters<typeof runGuardedCommand>[0]
 ): ReturnType<typeof runGuardedCommand> {
-    return runGuardedCommand({ ...input, admissionRoot: enforcementAdmissionRoot });
+    return runGuardedCommand({
+        storageRoot: join(enforcementAdmissionRoot, 'storage'),
+        ...input,
+        admissionRoot: enforcementAdmissionRoot,
+    });
 }
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
@@ -100,6 +104,10 @@ async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<num
         ),
     ]);
 }
+
+// Each real guarded command ends in a storage file proof that can spend its whole
+// five-second deadline retaking catalogs on a busy host.
+const GUARDED_CASE_TIMEOUT_MS = 20_000;
 
 describe('resource admission', () => {
     it('serializes admission updates', () => {
@@ -383,7 +391,7 @@ describe('process table sampling', () => {
     });
 });
 
-describe('resource enforcement', () => {
+describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('rechecks capacity before spawning', async () => {
         let samples = 0;
         const result = await runIsolatedGuardedCommand({
@@ -487,20 +495,41 @@ describe('resource enforcement', () => {
         try {
             const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
             delete childEnv[RESOURCE_SESSION_ENV];
+            let guardStderr = '';
             guard = spawn(
                 process.execPath,
                 [
-                    'scripts/resourceGuard.ts',
+                    resolve('scripts/resourceGuard.ts'),
                     '--profile',
                     'focused',
+                    '--max-rss-mib',
+                    '512',
                     '--',
                     process.execPath,
                     '-e',
                     `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`,
                 ],
-                { cwd: process.cwd(), env: childEnv, stdio: 'ignore' }
+                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] }
             );
-            await waitUntil(() => existsSync(pidPath));
+            guard.stderr?.on('data', (chunk: Buffer) => {
+                guardStderr = `${guardStderr}${chunk.toString()}`.slice(-8_192);
+            });
+            try {
+                await waitUntil(() => existsSync(pidPath));
+            } catch (error) {
+                const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+                const reservations = existsSync(reservationsRoot)
+                    ? readdirSync(reservationsRoot)
+                          .slice(0, 8)
+                          .map(
+                              (name) => `${name}: ${readFileSync(join(reservationsRoot, name), 'utf8').slice(0, 1_024)}`
+                          )
+                    : [];
+                throw new Error(
+                    `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; admission=${JSON.stringify(reservations)}`,
+                    { cause: error }
+                );
+            }
             const recordedPid = Number(readFileSync(pidPath, 'utf8'));
             childPid = recordedPid;
             guard.kill('SIGTERM');
@@ -725,7 +754,12 @@ describe('resource enforcement', () => {
                     RUST_TEST_THREADS: rust,
                 },
             });
-            const reported = JSON.parse(result.output) as { options: string; cargo: string; rust: string };
+            // The guard appends its own storage evidence after the child's one-line report.
+            const reported = JSON.parse(result.output.split('\n')[0] ?? '') as {
+                options: string;
+                cargo: string;
+                rust: string;
+            };
 
             expect(reported.options).toContain(`--max-old-space-size=${expectedHeap}`);
             expect(reported.cargo).toBe(expectedCargo);
@@ -851,7 +885,7 @@ describe('resource CLI', () => {
     });
 });
 
-describe('default budgets', () => {
+describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
         { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
         {
@@ -1151,7 +1185,7 @@ describe('pnpm modules preflight', () => {
     });
 });
 
-describe('guard failure stop enforcement', () => {
+describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     function fakeResult(overrides: Partial<GuardedCommandResult> = {}): GuardedCommandResult {
         return {
             code: 0,
@@ -1361,7 +1395,7 @@ describe('guard failure stop enforcement', () => {
         }
     });
 
-    it('writes guard-failure receipt on memory/timeout/monitor/leak failure in an author lane', async () => {
+    it('writes guard-failure receipt on memory/timeout/monitor/leak/pressure failure in an author lane', async () => {
         const repoRoot = fixtureRoot('lane-fail');
         const laneName = 'agent-101-work';
         const headSha = '3333333333333333333333333333333333333333';
@@ -1378,7 +1412,7 @@ describe('guard failure stop enforcement', () => {
         const errors: string[] = [];
 
         try {
-            for (const reason of ['memory', 'timeout', 'monitor', 'leak'] as const) {
+            for (const reason of ['memory', 'timeout', 'monitor', 'leak', 'pressure'] as const) {
                 const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
                     cwd: lane.worktreePath,
                     detectLane: () => lane,
@@ -1407,6 +1441,37 @@ describe('guard failure stop enforcement', () => {
                 );
                 clearGuardFailureReceipt(repoRoot, laneName);
             }
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a pressure result raised before the command started without stopping the lane', async () => {
+        const repoRoot = fixtureRoot('lane-admission-pressure');
+        const laneName = 'agent-103-admission';
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/103/admission',
+            headSha: '5555555555555555555555555555555555555555',
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+        mkdirSync(lane.worktreePath, { recursive: true });
+        const errors: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () =>
+                    fakeResult({ code: null, reason: 'pressure', refusedBeforeStart: true, durationMs: 0 }),
+                log: () => undefined,
+                error: (msg) => errors.push(msg),
+            });
+
+            expect(code).toBe(1);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(errors.join('\n')).not.toContain('lane is stopped');
         } finally {
             rmSync(repoRoot, { recursive: true, force: true });
         }
@@ -1840,6 +1905,49 @@ describe('guard failure stop enforcement', () => {
             );
         }
 
+        function createStoppedLaneFixture(label: string): {
+            repoRoot: string;
+            receiptsDir: string;
+            laneName: string;
+            lane: DetectedLane;
+            receipt: GuardFailureReceipt;
+            receiptPath: string;
+        } {
+            const repoRoot = fixtureRoot(label);
+            const laneName = `agent-${label}`;
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: `agent/${label}`,
+                headSha: '9696969696969696969696969696969696969696',
+                worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+            };
+            mkdirSync(lane.worktreePath, { recursive: true });
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: lane.branch,
+                headSha: lane.headSha,
+                failedAt: '2026-10-01T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['test:run', 'heavy.spec.ts'],
+                cwd: realpathSync(lane.worktreePath),
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 1200,
+            };
+            return {
+                repoRoot,
+                receiptsDir: join(repoRoot, GUARD_FAILURES_DIR),
+                laneName,
+                lane,
+                receipt,
+                receiptPath: guardFailureReceiptPath(repoRoot, laneName),
+            };
+        }
+
         it('refuses a mapping that leaves the package-root lint target present', async () => {
             const fixture = createLintRecoveryFixture('package-root-target-present');
             const nestedCwd = join(fixture.worktreePath, 'nested');
@@ -1981,7 +2089,12 @@ describe('guard failure stop enforcement', () => {
                     {
                         cwd: recordedCwd,
                         detectLane: () => fixture.lane,
-                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        runCommand: async (input) =>
+                            runIsolatedGuardedCommand({
+                                ...input,
+                                availableMemoryBytes: abundantMemoryBytes,
+                                maxRssBytes: 512 * 1024 ** 2,
+                            }),
                         assertModulesPreflight: () => undefined,
                     }
                 );
@@ -2316,17 +2429,19 @@ describe('guard failure stop enforcement', () => {
             let capturedCommand: string | undefined;
             let capturedArgs: string[] | undefined;
             let capturedMaxRss: number | undefined;
+            let capturedDiskReserve: number | undefined;
             let capturedCwd: string | undefined;
             const logs: string[] = [];
 
             try {
-                const code = await runGuardCli(['--recover', '--max-rss-mib', '6144'], {
+                const code = await runGuardCli(['--recover', '--max-rss-mib', '6144', '--disk-reserve-mib', '123'], {
                     cwd: lane.worktreePath,
                     detectLane: () => lane,
                     runCommand: async (input) => {
                         capturedCommand = input.command;
                         capturedArgs = input.args;
                         capturedMaxRss = input.maxRssBytes;
+                        capturedDiskReserve = input.diskReserveBytes;
                         capturedCwd = input.cwd;
                         return fakeResult({ code: 0, peakRssBytes: 5.5 * 1024 ** 3 });
                     },
@@ -2337,6 +2452,7 @@ describe('guard failure stop enforcement', () => {
                 expect(capturedCommand).toBe('pnpm');
                 expect(capturedArgs).toEqual(['test:run', 'heavy.spec.ts']);
                 expect(capturedMaxRss).toBe(6144 * 1024 ** 2);
+                expect(capturedDiskReserve).toBe(123 * 1024 ** 2);
                 expect(capturedCwd).toBe(realpathSync(lane.worktreePath));
                 expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
                 expect(logs).toContain(`guard: recovery succeeded; guard-failure receipt cleared for lane ${laneName}`);
@@ -2678,6 +2794,288 @@ describe('guard failure stop enforcement', () => {
                 expect(errorLine).toContain(claimPath);
             } finally {
                 rmSync(repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('adopts a receipt orphaned under a claim name by an interrupted clear and honors the stop', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-adopted');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const claimPath = `${fixture.receiptPath}.claim-5e6f7081-9293-4c4d-be5f-6a7b8c9d0e1f`;
+            renameSync(fixture.receiptPath, claimPath);
+            const logs: string[] = [];
+            let replayedArgs: string[] | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayedArgs = input.args;
+                        return fakeResult({ code: 0 });
+                    },
+                    log: (message) => logs.push(message),
+                });
+
+                expect(code).toBe(0);
+                expect(replayedArgs).toEqual(fixture.receipt.args);
+                expect(logs).toContain(
+                    `guard: restored an orphaned guard-failure receipt for lane ${fixture.laneName} from ${claimPath}`
+                );
+                expect(logs).toContain(
+                    `guard: recovery succeeded; guard-failure receipt cleared for lane ${fixture.laneName}`
+                );
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+                expect(readdirSync(fixture.receiptsDir)).toEqual([]);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses to drop or adopt an orphaned claim whose bytes are not a guard-failure receipt', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-not-receipt');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-6f708192-a3b4-4d5e-8f6a-7b8c9d0e1f2a`;
+            writeFileSync(claimPath, '{ not a guard-failure receipt');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('refusing to drop or adopt it');
+                expect(readFileSync(claimPath, 'utf8')).toBe('{ not a guard-failure receipt');
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses to drop or adopt an orphaned claim recording another lane receipt', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-foreign-lane');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-7f8092a3-b4c5-4e6f-9b7b-8c9d0e1f2a3b`;
+            writeFileSync(
+                claimPath,
+                `${JSON.stringify({ ...fixture.receipt, lane: 'agent-other-lane', branch: 'agent/other-lane' }, null, 2)}\n`
+            );
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('records lane agent-other-lane');
+                expect(readFileSync(claimPath, 'utf8')).toContain('agent-other-lane');
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('still reports no active receipt when the lane holds no canonical receipt and no claims', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-absent');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            // Other lanes' receipts and claims share the receipts directory; neither is this
+            // lane's obligation, so both must be left untouched by this lane's recovery.
+            const otherReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                lane: 'agent-other-lane',
+                branch: 'agent/other-lane',
+            };
+            const otherClaimPath = join(
+                fixture.receiptsDir,
+                'agent-other-lane.json.claim-8092a3b4-c5d6-4f70-8c80-9d0e1f2a3b4c'
+            );
+            writeGuardFailureReceipt(fixture.repoRoot, otherReceipt);
+            writeFileSync(otherClaimPath, '{}');
+            const logs: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    log: (message) => logs.push(message),
+                });
+
+                expect(code).toBe(0);
+                expect(logs).toContain(`guard: no active guard-failure receipt for lane ${fixture.laneName}`);
+                expect(readGuardFailureReceipt(fixture.repoRoot, 'agent-other-lane')).toEqual(otherReceipt);
+                expect(readFileSync(otherClaimPath, 'utf8')).toBe('{}');
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses to pick between multiple orphaned claims and names them all', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-ambiguous');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimBytes = `${JSON.stringify(fixture.receipt, null, 2)}\n`;
+            const claimPathA = `${fixture.receiptPath}.claim-9092a3b4-c5d6-4f70-8192-a3b4c5d6e7f8`;
+            const claimPathB = `${fixture.receiptPath}.claim-a0a3b4c5-d6e7-4f80-92a3-b4c5d6e7f8a9`;
+            writeFileSync(claimPathA, claimBytes);
+            writeFileSync(claimPathB, claimBytes);
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(claimPathA);
+                expect(errors[0]).toContain(claimPathB);
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+                expect(readFileSync(claimPathA, 'utf8')).toBe(claimBytes);
+                expect(readFileSync(claimPathB, 'utf8')).toBe(claimBytes);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('leaves a receipt installed concurrently at the canonical path in charge over an orphaned claim', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-eexist');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-b1b4c5d6-e7f8-4a90-a3b4-c5d6e7f8a9b0`;
+            writeFileSync(claimPath, `${JSON.stringify(fixture.receipt, null, 2)}\n`);
+            const concurrentReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['test:run', 'newer.spec.ts'],
+                failedAt: '2026-10-01T13:00:00.000Z',
+            };
+            const receiptPath = fixture.receiptPath;
+            const concurrentLink: typeof linkSync = () => {
+                writeFileSync(receiptPath, JSON.stringify(concurrentReceipt));
+                throw Object.assign(new Error('EEXIST: file already exists, link'), { code: 'EEXIST' });
+            };
+            const logs: string[] = [];
+            let replayedArgs: string[] | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayedArgs = input.args;
+                        return fakeResult({ code: 0 });
+                    },
+                    recoverReadPorts: { linkSync: concurrentLink },
+                    log: (message) => logs.push(message),
+                });
+
+                expect(code).toBe(0);
+                // The concurrently installed receipt drove the recovery, not the orphan's bytes.
+                expect(replayedArgs).toEqual(concurrentReceipt.args);
+                expect(logs).not.toContain(
+                    `guard: restored an orphaned guard-failure receipt for lane ${fixture.laneName} from ${claimPath}`
+                );
+                // The superseded claim is cleaned up only once the canonical receipt is in charge.
+                expect(existsSync(claimPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a newer receipt recorded during an adopted recovery replay instead of clearing it', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-adopt-newer');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const claimPath = `${fixture.receiptPath}.claim-c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f`;
+            renameSync(fixture.receiptPath, claimPath);
+            const newerReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['test:run', 'newer.spec.ts'],
+                failedAt: '2026-10-01T14:00:00.000Z',
+            };
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        // A concurrent writer records a newer receipt at the canonical path during
+                        // the replay window; the adopted receipt is no longer what is on disk.
+                        writeGuardFailureReceipt(fixture.repoRoot, newerReceipt);
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(errors).toContain(
+                    `guard: recovery succeeded but the guard-failure receipt changed for lane ${fixture.laneName}; preserving the current receipt`
+                );
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(newerReceipt);
+                // Only the preserved canonical receipt remains; no claim files are left behind.
+                expect(readdirSync(fixture.receiptsDir)).toEqual([`${fixture.laneName}.json`]);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('leaves an orphaned claim recoverable when the adoption restore link fails', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-link-fails');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a`;
+            const claimBytes = `${JSON.stringify(fixture.receipt, null, 2)}\n`;
+            writeFileSync(claimPath, claimBytes);
+            const errors: string[] = [];
+            const failingLink: typeof linkSync = () => {
+                throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
+            };
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    recoverReadPorts: { linkSync: failingLink },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('could not restore the orphaned guard-failure receipt claim');
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('EPERM: operation not permitted, link');
+                // The claim's bytes survive so a later recovery can adopt the stranded obligation.
+                expect(readFileSync(claimPath, 'utf8')).toBe(claimBytes);
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
             }
         });
 

@@ -442,6 +442,21 @@ describe('prepareTimelineMapTimeOperation', () => {
             expect([2, 4, 6].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([120, 160, 180]);
         });
 
+        it('never reads a narrow ramp past its own target when the target sits within tolerance before the cut', () => {
+            setStoreStates(
+                tempoState([{ id: 'a', beat: 5, tempo: 40, curve: 'linear' }, tempoChange('b', 5.0000002, 210)]),
+                timeSignatureState([])
+            );
+
+            deleteTime(5.0000011, 6);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [5, 40, 'linear'],
+                [5.0000011, 210, 'instant'],
+            ]);
+        });
+
         it('lands the change that follows a non-dyadic cut exactly on the span start, after the ramp arrival', () => {
             setStoreStates(
                 tempoState([
@@ -683,19 +698,15 @@ describe('prepareTimelineMapTimeOperation', () => {
 
             // The change at 4 is on the cut, so the result is the exact cut's, made at
             // the user's own start and shifted by the user's own span. The ramp from 0
-            // keeps its slope up to that start, so it arrives a float step further along it.
+            // has reached its target a float step before that start and never reads past it.
             expect(nearby.map(({ curve }) => curve)).toEqual(exact.map(({ curve }) => curve));
-            expect(nearby.map(({ tempo }) => tempo)).toEqual([
-                exact[0]?.tempo,
-                100 + (150 - 100) * (startBeat / 4),
-                exact[2]?.tempo,
-                exact[3]?.tempo,
-            ]);
-            expect(nearby[1]?.tempo).not.toBe(exact[1]?.tempo);
+            expect(nearby.map(({ tempo }) => tempo)).toEqual(exact.map(({ tempo }) => tempo));
+            expect(nearby[1]?.tempo).toBe(150);
             expect(nearby.map(({ beat }) => beat)).toEqual([0, startBeat, startBeat, 10 - (6 - startBeat)]);
-            // Material before the cut keeps its tempo.
+            // Material before the cut keeps its tempo, up to the ramp now reaching 150 a
+            // float step later than it did: its slope changes by 1e-9 / 4 of itself.
             for (const beat of [1, 2, 3.5]) {
-                expect(getTempoAtBeat(nearby, beat, 120)).toBeCloseTo(getTempoAtBeat(ramps(), beat, 120), 12);
+                expect(getTempoAtBeat(nearby, beat, 120)).toBeCloseTo(getTempoAtBeat(ramps(), beat, 120), 7);
             }
             // Material after the cut keeps the tempo it had before it.
             for (const oldBeat of [7, 8, 9]) {
@@ -1039,6 +1050,442 @@ describe('prepareTimelineMapTimeOperation', () => {
         });
     });
 
+    describe('insert keeps the tempo before the insert point and holds the tempo in force there across the span', () => {
+        function insertTime(atBeat: number, durationBeats: number): void {
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'insert', atBeat, durationBeats },
+            });
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+        }
+
+        function tempoCurveEvents(): Array<[number, number, TempoChange['curve']]> {
+            return (tempoMapStore.value?.changes ?? []).map(({ beat, tempo, curve }) => [beat, tempo, curve]);
+        }
+
+        function tempoAt(beat: number): number {
+            return getTempoAtBeat(tempoMapStore.value?.changes ?? [], beat, 120);
+        }
+
+        it('arrives at the insert point on the ramp slope and resumes the ramp after the span', () => {
+            setStoreStates(
+                tempoState([{ id: 'a', beat: 0, tempo: 100, curve: 'linear' }, tempoChange('b', 10, 200)]),
+                timeSignatureState([])
+            );
+
+            insertTime(4, 4);
+
+            expect(tempoCurveEvents()).toEqual([
+                [0, 100, 'linear'],
+                [4, 140, 'instant'],
+                [8, 140, 'linear'],
+                [14, 200, 'instant'],
+            ]);
+            expect(tempoAt(2)).toBe(120);
+            expect([4, 5, 6, 7, 8].map(tempoAt)).toEqual([140, 140, 140, 140, 140]);
+            expect(tempoAt(10)).toBe(160);
+            expect(tempoAt(14)).toBe(200);
+        });
+
+        it('moves a ramp target on the insert point to the span end and adds no continuation', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    tempoChange('b', 4, 140),
+                    tempoChange('c', 8, 200),
+                ]),
+                timeSignatureState([])
+            );
+
+            insertTime(4, 2);
+
+            expect(tempoMapStore.value?.changes.map(({ id, beat, tempo, curve }) => [id, beat, tempo, curve])).toEqual([
+                ['a', 0, 100, 'linear'],
+                [expect.any(String), 4, 140, 'instant'],
+                ['b', 6, 140, 'instant'],
+                ['c', 10, 200, 'instant'],
+            ]);
+            expect(tempoAt(2)).toBe(120);
+            expect([4, 5, 6, 8, 9].map(tempoAt)).toEqual([140, 140, 140, 140, 140]);
+            expect(tempoAt(10)).toBe(200);
+        });
+
+        it('only shifts the map when the change in force at the insert point is instant', () => {
+            setStoreStates(tempoState([tempoChange('a', 0, 100), tempoChange('b', 10, 200)]), timeSignatureState([]));
+
+            insertTime(4, 4);
+
+            expect(tempoMapStore.value?.changes.map(({ id, beat, tempo, curve }) => [id, beat, tempo, curve])).toEqual([
+                ['a', 0, 100, 'instant'],
+                ['b', 14, 200, 'instant'],
+            ]);
+        });
+
+        it('only shifts the map when the ramp in force at the insert point is flat', () => {
+            setStoreStates(
+                tempoState([{ id: 'a', beat: 0, tempo: 150, curve: 'linear' }, tempoChange('b', 10, 150)]),
+                timeSignatureState([])
+            );
+
+            insertTime(4, 4);
+
+            expect(tempoMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
+                ['a', 0],
+                ['b', 14],
+            ]);
+        });
+
+        it('keeps a change a float step before the insert point and shifts one on or after it by exactly the span', () => {
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 0, 100),
+                    tempoChange('b', 4 - 5e-7, 140),
+                    tempoChange('c', 4, 145),
+                    tempoChange('d', 4 + 5e-7, 150),
+                ]),
+                timeSignatureState([
+                    timeSignatureChange('m-a', 0, 4),
+                    timeSignatureChange('m-b', 4 - 5e-7, 3),
+                    timeSignatureChange('m-c', 4 + 5e-7, 5),
+                ])
+            );
+
+            insertTime(4, 1 / 3);
+
+            expect(tempoMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
+                ['a', 0],
+                ['b', 4 - 5e-7],
+                ['c', 4 + 1 / 3],
+                ['d', 4 + 5e-7 + 1 / 3],
+            ]);
+            expect(timeSignatureMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
+                ['m-a', 0],
+                ['m-b', 4 - 5e-7],
+                ['m-c', 4 + 5e-7 + 1 / 3],
+            ]);
+        });
+
+        it('arrives at the insert point on a ramp a float step before it and resumes toward its target', () => {
+            setStoreStates(
+                tempoState([{ id: 'a', beat: 4 - 5e-7, tempo: 100, curve: 'linear' }, tempoChange('b', 4 + 5e-7, 200)]),
+                timeSignatureState([])
+            );
+
+            insertTime(4, 2);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ id, beat, curve }) => [id, beat, curve])).toEqual([
+                ['a', 4 - 5e-7, 'linear'],
+                [expect.any(String), 4, 'instant'],
+                [expect.any(String), 6, 'linear'],
+                ['b', 4 + 5e-7 + 2, 'instant'],
+            ]);
+            expect(after[1]?.tempo).toBeCloseTo(150, 6);
+            expect(after[2]?.tempo).toBe(after[1]?.tempo);
+        });
+
+        it('restores the exact previous map on undo and re-creates the arrival and continuation on redo', () => {
+            const capturedTempo = tempoState([
+                { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                tempoChange('b', 10, 200),
+            ]);
+            setStoreStates(capturedTempo, timeSignatureState([]));
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'insert', atBeat: 4, durationBeats: 4 },
+            });
+            const plan = transaction.inversePlan;
+            if (!plan) {
+                throw new Error('Expected a changed insert to produce an inverse plan');
+            }
+
+            expect(transaction.apply()).toBe(true);
+            const appliedTempo = tempoMapStore.value;
+            expect(appliedTempo?.changes).toHaveLength(4);
+
+            expect(prepareTimelineMapStateRestore(plan).apply()).toBe(true);
+            expect(tempoMapStore.value).toEqual(capturedTempo);
+
+            const redo = prepareTimelineMapStateRestore({
+                version: 1,
+                expected: plan.replacement,
+                replacement: plan.expected,
+            });
+            expect(redo.apply()).toBe(true);
+            expect(tempoMapStore.value).toEqual(appliedTempo);
+        });
+    });
+
+    describe('insert carries the meter in force at the insert point past the inserted span', () => {
+        it.each([
+            {
+                name: 'a fractional carry in 3/4',
+                changes: [{ id: 'base', beat: 0, numerator: 3, denominator: 4 }],
+                atBeat: 6,
+                durationBeats: 10 / 3,
+                oldPosition: 13,
+                shiftedOrigin: 6 + 10 / 3,
+                expected: { bar: 6, beat: 2, tick: 0 },
+            },
+            {
+                name: 'a fractional shift of a 5/8 change',
+                changes: [
+                    { id: 'base', beat: 0, numerator: 3, denominator: 4 },
+                    { id: 'later', beat: 8.5, numerator: 5, denominator: 8 },
+                ],
+                atBeat: 8.5,
+                durationBeats: 1 / 3,
+                oldPosition: 16,
+                shiftedOrigin: 8.5 + 1 / 3,
+                expected: { bar: 6, beat: 1, tick: 0 },
+            },
+        ])(
+            'reads material on its beat after $name',
+            ({ changes, atBeat, durationBeats, oldPosition, shiftedOrigin, expected }) => {
+                const originalState = timeSignatureState(changes);
+                setStoreStates(tempoState([]), originalState);
+                const transaction = prepareTimelineMapTimeOperation({
+                    operation: { type: 'insert', atBeat, durationBeats },
+                });
+
+                expect(transaction.status).toBe('ready');
+                expect(transaction.apply()).toBe(true);
+                const shiftedChanges = timeSignatureMapStore.value?.changes ?? [];
+                expect(shiftedChanges.at(-1)?.beat).toBe(shiftedOrigin);
+                expect(getBarBeatAtPosition(shiftedChanges, oldPosition + durationBeats, 4, 4)).toEqual(expected);
+                const beatUnit = 4 / (changes.at(-1)?.denominator ?? 4);
+                expect(
+                    getBarBeatAtPosition(shiftedChanges, oldPosition + durationBeats + beatUnit * 0.251, 4, 4)
+                ).toEqual({
+                    ...expected,
+                    tick: 120,
+                });
+                expect(transaction.revert()).toBe(true);
+                expect(timeSignatureMapStore.value).toBe(originalState);
+            }
+        );
+
+        function insertTime(atBeat: number, durationBeats: number): void {
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'insert', atBeat, durationBeats },
+            });
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+        }
+
+        function meterEvents(): Array<[number, number, number]> {
+            return (timeSignatureMapStore.value?.changes ?? []).map(({ beat, numerator, denominator }) => [
+                beat,
+                numerator,
+                denominator,
+            ]);
+        }
+
+        function barBeatAt(beat: number): { bar: number; beat: number; tick: number } {
+            return getBarBeatAtPosition(timeSignatureMapStore.value?.changes ?? [], beat, 4, 4);
+        }
+
+        it('restarts the bar phase at the shifted downbeat, so a clip on bar 3 stays on bar 3', () => {
+            setStoreStates(tempoState([]), timeSignatureState([]));
+            expect(barBeatAt(8)).toEqual({ bar: 3, beat: 1, tick: 0 });
+
+            insertTime(4, 2);
+
+            expect(meterEvents()).toEqual([[6, 4, 4]]);
+            expect(barBeatAt(10)).toEqual({ bar: 3, beat: 1, tick: 0 });
+            // The inserted span is a two-beat partial bar before the bar the carried meter opens.
+            expect(barBeatAt(4)).toEqual({ bar: 2, beat: 1, tick: 0 });
+            expect(barBeatAt(5)).toEqual({ bar: 2, beat: 2, tick: 0 });
+            expect(barBeatAt(6)).toEqual({ bar: 2, beat: 1, tick: 0 });
+        });
+
+        it('carries the meter from the start of the split bar, so a clip on beat 3 of it stays on beat 3', () => {
+            setStoreStates(tempoState([]), timeSignatureState([timeSignatureChange('m-a', 0, 4)]));
+            const clipBeat = 6;
+            expect(barBeatAt(clipBeat)).toEqual({ bar: 2, beat: 3, tick: 0 });
+
+            insertTime(5, 2);
+
+            // The bar from beat 4 runs on to beat 6, and the carried meter restarts the grid there.
+            expect(meterEvents()).toEqual([
+                [0, 4, 4],
+                [6, 4, 4],
+            ]);
+            expect(barBeatAt(clipBeat + 2)).toEqual({ bar: 2, beat: 3, tick: 0 });
+            expect(barBeatAt(10)).toEqual({ bar: 3, beat: 1, tick: 0 });
+        });
+
+        it.each([
+            {
+                name: '4/4, a 9-beat span',
+                numerator: 4,
+                denominator: 4,
+                from: 0,
+                atBeat: 5,
+                durationBeats: 9,
+                carriedBeat: 13,
+            },
+            {
+                name: '3/4, the palette 4-beat span',
+                numerator: 3,
+                denominator: 4,
+                from: 0,
+                atBeat: 3,
+                durationBeats: 4,
+                carriedBeat: 7,
+            },
+            {
+                name: '3/4, 4 beats from mid-bar',
+                numerator: 3,
+                denominator: 4,
+                from: 0,
+                atBeat: 4,
+                durationBeats: 4,
+                carriedBeat: 7,
+            },
+            { name: '5/8', numerator: 5, denominator: 8, from: 0, atBeat: 3, durationBeats: 1, carriedBeat: 3.5 },
+            { name: '6/8', numerator: 6, denominator: 8, from: 0, atBeat: 4, durationBeats: 2, carriedBeat: 5 },
+            {
+                name: '7/8 off a change',
+                numerator: 7,
+                denominator: 8,
+                from: 2,
+                atBeat: 10,
+                durationBeats: 1,
+                carriedBeat: 10,
+            },
+        ])(
+            'keeps every moved position on its beat of the bar: $name',
+            ({ numerator, denominator, from, atBeat, durationBeats, carriedBeat }) => {
+                const meter = { id: 'm-a', beat: from, numerator, denominator };
+                setStoreStates(tempoState([]), timeSignatureState([meter]));
+                const probes = [atBeat, atBeat + 0.5, atBeat + 1, atBeat + 1.75, atBeat + 3, atBeat + 7.25];
+                // The bar number grows with the bars the span adds; the beat in the bar must not move.
+                const beatInBar = (beat: number): { beat: number; tick: number } => {
+                    const { beat: inBar, tick } = barBeatAt(beat);
+                    return { beat: inBar, tick };
+                };
+                const original = probes.map(beatInBar);
+
+                insertTime(atBeat, durationBeats);
+
+                expect(meterEvents().at(-1)).toEqual([carriedBeat, numerator, denominator]);
+                expect(meterEvents()).toHaveLength(2);
+                expect(probes.map((beat) => beatInBar(beat + durationBeats))).toEqual(original);
+            }
+        );
+
+        it('carries the meter before a later change that falls ahead of the next downbeat', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('m-a', 0, 4), timeSignatureChange('m-b', 7, 3)])
+            );
+            const original = [5, 6, 6.5, 7, 8].map((beat) => barBeatAt(beat));
+
+            insertTime(5, 2);
+
+            expect(timeSignatureMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
+                ['m-a', 0],
+                [expect.any(String), 6],
+                ['m-b', 9],
+            ]);
+            expect(meterEvents()[1]).toEqual([6, 4, 4]);
+            expect([5, 6, 6.5, 7, 8].map((beat) => barBeatAt(beat + 2))).toEqual(original);
+        });
+
+        it('falls back to the first downbeat when the span is shorter than the gap back to the bar start', () => {
+            setStoreStates(tempoState([]), timeSignatureState([timeSignatureChange('m-a', 0, 4)]));
+            const downbeat = barBeatAt(8);
+
+            insertTime(7, 0.5);
+
+            // The bar start is beat 4 and 4.5 is before the point, so the grid resumes at the
+            // shifted downbeat: beat 8 moves to 8.5.
+            expect(meterEvents()).toEqual([
+                [0, 4, 4],
+                [8.5, 4, 4],
+            ]);
+            expect(barBeatAt(8.5)).toEqual(downbeat);
+        });
+
+        it('writes no meter when the span is a whole number of bars', () => {
+            setStoreStates(tempoState([]), timeSignatureState([timeSignatureChange('m-a', 0, 4)]));
+
+            const transaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 5, durationBeats: 8 });
+
+            expect(transaction.status).toBe('ready');
+            expect(meterEvents()).toEqual([[0, 4, 4]]);
+        });
+
+        it('writes nothing for a whole number of bars of a meter that is not 4/4', () => {
+            setStoreStates(tempoState([]), timeSignatureState([{ id: 'm-a', beat: 2, numerator: 7, denominator: 8 }]));
+
+            const transaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 10, durationBeats: 7 });
+
+            expect(transaction.status).toBe('ready');
+        });
+
+        it('adds no duplicate when a meter change on the insert point already shifts onto the carried beat', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('m-a', 0, 4), timeSignatureChange('m-b', 8, 3)])
+            );
+
+            insertTime(8, 2);
+
+            expect(timeSignatureMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
+                ['m-a', 0],
+                ['m-b', 10],
+            ]);
+        });
+
+        it('carries a meter that is not 4/4 past its last change, from the start of the split bar', () => {
+            setStoreStates(tempoState([]), timeSignatureState([{ id: 'm-a', beat: 2, numerator: 7, denominator: 8 }]));
+            // 7/8 bars are 3.5 beats: from beat 2 they open on 5.5, 9, 12.5, 16.
+            const originalDownbeat = barBeatAt(12.5);
+            expect(originalDownbeat).toEqual({ bar: 4, beat: 1, tick: 0 });
+
+            insertTime(10, 1);
+
+            // The bar from beat 9 runs on to beat 10, where the carried meter restarts the grid.
+            expect(meterEvents()).toEqual([
+                [2, 7, 8],
+                [10, 7, 8],
+            ]);
+            expect(barBeatAt(13.5)).toEqual(originalDownbeat);
+            expect(barBeatAt(17)).toEqual({ bar: 5, beat: 1, tick: 0 });
+        });
+
+        it('restores the exact previous meter map on undo and re-creates the carried meter on redo', () => {
+            const capturedTimeSignature = timeSignatureState([timeSignatureChange('m-a', 0, 4)]);
+            setStoreStates(tempoState([]), capturedTimeSignature);
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            });
+            const plan = transaction.inversePlan;
+            if (!plan) {
+                throw new Error('Expected a changed insert to produce an inverse plan');
+            }
+
+            expect(transaction.apply()).toBe(true);
+            const appliedTimeSignature = timeSignatureMapStore.value;
+            expect(meterEvents()).toEqual([
+                [0, 4, 4],
+                [6, 4, 4],
+            ]);
+
+            expect(prepareTimelineMapStateRestore(plan).apply()).toBe(true);
+            expect(timeSignatureMapStore.value).toEqual(capturedTimeSignature);
+
+            const redo = prepareTimelineMapStateRestore({
+                version: 1,
+                expected: plan.replacement,
+                replacement: plan.expected,
+            });
+            expect(redo.apply()).toBe(true);
+            expect(timeSignatureMapStore.value).toEqual(appliedTimeSignature);
+        });
+    });
+
     it.each([
         { type: 'insert' as const, atBeat: Number.NaN, durationBeats: 1 },
         { type: 'insert' as const, atBeat: -1, durationBeats: 1 },
@@ -1104,7 +1551,8 @@ describe('prepareTimelineMapTimeOperation', () => {
     it.each([
         {
             name: 'insert',
-            operation: { type: 'insert' as const, atBeat: 0, durationBeats: 1 },
+            // Four beats is one bar of the implied 4/4, so the insert keeps every bar phase and carries no meter.
+            operation: { type: 'insert' as const, atBeat: 0, durationBeats: 4 },
         },
         {
             name: 'delete',
@@ -1126,7 +1574,8 @@ describe('prepareTimelineMapTimeOperation', () => {
 
     it('accepts empty owner maps and writes only a structurally changed owner', () => {
         setStoreStates(tempoState([]), timeSignatureState([]));
-        const emptyTransaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 2 });
+        // Four beats is one bar of the implied 4/4, so there is nothing to carry.
+        const emptyTransaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 4 });
         expect(emptyTransaction.status).toBe('ready');
         vi.restoreAllMocks();
 

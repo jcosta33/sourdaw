@@ -45,6 +45,7 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 // stubbed AudioContext cannot build. The subject here is what project truth holds after
 // undo, so the engine seam is stubbed rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
@@ -77,6 +78,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     deactivateTrackStrip: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+    reconcileAutoInputMonitoring: vi.fn(),
+    startInputMonitoring: vi.fn(() => Promise.resolve(false)),
     renderTrackSubgraphOffline: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),

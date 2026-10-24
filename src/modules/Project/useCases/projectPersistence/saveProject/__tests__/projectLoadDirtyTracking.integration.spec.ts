@@ -62,6 +62,7 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -143,6 +144,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: vi.fn(),
     compactProject: mockCompactProject,
     createCrdtDoc: vi.fn(),
@@ -179,11 +181,16 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     restorePluginState: vi.fn(),
 }));
+// The reset helper saves the outgoing project when a take closed into it.
+vi.mock('../saveProject', () => ({ saveProject: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: mockEnsureTrackStrips,
+    isTransportIdle: () => true,
     stopPlayback: mockStopPlayback,
+    countSettledTakes: () => 0,
     restoreTimelineMapSnapshot: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
 }));

@@ -11,6 +11,7 @@ import {
 import { getAudioDeviceRuntimeSink, type CapturedOfflineInstrument } from '../engine/audioDeviceRuntimeSink';
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { createExportError } from '../errors/ExportError';
+import { createFaustDeviceExportError } from '../errors/FaustDeviceExportError';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import {
@@ -86,6 +87,7 @@ const OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS = 30_000;
 
 type RunOfflineInstrumentSetupInput = {
     prepare?: CapturedOfflineInstrument;
+    refuseFailure?: boolean;
     device: Device;
     port: MessagePort;
     /** The chain's injected logger, so a swallowed failure is still reported. */
@@ -118,8 +120,8 @@ function exportCancelled(): Error {
 }
 
 /**
- * Run a device's offline setup under a deadline, and never let its failure remove
- * the device from the chain.
+ * Run a device's offline setup under a deadline. Degradable callers retain the
+ * device on setup failure; musician exports refuse failed audible Faust devices.
  *
  * Both halves are load-bearing.
  *
@@ -167,6 +169,7 @@ async function runOfflineInstrumentSetup({
     logger,
     prepare,
     signal,
+    refuseFailure,
 }: RunOfflineInstrumentSetupInput): Promise<void> {
     // An already-cancelled render starts no new work — not even a setup that
     // would resolve instantly, because the render's answer is already decided.
@@ -211,7 +214,10 @@ async function runOfflineInstrumentSetup({
         if (signal?.aborted) {
             throw exportCancelled();
         }
-        // Deliberately swallowed: see why above. The node stays in the chain.
+        if (refuseFailure) {
+            throw error;
+        }
+        // Deliberately swallowed for degradable callers: the node stays in the chain.
         logger.warn(
             `Offline setup failed for ${device.type} (${device.id}); it will render silent rather than be replaced: ${String(error)}`
         );
@@ -222,6 +228,8 @@ async function runOfflineInstrumentSetup({
 }
 
 export type BuildDeviceChainContext = {
+    /** Musician exports must not succeed with an audible, admitted Faust device missing. */
+    refuseFailedFaustDevices?: boolean;
     instruments?: ReadonlyMap<string, CapturedOfflineInstrument>;
     loadedExternalInstanceIds?: ReadonlySet<string>;
     /** Track name, used only to make a failure message locatable by the user. */
@@ -374,9 +382,12 @@ function releaseBuiltStrategies(
  *   excludes it) all carry the device with nothing loaded, and `TrackNode`
  *   gives it a unity pass-through that sounds nothing live either. Those
  *   degrade with the warning, exactly like the never-claimed types below.
+ * - A musician export refuses a failed, audible Faust device, including setup.
+ *   Its policy is explicit so freeze, preview and agent renders keep their degradation.
  * - Everything else degrades and reaches the user through the export warning
  *   channel instead of only the log: a real implementation that failed at
- *   runtime (missing WASM asset, unavailable worklet, Faust compile error), and
+ *   runtime (missing WASM asset, unavailable worklet, or a Faust compile error
+ *   on a degradable caller), and
  *   a device type the product does not claim at all. The latter is silent in
  *   live playback too — `TrackNode` returns without a node when no descriptor
  *   matches — so dropping it offline matches playback rather than diverging
@@ -427,6 +438,8 @@ export const buildDeviceChain = inject({ logger })(
             for (const device of activeDevices) {
                 let strategy: AudioDeviceStrategy | undefined;
                 let releaseWithheld = false;
+                const refuseFaustFailure =
+                    context.refuseFailedFaustDevices === true && contributesAudio && isFaustModule(device.type);
                 // Asked before construction, and deliberately not folded into
                 // the catch below. `findReleasedNativeDspDeviceFactory` returns
                 // nothing for a withheld type, so the registry would throw a
@@ -483,6 +496,7 @@ export const buildDeviceChain = inject({ logger })(
                                                   new Error(`Missing captured offline setup for ${device.id}`)
                                               ))),
                                 signal: context.cancellationSignal,
+                                refuseFailure: refuseFaustFailure,
                             });
                         }
                     } catch (error) {
@@ -511,6 +525,22 @@ export const buildDeviceChain = inject({ logger })(
                                 // cancellation with its own failure.
                             }
                             throw exportCancelled();
+                        }
+                        if (refuseFaustFailure) {
+                            releaseBuiltStrategies(entries, logger);
+                            try {
+                                strategy?.destroy?.();
+                            } catch (teardownError) {
+                                logger.warn(
+                                    `Device ${device.type} threw during refused export teardown: ${String(teardownError)}`
+                                );
+                            }
+                            const detail = error instanceof Error ? error.message : String(error);
+                            throw createFaustDeviceExportError(
+                                `Track "${trackLabel}" could not render device "${device.name}" (${device.type}): ${detail}. ` +
+                                    'No audio was exported. Restore the device or bypass it to export without it.',
+                                error
+                            );
                         }
                         // Refuse only for a device the session is actually
                         // sounding — dropping one of those hands back a file the

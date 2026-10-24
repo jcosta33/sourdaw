@@ -84,6 +84,7 @@ export async function importDroppedLaunchFiles({
             const bufferId = `audio-${crypto.randomUUID()}`;
             const track = addTrack({ name, kind: 'audio' });
             if (!track) {
+                failedFileNames.push(file.name);
                 continue;
             }
             createdTrackId = track.id;
@@ -105,6 +106,7 @@ export async function importDroppedLaunchFiles({
             if (!clip) {
                 removeTrack(track.id);
                 createdTrackId = null;
+                failedFileNames.push(file.name);
                 continue;
             }
             if (!authority.isCurrent()) {
