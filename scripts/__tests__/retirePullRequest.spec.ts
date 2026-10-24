@@ -31,7 +31,12 @@ import {
     type RetirementReviewState,
 } from '../retirePullRequest.ts';
 import { renderReviewRepairReply, type ReviewRepairRecord } from '../reviewRepair.ts';
-import { commentClientMutationId, type IssueComment, type SupersededPullRequest } from '../supersedePullRequestGh.ts';
+import {
+    commentClientMutationId,
+    shellPort,
+    type IssueComment,
+    type SupersededPullRequest,
+} from '../supersedePullRequestGh.ts';
 
 const pr = 5361;
 const head = 'a'.repeat(40);
@@ -187,6 +192,7 @@ function fixture(options: FixtureOptions = {}) {
     });
     const port: RetirePullRequestPort = {
         inspect: () => inspect(),
+        assertCurrentPullRequest: () => undefined,
         isAncestor: (commit, target) => commit === target,
         inspectReviewThreads: () => [],
         inspectRetirementReviewState: () => {
@@ -251,7 +257,269 @@ function ownerOid(root: string): string | undefined {
     return readPullRequestMutationLockOid(root, pullRequestMutationLockRef(pr), pr);
 }
 
+function nativeClosureFixture(root: string, moveAtCommentRead?: number, closeError = false) {
+    let currentHead = head;
+    let state = 'OPEN';
+    let closedAt: string | null = null;
+    let comments: IssueComment[] = [];
+    let commentReads = 0;
+    let moveAt = moveAtCommentRead;
+    let damage: ((value: ReturnType<typeof core>) => unknown) | undefined;
+    const events: string[] = [];
+    const core = () => ({
+        data: {
+            repository: {
+                nameWithOwner: 'jcosta33/sourdaw',
+                pullRequest: {
+                    id: 'PR_retire',
+                    number: pr,
+                    state,
+                    headRefOid: currentHead,
+                    headRefName: 'fix/retire',
+                    headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
+                    baseRefName: 'main',
+                    baseRef: null,
+                    merged: false,
+                    closedAt,
+                },
+            },
+        },
+    });
+    const capture = (command: string, args: string[]): string => {
+        if (command === 'git') {
+            return join(root, '.git');
+        }
+        const query = args.find((arg) => arg.startsWith('query=')) ?? '';
+        if (query.includes('reviewThreads(first:100)')) {
+            events.push('reviews');
+            return JSON.stringify(providerProjection());
+        }
+        if (query.includes('headRefOid')) {
+            const preceding = events.at(-1);
+            events.push('core');
+            if (damage !== undefined && preceding === 'reviews' && commentReads === 4) {
+                const apply = damage;
+                damage = undefined;
+                return JSON.stringify(apply(core()));
+            }
+            return JSON.stringify(core());
+        }
+        if (query.includes('node(id:$subjectId)')) {
+            events.push('comments');
+            commentReads += 1;
+            if (commentReads === moveAt) {
+                currentHead = 'b'.repeat(40);
+            }
+            return JSON.stringify({
+                data: {
+                    node: {
+                        id: 'PR_retire',
+                        comments: {
+                            nodes: comments.map((entry) => ({
+                                id: entry.id,
+                                fullDatabaseId: entry.fullDatabaseId,
+                                body: entry.body,
+                                author: {
+                                    id: entry.authorNodeId,
+                                    login: entry.authorLogin,
+                                    __typename: entry.authorType,
+                                },
+                            })),
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    },
+                },
+            });
+        }
+        const field = (name: string) => args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1) ?? '';
+        if (query.includes('addComment(input:')) {
+            events.push('comment');
+            const entry = comment('2001', field('body'), AUTHOR_BOT_NODE_ID);
+            comments.push(entry);
+            return JSON.stringify({
+                data: {
+                    addComment: {
+                        clientMutationId: field('clientMutationId'),
+                        commentEdge: {
+                            node: {
+                                ...entry,
+                                author: { id: AUTHOR_BOT_NODE_ID, __typename: 'Bot', login: 'author[bot]' },
+                            },
+                        },
+                    },
+                },
+            });
+        }
+        if (query.includes('deleteIssueComment(input:')) {
+            events.push('delete');
+            comments = comments.filter((entry) => entry.id !== field('id'));
+            return JSON.stringify({ data: { deleteIssueComment: { clientMutationId: field('clientMutationId') } } });
+        }
+        if (query.includes('closePullRequest(input:')) {
+            events.push('close');
+            if (closeError) {
+                throw new Error('native close transport lost');
+            }
+            state = 'CLOSED';
+            closedAt = '2026-10-24T00:00:00Z';
+            return JSON.stringify({
+                data: {
+                    closePullRequest: {
+                        clientMutationId: field('clientMutationId'),
+                        pullRequest: { id: 'PR_retire', state, closedAt },
+                    },
+                },
+            });
+        }
+        throw new Error(`unexpected native provider query: ${query}`);
+    };
+    const native = shellPort({ configDir: root, env: {}, dispose: () => undefined }, root, capture);
+    const port: RetirePullRequestPort = {
+        ...native,
+        inspectRetirementReviewState: () => inspectRetirementReviewState(pr, (args) => capture('gh', args)),
+        isAncestor: (commit, target) => commit === target,
+        log: (message) => events.push(message),
+    };
+    return {
+        port,
+        events,
+        comments: () => comments,
+        state: () => state,
+        moveOnReplay: () => {
+            moveAt = commentReads + 2;
+        },
+        damageWitness: (apply: NonNullable<typeof damage>) => {
+            damage = apply;
+        },
+    };
+}
+
 describe('native obsolete pull-request retirement', () => {
+    it('keeps the actual native inspection and close adapters valid on a stable head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeClosureFixture(root);
+            await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-retired:5361');
+            await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-retired:5361');
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            const closeIndex = current.events.indexOf('close');
+            expect(current.events.slice(closeIndex - 2, closeIndex + 1)).toEqual(['reviews', 'core', 'close']);
+            expect(current.comments()).toHaveLength(1);
+        });
+    });
+
+    it('refuses before native close when the final comment response follows a moved head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeClosureFixture(root, 4);
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events).not.toContain('close');
+            expect(current.state()).toBe('OPEN');
+        });
+    });
+
+    it('refuses native CLOSED replay when its final comment response follows a moved head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeClosureFixture(root);
+            await runSerialized(root, current.port);
+            current.moveOnReplay();
+            const before = current.events.filter((event) => ['comment', 'delete', 'close'].includes(event));
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events.filter((event) => ['comment', 'delete', 'close'].includes(event))).toEqual(before);
+        });
+    });
+
+    it.each<[string, Parameters<ReturnType<typeof nativeClosureFixture>['damageWitness']>[0]]>([
+        [
+            'wrong repository',
+            (value) => {
+                value.data.repository.nameWithOwner = 'other/repository';
+                return value;
+            },
+        ],
+        [
+            'wrong PR',
+            (value) => {
+                value.data.repository.pullRequest.number = pr + 1;
+                return value;
+            },
+        ],
+        [
+            'changed node ID',
+            (value) => {
+                value.data.repository.pullRequest.id = 'PR_other';
+                return value;
+            },
+        ],
+        [
+            'missing core',
+            (value) => {
+                Reflect.deleteProperty(value.data.repository, 'pullRequest');
+                return value;
+            },
+        ],
+        [
+            'missing head',
+            (value) => {
+                Reflect.deleteProperty(value.data.repository.pullRequest, 'headRefOid');
+                return value;
+            },
+        ],
+        [
+            'malformed head',
+            (value) => {
+                value.data.repository.pullRequest.headRefOid = 'invalid';
+                return value;
+            },
+        ],
+        [
+            'moved base',
+            (value) => {
+                value.data.repository.pullRequest.baseRefName = 'other-base';
+                return value;
+            },
+        ],
+        [
+            'moved source',
+            (value) => {
+                value.data.repository.pullRequest.headRepository.nameWithOwner = 'other/source';
+                return value;
+            },
+        ],
+        ['malformed envelope', () => ({ errors: [{ message: 'partial core response' }] })],
+    ])('refuses a %s final core witness before the real close adapter runs', async (_label, damage) => {
+        await withLockRoot(async (root) => {
+            const current = nativeClosureFixture(root);
+            current.damageWitness(damage);
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events).not.toContain('close');
+            expect(current.state()).toBe('OPEN');
+        });
+    });
+
+    it('preserves native marker and journal after an ambiguous real close result', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeClosureFixture(root, undefined, true);
+            await expect(runSerialized(root, current.port)).rejects.toThrow(/native close transport lost/u);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            expect(current.events).not.toContain('delete');
+            expect(current.comments()).toHaveLength(1);
+            const oid = ownerOid(root);
+            expect(oid).toBeDefined();
+            expect(readPullRequestMutationLockOwner(root, oid!, pr)).toMatchObject({
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+        });
+    });
+
+    it('retains native closure evidence if the head moves inside the post-close comment response', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeClosureFixture(root, 5);
+            await expect(runSerialized(root, current.port)).rejects.toThrow(/core identity/u);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            expect(current.events).not.toContain('delete');
+            expect(current.comments()).toHaveLength(1);
+            expect(ownerOid(root)).toBeDefined();
+        });
+    });
     it.each(['OPEN', 'CLOSED'] as const)('refuses a fractured thread/review projection on an %s PR', (state) => {
         const current = fixture();
         if (state === 'CLOSED') {

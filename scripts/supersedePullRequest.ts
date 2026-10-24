@@ -500,6 +500,7 @@ export function supersedePullRequest(
             checkedChildBaseRef(completed, replayProof.parent, true);
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
         }
+        port.assertCurrentPullRequest(oldNumber, before);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
     assertOpen(before, oldNumber);
@@ -594,12 +595,14 @@ export function closePullRequestWithMarkers(
         assertStableOpen(converged, number, expectedHead, before.base);
         const markerIds = closureMarkerIds(converged, number, markers);
         checks.beforeClose(markerIds);
+        port.assertCurrentPullRequest(number, before);
         closeAttempted = true;
         const closeResult = port.close(number);
         assertCloseReceipt(closeResult);
         closeReceipt = closeResult;
         const verified = port.inspect(number);
         checks.afterClose(verified, markerIds, closeReceipt);
+        port.assertCurrentPullRequest(number, verified);
     } catch (error) {
         compensateSupersession(number, before, transaction, closeAttempted, closeReceipt, port, error);
     }

@@ -6,6 +6,23 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
+
+Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
+(`789351350ae323da1bac0aa68fc35b80a294c328`) shows core metadata read before comments and a
+node-ID-only close. A controlled production-adapter probe moved the head during the final comment
+response; CLOSE happened before later refusal. Exact historical reviewer prompts are unavailable,
+so whether the missed composition risk lacked a stance, was mis-prompted or was mis-tiered remains
+unestablished. No live GitHub occurrence is claimed.
+
+Use actual inspection and close adapters over controlled provider responses. A stable head must
+close once; movement between core and comment responses must yield zero CLOSE mutations, while
+prior legitimate marker creation/compensation remains allowed. Prove the final witness contains no
+comment read, is bound to the same repository/PR/node/head/source/base, and directly precedes the
+mutation. Require malformed/missing witnesses to refuse and post-close/CLOSED replay movement to
+preserve the appropriate no-write or uncertain-owner result. A fake close that bypasses this native
+boundary cannot carry the claim; the final observation is not server-side compare-and-swap.
+
 ### 2026-10-24 — an empty rollback projection hid an acknowledged remote marker (introduced by PR #5639)
 
 PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) introduced the serializer and

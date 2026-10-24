@@ -231,6 +231,7 @@ export function retirePullRequest(
         }
         assertCompletedClosureWithMarkers(before, number, head, record.base, [marker]);
         assertClosedReplayUnchanged(before, port.inspect(number), record, marker);
+        port.assertCurrentPullRequest(number, before);
     } else {
         if (before.state !== PR_STATE.OPEN) {
             fail(`PR #${number} is ${before.state.toLowerCase()}`);

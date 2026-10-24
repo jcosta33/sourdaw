@@ -22,6 +22,24 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-24 — split PR metadata could close a head that arrived during comment reads (introduced by PR #2357, retained by #4420)
+
+PR #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) read PR core metadata before a
+separate comment request, then closed by node ID alone. PR #4420 (`789351350ae323da1bac0aa68fc35b80a294c328`)
+extracted the same mechanism into `supersedePullRequestGh.ts`. Primary GitHub source at those named
+commits establishes the path; later Toaster integration #5413 is not its introduction. A controlled
+production-adapter probe moved the head during the final comment response and observed CLOSE before
+the command refused. No live occurrence is established. The missed risk is head movement inside
+metadata composition; unavailable historical reviewer prompts do not establish whether its stance
+was missing, mis-prompted or mis-tiered.
+
+Drive the real inspection and close adapters together, move the head between core and comment
+responses, and require refusal before CLOSE. Observe an independent, bound core response after all
+composite marker/review reads, directly before mutation; malformed or wrongly bound witnesses must
+refuse too. Finish post-close and CLOSED replay proof with the same witness. Preserve a stable
+control and ambiguous-close evidence. `ClosePullRequestInput` carries no expected-head CAS: this
+bounds client composition, not external changes after observation.
+
 ### 2026-10-24 — an acknowledged marker vanished from reads and released its owner (introduced by PR #5639)
 
 PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) added the serialized owner and

@@ -662,6 +662,13 @@ rerun the original closure command with its verified head and complete bound rec
 Closure success is logged only after its mutation owner releases. Retirement preserves its exact
 marker and retained owner after ambiguous writes, failed or unverified compensation, or uncertainty
 after a close attempt; a verified complete OPEN rollback releases ownership while still refusing.
+Both native closers observe the bound PR core again after their marker/review reads and immediately
+before the close mutation, without fetching comments in that last observation. They compare PR
+number/node identity, head, source, base, state and closure facts. Post-close proof and CLOSED replay
+also finish with an independent core observation. A moved or unreadable witness refuses; safe
+pre-close compensation remains available, while uncertainty after a close preserves the evidence
+and owner. GitHub's `ClosePullRequestInput` has no expected-head comparison, so this bounds the
+client's split-read composition gap without eliminating external changes after its final read.
 
 Launch supersession and retirement through the protected primary package route. Their pinned
 snapshot closures include the CLI, transaction, GitHub adapter and record parsers;
