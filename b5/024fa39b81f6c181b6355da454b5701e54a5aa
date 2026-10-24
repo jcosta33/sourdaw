@@ -1,0 +1,62 @@
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_72c4938cab8bd2 9-25
+  s_3168504f6ce387::t_c3d6874a9bf9f3 26
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_3168504f6ce387::t_6ba6d79cb75724 5,1687-1798
+  s_3168504f6ce387::t_e73e0ecfef350c 1799-1801
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_3168504f6ce387::t_159f2d8766a6dc 340-349
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3168504f6ce387::t_159f2d8766a6dc 6129,6132,6134-6146,6163,6176,6178-6187,7022-7026,7101-7108
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_3168504f6ce387::t_6f50c925f160ef 48-49,126-136,171,179-187,194,205
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_3168504f6ce387::t_4b9ce161c47054 14,17-23,33
+  s_993e8cd4f5fad8::t_6848943dd6cc6d 34-36
+.agents/skills/review-stances/correctness.md
+  s_3168504f6ce387::t_304ad742f59288 14-31
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_7acdc945b846b6::t_45e22aa01300b9 58-63
+src/modules/AiRuntime/useCases/agentReference/__tests__/proposalGroundingBasis.spec.ts
+  s_993e8cd4f5fad8::t_394ee7498cdeab 52-78
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_993e8cd4f5fad8::t_2adcd0d10d4a22 82-88,327-377,693,700-701
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_993e8cd4f5fad8::t_5bbfe0f89154c2 41-46,61-62
+src/modules/AiRuntime/useCases/agentReference/protectionObjectForms.ts
+  s_7acdc945b846b6::t_d026796112c740 179-182
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_993e8cd4f5fad8::t_f4daa485a8ded8 37-38,46-51,73-76,168,177-196,207,226-233,272,278-279,352,355-364,485,487-488,494,506-518,523-526,532-535,541,551-554,557-566,569-578
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5024fa39b81f6c181b6355da454b5701e54a5aa",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_993e8cd4f5fad8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffd-2641-7f40-9221-3bd2de725b9b",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
