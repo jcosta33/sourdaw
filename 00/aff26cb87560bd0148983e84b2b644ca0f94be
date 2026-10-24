@@ -1,0 +1,43 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_63023178538a79 48
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_5156b9a01d3395 53-58
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_598269f90eb7eb 824-1498
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_4bd77eea46fa95 1537-1800
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_1c08b47ac3792f::t_ebc91241a98806 1-461
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_9a55ed2b271596 155,6082-6089,6092,6098-6099,6102-6104,6106-6108,6115-6131,6137-6165,6684-6693,6958-6997
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_1c08b47ac3792f::t_bcef4371d5c33c 21,125-128,134
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_30f1f4f4cea808 12-28,52,60,77,101,107-111
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_1c08b47ac3792f::t_840a3e0e7e78e5 1-515
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_1c08b47ac3792f::t_df8ec36810cadd 1-188
+src/modules/AiRuntime/useCases/agentReference/refinementProtectionForms.ts
+  s_1c08b47ac3792f::t_eee89602dbb2fd 41-43,49,52,54-56,218-219
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_1c08b47ac3792f::t_8519c3e9724f9e 302-303
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_1c08b47ac3792f::t_dfc15536221389 23,324-340,348,355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00aff26cb87560bd0148983e84b2b644ca0f94be",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
