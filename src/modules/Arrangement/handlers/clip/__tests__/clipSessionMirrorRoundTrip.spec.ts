@@ -37,6 +37,7 @@ import {
     resetCrdtProjectAuthority,
     replaceCrdtDocInLineage,
     setupProjectionBridge,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
@@ -713,6 +714,162 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         removeCrdtDoc('root');
         Container.clear();
     });
+
+    it('keeps a saved split paired take capture when a listener publishes another root', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'listener-right' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        reloadSavedProject();
+        const laterTake = { ...createTake('listener-right', 'Later right take', 2, 4), selected: true };
+        const laterLane = {
+            ...createTakeLane(TRACK_ID),
+            id: 'listener-right-lane',
+            takes: [laterTake],
+            activeCompRegions: [],
+        };
+        syncPeerProject((project) => {
+            project.takeLanes.lanes.push(laterLane);
+        });
+        const held = undoHistoryStore.value?.past[0];
+        if (
+            held?.kind !== 'action' ||
+            held.inverseAction?.type !== 'restoreClipSplitState' ||
+            held.redoAction?.type !== 'restoreClipSplitState'
+        ) {
+            throw new Error('Expected genuine saved paired split capture');
+        }
+        const inverseCapture = held.inverseAction.payload.retiredTakeLanes;
+        const redoCapture = held.redoAction.payload.retiredTakeLanes;
+        const previousValue = structuredClone(inverseCapture);
+        expect(inverseCapture).toBe(redoCapture);
+        expect(inverseCapture).toEqual([]);
+        const current = getCrdtDoc<PeerProject>('root');
+        if (!current) {
+            throw new Error('Expected saved split root');
+        }
+        const foreignSnapshot = Automerge.change(Automerge.clone(current), (project) => {
+            project.tracks.tracks[0]!.name = 'Peer published split root';
+        });
+        let replaced = false;
+        const unsubscribe = subscribeToCrdtChanges((docId) => {
+            if (docId !== 'root' || replaced) {
+                return;
+            }
+            replaced = true;
+            unsubscribe();
+            replaceCrdtDocInLineage({ id: 'root', doc: foreignSnapshot });
+        });
+        try {
+            expect((await undo()).headConsumed).toBe(true);
+        } finally {
+            unsubscribe();
+        }
+        expect(replaced).toBe(true);
+        expect(getCrdtDoc('root')).toEqual(foreignSnapshot);
+        expect(held.inverseAction.payload.retiredTakeLanes).toBe(inverseCapture);
+        expect(held.redoAction.payload.retiredTakeLanes).toBe(redoCapture);
+        expect(inverseCapture).toEqual(previousValue);
+        expect(clipOnTrack(TRACK_ID, 'listener-right')).toBeDefined();
+        expect(takeLaneStore.value?.lanes).toEqual([laterLane]);
+        expectValidProject();
+    });
+
+    it.each(['ordinary', 'ambiguous'] as const)(
+        'keeps a saved remove inverse after a listener publishes another root terminal=%s',
+        async (terminal) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+            );
+            reloadSavedProject();
+            const laterTake = { ...createTake('clip-a', 'Later peer take', 0, 4), selected: true };
+            const laterLane = {
+                ...createTakeLane(TRACK_ID),
+                id: 'listener-remove-lane',
+                takes: [laterTake],
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: laterTake.id }],
+            };
+            syncPeerProject((project) => {
+                project.takeLanes.lanes.push(laterLane);
+            });
+            const held = undoHistoryStore.value?.future[0];
+            if (held?.kind !== 'action' || held.inverseAction?.type !== 'restoreClip') {
+                throw new Error('Expected genuine saved removal inverse');
+            }
+            const heldInverse = held.inverseAction;
+            const previousValue = structuredClone(heldInverse);
+            const retiredCapture = heldInverse.payload.retiredTakeLanes;
+            const current = getCrdtDoc<PeerProject>('root');
+            if (!current) {
+                throw new Error('Expected restored root with later take');
+            }
+            const foreignSnapshot = Automerge.change(Automerge.clone(current), (project) => {
+                project.tracks.tracks[0]!.name = 'Peer published removal root';
+            });
+            let replaced = false;
+            const unsubscribe = subscribeToCrdtChanges((docId) => {
+                if (docId !== 'root' || replaced) {
+                    return;
+                }
+                replaced = true;
+                unsubscribe();
+                replaceCrdtDocInLineage({ id: 'root', doc: foreignSnapshot });
+            });
+            if (terminal === 'ambiguous') {
+                let throwAfterPublication = true;
+                configureAutomergeStoragePort({
+                    getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                    getDocHeads: (docId) => Automerge.getHeads(getCrdtDoc(docId)!),
+                    getSemanticMessage: () => undefined,
+                    hasDoc: (docId) => getCrdtDoc(docId) !== undefined,
+                    mutateDoc: ({ docId, changeFn, message, changedKeys, snapshotTransaction }) => {
+                        mutateCrdtDoc({ id: docId, changeFn, message, localSlots: changedKeys, snapshotTransaction });
+                        if (throwAfterPublication) {
+                            throwAfterPublication = false;
+                            throw new Error('Controlled failure after own remove publication');
+                        }
+                    },
+                });
+            }
+            try {
+                if (terminal === 'ambiguous') {
+                    await expect(redo()).rejects.toSatisfy(isAppActionCommittedError);
+                } else {
+                    await redo();
+                }
+            } finally {
+                unsubscribe();
+                registerCrdtStorageRuntime();
+            }
+            expect(replaced).toBe(true);
+            expect(getCrdtDoc('root')).toEqual(foreignSnapshot);
+            expect(held.inverseAction).toBe(heldInverse);
+            expect(held.inverseAction).toEqual(previousValue);
+            expect(held.inverseAction.payload.retiredTakeLanes).toBe(retiredCapture);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeDefined();
+            expect(takeLaneStore.value?.lanes).toEqual([laterLane]);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectValidProject();
+        }
+    );
 
     it.each([false, true])(
         'restores a saved middle clip in its exact slot and retains peer material=%s',

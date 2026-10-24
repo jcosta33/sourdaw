@@ -408,6 +408,20 @@ export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
     return activeAutomergeStorageTransaction?.commitOwner;
 }
 
+/** Run one synchronous repository listener without inheriting its publisher's owner. */
+export function runOutsideAutomergeStoragePublisherScope<Result>(callback: () => Result): Result {
+    const previousTransaction = activeAutomergeStorageTransaction;
+    const previousProvenance = activeAutomergeStorageMutationProvenance;
+    activeAutomergeStorageTransaction = undefined;
+    activeAutomergeStorageMutationProvenance = undefined;
+    try {
+        return callback();
+    } finally {
+        activeAutomergeStorageTransaction = previousTransaction;
+        activeAutomergeStorageMutationProvenance = previousProvenance;
+    }
+}
+
 export function isAutomergeStorageMutationOwned(): boolean {
     return getCurrentAutomergeStorageMutationOwner() !== undefined;
 }
