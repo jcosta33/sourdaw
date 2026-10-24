@@ -1,0 +1,30 @@
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_59e31a5c6f3e31::t_a0285e8a3ba084 69,806,808,908
+  s_59e31a5c6f3e31::t_b803f9e80450e7 612-615,627-631,687,807,809,874-880,892-893,895-906,915,925-927,933-934,953-954,975,1004-1006,1011
+  s_59e31a5c6f3e31::t_0cdc60af9cd470 916-924
+  s_29d8df116c5b92::t_89c444c4848f67 907
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb52efb1c871ef885ea769a8748abd066bc434de",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
