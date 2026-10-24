@@ -43,7 +43,8 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 /** Only credential and remote-PR ports are controlled; the native launcher, CLI and lock are real. */
 function withNativeSupersession(
     run: (root: string, bin: string, env: NodeJS.ProcessEnv) => void,
-    mutation?: 'direct-package' | 'unfenced-command'
+    mutation?: 'direct-package' | 'unfenced-command' | 'dropped-parent-argument',
+    parentProof = false
 ): void {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-supersession-'));
     const bin = join(root, 'bin');
@@ -97,6 +98,13 @@ function withNativeSupersession(
             expect(source).toContain("command === 'pr:supersede' ||");
             writeFileSync(path, source.replace("command === 'pr:supersede' ||", ''));
         }
+        if (mutation === 'dropped-parent-argument') {
+            const path = join(root, 'scripts/supersedePullRequest.ts');
+            const source = readFileSync(path, 'utf8');
+            const forwarding = 'supersededParentNumber: parsed.supersededParentNumber,';
+            expect(source).toContain(forwarding);
+            writeFileSync(path, source.replace(forwarding, ''));
+        }
         writeFileSync(
             join(root, 'lineage.json'),
             JSON.stringify({
@@ -135,17 +143,30 @@ function withNativeSupersession(
             export const commentClientMutationId = (number, body) => 'supersede-comment:' + number + ':' + body;
             export const isDecimalId = value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
             export function shellPort() {
-                const inspect = number => {
+                const parentProof = ${parentProof};
+                const recordRead = number => {
                     const root = process.cwd();
-                    const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
-                    const owner = readPullRequestMutationLockOwner(root, oid, number);
+                    const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(2244), 2244);
+                    const owner = readPullRequestMutationLockOwner(root, oid, 2244);
                     writeFileSync(join(root, 'admitted.json'), JSON.stringify({
                         pid: process.pid, ownerFence: owner.ownerFence, psPath: process.env.SOURDAW_TRUSTED_PS_PATH,
                         powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH,
+                        inspectedNumber: number, ownerNumber: owner.number, mutation: owner.mutation,
                     }));
-                    throw new Error('controlled refusal before remote mutation');
+                    if (!parentProof) throw new Error('controlled refusal before remote mutation');
                 };
-                return { inspect, inspectReviewThreads: inspect };
+                const inspect = number => {
+                    recordRead(number);
+                    if (number === 2245) throw new Error('controlled parent proof read before remote mutation');
+                    return {
+                        number, repository: 'fixture/repository', comments: [],
+                        head: 'a'.repeat(40), headRefName: 'fix/fixture-child', headRepository: 'fixture/repository',
+                        state: number === 2244 ? 'OPEN' : 'MERGED',
+                        base: number === 2244 ? 'fix/fixture-parent' : 'main',
+                        merged: number !== 2244, closedAt: null,
+                    };
+                };
+                return { inspect, inspectReviewThreads: number => { recordRead(number); return []; } };
             }
         `
         );
@@ -170,30 +191,57 @@ function withNativeSupersession(
     }
 }
 
-function invokeNativeSupersession(root: string, env: NodeJS.ProcessEnv) {
-    return spawnSync(
-        process.execPath,
-        [
-            '--run',
-            'pr:supersede',
-            '--',
-            '2244',
-            '--head',
-            'a'.repeat(40),
-            '--replacement',
-            '2246',
-            '--lineage',
-            join(root, 'lineage.json'),
-        ],
-        {
-            cwd: root,
-            env,
-            encoding: 'utf8',
-        }
-    );
+function invokeNativeSupersession(root: string, env: NodeJS.ProcessEnv, supersededParent = false) {
+    const args = ['--run', 'pr:supersede', '--', '2244', '--head', 'a'.repeat(40), '--replacement', '2246'];
+    if (supersededParent) {
+        args.push('--superseded-parent', '2245');
+    }
+    args.push('--lineage', join(root, 'lineage.json'));
+    return spawnSync(process.execPath, args, {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+    });
 }
 
 describe('native supersession process-tool admission', () => {
+    it('forwards the superseded parent flag through the native package into the owned parent proof read', () => {
+        withNativeSupersession(
+            (root, _bin, env) => {
+                const result = invokeNativeSupersession(root, env, true);
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('controlled parent proof read before remote mutation');
+                const admitted = JSON.parse(readFileSync(join(root, 'admitted.json'), 'utf8'));
+                expect(admitted.inspectedNumber).toBe(2245);
+                expect(admitted.ownerNumber).toBe(2244);
+                expect(admitted.mutation).toEqual({ phase: 'prepared', epoch: 0 });
+                expect(admitted.ownerFence.kind).toBe('pgid');
+                expect(admitted.ownerFence.pgid).toBe(admitted.pid);
+                expect(admitted.ownerFence.leaderStartedAt).toEqual(expect.any(String));
+                expect(admitted.psPath).toBe(resolveTrustedExecutable('ps'));
+            },
+            undefined,
+            true
+        );
+    }, 30_000);
+
+    it('detects a dropped native parent argument before the parent proof read', () => {
+        withNativeSupersession(
+            (root, _bin, env) => {
+                const result = invokeNativeSupersession(root, env, true);
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('replacement PR #2246 does not target fix/fixture-parent');
+                expect(result.stderr).not.toContain('controlled parent proof read before remote mutation');
+                const admitted = JSON.parse(readFileSync(join(root, 'admitted.json'), 'utf8'));
+                expect(admitted.inspectedNumber).toBe(2246);
+                expect(admitted.ownerNumber).toBe(2244);
+                expect(admitted.mutation).toEqual({ phase: 'prepared', epoch: 0 });
+            },
+            'dropped-parent-argument',
+            true
+        );
+    }, 30_000);
+
     it('reaches the real default owner fence through the package and protected snapshot before PR I/O', () => {
         withNativeSupersession((root, _bin, env) => {
             const result = invokeNativeSupersession(root, {
