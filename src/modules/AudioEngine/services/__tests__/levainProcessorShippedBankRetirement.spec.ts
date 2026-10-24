@@ -185,7 +185,14 @@ async function renderStolenAttack(incomingPcm: number): Promise<Float32Array> {
         sustain: 1,
         release: 0.3,
     });
-    send(processor, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+    stageAndCommitBank((data) => send(processor, data), wasmModule, 1, {
+        zones: [
+            { ...WIDE_ZONE, hiKey: 66 },
+            { ...WIDE_ZONE, zoneId: 1, loKey: 67 },
+        ],
+        numArticulations: 1,
+        numMics: 1,
+    });
     expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
     send(processor, { type: 'param', name: 'humanize', value: 0 });
     send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
