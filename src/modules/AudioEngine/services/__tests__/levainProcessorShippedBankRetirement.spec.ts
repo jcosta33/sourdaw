@@ -368,6 +368,72 @@ describe('shipped LevainProcessor bank retirement', () => {
         expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
     });
 
+    it.each([undefined, 3])(
+        'keeps the prior same-pitch violin tail unchanged when channel %s cancels an unheard retrigger',
+        async (channel) => {
+            async function renderTail(cancelPending: boolean): Promise<Float32Array[]> {
+                vi.resetModules();
+                const { registry } = installWorkletGlobals<LevainProcessorLike>();
+                await import('../levainProcessor');
+                const Processor = registry.get('levain-processor');
+                if (!Processor) {
+                    throw new TypeError('Expected levain-processor registration');
+                }
+                const processor = new Processor({ processorOptions: { wasmModule } });
+                send(processor, { type: 'init' });
+                loadBank(processor, 1, 'violin-1');
+                expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
+                send(processor, { type: 'param', name: 'humanize', value: 0 });
+                send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
+                send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+                send(processor, { type: 'param', name: 'attackSpread', value: 3.23 });
+                send(processor, { type: 'noteOn', note: 67, velocity: 100, channel, sampleFrame: 0 });
+                const output = makeChannels(2, FRAMES);
+                for (let quantum = 0; quantum < 8; quantum++) {
+                    vi.stubGlobal('currentFrame', quantum * FRAMES);
+                    expect(processor.process([], [output])).toBe(true);
+                }
+                expect(output[0]!.some((sample) => Math.abs(sample) > 1e-6)).toBe(true);
+                vi.stubGlobal('currentFrame', 8 * FRAMES);
+                send(processor, { type: 'noteOff', note: 67, channel, sampleFrame: 8 * FRAMES });
+                expect(processor.process([], [output])).toBe(true);
+                vi.stubGlobal('currentFrame', 9 * FRAMES);
+                if (cancelPending) {
+                    send(processor, { type: 'noteOn', note: 67, velocity: 100, channel, sampleFrame: 9 * FRAMES });
+                }
+                expect(processor.process([], [output])).toBe(true);
+                if (cancelPending) {
+                    send(processor, { type: 'noteOff', note: 67, channel, sampleFrame: 10 * FRAMES });
+                }
+                const rendered = makeChannels(2, 8 * FRAMES);
+                for (let quantum = 0; quantum < 8; quantum++) {
+                    vi.stubGlobal('currentFrame', (10 + quantum) * FRAMES);
+                    expect(processor.process([], [output])).toBe(true);
+                    for (let side = 0; side < 2; side++) {
+                        rendered[side]!.set(output[side]!, quantum * FRAMES);
+                    }
+                }
+                expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+                expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'sampleBankError' }));
+                return rendered;
+            }
+
+            const cancelled = await renderTail(true);
+            const reference = await renderTail(false);
+            for (let side = 0; side < 2; side++) {
+                expect(reference[side]!.some((sample) => Math.abs(sample) > 1e-6)).toBe(true);
+                const maxDifference = cancelled[side]!.reduce(
+                    (maximum, sample, frame) => Math.max(maximum, Math.abs(sample - reference[side]![frame]!)),
+                    0
+                );
+                expect(
+                    maxDifference,
+                    `channel ${channel}, output ${side}: cancelling an unheard note must leave the prior tail intact`
+                ).toBe(0);
+            }
+        }
+    );
+
     it('keeps a stolen incoming sample silent until its ensemble offset while the old voice fades', async () => {
         const sounding = await renderStolenAttack(0.5);
         const silent = await renderStolenAttack(0);

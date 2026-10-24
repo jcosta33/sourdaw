@@ -1065,8 +1065,11 @@ impl LevainEngine {
             return;
         }
 
+        // A release tail is still active, but it belongs to an earlier
+        // note-off and cannot make the current held attack count as heard.
         let matching_voices = self.voice_pool.voices.iter().filter(|voice| {
             voice.active
+                && voice.held
                 && voice.note == note
                 && self
                     .pending_note_off_channel
@@ -4015,6 +4018,91 @@ mod tests {
         let expected = render(&mut reference, 8);
         assert!(expected.iter().any(|sample| sample.abs() > 1e-6));
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn cancelling_a_pending_same_pitch_attack_preserves_the_released_voice_tail() {
+        fn prepared(tail_channel: u8) -> LevainEngine {
+            let mut engine = ensemble_engine(true);
+            engine.set_instrument("violin-1");
+            engine.set_param("legato_enabled", 0.0);
+            engine.set_param("attack_spread", 3.23);
+            assert_eq!(
+                engine.ensemble_timing.onset_delay_samples(67, SAMPLE_RATE),
+                128
+            );
+            engine.note_on_with_channel(67, 100, tail_channel);
+            assert!(render(&mut engine, 8)
+                .iter()
+                .any(|sample| sample.abs() > 1e-6));
+            engine.note_off_on_channel(67, tail_channel);
+            render(&mut engine, 1);
+            engine
+        }
+
+        for tail_channel in [2, 3] {
+            for off_channel in [None, Some(3)] {
+                let mut reference = prepared(tail_channel);
+                let mut pending = prepared(tail_channel);
+                pending.note_on_with_channel(67, 100, 3);
+                assert_eq!(render(&mut pending, 1), render(&mut reference, 1));
+                assert!(pending.voice_pool.voices.iter().any(|voice| {
+                    voice.active && voice.held && voice.note == 67 && voice.attack_is_pending()
+                }));
+                assert!(pending.voice_pool.voices.iter().any(|voice| {
+                    voice.active && !voice.held && voice.note == 67 && !voice.attack_is_pending()
+                }));
+                match off_channel {
+                    Some(channel) => pending.note_off_on_channel(67, channel),
+                    None => pending.note_off(67),
+                }
+                let actual = render(&mut pending, 8);
+                let expected = render(&mut reference, 8);
+                assert!(expected.iter().any(|sample| sample.abs() > 1e-6));
+                assert_eq!(
+                    actual, expected,
+                    "tail channel {tail_channel}, note-off channel {off_channel:?}: \
+                     an unheard attack must not restart the prior note's bow release"
+                );
+                assert_eq!(pending.active_voice_count(), reference.active_voice_count());
+            }
+        }
+    }
+
+    #[test]
+    fn a_pending_same_pitch_attack_does_not_suppress_a_held_voices_bowed_release() {
+        fn prepared() -> LevainEngine {
+            let mut engine = ensemble_engine(true);
+            engine.set_instrument("violin-1");
+            engine.set_param("legato_enabled", 0.0);
+            engine.set_param("attack_spread", 3.23);
+            engine.note_on_with_channel(67, 100, 3);
+            render(&mut engine, 8);
+            engine
+        }
+
+        let mut reference = prepared();
+        let mut pending = prepared();
+        pending.note_on_with_channel(67, 100, 3);
+        assert_eq!(render(&mut pending, 1), render(&mut reference, 1));
+        assert!(pending.voice_pool.voices.iter().any(|voice| {
+            voice.active && voice.held && voice.note == 67 && !voice.attack_is_pending()
+        }));
+        assert!(pending.voice_pool.voices.iter().any(|voice| {
+            voice.active && voice.held && voice.note == 67 && voice.attack_is_pending()
+        }));
+
+        pending.note_off_on_channel(67, 3);
+        reference.note_off_on_channel(67, 3);
+
+        let actual = render(&mut pending, 8);
+        let expected = render(&mut reference, 8);
+        assert!(expected.iter().any(|sample| sample.abs() > 1e-6));
+        assert_eq!(
+            actual, expected,
+            "a sounded held note still needs its release when another attack is pending"
+        );
+        assert_eq!(pending.active_voice_count(), reference.active_voice_count());
     }
 
     #[test]
