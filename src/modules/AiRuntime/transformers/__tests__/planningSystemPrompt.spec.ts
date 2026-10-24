@@ -17,7 +17,7 @@ const METHOD_STEPS: readonly MethodStep[] = [
     },
     {
         name: 'resolve the target',
-        clause: 'work in this order: (1) resolve the target from the project context, calling project.query only when that context is insufficient; ',
+        clause: 'work in this order: (1) resolve the target from the project context; ',
     },
     { name: 'measure the target', clause: '(2) measure it with analysis.measure; ' },
     {
@@ -40,7 +40,11 @@ const METHOD_STEPS: readonly MethodStep[] = [
     { name: 'propose ends the run', clause: 'command.batch.propose ends the run, so measure before it. ' },
     {
         name: 'without a preview, adopt the compilation',
-        clause: "With no preview, adopt recipe.expand's or transform.compile's callId instead.",
+        clause: "With no preview, adopt recipe.expand's or transform.compile's callId instead. ",
+    },
+    {
+        name: 'when the context cannot resolve the target, query alone and skip both measurements',
+        clause: "If the project context cannot resolve the target, call project.query alone first; the preview would then need a turn the run does not have, so skip (2) and (5) and propose adopting recipe.expand's callId.",
     },
 ];
 
@@ -62,6 +66,12 @@ describe('buildPlanningSystemPrompt mixing method', () => {
         const method = METHOD_STEPS.map(({ clause }) => clause).join('');
 
         expect(prompt).toContain(method);
+    });
+
+    it('puts the creative interpretation in the first turn, alone, before any other tool', () => {
+        expect(prompt).toContain(
+            'call selectCreativeInterpretation alone in the first turn, before any other tool, choosing only'
+        );
     });
 
     it('does not tell the planner to report deltas, which an answer beside a propose would refuse', () => {

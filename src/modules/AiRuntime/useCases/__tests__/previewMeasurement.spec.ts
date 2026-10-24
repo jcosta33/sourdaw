@@ -26,6 +26,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
@@ -449,6 +450,7 @@ afterEach(() => {
     resetActionReplayAuthority();
     clearAgentMeasurementArtifacts();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    projectStore.set(structuredClone(defaultProjectStoreState));
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
 });
@@ -678,6 +680,64 @@ describe('a measured preview through proposal and approval', () => {
         const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
         expect(target?.targetId).toBe('drums');
         expect(typeof loudness?.delta?.value).toBe('number');
+    });
+
+    // Red when the query branch the planning prompt states (the context cannot resolve the target: the
+    // interpretation, project.query alone, discovery, expansion, then a propose adopting the expansion)
+    // stops fitting the loop's turns or completing without a rejection.
+    it('completes the prompt-stated query branch in the loop turns: query alone, discover, expand, then adopt the expansion', async () => {
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+        });
+        // The identity is persisted through the CRDT, so the revision is captured only once that write has landed.
+        flushAutomergeStorageWrites();
+        const revision = captureProjectRevision();
+        const recipeValues = [
+            { paramId: 'comp-threshold', value: -16 },
+            { paramId: 'comp-ratio', value: 4 },
+            { paramId: 'comp-attack', value: 25 },
+            { paramId: 'comp-release', value: 90 },
+            { paramId: 'comp-makeup', value: 4.5 },
+        ];
+        scriptTurns(revision, [
+            [{ id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } }],
+            [
+                {
+                    id: 'discover-1',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [{ id: 'expand-1', name: 'recipe.expand', arguments: { recipeId: 'drums-punchy', targetId: 'drums' } }],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+
+        const receipts = planned.applicationToolReceipts ?? [];
+        const failedReads = receipts.flatMap((receipt) => (receipt.error === null ? [] : [receipt.error.safeMessage]));
+        expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({
+            rejection: null,
+            failedReads: [],
+        });
+        // The interpretation turn, then query, discover, expand and the propose: five turns, the loop's
+        // four plus the one an admitted interpretation adds.
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
+            expect.arrayContaining(
+                ['resolve-target', 'discover-1', 'expand-1'].map((callId) => ({ callId, status: 'success' }))
+            )
+        );
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            ...recipeValues.map(({ paramId, value }) => ({ type: 'setDeviceParameter', payload: { paramId, value } })),
+        ]);
+        expect(planned.measuredPreview).toBeUndefined();
     });
 
     // Red when the batch hash counts the ids each compilation mints for the objects it creates.
