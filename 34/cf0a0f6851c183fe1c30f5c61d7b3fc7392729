@@ -1,0 +1,29 @@
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  s_29d8df116c5b92::t_a8cff0ca258095 264-287
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_8a5042b0adecf0 129-140
+src/modules/Arrangement/handlers/clip/__tests__/clipGestureUndoGrouping.integration.spec.ts
+  s_29d8df116c5b92::t_a8cff0ca258095 392-395,413-416
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_29d8df116c5b92::t_8a5042b0adecf0 193,197-201
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_a8cff0ca258095 962-963
+  s_29d8df116c5b92::t_8a5042b0adecf0 995-1013
+  s_29d8df116c5b92::t_54ddfe1a19a02b 946-950,964-965
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34cf0a0f6851c183fe1c30f5c61d7b3fc7392729",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
