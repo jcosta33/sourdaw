@@ -2,41 +2,59 @@ import { describe, expect, it } from 'vitest';
 
 import { buildPlanningSystemPrompt } from '../buildPlanningSystemPrompt';
 
-type MethodStep = { name: string; phrase: string };
+type MethodStep = { name: string; clause: string };
 
-/** Each step of the mixing method, in order, as the planning prompt must state it. */
+/**
+ * Each clause of the mixing method as the planning prompt states it, with its marker and closing
+ * delimiter. The whole clause is pinned, so a negation inserted anywhere inside it ("never
+ * measure the preview ...") no longer matches. The order is the tool loop's: a preview is measured
+ * before the terminal propose that adopts it by call id.
+ */
 const METHOD_STEPS: readonly MethodStep[] = [
-    { name: 'resolve the target', phrase: 'resolve the target with project.query' },
-    { name: 'measure', phrase: 'measure it with analysis.measure' },
+    {
+        name: 'the method applies to a mix outcome without values',
+        clause: 'When the request asks for a mix outcome without naming values, such as warmer or less muddy, ',
+    },
+    { name: 'resolve the target', clause: 'work in this order: (1) resolve the target with project.query; ' },
+    { name: 'measure the target', clause: '(2) measure it with analysis.measure; ' },
     {
         name: 'discover and expand a recipe',
-        phrase: 'discover a recipe with recipe.discover and expand it with recipe.expand',
+        clause: '(3) discover a recipe with recipe.discover and expand it with recipe.expand; ',
+    },
+    { name: 'plan values inside the recipe ranges', clause: "(4) plan values inside the recipe's ranges; " },
+    {
+        name: 'measure the planned list as a preview',
+        clause: "(5) measure that planned list as a preview with analysis.measure subject 'preview' and the list as proposal; ",
     },
     {
-        name: 'propose within recipe ranges',
-        phrase: "propose values inside the recipe's ranges with command.batch.propose",
+        name: 'propose adopting the compiled call ids',
+        clause: "(6) propose with command.batch.propose, adopting the preview's, recipe.expand's and transform.compile's callId in compiledCallIds. ",
     },
-    { name: 'measure the preview', phrase: "measure the preview with analysis.measure subject 'preview'" },
-    { name: 'report the deltas', phrase: 'report the measured deltas' },
+    { name: 'propose ends the run', clause: 'command.batch.propose ends the run, so measure before it.' },
 ];
 
 describe('buildPlanningSystemPrompt mixing method', () => {
     const prompt = buildPlanningSystemPrompt();
 
-    it.each(METHOD_STEPS)('states the step: $name', ({ phrase }) => {
-        expect(prompt).toContain(phrase);
+    it.each(METHOD_STEPS)('states the clause: $name', ({ clause }) => {
+        expect(prompt).toContain(clause);
     });
 
-    it('states the steps in method order', () => {
-        const positions = METHOD_STEPS.map(({ phrase }) => prompt.indexOf(phrase));
+    it('states the clauses in the order the tool loop runs them', () => {
+        const positions = METHOD_STEPS.map(({ clause }) => prompt.indexOf(clause));
 
         expect(positions.every((position) => position >= 0)).toBe(true);
         expect(positions).toEqual([...positions].sort((left, right) => left - right));
     });
 
-    it('names transform.compile and compiledCallIds as the way to adopt a compiled call', () => {
-        expect(prompt).toContain('transform.compile');
-        expect(prompt).toContain('compiledCallIds');
+    it('states the whole method as one uninterrupted passage', () => {
+        const method = METHOD_STEPS.map(({ clause }) => clause).join('');
+
+        expect(prompt).toContain(method);
+    });
+
+    it('does not tell the planner to report deltas, which an answer beside a propose would refuse', () => {
+        expect(prompt).not.toContain('report the measured deltas');
     });
 
     it('states that recipes and their ranges come only from the catalog', () => {
@@ -48,14 +66,14 @@ describe('buildPlanningSystemPrompt mixing method', () => {
     });
 
     it('states the decibel forms', () => {
-        expect(prompt).toContain('gainDb');
-        expect(prompt).toContain('levelDb');
-        expect(prompt).toContain('valueDb');
-        expect(prompt).toContain('deltaDb');
+        expect(prompt).toContain(
+            'A level takes exactly one of its linear field (gain, level, value), its absolute decibel field (gainDb, levelDb, valueDb) or relative deltaDb.'
+        );
     });
 
     it('states the set selector fields', () => {
-        expect(prompt).toContain('selector with targetArgument, entity, where or match, excludeIds');
-        expect(prompt).toContain('quantity of exactly or maximum');
+        expect(prompt).toContain(
+            "selector with targetArgument, entity, where or match, excludeIds and a quantity of exactly or maximum with unit 'targets'."
+        );
     });
 });

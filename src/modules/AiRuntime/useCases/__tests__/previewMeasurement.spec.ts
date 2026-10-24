@@ -574,6 +574,58 @@ describe('a measured preview through proposal and approval', () => {
         expect(drumsLevel()).toBe(0);
     });
 
+    // Red when the order the planning prompt states (measure the target, measure the planned list as
+    // a preview, then propose adopting the preview by call id) stops completing with measured deltas.
+    it('completes the prompt-stated method: a measure, a preview measure with proposal, then a propose adopting it', async () => {
+        const revision = captureProjectRevision();
+        const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, -6));
+        scriptTurns(revision, [
+            [
+                {
+                    id: 'measure-target',
+                    name: 'analysis.measure',
+                    arguments: {
+                        scope: DRUMS_SCOPE,
+                        range: RANGE,
+                        metrics: ['integratedLoudness'],
+                        subject: 'project',
+                    },
+                },
+            ],
+            [measureCallFor('measure-preview', proposal)],
+            [proposeCall({ commands: [], compiledCallIds: ['measure-preview'] })],
+        ]);
+
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(4);
+        const receiptStatuses = (planned.applicationToolReceipts ?? []).map(({ callId, status }) => ({
+            callId,
+            status,
+        }));
+        expect(receiptStatuses).toEqual(
+            expect.arrayContaining([
+                { callId: 'measure-target', status: 'success' },
+                { callId: 'measure-preview', status: 'success' },
+            ])
+        );
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 } },
+        ]);
+
+        const confirmationId = persistForApproval(planned, revision);
+        const [target] = getAgentApprovalView({ confirmationId })?.measuredPreview?.targets ?? [];
+        const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
+        expect(target?.targetId).toBe('drums');
+        expect(loudness?.delta?.value).toBeCloseTo(-6, 1);
+        expect(drumsLevel()).toBe(0);
+    });
+
     // Red when the batch hash counts the ids each compilation mints for the objects it creates.
     it('shows the figures for a preview that creates a device, though the adopting batch mints new ids', async () => {
         const revision = captureProjectRevision();
