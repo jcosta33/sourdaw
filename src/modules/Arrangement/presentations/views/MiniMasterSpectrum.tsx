@@ -14,6 +14,7 @@ import { useTracks } from '../hooks/useTracks';
 export const MiniMasterSpectrum = ({ className }: { className?: string }): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const triggerRef = useRef<HTMLDivElement>(null);
+    const isPointerOverTrigger = useRef(false);
     const schedulerId = useId();
     const [isTooltipOpen, setIsTooltipOpen] = useState(false);
     const { tracks, selectedTrackId } = useTracks();
@@ -26,7 +27,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
 
     useEffect(() => {
         const trigger = triggerRef.current;
-        if (!freezeErrorMessage && trigger?.ownerDocument.activeElement !== trigger) {
+        if (!freezeErrorMessage && trigger?.ownerDocument.activeElement !== trigger && !isPointerOverTrigger.current) {
             setIsTooltipOpen(false);
         }
     }, [freezeErrorMessage]);
@@ -133,8 +134,18 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
                     role="button"
                     tabIndex={0}
                     onClick={() => selectTrack(masterTrack.id)}
-                    onBlur={() => setIsTooltipOpen(false)}
+                    onBlur={() => {
+                        if (!isPointerOverTrigger.current) {
+                            setIsTooltipOpen(false);
+                        }
+                    }}
+                    onPointerMove={(event) => {
+                        if (event.pointerType !== 'touch') {
+                            isPointerOverTrigger.current = true;
+                        }
+                    }}
                     onPointerLeave={(event) => {
+                        isPointerOverTrigger.current = false;
                         if (
                             !freezeErrorMessage &&
                             event.currentTarget.ownerDocument.activeElement !== event.currentTarget
