@@ -12,6 +12,17 @@ import {
 
 const SOURCE = 'a'.repeat(40);
 const INTERVAL = { startedAt: '2026-10-08T00:00:00.000Z', endedAt: '2026-10-08T00:00:01.000Z' };
+const PULL_REQUEST_PARAMETERS = {
+    dismiss_stale_reviews_on_push: true,
+    require_code_owner_review: false,
+    require_last_push_approval: true,
+    required_approving_review_count: 1,
+    required_review_thread_resolution: true,
+};
+
+function effectiveRule(rule: Record<string, JsonValue>): Record<string, JsonValue> {
+    return { ...rule, ruleset_id: 1, ruleset_source_type: 'Repository', ruleset_source: 'jcosta33/sourdaw' };
+}
 
 function observed(): CapabilityObservation {
     return {
@@ -33,12 +44,14 @@ function observed(): CapabilityObservation {
                 target: 'branch',
                 enforcement: 'active',
                 conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-                rules: [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }],
+                rules: [{ type: 'pull_request', parameters: structuredClone(PULL_REQUEST_PARAMETERS) }],
                 bypass_actors: [],
             },
         ],
         classic: [],
-        effectiveBranches: { main: [{ type: 'pull_request' }] },
+        effectiveBranches: {
+            main: [effectiveRule({ type: 'pull_request', parameters: structuredClone(PULL_REQUEST_PARAMETERS) })],
+        },
         exactMainProtection: {
             url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
             required_status_checks: null,
@@ -222,12 +235,87 @@ describe('inactive retarget capability plan', () => {
         }
     );
 
-    it('keeps parameterless rules without required checks readable', () => {
+    it.each(['creation', 'deletion', 'required_linear_history', 'required_signatures', 'non_fast_forward'])(
+        'keeps the parameterless %s rule readable',
+        (type) => {
+            const input = observed();
+            requiredRuleset(input).rules = [{ type }];
+            input.effectiveBranches.main = [effectiveRule({ type })];
+            const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+            expect(plan.completeObservedInventory).toBe(true);
+            expect(plan.limitations).toEqual([]);
+            expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+        }
+    );
+
+    const requiredParameterRules: Array<{ type: string; parameters: Record<string, JsonValue> }> = [
+        { type: 'update', parameters: { update_allows_fetch_and_merge: false } },
+        { type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS },
+        {
+            type: 'required_status_checks',
+            parameters: { strict_required_status_checks_policy: false, required_status_checks: [] },
+        },
+    ];
+    const incompleteParameterRules = requiredParameterRules.flatMap(({ type, parameters }) => [
+        { type },
+        { type, parameters: {} },
+        ...Object.keys(parameters).map((field) => ({
+            type,
+            parameters: Object.fromEntries(Object.entries(parameters).filter(([key]) => key !== field)),
+        })),
+    ]);
+    it.each(
+        (['detail', 'effective'] as const).flatMap((surface) =>
+            incompleteParameterRules.map((rule) => ({ surface, rule }))
+        )
+    )('does not certify missing required parameters on $surface: $rule', ({ surface, rule }) => {
         const input = observed();
-        requiredRuleset(input).rules = [{ type: 'pull_request' }];
+        if (surface === 'detail') {
+            requiredRuleset(input).rules = [rule];
+        } else {
+            input.effectiveBranches.main = [effectiveRule(rule)];
+        }
         const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
-        expect(plan.completeObservedInventory).toBe(true);
-        expect(plan.limitations).toEqual([]);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContainEqual(expect.stringContaining('incomplete required'));
+        expect(requiredRecord(plan.baseline)).toEqual(input);
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    const unsupportedParameterizedTypes = [
+        'commit_message_pattern',
+        'commit_author_email_pattern',
+        'committer_email_pattern',
+        'branch_name_pattern',
+        'required_deployments',
+        'required_code_scanning',
+        'required_workflows',
+        'merge_queue',
+        'file_path_restriction',
+        'max_file_path_length',
+        'file_extension_restriction',
+        'max_file_size',
+        'copilot_code_review',
+    ];
+    it.each(
+        (['detail', 'effective'] as const).flatMap((surface) =>
+            unsupportedParameterizedTypes.flatMap((type) => [
+                { surface, rule: { type } },
+                { surface, rule: { type, parameters: {} } },
+            ])
+        )
+    )('does not infer unsupported $surface parameter semantics: $rule', ({ surface, rule }) => {
+        const input = observed();
+        if (surface === 'detail') {
+            requiredRuleset(input).rules = [rule];
+        } else {
+            input.effectiveBranches.main = [effectiveRule(rule)];
+        }
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('an applicable ruleset has unknown parameter semantics');
+        expect(requiredRecord(plan.baseline)).toEqual(input);
         expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
     });
 
@@ -239,7 +327,7 @@ describe('inactive retarget capability plan', () => {
             'require_last_push_approval',
             'required_review_thread_resolution',
         ].map((field) => ({ type: 'pull_request', parameters: { [field]: 'false' } })),
-        ...[-1, 1.5, '1', null, Number.MAX_SAFE_INTEGER + 1].map((value) => ({
+        ...[-1, 11, 1.5, '1', null, Number.MAX_SAFE_INTEGER + 1].map((value) => ({
             type: 'pull_request',
             parameters: { required_approving_review_count: value },
         })),
@@ -267,7 +355,7 @@ describe('inactive retarget capability plan', () => {
         expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
     });
 
-    it.each(['detail', 'effective'] as const)('accepts supported %s parameter values', (surface) => {
+    it('accepts supported required and optional parameter values on both policy surfaces', () => {
         const input = observed();
         const rules: JsonValue[] = [
             { type: 'update', parameters: { update_allows_fetch_and_merge: false } },
@@ -283,11 +371,8 @@ describe('inactive retarget capability plan', () => {
                 },
             },
         ];
-        if (surface === 'detail') {
-            requiredRuleset(input).rules = rules;
-        } else {
-            input.effectiveBranches.main = rules;
-        }
+        requiredRuleset(input).rules = rules;
+        input.effectiveBranches.main = rules.map((rule) => effectiveRule(requiredRecord(rule)));
         const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
         expect(plan.completeObservedInventory).toBe(true);
         expect(plan.limitations).toEqual([]);
@@ -343,15 +428,139 @@ describe('inactive retarget capability plan', () => {
 
     it('retains completeness for valid effective-main required checks', () => {
         const input = observed();
-        input.effectiveBranches.main = [
+        const rules = [
             {
                 type: 'required_status_checks',
                 parameters: { strict_required_status_checks_policy: false, required_status_checks: [] },
             },
         ];
+        requiredRuleset(input).rules = rules;
+        input.effectiveBranches.main = rules.map(effectiveRule);
         const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
         expect(plan.completeObservedInventory).toBe(true);
         expect(plan.limitations).toEqual([]);
+    });
+
+    const invalidEffectiveSources: Array<{ label: string; source: Record<string, JsonValue> }> = [
+        { label: 'absent provenance', source: {} },
+        { label: 'missing ID', source: { ruleset_source_type: 'Repository', ruleset_source: 'jcosta33/sourdaw' } },
+        ...[0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1', null].map((ruleset_id) => ({
+            label: `invalid ID ${String(ruleset_id)}`,
+            source: { ruleset_id, ruleset_source_type: 'Repository', ruleset_source: 'jcosta33/sourdaw' },
+        })),
+        { label: 'missing source type', source: { ruleset_id: 1, ruleset_source: 'jcosta33/sourdaw' } },
+        { label: 'missing source name', source: { ruleset_id: 1, ruleset_source_type: 'Repository' } },
+        {
+            label: 'unlisted organization policy',
+            source: { ruleset_id: 999, ruleset_source_type: 'Organization', ruleset_source: 'unlisted-organization' },
+        },
+        {
+            label: 'different source type',
+            source: { ruleset_id: 1, ruleset_source_type: 'Organization', ruleset_source: 'jcosta33/sourdaw' },
+        },
+        {
+            label: 'different source name',
+            source: { ruleset_id: 1, ruleset_source_type: 'Repository', ruleset_source: 'another/repository' },
+        },
+    ];
+    it.each(
+        ['main', 'agent/retarget-capability-planner', 'release/v1.0', 'Case.Mixed'].flatMap((branch) =>
+            invalidEffectiveSources.map(({ label, source }) => ({ branch, label, source }))
+        )
+    )('does not certify $label on $branch', ({ branch, source }) => {
+        const input = observed();
+        input.effectiveBranches[branch] = [{ type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS, ...source }];
+        const raw = canonicalJson(input);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('effective rule source is not bound to captured ruleset detail');
+        expect(canonicalJson(plan.baseline ?? null)).toBe(raw);
+        expect(plan.originalMainRollback).toEqual([canonicalJson(requiredRuleset(input))]);
+        expect(plan.sourceSha).toBe(SOURCE);
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    it.each([
+        { label: 'different rule type', rules: [{ type: 'deletion' }] },
+        {
+            label: 'different required parameter',
+            rules: [
+                { type: 'pull_request', parameters: { ...PULL_REQUEST_PARAMETERS, require_last_push_approval: false } },
+            ],
+        },
+        {
+            label: 'unobserved optional default',
+            rules: [
+                { type: 'pull_request', parameters: { ...PULL_REQUEST_PARAMETERS, allowed_merge_methods: ['squash'] } },
+            ],
+        },
+        {
+            label: 'ambiguous duplicate rule',
+            rules: [
+                { type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS },
+                { type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS },
+            ],
+        },
+    ])('does not join an effective rule to $label in its captured source', ({ rules }) => {
+        const input = observed();
+        requiredRuleset(input).rules = rules;
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('effective rule semantics do not match captured ruleset detail');
+        expect(requiredRecord(plan.baseline)).toEqual(input);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    it.each([
+        { label: 'missing bypass detail', change: { bypass_actors: null } },
+        { label: 'disabled detail', change: { enforcement: 'disabled' } },
+        { label: 'evaluate detail', change: { enforcement: 'evaluate' } },
+        { label: 'tag detail', change: { target: 'tag' } },
+        { label: 'push detail', change: { target: 'push' } },
+        { label: 'changed detail source', change: { source: 'another/repository' } },
+        { label: 'changed detail source type', change: { source_type: 'Organization' } },
+    ])('does not bind an effective rule to $label', ({ change }) => {
+        const input = observed();
+        Object.assign(requiredRuleset(input), change);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('effective rule source is not bound to captured ruleset detail');
+        expect(requiredRecord(plan.baseline)).toEqual(input);
+    });
+
+    it('refuses duplicate captured source IDs before an ambiguous effective join', () => {
+        const input = observed();
+        input.rulesets.push({ ...requiredRuleset(input), name: 'another-name', source: 'another/repository' });
+        expect(() => buildCapabilityPlan(input, SOURCE, INTERVAL)).toThrow('duplicate ruleset id');
+    });
+
+    it('binds multiple effective rules on every branch to the same complete source without rewriting raw observations', () => {
+        const input = observed();
+        const rules = [
+            { type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS },
+            { type: 'update', parameters: { update_allows_fetch_and_merge: false } },
+            { type: 'deletion' },
+        ];
+        requiredRuleset(input).conditions = { ref_name: { include: ['~ALL'], exclude: [] } };
+        requiredRuleset(input).rules = rules;
+        for (const branch of ['main', 'agent/retarget-capability-planner', 'release/v1.0', 'Case.Mixed']) {
+            input.effectiveBranches[branch] = rules.map(effectiveRule);
+        }
+        const raw = canonicalJson(input);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+        expect(canonicalJson(plan.baseline ?? null)).toBe(raw);
+        expect(plan.baselineDigest).toBe(createHash('sha256').update(raw).digest('hex'));
+        expect(plan.originalMainRollback).toEqual([canonicalJson(requiredRuleset(input))]);
+        expect(plan.captureEnvelopeDigest).toBe(
+            createHash('sha256')
+                .update(canonicalJson({ sourceSha: SOURCE, observedAt: INTERVAL, baseline: input }))
+                .digest('hex')
+        );
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
     });
 
     const unreadableProtection: JsonValue[] = [
@@ -709,10 +918,6 @@ describe('inactive retarget capability plan', () => {
         expect(incomplete.limitations).toContain('an applicable ruleset has incomplete required status checks');
         expect(incomplete.activationEligible).toBe(false);
 
-        const optional = observed();
-        requiredRuleset(optional).rules = [{ type: 'pull_request' }];
-        expect(buildCapabilityPlan(optional, SOURCE, INTERVAL).completeObservedInventory).toBe(true);
-
         const valid = observed();
         requiredRuleset(valid).rules = [
             {
@@ -724,6 +929,7 @@ describe('inactive retarget capability plan', () => {
                 },
             },
         ];
+        valid.effectiveBranches.main = [];
         expect(buildCapabilityPlan(valid, SOURCE, INTERVAL).completeObservedInventory).toBe(true);
     });
 

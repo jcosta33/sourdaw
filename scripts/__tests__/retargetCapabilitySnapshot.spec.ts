@@ -33,6 +33,13 @@ const REPOSITORY = {
     owner: { id: 8978270, node_id: 'MDQ6VXNlcjg5NzgyNzA=', login: 'jcosta33', type: 'User' },
 };
 const USER = { id: 8978270, node_id: 'MDQ6VXNlcjg5NzgyNzA=', type: 'User' };
+const PULL_REQUEST_PARAMETERS = {
+    dismiss_stale_reviews_on_push: true,
+    require_code_owner_review: false,
+    require_last_push_approval: true,
+    required_approving_review_count: 1,
+    required_review_thread_resolution: true,
+};
 const RULE = {
     id: 5,
     name: 'main',
@@ -41,7 +48,7 @@ const RULE = {
     target: 'branch',
     enforcement: 'active',
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-    rules: [{ type: 'pull_request' }],
+    rules: [{ type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS }],
     bypass_actors: [],
 };
 const EXACT_MAIN_PROTECTION = {
@@ -498,6 +505,174 @@ function emittedClassicBaseline(output: string): {
 }
 
 describe('bounded capability capture', () => {
+    it.each(
+        (['detail', 'effective'] as const).flatMap((surface) =>
+            [
+                { label: 'absent pull request parameters', rule: { type: 'pull_request' } },
+                { label: 'empty pull request parameters', rule: { type: 'pull_request', parameters: {} } },
+                {
+                    label: 'partial pull request parameters',
+                    rule: { type: 'pull_request', parameters: { required_approving_review_count: 1 } },
+                },
+                { label: 'unsupported parameterless merge queue', rule: { type: 'merge_queue' } },
+            ].map(({ label, rule }) => ({ surface, label, rule }))
+        )
+    )('retains two stable captures with $label in $surface as incomplete', ({ surface, rule }) => {
+        const { port } = fakePort();
+        const ruleset = { ...RULE, rules: [rule] };
+        const effective = [
+            { ...rule, ruleset_id: RULE.id, ruleset_source_type: RULE.source_type, ruleset_source: RULE.source },
+        ];
+        let detailReads = 0;
+        let effectiveReads = 0;
+        const capture = runStableClassicCli({
+            ...port,
+            ruleset: () => {
+                detailReads += 1;
+                if (surface === 'detail') {
+                    return ruleset;
+                }
+                return RULE;
+            },
+            effectiveBranch: (branch) => {
+                if (branch !== 'main') {
+                    return rest([]);
+                }
+                effectiveReads += 1;
+                if (surface === 'effective') {
+                    return rest(effective);
+                }
+                return rest([]);
+            },
+        });
+        expect(capture.run()).toBe(0);
+        expect(detailReads).toBe(2);
+        expect(effectiveReads).toBe(2);
+        expect(capture.printed).toHaveLength(1);
+        const output = capture.printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const plan = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toEqual(expect.arrayContaining([expect.stringMatching(/parameter/u)]));
+        const baseline = requiredRecord(plan.baseline, 'captured baseline');
+        if (surface === 'detail') {
+            expect(baseline.rulesets).toEqual([ruleset]);
+            expect(plan.originalMainRollback).toEqual([canonicalJson(ruleset)]);
+        } else {
+            expect(requiredRecord(baseline.effectiveBranches, 'effective branches').main).toEqual(effective);
+            expect(plan.originalMainRollback).toEqual([canonicalJson(RULE)]);
+        }
+        expect(plan.baselineDigest).toBe(createHash('sha256').update(canonicalJson(baseline)).digest('hex'));
+        expect(plan).toMatchObject({
+            sourceSha: SOURCE,
+            activationEligible: false,
+            proposal: { enforcement: 'disabled' },
+        });
+        expect(output).toBe(canonicalJson(plan));
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
+    it.each(
+        ['main', 'agent/retarget-capability-planner', 'release/v1.0', 'Case.Mixed'].flatMap((branch) =>
+            [
+                { label: 'missing ID', source: { ruleset_source_type: RULE.source_type, ruleset_source: RULE.source } },
+                { label: 'missing source type', source: { ruleset_id: RULE.id, ruleset_source: RULE.source } },
+                {
+                    label: 'missing source name',
+                    source: { ruleset_id: RULE.id, ruleset_source_type: RULE.source_type },
+                },
+                {
+                    label: 'uncaptured organization source',
+                    source: {
+                        ruleset_id: 999,
+                        ruleset_source_type: 'Organization',
+                        ruleset_source: 'another-organization',
+                    },
+                },
+                {
+                    label: 'mismatched detail provenance',
+                    source: {
+                        ruleset_id: RULE.id,
+                        ruleset_source_type: 'Repository',
+                        ruleset_source: 'another/repository',
+                    },
+                },
+                {
+                    label: 'matching source',
+                    source: { ruleset_id: RULE.id, ruleset_source_type: RULE.source_type, ruleset_source: RULE.source },
+                },
+            ].map(({ label, source }) => ({ branch, label, source, complete: label === 'matching source' }))
+        )
+    )(
+        'binds two stable effective captures of $label on $branch without changing raw bytes',
+        ({ branch, source, complete }) => {
+            const { port } = fakePort();
+            const rule = { type: 'pull_request', parameters: PULL_REQUEST_PARAMETERS, ...source };
+            let detailReads = 0;
+            let effectiveReads = 0;
+            const capture = runStableClassicCli({
+                ...port,
+                ruleset: () => {
+                    detailReads += 1;
+                    return RULE;
+                },
+                effectiveBranch: (name) => {
+                    if (name === branch) {
+                        effectiveReads += 1;
+                        return rest([rule]);
+                    }
+                    return rest([]);
+                },
+            });
+            expect(capture.run()).toBe(0);
+            expect(detailReads).toBe(2);
+            expect(effectiveReads).toBe(2);
+            expect(capture.printed).toHaveLength(1);
+            const output = capture.printed[0];
+            if (output === undefined) {
+                throw new Error('expected one emitted capability plan');
+            }
+            const plan = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+            expect(plan.completeObservedInventory).toBe(complete);
+            if (complete) {
+                expect(plan.limitations).toEqual([]);
+            } else {
+                expect(plan.limitations).toEqual(['effective rule source is not bound to captured ruleset detail']);
+            }
+            const baseline = requiredRecord(plan.baseline, 'captured baseline');
+            expect(requiredRecord(baseline.effectiveBranches, 'effective branches')[branch]).toEqual([rule]);
+            expect(baseline.rulesets).toEqual([RULE]);
+            expect(plan.baselineDigest).toBe(createHash('sha256').update(canonicalJson(baseline)).digest('hex'));
+            expect(plan.originalMainRollback).toEqual([canonicalJson(RULE)]);
+            expect(plan.captureEnvelopeDigest).toBe(
+                createHash('sha256')
+                    .update(
+                        canonicalJson({
+                            sourceSha: SOURCE,
+                            observedAt: { startedAt: CLI_DATE, endedAt: CLI_DATE },
+                            baseline,
+                        })
+                    )
+                    .digest('hex')
+            );
+            expect(plan).toMatchObject({
+                sourceSha: SOURCE,
+                activationEligible: false,
+                proposal: { enforcement: 'disabled' },
+                datedGrantEvidence: { currentGrantClaim: false },
+                claims: {
+                    atomicServerSnapshot: false,
+                    repairedDestinationBoundary: false,
+                    operatorGrantPresent: false,
+                },
+            });
+            expect(output).toBe(canonicalJson(plan));
+            expect(capture.disposed).toHaveBeenCalledOnce();
+        }
+    );
+
     it('routes all eight read methods and four allowance variants through the supplied capture', () => {
         const calls: Array<{ command: string; args: string[] }> = [];
         const capture = (command: string, args: string[]) => {
@@ -1305,9 +1480,13 @@ describe('bounded capability capture', () => {
                 throw new Error('expected one emitted capability plan');
             }
             const emitted: unknown = JSON.parse(output);
+            const limitations = ['an applicable ruleset has incomplete required status checks'];
+            if (surface === 'effective') {
+                limitations.push('effective rule source is not bound to captured ruleset detail');
+            }
             expect(emitted).toMatchObject({
                 completeObservedInventory: false,
-                limitations: ['an applicable ruleset has incomplete required status checks'],
+                limitations,
                 activationEligible: false,
             });
             expect(disposed).toHaveBeenCalledOnce();
@@ -1363,9 +1542,13 @@ describe('bounded capability capture', () => {
                 throw new Error('expected one emitted capability plan');
             }
             const emitted: unknown = JSON.parse(output);
+            const limitations = ['an applicable ruleset has incomplete required status checks'];
+            if (surface === 'effective') {
+                limitations.push('effective rule source is not bound to captured ruleset detail');
+            }
             expect(emitted).toMatchObject({
                 completeObservedInventory: false,
-                limitations: ['an applicable ruleset has incomplete required status checks'],
+                limitations,
                 activationEligible: false,
             });
             expect(disposed).toHaveBeenCalledOnce();

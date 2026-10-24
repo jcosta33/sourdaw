@@ -74,15 +74,7 @@ function sha256(value: JsonValue): string {
     return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
-const KNOWN_RULE_TYPES = new Set([
-    'creation',
-    'update',
-    'deletion',
-    'required_linear_history',
-    'required_signatures',
-    'pull_request',
-    'required_status_checks',
-    'non_fast_forward',
+const UNSUPPORTED_PARAMETERIZED_RULE_TYPES = new Set([
     'commit_message_pattern',
     'commit_author_email_pattern',
     'committer_email_pattern',
@@ -124,12 +116,15 @@ const KNOWN_RULE_PARAMETERS: Readonly<Record<string, Readonly<Record<string, (va
     creation: {},
     update: { update_allows_fetch_and_merge: booleanParameter },
     deletion: {},
+    required_linear_history: {},
+    required_signatures: {},
+    non_fast_forward: {},
     pull_request: {
         dismiss_stale_reviews_on_push: booleanParameter,
         require_code_owner_review: booleanParameter,
         require_last_push_approval: booleanParameter,
         required_approving_review_count: (value) =>
-            typeof value === 'number' && Number.isSafeInteger(value) && value >= 0,
+            typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 10,
         required_review_thread_resolution: booleanParameter,
         allowed_merge_methods: (value) =>
             jsonArray(value) &&
@@ -141,6 +136,20 @@ const KNOWN_RULE_PARAMETERS: Readonly<Record<string, Readonly<Record<string, (va
         required_status_checks: requiredStatusChecksParameter,
         do_not_enforce_on_create: booleanParameter,
     },
+};
+
+// GitHub's repository-rule parameter schemas distinguish these required fields from optional controls.
+// https://github.com/github/rest-api-description/blob/main/descriptions/api.github.com/api.github.com.json
+const REQUIRED_RULE_PARAMETERS: Readonly<Record<string, readonly string[]>> = {
+    update: ['update_allows_fetch_and_merge'],
+    pull_request: [
+        'dismiss_stale_reviews_on_push',
+        'require_code_owner_review',
+        'require_last_push_approval',
+        'required_approving_review_count',
+        'required_review_thread_resolution',
+    ],
+    required_status_checks: ['strict_required_status_checks_policy', 'required_status_checks'],
 };
 
 function nullableRecord(value: JsonValue | undefined): value is RulesetDocument | null {
@@ -230,7 +239,9 @@ function rulesetShapeComplete(ruleset: RulesetDocument): ruleset is RulesetDocum
     bypass_actors: JsonValue[];
 } {
     return (
+        typeof ruleset.id === 'number' &&
         Number.isSafeInteger(ruleset.id) &&
+        ruleset.id > 0 &&
         typeof ruleset.name === 'string' &&
         typeof ruleset.target === 'string' &&
         ['branch', 'tag', 'push'].includes(ruleset.target) &&
@@ -246,34 +257,37 @@ function rulesetShapeComplete(ruleset: RulesetDocument): ruleset is RulesetDocum
 function ruleLimitations(rule: JsonValue): string[] {
     const details = record(rule, 'ruleset rule');
     const type = details.type;
-    if (typeof type !== 'string' || !KNOWN_RULE_TYPES.has(type)) {
+    if (typeof type !== 'string') {
         return ['an applicable ruleset has unknown rule semantics'];
     }
-    if (details.parameters === undefined) {
-        if (type === 'required_status_checks') {
-            return ['an applicable ruleset has incomplete required status checks'];
-        }
-        return [];
-    }
-    const parameters = record(details.parameters, 'ruleset rule parameters');
     const known = KNOWN_RULE_PARAMETERS[type];
-    if (known === undefined || Object.keys(parameters).some((key) => !Object.hasOwn(known, key))) {
+    if (known === undefined || !Object.hasOwn(KNOWN_RULE_PARAMETERS, type)) {
+        if (UNSUPPORTED_PARAMETERIZED_RULE_TYPES.has(type)) {
+            return ['an applicable ruleset has unknown parameter semantics'];
+        }
+        return ['an applicable ruleset has unknown rule semantics'];
+    }
+    const required = REQUIRED_RULE_PARAMETERS[type] ?? [];
+    let parameters: RulesetDocument = {};
+    if (details.parameters !== undefined) {
+        parameters = record(details.parameters, 'ruleset rule parameters');
+    }
+    if (Object.keys(parameters).some((key) => !Object.hasOwn(known, key))) {
         return ['an applicable ruleset has unknown parameter semantics'];
     }
     const unsupportedValues = Object.entries(parameters).some(([key, value]) => {
         const validate = known[key];
         return validate === undefined || !validate(value);
     });
-    if (
-        type === 'required_status_checks' &&
-        (parameters.strict_required_status_checks_policy === undefined ||
-            parameters.required_status_checks === undefined ||
-            unsupportedValues)
-    ) {
+    const missingRequired = required.some((field) => parameters[field] === undefined);
+    if (type === 'required_status_checks' && (missingRequired || unsupportedValues)) {
         return ['an applicable ruleset has incomplete required status checks'];
     }
     if (unsupportedValues) {
         return ['an applicable ruleset has unsupported parameter values'];
+    }
+    if (missingRequired) {
+        return ['an applicable ruleset has incomplete required parameters'];
     }
     return [];
 }
@@ -299,17 +313,45 @@ function bypassActorIsSupported(actor: Record<string, JsonValue>): boolean {
     return typeof actor.actor_id === 'number' && Number.isSafeInteger(actor.actor_id) && actor.actor_id > 0;
 }
 
-function effectivePolicyLimitations(effectiveBranches: CapabilityObservation['effectiveBranches']): string[] {
+function effectiveRuleSourceLimitations(rule: JsonValue, rulesets: readonly RulesetDocument[]): string[] {
+    const details = record(rule, 'effective rule');
+    const source = rulesets.find((ruleset) => ruleset.id === details.ruleset_id);
+    if (
+        source === undefined ||
+        !rulesetShapeComplete(source) ||
+        source.target !== 'branch' ||
+        source.enforcement !== 'active' ||
+        details.ruleset_source_type !== source.source_type ||
+        details.ruleset_source !== source.source
+    ) {
+        return ['effective rule source is not bound to captured ruleset detail'];
+    }
+    // Exact captured parameters avoid inventing defaults when the two policy surfaces disagree.
+    const matchingRules = source.rules.filter((rule) => {
+        const captured = record(rule, 'captured ruleset rule');
+        return (
+            captured.type === details.type &&
+            canonicalJson(captured.parameters ?? null) === canonicalJson(details.parameters ?? null)
+        );
+    });
+    if (matchingRules.length !== 1) {
+        return ['effective rule semantics do not match captured ruleset detail'];
+    }
+    return [];
+}
+
+function effectivePolicyLimitations(observation: CapabilityObservation): string[] {
     const limitations: string[] = [];
-    if (!jsonArray(effectiveBranches.main)) {
+    if (!jsonArray(observation.effectiveBranches.main)) {
         limitations.push('effective main rules unavailable');
     }
-    for (const rules of Object.values(effectiveBranches)) {
+    for (const rules of Object.values(observation.effectiveBranches)) {
         if (!jsonArray(rules)) {
             throw new Error('effective policy rules are malformed');
         }
         for (const rule of rules) {
             limitations.push(...ruleLimitations(rule));
+            limitations.push(...effectiveRuleSourceLimitations(rule, observation.rulesets));
         }
     }
     return limitations;
@@ -363,7 +405,7 @@ function policyLimitations(observation: CapabilityObservation, mainApplicability
             limitations.push(...ruleLimitations(rule));
         }
     }
-    limitations.push(...effectivePolicyLimitations(observation.effectiveBranches));
+    limitations.push(...effectivePolicyLimitations(observation));
     return [...new Set(limitations)].sort();
 }
 
