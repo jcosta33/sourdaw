@@ -21,6 +21,8 @@ import {
     updateWarpMarkerBeat,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -90,6 +92,7 @@ const VIRTUALIZE_THRESHOLD = 200;
 
 export const ElasticEditorPanel = (): ReactElement => {
     const elasticState = useStore(elasticAudioStore, defaultElasticAudioState);
+    const preferences = useStore(preferencesStore, defaultPreferences);
     const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const trackState = useStore(trackStore, defaultTrackState);
@@ -184,7 +187,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     }
 
     const handleDetect = (): void => {
-        detectTransientsForClip(clipId, elasticState.sensitivity);
+        detectTransientsForClip(clipId, preferences.elasticTransientSensitivity);
         markElasticDetectionComplete();
         refreshWarp();
     };
@@ -200,7 +203,7 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const handleSensitivity = (value: number): void => {
         // Fire-and-forget settings dispatch from a slider handler; the new
-        // sensitivity is observed reactively via the store, no rejection to await.
+        // Sensitivity is observed reactively through preferences, with no rejection to await.
         void setElasticSensitivity(value);
     };
 
@@ -348,7 +351,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 <Row gap={2}>
                     <span className="text-[10px] text-muted-foreground">Sensitivity</span>
                     <Slider
-                        value={[elasticState.sensitivity * 100]}
+                        value={[preferences.elasticTransientSensitivity * 100]}
                         onValueChange={([v]) => {
                             if (v !== undefined) {
                                 handleSensitivity(v / 100);
@@ -361,7 +364,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                         aria-label="Transient detection sensitivity"
                     />
                     <span className="w-8 text-right text-[10px] tabular-nums text-muted-foreground">
-                        {(elasticState.sensitivity * 100).toFixed(0)}
+                        {(preferences.elasticTransientSensitivity * 100).toFixed(0)}
                     </span>
                 </Row>
 

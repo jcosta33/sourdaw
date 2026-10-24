@@ -65,6 +65,35 @@ describe('validateStoredPreferences — per-field schema guards', () => {
         vi.spyOn(logger, 'warn').mockImplementation(() => {});
     });
 
+    it.each([0, 0.82, 1])('preserves valid Elastic transient sensitivity %s', (sensitivity) => {
+        const result = validateStoredPreferences({ ...defaultPreferences, elasticTransientSensitivity: sensitivity });
+        expect(result.elasticTransientSensitivity).toBe(sensitivity);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.1, 1.1, '0.82', null])(
+        'defaults invalid stored Elastic transient sensitivity %s without dropping other fields',
+        (sensitivity) => {
+            const result = validateStoredPreferences({
+                ...defaultPreferences,
+                theme: 'light',
+                elasticTransientSensitivity: sensitivity,
+            });
+            expect(result.elasticTransientSensitivity).toBe(0.5);
+            expect(result.theme).toBe('light');
+        }
+    );
+
+    it('seeds missing sensitivity without changing an explicit schema-3 count-in choice', () => {
+        const result = validateStoredPreferences({
+            preferencesSchemaVersion: 3,
+            recordCountIn: 1,
+            theme: 'light',
+        });
+        expect(result.elasticTransientSensitivity).toBe(0.5);
+        expect(result.recordCountIn).toBe(1);
+        expect(result.theme).toBe('light');
+    });
+
     it('replaces an out-of-range numeric-enum recordCountIn with its default', () => {
         const result = validateStoredPreferences({ ...defaultPreferences, recordCountIn: 3 });
 

@@ -1,10 +1,16 @@
 import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleDetectTransients = createHandler<'detectTransients'>({
     execute: (a) => {
-        const result = detectTransientsForClip(a.payload.clipId, a.payload.sensitivity ?? 0.5);
+        const sensitivity =
+            a.payload.sensitivity ??
+            preferencesStore.value?.elasticTransientSensitivity ??
+            defaultPreferences.elasticTransientSensitivity;
+        const result = detectTransientsForClip(a.payload.clipId, sensitivity);
         if (!result.ok) {
             const messages: Record<typeof result.reason, string> = {
                 CLIP_NOT_FOUND: 'Clip not found',

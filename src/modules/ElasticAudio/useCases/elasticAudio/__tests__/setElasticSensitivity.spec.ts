@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+
 const mocks = vi.hoisted(() => ({
     detectTransientsForClip: vi.fn().mockReturnValue({ ok: true, added: 0, kept: 0, removed: 0 }),
 }));
@@ -16,23 +19,55 @@ describe('setElasticSensitivity', () => {
         vi.useFakeTimers();
         mocks.detectTransientsForClip.mockClear();
         elasticAudioStore.set({ ...defaultElasticAudioState });
+        preferencesStore.trySet(defaultPreferences);
     });
 
     afterEach(() => {
+        preferencesStore.trySet(defaultPreferences);
         vi.useRealTimers();
     });
 
-    it('updates the sensitivity in the store immediately', () => {
+    it('persists the last sensitivity for a fresh preferences store', async () => {
+        setElasticSensitivity(0.82);
+
+        expect(preferencesStore.value).toHaveProperty('elasticTransientSensitivity', 0.82);
+
+        vi.resetModules();
+        const reloaded = (await import('#/modules/Preferences/stores')).preferencesStore;
+        expect(reloaded.value).toHaveProperty('elasticTransientSensitivity', 0.82);
+    });
+
+    it('uses the reset preference when a pending detection fires', async () => {
+        elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
+        const pending = setElasticSensitivity(0.82);
+
+        resetPreferences();
+        vi.advanceTimersByTime(150);
+        await pending;
+
+        expect(mocks.detectTransientsForClip).toHaveBeenCalledOnce();
+        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.5);
+    });
+
+    it('updates the canonical preference immediately', () => {
         setElasticSensitivity(0.75);
-        expect(elasticAudioStore.value?.sensitivity).toBe(0.75);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.75);
     });
 
     it('clamps sensitivity into [0,1]', () => {
         setElasticSensitivity(-0.3);
-        expect(elasticAudioStore.value?.sensitivity).toBe(0);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0);
         setElasticSensitivity(1.7);
-        expect(elasticAudioStore.value?.sensitivity).toBe(1);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(1);
     });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+        'uses the default for nonfinite sensitivity %s',
+        (value) => {
+            setElasticSensitivity(value);
+            expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.5);
+        }
+    );
 
     it('debounces detection by 150ms when a clip is open', async () => {
         elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });

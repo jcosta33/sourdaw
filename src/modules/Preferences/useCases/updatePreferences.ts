@@ -1,6 +1,11 @@
 import { setSoloMode } from '#/modules/WorkspaceShell/useCases';
 
-import { defaultPreferences, normalizeUiScale, type Preferences } from '../models/Preferences';
+import {
+    defaultPreferences,
+    normalizeElasticTransientSensitivity,
+    normalizeUiScale,
+    type Preferences,
+} from '../models/Preferences';
 import { preferencesStore } from '../stores/preferencesStore';
 
 type UpdatePreferencesInput = {
@@ -14,6 +19,11 @@ export function updatePreferences({ patch }: UpdatePreferencesInput): void {
         ...patch,
         ...(patch.uiScale === undefined ? {} : { uiScale: normalizeUiScale(patch.uiScale) }),
     };
+    if (patch.elasticTransientSensitivity !== undefined) {
+        next_preferences.elasticTransientSensitivity = normalizeElasticTransientSensitivity(
+            patch.elasticTransientSensitivity
+        );
+    }
 
     // `trySet`, not `set`. This runs from click handlers, and a refused write
     // used to throw out of one synchronously — `registerGlobalErrorHandlers`

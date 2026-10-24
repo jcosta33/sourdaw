@@ -1,3 +1,6 @@
+import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+
 import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasticAudio';
 
 import { detectTransientsForClip } from './detectTransientsForClip';
@@ -13,9 +16,7 @@ type PendingState = {
 const pending: PendingState = { timer: null, inFlight: null, resolver: null };
 
 export function setElasticSensitivity(sensitivity: number): Promise<void> {
-    const clamped = Math.max(0, Math.min(1, sensitivity));
-    const current = elasticAudioStore.value ?? defaultElasticAudioState;
-    elasticAudioStore.set({ ...current, sensitivity: clamped });
+    updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
 
     if (pending.timer !== null) {
         clearTimeout(pending.timer);
@@ -36,7 +37,9 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
         pending.inFlight = null;
         pending.resolver = null;
         if (clipId !== null) {
-            detectTransientsForClip(clipId, state.sensitivity);
+            const currentSensitivity =
+                preferencesStore.value?.elasticTransientSensitivity ?? defaultPreferences.elasticTransientSensitivity;
+            detectTransientsForClip(clipId, currentSensitivity);
             elasticAudioStore.set({ ...state, detected: true });
         }
         if (resolver) {

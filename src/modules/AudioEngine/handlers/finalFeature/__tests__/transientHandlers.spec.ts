@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { detectTransientsForClip, quantizeTransients } from '#/modules/ElasticAudio/useCases';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { handleDetectTransients } from '../handleDetectTransients';
@@ -13,7 +15,10 @@ vi.mock('#/modules/ElasticAudio/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 describe('handleDetectTransients', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        preferencesStore.trySet(defaultPreferences);
+    });
 
     it.each([
         ['CLIP_NOT_FOUND', 'Clip not found'],
@@ -31,6 +36,15 @@ describe('handleDetectTransients', () => {
         handleDetectTransients.execute({ type: 'detectTransients', payload: { clipId: 'c1' } });
         expect(detectTransientsForClip).toHaveBeenCalledWith('c1', 0.5);
         expect(notifyUser).toHaveBeenCalledWith('Detected 4 transients (2 preserved)', 'success');
+    });
+
+    it('uses the saved preference for a command without explicit sensitivity', () => {
+        preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+        vi.mocked(detectTransientsForClip).mockReturnValue({ ok: true, added: 1, kept: 0, removed: 0 });
+
+        handleDetectTransients.execute({ type: 'detectTransients', payload: { clipId: 'c2' } });
+
+        expect(detectTransientsForClip).toHaveBeenCalledWith('c2', 0.82);
     });
 
     it('forwards an explicit sensitivity through the payload', () => {
