@@ -1,0 +1,22 @@
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  s_59e31a5c6f3e31::t_4c38d4f5b8f0f3 268-283,294-295,302-303,322-325,327-328,335,358-361,402,406,674-676,719-720,723,725,755-756,762
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_59e31a5c6f3e31::t_a521ecda6eac02 353,1573-1676,1679-1680,1683,1690-1691,1694-1695,1697-1698
+  s_59e31a5c6f3e31::t_54c1bcab94f257 1677-1678,1681-1682,1684-1689,1692-1693,1696
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4ca21445f0019d83041f6c4cc73805847b66fd8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
