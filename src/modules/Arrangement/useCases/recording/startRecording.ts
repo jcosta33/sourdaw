@@ -3,6 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
@@ -106,6 +107,9 @@ export function startRecording(atBeat?: number): Clip[] {
         // Mark these clips as actively recording so the timeline renderer can
         // grow them visually using the live playhead position.
         activeRecordingRef.current = newClips.map((context) => context.id);
+        // The take belongs to the root it is opened on (#5517): the Stop
+        // finaliser compares against this witness before closing or committing.
+        activeRecordingRef.capturedRootIdentity = captureProjectRootIdentity();
     }
 
     return newClips;
