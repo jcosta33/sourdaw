@@ -8,6 +8,8 @@ import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
 import { MiniMasterSpectrum } from '../MiniMasterSpectrum';
 
+vi.unmock('#/components/ui/tooltip');
+
 // Capture the draw callback handed to animationScheduler.register so the test
 // can drive a single spectrum redraw and assert the bar-painting behaviour.
 const schedulerCallbacks = vi.hoisted(() => new Map<string, () => void>());
@@ -49,6 +51,10 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
+const renderWithImmediateTooltip = (ui: React.ReactElement) => {
+    return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 };
 
 // Build a capturing 2D context so a redraw's fillRect calls can be inspected.
@@ -146,6 +152,108 @@ describe('MiniMasterSpectrum', () => {
     it('should have correct accessibility attributes', () => {
         renderWithTooltip(<MiniMasterSpectrum />);
         expect(screen.getByLabelText('Master Track Spectrum')).toBeInTheDocument();
+    });
+
+    it('shows the stored master freeze error on the master spectrum control', async () => {
+        const reason = 'Master freeze failed: output was silent';
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [
+                {
+                    ...master,
+                    freezeState: { status: 'error', errorMessage: reason },
+                },
+            ],
+            selectedTrackId: 'master',
+        });
+
+        renderWithImmediateTooltip(<MiniMasterSpectrum />);
+
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeVisible();
+
+        fireEvent.pointerMove(spectrum, { pointerType: 'mouse' });
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(reason);
+        expect(spectrum).toHaveAccessibleDescription(reason);
+    });
+
+    it('shows the master freeze error tooltip when the spectrum receives keyboard focus', async () => {
+        const reason = 'Master freeze failed: render timed out';
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...master, freezeState: { status: 'error', errorMessage: reason } }],
+            selectedTrackId: 'master',
+        });
+
+        renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        fireEvent.focus(spectrum);
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(reason);
+        expect(spectrum).toHaveAccessibleDescription(reason);
+    });
+
+    it.each([
+        ['missing', undefined],
+        ['empty', ''],
+    ])('uses the existing fallback reason for a %s master freeze error', async (_case, errorMessage) => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...master, freezeState: { status: 'error', errorMessage } }],
+            selectedTrackId: 'master',
+        });
+
+        renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+        fireEvent.focus(spectrum);
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('Freeze failed. Try again.');
+        expect(spectrum).toHaveAccessibleDescription('Freeze failed. Try again.');
+    });
+
+    it('does not show an error marker for a non-error master or a non-master error', () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        const audio = normalizeTrack({ id: 'audio', name: 'Audio', kind: 'audio' });
+        const { rerender } = renderWithTooltip(<MiniMasterSpectrum />);
+
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [master, { ...audio, freezeState: { status: 'error', errorMessage: 'Audio failed' } }],
+            selectedTrackId: 'master',
+        });
+        rerender(
+            <TooltipProvider>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+        expect(screen.queryByTestId('master-freeze-error-marker')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Master Track Spectrum' })).not.toHaveAttribute('aria-describedby');
+        expect(screen.getByRole('button', { name: 'Master Track Spectrum' })).toHaveAttribute(
+            'title',
+            'Master Track (Click to inspect)'
+        );
+    });
+
+    it('clears the master error marker after the master returns to a non-error state', () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...master, freezeState: { status: 'error', errorMessage: 'Retry failed' } }],
+            selectedTrackId: 'master',
+        });
+        const { rerender } = renderWithTooltip(<MiniMasterSpectrum />);
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeInTheDocument();
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+
+        expect(screen.queryByTestId('master-freeze-error-marker')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Master Track Spectrum' })).not.toHaveAttribute('aria-describedby');
+        expect(screen.getByRole('button', { name: 'Master Track Spectrum' })).toHaveAttribute(
+            'title',
+            'Master Track (Click to inspect)'
+        );
     });
 
     it('should call selectTrack when clicked', () => {

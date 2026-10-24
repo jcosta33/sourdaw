@@ -1,6 +1,9 @@
 import { type ReactElement, useEffect, useId, useRef } from 'react';
 
+import { AlertCircle } from 'lucide-react';
+
 import { Stack } from '#/components/layout';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
@@ -14,6 +17,10 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((time) => time.kind === 'master');
     const isSelected = masterTrack?.id === selectedTrackId;
+    let freezeErrorMessage: string | null = null;
+    if (masterTrack?.freezeState.status === 'error') {
+        freezeErrorMessage = masterTrack.freezeState.errorMessage || 'Freeze failed. Try again.';
+    }
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -110,39 +117,49 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     }
 
     return (
-        <div
-            role="button"
-            tabIndex={0}
-            onClick={() => selectTrack(masterTrack.id)}
-            onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    selectTrack(masterTrack.id);
-                }
-            }}
-            className={cn(
-                'absolute inset-0 overflow-hidden cursor-pointer transition-colors',
-                isSelected ? 'bg-black/30 shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-white/[0.02]',
-                className
-            )}
-            title="Master Track (Click to inspect)"
-            aria-label="Master Track Spectrum"
-        >
-            <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none opacity-40">
-                <canvas ref={canvasRef} className="w-full h-full block" width={180} height={80} />
-            </div>
-            <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_1px,rgba(0,0,0,0.1)_1px,rgba(0,0,0,0.1)_2px)] opacity-50" />
-            <Stack className="absolute inset-x-2 top-2 z-10 pointer-events-none">
-                <span
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => selectTrack(masterTrack.id)}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            selectTrack(masterTrack.id);
+                        }
+                    }}
                     className={cn(
-                        'text-[10px] uppercase tracking-wider font-semibold drop-shadow-md transition-colors',
-                        isSelected ? 'text-foreground' : 'text-muted-foreground'
+                        'absolute inset-0 overflow-hidden cursor-pointer transition-colors',
+                        isSelected ? 'bg-black/30 shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'hover:bg-white/[0.02]',
+                        className
                     )}
+                    title={freezeErrorMessage ? undefined : 'Master Track (Click to inspect)'}
+                    aria-label="Master Track Spectrum"
                 >
-                    Master
-                </span>
-            </Stack>
-        </div>
+                    <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none opacity-40">
+                        <canvas ref={canvasRef} className="w-full h-full block" width={180} height={80} />
+                    </div>
+                    <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_1px,rgba(0,0,0,0.1)_1px,rgba(0,0,0,0.1)_2px)] opacity-50" />
+                    <Stack className="absolute inset-x-0 top-0 z-10 pointer-events-none flex-row justify-between p-2">
+                        <span
+                            className={cn(
+                                'text-[10px] uppercase tracking-wider font-semibold drop-shadow-md transition-colors',
+                                isSelected ? 'text-foreground' : 'text-muted-foreground'
+                            )}
+                        >
+                            Master
+                        </span>
+                        {freezeErrorMessage ? (
+                            <span className="pointer-events-none" data-testid="master-freeze-error-marker">
+                                <AlertCircle className="size-3 text-state-danger drop-shadow-md" aria-hidden="true" />
+                            </span>
+                        ) : null}
+                    </Stack>
+                </div>
+            </TooltipTrigger>
+            {freezeErrorMessage ? <TooltipContent side="top">{freezeErrorMessage}</TooltipContent> : null}
+        </Tooltip>
     );
 };
