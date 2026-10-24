@@ -403,6 +403,74 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(firstBeat).toBeCloseTo(-audioOffsetBeats + rawStartBeat, 1);
         expect(firstBeat).toBeGreaterThan(1);
     });
+
+    it('transcribes a trimmed loop from its anchored region, tail then wrapped head', () => {
+        // A clip looped at 0 (region source beats [0, 2)) and start-trimmed
+        // to 1: the pass enters at phase 1, so each pass plays source beats
+        // [1, 2) — the region tail — then wraps to [0, 1) — the region head.
+        // Material past the region end (source beats [2, 3)) never sounds.
+        // Transcribe in pitched mode: the notes must carry the tail's and the
+        // wrapped head's pitches, one pair per pass, and never the pitch of
+        // the silent material. The pre-anchor read
+        // (`[offset, offset + loop)` = [1, 3) every pass) transcribed the
+        // silent span and missed the wrapped head instead.
+        //
+        // Each span a read covers is filled with one continuous sine — quiet,
+        // then loud past a detector hop so the amplitude step is the onset —
+        // because the pitch window at a reported onset reaches back into the
+        // pre-onset material and only resolves when that material is tone of
+        // the same frequency. The pitches separate the spans: wrapped head
+        // 660 Hz (midi 76), region tail 440 Hz (midi 69), past-the-end 880 Hz
+        // (midi 81) — the last inside the pre-anchor read only.
+        const tone = (from: number, to: number, freq: number, amp: number) => (index: number) =>
+            index >= from && index < to ? amp * Math.sin((2 * Math.PI * freq * index) / SAMPLE_RATE) : 0;
+        const HOP = 512;
+        const step = 12 * HOP;
+        const wrap = (index: number) =>
+            index < step ? tone(0, 22050, 660, 0.06)(index) : tone(0, 22050, 660, 0.9)(index);
+        const tail = (index: number) =>
+            index < 22050 + step ? tone(22050, 44100, 440, 0.06)(index) : tone(22050, 44100, 440, 0.9)(index);
+        const pastEnd = (index: number) =>
+            index < 44100 + step ? tone(44100, 66150, 880, 0.06)(index) : tone(44100, 66150, 880, 0.9)(index);
+        const buffer = makeBuffer(4 * SAMPLE_RATE, (index) => wrap(index) + tail(index) + pastEnd(index));
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 1,
+            endBeat: 5,
+            name: 'Looped',
+            audioOffsetBeats: 1,
+            loopEnabled: true,
+            loopLength: 2,
+            loopOriginBeat: 0,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY, mode: 'pitched' })).toBe(true);
+
+        const written = mocks.addMidiNote.mock.calls.map((call) => ({
+            pitch: call[1] as number,
+            startBeat: call[2] as number,
+        }));
+        expect(written).toHaveLength(4);
+        const sorted = written.slice().sort((left, right) => left.startBeat - right.startBeat);
+        // Each pass: the region tail's A4 at its pass-relative read offset,
+        // then the wrapped head's E5 one beat later. Beat tolerance carries
+        // the onset detector's frame granularity; the pitches discriminate.
+        const nearBeat = (beat: number, expected: number) => expect(Math.abs(beat - expected)).toBeLessThan(0.15);
+        nearBeat(sorted[0]!.startBeat, 0.26);
+        nearBeat(sorted[1]!.startBeat, 1.26);
+        nearBeat(sorted[2]!.startBeat, 2.26);
+        nearBeat(sorted[3]!.startBeat, 3.26);
+        expect(sorted[0]!.pitch).toBe(69);
+        expect(sorted[1]!.pitch).toBe(76);
+        expect(sorted[2]!.pitch).toBe(69);
+        expect(sorted[3]!.pitch).toBe(76);
+        // The material past the region end (880 Hz) is never transcribed.
+        for (const note of written) {
+            expect(note.pitch).not.toBe(81);
+        }
+    });
 });
 
 // Fix 3 (pitch-window bounds clamp in detectPitchForOnsets) has no red/green regression

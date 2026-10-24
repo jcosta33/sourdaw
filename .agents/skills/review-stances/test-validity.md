@@ -6,6 +6,30 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
+
+The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
+path at epoch 0, where the epoch term is bypassed, and mocked `captureProjectRevision` to a
+constant with a no-op `stopPlayback`. None of them could observe the guard reading the discard's
+own load transaction, transport halt and `loading` publication as a newer transition or an edit
+(#5573). The full lesson is in `project-integrity.md`.
+
+Probe: run the real revision and identity capture over a real root document, after one real
+transition has activated, with every wait the action crosses spanning a frame so pending document
+writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
+
+### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
+
+PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
+separate storage-proof allowances. A controlled pair of complete 4.6-second proofs finished actual
+forced cleanup after 16 seconds. The historical review prompt and tier are unestablished; the
+test-validity gap is the missing composition of stage deadlines.
+
+Keep the real-census case and a slow complete-proof row with actual termination, descendant death,
+live-storage and final-removal assertions. Require both proof calls, then restore only the case's
+old deadline in a committed private probe: the unchanged slow row must fail. Simulated proof timing
+does not identify the cause of an earlier uninstrumented macOS failure or prove census convergence.
+
 ### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
 
 The native mutation runner had no real-child fixture: direct-child close canceled KILL while a
@@ -311,6 +335,16 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Lessons from escapes
 
+### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
+
+PR #5331's controlled Darwin census cases asserted retention after exactly three catalogs for
+persistent descriptor omissions and PID gaps. Those expectations encoded the cap that stopped
+lanes under real load, so they would fail any convergent census while proving nothing about
+whether a later complete catalog could be reached. This supersedes the three-observation bound in
+the 2026-10-12 Darwin lesson below. Probe persistent omission through the whole simulated
+deadline: every whole and PID-scoped `lsof` call must receive the remaining deadline as its
+timeout, and expiry must name the last uncovered process. A reintroduced count cap must fail.
+
 ### 2026-10-21 — final storage cleanup outlived the returned leak verdict
 
 PR #5274 (`40baa0716b`) recorded a retained-storage verdict before an existing final cleanup
@@ -610,7 +644,35 @@ registry can violate a data contract no spec observes.
 Probe that would have caught it: when a diff adds type or name strings to registries (device types,
 plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
-any hit in the same change.
+any hit in the same change. The tracked-set digest variant of this gap, where no digest moves
+at all, is the 2026-10-24 entry below.
+
+### 2026-10-24 — a tracked-set source edit left its release digest unrestamped (escaped via PR #5568, found by a manual release-inventory run on main)
+
+PR #5568 added the overdub controller command handlers and their argument keys. It changed
+`src/modules/Command/useCases/versionedCommandArgumentKeys.ts` and `src/utils/handlerContract.ts`,
+both inside the Grand Boule project-state tracked set in `scripts/checkReleaseInventory.ts`, and did
+not restamp `release/open-source-inventory.json`. Its checks were green. `main` then failed
+`pnpm test:release-inventory` with a digest mismatch until a follow-up restamp. A manual run on main
+found it after a reviewer of another PR noticed the stale digest.
+
+Blind spot: no pull-request check runs `pnpm test:release-inventory`; the nightly and
+`release:proof:assemble` are the only runners. A diff can therefore change a tracked-set source while
+its recorded digest goes stale unobserved. Stances that attack the change's behavior never touch the
+digest, so the escape reaches `main` unless a reviewer checks for it.
+
+Probe that would have caught it: for each surface boundary in `scripts/checkReleaseInventory.ts`,
+find its `gitPathspecs` by its `digestLabel` (the Grand Boule project-state boundary is the one with
+`digestLabel: 'grand-boule-project-state'`) and run
+`git diff --name-only <base> <head> -- <gitPathspecs>`, keeping its `:(exclude…)` entries. Match only
+against `gitPathspecs`: those are what the digest hashes. The boundary's `paths` is licensing
+membership and is broader, since it includes GrandBoule specs and AGENTS.md. When the command lists
+a path, require `release/open-source-inventory.json` to move in the same diff, and have the reviewer
+run `pnpm test:release-inventory` in their probe worktree (see Reviewer isolation in
+`.agents/skills/review-stances/README.md`), not in the lane; it must pass. A missing digest move is
+a finding for the reviewer, not something to leave to the author's run. If the author must restamp,
+`pnpm release:restamp:tracked-set` refuses while tracked-set source changes are uncommitted, so the
+source commit comes first.
 
 ### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
 

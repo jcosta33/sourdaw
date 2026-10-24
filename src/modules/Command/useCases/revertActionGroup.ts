@@ -1,10 +1,11 @@
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
+import { commitRevertedEntries } from './commitRevertedEntries';
 import { executeAppAction } from './executeAppAction';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
+import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
-import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /**
  * Undo a single undo entry, returning whether anything was actually undone. An
@@ -12,7 +13,11 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
  * `executeUndo` for why a non-undoable entry must not be consumed.
  *
  * The inverse is an internal replay driven by the undo engine, so it must not
- * commit its own undo entry or appear in an active macro recording.
+ * commit its own undo entry or appear in an active macro recording. It goes
+ * through the same legacy-anchor normalization seam the `undo` paths use
+ * (#5198): a keyless legacy trim/loop/slip inverse in a persisted group must
+ * restore anchorless — a slip's captured offset verbatim, rows unmoved — not
+ * replay the fresh-action mint or wrap laws.
  */
 async function revertEntry(entry: UndoEntry): Promise<boolean> {
     if (entry.kind === 'callback') {
@@ -20,24 +25,13 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
         return true;
     }
     if (entry.inverseAction) {
-        await executeAppAction(entry.inverseAction, {
+        await executeAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), {
             skipUndo: true,
             skipMacroRecording: true,
         });
         return true;
     }
     return false;
-}
-
-function commitRevertedEntries(entries: readonly UndoEntry[]): void {
-    const liveState = undoStore.value;
-    if (!liveState || entries.length === 0) {
-        return;
-    }
-    const revertedIds = new Set(entries.map((entry) => entry.id));
-    const past = liveState.past.filter((entry) => !revertedIds.has(entry.id));
-    undoStore.set({ past, future: [...entries, ...liveState.future] });
-    undoTreeMoveTo(past.length > 0 ? past[past.length - 1]!.id : null);
 }
 
 /**
