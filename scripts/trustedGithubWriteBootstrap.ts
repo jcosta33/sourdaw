@@ -111,6 +111,7 @@ function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefine
     return (
         command === 'deliver' ||
         command === 'pr:supersede' ||
+        command === 'pr:retire' ||
         command === 'review:accept' ||
         command === 'review:publish' ||
         command === 'review:publish:recover'

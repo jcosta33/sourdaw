@@ -377,42 +377,62 @@ export async function serializedSupersedePullRequest(
     input: SupersessionInput,
     serialize: PullRequestMutationSerialization = withPullRequestMutationLock
 ): Promise<string> {
+    return serializedPullRequestClosure(
+        primaryRoot,
+        input.oldNumber,
+        'supersession',
+        input.port,
+        (port) =>
+            supersedePullRequest(
+                input.oldNumber,
+                input.expectedHead,
+                input.replacementNumber,
+                input.lineage,
+                input.authorNodeId,
+                port,
+                input.supersededParentNumber
+            ),
+        serialize
+    );
+}
+
+/** Native closures share ownership and the verified OPEN-compensation release rule. */
+export async function serializedPullRequestClosure(
+    primaryRoot: string,
+    number: number,
+    operation: 'supersession' | 'retirement',
+    inputPort: SupersedePullRequestPort,
+    close: (port: SupersedePullRequestPort) => string,
+    serialize: PullRequestMutationSerialization = withPullRequestMutationLock
+): Promise<string> {
     let attemptedOwner: string | undefined;
     let unsafeFailure = false;
     let outcome: SupersessionOutcome;
     try {
-        outcome = await serialize(primaryRoot, input.oldNumber, async (boundary): Promise<SupersessionOutcome> => {
+        outcome = await serialize(primaryRoot, number, async (boundary): Promise<SupersessionOutcome> => {
             const markMutation = () => {
                 boundary.markRemoteMutationAttempt();
                 attemptedOwner = boundary.ownerOid;
             };
             const port: SupersedePullRequestPort = {
-                ...input.port,
+                ...inputPort,
                 log: () => undefined,
                 comment: (number, body) => {
                     markMutation();
-                    return input.port.comment(number, body);
+                    return inputPort.comment(number, body);
                 },
                 deleteComment: (id) => {
                     markMutation();
-                    input.port.deleteComment(id);
+                    inputPort.deleteComment(id);
                 },
                 close: (number) => {
                     markMutation();
-                    return input.port.close(number);
+                    return inputPort.close(number);
                 },
             };
             try {
                 return {
-                    success: supersedePullRequest(
-                        input.oldNumber,
-                        input.expectedHead,
-                        input.replacementNumber,
-                        input.lineage,
-                        input.authorNodeId,
-                        port,
-                        input.supersededParentNumber
-                    ),
+                    success: close(port),
                 };
             } catch (error) {
                 if (error instanceof VerifiedSupersessionCompensationError) {
@@ -425,8 +445,8 @@ export async function serializedSupersedePullRequest(
     } catch (error) {
         if (unsafeFailure && attemptedOwner !== undefined) {
             throw new Error(
-                `${errorMessage(error)}; PR #${input.oldNumber} supersession preserved lock owner ${attemptedOwner}: ` +
-                    `pnpm deliver --recover-lock ${input.oldNumber} --owner ${attemptedOwner}`,
+                `${errorMessage(error)}; PR #${number} ${operation} preserved lock owner ${attemptedOwner}: ` +
+                    `pnpm deliver --recover-lock ${number} --owner ${attemptedOwner}`,
                 { cause: error }
             );
         }
@@ -435,7 +455,7 @@ export async function serializedSupersedePullRequest(
     if ('compensated' in outcome) {
         throwWithCompensation(outcome.compensated.refusal, []);
     }
-    input.port.log(outcome.success);
+    inputPort.log(outcome.success);
     return outcome.success;
 }
 
@@ -572,9 +592,7 @@ export function closePullRequestWithMarkers(
         }
         const converged = port.inspect(number);
         assertStableOpen(converged, number, expectedHead, before.base);
-        const markerIds = markers.map(
-            (marker) => requireOneCommentMarker(converged.comments, marker, markers, number).id
-        );
+        const markerIds = closureMarkerIds(converged, number, markers);
         checks.beforeClose(markerIds);
         closeAttempted = true;
         const closeResult = port.close(number);
@@ -937,9 +955,15 @@ export function assertCompletedClosureWithMarkers(
     ) {
         fail(`PR #${number} is not the expected completed supersession`);
     }
-    for (const marker of markers) {
-        requireOneCommentMarker(value.comments, marker, markers, number);
-    }
+    closureMarkerIds(value, number, markers);
+}
+
+export function closureMarkerIds(
+    value: Pick<SupersededPullRequest, 'comments'>,
+    number: number,
+    markers: readonly MarkerSpec[]
+): string[] {
+    return markers.map((marker) => requireOneCommentMarker(value.comments, marker, markers, number).id);
 }
 function assertCommentReceipt(value: AddedIssueCommentReceipt, expectedClientMutationId: string): string {
     if (

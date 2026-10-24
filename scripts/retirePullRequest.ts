@@ -14,14 +14,21 @@ import {
     spawnCapture,
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE } from './prContract.ts';
+import { type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
 import {
     readRetirementRecordFile,
     renderRetirementMarker,
     assertRetirementRecord,
+    retirementReviewBodyDigest,
     type RetirementRecord,
 } from './retirementRecord.ts';
 import { parseReviewRepairReplyForRole, reviewRepairRecordDigest } from './reviewRepair.ts';
-import { assertCompletedClosureWithMarkers, closePullRequestWithMarkers } from './supersedePullRequest.ts';
+import {
+    assertCompletedClosureWithMarkers,
+    closePullRequestWithMarkers,
+    closureMarkerIds,
+    serializedPullRequestClosure,
+} from './supersedePullRequest.ts';
 import { shellPort, type SupersedePullRequestPort } from './supersedePullRequestGh.ts';
 
 export type RetirementReviewState = {
@@ -123,11 +130,14 @@ function confirmedReplyPair(
     ) {
         fail(`retirement root ${rootId} lacks an immutable-role repair and confirmation pair`);
     }
+    if (BigInt(confirmationReply[0].id) <= BigInt(repairReply[0].id)) {
+        fail(`retirement root ${rootId} confirmation must follow the selected author repair`);
+    }
     return [repairReply[0], confirmationReply[0]];
 }
 
 function assertReviewBodies(record: RetirementRecord, state: RetirementReviewState): void {
-    const reviews = new Map(record.reviewBodies.map((item) => [item.reviewId, item.rootCommentIds]));
+    const reviews = new Map(record.reviewBodies.map((item) => [item.reviewId, item]));
     if (
         state.requestedReviews.length !== reviews.size ||
         new Set(state.requestedReviews.map((review) => review.reviewId)).size !== state.requestedReviews.length
@@ -136,16 +146,19 @@ function assertReviewBodies(record: RetirementRecord, state: RetirementReviewSta
     }
     for (const review of state.requestedReviews) {
         const mapped = reviews.get(review.reviewId);
-        if (mapped === undefined || mapped.length === 0 || !/^[0-9a-f]{40}$/u.test(review.head)) {
+        if (mapped === undefined || mapped.rootCommentIds.length === 0 || !/^[0-9a-f]{40}$/u.test(review.head)) {
             fail(`REQUEST_CHANGES review ${review.reviewId} is unmapped or lacks its original head`);
+        }
+        if (retirementReviewBodyDigest(review.body) !== mapped.bodyDigest) {
+            fail(`REQUEST_CHANGES review ${review.reviewId} body differs from its retirement attestation`);
         }
         const actual = state.threads
             .filter((thread) => thread.rootReviewId === review.reviewId)
             .map((thread) => thread.rootCommentId);
         if (
             actual.length === 0 ||
-            actual.length !== mapped.length ||
-            actual.some((rootId) => !mapped.includes(rootId))
+            actual.length !== mapped.rootCommentIds.length ||
+            actual.some((rootId) => !mapped.rootCommentIds.includes(rootId))
         ) {
             fail(`REQUEST_CHANGES review ${review.reviewId} has body-only or unmapped findings`);
         }
@@ -189,14 +202,23 @@ export function retirePullRequest(
             fail(`PR #${number} is ${before.state.toLowerCase()}`);
         }
         closePullRequestWithMarkers(number, head, before, [marker], port, {
-            beforeClose: () => {
+            beforeMarkers: () => assertReviewProof(record, port.inspectRetirementReviewState(number)),
+            beforeClose: (ids) => {
                 const current = port.inspect(number);
                 if (
+                    current.number !== number ||
+                    current.repository !== REQUIRED_REPOSITORY ||
                     current.headRepository !== REQUIRED_REPOSITORY ||
                     current.head !== head ||
-                    current.base !== record.base
+                    current.base !== record.base ||
+                    current.state !== PR_STATE.OPEN ||
+                    current.merged ||
+                    current.closedAt !== before.closedAt
                 ) {
                     fail(`PR #${number} source identity moved before retirement close`);
+                }
+                if (closureMarkerIds(current, number, [marker])[0] !== ids[0]) {
+                    fail(`PR #${number} retirement marker identity changed before close`);
                 }
                 assertReviewProof(record, port.inspectRetirementReviewState(number));
             },
@@ -229,6 +251,25 @@ export function retirePullRequest(
     return message;
 }
 
+export function serializedRetirePullRequest(
+    primaryRoot: string,
+    number: number,
+    head: string,
+    record: RetirementRecord,
+    authorNodeId: string,
+    port: RetirePullRequestPort,
+    serialize?: PullRequestMutationSerialization
+): Promise<string> {
+    return serializedPullRequestClosure(
+        primaryRoot,
+        number,
+        'retirement',
+        port,
+        (ownedPort) => retirePullRequest(number, head, record, authorNodeId, { ...port, ...ownedPort }),
+        serialize
+    );
+}
+
 export async function runRetirePullRequestCli(args: string[] = process.argv.slice(2)): Promise<number> {
     const parsed = parseRetirePullRequestArgs(args);
     if (parsed.help) {
@@ -256,7 +297,8 @@ export async function runRetirePullRequestCli(args: string[] = process.argv.slic
                 cwd: primaryRoot,
             })
         );
-        retirePullRequest(
+        await serializedRetirePullRequest(
+            primaryRoot,
             parsed.number,
             parsed.head,
             readRetirementRecordFile(parsed.recordPath),

@@ -36,7 +36,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent>] --lineage <path-to-json>`                                                     |
-| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                   |
+| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                               |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
@@ -58,13 +58,20 @@ a partial transaction repairs rather than duplicates.
 caller supplies a canonical `retirement-v1` JSON record with `pr`, `head`, `base`, a one-line
 `rationale`, 1–8 repository evidence URL/observation pairs, a total `findings` list of live root
 comment/thread IDs and native author repair/reviewer confirmation comment IDs, and `reviewBodies`
-mapping each `REQUEST_CHANGES` review ID to its inline roots. The command refuses an unconfirmed
+mapping each `REQUEST_CHANGES` review ID to its inline roots and `bodyDigest`, the lower-case
+SHA-256 digest of that exact review body's UTF-8 bytes (without trimming or normalization).
+The command checks this binding initially, before marker writes, before closing, after closing,
+and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new
+close or replay and must never be adopted as bound evidence.
+The command refuses an unconfirmed
 or unresolved root, unmatched review body, changed head/base/root set, or ambiguous role actor;
 it posts one author-App marker and closes through the native transaction. The reason, evidence,
 and mapping of review prose to inline roots are caller attestations, not machine proof of
 obsolescence. A review body with a distinct finding that cannot truthfully be mapped to a
 confirmed inline root remains a refusal; there is no discard or body-only admission in this
 version. This does not change `pr:supersede`, review, Gate, or delivery rules.
+The selected reviewer confirmation's decimal comment ID must strictly follow the selected author
+repair's ID; identity and a matching repair digest alone do not establish that chronology.
 
 The replacement normally targets the old pull request's base exactly. A child
 left behind after its stack parent was natively superseded may cross that base
@@ -622,7 +629,7 @@ or already-merged recovery and tracker completion. Validate and refuse existing
 owners without waiting or automatic takeover, regardless of liveness. Crashes
 leave the ref; only `deliver --recover-lock` clears it.
 
-`pr:supersede` uses this same per-PR owner for every live PR read, replay, comment,
+`pr:supersede` and `pr:retire` use this same per-PR owner for every live PR read, replay, comment,
 delete, close and compensation. A pre-close refusal releases only after verified
 rollback restores the original OPEN comment-ID set and removes every comment the
 invocation created; the overall command still fails. This permits corrected
@@ -635,11 +642,13 @@ failed compensation retain the journaled owner and print its exact recovery
 command. After that owner's process fence is dead, use the existing
 `deliver --recover-lock <pr> --owner <oid>` route. It can reconcile stable OPEN or
 CLOSED unmerged observations, but recovery does not prove supersession complete:
-rerun `pr:supersede` with the verified head, replacement and complete lineage.
-Supersession success is logged only after its mutation owner releases.
+rerun the original closure command with its verified head and complete bound record or lineage.
+Closure success is logged only after its mutation owner releases. Retirement preserves its exact
+marker and retained owner after ambiguous writes, failed or unverified compensation, or uncertainty
+after a close attempt; a verified complete OPEN rollback releases ownership while still refusing.
 
-Launch supersession through the protected primary package route. Its pinned
-snapshot closure includes the CLI, transaction, GitHub adapter and lineage parser;
+Launch supersession and retirement through the protected primary package route. Their pinned
+snapshot closures include the CLI, transaction, GitHub adapter and record parsers;
 the launcher freezes POSIX `ps` or Windows PowerShell before the default process
 fence is acquired. POSIX snapshots own a detached process group. Calling the
 transaction script directly does not supply this trusted process-tool boundary.
@@ -707,7 +716,7 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `deliver`, `pr:supersede`, `issue:claim`, and `issue:reconcile` through the
+Run `lane:publish`, `deliver`, `pr:supersede`, `pr:retire`, `issue:claim`, and `issue:reconcile` through the
 protected primary checkout's package route; `review:accept` remains only for
 legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure
