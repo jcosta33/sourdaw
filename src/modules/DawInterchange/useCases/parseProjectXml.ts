@@ -888,8 +888,7 @@ function parseArrangementClips(
         // sibling. Traversal checks each branch again before publishing it.
         return (
             nestedTimelines.length === 0 ||
-            (node.element.tagName === CLIP &&
-                (clipNotesContent(node) !== null || Boolean(resolveAudioAssetPath(node)))) ||
+            (node.element.tagName === CLIP && clipNotesContent(node) !== null) ||
             nestedTimelines.some((child) => nestedTimingIsAffine(child, nextScope))
         );
     }
