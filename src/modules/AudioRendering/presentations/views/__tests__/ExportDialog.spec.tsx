@@ -2332,15 +2332,21 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
             expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
 
-            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
             view.rerender(<ExportDialog open={false} onClose={onClose} />);
             view.rerender(<ExportDialog open={true} onClose={onClose} />);
-            const createWritable = vi.fn();
+            const writable = {
+                write: vi.fn().mockResolvedValue(undefined),
+                close: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue(undefined),
+            };
+            const createWritable = vi.fn().mockResolvedValue(writable);
             await act(async () => destination.resolve({ createWritable } as unknown as FileSystemFileHandle));
 
+            await waitFor(() => expect(writable.abort).toHaveBeenCalledTimes(1));
             expect(mocks.renderOffline).not.toHaveBeenCalled();
             expect(audioBufferToMp3).not.toHaveBeenCalled();
-            expect(createWritable).not.toHaveBeenCalled();
+            expect(writable.write).not.toHaveBeenCalled();
+            expect(writable.close).not.toHaveBeenCalled();
             expect(mocks.notifyUser).not.toHaveBeenCalled();
             expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
         } finally {

@@ -195,6 +195,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
         openSessionRef.current += 1;
+        setExporting(false);
         setProgress(0);
         setStatusText('');
         setErrorText('');
@@ -412,8 +413,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
         const session = openSessionRef.current;
-        const destinationBelongsToSession = () =>
-            !cancelledRef.current && openSessionRef.current === session && openRef.current;
+        const currentSession = () => openSessionRef.current === session && openRef.current;
+        const destinationBelongsToSession = () => !cancelledRef.current && currentSession();
+        const finishCancelledPreparation = () => {
+            if (!currentSession()) {
+                return;
+            }
+            setProgress(0);
+            setStatusText('Oven turned off.');
+            setTimeout(() => {
+                if (currentSession()) {
+                    setExporting(false);
+                }
+            }, 1500);
+        };
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
 
@@ -482,7 +495,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     checkCancelled,
                 });
             } catch (error) {
-                if (!destinationBelongsToSession()) {
+                if (!currentSession()) {
+                    return;
+                }
+                if (cancelledRef.current) {
+                    finishCancelledPreparation();
                     return;
                 }
                 if (error instanceof Error && error.name === 'AbortError') {
@@ -500,6 +517,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         }
 
         if (!destinationBelongsToSession()) {
+            try {
+                await output?.abort();
+            } catch (cleanupError) {
+                logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
+            }
+            if (cancelledRef.current) {
+                finishCancelledPreparation();
+            }
             return;
         }
 
