@@ -119,6 +119,7 @@ import {
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
+import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -145,6 +146,7 @@ import { type ActionPromptScope, type PromptClause } from './groundingStrategies
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
+import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
@@ -1318,9 +1320,13 @@ function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
     const commandLead = lead
         .trim()
         .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
-        .replace(/^please\s+/iu, '');
+        .replace(/^please(?:\s+|$)/iu, '');
     const normalizedLead = normalizePromptText(commandLead);
     const normalizedIntent = normalizePromptText(intentPhrase);
+    if (intentPhrase.startsWith(REFERENCE_PLACEHOLDER)) {
+        // "Drums and Bass up 2 dB": the phrase opens with its reference, so the list is the whole head.
+        return normalizedLead.length === 0;
+    }
     return (
         normalizedLead.length > 0 &&
         (normalizedIntent === normalizedLead ||
@@ -1648,7 +1654,13 @@ function resolveActionPromptScope({
                     takesContinuation = decibelLevelForms.length > 0;
                     continue;
                 }
-                matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
+                matchingScopes.push({
+                    ...clause,
+                    directional: false,
+                    matchedIntentPhrase: intent.phrase,
+                    referencedSlot:
+                        intent.referenceSlot && clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end),
+                });
                 takesContinuation = decibelLevelForms.length > 0;
             }
             continue;
@@ -1777,6 +1789,96 @@ function resolveActionPromptScope({
         return null;
     }
     return compiledGroup ? { ...selectedScope, compilerGroupArguments: compiledGroup.arguments } : selectedScope;
+}
+
+/** The whole clauses a request may carry beside a referenced level phrase, and nothing else. */
+const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
+
+/**
+ * Whether a coordinated list is read: it resolves to a scope (it ends on its one figure and names no member
+ * outside it) and the batch answers every member it grounds. A list that does not may single a member out
+ * or restate the level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
+ */
+function isListAnsweredByEveryMember(
+    list: CoordinatedLevelList,
+    calls: readonly ToolCallResult[],
+    actionName: string,
+    targetArgument: string
+): boolean {
+    const memberIds = list.scope?.coordinatedTargets?.memberIds;
+    return (
+        memberIds !== undefined &&
+        memberIds.every((memberId) =>
+            calls.some((call) => call.name === actionName && call.arguments[targetArgument] === memberId)
+        )
+    );
+}
+
+/**
+ * Whether every clause of the request is one a referenced level phrase ("set Drums to -6 dB", "Drums up
+ * 2 dB") may stand beside: a referenced level clause, a member of a coordinated level list, the
+ * continuation of a referenced level clause onto another track, or strict courtesy. A clause outside
+ * those may restrict, qualify or redirect the level, or ask for a change of its own, and no word list
+ * can enumerate which ("instead", "actually", "on the Reverb send", "turn the Comp off"), so the phrase
+ * then names nothing and the request is read as main reads it.
+ */
+function readsOnlyReferencedLevelClauses(input: {
+    calls: readonly ToolCallResult[];
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+}): boolean {
+    const { calls, catalog, context, prompt } = input;
+    const actionName = 'setTrackGain';
+    const groundingRules = getExecutableAppActionGroundingRules(actionName);
+    if (!groundingRules) {
+        return false;
+    }
+    const targetArgument = groundingRules.targetRules[0]?.argument;
+    if (targetArgument === undefined) {
+        return false;
+    }
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
+    const decibelLevelForms = catalog.find((entry) => entry.actionType === actionName)?.decibelLevelForms ?? [];
+    const clauses = splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog);
+    const coordinatedLevelLists = getCoordinatedLevelLists({
+        actionName,
+        catalog,
+        clauses,
+        context,
+        decibelLevelForms,
+        groundingRules,
+        maskedPrompt,
+        prompt,
+    });
+    let continuesReferencedLevel = false;
+    return clauses.every((clause, clauseIndex) => {
+        const continuesScope = continuesReferencedLevel;
+        continuesReferencedLevel = false;
+        if (
+            coordinatedLevelLists.some(
+                (list) =>
+                    clauseIndex >= list.firstClauseIndex &&
+                    clauseIndex <= list.lastClauseIndex &&
+                    isListAnsweredByEveryMember(list, calls, actionName, targetArgument)
+            )
+        ) {
+            return true;
+        }
+        if (STRICT_COURTESY_CLAUSES.has(normalizePromptText(clause.masked))) {
+            return true;
+        }
+        if (namesLevelOutsideActionFader(actionName, clause, context)) {
+            return false;
+        }
+        const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
+        const continuesLevel =
+            intent === null
+                ? continuesScope && isLevelContinuationClause(clause.masked, decibelLevelForms)
+                : intent.actionType === actionName && intent.referenceSlot !== undefined;
+        continuesReferencedLevel = continuesLevel;
+        return continuesLevel;
+    });
 }
 
 function isTrackControlProtectionVerb(normalized: string): boolean {
@@ -6465,7 +6567,7 @@ function bridgeRefinedLlmToolCalls(
         prompt,
         removed: [...removals.removedTargets, ...removals.protectedTargets],
     });
-    const direct = bridgeGroundedLlmToolCalls(unrefined);
+    const direct = bridgeWithoutReferencedLevelPhrases(unrefined);
     // "Turn Vocals down 2 dB more" grounds by itself as a plain 2 dB cut, which the comparative beside
     // its figure contradicts; such a batch is read against the pending values it compares with.
     const comparesFigure = refinementClauseReader.figureComparative({
@@ -6572,7 +6674,7 @@ function findRefinementDefect(input: {
         return omission;
     }
     const answering = {
-        catalog: getExecutableAppActionGroundingCatalog(),
+        catalog: withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog()),
         candidates: refinementRequestReading.candidates(context),
         context,
     };
@@ -6620,7 +6722,7 @@ function groundNewRefinedCalls(input: {
         return { actions: new Map(), rejections: [] };
     }
     const answering = {
-        catalog: getExecutableAppActionGroundingCatalog(),
+        catalog: withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog()),
         candidates: refinementRequestReading.candidates(context),
         context,
     };
@@ -6655,7 +6757,7 @@ function groundNewRefinedCalls(input: {
     }
     const actions = new Map<number, BridgeGroundedLlmToolCallsResult['actions'][number]>();
     for (const [text, indexes] of groups) {
-        const grounded = bridgeGroundedLlmToolCalls({
+        const grounded = bridgeWithoutReferencedLevelPhrases({
             ...unrefined,
             prompt: text,
             calls: indexes.map((index) => calls[index]!),
@@ -6785,21 +6887,53 @@ export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInpu
     if (input.refinementBasis !== undefined) {
         return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
     }
-    return bridgeUnrefinedLlmToolCalls(input);
+    const main = bridgeWithoutReferencedLevelPhrases(input);
+    if (main.rejections.length === 0) {
+        return main;
+    }
+    // A level phrase that names its track ("set Drums to -6 dB") grounds only where main's reading refuses
+    // a call and every clause of the request is accounted for, so it admits nothing main refused beside a
+    // clause that might restrict it, and changes nothing main grounded. A refusal of the batch as a whole
+    // (an oversized or mismatched plan) is not one a level phrase can answer.
+    const catalog = getExecutableAppActionGroundingCatalog();
+    if (
+        main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
+        !readsOnlyReferencedLevelClauses({
+            calls: input.calls,
+            catalog,
+            context: input.context,
+            prompt: input.prompt,
+        })
+    ) {
+        return main;
+    }
+    const referenced = bridgeUnrefinedLlmToolCalls(input, catalog);
+    return referenced.rejections.length === 0 ? referenced : main;
 }
 
-function bridgeUnrefinedLlmToolCalls({
-    calls,
-    context,
-    markerSignatures = [],
-    sectionSignatures = [],
-    prompt,
-    compilerEvidence,
-    transformProof,
-    projectRevision,
-    workflowCapabilityId,
-    creativeAuthority,
-}: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+/**
+ * Ground a request as it is read before any level phrase naming its track counts. A refinement reads
+ * its text this way too: it answers the pending card, whose commands a phrase on their object means.
+ */
+function bridgeWithoutReferencedLevelPhrases(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    return bridgeUnrefinedLlmToolCalls(input, withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog()));
+}
+
+function bridgeUnrefinedLlmToolCalls(
+    {
+        calls,
+        context,
+        markerSignatures = [],
+        sectionSignatures = [],
+        prompt,
+        compilerEvidence,
+        transformProof,
+        projectRevision,
+        workflowCapabilityId,
+        creativeAuthority,
+    }: BridgeGroundedLlmToolCallsInput,
+    catalog: GroundingCatalog
+): BridgeGroundedLlmToolCallsResult {
     const transformCompilations = transformProof?.compilations ?? [];
     const transformCalls = materializeTransformToolCalls(transformCompilations);
     if (
@@ -7322,7 +7456,6 @@ function bridgeUnrefinedLlmToolCalls({
             effectiveCalls = calls.filter((call) => call.name !== 'glueClips');
         }
     }
-    const catalog = getExecutableAppActionGroundingCatalog();
     const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
     const promptActionRequests = promptActionAnalysis.requests;
     const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);

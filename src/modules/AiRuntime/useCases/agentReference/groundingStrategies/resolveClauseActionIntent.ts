@@ -1,6 +1,7 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { findGappedIntentPhrase, type IntentPhraseGaps } from './findGappedIntentPhrase';
+import { findReferencedIntentPhrase } from './findReferencedIntentPhrase';
 import { getClauseIntentVocabulary, type CreationProposal } from './getClauseIntentVocabulary';
 import { getIntentPhraseIndex } from './getIntentPhraseIndex';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
@@ -15,6 +16,8 @@ type ClauseActionIntent = {
     actionType: string;
     index: number;
     phrase: string;
+    /** Where the project reference a referenced level phrase acts on sits in the clause. */
+    referenceSlot?: { start: number; end: number };
 };
 
 /** The earliest place the phrase names its action: contiguously, or across one gap the clause admits. */
@@ -51,11 +54,21 @@ export function resolveClauseActionIntent(
     const matches = catalog
         .flatMap((entry) => {
             const vocabulary = getClauseIntentVocabulary(entry, statedLevelForms, creationProposal);
-            return vocabulary.phrases.map((phrase) => ({
+            const referencedMatches = vocabulary.referencedPhrases.map((phrase): ClauseActionIntent => {
+                const referenced = findReferencedIntentPhrase(maskedText, phrase);
+                return {
+                    actionType: entry.actionType,
+                    index: referenced?.index ?? -1,
+                    phrase,
+                    referenceSlot: referenced?.slot,
+                };
+            });
+            const phraseMatches = vocabulary.phrases.map((phrase): ClauseActionIntent => ({
                 actionType: entry.actionType,
                 index: findPhraseIndex(maskedText, phrase, vocabulary.gaps),
                 phrase,
             }));
+            return [...phraseMatches, ...referencedMatches];
         })
         .filter((match) => match.index >= 0 && !isNegatedIntent(maskedText, match.phrase, match.index))
         .sort((left, right) => {
