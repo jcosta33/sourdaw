@@ -1091,6 +1091,44 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toEqual([]);
     });
 
+    it.each([
+        { name: 'time', attributes: 'time="not-a-number" duration="1"' },
+        { name: 'duration', attributes: 'time="0" duration="not-a-number"' },
+        { name: 'time and duration', attributes: 'time="not-a-number" duration="not-a-number"' },
+    ])('warns and omits a nested phrase with malformed $name while preserving its siblings', ({ attributes }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip id="container" name="Container" time="8" duration="8"><Clips>' +
+                    '<Clip id="valid" name="Valid phrase" time="0" duration="1"><Notes>' +
+                    '<Note time="0" duration="1" key="60"/></Notes></Clip>' +
+                    `<Clip id="malformed" name="Malformed phrase" ${attributes}><Notes>` +
+                    '<Note time="0" duration="1" key="62"/></Notes></Clip>' +
+                    '<Clip id="optional" name="Optional defaults"><Notes/></Clip>' +
+                    '</Clips></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.startBeat, clip.endBeat])).toEqual([
+            ['Container', 8, 16],
+            ['Valid phrase', 8, 9],
+            ['Optional defaults', 8, 8.25],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                sourceId: 'malformed',
+                name: 'Malformed phrase',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings[0]?.sourceOrder).toBeGreaterThan(0);
+    });
+
     it('uses the parent content unit and playStart when placing a nested seconds phrase', () => {
         const xml = project(
             '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +

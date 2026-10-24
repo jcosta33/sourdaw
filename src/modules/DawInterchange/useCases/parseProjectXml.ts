@@ -620,6 +620,15 @@ function parseArrangementClips(
         if (scope.tempo === null) {
             return null;
         }
+        if (
+            (scope.visibleStartBeat !== null || hasNestedClips(clip)) &&
+            ['time', 'duration', 'playStart', 'playStop', 'loopStart', 'loopEnd'].some((attribute) => {
+                const value = clip.attr(attribute);
+                return value !== null && !Number.isFinite(Number(value));
+            })
+        ) {
+            return null;
+        }
         const rawUnit = clip.attr('timeUnit');
         const unit = rawUnit === 'beats' || rawUnit === 'seconds' ? rawUnit : scope.unit;
         const initialTiming = readClipTiming(clip, scope.unit, scope.originBeat, scope.tempo);
