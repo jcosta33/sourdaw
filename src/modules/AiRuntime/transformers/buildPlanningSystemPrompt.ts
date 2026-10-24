@@ -1,8 +1,19 @@
+import {
+    ANALYSIS_MEASURE_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    PROJECT_QUERY_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
+} from '../models/AgentToolCatalogNames';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../models/CreativeInterpretation';
 
 import { buildLlmActionSystemPrompt } from './llmActionBridge';
 
-/** The system prompt every planning backend receives: the action contract plus the workflow and creative-interpretation turns. */
+const MIXING_METHOD = `When the request asks for a mix outcome without naming values, such as warmer or less muddy, work in this order: resolve the target with ${PROJECT_QUERY_TOOL_NAME}; measure it with ${ANALYSIS_MEASURE_TOOL_NAME}; discover a recipe with ${RECIPE_DISCOVERY_TOOL_NAME} and expand it with ${RECIPE_EXPANSION_TOOL_NAME}; propose values inside the recipe's ranges with ${COMMAND_BATCH_PROPOSAL_TOOL_NAME}, adopting ${RECIPE_EXPANSION_TOOL_NAME}, ${TRANSFORM_COMPILE_TOOL_NAME} and preview calls by callId in compiledCallIds; measure the preview with ${ANALYSIS_MEASURE_TOOL_NAME} subject 'preview'; report the measured deltas. Recipes and their ranges come only from the catalog, never invented. Explicit literal edits skip measurement.
+A level takes exactly one of its linear field (gain, level, value), its absolute decibel field (gainDb, levelDb, valueDb) or relative deltaDb. To apply one command to a set, give the list item a selector with targetArgument, entity, where or match, excludeIds and a quantity of exactly or maximum.`;
+
+/** The system prompt every planning backend receives: the action contract plus the workflow, mixing-method and creative-interpretation turns. */
 export function buildPlanningSystemPrompt(): string {
-    return `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.\nWhen the request delegates a musical or artistic outcome rather than naming exact edits, call ${CREATIVE_INTERPRETATION_TOOL_NAME} alone in one turn, choosing only the published candidates, then wait for its receipt before proposing ordinary commands. Do not call it for explicit literal edits or when a specialized workflow covers the request.\nWhen the request refines the pending proposal in thread_context, propose its complete replacement: the pending commands with only the requested dimension changed, with refines set to that proposal's confirmationId. Leave refines out of any other proposal.`;
+    return `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use ${PROJECT_QUERY_TOOL_NAME} only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.\n${MIXING_METHOD}\nWhen the request delegates a musical or artistic outcome rather than naming exact edits, call ${CREATIVE_INTERPRETATION_TOOL_NAME} alone in one turn, choosing only the published candidates, then wait for its receipt before proposing ordinary commands. Do not call it for explicit literal edits or when a specialized workflow covers the request.\nWhen the request refines the pending proposal in thread_context, propose its complete replacement: the pending commands with only the requested dimension changed, with refines set to that proposal's confirmationId. Leave refines out of any other proposal.`;
 }
