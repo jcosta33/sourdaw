@@ -279,7 +279,7 @@ function largeStablePolicy() {
     }));
 }
 
-async function runNativePlanWithPipe(failRead: boolean) {
+async function runNativePlanWithPipe(failRead: boolean, forceExitAfterPlan = false) {
     const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
     const fixtureRoot = mkdtempSync(join(realpathSync(tmpdir()), 'retarget-plan-pipe-'));
     const rulesets = largeStablePolicy();
@@ -350,12 +350,21 @@ import { writeFileSync } from 'node:fs';
 const fixture = ${JSON.stringify(pathToFileURL(fixturePath).href)};
 const originalWrite = process.stdout.write.bind(process.stdout);
 process.stdout.write = function (...args) {
-    const accepted = originalWrite(...args);
-    if (!accepted) writeFileSync(${JSON.stringify(backpressurePath)}, 'backpressured');
-    return accepted;
+    process.stdout.cork();
+    try {
+        const accepted = originalWrite(...args);
+        if (!accepted) writeFileSync(${JSON.stringify(backpressurePath)}, 'backpressured');
+        return accepted;
+    } finally {
+        // Keep output pending until the event loop can release the real Writable.
+        setImmediate(() => process.stdout.uncork());
+    }
 };
 registerHooks({ load(url, context, next) {
     const result = next(url, context);
+    if (${JSON.stringify(forceExitAfterPlan)} && url.endsWith('/scripts/retargetCapabilitySnapshot.ts')) {
+        return { ...result, source: String(result.source) + '\\nprocess.exit(0);\\n' };
+    }
     if (url.endsWith('/scripts/githubAppIdentity.ts')) return { ...result, source: String(result.source) +
         '\\nimport { capture, authenticate } from ' + JSON.stringify(fixture) +
         ';\\nspawnCapture = capture;\\nauthenticateOrchestratorSession = authenticate;\\n' };
@@ -383,7 +392,7 @@ Date.prototype.toISOString = function () { return ${JSON.stringify(CLI_DATE)}; }
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];
         let bufferedBeforeDrain = 0;
-        if (!failRead) {
+        if (!failRead && !forceExitAfterPlan) {
             child.stdout.pause();
             await Promise.race([
                 once(child.stdout, 'readable'),
@@ -421,7 +430,7 @@ Date.prototype.toISOString = function () { return ${JSON.stringify(CLI_DATE)}; }
 }
 
 describe('native planner pipe delivery', () => {
-    it('writes a complete large canonical plan through a backpressured pipe before successful exit', async () => {
+    it('writes a complete large canonical plan through a pipe after native Writable backpressure', async () => {
         const rulesets = largeStablePolicy();
         const port: CapabilityReadPort = {
             user: () => USER,
@@ -464,6 +473,16 @@ describe('native planner pipe delivery', () => {
         expect(Buffer.byteLength(actual.stdout)).toBe(Buffer.byteLength(canonical));
         expect(actual.stdout === canonical).toBe(true);
         expect(JSON.parse(actual.stdout)).toMatchObject({ activationEligible: false });
+        expect(actual.disposed).toBe('disposed');
+    }, 30_000);
+
+    it('keeps queued native stdout out of a forced-exit copy', async () => {
+        const actual = await runNativePlanWithPipe(false, true);
+        expect(actual.backpressured).toBe(true);
+        expect(actual.signal).toBeNull();
+        expect(actual.code).toBe(0);
+        expect(actual.stdout).toBe('');
+        expect(actual.stderr).toBe('');
         expect(actual.disposed).toBe('disposed');
     }, 30_000);
 

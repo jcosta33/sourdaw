@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
+
+PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but
+never guaranteed the child stdout Writable returned `false`. The first PR check for #5638 failed at
+that admission assertion, before exact-output and disposal checks ran. Public review covered other
+capture risks; a native false-return admission probe was missing.
+
+Keep stdout as a real child-process pipe. Hold the child's real Writable output while calling its
+bound `write`, record pressure only from that call returning `false`, and release on a later event-loop
+turn. Require exact independent canonical bytes, successful close, empty stderr, and disposal after
+release. A forced exit before release must lose bytes and fail the case. Parent `readableLength` alone
+proves only that some bytes crossed the pipe, not child Writable or kernel-pipe saturation.
+
 ### 2026-10-24 — injected owner fences concealed missing launcher admission (introduced by PR #5639)
 
 PR #5639's real Git-ref lock cases supplied fixture owner fences, so they never observed the
