@@ -2049,6 +2049,14 @@ describe('AudioEngine', () => {
                 (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.values()
             );
             const tracks = ['source-1', 'source-2', 'bus-1', 'bus-2'].map((id) => getMockTrackNode(engine, id));
+            const firstBus = buses[0];
+            if (!firstBus) {
+                throw new Error('Expected the retiring graph to contain a bus');
+            }
+            const firstTrack = tracks[0];
+            if (!firstTrack) {
+                throw new Error('Expected the retiring graph to contain a track');
+            }
             const pending = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
                 .pendingDevicePromises;
             pending.add(Promise.withResolvers().promise);
@@ -2057,7 +2065,7 @@ describe('AudioEngine', () => {
                 targetTrackId: 'source-2',
                 targetDeviceId: 'pending-device',
             });
-            return { sends: [firstSend, secondSend], buses, tracks, pending };
+            return { sends: [firstSend, secondSend], buses, tracks, firstBus, firstTrack, pending };
         }
 
         function expectRetired(graph: ReturnType<typeof createRetiringGraph>) {
@@ -2085,8 +2093,8 @@ describe('AudioEngine', () => {
                 const failure = new Error(`${resource} retirement refused`);
                 const operation = {
                     send: graph.sends[0].disconnect,
-                    bus: graph.buses[0].dispose,
-                    track: graph.tracks[0].dispose,
+                    bus: graph.firstBus.dispose,
+                    track: graph.firstTrack.dispose,
                 }[resource];
                 operation.mockImplementationOnce(() => {
                     throw failure;
@@ -2121,10 +2129,10 @@ describe('AudioEngine', () => {
             graph.sends[0].disconnect.mockImplementationOnce(() => {
                 throw sendFailure;
             });
-            graph.buses[0].dispose.mockImplementationOnce(() => {
+            graph.firstBus.dispose.mockImplementationOnce(() => {
                 throw busFailure;
             });
-            graph.tracks[0].dispose.mockImplementationOnce(() => {
+            graph.firstTrack.dispose.mockImplementationOnce(() => {
                 throw trackFailure;
             });
             const revision = engine.getRuntimeGraphRevision();
