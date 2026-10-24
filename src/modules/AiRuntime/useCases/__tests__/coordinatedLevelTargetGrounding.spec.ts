@@ -1626,3 +1626,60 @@ describe('level requests outside a coordinated list ground as before', () => {
         expect(result.actions).not.toContainEqual(gainAction(bass.id, { deltaDb: -3 }));
     });
 });
+
+describe('a protection grounds what main grounds outside its object forms', () => {
+    it.each([
+        'turn the Drums down 3 dB and keep the Kick level punchy',
+        'turn the Drums down 3 dB and keep an eye on the Kick level',
+        'turn the Drums down 3 dB and keep the next one',
+        'turn the Drums down 3 dB and leave the Kick fader where it is',
+        'turn the Drums down 3 dB and leave the Drums alone except for the fader',
+        'turn the Drums down 3 dB and keep the Drums unchanged other than the gain',
+        'turn the Drums down 3 dB and keep the Gain Staging as is',
+        "turn the Drums down 3 dB and don't change the Pan Law",
+        'turn the Drums down 3 dB but leave the Drums clip alone',
+        "turn the Drums down 3 dB but don't move the Drums plugin",
+        'turn the Drums down 3 dB but otherwise leave the Drums alone',
+        'turn the Drums down 3 dB, other than that leave the Drums alone',
+        'turn the Drums down 3 dB and leave the Drums alone besides that',
+        'turn the Drums down 3 dB; Overall level stays the same.',
+        'TURN THE DRUMS DOWN 3 DB AND KEEP THE OVERALL LEVEL THE SAME',
+    ])('grounds "%s" on the bridge and atomic routes', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        expect(groundGainList(prompt, [drums]).status).toBe('grounded');
+    });
+
+    it('still refuses a carved-out track whose other controls the request changes', () => {
+        const pan = { name: 'setTrackPan', arguments: { trackId: drums.id, pan: -20 } };
+        const result = bridge([pan], 'pan the Drums 20% left; leave the Drums alone except for the fader');
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([{ index: 0, name: '<batch>', reason: expect.stringContaining('"Drums"') }]);
+    });
+
+    it.each(['do not change the pan, solo, and fader of Vocals', 'leave the fader and the pan of Vocals alone'])(
+        'refuses a pan change to Vocals beside "%s"',
+        (protection) => {
+            const pan = { name: 'setTrackPan', arguments: { trackId: vocals.id, pan: -20 } };
+            const result = bridge([pan], `pan the Vocals 20% left; ${protection}`);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: '<batch>', reason: expect.stringContaining('"Vocals"') },
+            ]);
+        }
+    );
+
+    it('refuses a change to the Drum Bus a capitalized protection verb after a conjunction keeps', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(drumBus.id, { deltaDb: -3 })],
+            'Turn the Drums and the Drum Bus down 3 dB but Keep the Drum Bus unchanged'
+        );
+
+        expect(result.actions).not.toContainEqual(gainAction(drumBus.id, { deltaDb: -3 }));
+        expect(result.rejections).not.toEqual([]);
+    });
+});

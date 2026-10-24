@@ -105,7 +105,7 @@ describe('readExplicitProtections', () => {
             ['keep the Ghost track as is', ['Ghost']],
             ['keep the "Ghost" track as is', ['Ghost']],
             ['leave the "Ghost" bus alone', ['Ghost']],
-            ['turn Keys down 3 dB; Ghost send stays as is', ['Ghost']],
+            ['turn Keys down 3 dB; the Ghost send stays as is', ['Ghost']],
             ['leave the Backing Vocal track alone', ['Backing Vocal']],
             ['turn Keys down 3 dB; Leave the Ghost track alone', ['Ghost']],
             // a position
@@ -526,11 +526,211 @@ describe('readExplicitProtections', () => {
     });
 
     describe('a capital at a sentence start carries no signal in a kind form', () => {
-        it.each(['Ghost track stays as is, turn Keys down 3 dB', 'turn Keys down 3 dB. Ghost track stays as is.'])(
-            'finds nothing unresolved in "%s"',
-            (prompt) => {
-                expect(unresolvedIn(prompt)).toEqual([]);
+        it.each([
+            'Ghost track stays as is, turn Keys down 3 dB',
+            'turn Keys down 3 dB. Ghost track stays as is.',
+            'turn Keys down 3 dB; Ghost send stays as is',
+            'turn the Drums down 3 dB; Overall level stays the same.',
+            'turn the Drums down 3 dB: Kick level unchanged',
+            'TURN THE DRUMS DOWN 3 DB AND KEEP THE OVERALL LEVEL THE SAME',
+            'TURN THE DRUMS DOWN 3 DB AND LEAVE THE KICK FADER ALONE',
+        ])('finds nothing unresolved in "%s"', (prompt) => {
+            expect(unresolvedIn(prompt)).toEqual([]);
+        });
+    });
+
+    describe('an object form names a project object only in a closed protection', () => {
+        it.each([
+            'turn the Drums down 3 dB and keep the Kick level punchy',
+            'turn the Drums down 3 dB and keep the Pad volume low',
+            'turn the Drums down 3 dB and keep an eye on the Kick level',
+            'turn the Drums down 3 dB to keep the Kick level from clipping',
+            'turn the Drums down 3 dB and keep the LUFS level under -14',
+            'turn the Drums down 3 dB and keep the Lead fader moving',
+            'turn the Drums down 3 dB and keep the next one',
+            'turn the Drums down 3 dB and leave the Kick fader where it is',
+            'turn the Drums down 3 dB and keep the Snare level at -6 dB',
+        ])('finds nothing unresolved in "%s"', (prompt) => {
+            expect(unresolvedIn(prompt)).toEqual([]);
+        });
+
+        it('still refuses the same form once a closing word closes it', () => {
+            expect(unresolvedIn('turn the Drums down 3 dB and keep the Kick level as is')).toEqual(['Kick']);
+            expect(unresolvedIn('turn the Drums down 3 dB and leave the next one alone')).toEqual(['next one']);
+        });
+    });
+
+    describe('a control names an object form only after the name', () => {
+        it.each([
+            'keep the Gain Staging as is',
+            'keep the Gain Reduction the same',
+            "don't change the Pan Law",
+            'leave the Volume Automation alone',
+            'keep the Level Matching as is',
+        ])('finds nothing unresolved in "turn the Drums down 3 dB; %s"', (protection) => {
+            expect(unresolvedIn(`turn the Drums down 3 dB and ${protection}`)).toEqual([]);
+        });
+
+        it('still refuses a possessive or trailing control of an unknown name', () => {
+            expect(unresolvedIn("turn the Drums down 3 dB and leave Ghost's faders alone")).toEqual(['Ghost']);
+            expect(unresolvedIn('turn the Drums down 3 dB and keep the Kick volume as is')).toEqual(['Kick']);
+        });
+    });
+
+    describe('an object on a track never protects the whole track', () => {
+        it.each([
+            'turn Drums down 3 dB but leave the Drums clip alone',
+            "turn Drums down 3 dB but don't move the Drums plugin",
+            'turn Drums down 3 dB but keep the Drums device as is',
+        ])('protects nothing in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context)).toEqual(NOTHING);
+        });
+
+        it('keeps only the output routing for an output', () => {
+            expect(readExplicitProtections('turn Drums down 3 dB but leave the Drums output alone', context)).toEqual({
+                ...NOTHING,
+                protectedControls: [{ trackId: drums.id, actionTypes: ['setTrackOutput'] }],
+            });
+            expect(
+                readExplicitProtections('turn Drums down 3 dB but leave the Drums routing alone', context)
+            ).toMatchObject({ protectedTrackIds: [drums.id] });
+        });
+    });
+
+    describe('every control a protection lists binds its owner', () => {
+        it.each([
+            ['leave the fader and pan of the selected track alone', ['setTrackGain', 'setTrackPan']],
+            ["leave the selected track's pan and fader alone", ['setTrackPan', 'setTrackGain']],
+        ])('keeps both controls of the selected track in "%s"', (protection, actionTypes) => {
+            expect(readExplicitProtections(`turn Keys down 3 dB; ${protection}`, drumsSelected)).toEqual({
+                ...NOTHING,
+                protectedControls: [{ trackId: drums.id, actionTypes }],
+            });
+        });
+
+        it.each([
+            ['leave the fader and the pan of Vocals alone', ['setTrackGain', 'setTrackPan']],
+            ['do not change pan, solo, and fader of Vocals', ['setTrackPan', 'soloTrack', 'setTrackGain']],
+            ['leave the Vocals pan and fader alone', ['setTrackPan', 'setTrackGain']],
+        ])('keeps every control of Vocals in "%s"', (protection, actionTypes) => {
+            expect(readExplicitProtections(`turn Keys down 3 dB; ${protection}`, context)).toEqual({
+                ...NOTHING,
+                protectedControls: [{ trackId: vocals.id, actionTypes }],
+            });
+        });
+
+        it('never narrows a whole-track protection to a control listed beside it', () => {
+            expect(readExplicitProtections('turn Keys down 3 dB; leave Vocals and the fader alone', context)).toEqual({
+                ...NOTHING,
+                protectedTrackIds: [vocals.id],
+                namedTrackIds: [vocals.id],
+            });
+        });
+    });
+
+    describe('a carve-out of controls exempts them from the track a protection keeps', () => {
+        it.each([
+            'turn the Drums down 3 dB and leave the Drums alone except for the fader',
+            'turn the Drums down 3 dB and keep the Drums unchanged other than the gain',
+            'turn the Drums down 3 dB and keep the Drums as is apart from the level',
+        ])('keeps every other mixer control of Drums in "%s"', (prompt) => {
+            const reading = readExplicitProtections(prompt, context);
+
+            expect(reading.protectedTrackIds).toEqual([]);
+            expect(reading.protectedControls).toEqual([
+                {
+                    trackId: drums.id,
+                    actionTypes: [
+                        'setTrackPan',
+                        'muteTrack',
+                        'soloTrack',
+                        'armTrack',
+                        'addSend',
+                        'removeSend',
+                        'setSend',
+                        'setTrackOutput',
+                    ],
+                },
+            ]);
+        });
+    });
+
+    describe('otherwise before a protection, or a carve-out of the request, reads as otherwise after it', () => {
+        it.each([
+            'turn the Drums down 3 dB but otherwise leave the Drums alone',
+            'turn the Drums down 3 dB; otherwise leave the Drums untouched',
+            'turn the Drums down 3 dB, other than that leave the Drums alone',
+            'turn the Drums down 3 dB, apart from that keep the Drums as is',
+            'turn the Drums down 3 dB and leave the Drums alone besides that',
+        ])('protects nothing in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context)).toEqual(NOTHING);
+        });
+
+        it('still protects a track named after a carve-out', () => {
+            expect(
+                readExplicitProtections(
+                    'turn the Drums down 3 dB and leave Keys alone except this track',
+                    drumsSelected
+                ).protectedTrackIds
+            ).toEqual([keys.id]);
+        });
+    });
+
+    describe('a capitalized protection verb after a conjunction is a request', () => {
+        it('protects the Drum Bus in "Turn the Drums down 3 dB but Keep the Drum Bus unchanged"', () => {
+            expect(
+                readExplicitProtections('Turn the Drums down 3 dB but Keep the Drum Bus unchanged', context)
+                    .protectedTrackIds
+            ).toEqual([drumBus.id]);
+        });
+    });
+
+    describe('reading rules each pinned by one row', () => {
+        const synthsBus = createTrack('track-synths', 'Synths', { kind: 'bus' });
+        const keysBus = createTrack('track-keys-bus', 'Keys', { kind: 'bus' });
+        const horns: ProjectContext = {
+            ...context,
+            tracks: [...context.tracks, synthsBus],
+            vcaGroups: [{ id: 'vca-horns', name: 'Horns', gain: 1, muted: false, trackIds: [keys.id] }],
+        };
+
+        it('closes a protection with no verb on intact only after a state verb', () => {
+            expect(readExplicitProtections('Turn the Drums down 3 dB but the Drum Bus intact', context)).toEqual(
+                NOTHING
+            );
+            expect(
+                readExplicitProtections('Turn the Drums down 3 dB but the Drum Bus stays intact', context)
+                    .protectedTrackIds
+            ).toEqual([drumBus.id]);
+        });
+
+        it('binds a track kind form to a bus whose name is its variant', () => {
+            expect(readExplicitProtections('turn the Drums down 3 dB and leave the Synth track alone', horns)).toEqual({
+                ...NOTHING,
+                protectedTrackIds: [synthsBus.id],
+                namedTrackIds: [synthsBus.id],
+            });
+        });
+
+        it('refuses a kind form whose variant names two objects', () => {
+            const twoKeys: ProjectContext = { ...context, tracks: [...context.tracks, keysBus] };
+
+            expect(unresolvedIn('turn the Drums down 3 dB and leave the Key track alone', twoKeys)).toEqual(['Key']);
+        });
+
+        it.each(['leave the Horn VCA alone', 'leave the Horn VCA group alone'])(
+            'binds "%s" to the Horns VCA group members',
+            (protection) => {
+                expect(readExplicitProtections(`turn the Drums down 3 dB and ${protection}`, horns)).toEqual({
+                    ...NOTHING,
+                    protectedTrackIds: [keys.id],
+                    namedTrackIds: [keys.id],
+                });
             }
         );
+
+        it('refuses a control on an unknown name', () => {
+            expect(unresolvedIn('turn the Drums down 3 dB and leave the faders on Ghost alone')).toEqual(['Ghost']);
+        });
     });
 });

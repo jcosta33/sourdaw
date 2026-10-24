@@ -56,9 +56,16 @@ export type Slot = {
 };
 export type Range = { start: number; end: number };
 
-/** A capitalized word inside a sentence belongs to a title-cased name ("Keep Them Separate"), not to a request. */
+/**
+ * A capitalized word inside a sentence belongs to a title-cased name ("Keep Them Separate"), not to a request,
+ * unless a conjunction opens its clause ("but Keep the Drum Bus unchanged").
+ */
 function opensTitleCasedPhrase(masked: string, index: number): boolean {
-    return /^\p{Lu}/u.test(masked.slice(index)) && !opensClause(masked, index);
+    return /^\p{Lu}/u.test(masked.slice(index)) && !opensClause(masked, index) && !followsConjunction(masked, index);
+}
+
+function followsConjunction(masked: string, index: number): boolean {
+    return /\b(?:and|but|then|so)$/iu.test(masked.slice(0, index).trimEnd());
 }
 
 /** Whether a clause starts at the index: a sentence start, or after a semicolon or colon. */
@@ -179,18 +186,40 @@ function readSlot(masked: string, piece: Piece): Slot | null {
     };
 }
 
+/** A carve-out of what the request itself does ("other than that", "besides that"), which reads as `otherwise`. */
+const CARVE_OUT_OF_REQUEST = /^[\s,]*(?:that|this)[\s,]*$/iu;
+
+/**
+ * Whether `otherwise` qualifies a protection: inside it, alone in the piece right before it ("but otherwise
+ * leave the Drums alone"), or as a carve-out of the request right before or after it ("other than that leave
+ * the Drums alone", "leave the Drums alone besides that").
+ */
+function readsOtherwise(masked: string, pieces: readonly Piece[], index: number): boolean {
+    const isCarveOutOfRequest = (piece: Piece | undefined) =>
+        piece?.lead?.kind === 'carve-out' && CARVE_OUT_OF_REQUEST.test(masked.slice(piece.lead.end, piece.end));
+    const before = pieces[index - 1];
+    const own = pieces[index];
+    return (
+        (own !== undefined && /\botherwise\b/iu.test(masked.slice(own.start, own.end))) ||
+        (before !== undefined && /^[\s,]*otherwise[\s,]*$/iu.test(masked.slice(before.start, before.end))) ||
+        isCarveOutOfRequest(before) ||
+        isCarveOutOfRequest(pieces[index + 1])
+    );
+}
+
 /** Every slot of the text, a carve-out right after a protection marked as only exempting from it. */
 function readSlots(masked: string): Slot[] {
     const slots: Slot[] = [];
+    const pieces = splitPieces(masked);
     let previousProtects = false;
-    for (const piece of splitPieces(masked)) {
+    for (const [index, piece] of pieces.entries()) {
         const slot = readSlot(masked, piece);
         if (slot === null) {
             previousProtects = false;
             continue;
         }
         const isCarveOut = piece.lead?.kind === 'carve-out';
-        const otherwise = /\botherwise\b/iu.test(masked.slice(piece.start, piece.end));
+        const otherwise = readsOtherwise(masked, pieces, index);
         slots.push({ ...slot, exempts: isCarveOut && previousProtects, otherwise });
         previousProtects = piece.lead?.kind === 'verb' || piece.lead?.kind === 'prohibition';
     }

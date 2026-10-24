@@ -58,6 +58,8 @@ export const KIND_NOUNS: ReadonlySet<string> = new Set([
     'return',
     'vca',
 ]);
+/** The kind nouns that name a track itself, so a track's name beside one protects the whole track. */
+export const TRACK_KIND_NOUNS: ReadonlySet<string> = new Set(['track', 'bus', 'group', 'channel', 'return', 'vca']);
 /** The kinds of track, which beside `track` name a category ("the audio track"), not an object. */
 export const TRACK_KIND_WORDS: ReadonlySet<string> = new Set([
     'audio',
@@ -94,16 +96,17 @@ function isControl(lower: string): boolean {
 export type Token = { text: string; lower: string; quoted: boolean; capitalized: boolean };
 
 function readTokens(blanked: string, masked: string, range: { start: number; end: number }): Token[] {
+    // A capital carries no signal at the start of a sentence or clause, nor in a request written without lowercase.
+    const writesCase = /\p{Ll}/u.test(masked);
     return Array.from(blanked.slice(range.start, range.end).matchAll(/[\p{L}\p{N}□]+/gu), (match) => {
         const index = range.start + match.index;
         const before = masked.slice(0, index).trimEnd();
-        const startsSentence = before.length === 0 || /[.!?\n]$/u.test(before);
+        const startsClause = before.length === 0 || /[.!?\n;:]$/u.test(before);
         return {
             text: match[0],
             lower: match[0].toLocaleLowerCase(),
             quoted: masked[index] === ' ' && blanked[index] !== ' ',
-            // A capital at the start of a sentence carries no signal.
-            capitalized: /^\p{Lu}/u.test(match[0]) && !startsSentence,
+            capitalized: writesCase && /^\p{Lu}/u.test(match[0]) && !startsClause,
         };
     });
 }
@@ -170,12 +173,12 @@ function readObjectForm(
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
     const names = content.filter((token) => !isControl(token.lower) && !KIND_NOUNS.has(token.lower));
-    const hasControl = content.some((token) => isControl(token.lower));
-    const hasSingularControl = content.some((token) => CONTROL_WORDS.has(token.lower));
-    if (names.length > 0 && ((possessive && hasControl) || hasSingularControl)) {
+    const last = content.at(-1);
+    // The control follows the name ("the Kick fader"); one before a word names a concept ("the Gain Staging").
+    const endsOnControl = last !== undefined && (possessive ? isControl(last.lower) : CONTROL_WORDS.has(last.lower));
+    if (names.length > 0 && endsOnControl) {
         return unbound(names);
     }
-    const last = content.at(-1);
     const subject = content.slice(0, -1).filter((token) => token.lower !== 'vca');
     if (last === undefined || !KIND_NOUNS.has(last.lower) || subject.length === 0) {
         return null;

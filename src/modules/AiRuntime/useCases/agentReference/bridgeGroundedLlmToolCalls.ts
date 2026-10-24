@@ -180,6 +180,11 @@ type BridgeGroundedLlmToolCallsInput = {
      * request does; present, a call may inherit a pending command instead of grounding in this text.
      */
     refinementBasis?: ProposalGroundingBasis;
+    /**
+     * The grounding of a pending card a batch replaces without refining against it (a compiled list): the
+     * operations the card's requests protected still bind the batch.
+     */
+    protectionBasis?: ProposalGroundingBasis;
 };
 
 type GroundToolCallInput = {
@@ -6145,13 +6150,22 @@ function getRefinementReadProtections(
     prompt: string
 ): { controls: Array<{ trackId: string; actionTypes: string[] }>; namedTracks: Array<{ id: string; name: string }> } {
     const current = readExplicitProtections(prompt, context);
-    const earlier =
-        basis.protectedControls?.map(({ trackId, operations }) => ({ trackId, actionTypes: operations })) ??
-        basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls);
+    const earlier = readRecordedControls(basis, context);
     return {
         controls: [...earlier, ...current.protectedControls],
         namedTracks: context.tracks.filter((track) => current.namedTrackIds.includes(track.id)),
     };
+}
+
+/** The operations a card's requests protected, as recorded when it was grounded, or read from its sources. */
+function readRecordedControls(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): Array<{ trackId: string; actionTypes: string[] }> {
+    return (
+        basis.protectedControls?.map(({ trackId, operations }) => ({ trackId, actionTypes: operations })) ??
+        basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls)
+    );
 }
 
 function findProtectedChange(
@@ -6982,9 +6996,11 @@ function refuseWhenProtectionIsUnresolved(
         );
     }
     const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
+    const recordedControls =
+        input.protectionBasis === undefined ? [] : readRecordedControls(input.protectionBasis, context);
     const changedTrack =
         findChangedObject(grounded.actions, wholeTracks, context) ??
-        findChangedControl(grounded.actions, protections.protectedControls, context);
+        findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
     return changedTrack === null
         ? grounded
         : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);

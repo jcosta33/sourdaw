@@ -132,6 +132,7 @@ function bridgeCompiledCalls(
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
         refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
+        protectionBasis: isOrdinaryBatch(input) ? undefined : input.refinementBasis,
     });
     if (bridged.clarification !== undefined) {
         return {

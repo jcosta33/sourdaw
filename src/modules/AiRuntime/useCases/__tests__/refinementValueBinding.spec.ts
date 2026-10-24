@@ -1784,6 +1784,81 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     expect(refinement('track-bass').status).toBe('grounded');
                 });
 
+                it('never reads a recorded selection protection against the live selection', () => {
+                    const card = {
+                        prompt: 'turn Snare down 3 dB and leave the selected track alone',
+                        calls: [snareBy(-3)],
+                    };
+                    const basis = cardBasis(card.prompt, card.calls, threeTrackContext('track-vocals'));
+                    const bassBy = (deltaDb: number): ProviderCall => ({
+                        name: 'setTrackGain',
+                        arguments: { trackId: 'track-bass', deltaDb },
+                    });
+
+                    expect(
+                        ground('turn Bass down 1 dB', [snareBy(-3), bassBy(-1)], basis, threeTrackContext('track-bass'))
+                            .status
+                    ).toBe('grounded');
+                });
+
+                it('keeps the control a card protected on a compiled refinement', () => {
+                    const context = threeTrackContext('track-bass');
+                    const basis = cardBasis(
+                        "turn Snare down 3 dB and leave the selected track's fader alone",
+                        [snareBy(-3)],
+                        threeTrackContext('track-vocals')
+                    );
+                    const compiled = compileArbitraryCommandList({
+                        context,
+                        revision: 'revision-compiled-refinement',
+                        calls: [
+                            {
+                                name: 'command.batch.propose',
+                                arguments: {
+                                    plan: asCommandBatchProposal({ calls: [vocalsBy(-1)] }).arguments.plan,
+                                    list: {
+                                        schemaVersion: 1,
+                                        items: ['Vocals', 'Bass'].map((name) => ({
+                                            id: `level-${name}`,
+                                            name: 'setTrackGain',
+                                            arguments: { deltaDb: -1 },
+                                            selector: {
+                                                targetArgument: 'trackId',
+                                                entity: 'track',
+                                                where: { name },
+                                                quantity: { unit: 'targets', exactly: 1 },
+                                            },
+                                        })),
+                                    },
+                                },
+                            },
+                        ],
+                    });
+                    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                        throw new Error('Expected the refinement list to compile.');
+                    }
+
+                    expect(
+                        groundCompiledCommandBatch({
+                            toolCalls: compiled.compilerEvidence.commands,
+                            compilerEvidence: compiled.compilerEvidence,
+                            context,
+                            prompt: 'turn Vocals and Bass down 1 dB',
+                            projectRevision: 'revision-compiled-refinement',
+                            workflowCapabilityId: undefined,
+                            selectedCompilations: [],
+                            transformCommands: [],
+                            transformTargetIds: [],
+                            creativeAuthority: undefined,
+                            providerProposal: null,
+                            refinementBasis: basis,
+                        })
+                    ).toMatchObject({
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining('"Vocals", which a protection in it leaves alone'),
+                    });
+                });
+
                 it('keeps the selected track a request kept intact', () => {
                     const card = {
                         prompt: 'turn Snare down 3 dB and keep the selected track intact',

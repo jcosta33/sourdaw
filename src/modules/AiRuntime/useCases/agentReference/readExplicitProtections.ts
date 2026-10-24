@@ -8,6 +8,7 @@ import {
     REST_OF_MIX,
     SEND_ACTIONS,
     CONTROL_WORDS,
+    TRACK_KIND_NOUNS,
     protectionObjectForms,
     type ProtectableObjectName,
     type Token,
@@ -62,6 +63,7 @@ const SELECTION_PHRASES: ReadonlyMap<string, 'any' | 'track'> = new Map([
     ['current track', 'track'],
     ['current channel', 'track'],
 ]);
+const OUTPUT_ACTIONS: readonly string[] = ['setTrackOutput'];
 const MEMBER_SEPARATOR = /\s*,\s*|\s+(?:and|or|as\s+well\s+as|along\s+with|together\s+with|plus)\s+|\s*&\s*/giu;
 const PROTECTION_VERB_WORD = /^(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)$/u;
 
@@ -99,7 +101,7 @@ function readMember(input: MemberInput): MemberReading {
     }
     const content = tokens.filter((token) => !CONNECTIVE_WORDS.has(token.lower));
     const controls = content.filter((token) => isControl(token.lower)).map((token) => token.lower);
-    const position = POSITION.exec(lowered);
+    const position = slot.strict ? POSITION.exec(lowered) : null;
     if (position !== null) {
         const leftover = lowered
             .replace(position[0], ' ')
@@ -126,12 +128,14 @@ function readMember(input: MemberInput): MemberReading {
         };
     }
     if (tokens.some(isBoundToken)) {
+        // "the Drums clip" or "the Drums plugin" names an object on the track, never the track itself.
         const onlyNames = content.every(
-            (token) => isBoundToken(token) || isControl(token.lower) || KIND_NOUNS.has(token.lower)
+            (token) => isBoundToken(token) || isControl(token.lower) || TRACK_KIND_NOUNS.has(token.lower)
         );
         return { kind: 'bound', controls, onlyNames };
     }
-    const form = readObjectForm(tokens, possessive, objects);
+    // An object form names a project object only in a closed protection: "keep the Kick level punchy" protects nothing.
+    const form = slot.strict ? readObjectForm(tokens, possessive, objects) : null;
     if (form !== null) {
         return form;
     }
@@ -149,7 +153,13 @@ type SelectionMember = {
     anaphoric: boolean;
 };
 type BoundMember = { trackIds: string[]; controls: string[] };
-type SlotReading = { unresolved: string[]; selection: SelectionMember[]; bound: BoundMember[] };
+type SlotReading = {
+    unresolved: string[];
+    selection: SelectionMember[];
+    bound: BoundMember[];
+    /** Controls the slot lists with no owner ("except for the fader"). */
+    controls: string[];
+};
 type NamedRange = Range & { denotes: ReadonlySet<string> };
 
 function readSlotMembers(input: {
@@ -162,7 +172,7 @@ function readSlotMembers(input: {
     objects: readonly ProtectableObjectName[];
 }): SlotReading {
     const { prompt, blanked, masked, slot, references, context, objects } = input;
-    const reading: SlotReading = { unresolved: [], selection: [], bound: [] };
+    const reading: SlotReading = { unresolved: [], selection: [], bound: [], controls: [] };
     const trackIds = new Set(context.tracks.map((track) => track.id));
     const bounds: Range[] = [];
     let start = slot.start;
@@ -172,13 +182,39 @@ function readSlotMembers(input: {
     }
     bounds.push({ start, end: slot.end });
     let namedBefore = false;
-    let lastSelection: SelectionMember | null = null;
+    // Controls listed before their owner ("the fader and pan of Vocals") wait for it; ones after an owner that
+    // names a control ("the Vocals pan and fader") join it. An owner protected whole never narrows to them.
+    let pendingControls: string[] = [];
+    let lastOwner: { controls: string[] } | null = null;
     for (const range of bounds) {
         const raw = readTokens(blanked, masked, range);
         const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
         const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
         const phrase = prompt.slice(range.start, range.end).trim();
         const member = readMember({ tokens, phrase, slot, possessive: raw.some(isPossessiveS), objects });
+        if (member.kind === 'controls') {
+            if (lastOwner === null) {
+                pendingControls.push(...member.controls);
+            } else {
+                lastOwner.controls.push(...member.controls);
+            }
+            namedBefore ||= tokens.some(isBoundToken);
+            continue;
+        }
+        if (member.kind === 'selection') {
+            const selection = {
+                ...member,
+                anaphoric: member.pronoun && member.phrase.toLocaleLowerCase().startsWith('its') && namedBefore,
+            };
+            reading.selection.push(selection);
+            lastOwner = adoptControls(selection, pendingControls);
+            pendingControls = [];
+            namedBefore ||= tokens.some(isBoundToken);
+            continue;
+        }
+        const pending = pendingControls;
+        pendingControls = [];
+        lastOwner = null;
         if (member.kind === 'unbound' || member.kind === 'position') {
             reading.unresolved.push(member.text);
         } else if (member.kind === 'variant') {
@@ -195,25 +231,24 @@ function readSlotMembers(input: {
                 only !== undefined &&
                 Array.from(only.denotes).every((id) => trackIds.has(id));
             if (namesOneTrack) {
-                reading.bound.push({ trackIds: Array.from(only.denotes), controls: member.controls });
+                const owner = { trackIds: Array.from(only.denotes), controls: [...member.controls] };
+                reading.bound.push(owner);
+                lastOwner = adoptControls(owner, pending);
             }
-        } else if (member.kind === 'selection') {
-            lastSelection = {
-                ...member,
-                anaphoric: member.pronoun && member.phrase.toLocaleLowerCase().startsWith('its') && namedBefore,
-            };
-            reading.selection.push(lastSelection);
-            namedBefore ||= tokens.some(isBoundToken);
-            continue;
-        } else if (member.kind === 'controls' && lastSelection !== null) {
-            lastSelection.controls.push(...member.controls);
-        }
-        if (member.kind !== 'controls') {
-            lastSelection = null;
         }
         namedBefore ||= tokens.some(isBoundToken);
     }
+    reading.controls.push(...pendingControls);
     return reading;
+}
+
+/** Gives an owner naming a control the controls listed before it, and returns it when later controls may join it. */
+function adoptControls<Owner extends { controls: string[] }>(owner: Owner, pending: readonly string[]): Owner | null {
+    if (owner.controls.length === 0) {
+        return null;
+    }
+    owner.controls.unshift(...pending);
+    return owner;
 }
 
 /** The extra names a project holds that the refinement reader's candidates leave out. */
@@ -279,6 +314,9 @@ function readControlActions(control: string): readonly string[] | undefined {
     const singular = CONTROL_WORDS.has(control) ? control : control.replace(/s$/u, '');
     if (singular === 'send') {
         return SEND_ACTIONS;
+    }
+    if (singular === 'output') {
+        return OUTPUT_ACTIONS;
     }
     return refinementRequestReading.operationActions[singular];
 }
@@ -391,6 +429,32 @@ function protectBoundMembers(
     }
 }
 
+/** Every operation a track's mixer controls perform, which a protection of the track keeps but for its carve-outs. */
+const MIXER_CONTROLS: readonly string[] = ['pan', 'gain', 'mute', 'solo', 'arm', 'send', 'output'];
+
+/**
+ * A carve-out of controls after a protection of a whole track ("leave the Drums alone except for the fader")
+ * leaves the track's other mixer controls protected and lets the carved-out ones change.
+ */
+function exemptControls(found: Accumulator, trackIds: readonly string[], carvedOut: readonly string[]): void {
+    const exempted = new Set(carvedOut.flatMap((control) => readControlActions(control) ?? []));
+    if (exempted.size === 0) {
+        return;
+    }
+    const kept = MIXER_CONTROLS.flatMap((control) => readControlActions(control) ?? []).filter(
+        (action) => !exempted.has(action)
+    );
+    for (const trackId of trackIds) {
+        found.wholeTrackIds.delete(trackId);
+        found.namedTrackIds.delete(trackId);
+        const actions = found.controls.get(trackId) ?? new Set<string>();
+        for (const action of kept) {
+            actions.add(action);
+        }
+        found.controls.set(trackId, actions);
+    }
+}
+
 /**
  * Reads every explicit protection clause of the request. A protection that names a project object by
  * an object form and binds to none is reported unresolved; one that binds reports what it keeps: a
@@ -414,16 +478,25 @@ export function readExplicitProtections(prompt: string, context: ProjectContext)
     const slots = protectionSlots.read(masked);
     const objects = readProtectableObjects(context);
     const targetTrackIds = readTargetTrackIds(references, slots, context);
+    let wholeBeforeCarveOut: string[] = [];
     for (const slot of slots) {
         const reading = readSlotMembers({ prompt, blanked, masked, slot, references, context, objects });
         for (const reference of reading.unresolved) {
             found.unresolved.add(reference);
         }
         readSelectionMembers(reading.selection, { context, targetTrackIds, protects: !slot.exempts }, found);
+        if (slot.exempts) {
+            exemptControls(found, wholeBeforeCarveOut, reading.controls);
+        }
+        wholeBeforeCarveOut = [];
         if (!slot.exempts) {
             if (slot.strict) {
                 // "Leave the Drums alone otherwise" keeps everything but the request's own targets.
-                protectBoundMembers(reading.bound, found, slot.otherwise ? targetTrackIds : new Set());
+                const exempt = slot.otherwise ? targetTrackIds : new Set<string>();
+                protectBoundMembers(reading.bound, found, exempt);
+                wholeBeforeCarveOut = reading.bound
+                    .filter((member) => member.controls.length === 0)
+                    .flatMap((member) => member.trackIds.filter((id) => !exempt.has(id)));
             }
             for (const trackId of readVcaMemberTracks(references, slot, vcaGroups)) {
                 found.wholeTrackIds.add(trackId);
