@@ -83,7 +83,9 @@ export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): Tak
         takeLaneStore.value?.lanes.map((lane) => ({ id: lane.id, trackId: lane.trackId, takes: [...lane.takes] })) ??
         [];
     for (const action of priorActions) {
-        if (action.type === 'restoreClip') {
+        if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
+            retireClipOwners(lanes, action.payload.clipId);
+        } else if (action.type === 'restoreClip') {
             restoreRetiredOwners(lanes, action.payload.retiredTakeLanes ?? []);
         } else if (action.type === 'restoreClipSplitState') {
             const { replacement, rightClipId, retiredTakeLanes, reKeyedTakeLanes } = action.payload;

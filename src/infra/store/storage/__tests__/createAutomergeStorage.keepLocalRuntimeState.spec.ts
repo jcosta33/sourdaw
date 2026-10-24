@@ -265,6 +265,26 @@ describe('createAutomergeStorage hydrate with keepLocalRuntimeState', () => {
         expect(storage.get()).toEqual(DEFAULT_TRANSPORT);
     });
 
+    it('commits an earlier owner local view without a later provisional runtime field', () => {
+        const doc: TestDoc = { state: { tempo: 90 } };
+        configureTestPort(doc);
+        const storage = createOptedInRuntimeStorage();
+        storage.hydrate?.();
+        storage.set({ tempo: 90, playing: true });
+        const earlier = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ tempo: 120, playing: true });
+        });
+        const later = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ tempo: 150, playing: false });
+        });
+        earlier.commit();
+        expect(storage.get()).toEqual({ tempo: 150, playing: false });
+        later.abort();
+        expect(storage.get()).toEqual({ tempo: 120, playing: true });
+        expect(doc.state).toEqual({ tempo: 120, playing: false });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
     it('retains only local fields through absent-port deferred owner terminals', () => {
         const storage = createOptedInRuntimeStorage();
         storage.set({ tempo: 90, playing: false });

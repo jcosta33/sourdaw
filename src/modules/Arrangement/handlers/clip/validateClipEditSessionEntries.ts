@@ -128,7 +128,7 @@ function hasValidClipFields(value: Record<string, unknown>): boolean {
     );
 }
 
-function isRetiredTakeLane(value: unknown, clipId: string, trackId: string): boolean {
+function isRetiredTakeLane(value: unknown, clipId: string, trackId?: string): boolean {
     if (
         !isRecord(value) ||
         typeof value.laneIndex !== 'number' ||
@@ -138,7 +138,7 @@ function isRetiredTakeLane(value: unknown, clipId: string, trackId: string): boo
         return false;
     }
     const lane = decodeExactTakeLaneSnapshots([value.lane])?.[0];
-    if (!lane || lane.trackId !== trackId) {
+    if (!lane || (trackId !== undefined && lane.trackId !== trackId)) {
         return false;
     }
     return (
@@ -155,7 +155,7 @@ function isRetiredTakeLane(value: unknown, clipId: string, trackId: string): boo
     );
 }
 
-function isRetiredTakeLanes(value: unknown, clipId: string, trackId: string): boolean {
+function isRetiredTakeLanes(value: unknown, clipId: string, trackId?: string): boolean {
     return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId, trackId));
 }
 
@@ -258,7 +258,9 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
         (!Object.hasOwn(value, 'retiredTakeLanes') ||
-            isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId)) &&
+            // A move retains the recording lane on its original track. Removal
+            // captures takes by clip identity, not by the clip's current host.
+            isRetiredTakeLanes(value.retiredTakeLanes, value.clipId)) &&
         ['midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'].every((key) => Object.hasOwn(value, key)) &&
         decodeMidiClipDataSnapshots({
             notesSnapshot: value.midiNotesSnapshot,

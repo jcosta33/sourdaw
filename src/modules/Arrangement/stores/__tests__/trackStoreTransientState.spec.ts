@@ -230,6 +230,40 @@ describe('trackStore transient-state fallback', () => {
         }
     });
 
+    it.each(['none', 'selection', 'ghosts'] as const)(
+        'does not copy a later provisional selection into an earlier owner commit, explicit edit=%s',
+        (edit) => {
+            const selected = TrackDummy.create({ id: 'selected', name: 'Selected', kind: 'audio' });
+            const survivor = TrackDummy.create({ id: 'survivor', name: 'Survivor', kind: 'audio' });
+            const ghost = ClipDummy.create({ id: 'committed-ghost', trackId: selected.id });
+            trackStore.set({ tracks: [selected, survivor], selectedTrackId: selected.id, ghostClips: [ghost] });
+            flushAutomergeStorageWrites();
+            const renamed = { ...selected, name: 'Renamed' };
+            const earlier = runWithAutomergeStorageTransaction(undefined, () => {
+                trackStore.set({ ...trackStore.value!, tracks: [renamed, survivor] });
+            });
+            const later = runWithAutomergeStorageTransaction(undefined, () => {
+                trackStore.set({ tracks: [survivor], selectedTrackId: null, ghostClips: [] });
+            });
+            expect(earlier.status).toBe('returned');
+            expect(later.status).toBe('returned');
+            const localGhost = ClipDummy.create({ id: 'overlap-local-ghost', trackId: survivor.id });
+            if (edit === 'selection') {
+                trackStore.set({ ...trackStore.value!, selectedTrackId: survivor.id });
+            } else if (edit === 'ghosts') {
+                trackStore.set({ ...trackStore.value!, ghostClips: [localGhost] });
+            }
+            earlier.commit();
+            expect(trackStore.value?.selectedTrackId).toBe(edit === 'selection' ? survivor.id : null);
+            later.abort();
+            expect(trackStore.value?.tracks).toEqual([renamed, survivor]);
+            expect(trackStore.value?.selectedTrackId).toBe(edit === 'selection' ? survivor.id : selected.id);
+            expect(trackStore.value?.ghostClips).toEqual(edit === 'ghosts' ? [localGhost] : [ghost]);
+            expect(fake_doc.tracks).toEqual({ tracks: [renamed, survivor] });
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        }
+    );
+
     it.each(['selection', 'ghosts'] as const)(
         'keeps an independent %s edit without retaining the aborted owner’s other transient fields',
         (field) => {

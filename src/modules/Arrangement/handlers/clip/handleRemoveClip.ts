@@ -181,21 +181,23 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         // and restores exactly the material this replay retired.
         const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
         pendingRedoCaptures.delete(alpha);
-        const documentBeforeReplay = fresh || pendingRedo ? captureDurableDocumentWitness() : null;
+        const documentBeforeReplay = pendingRedo ? captureDurableDocumentWitness() : null;
         const ownsPublication = fresh || pendingRedo ? captureProjectMutationAuthorization() : null;
         // Bind now, inside the actual handler scope, while its exact transaction
         // owner is visible. Later group members publish under this same owner.
         ownsPublication?.();
+        if (fresh && ownsPublication) {
+            commitRedoInverseCapture({ phase: 'stage', action: alpha, inverseAction: fresh, ownsPublication });
+        }
         const installCapture = () => {
-            // Both successful and ambiguously published commits can run observers
-            // before this effect. Only this mutation owner may refresh its inverse.
-            if (getCrdtDoc('root') && captureDurableDocumentWitness() !== documentBeforeReplay && ownsPublication?.()) {
-                if (fresh?.type === 'restoreClip') {
-                    commitRedoInverseCapture(alpha, fresh);
-                }
-                if (pendingRedo) {
-                    pendingRedo.payload.ripple = ripple;
-                }
+            // Publish the resolved preference only for its producer's own write.
+            if (
+                pendingRedo &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
+                pendingRedo.payload.ripple = ripple;
             }
         };
         const committedResult = () => {
