@@ -1,0 +1,22 @@
+.agents/skills/review-stances/test-validity.md
+  s_3e7dea5cde3f9e::t_a3fc99fc7f5877 664-675
+  s_3e7dea5cde3f9e::t_579bf79030bbf6 650,656-657,659-660
+.agents/skills/review-stances/README.md
+  s_3e7dea5cde3f9e::t_da3accf5003f1b 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "136e4e7f1c2b84583dc0124f4b56913cde0b0bb6",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
