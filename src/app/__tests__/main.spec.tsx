@@ -58,6 +58,8 @@ vi.mock('../bootstrap', () => {
     return {};
 });
 
+vi.mock('#/styles/main.css', () => ({}));
+
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
     resetBrowserDisplayScaleForChildStartup: mocks.resetBrowserDisplayScaleForChildStartup,
