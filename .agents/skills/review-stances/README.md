@@ -23,7 +23,7 @@ in addition; a stance matching no file dispatches without one. An escape attache
 whose probes participate in what would have caught it, or mints a new file for a defect class
 none covers.
 
-The tracked-set drift escape is recorded in `test-validity.md` under its 2026-10-24 entry.
+Release tracked-set drift lessons live in `test-validity.md`.
 
 ## Reviewer isolation
 
