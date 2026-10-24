@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => ({
+    executeAppAction: vi.fn<(action: AppAction) => Promise<void>>(),
     midi: { value: null as MidiStoreStateInput | null },
     activeRecordingRef: { current: [] as string[] },
     trackState: {
@@ -46,6 +49,11 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => mocks.targetTrackId.value,
 }));
 
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+}));
+
+const { logger } = await import('#/infra/logger/appLogger');
 const { midiStore } = await import('../../../stores/midiStore');
 const { heldPedalState } = await import('../../../repositories/webMidi/heldPedalState');
 const { recordedControllerTakeState } = await import('../../../repositories/webMidi/recordedControllerTakeState');
@@ -87,7 +95,18 @@ function beginTake(clipId = CLIP): void {
 }
 
 describe('recorded controller take', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        const { handleAppendOverdubControllers } =
+            await import('../../../handlers/overdubControllers/handleAppendOverdubControllers');
+        // An overdub pass lands through its app action; run the real handler's write so the
+        // specs read the rows the store would hold once the dispatch settles.
+        mocks.executeAppAction.mockReset();
+        mocks.executeAppAction.mockImplementation((action) => {
+            if (action.type === 'appendOverdubControllers') {
+                handleAppendOverdubControllers.execute(action);
+            }
+            return Promise.resolve();
+        });
         vi.mocked(midiStore.set).mockClear();
         mocks.midi.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
         mocks.activeRecordingRef.current = [];
@@ -575,12 +594,12 @@ describe('recorded controller take', () => {
             expect(new Set(first.cc.map(({ id }) => id)).size).toBe(first.cc.length);
         });
 
-        it('writes the lift of a pedal still down when an overdub take ends, on the clip closing line', () => {
+        it('writes the lift of a pedal still down when an overdub take ends, on the clip closing line', async () => {
             beginTake();
             setLiveClips(CLIP, 'existing-clip');
             bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 64, value: 127, beat: 1, channel: 0 } });
 
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(bare(mocks.midi.value?.ccByClipId['existing-clip'])).toEqual([
                 { controller: 64, value: 127, beat: 1, channel: 0 },
@@ -590,33 +609,33 @@ describe('recorded controller take', () => {
     });
 
     describe('a take that is not committed', () => {
-        it('drops the buffer of a recorded clip that was discarded, unwritten', () => {
+        it('drops the buffer of a recorded clip that was discarded, unwritten', async () => {
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
             setLiveClips();
 
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(recordedControllerTakeState.buffers.size).toBe(0);
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
-        it('keeps the buffer of a recorded clip that is still waiting for its commit', () => {
+        it('keeps the buffer of a recorded clip that is still waiting for its commit', async () => {
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
 
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(recordedControllerTakeState.buffers.has(CLIP)).toBe(true);
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
-        it('starts the next take empty and with its own pedals once the earlier take was discarded', () => {
+        it('starts the next take empty and with its own pedals once the earlier take was discarded', async () => {
             holdPedal(0, 64, 127);
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
             setLiveClips();
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             heldPedalState.clear();
             mocks.activeRecordingRef.current = [NEXT_CLIP];
@@ -643,12 +662,12 @@ describe('recorded controller take', () => {
             expect(midiStore.set).not.toHaveBeenCalled();
         });
 
-        it('keeps the buffer and pedals of an earlier take whose commit is still waiting when the next take begins', () => {
+        it('keeps the buffer and pedals of an earlier take whose commit is still waiting when the next take begins', async () => {
             holdPedal(0, 64, 127);
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 55, beat: 1, channel: 0 } });
             bufferRecordedMidiPitchBend({ clipId: CLIP, row: { value: 9, beat: 1, channel: 0 } });
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             holdPedal(0, 64, 0);
             holdPedal(0, 66, 90);
@@ -684,10 +703,10 @@ describe('recorded controller take', () => {
             expect(recordedControllerTakeState.buffers.get(CLIP)?.cc).toHaveLength(1);
         });
 
-        it('writes the rows a later take records into a carried-over clip after its commit landed, when that take ends', () => {
+        it('writes the rows a later take records into a carried-over clip after its commit landed, when that take ends', async () => {
             beginTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 1, value: 10, beat: 1, channel: 0 } });
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
             beginRecordedControllerTake();
             bufferRecordedMidiCC({ clipId: CLIP, row: { controller: 64, value: 127, beat: 2, channel: 0 } });
 
@@ -700,7 +719,7 @@ describe('recorded controller take', () => {
                 { controller: 64, value: 0, beat: 4, channel: 0 },
             ];
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual(committed);
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(bare(mocks.midi.value?.ccByClipId[CLIP])).toEqual([
                 ...committed,
@@ -708,13 +727,13 @@ describe('recorded controller take', () => {
             ]);
         });
 
-        it('writes an overdub take into the existing clip it recorded into when the take ends', () => {
+        it('writes an overdub take into the existing clip it recorded into when the take ends', async () => {
             beginTake();
             setLiveClips(CLIP, 'existing-clip');
             bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 10, beat: 3, channel: 0 } });
             bufferRecordedMidiPitchBend({ clipId: 'existing-clip', row: { value: 9, beat: 3, channel: 0 } });
 
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(midiStore.set).toHaveBeenCalledTimes(1);
             expect(bare(mocks.midi.value?.ccByClipId['existing-clip'])).toEqual([
@@ -725,14 +744,76 @@ describe('recorded controller take', () => {
             ]);
         });
 
-        it('drops an overdub buffer whose clip was removed mid-take', () => {
+        it('lands every clip the overdub pass recorded into in ONE app action', async () => {
+            beginTake();
+            setLiveClips(CLIP, 'existing-clip', 'second-clip');
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 10, beat: 3, channel: 0 } });
+            bufferRecordedMidiPitchBend({ clipId: 'second-clip', row: { value: 9, beat: 3, channel: 0 } });
+
+            await endRecordedControllerTake();
+
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            const [action] = mocks.executeAppAction.mock.calls[0] ?? [];
+            if (action?.type !== 'appendOverdubControllers') {
+                throw new Error('expected the overdub rows to be appended by one app action');
+            }
+            expect(action.payload.clips.map((clip) => clip.clipId)).toEqual(['existing-clip', 'second-clip']);
+            expect(action.payload.clips.map((clip) => [clip.cc.length, clip.pitchBend.length])).toEqual([
+                [1, 0],
+                [0, 1],
+            ]);
+        });
+
+        it('dispatches nothing for an overdub pass that recorded no rows', async () => {
+            beginTake();
+            setLiveClips(CLIP, 'existing-clip');
+
+            await endRecordedControllerTake();
+
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(midiStore.set).not.toHaveBeenCalled();
+        });
+
+        it('logs a refused dispatch and settles, so the stop never fails on a controller fault', async () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+            mocks.executeAppAction.mockRejectedValueOnce(new Error('refused'));
+            beginTake();
+            setLiveClips(CLIP, 'existing-clip');
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 10, beat: 3, channel: 0 } });
+
+            await expect(endRecordedControllerTake()).resolves.toBeUndefined();
+
+            expect(warn).toHaveBeenCalledWith('[MIDI] Recording the overdub controllers failed:', expect.any(Error));
+            warn.mockRestore();
+        });
+
+        it('lands the next pass after one that was refused', async () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+            mocks.executeAppAction.mockRejectedValueOnce(new Error('refused'));
+            beginTake();
+            setLiveClips(CLIP, 'existing-clip');
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 10, beat: 3, channel: 0 } });
+            await endRecordedControllerTake();
+
+            beginRecordedControllerTake();
+            bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 20, beat: 3, channel: 0 } });
+            await endRecordedControllerTake();
+
+            expect(bare(mocks.midi.value?.ccByClipId['existing-clip'])).toEqual([
+                { controller: 1, value: 20, beat: 3, channel: 0 },
+            ]);
+            warn.mockRestore();
+        });
+
+        it('drops an overdub buffer whose clip was removed mid-take', async () => {
             beginTake();
             bufferRecordedMidiCC({ clipId: 'existing-clip', row: { controller: 1, value: 10, beat: 3, channel: 0 } });
 
-            endRecordedControllerTake();
+            await endRecordedControllerTake();
 
             expect(recordedControllerTakeState.buffers.size).toBe(0);
             expect(midiStore.set).not.toHaveBeenCalled();
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
         });
     });
 });

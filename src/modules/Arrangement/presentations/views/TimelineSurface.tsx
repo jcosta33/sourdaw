@@ -32,7 +32,6 @@ export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
-
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const marqueeSelection = clipSelection.marqueeSelection;
     const currentViewStore = useStore(timelineViewStore, {
