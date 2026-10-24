@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { recordingPassTiming } from '../recordingPassTiming';
 import { stopRecording } from '../stopRecording';
 
 import type { TakeLaneStoreState, takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import type { TransportState } from '#/modules/Transport/stores';
+import { defaultTransportState, type TransportState } from '#/modules/Transport/stores';
 import type { Take } from '../../../models/TakeLane';
 import type { TrackState, getTrackState } from '../../../repositories/track/getTrackState';
 import type { setTrackState } from '../../../repositories/track/setTrackState';
@@ -76,10 +77,13 @@ function seedRecording(clip: Pick<TrackClip, 'type' | 'startBeat' | 'endBeat'>, 
     mocks.getTrackState.mockReturnValue({
         tracks: [{ id: 't1', clips: [{ id: 'c1', ...clip }] }],
     } as unknown as TrackState);
-    mocks.transportStoreValue = { playheadPosition: 0 } as unknown as TransportState;
+    mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 0 };
     mocks.takeLaneStoreValue.value = {
         lanes: [{ id: 'lane-1', trackId: 't1', takes, activeCompRegions: [] }],
     };
+    if (clip.type === 'audio') {
+        recordingPassTiming.begin('c1', clip.startBeat);
+    }
 }
 
 function writtenClip(): TrackClip {
@@ -110,6 +114,7 @@ describe('stopRecording during a loop recording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.activeRecordingRef.current = ['c1'];
+        recordingPassTiming.retire('c1');
     });
 
     it('keeps a MIDI clip and its completed pass takes covering the loop when Stop lands mid-pass', () => {
