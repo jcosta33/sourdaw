@@ -5,7 +5,7 @@
  *
  * Port protocol (self.onmessage):
  *   ← { type: 'parse', buffer: ArrayBuffer }                        (transferable)
- *   → { type: 'parsed', tracks, ticksPerBeat, tempo, declaredTrackCount, truncated }
+ *   → { type: 'parsed', tracks, ticksPerBeat, tempo, declaredTrackCount, truncated, timing }
  *   | { type: 'error', message }
  *
  * `declaredTrackCount` is the track count the header claimed; `truncated` is
@@ -37,6 +37,23 @@ type ParsedTrack = {
     ccs: ParsedCC[];
     endTick: number;
 };
+
+type TimingOrigin = {
+    tick: number;
+    beat: number;
+    sourceTrackIndex: number;
+    eventOrdinal: number;
+};
+
+type TimingEvent =
+    | (TimingOrigin & { kind: 'tempo'; microsecondsPerQuarterNote: number })
+    | (TimingOrigin & {
+          kind: 'meter';
+          numerator: number;
+          denominatorExponent: number;
+          clocksPerClick: number;
+          notated32ndsPerQuarter: number;
+      });
 
 const MAX_VAR_LEN_BYTES = 4;
 const CHUNK_HEADER_BYTES = 8;
@@ -153,6 +170,7 @@ function parseMidiFile(buffer: ArrayBuffer): {
     ticksPerBeat: number;
     tempo: number;
     truncated: boolean;
+    timing: { format: 0 | 1; ticksPerBeat: number; events: TimingEvent[]; complete: boolean };
 } {
     const reader = new MidiReader(buffer);
 
@@ -174,6 +192,7 @@ function parseMidiFile(buffer: ArrayBuffer): {
     if (format > 1) {
         throw new Error(`MIDI format ${format} not supported`);
     }
+    const supportedFormat = format === 0 ? 0 : 1;
 
     // Bit 15 of the division word selects SMPTE (frames/second) timing instead
     // of ticks-per-quarter-note. Reading it as PPQN yields meaningless beats.
@@ -187,12 +206,13 @@ function parseMidiFile(buffer: ArrayBuffer): {
     const ticksPerBeat = division;
 
     let globalTempo = DEFAULT_TEMPO_BPM;
-    // The result protocol carries a single tempo, so a tempo map has to collapse.
-    // Collapsing to the *first* tempo keeps the value the file starts at;
-    // collapsing to the last imported the file at whatever tempo happened to
-    // appear last in the map.
+    // Retain the legacy single-tempo field for existing consumers. It remains
+    // the first encountered value in track scan order; timing.events below
+    // holds the complete ordered metadata for future callers.
     let tempoResolved = false;
     const parsedTracks: ParsedTrack[] = [];
+    const timingEvents: TimingEvent[] = [];
+    let timingComplete = true;
     // Set whenever the file gave up less than it declared. It decides whether
     // an empty result is an empty file or an unreadable one, and travels to the
     // importer as `truncated` so a partial recovery can be reported — a smaller
@@ -216,19 +236,25 @@ function parseMidiFile(buffer: ArrayBuffer): {
         const chunkLength = reader.readUint32();
 
         if (chunkType !== 'MTrk') {
+            timingComplete = false;
             reader.skip(chunkLength);
             continue;
         }
 
         // A declared length that overruns the buffer must not become a read
         // bound; clamp it so the event loop below stops at real data.
-        const chunkEnd = Math.min(reader.position + chunkLength, reader.length);
+        const declaredChunkEnd = reader.position + chunkLength;
+        const chunkEnd = Math.min(declaredChunkEnd, reader.length);
+        if (declaredChunkEnd > reader.length) {
+            timingComplete = false;
+        }
         let trackName = `Track ${time + 1}`;
         const activeNotes = new Map<number, { tick: number; velocity: number }>();
         const notes: ParsedNote[] = [];
         const ccs: ParsedCC[] = [];
         let tick = 0;
         let runningStatus = 0;
+        let eventOrdinal = 0;
 
         try {
             while (reader.position < chunkEnd) {
@@ -236,9 +262,14 @@ function parseMidiFile(buffer: ArrayBuffer): {
                 tick += delta;
 
                 let statusByte = reader.readUint8();
+                const ordinal = eventOrdinal++;
+                if (reader.position > chunkEnd) {
+                    timingComplete = false;
+                    break;
+                }
 
                 // The status bytes and meta-event ids below (0xff, 0x03, 0x51,
-                // 0x90, 0x80, 0xb0) are restated from their owner in
+                // 0x58, 0x90, 0x80, 0xb0) are restated from their owner in
                 // `models/SmfConstants.ts` because this worker is a separately
                 // bundled realm; smfConstantsParity.spec pins the two spellings
                 // equal.
@@ -247,15 +278,47 @@ function parseMidiFile(buffer: ArrayBuffer): {
                     const metaLen = reader.readVarLen();
                     const metaStart = reader.position;
 
+                    if (metaStart > chunkEnd) {
+                        timingComplete = false;
+                        break;
+                    }
+                    const isTimingMeta = metaType === 0x51 || metaType === 0x58;
+                    if (isTimingMeta && (metaLen !== (metaType === 0x51 ? 3 : 4) || metaStart + metaLen > chunkEnd)) {
+                        timingComplete = false;
+                    }
+                    if (isTimingMeta && metaStart + metaLen > chunkEnd) {
+                        break;
+                    }
+
                     if (metaType === 0x03) {
                         trackName = reader.readString(metaLen);
                     } else if (metaType === 0x51 && metaLen === 3) {
                         const microsPerBeat =
                             (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
+                        timingEvents.push({
+                            kind: 'tempo',
+                            tick,
+                            beat: tick / ticksPerBeat,
+                            sourceTrackIndex: time,
+                            eventOrdinal: ordinal,
+                            microsecondsPerQuarterNote: microsPerBeat,
+                        });
                         if (!tempoResolved && microsPerBeat > 0) {
                             globalTempo = Math.round(60_000_000 / microsPerBeat);
                             tempoResolved = true;
                         }
+                    } else if (metaType === 0x58 && metaLen === 4) {
+                        timingEvents.push({
+                            kind: 'meter',
+                            tick,
+                            beat: tick / ticksPerBeat,
+                            sourceTrackIndex: time,
+                            eventOrdinal: ordinal,
+                            numerator: reader.readUint8(),
+                            denominatorExponent: reader.readUint8(),
+                            clocksPerClick: reader.readUint8(),
+                            notated32ndsPerQuarter: reader.readUint8(),
+                        });
                     }
 
                     reader.skip(Math.max(0, metaLen - (reader.position - metaStart)));
@@ -350,6 +413,10 @@ function parseMidiFile(buffer: ArrayBuffer): {
                 throw error;
             }
             lostTrackData = true;
+            timingComplete = false;
+        }
+        if (reader.position > chunkEnd) {
+            timingComplete = false;
         }
 
         // A note-on with no matching note-off is still a note the file asked
@@ -383,12 +450,22 @@ function parseMidiFile(buffer: ArrayBuffer): {
         throw new Error('Invalid MIDI file: no readable track data');
     }
 
+    timingEvents.sort(
+        (a, b) => a.tick - b.tick || a.sourceTrackIndex - b.sourceTrackIndex || a.eventOrdinal - b.eventOrdinal
+    );
+
     return {
         declaredTrackCount: numTracks,
         tracks: parsedTracks,
         ticksPerBeat,
         tempo: globalTempo,
         truncated: lostTrackData,
+        timing: {
+            format: supportedFormat,
+            ticksPerBeat,
+            events: timingEvents,
+            complete: timingComplete && !lostTrackData,
+        },
     };
 }
 
