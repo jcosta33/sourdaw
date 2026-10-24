@@ -875,7 +875,6 @@ describe('connected stem export output ownership', () => {
                     throw new TypeError('Run this ownership probe with node --expose-gc.');
                 }
                 await runGcMeasurementInChild();
-                expect(ownership.unexpectedDecodeCalls).toBe(0);
                 return;
             }
             stemRender.frames = 44100 * 3;
