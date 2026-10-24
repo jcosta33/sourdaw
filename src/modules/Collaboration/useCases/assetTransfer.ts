@@ -1117,23 +1117,30 @@ export class AssetTransfer {
             if (journal) {
                 attempt.partial = undefined;
                 const chunks = new Map<number, Uint8Array>();
-                for (const chunk of journal.chunks) {
+                const corrupt: number[] = [];
+                for await (const entry of journal.chunks) {
+                    if (!this.attemptIsCurrent(hash, attempt)) {
+                        return;
+                    }
+                    const chunk = entry.chunk;
                     const expectedSize = Math.min(
                         journal.metadata.manifest.chunkSize,
-                        journal.metadata.manifest.size - chunk.index * journal.metadata.manifest.chunkSize
+                        journal.metadata.manifest.size - entry.index * journal.metadata.manifest.chunkSize
                     );
                     if (
+                        chunk &&
                         chunk.data.byteLength === expectedSize &&
                         isChunkDigest(chunk.digest) &&
                         (await hashBytes(chunk.data)) === chunk.digest
                     ) {
-                        chunks.set(chunk.index, chunk.data);
+                        chunks.set(entry.index, chunk.data);
+                    } else {
+                        corrupt.push(entry.index);
                     }
                     if (!this.attemptIsCurrent(hash, attempt)) {
                         return;
                     }
                 }
-                const corrupt = journal.metadata.received.filter((index) => !chunks.has(index));
                 if (corrupt.length > 0) {
                     const metadata = await this.resumeRepository.discard(
                         journal.metadata,
@@ -1163,6 +1170,7 @@ export class AssetTransfer {
         }
         if (attempt.partial && attempt.partial.receivedBitmap.size === attempt.partial.manifest.chunkCount) {
             attempt.assembling = true;
+            this.clearStallTimer(hash);
             await this.assembleAsset(hash, attempt.partial, attempt);
             return;
         }

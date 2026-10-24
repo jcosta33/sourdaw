@@ -131,9 +131,17 @@ describe('temporary bitmap age and exact terminal lifecycle', () => {
         expect(scannedRevision).toBe(written.revision);
         expect(current?.metadata.writerId).toBe('successor-writer');
         expect(current?.metadata.revision).toBe(written.revision + 1);
-        expect(current?.metadata.received).toEqual([0]);
+        const indices: number[] = [];
+        if (current) {
+            for await (const entry of current.chunks) indices.push(entry.index);
+        }
+        expect(indices).toEqual([0]);
         const reopened = await repository.claim(HASH, 'reader');
         expect(reopened?.metadata.generation).toBe(written.generation);
-        expect(reopened?.chunks).toHaveLength(1);
+        const restored: number[] = [];
+        if (reopened) {
+            for await (const entry of reopened.chunks) restored.push(entry.index);
+        }
+        expect(restored).toEqual([0]);
     });
 });

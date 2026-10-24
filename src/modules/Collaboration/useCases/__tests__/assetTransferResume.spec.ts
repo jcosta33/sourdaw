@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     ASSET_CHUNK_SIZE,
@@ -9,13 +10,10 @@ import { type PeerMessage } from '../../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
 
-import { installFakeDurableAssetIndexedDb } from './fakeDurableAssetIndexedDb';
-
-let database: ReturnType<typeof installFakeDurableAssetIndexedDb>;
-beforeAll(() => {
-    database = installFakeDurableAssetIndexedDb();
+beforeEach(() => {
+    vi.stubGlobal('indexedDB', new IDBFactory());
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
-beforeEach(() => database.reset());
 const instances: AssetTransfer[] = [];
 afterEach(() => {
     for (const instance of instances.splice(0)) {
@@ -23,6 +21,7 @@ afterEach(() => {
     }
     vi.restoreAllMocks();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
 });
 
 function endpoint(owner = 'project:A') {
@@ -116,7 +115,7 @@ async function fixture(priorFailures = 0) {
     }
     const blob = new Blob([bytes], { type: 'audio/wav' });
     const hash = await sender.transfer.addLocalAsset(blob, 'take.wav');
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     for (let attempt = 0; attempt < priorFailures; attempt++) {
         await receiver.request(hash);
         vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS + ASSET_REQUEST_RETRY_COOLDOWN_MS);
@@ -464,7 +463,7 @@ describe('same-session legacy compatibility over serialized peer frames', () => 
         const receiver = endpoint();
         const bytes = new Uint8Array(ASSET_CHUNK_SIZE * 2 + 17).fill(37);
         const hash = await sender.transfer.addLocalAsset(new Blob([bytes]), 'legacy.wav');
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         await receiver.request(hash);
         function legacy(message: PeerMessage) {
             return rewrite(message, (frame) => {

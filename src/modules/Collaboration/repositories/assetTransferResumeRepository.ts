@@ -5,6 +5,7 @@ import {
     type ResumeAuthority,
     type ResumeChunk,
     type ResumeJournal,
+    type ResumeJournalEntry,
     type ResumeManifest,
     type ResumeMetadata,
 } from '../models/AssetTransferResume';
@@ -17,6 +18,9 @@ import {
 } from '../models/CollaborationTypes';
 
 import { openAssetTransferResumeDatabase } from './assetTransferResumeIndexedDb';
+
+type LegacyResumeMetadata = Omit<ResumeMetadata, 'schemaVersion'> & { schemaVersion: 1; received: number[] };
+type StoredResumeMetadata = ResumeMetadata | LegacyResumeMetadata;
 
 function requestValue<Value>(request: IDBRequest<Value>): Promise<Value> {
     return new Promise((resolve, reject) => {
@@ -124,22 +128,43 @@ function isResumeManifest(value: unknown, hash: string): value is ResumeManifest
     );
 }
 
-function isMetadata(value: unknown): value is ResumeMetadata {
+function isMetadata(value: unknown): value is StoredResumeMetadata {
     if (!isRecord(value) || typeof value.hash !== 'string' || !isResumeManifest(value.manifest, value.hash)) {
         return false;
+    }
+    if (
+        typeof value.ownerId !== 'string' ||
+        typeof value.generation !== 'string' ||
+        value.generation.length === 0 ||
+        typeof value.writerId !== 'string' ||
+        typeof value.revision !== 'number' ||
+        !Number.isSafeInteger(value.revision) ||
+        value.revision < 0 ||
+        typeof value.lastVerifiedProgressAt !== 'number' ||
+        !Number.isFinite(value.lastVerifiedProgressAt)
+    ) {
+        return false;
+    }
+    if (value.schemaVersion === 2) {
+        const keys = [
+            'schemaVersion',
+            'ownerId',
+            'hash',
+            'generation',
+            'writerId',
+            'revision',
+            'manifest',
+            'lastVerifiedProgressAt',
+        ];
+        return (
+            Object.keys(value).length === keys.length &&
+            keys.every((key) => Object.hasOwn(value, key)) &&
+            Object.keys(value.manifest).length === 6
+        );
     }
     const chunkCount = value.manifest.chunkCount;
     return (
         value.schemaVersion === 1 &&
-        typeof value.ownerId === 'string' &&
-        typeof value.generation === 'string' &&
-        value.generation.length > 0 &&
-        typeof value.writerId === 'string' &&
-        typeof value.revision === 'number' &&
-        Number.isSafeInteger(value.revision) &&
-        value.revision >= 0 &&
-        typeof value.lastVerifiedProgressAt === 'number' &&
-        Number.isFinite(value.lastVerifiedProgressAt) &&
         Array.isArray(value.received) &&
         value.received.length <= chunkCount &&
         value.received.every(
@@ -155,16 +180,18 @@ function chunkRange(metadata: Pick<ResumeMetadata, 'ownerId' | 'hash' | 'generat
     );
 }
 
-function sameRevision(actual: unknown, expected: ResumeMetadata): actual is ResumeMetadata {
+function sameRevision(actual: unknown, expected: StoredResumeMetadata): actual is StoredResumeMetadata {
     return (
         isMetadata(actual) &&
+        actual.ownerId === expected.ownerId &&
+        actual.hash === expected.hash &&
         actual.generation === expected.generation &&
         actual.writerId === expected.writerId &&
         actual.revision === expected.revision
     );
 }
 
-function nextRevision(metadata: ResumeMetadata): number {
+function nextRevision(metadata: StoredResumeMetadata): number {
     const revision = metadata.revision + 1;
     if (!Number.isSafeInteger(revision)) {
         throw new TypeError('Asset resume revision is exhausted');
@@ -172,7 +199,7 @@ function nextRevision(metadata: ResumeMetadata): number {
     return revision;
 }
 
-async function removeExact(expected: ResumeMetadata, authority?: ResumeAuthority): Promise<boolean> {
+async function removeExact(expected: StoredResumeMetadata, authority?: ResumeAuthority): Promise<boolean> {
     return transact(
         'readwrite',
         async (transaction) => {
@@ -189,13 +216,111 @@ async function removeExact(expected: ResumeMetadata, authority?: ResumeAuthority
     );
 }
 
+function chunkKeyIndex(key: IDBValidKey): number {
+    if (!Array.isArray(key) || typeof key[3] !== 'number') {
+        throw new Error('Asset resume chunk key is invalid');
+    }
+    return key[3];
+}
+
+// A v1 row is committed only when its index is listed. Migrate that authority
+// once without loading the chunk payloads.
+function preserveLegacyMembership(transaction: IDBTransaction, metadata: LegacyResumeMetadata): Promise<void> {
+    const received = new Set(metadata.received);
+    return new Promise((resolve, reject) => {
+        const request = transaction.objectStore(ASSET_RESUME_CHUNKS).openKeyCursor(chunkRange(metadata));
+        request.onerror = () => reject(request.error ?? new Error('Asset resume migration failed'));
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+                resolve();
+                return;
+            }
+            if (!received.has(chunkKeyIndex(cursor.primaryKey))) {
+                transaction.objectStore(ASSET_RESUME_CHUNKS).delete(cursor.primaryKey);
+            }
+            cursor.continue();
+        };
+    });
+}
+
+function isChunkData(value: unknown): value is Uint8Array {
+    return ArrayBuffer.isView(value) && Object.prototype.toString.call(value) === '[object Uint8Array]';
+}
+
+function readChunkValue(value: unknown, index: number, metadata: ResumeMetadata): ResumeChunk | null {
+    if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= metadata.manifest.chunkCount ||
+        !isRecord(value) ||
+        value.ownerId !== metadata.ownerId ||
+        value.hash !== metadata.hash ||
+        value.generation !== metadata.generation ||
+        value.index !== index ||
+        !isChunkData(value.data) ||
+        typeof value.digest !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/.test(value.digest)
+    ) {
+        return null;
+    }
+    return {
+        ownerId: metadata.ownerId,
+        hash: metadata.hash,
+        generation: metadata.generation,
+        index,
+        data: value.data,
+        digest: value.digest,
+    };
+}
+
+async function* readJournalChunks(
+    metadata: ResumeMetadata,
+    authority?: ResumeAuthority
+): AsyncIterable<ResumeJournalEntry> {
+    let afterIndex: number | undefined;
+    while (true) {
+        const entry: ResumeJournalEntry | null = await transact(
+            'readonly',
+            async (transaction) => {
+                const actual: unknown = await requestValue(
+                    transaction.objectStore(ASSET_RESUME_METADATA).get([metadata.ownerId, metadata.hash])
+                );
+                if (!sameRevision(actual, metadata)) {
+                    throw new Error('Asset resume reader was superseded');
+                }
+                const range = IDBKeyRange.bound(
+                    [metadata.ownerId, metadata.hash, metadata.generation, afterIndex ?? 0],
+                    [metadata.ownerId, metadata.hash, metadata.generation, Number.MAX_SAFE_INTEGER],
+                    afterIndex !== undefined
+                );
+                // Leave this transaction before the caller hashes the single cloned row.
+                const cursor = await requestValue(transaction.objectStore(ASSET_RESUME_CHUNKS).openCursor(range));
+                if (!cursor) {
+                    return null;
+                }
+                // Corrupt payload indices must never redirect the later exact cleanup.
+                const index = chunkKeyIndex(cursor.primaryKey);
+                return { index, chunk: readChunkValue(cursor.value, index, metadata) };
+            },
+            authority
+        );
+        assertAuthority(authority);
+        if (!entry) {
+            return;
+        }
+        afterIndex = entry.index;
+        yield entry;
+    }
+}
+
 async function claimResumeJournal(
     ownerId: string,
     hash: string,
     writerId: string,
     authority?: ResumeAuthority
 ): Promise<ResumeJournal | null> {
-    return transact(
+    const metadata = await transact(
         'readwrite',
         async (transaction) => {
             const transfers = transaction.objectStore(ASSET_RESUME_METADATA);
@@ -211,41 +336,32 @@ async function claimResumeJournal(
                 transaction.objectStore(ASSET_RESUME_CHUNKS).delete(chunkRange(value));
                 return null;
             }
-            const values: unknown[] = await requestValue(
-                transaction.objectStore(ASSET_RESUME_CHUNKS).getAll(chunkRange(value))
-            );
-            const metadata: ResumeMetadata = { ...value, writerId, revision: nextRevision(value) };
-            transfers.put(metadata);
-            const chunks: ResumeChunk[] = [];
-            for (const chunk of values) {
-                if (
-                    !isRecord(chunk) ||
-                    typeof chunk.index !== 'number' ||
-                    !value.received.includes(chunk.index) ||
-                    !ArrayBuffer.isView(chunk.data) ||
-                    Object.prototype.toString.call(chunk.data) !== '[object Uint8Array]' ||
-                    typeof chunk.digest !== 'string' ||
-                    chunk.ownerId !== ownerId ||
-                    chunk.hash !== hash ||
-                    chunk.generation !== value.generation
-                ) {
-                    continue;
-                }
-                const data = new Uint8Array(chunk.data.byteLength);
-                data.set(new Uint8Array(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength));
-                chunks.push({
-                    ownerId,
-                    hash,
-                    generation: value.generation,
-                    index: chunk.index,
-                    data,
-                    digest: chunk.digest,
-                });
+            if (value.schemaVersion === 1) {
+                await preserveLegacyMembership(transaction, value);
             }
-            return { metadata, chunks };
+            const next: ResumeMetadata = {
+                schemaVersion: 2,
+                ownerId,
+                hash,
+                generation: value.generation,
+                writerId,
+                revision: nextRevision(value),
+                manifest: {
+                    hash: value.manifest.hash,
+                    size: value.manifest.size,
+                    chunkSize: value.manifest.chunkSize,
+                    chunkCount: value.manifest.chunkCount,
+                    name: value.manifest.name,
+                    mime: value.manifest.mime,
+                },
+                lastVerifiedProgressAt: value.lastVerifiedProgressAt,
+            };
+            transfers.put(next);
+            return next;
         },
         authority
     );
+    return metadata ? { metadata, chunks: readJournalChunks(metadata, authority) } : null;
 }
 
 async function beginResumeJournal(
@@ -263,7 +379,7 @@ async function beginResumeJournal(
                 throw new Error('Asset resume record changed before manifest admission');
             }
             const metadata: ResumeMetadata = {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 ownerId,
                 hash: manifest.hash,
                 generation: crypto.randomUUID(),
@@ -277,7 +393,6 @@ async function beginResumeJournal(
                     name: manifest.name,
                     mime: manifest.mime,
                 },
-                received: [],
                 lastVerifiedProgressAt: Date.now(),
             };
             if (!isMetadata(metadata)) {
@@ -303,7 +418,7 @@ async function appendResumeChunk(
         async (transaction) => {
             const transfers = transaction.objectStore(ASSET_RESUME_METADATA);
             const actual: unknown = await requestValue(transfers.get([ownerId, expected.hash]));
-            if (!sameRevision(actual, expected)) {
+            if (!sameRevision(actual, expected) || actual.schemaVersion !== 2) {
                 throw new Error('Asset resume writer was superseded');
             }
             const expectedSize = Math.min(
@@ -320,13 +435,14 @@ async function appendResumeChunk(
             ) {
                 throw new Error('Asset resume chunk is invalid');
             }
-            if (actual.received.includes(index)) {
+            const chunks = transaction.objectStore(ASSET_RESUME_CHUNKS);
+            const key = [ownerId, expected.hash, expected.generation, index];
+            if ((await requestValue(chunks.getKey(key))) !== undefined) {
                 return actual;
             }
             const next: ResumeMetadata = {
                 ...actual,
                 revision: nextRevision(actual),
-                received: [...actual.received, index],
                 lastVerifiedProgressAt: Date.now(),
             };
             transaction.objectStore(ASSET_RESUME_CHUNKS).put({
@@ -355,14 +471,13 @@ async function discardResumeChunks(
         async (transaction) => {
             const transfers = transaction.objectStore(ASSET_RESUME_METADATA);
             const actual: unknown = await requestValue(transfers.get([ownerId, expected.hash]));
-            if (expected.ownerId !== ownerId || !sameRevision(actual, expected)) {
+            if (expected.ownerId !== ownerId || !sameRevision(actual, expected) || actual.schemaVersion !== 2) {
                 throw new Error('Asset resume writer was superseded');
             }
             const rejected = new Set(indices);
             const next: ResumeMetadata = {
                 ...actual,
                 revision: nextRevision(actual),
-                received: actual.received.filter((index) => !rejected.has(index)),
             };
             for (const index of rejected) {
                 transaction

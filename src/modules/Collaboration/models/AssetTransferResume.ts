@@ -14,14 +14,13 @@ export type ResumeManifest = {
 };
 
 export type ResumeMetadata = {
-    schemaVersion: 1;
+    schemaVersion: 2;
     ownerId: string;
     hash: string;
     generation: string;
     writerId: string;
     revision: number;
     manifest: ResumeManifest;
-    received: number[];
     lastVerifiedProgressAt: number;
 };
 
@@ -34,9 +33,14 @@ export type ResumeChunk = {
     digest: string;
 };
 
+export type ResumeJournalEntry = {
+    index: number;
+    chunk: ResumeChunk | null;
+};
+
 export type ResumeJournal = {
     metadata: ResumeMetadata;
-    chunks: ResumeChunk[];
+    chunks: AsyncIterable<ResumeJournalEntry>;
 };
 
 export type ResumeAuthority = {

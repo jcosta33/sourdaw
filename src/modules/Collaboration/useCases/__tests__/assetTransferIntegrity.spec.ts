@@ -96,10 +96,27 @@ async function journalState(): Promise<{ received: number[][]; chunks: number }>
     return new Promise((resolve, reject) => {
         const transaction = database.transaction([ASSET_RESUME_METADATA, ASSET_RESUME_CHUNKS], 'readonly');
         const metadata = transaction.objectStore(ASSET_RESUME_METADATA).getAll();
-        const chunks = transaction.objectStore(ASSET_RESUME_CHUNKS).count();
+        const chunks = transaction.objectStore(ASSET_RESUME_CHUNKS).getAllKeys();
         transaction.oncomplete = () => {
             database.close();
-            resolve({ received: metadata.result.map((row: ResumeMetadata) => row.received), chunks: chunks.result });
+            resolve({
+                received: metadata.result.map((row: ResumeMetadata) =>
+                    chunks.result
+                        .filter(
+                            (key) =>
+                                Array.isArray(key) &&
+                                key[0] === row.ownerId &&
+                                key[1] === row.hash &&
+                                key[2] === row.generation
+                        )
+                        .map((key) => {
+                            if (!Array.isArray(key) || typeof key[3] !== 'number')
+                                throw new Error('Expected a chunk key');
+                            return key[3];
+                        })
+                ),
+                chunks: chunks.result.length,
+            });
         };
         transaction.onabort = () => {
             database.close();
