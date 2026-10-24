@@ -267,10 +267,10 @@ async function beginCollectionWithCapturedRealCensus(page: Page): Promise<readon
             observed = resolve;
         });
         audio.configureDurableAudioBufferOwnership(async () => {
-            const realOwnedIds = await project.collectDurableOwnedAudioBufferIds();
-            observed(realOwnedIds);
+            const census = await project.collectDurableOwnedAudioBufferIds();
+            observed(census.ids);
             await released;
-            return realOwnedIds;
+            return census;
         });
         Reflect.set(globalThis, '__sourdawReleaseNativeCensus', release);
         Reflect.set(
@@ -411,7 +411,7 @@ async function requireHydratableDurableProjectAudio(page: Page, bufferId: string
     expect(serializedAudioBufferId).toBe(bufferId);
     const ownedBufferIds = await page.evaluate(async () => {
         const project = await import('/src/modules/Project/useCases/index.ts');
-        return project.collectDurableOwnedAudioBufferIds();
+        return (await project.collectDurableOwnedAudioBufferIds()).ids;
     });
     expect(ownedBufferIds).toContain(bufferId);
 }
