@@ -25,6 +25,8 @@ const CREATED_AT = 1700000000000;
 const PROJECT_NAME = 'Round Trip Song';
 const RECENT_KEY = `sourdaw:project:${CREATED_AT}`;
 
+const documentIdentity = vi.hoisted(() => ({ epoch: 0 }));
+
 const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: null as ProjectStoreState | null },
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
@@ -55,12 +57,14 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${documentIdentity.epoch}`),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
     resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        documentIdentity.epoch += 1;
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     }),
@@ -274,6 +278,7 @@ function makeProjectData(): ProjectData {
 describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        documentIdentity.epoch = 0;
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         installFakeIndexedDb();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });

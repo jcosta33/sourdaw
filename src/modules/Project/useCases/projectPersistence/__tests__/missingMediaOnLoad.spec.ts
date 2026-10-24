@@ -109,6 +109,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn<() => () => boolean>(() => () => false),
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
     createCrdtDoc: vi.fn(),
     createCrdtProject: vi.fn(),
     DOC_BRANCHES: '__branches__',

@@ -33,6 +33,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const documentIdentity = vi.hoisted(() => ({ epoch: 0 }));
+
 const {
     mockLogger,
     mockGetAudioContext,
@@ -195,6 +197,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${documentIdentity.epoch}`),
     captureProjectRevision: vi.fn(),
     compactProject: mockCompactProject,
     createCrdtDoc: vi.fn(),
@@ -467,6 +470,7 @@ describe('interrupted project load dirty tracking', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        documentIdentity.epoch = 0;
         stopDirtyTracking();
         batchFlushFailure.error = null;
         transactionControls.prepare = () => Promise.resolve(true);
@@ -477,6 +481,7 @@ describe('interrupted project load dirty tracking', () => {
         mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
         mockResetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
+            documentIdentity.epoch += 1;
             onAuthorityReplaced?.();
             return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
         });
@@ -820,6 +825,7 @@ describe('interrupted project load dirty tracking', () => {
         function replaceAuthorityThenThrow(): void {
             mockResetCrdtProject.mockImplementation(
                 (_name: string, onAuthorityReplaced?: () => void): Promise<never> => {
+                    documentIdentity.epoch += 1;
                     onAuthorityReplaced?.();
                     // What `resetAutomergeStorageProjections` does to every
                     // root-doc projection: the user's project leaves the stores.
