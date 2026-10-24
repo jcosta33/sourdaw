@@ -35,6 +35,7 @@ use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
+use daw_dsp::proof::parameter_registry::{self as proof_parameters, NativeAdmission};
 use daw_dsp::toaster::ToasterInstance;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
@@ -3263,37 +3264,22 @@ impl ProofBody {
         sanitize_block(right);
     }
 
-    /// Write one of the mastering chain's own parameters by name, from the audio
-    /// thread.
-    ///
-    /// Real-time safe, and this is the door that makes it so. Three things
-    /// happen here and nothing else does.
-    ///
-    /// A name in [`PROOF_GRAPH_OWNED`] is dropped: the graph owns the device's
-    /// bypass, so it does not belong to the chain this body runs.
-    ///
-    /// A `chain_order_{n}` key writes slot `n` of [`Self::order`] and re-offers
-    /// the whole array to `ProofChain::reorder`, which installs it only if it is
-    /// a permutation — the per-key route the doc on this struct explains. The
-    /// cast to `u8` saturates rather than wrapping (a negative or non-finite
-    /// value lands at 0, one past 255 at 255), and any value outside `0..5` is
-    /// refused by that permutation check rather than by a range rule of this
-    /// body's own.
-    ///
-    /// Everything else is forwarded to `ProofChain::set_param`, whose arms store
-    /// a scalar, clamp one, redesign a biquad in place or resize a look-ahead
-    /// ring inside capacity the constructor already took. None of them allocates
-    /// or locks.
-    fn set_param(&mut self, name: &str, value: f32) {
-        if PROOF_GRAPH_OWNED.contains(&name) {
-            return;
-        }
+    /// Apply only canonical scalar targets or integral order slots. Order slots
+    /// stage independently; only a complete permutation changes the chain.
+    fn set_param(&mut self, name: &str, value: f32) -> bool {
+        let Some(NativeAdmission::Apply { value, .. }) =
+            proof_parameters::admit_native(name, value, false)
+        else {
+            return false;
+        };
         if let Some(slot) = proof_chain_order_slot(name) {
             self.order[slot] = value as u8;
             self.chain.reorder(self.order);
-            return;
+            // The slot was admitted even when its tuple is still incomplete.
+            // Returning false here would increment unmapped-write diagnostics.
+            return true;
         }
-        self.chain.set_param(name, value);
+        self.chain.set_param(name, value)
     }
 
     /// Apply a whole patch, on the control thread, before this body crosses the
@@ -4556,8 +4542,7 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
-            body.set_param(name.as_str(), value);
-            true
+            body.set_param(name.as_str(), value)
         }
         (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
@@ -12686,6 +12671,9 @@ mod tests {
                 for (name, value) in &writes {
                     body.set_param(name.as_str(), *value);
                 }
+                assert!(!body.set_param("eq_band0Xfreq", 800.0));
+                assert!(!body.set_param("input_gain", f32::NAN));
+                assert_eq!(body.chain.get_module_order(), [0, 1, 2, 3, 4]);
                 body.process(&mut left, &mut right);
             });
 
@@ -24696,6 +24684,54 @@ mod timeline_tests {
             right, ramp,
             "a bypassed multi-effect moved the right channel"
         );
+    }
+
+    #[test]
+    fn proof_body_registry_refuses_bad_targets_without_mutating_order_or_audio() {
+        let patch = proof_patch(&[("input_gain", 3.0), ("lim_ceiling", -3.0)]);
+        let mut actual = ProofBody::new(PROOF_RATE);
+        actual.load_patch(&patch);
+        assert!(!actual.set_param("chain_order_0", 4.5));
+        assert!(!actual.set_param("eq_band0Xfreq", 800.0));
+        assert!(!actual.set_param("input_gain", f32::NAN));
+        assert!(!actual.set_param("bypass", 1.0));
+        assert!(!actual.set_param("target_lufs", -14.0));
+        assert_eq!(actual.chain.get_module_order(), [0, 1, 2, 3, 4]);
+        let mut reference = ProofBody::new(PROOF_RATE);
+        reference.load_patch(&patch);
+        let material = proof_burst_material(4096);
+        let rendered = proof_render(&mut actual, &material);
+        assert!(rendered.iter().any(|value| *value != 0.0));
+        assert_eq!(rendered, proof_render(&mut reference, &material));
+        assert!(actual.set_param("input_gain", -6.0));
+    }
+
+    #[test]
+    fn proof_order_staging_is_admitted_before_a_permutation_is_installed() {
+        let mut instance = PluginCore::proof_with_patch(PROOF_RATE, &[]);
+        assert!(apply_builtin_param(
+            &mut instance,
+            DeviceParam::BuiltinNamed(proof_name("chain_order_0")),
+            4.0
+        ));
+        let PluginCore::Proof(body) = &instance else {
+            unreachable!()
+        };
+        assert_eq!(body.chain.get_module_order(), [0, 1, 2, 3, 4]);
+        assert!(apply_builtin_param(
+            &mut instance,
+            DeviceParam::BuiltinNamed(proof_name("chain_order_4")),
+            0.0
+        ));
+        let PluginCore::Proof(body) = &instance else {
+            unreachable!()
+        };
+        assert_eq!(body.chain.get_module_order(), [4, 1, 2, 3, 0]);
+        assert!(!apply_builtin_param(
+            &mut instance,
+            DeviceParam::BuiltinNamed(proof_name("chain_order_0")),
+            1.5
+        ));
     }
 
     // ── Proof ──────────────────────────────────────────────────────────────

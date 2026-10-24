@@ -405,11 +405,11 @@ describe('createProofNode', () => {
             worklet.port.postMessage.mockClear();
 
             node.setBypass(true);
-            node.setParam('limiter_ceiling', -0.3);
+            node.setParam('lim_ceiling', -0.3);
 
             expect(paramPosts(worklet.port)).toContainEqual({
                 type: 'param',
-                name: 'limiter_ceiling',
+                name: 'lim_ceiling',
                 value: -0.3,
             });
         });
@@ -419,7 +419,7 @@ describe('createProofNode', () => {
             const worklet = lastWorklet();
 
             node.setBypass(true);
-            node.setParam('limiter_ceiling', -0.3);
+            node.setParam('lim_ceiling', -0.3);
             worklet.port.postMessage.mockClear();
             node.setBypass(false);
 
@@ -438,11 +438,11 @@ describe('createProofNode', () => {
             worklet.port.postMessage.mockClear();
 
             node.setBypass(true);
-            node.setParam('limiter_ceiling', Number.NaN);
+            node.setParam('lim_ceiling', Number.NaN);
             node.setBypass(false);
-            node.setParam('limiter_ceiling', Number.POSITIVE_INFINITY);
+            node.setParam('lim_ceiling', Number.POSITIVE_INFINITY);
 
-            expect(paramPosts(worklet.port).filter((message) => message.name === 'limiter_ceiling')).toEqual([]);
+            expect(paramPosts(worklet.port).filter((message) => message.name === 'lim_ceiling')).toEqual([]);
         });
     });
 });

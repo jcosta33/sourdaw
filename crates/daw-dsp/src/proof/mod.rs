@@ -19,6 +19,7 @@ pub mod linear_phase_eq;
 pub mod match_eq;
 pub mod metering;
 pub mod multiband;
+pub mod parameter_registry;
 pub mod true_peak;
 
 use crate::primitives::sanitize_block;
@@ -92,6 +93,7 @@ impl ProofInstance {
         self.input_right.as_mut_ptr()
     }
 
+    /// Unknown or malformed targets leave the current DSP state untouched.
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.chain.set_param(name, value);
     }

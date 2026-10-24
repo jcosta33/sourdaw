@@ -161,6 +161,22 @@ impl HarmonicExciter {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn parameter_value(&self, name: &str) -> Option<f32> {
+        if name == "exc_bypass" {
+            return Some(u8::from(self.bypassed) as f32);
+        }
+        let (index, field) = name.strip_prefix("exc_band")?.split_once('_')?;
+        let band = self.bands.get(index.parse::<usize>().ok()?)?;
+        Some(match field {
+            "type" => band.sat_type as u8 as f32,
+            "drive" => band.drive,
+            "blend" => band.blend,
+            "enabled" => u8::from(band.enabled) as f32,
+            _ => return None,
+        })
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         if name == "exc_bypass" {
             self.bypassed = value > 0.5;

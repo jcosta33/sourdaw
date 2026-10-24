@@ -12,7 +12,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
-import { createProofRuntimeParameterIds } from '../models/ProofRuntimeControl';
+import { createProofRuntimeParameterIds, normalizeProofParameter } from '../models/ProofRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
@@ -155,6 +155,11 @@ export async function createProofNode(
     let nextControlSequence = 1;
     let destroyed = false;
     const postControl = (name: string, value: number): void => {
+        const normalized = normalizeProofParameter(name, value, target ? 'live' : 'legacy');
+        if (normalized === null) {
+            return;
+        }
+        value = normalized;
         if (!Number.isFinite(value)) {
             return;
         }

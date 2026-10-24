@@ -1,7 +1,25 @@
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { describe, it, expect, vi } from 'vitest';
+
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
+
+import { DEFAULT_PATCH, type ProofPatch } from '../../models/ProofPatch';
+import { hydrateProofPatch, proofStore } from '../../stores/proofStore';
+import { syncFullPatch } from '../../useCases/proofParamBridge/syncFullPatch';
+import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { getProofPatchParameterValues } from '../getProofPatchParameterValues';
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
+        status: 'eligible',
+        trackId: 'track-registry',
+        deviceId,
+    }),
+}));
+vi.mock('#/modules/Arrangement/useCases', () => ({ getTrackStoreState: () => null }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({ updateDeviceParam: vi.fn(), updateDevicePatch: vi.fn() }));
 
 function minimalPatch(overrides: Partial<ProofPatch> = {}): ProofPatch {
     return {
@@ -181,5 +199,72 @@ describe('getProofPatchParameterValues', () => {
         const values = getProofPatchParameterValues(minimalPatch({ chainOrder: [4, 3, 2, 1, 0] }));
         expect(values.chain_order_0).toBe(4);
         expect(values.chain_order_4).toBe(0);
+    });
+});
+
+describe('complete persisted Proof producer against the applied registry', () => {
+    it.each([{ id: 'default', patch: DEFAULT_PATCH }, ...PROOF_PRESETS])(
+        'real full-patch emitters cover the saved scalar and order targets for $id',
+        ({ patch }) => {
+            proofStore.set({});
+            vi.mocked(updateDeviceParam).mockClear();
+            vi.mocked(updateDevicePatch).mockClear();
+            hydrateProofPatch({ deviceId: 'proof-registry', patch });
+            syncFullPatch('proof-registry');
+            const writes = vi.mocked(updateDeviceParam).mock.calls;
+            const applied = Object.fromEntries(
+                writes.map(([trackId, deviceId, name, value]) => {
+                    expect(trackId).toBe('track-registry');
+                    expect(deviceId).toBe('proof-registry');
+                    return [name, value];
+                })
+            );
+            const persisted = getProofPatchParameterValues(patch);
+            const scalar = Object.fromEntries(
+                Object.entries(persisted).filter(
+                    ([name]) => !name.startsWith('chain_order_') && name !== 'target_mode' && name !== 'target_lufs'
+                )
+            );
+            expect(applied).toEqual({ ...scalar, ab_bypass: 0 });
+            expect(writes).toHaveLength(Object.keys(scalar).length + 1);
+            expect(updateDevicePatch).toHaveBeenCalledExactlyOnceWith(
+                'track-registry',
+                'proof-registry',
+                Object.fromEntries(patch.chainOrder.map((module, index) => [`chain_order_${index}`, module]))
+            );
+        }
+    );
+
+    it('classifies every default patch target exactly once, separately from metadata', () => {
+        const contract: {
+            version: number;
+            parameters: Array<{ name: string; persisted: boolean; minimum: number; maximum: number; kind: string }>;
+        } = JSON.parse(
+            readFileSync(
+                resolve(process.cwd(), 'src/modules/AudioEngine/services/proofAppliedParameterContract.json'),
+                'utf8'
+            )
+        );
+        expect(contract.version).toBe(1);
+        const values = getProofPatchParameterValues(DEFAULT_PATCH);
+        expect(Object.keys(values).length).toBeGreaterThan(100);
+        for (const [name, value] of Object.entries(values)) {
+            if (name === 'target_mode' || name === 'target_lufs') {
+                expect(contract.parameters.some((p) => p.name === name)).toBe(false);
+                continue;
+            }
+            const entries = contract.parameters.filter((p) => p.name === name);
+            expect(entries, name).toHaveLength(1);
+            const entry = entries[0]!;
+            expect(entry.persisted, name).toBe(true);
+            expect(value, name).toBeGreaterThanOrEqual(entry.minimum);
+            expect(value, name).toBeLessThanOrEqual(entry.maximum);
+            if (entry.kind !== 'continuous') {
+                expect(Number.isInteger(value), name).toBe(true);
+            }
+        }
+        expect(values.eq_band1_enabled).toBe(1);
+        expect(values.exc_band0_drive).toBe(0.2);
+        expect(values.ab_bypass).toBeUndefined();
     });
 });
