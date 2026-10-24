@@ -302,12 +302,14 @@ describe('inactive retarget capability plan', () => {
     ];
     it.each(
         (['detail', 'effective'] as const).flatMap((surface) =>
-            unsupportedParameterizedTypes.flatMap<{ surface: 'detail' | 'effective'; rule: Record<string, JsonValue> }>(
-                (type) => [
-                    { surface, rule: { type } },
-                    { surface, rule: { type, parameters: {} } },
-                ]
-            )
+            unsupportedParameterizedTypes.flatMap((type) => {
+                const withoutParameters: Record<string, JsonValue> = { type };
+                const emptyParameters: Record<string, JsonValue> = { type, parameters: {} };
+                return [
+                    { surface, rule: withoutParameters },
+                    { surface, rule: emptyParameters },
+                ];
+            })
         )
     )('does not infer unsupported $surface parameter semantics: $rule', ({ surface, rule }) => {
         const input = observed();
