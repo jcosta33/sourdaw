@@ -212,8 +212,12 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     }) => TData | null;
     /** Opt in to immutable owner-local metadata captured at each actual set or clear. */
     writeMetadata?: AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata>;
-    /** Restore explicitly named runtime fields after committed durable authority is projected. */
-    projectCommittedLocalState?: (input: { authorityValue: TData; localValue: TData }) => TData;
+    /** Restore local fields, or only their explicit changes when previousLocalValue is supplied. */
+    projectCommittedLocalState?: (input: {
+        authorityValue: TData;
+        localValue: TData;
+        previousLocalValue?: TData;
+    }) => TData;
     /** Classify a same-authority update whose changes belong only to the adapter's local read projection. */
     isLocalRuntimeStateUpdate?: (input: { currentValue: TData; nextValue: TData }) => boolean;
     /** Keep declared local fields when a pending owner settles and the visible authority is recomputed. */
@@ -1923,7 +1927,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         retainDeferredBaseline(pending);
     };
 
-    const recomputeCachedValue = (localValue: TData | null = cachedValue): void => {
+    const recomputeCachedValue = (localValue: TData | null = null): void => {
         let visibleValue = committedCacheValue;
         let visibleRevision = committedCacheRevision;
         for (const remaining of pendingWritesByOwner.values()) {
@@ -1940,6 +1944,24 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 ? projectCommittedLocalState({ authorityValue: visibleValue, localValue })
                 : visibleValue;
         cachedRevision = visibleRevision;
+    };
+
+    const projectLocalRuntimeUpdate = (value: TData, previousValue: TData): void => {
+        if (!preserveLocalRuntimeStateOnRecompute || !projectCommittedLocalState) {
+            return;
+        }
+        const project = (authorityValue: TData): TData =>
+            projectCommittedLocalState({ authorityValue, localValue: value, previousLocalValue: previousValue });
+        // Only an explicit local edit survives an owner's abort. Its other
+        // provisional runtime fields still belong to that owner's value.
+        if (committedCacheValue !== null) {
+            committedCacheValue = project(committedCacheValue);
+        }
+        for (const pending of pendingWritesByOwner.values()) {
+            if (pending.value !== null) {
+                pending.value = project(pending.value);
+            }
+        }
     };
 
     const projectCachedValue = (value: TData | null, notify: boolean): void => {
@@ -2067,6 +2089,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         }
         if (!isCurrentProjection()) {
             return;
+        }
+        if (preserveLocalRuntimeStateOnRecompute && projected !== null && committedCacheValue !== null) {
+            projected = keepLocalRuntimeState(projected, committedCacheValue, { keepLocalRuntimeState: true });
         }
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
@@ -2509,6 +2534,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 isLocalRuntimeStateUpdate?.({ currentValue: intentBase, nextValue: value })
             ) {
                 assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
+                projectLocalRuntimeUpdate(value, intentBase);
                 projectCachedValue(value, false);
                 return;
             }

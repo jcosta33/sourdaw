@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
 import { normalizeTrack } from '../models/Track';
@@ -783,14 +784,34 @@ function get_current_track_transient_state(): TrackTransientState {
 function project_track_local_state(input: {
     authorityValue: TrackStoreState;
     localValue: TrackStoreState;
+    previousLocalValue?: TrackStoreState;
 }): TrackStoreState {
-    const transient_state = get_valid_transient_state(input.localValue) ?? defaultTrackTransientState;
+    const local_state = get_valid_transient_state(input.localValue);
+    const transient_state = local_state ?? defaultTrackTransientState;
+    const previous = local_state ? input.previousLocalValue : undefined;
+    const authority_state = get_valid_transient_state(input.authorityValue) ?? defaultTrackTransientState;
+    const requested_selection =
+        previous && input.localValue.selectedTrackId === previous.selectedTrackId
+            ? authority_state.selectedTrackId
+            : transient_state.selectedTrackId;
+    const selected_track_id = input.authorityValue.tracks.some((track) => track.id === requested_selection)
+        ? requested_selection
+        : null;
+    const ghost_clips =
+        previous && input.localValue.ghostClips === previous.ghostClips
+            ? authority_state.ghostClips
+            : transient_state.ghostClips;
+    if (
+        input.authorityValue.selectedTrackId === selected_track_id &&
+        (valuesEqual(input.authorityValue.ghostClips, ghost_clips) ||
+            (input.authorityValue.ghostClips === undefined && ghost_clips?.length === 0))
+    ) {
+        return input.authorityValue;
+    }
     return {
         ...input.authorityValue,
-        selectedTrackId: input.authorityValue.tracks.some((track) => track.id === transient_state.selectedTrackId)
-            ? transient_state.selectedTrackId
-            : null,
-        ghostClips: transient_state.ghostClips,
+        selectedTrackId: selected_track_id,
+        ghostClips: ghost_clips,
     };
 }
 
