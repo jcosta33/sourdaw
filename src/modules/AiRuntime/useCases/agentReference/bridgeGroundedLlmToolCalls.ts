@@ -152,6 +152,7 @@ import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilit
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
+import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
@@ -6887,6 +6888,49 @@ export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInpu
     if (input.refinementBasis !== undefined) {
         return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
     }
+    return refuseWhenProtectionIsUnresolved(input, bridgeOriginalRequestToolCalls(input));
+}
+
+/**
+ * An explicit protection naming a reference that resolves to no protectable target cannot be
+ * enforced, so a request holding one grounds nothing: an incomplete protection is a rejection, never
+ * an empty permission set. A protection that resolves through the selected track binds that track
+ * like a name does. A refinement reads its protections in its own closed grammar, which asks about
+ * any it cannot bind.
+ */
+function refuseWhenProtectionIsUnresolved(
+    input: BridgeGroundedLlmToolCallsInput,
+    grounded: BridgeGroundedLlmToolCallsResult
+): BridgeGroundedLlmToolCallsResult {
+    if (grounded.actions.length === 0) {
+        return grounded;
+    }
+    const { context } = input;
+    const { unresolved, protectsSelectedTrack } = readExplicitProtections(input.prompt, context);
+    const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId);
+    const changesProtectedSelection =
+        protectsSelectedTrack &&
+        selectedTrack !== undefined &&
+        findProtectedChange(grounded.actions, [selectedTrack], context) !== null;
+    if (unresolved.length > 0) {
+        const references = unresolved.map((reference) => `"${reference}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip or device parameter, so the request is refused`
+        );
+    }
+    if (changesProtectedSelection) {
+        return refuseProtectedRequest(
+            `Request changes the selected track "${selectedTrack?.name ?? ''}", which its own protection leaves alone`
+        );
+    }
+    return grounded;
+}
+
+function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
+    return { actions: [], rejections: [rejection(0, '<batch>', reason)] };
+}
+
+function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     const main = bridgeWithoutReferencedLevelPhrases(input);
     if (main.rejections.length === 0) {
         return main;

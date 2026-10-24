@@ -821,6 +821,145 @@ describe('a coordinated level list keeps the protections of tracks outside it', 
     });
 });
 
+/**
+ * An explicit protection is only as good as the references it resolves. One naming a reference that
+ * resolves to no track, clip or device parameter (a VCA group, a missing name, a position, a pronoun)
+ * cannot be enforced, so the request grounds nothing: an incomplete protection is a rejection, never an
+ * empty permission set, for one target, a coordinated list and every route alike.
+ */
+describe('an explicit protection naming a reference that resolves to no target refuses the request', () => {
+    const unresolvedProtections: Array<[string, string, ProjectContext]> = [
+        ['do not change pan, solo, and fader of Strings', 'Strings', projectWithStringsGroup],
+        ['do not change pan, solo, and fader of Strings', 'Strings', projectContext],
+        ['leave Keys as well as the first track alone', 'first track', projectContext],
+        ['leave Keys along with the second track alone', 'second track', projectContext],
+        ['leave Keys plus it alone', 'it', projectContext],
+        ['leave Keys as well as the last one alone', 'last one', projectContext],
+        ['leave the Keys alone except the second one', 'second one', projectContext],
+        ['leave Keys and Strings alone', 'Strings', projectWithStringsGroup],
+        ['leave Ghost alone', 'Ghost', projectContext],
+        ['keep "Ghost" as is', 'Ghost', projectContext],
+    ];
+
+    function expectRefusedNamingReference(result: ReturnType<typeof bridge>, reference: string) {
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            { index: 0, name: '<batch>', reason: expect.stringContaining(`"${reference}"`) },
+        ]);
+    }
+
+    it.each(unresolvedProtections)(
+        'refuses one target when the protection "%s" cannot resolve %s',
+        (protection, reference, context) => {
+            const prompt = `turn the Drums down 3 dB; ${protection}`;
+
+            expectRefusedNamingReference(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, context), reference);
+        }
+    );
+
+    it.each(unresolvedProtections.map(([protection, , context]) => ({ protection, context })))(
+        'refuses a coordinated list when the protection "$protection" cannot resolve',
+        ({ protection, context }) => {
+            const prompt = `turn the Drums and the Bass down 3 dB and ${protection}`;
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+                prompt,
+                context
+            );
+
+            // A list already refuses a clause naming a track beside it, so the reason may be either.
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).not.toEqual([]);
+        }
+    );
+
+    it.each([
+        ['turn the Drums down 3 dB and leave Keys as well as the first track alone', [drums]],
+        ['turn the Drums and the Bass down 3 dB and leave Keys plus it alone', [drums, bass]],
+    ])('refuses the compiled and atomic routes in "%s"', (prompt, tracks) => {
+        const compiled = bridgeCompiledGainList(prompt, tracks);
+
+        expect(compiled.actions).toEqual([]);
+        expect(compiled.rejections).not.toEqual([]);
+        expect(groundGainList(prompt, tracks).status).toBe('rejected');
+        expect(groundGainList(prompt, tracks, projectContext, true).status).toBe('rejected');
+    });
+
+    it('names every unresolved reference of the request', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 })],
+            'turn the Drums down 3 dB and leave Ghost alone; do not change the fader of the second one'
+        );
+
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: '<batch>',
+                reason: expect.stringMatching(/"Ghost", "second one"/u),
+            },
+        ]);
+    });
+
+    it.each([
+        'turn the Drums down 3 dB and leave Keys as well as the Vocals alone',
+        'turn the Drums down 3 dB and leave Keys, Vocals and the Drum Bus alone',
+        'turn the Drums down 3 dB; do not change pan, solo, and fader of Keys',
+        'turn the Drums down 3 dB and leave "Bass DI" and Keys unchanged',
+        'turn the Drums down 3 dB and keep the rest alone',
+        'turn the Drums down 3 dB, keep everything else unchanged except the Keys',
+        'turn the Drums down 3 dB and keep the tempo as is',
+    ])('still grounds the asked change when every protected reference resolves in "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
+        ['turn the Drums down 3 dB and leave Keys as well as the Vocals alone', vocals],
+        ['turn the Drums down 3 dB and leave Keys along with the Bass alone', bass],
+        ['turn the Drums down 3 dB; do not change pan, solo, and fader of Keys', keys],
+    ])('still refuses an extra call on a track the resolved protection names in "%s"', (prompt, protectedTrack) => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(protectedTrack.id, { deltaDb: -3 })],
+            prompt
+        );
+
+        expect(result.actions).not.toContainEqual(gainAction(protectedTrack.id, { deltaDb: -3 }));
+    });
+
+    it('resolves a selection phrase through the selected track, and protects that track', () => {
+        const prompt = 'turn the Drums down 3 dB and leave this track alone';
+        const bassSelected = { ...projectContext, selectedTrackId: bass.id };
+        const drumsSelected = { ...projectContext, selectedTrackId: drums.id };
+
+        const protectsOther = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, bassSelected);
+        expect(protectsOther.rejections).toEqual([]);
+        expect(protectsOther.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        expect(bridge([gainCall(bass.id, { deltaDb: -3 })], prompt, bassSelected).actions).toEqual([]);
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, drumsSelected).actions).toEqual([]);
+    });
+
+    it('refuses a selection phrase when nothing is selected', () => {
+        expectRefusedNamingReference(
+            bridge([gainCall(drums.id, { deltaDb: -3 })], 'turn the Drums down 3 dB and leave this track alone'),
+            'this track'
+        );
+    });
+
+    it.each([
+        'turn the Drums down 3 dB and keep going',
+        'turn the Drums down 3 dB, keep it simple',
+        'turn the Drums down 3 dB and leave it at that',
+        'turn the Drums down 3 dB and rename Vocals to "leave Ghost alone"',
+    ])('does not read a protection into "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+});
+
 describe('level requests outside a coordinated list ground as before', () => {
     it('grounds the two-clause form', () => {
         const result = bridge(

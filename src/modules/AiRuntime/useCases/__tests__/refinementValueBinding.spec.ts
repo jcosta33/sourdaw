@@ -3741,11 +3741,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     [audioTrack('Percussion'), vocalsBy(-3)],
                     omits('addTrack'),
                 ],
+                // Drums exists only on the card, so the protection names no project target and the
+                // refinement is rejected before the card's creations are compared.
                 [
                     drums,
                     'add an audio track named Percussion, leaving Drums unchanged',
                     [audioTrack('Percussion')],
-                    omits('addTrack'),
+                    { status: 'rejected', reason: null },
                 ],
                 [drums, 'add an audio track named Percussion, remove Drums', [audioTrack('Percussion')], valid],
                 [

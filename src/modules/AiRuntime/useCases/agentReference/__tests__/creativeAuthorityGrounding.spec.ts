@@ -1023,7 +1023,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
     });
 
     it('grounds setDeviceParameter on brightness when a negated word contains an intent verb as a substring', () => {
-        expectBrightnessGrounded('make the Guitar brighter, do not touch the preset', 0.8);
+        expectBrightnessGrounded('make the Guitar brighter, but not the preset', 0.8);
     });
 
     it('refuses setDeviceParameter when the prompt explicitly negates that intent', () => {
