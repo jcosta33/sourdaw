@@ -1,3 +1,4 @@
+import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,7 +6,8 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, startRecording } from '#/modules/Arrangement/useCases';
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, startRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -16,9 +18,12 @@ import {
 } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    DOC_PREFIX_ROOT,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -250,6 +255,44 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('counts no settled take for a stop the root guard refuses', async () => {
+        // The ownership helper must answer against the real root identity epoch
+        // (#5517): a take staged under one root, moved to another, stops
+        // through the real user Stop path and closes nothing — no settled-take
+        // count, no commit entry, and the branch-move notice instead.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        expect(takeOwnsRecordingRoot()).toBe(true);
+        const settledBefore = recordingLifecycle.settledCommitCount;
+
+        // The identity-moving replacement a branch fork or switch performs,
+        // through the barrel's own seam.
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('expected the root document to be installed');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        expect(takeOwnsRecordingRoot()).toBe(false);
+
+        await stopActiveRecording();
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+        expect(committedEntryCount()).toBe(0);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while recording, so it was not kept.',
+            'warning'
+        );
+
+        // A null witness is the legacy in-flight reading and always owns.
+        const witness = activeRecordingRef.capturedRootIdentity;
+        activeRecordingRef.capturedRootIdentity = null;
+        expect(takeOwnsRecordingRoot()).toBe(true);
+        activeRecordingRef.capturedRootIdentity = witness;
     });
 
     it('records the MIDI gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
