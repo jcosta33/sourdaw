@@ -18,6 +18,7 @@ import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionSco
 import { getSharedVocalFxBusesPromptScope } from './getSharedVocalFxBusesPromptScope';
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './getSyncopatedArpeggioPromptScope';
+import { readExplicitProtections } from './readExplicitProtections';
 
 export type ApplicationProtectedObject = { id: string; name: string };
 
@@ -121,11 +122,16 @@ export function getApplicationProtectedObjects(input: {
     const syncopatedArpeggioProtections =
         syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const explicitClipProtection = getExplicitClipProtection(prompt, context);
+    const readProtections = readExplicitProtections(prompt, context);
+    const readProtectedTracks = new Set(
+        readProtections.protectedTrackIds.filter((id) => !readProtections.namedTrackIds.includes(id))
+    );
     const protections = [
         ...(actions.some((action) => action.type === 'importStemSet')
             ? context.tracks.map(({ id, name }) => ({ id, name }))
             : []),
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
+        ...context.tracks.filter((track) => readProtectedTracks.has(track.id)).map(({ id, name }) => ({ id, name })),
         ...explicitClipProtection.clips,
         ...protectedParameters,
         ...planProtections,

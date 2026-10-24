@@ -152,6 +152,7 @@ import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilit
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
+import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
@@ -179,6 +180,11 @@ type BridgeGroundedLlmToolCallsInput = {
      * request does; present, a call may inherit a pending command instead of grounding in this text.
      */
     refinementBasis?: ProposalGroundingBasis;
+    /**
+     * The grounding of a pending card a batch replaces without refining against it (a compiled list): the
+     * operations the card's requests protected still bind the batch.
+     */
+    protectionBasis?: ProposalGroundingBasis;
 };
 
 type GroundToolCallInput = {
@@ -6078,11 +6084,87 @@ function getRefinementProtectedObjects(input: {
     removed: ReadonlyArray<{ id: string; name: string }>;
 }): Array<{ id: string; name: string }> {
     const { basis, context, prompt } = input;
+    // A basis that records its protections keeps what each request protected when it was grounded; one
+    // that predates the record reads its sources against the live project, as it always did.
+    const sourceProtections =
+        basis.protectedControls === undefined
+            ? basis.sources.map((source) =>
+                  getApplicationProtectedObjects({ actions: [], context, prompt: source.text })
+              )
+            : [];
     return unionProtectedObjects(
         basis.protectedUnchanged,
-        ...basis.sources.map((source) => getApplicationProtectedObjects({ actions: [], context, prompt: source.text })),
+        ...sourceProtections,
         getApplicationProtectedObjects({ actions: [], context, prompt }),
         input.removed
+    );
+}
+
+/** The first protected object an action touches, or only through the given action types when any are given. */
+function findChangedObject(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
+    context: ProjectContext,
+    onlyActionTypes?: readonly string[]
+): { id: string; name: string } | null {
+    for (const action of actions) {
+        if (onlyActionTypes !== undefined && !onlyActionTypes.includes(action.type)) {
+            continue;
+        }
+        const payload: unknown = 'payload' in action ? action.payload : undefined;
+        const payloadRecord =
+            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
+        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
+        const hit = protectedObjects.find((object) => touched.has(object.id));
+        if (hit !== undefined) {
+            return hit;
+        }
+    }
+    return null;
+}
+
+/** The first track whose protected operations an action performs. */
+function findChangedControl(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    controls: ReadonlyArray<{ trackId: string; actionTypes: readonly string[] }>,
+    context: ProjectContext
+): { id: string; name: string } | null {
+    for (const { trackId, actionTypes } of controls) {
+        const track = context.tracks.find((candidate) => candidate.id === trackId);
+        const hit = track === undefined ? null : findChangedObject(actions, [track], context, actionTypes);
+        if (hit !== null) {
+            return hit;
+        }
+    }
+    return null;
+}
+
+/**
+ * What the chain leaves alone beyond the protected objects: the operations each earlier request kept,
+ * as recorded when it was grounded, and the tracks and operations this refinement's own text keeps, read
+ * against the live project.
+ */
+function getRefinementReadProtections(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext,
+    prompt: string
+): { controls: Array<{ trackId: string; actionTypes: string[] }>; namedTracks: Array<{ id: string; name: string }> } {
+    const current = readExplicitProtections(prompt, context);
+    const earlier = readRecordedControls(basis, context);
+    return {
+        controls: [...earlier, ...current.protectedControls],
+        namedTracks: context.tracks.filter((track) => current.namedTrackIds.includes(track.id)),
+    };
+}
+
+/** The operations a card's requests protected, as recorded when it was grounded, or read from its sources. */
+function readRecordedControls(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): Array<{ trackId: string; actionTypes: string[] }> {
+    return (
+        basis.protectedControls?.map(({ trackId, operations }) => ({ trackId, actionTypes: operations })) ??
+        basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls)
     );
 }
 
@@ -6091,17 +6173,8 @@ function findProtectedChange(
     protectedObjects: ReadonlyArray<{ id: string; name: string }>,
     context: ProjectContext
 ): string | null {
-    for (const action of actions) {
-        const payload: unknown = 'payload' in action ? action.payload : undefined;
-        const payloadRecord =
-            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
-        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
-        const hit = protectedObjects.find((object) => touched.has(object.id));
-        if (hit !== undefined) {
-            return `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
-        }
-    }
-    return null;
+    const hit = findChangedObject(actions, protectedObjects, context);
+    return hit === null ? null : `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
 }
 
 /** The pending commands of one type and full target tuple. */
@@ -6622,7 +6695,16 @@ function bridgeRefinedLlmToolCalls(
         return comparativeOutcome;
     }
     const protectedChange = findProtectedChange(routed.actions, protectedObjects, context);
-    return protectedChange === null ? routed : refuseRefinement(protectedChange);
+    if (protectedChange !== null) {
+        return refuseRefinement(protectedChange);
+    }
+    const readProtections = getRefinementReadProtections(basis, context, prompt);
+    const changedRead =
+        findChangedObject(routed.actions, readProtections.namedTracks, context) ??
+        findChangedControl(routed.actions, readProtections.controls, context);
+    return changedRead === null
+        ? routed
+        : refuseRefinement(`Refined proposal changes "${changedRead.name}", which the request chain leaves unchanged`);
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
@@ -6887,6 +6969,48 @@ export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInpu
     if (input.refinementBasis !== undefined) {
         return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
     }
+    return refuseWhenProtectionIsUnresolved(input, bridgeOriginalRequestToolCalls(input));
+}
+
+/**
+ * An explicit protection holding a concrete reference that binds to no object (a quoted or
+ * capitalized name nothing carries, a position, a selection phrase with nothing selected) cannot be
+ * enforced, so a request holding one grounds nothing: an incomplete protection is a rejection, never
+ * an empty permission set. A protection that names a VCA group keeps its member tracks, and one that
+ * resolves through the selected track keeps that track, or only the control it names. A refinement
+ * reads its protections in its own closed grammar, which asks about any it cannot bind.
+ */
+function refuseWhenProtectionIsUnresolved(
+    input: BridgeGroundedLlmToolCallsInput,
+    grounded: BridgeGroundedLlmToolCallsResult
+): BridgeGroundedLlmToolCallsResult {
+    if (grounded.actions.length === 0) {
+        return grounded;
+    }
+    const { context } = input;
+    const protections = readExplicitProtections(input.prompt, context);
+    if (protections.unresolved.length > 0) {
+        const references = protections.unresolved.map((reference) => `"${reference}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+        );
+    }
+    const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
+    const recordedControls =
+        input.protectionBasis === undefined ? [] : readRecordedControls(input.protectionBasis, context);
+    const changedTrack =
+        findChangedObject(grounded.actions, wholeTracks, context) ??
+        findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
+    return changedTrack === null
+        ? grounded
+        : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
+}
+
+function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
+    return { actions: [], rejections: [rejection(0, '<batch>', reason)] };
+}
+
+function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     const main = bridgeWithoutReferencedLevelPhrases(input);
     if (main.rejections.length === 0) {
         return main;
