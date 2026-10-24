@@ -2657,38 +2657,64 @@ class AudioEngineImpl implements AudioEngine {
             // Tear down all per-project audio graph state (tracks, buses, sends,
             // sidechain routes) without closing the AudioContext, master nodes,
             // or already-loaded worklet modules. Used when switching projects.
-            () =>
-                this.mutateRuntimeGraph(() => {
-                    const hadLiveGraph =
-                        !this.fallbackMode &&
-                        (this.trackNodes.size > 0 ||
-                            this.busNodes.size > 0 ||
-                            this.sendNodes.size > 0 ||
-                            this.sidechainConnections.size > 0 ||
-                            this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
-                            Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
-                    this.stopAllScheduled();
-                    this.adjustmentRuntime.reset();
-                    for (const [key] of this.sidechainConnections) {
-                        this.removeLiveSidechainConnection(key);
-                    }
-                    // Drop sidechain routes queued during fallback: they belong to the
-                    // project being torn down and must not replay into the next one.
-                    this.pendingSidechainRoutes.clear();
-                    for (const send of Array.from(this.sendNodes.values())) {
+            () => {
+                const hadLiveGraph =
+                    !this.fallbackMode &&
+                    (this.trackNodes.size > 0 ||
+                        this.busNodes.size > 0 ||
+                        this.sendNodes.size > 0 ||
+                        this.sidechainConnections.size > 0 ||
+                        this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
+                        Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
+                // Reset retires the whole graph, so it must not reroute doomed
+                // peers through ordinary transactional strip removal. Snapshot
+                // each owner once and keep retiring after an independent fault.
+                runAllEffects([
+                    () => this.stopAllScheduled(),
+                    () => this.adjustmentRuntime.reset(),
+                    ...Array.from(this.sidechainConnections.values()).flatMap((connection) => [
+                        () => {
+                            try {
+                                connection.sourceNode.disconnect(connection.keyDelayNode);
+                            } catch {
+                                // The source edge may already be detached by wider teardown.
+                            }
+                        },
+                        () => connection.keyDelayNode.disconnect(),
+                        () => connection.gainNode.disconnect(),
+                    ]),
+                    ...Array.from(this.sendNodes.values(), (send) => () => {
                         this.removeSendFromGraph(send.sourceTrackId, send.busId);
-                    }
-                    for (const [id] of this.busNodes) {
-                        this.removeBusStripFromGraph(id, 'graph-reset');
-                    }
-                    for (const [id] of this.trackNodes) {
-                        this.removeTrackStripFromGraph(id, 'graph-reset');
-                    }
-                    this.toasterPadRoutes.clear();
-                    this.pendingDevicePromises.clear();
-                    this.deviceReadinessDiagnostics.reset();
-                    return { value: undefined, changed: hadLiveGraph };
-                }),
+                    }),
+                    ...Array.from(this.toasterPadRoutes.values()).flatMap((route) => {
+                        const { controls, destinationNode, padIndex } = route;
+                        if (!destinationNode) {
+                            return [];
+                        }
+                        return [
+                            () => controls?.disconnectPadOutput?.(padIndex, destinationNode),
+                            () => controls?.setPadDryRouted(padIndex, false),
+                        ];
+                    }),
+                    ...Array.from(this.busNodes.values(), (node) => () => node.dispose()),
+                    ...Array.from(this.trackNodes.values(), (node) => () => node.dispose()),
+                    () => {
+                        // Retired ownership must not replay into the next project,
+                        // even when a physical disconnect or disposal reported a fault.
+                        this.sidechainConnections.clear();
+                        this.pendingSidechainRoutes.clear();
+                        this.sendNodes.clear();
+                        this.busNodes.clear();
+                        this.trackNodes.clear();
+                        this.toasterPadRoutes.clear();
+                        this.pendingDevicePromises.clear();
+                    },
+                    () => this.deviceReadinessDiagnostics.reset(),
+                    // Publish the changed generation before any retirement fault
+                    // escapes; empty resets still publish no topology mutation.
+                    () => this.mutateRuntimeGraph(() => ({ value: undefined, changed: hadLiveGraph })),
+                ]);
+            },
         ]);
     }
 

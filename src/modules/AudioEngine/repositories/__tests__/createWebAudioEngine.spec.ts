@@ -4,6 +4,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { notifyUser } from '../../../../utils/Notification/notifyUser';
+import { AdjustmentBusNode } from '../../engine/AdjustmentBusNode';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
 import { inputMonitoringSession } from '../audioRecorder/inputMonitoringSession';
 
@@ -99,6 +100,8 @@ vi.mock('../../engine/TrackNode', () => {
         private shouldFailNextRemoveDeviceRebuild = false;
         dispose = vi.fn();
         disposeLeavingProject = vi.fn();
+        getDefaultDestination = vi.fn(() => this.outputDestination);
+        routeOutput = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
@@ -2028,6 +2031,247 @@ describe('AudioEngine', () => {
                 expectGraphReleased(graph);
             }
         );
+    });
+
+    describe('inner graph fault continuation', () => {
+        function createRetiringGraph() {
+            for (const id of ['source-1', 'source-2']) {
+                engine.ensureTrackStrip(id);
+            }
+            for (const id of ['bus-1', 'bus-2']) {
+                engine.ensureBusStrip(id);
+            }
+            engine.setSend('source-1', 'bus-1', 0.5);
+            const firstSend = mockCtx.createGain.mock.results.at(-1)!.value;
+            engine.setSend('source-2', 'bus-2', 0.5);
+            const secondSend = mockCtx.createGain.mock.results.at(-1)!.value;
+            const buses = Array.from(
+                (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.values()
+            );
+            const tracks = ['source-1', 'source-2', 'bus-1', 'bus-2'].map((id) => getMockTrackNode(engine, id));
+            const pending = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
+                .pendingDevicePromises;
+            pending.add(Promise.withResolvers().promise);
+            getPendingSidechainRoutes(engine).set('queued-route', {
+                sourceTrackId: 'source-1',
+                targetTrackId: 'source-2',
+                targetDeviceId: 'pending-device',
+            });
+            return { sends: [firstSend, secondSend], buses, tracks, pending };
+        }
+
+        function expectRetired(graph: ReturnType<typeof createRetiringGraph>) {
+            for (const send of graph.sends) {
+                expect(send.disconnect).toHaveBeenCalledTimes(1);
+            }
+            for (const node of [...graph.buses, ...graph.tracks]) {
+                expect(node.dispose).toHaveBeenCalledTimes(1);
+            }
+            expect(graph.pending.size).toBe(0);
+            expect(getPendingSidechainRoutes(engine).size).toBe(0);
+            expect(getToasterPadRoutes(engine).size).toBe(0);
+            expect(engine.getDiagnostics().graph).toMatchObject({
+                trackStrips: 0,
+                busStrips: 0,
+                sends: 0,
+                sidechains: 0,
+            });
+        }
+
+        it.each(['send', 'bus', 'track'] as const)(
+            'retires every peer and advances one revision when a %s retirement fails',
+            (resource) => {
+                const graph = createRetiringGraph();
+                const failure = new Error(`${resource} retirement refused`);
+                const operation = {
+                    send: graph.sends[0].disconnect,
+                    bus: graph.buses[0].dispose,
+                    track: graph.tracks[0].dispose,
+                }[resource];
+                operation.mockImplementationOnce(() => {
+                    throw failure;
+                });
+                const revision = engine.getRuntimeGraphRevision();
+
+                let observed: unknown;
+                try {
+                    engine.resetGraph();
+                } catch (error) {
+                    observed = error;
+                }
+
+                expect(observed).toBe(failure);
+                expectRetired(graph);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+                expect(mockCtx.close).not.toHaveBeenCalled();
+                engine.resetGraph();
+                expectRetired(graph);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+                engine.ensureTrackStrip('next-project');
+                expect(engine.getTrackStrip('next-project')).toBeDefined();
+            }
+        );
+
+        it('reports independent send, bus and track failures in retirement order after clearing ownership', () => {
+            const graph = createRetiringGraph();
+            const sendFailure = new Error('send retirement refused');
+            const busFailure = new Error('bus retirement refused');
+            const trackFailure = new Error('track retirement refused');
+            const failures = [sendFailure, busFailure, trackFailure];
+            graph.sends[0].disconnect.mockImplementationOnce(() => {
+                throw sendFailure;
+            });
+            graph.buses[0].dispose.mockImplementationOnce(() => {
+                throw busFailure;
+            });
+            graph.tracks[0].dispose.mockImplementationOnce(() => {
+                throw trackFailure;
+            });
+            const revision = engine.getRuntimeGraphRevision();
+
+            let observed: unknown;
+            try {
+                engine.resetGraph();
+            } catch (error) {
+                observed = error;
+            }
+
+            expect(observed).toBeInstanceOf(AggregateError);
+            expect((observed as AggregateError).errors).toEqual(failures);
+            expectRetired(graph);
+            expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+        });
+
+        it.each(['delay', 'gain'] as const)(
+            'reports a sidechain %s fault and retires the remaining graph',
+            (resource) => {
+                const graph = createRetiringGraph();
+                getMockTrackNode(engine, 'source-2').notifyDeviceLoaded({
+                    deviceId: 'sidechain-device',
+                    type: 'builtin-sidechain-compressor',
+                    inputNode: makeStripNode(),
+                    nodes: [],
+                });
+                engine.wireSidechainRoute('source-1', 'source-2', 'sidechain-device');
+                const delay = mockCtx.createDelay.mock.results.at(-1)!.value;
+                const gain = mockCtx.createGain.mock.results.at(-1)!.value;
+                const failure = new Error(`sidechain ${resource} disconnect refused`);
+                const operation = resource === 'delay' ? delay.disconnect : gain.disconnect;
+                operation.mockImplementationOnce(() => {
+                    throw failure;
+                });
+
+                let observed: unknown;
+                try {
+                    engine.resetGraph();
+                } catch (error) {
+                    observed = error;
+                }
+
+                expect(observed).toBe(failure);
+                expect(delay.disconnect).toHaveBeenCalledTimes(1);
+                expect(gain.disconnect).toHaveBeenCalledTimes(1);
+                expectRetired(graph);
+            }
+        );
+
+        it('retains both Toaster retirement faults and still clears its route and peer ownership', () => {
+            const graph = createRetiringGraph();
+            const controls = loadToasterPadControls(engine, 'source-2');
+            setPadTrackOutput(engine, 'source-1', 'hw_out', 'source-2', 1);
+            const disconnectFailure = new Error('Toaster pad disconnect refused');
+            const dryRouteFailure = new Error('Toaster dry route release refused');
+            controls.disconnectPadOutput.mockImplementationOnce(() => {
+                throw disconnectFailure;
+            });
+            controls.setPadDryRouted.mockImplementationOnce(() => {
+                throw dryRouteFailure;
+            });
+
+            let observed: unknown;
+            try {
+                engine.resetGraph();
+            } catch (error) {
+                observed = error;
+            }
+
+            expect(observed).toBeInstanceOf(AggregateError);
+            expect((observed as AggregateError).errors).toEqual([disconnectFailure, dryRouteFailure]);
+            expectRetired(graph);
+        });
+
+        it('retires adjustment ownership and graph peers after an adjustment bus fault', () => {
+            const graph = createRetiringGraph();
+            engine.applyAdjustmentLayerTick?.([
+                { layerId: 'L1', trackId: 'source-1', effectType: 'eq', parameters: {}, blend: 1 },
+                { layerId: 'L2', trackId: 'source-2', effectType: 'filter', parameters: {}, blend: 1 },
+            ]);
+            expect(engine.getDiagnostics().graph.adjustmentLayerBuses).toBe(2);
+            const failure = new Error('adjustment bus disposal refused');
+            const dispose = vi.spyOn(AdjustmentBusNode.prototype, 'dispose').mockImplementationOnce(() => {
+                throw failure;
+            });
+            const revision = engine.getRuntimeGraphRevision();
+            try {
+                let observed: unknown;
+                try {
+                    engine.resetGraph();
+                } catch (error) {
+                    observed = error;
+                }
+
+                expect(observed).toBe(failure);
+                expect(dispose).toHaveBeenCalledTimes(2);
+                expect(engine.getDiagnostics().graph.adjustmentLayerBuses).toBe(0);
+                expect(engine.listLiveAdjustmentBusKeys?.()).toEqual([]);
+                expectRetired(graph);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+                expect(mockCtx.close).not.toHaveBeenCalled();
+                engine.resetGraph();
+                expect(dispose).toHaveBeenCalledTimes(2);
+                expect(engine.getRuntimeGraphRevision()).toBe(revision + 1);
+            } finally {
+                dispose.mockRestore();
+            }
+        });
+
+        it('awaits one close and caches the combined monitor and inner graph failure', async () => {
+            const graph = createRetiringGraph();
+            const capture = seedMonitorCapture(null, 'source-1', engine.getTrackStrip('source-1')!.gainNode);
+            const monitorFailure = new Error('monitor disconnect refused');
+            capture.sourceDisconnect.mockImplementation((...destinations) => {
+                if (destinations.length === 0) {
+                    throw monitorFailure;
+                }
+            });
+            const sendFailure = new Error('send disconnect refused');
+            graph.sends[0].disconnect.mockImplementationOnce(() => {
+                throw sendFailure;
+            });
+            const closing = Promise.withResolvers<void>();
+            mockCtx.close.mockReturnValue(closing.promise);
+            let settled = false;
+
+            const disposal = engine.dispose();
+            const result = disposal.catch((error: unknown) => {
+                settled = true;
+                return error;
+            });
+            expect(engine.dispose()).toBe(disposal);
+            await vi.waitFor(() => expect(mockCtx.close).toHaveBeenCalledTimes(1));
+            expect(settled).toBe(false);
+            expectRetired(graph);
+            expect(capture.trackStop).toHaveBeenCalledTimes(1);
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            closing.resolve();
+            const failure: unknown = await result;
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([monitorFailure, sendFailure]);
+            await expect(engine.dispose()).rejects.toBe(failure);
+            expect(engine.dispose()).toBe(disposal);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expectRetired(graph);
+        });
     });
 
     describe('dispose', () => {
