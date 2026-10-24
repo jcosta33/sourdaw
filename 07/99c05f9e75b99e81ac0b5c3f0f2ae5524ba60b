@@ -1,0 +1,25 @@
+src/modules/Project/useCases/arrangement/__tests__/createArrangement.spec.ts
+  s_59e31a5c6f3e31::t_94b2872a4810b0 1-4,8,13-25,34,43,64-112
+src/modules/Project/useCases/arrangement/__tests__/duplicateArrangement.spec.ts
+  s_59e31a5c6f3e31::t_d81b73119af4e7 1-4,13-25,34,43,65-111
+src/modules/Project/useCases/arrangement/createArrangement.ts
+  s_59e31a5c6f3e31::t_8c1487ef52602f 19,30
+src/modules/Project/useCases/arrangement/duplicateArrangement.ts
+  s_59e31a5c6f3e31::t_1f38daa9195e95 17,19,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0799c05f9e75b99e81ac0b5c3f0f2ae5524ba60b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
