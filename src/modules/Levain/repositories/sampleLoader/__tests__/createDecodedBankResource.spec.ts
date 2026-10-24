@@ -926,7 +926,7 @@ describe('createDecodedBankResource', () => {
             basePath: `/${instrumentId}`,
             expectedInstrumentId: instrumentId,
         });
-        const loadSample = vi.fn(() => Promise.resolve(createSample(1)));
+        const loadSample = vi.fn((_url: string, _signal: AbortSignal) => Promise.resolve(createSample(1)));
         const resource = createDecodedBankResource({
             maxDecodedBytes: 4,
             loadManifest: (url) =>
