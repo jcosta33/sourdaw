@@ -1,6 +1,8 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { projectStore } from '#/modules/Project/stores';
+
 import { useNativeApplicationMenu } from '../useNativeApplicationMenu';
 
 type NativeMenuIntent = Parameters<Parameters<SourdawDesktopBridge['nativeMenu']['listen']>[0]>[0];
@@ -510,6 +512,121 @@ describe('useNativeApplicationMenu', () => {
         expect(command.undo).not.toHaveBeenCalled();
         expect(command.redo).not.toHaveBeenCalled();
         input.remove();
+    });
+
+    it.each(['listbox', 'dialog', 'alertdialog', 'menu'] as const)(
+        'keeps every native Edit intent within a focused %s and its descendant',
+        (role) => {
+            const project = projectStore.value;
+            if (project === null) {
+                throw new Error('project required for native menu test');
+            }
+            renderHook(() => useNativeApplicationMenu(project));
+            const surface = document.createElement('div');
+            surface.setAttribute('role', role);
+            surface.tabIndex = 0;
+            const descendant = document.createElement('button');
+            surface.append(descendant);
+            document.body.append(surface);
+
+            for (const target of [surface, descendant]) {
+                target.focus();
+                expect(document.activeElement).toBe(target);
+                for (const action of [
+                    'edit:undo',
+                    'edit:redo',
+                    'edit:cut',
+                    'edit:copy',
+                    'edit:paste',
+                    'edit:select-all',
+                    'edit:deselect-all',
+                ] as const) {
+                    desktop.listener?.({ action });
+                }
+                desktop.listener?.({ action: 'project:save' });
+            }
+
+            expect(command.executeUserAppAction).not.toHaveBeenCalled();
+            expect(command.undo).not.toHaveBeenCalled();
+            expect(command.redo).not.toHaveBeenCalled();
+            expect(arrangement.selectAllClips).not.toHaveBeenCalled();
+            expect(arrangement.clearClipSelection).not.toHaveBeenCalled();
+            expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
+            expect(
+                commandInterface.dispatchCanvasEditorCommand.mock.results.every((result) => result.value === false)
+            ).toBe(true);
+            surface.remove();
+        }
+    );
+
+    it('keeps a canvas editor command local inside a dialog and blocks its unhandled Undo fallback', () => {
+        const project = projectStore.value;
+        if (project === null) {
+            throw new Error('project required for native menu test');
+        }
+        renderHook(() => useNativeApplicationMenu(project));
+        const dialog = document.createElement('div');
+        dialog.setAttribute('role', 'dialog');
+        const canvasEditor = document.createElement('div');
+        canvasEditor.tabIndex = 0;
+        canvasEditor.setAttribute('data-canvas-editor', '');
+        dialog.append(canvasEditor);
+        document.body.append(dialog);
+        canvasEditor.focus();
+
+        desktop.listener?.({ action: 'edit:select-all' });
+        desktop.listener?.({ action: 'edit:deselect-all' });
+        desktop.listener?.({ action: 'edit:undo' });
+
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(
+            1,
+            canvasEditor,
+            'edit:select-all'
+        );
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(
+            2,
+            canvasEditor,
+            'edit:deselect-all'
+        );
+        expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(3, canvasEditor, 'edit:undo');
+        expect(arrangement.selectAllClips).not.toHaveBeenCalled();
+        expect(arrangement.clearClipSelection).not.toHaveBeenCalled();
+        expect(command.undo).not.toHaveBeenCalled();
+        dialog.remove();
+    });
+
+    it('still routes every native Edit intent from ordinary focused DOM', () => {
+        const project = projectStore.value;
+        if (project === null) {
+            throw new Error('project required for native menu test');
+        }
+        renderHook(() => useNativeApplicationMenu(project));
+        const button = document.createElement('button');
+        document.body.append(button);
+        button.focus();
+        expect(document.activeElement).toBe(button);
+
+        for (const action of [
+            'edit:undo',
+            'edit:redo',
+            'edit:cut',
+            'edit:copy',
+            'edit:paste',
+            'edit:select-all',
+            'edit:deselect-all',
+        ] as const) {
+            desktop.listener?.({ action });
+        }
+
+        expect(command.undo).toHaveBeenCalledOnce();
+        expect(command.redo).toHaveBeenCalledOnce();
+        expect(command.executeUserAppAction).toHaveBeenCalledTimes(3);
+        expect(command.executeUserAppAction).toHaveBeenNthCalledWith(1, { type: 'cutClip' });
+        expect(command.executeUserAppAction).toHaveBeenNthCalledWith(2, { type: 'copyClip' });
+        expect(command.executeUserAppAction).toHaveBeenNthCalledWith(3, { type: 'pasteClip' });
+        expect(arrangement.selectAllClips).toHaveBeenCalledOnce();
+        expect(arrangement.clearClipSelection).toHaveBeenCalledOnce();
+        button.remove();
     });
 
     it('publishes one atomic live project projection from a captured CRDT callback', () => {
