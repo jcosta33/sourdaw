@@ -308,6 +308,7 @@ jobs:
         with:
           # Release inventory reads immutable Levain measurement provenance.
           fetch-depth: 0
+          ref: ${{ github.sha }}
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a

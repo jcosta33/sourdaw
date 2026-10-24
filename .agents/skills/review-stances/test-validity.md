@@ -768,6 +768,22 @@ the reviewer, not something to leave to the author's local run. If the author mu
 `pnpm release:restamp:tracked-set` refuses while tracked-set source changes are uncommitted, so the
 source commit comes first.
 
+### 2026-10-24 — script-only package routes left dependency provenance stale (escaped via PRs #5642 and #5625)
+
+PR #5642 changed the `pr:supersede` script in `package.json`; PR #5625 added `pr:retire` and a
+repository URL prefix in `scripts/retirementRecord.ts`. Neither updated release provenance. The
+pull-request Release inventory check later reported `Cargo source inputs drifted` because
+`package.json` is a fixed source input in `scripts/dependencyLicenseReport.ts`. The sanctioned
+dependency restamp then exposed the unclassified URL literal.
+
+Blind spot: a script-only package edit still changes the raw-byte Cargo source pin, and a source
+URL literal needs an external-reference assignment even when it only validates input.
+
+Probe: for every `package.json` edit, check its recorded Cargo source digest and require the
+dependency restamp artifacts to move with it. For new URL literals under `scripts/`, inspect their
+external-reference assignment. Inspect the pull request's Release inventory result on the changed
+head; a pass from an earlier head or a retry cannot discharge either obligation.
+
 ### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
 
 The helper fixture always ended the AudioWorkletNode handler after its outer callback. Its separate

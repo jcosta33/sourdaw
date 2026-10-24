@@ -1964,8 +1964,12 @@ function assertSummaryMembership(set: WorkflowSet): void {
 
 function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
     const staticCheckout = stepNamed(jobAt(candidate, 'static'), 'Checkout');
-    if (recordAt(staticCheckout, 'with')['fetch-depth'] !== 0) {
+    const staticOptions = recordAt(staticCheckout, 'with');
+    if (staticOptions['fetch-depth'] !== 0) {
         throw new Error('static must retain complete history for release inventory provenance');
+    }
+    if (staticOptions.ref !== '${{ github.sha }}') {
+        throw new Error('static release inventory must inspect the current workflow revision');
     }
     const unitCheckout = stepNamed(jobAt(candidate, 'unit'), 'Checkout');
     if (recordAt(unitCheckout, 'with')['fetch-depth'] !== 0) {
@@ -4690,6 +4694,13 @@ export -f sudo timeout sleep apt-get
         recordAt(stepNamed(jobAt(shallowPr.validation, 'static'), 'Checkout'), 'with')['fetch-depth'] = 1;
         expect(() => assertUnitProvenanceHistory(shallowPr.validation)).toThrow(
             'static must retain complete history for release inventory provenance'
+        );
+
+        const baseRevision = cloneWorkflows('release inventory on pull request base');
+        recordAt(stepNamed(jobAt(baseRevision.validation, 'static'), 'Checkout'), 'with').ref =
+            '${{ github.event.pull_request.base.sha }}';
+        expect(() => assertUnitProvenanceHistory(baseRevision.validation)).toThrow(
+            'static release inventory must inspect the current workflow revision'
         );
 
         const dropped = cloneWorkflows('release inventory dropped from nightly');
