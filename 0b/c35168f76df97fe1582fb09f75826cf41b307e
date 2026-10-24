@@ -1,0 +1,99 @@
+docs/release.md
+  s_3e7dea5cde3f9e::t_fa8dc8e0e6e8a1 37
+scripts/__tests__/stackedLanes.spec.ts
+  s_3e7dea5cde3f9e::t_fc3a43b692bf09 70-114,116-117
+  s_3e7dea5cde3f9e::t_25994ba86045b4 115
+scripts/__tests__/publishLane.spec.ts
+  s_3e7dea5cde3f9e::t_7a294ffbb86dc1 93
+  s_3e7dea5cde3f9e::t_c0ae35da077b9d 2835-2844,2846-2993
+  s_3e7dea5cde3f9e::t_116b9d44a43335 3132,3161
+  s_3e7dea5cde3f9e::t_99eb0dd7db4ba6 2845
+AGENTS.md
+  s_3e7dea5cde3f9e::t_90a46088dd503d 334
+  s_3e7dea5cde3f9e::t_82879b2d80f600 340-345
+scripts/openLane.ts
+  s_3e7dea5cde3f9e::t_e4ef28f81d78d7 21,23,27,29,34
+  s_3e7dea5cde3f9e::t_0f209cec20c871 184-185,187-189,191-192
+  s_3e7dea5cde3f9e::t_4b5eea31d79927 336
+  s_3e7dea5cde3f9e::t_fd0db033e1f6c6 405-406,411
+  s_3e7dea5cde3f9e::t_f82e73fd20c745 213,220-221
+  s_3e7dea5cde3f9e::t_573b2b91fd69f4 153-154,157
+  s_3e7dea5cde3f9e::t_f2d97a2eef7d1f 127
+  s_3e7dea5cde3f9e::t_302c0e91757907 108-120
+  s_3e7dea5cde3f9e::t_d8fc13a5a79ddb 155-156
+scripts/publishLane.ts
+  s_3e7dea5cde3f9e::t_205207392c2b8b 37,40,43
+  s_3e7dea5cde3f9e::t_a53f7f4884d416 812
+  s_3e7dea5cde3f9e::t_03a47c37e80974 781-782
+  s_3e7dea5cde3f9e::t_717d109f52f88f 916-918
+  s_3e7dea5cde3f9e::t_72fc40b1387a63 817
+  s_3e7dea5cde3f9e::t_8446e62901e900 1656-1686
+  s_3e7dea5cde3f9e::t_6ef9426e180a50 42
+  s_3e7dea5cde3f9e::t_212b7c294f7f8a 984-985,988-989
+  s_3e7dea5cde3f9e::t_f42c55b82a95d4 802,830,869,919,922,990,1271,1691,2352
+scripts/__tests__/stampLaneIdentity.spec.ts
+  s_3e7dea5cde3f9e::t_e9e17ed6779242 34-35,39
+  s_3e7dea5cde3f9e::t_79450845ed4e2b 67-87
+  s_3e7dea5cde3f9e::t_601326eb943a5f 127-131
+  s_3e7dea5cde3f9e::t_92f84c16fb811f 101-111
+scripts/stackedLanes.ts
+  s_3e7dea5cde3f9e::t_0432e9644fe2e1 39,41
+  s_3e7dea5cde3f9e::t_9d4714e88f0bbd 6
+scripts/__tests__/openLane.spec.ts
+  s_3e7dea5cde3f9e::t_d24e38c8737cd4 375-377,382-404
+  s_3e7dea5cde3f9e::t_e374e1ebd92761 148
+  s_3e7dea5cde3f9e::t_5846e853725efd 846
+  s_3e7dea5cde3f9e::t_a8354884f485c7 190,196,199,213,216
+  s_3e7dea5cde3f9e::t_fee7ca27340ff5 121-124
+  s_3e7dea5cde3f9e::t_554159b6f23b29 174,177,179,181
+  s_3e7dea5cde3f9e::t_d5dbe4acf04e20 715-716
+  s_3e7dea5cde3f9e::t_2695ec00f8c763 270,273
+  s_3e7dea5cde3f9e::t_9ae52743f58018 674-678,684,691-714,717-771,774,778,781,799,831,845,865
+  s_3e7dea5cde3f9e::t_fe41a3e87cd348 178,208,227,236,267,301,313,325
+  s_3e7dea5cde3f9e::t_f309c7185ff9ed 237,245-247,252,302-303
+  s_3e7dea5cde3f9e::t_66956246aa8e77 223-224,228-230
+  s_3e7dea5cde3f9e::t_a4f15b72672111 268
+  s_3e7dea5cde3f9e::t_cfdc98507d3bbd 305
+  s_3e7dea5cde3f9e::t_6d7e218a7ce4cc 442,449,475,507,588
+  s_3e7dea5cde3f9e::t_f1c8e6c7426a81 271
+  s_3e7dea5cde3f9e::t_d281d0c3381745 336
+  s_3e7dea5cde3f9e::t_205e497235a739 327,357,410,529,780,822,848
+  s_3e7dea5cde3f9e::t_a95f064fd8c039 209-210,326,334,338-340,351,353,364,366,372,374,405-409,411,451-454,456,506,519-520,536,539,563,566,598,604,616,641-648,670-673,772-773,775-777,779,782-784,812,814,820,829,849,855,857,861,863
+scripts/prContract.ts
+  s_3e7dea5cde3f9e::t_4447ab71816430 676-679
+  s_3e7dea5cde3f9e::t_15e6b969f8b6a9 4-52
+  s_3e7dea5cde3f9e::t_d3fe190f76a870 54,74-81,83-112,114-117,119-120,126-130,132,680,682
+  s_3e7dea5cde3f9e::t_71e403ab8931bc 113,118,121-125
+  s_3e7dea5cde3f9e::t_e61bbe902afc8f 53,131,681,683
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_3e7dea5cde3f9e::t_15de5fd7d07da4 2999
+  s_3e7dea5cde3f9e::t_5f737d2614b366 3392
+  s_3e7dea5cde3f9e::t_6b10c8a9afed6f 2496
+scripts/stampLaneIdentity.ts
+  s_3e7dea5cde3f9e::t_605e2ac9e33ca8 32,39
+  s_3e7dea5cde3f9e::t_f06d49d2229bf2 27
+.agents/skills/delivery-orchestration/SKILL.md
+  s_3e7dea5cde3f9e::t_a09cbaea04689c 24
+  s_3e7dea5cde3f9e::t_6a1f8f0ebf37b7 142-147,154-160
+  s_3e7dea5cde3f9e::t_4ae7af331871ab 208-214
+  s_3e7dea5cde3f9e::t_617c1c723f6dad 148-153
+scripts/__tests__/prContract.spec.ts
+  s_3e7dea5cde3f9e::t_671ffad1fb425b 8,12,14,23,25,28,561-563,569-605,629-719
+  s_3e7dea5cde3f9e::t_305fe551b635f1 606-628
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bc35168f76df97fe1582fb09f75826cf41b307e",
+  "prompts": {},
+  "sessions": {
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
