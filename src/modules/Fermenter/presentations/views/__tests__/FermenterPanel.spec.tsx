@@ -47,6 +47,7 @@ const midiLearnRotaryKnobMock = vi.hoisted(() =>
     ))
 );
 const setFermenterParamWithAudioMock = vi.hoisted(() => vi.fn());
+const selectFermenterOscillatorEngineMock = vi.hoisted(() => vi.fn());
 const loadUserPatchesMock = vi.hoisted(() => vi.fn());
 const loadFermenterPatchWithAudioMock = vi.hoisted(() => vi.fn());
 const storeState = vi.hoisted<{ value: unknown }>(() => ({ value: null }));
@@ -75,6 +76,10 @@ vi.mock('../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio', ()
 
 vi.mock('../../../useCases/fermenterParamBridge/setFermenterParamWithAudio', () => ({
     setFermenterParamWithAudio: setFermenterParamWithAudioMock,
+}));
+
+vi.mock('../../../useCases/selectFermenterOscillatorEngine', () => ({
+    selectFermenterOscillatorEngine: selectFermenterOscillatorEngineMock,
 }));
 
 function makeState(overrides: Record<string, unknown> = {}) {
@@ -394,13 +399,14 @@ describe('FermenterPanel', () => {
             expectRouted('noiseLevel', 1.2);
         });
 
-        it('routes the oscillator engine + waveform chip clicks to oscEngine/oscWaveform', () => {
+        it('routes Engine through its selection use case and Waveform through the existing bridge', () => {
             renderPanel();
             // ENGINE_NAMES[2] = 'FM', WAVEFORM_NAMES[1] = 'Saw'.
             fireEvent.click(screen.getByText('FM'));
             fireEvent.click(screen.getByText('Saw'));
             const calls = setFermenterParamWithAudioMock.mock.calls;
-            expect(calls.find(([, k]) => k === 'oscEngine')![2]).toBe(2);
+            expect(selectFermenterOscillatorEngineMock).toHaveBeenCalledWith('fermenter-1', 2);
+            expect(calls.some(([, k]) => k === 'oscEngine')).toBe(false);
             expect(calls.find(([, k]) => k === 'oscWaveform')![2]).toBe(1);
         });
 

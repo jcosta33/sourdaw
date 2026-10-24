@@ -64,6 +64,10 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
 
     const patch: FermenterPatch = {
         ...currentPatch,
+        // Undo of the first Engine selection removes its leaf, restoring the default.
+        oscEngine: Object.hasOwn(device.parameterValues ?? {}, 'oscEngine')
+            ? currentPatch.oscEngine
+            : DEFAULT_PATCH.oscEngine,
         macros: [...currentPatch.macros],
         macroMappings: currentPatch.macroMappings ? [...currentPatch.macroMappings] : undefined,
     };
