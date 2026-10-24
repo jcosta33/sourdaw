@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { startInputMonitoring } from '../../../repositories/audioRecorder/inputMonitoring';
 import { inputMonitoringSession } from '../../../repositories/audioRecorder/inputMonitoringSession';
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
+import { externalLatencyRegistry } from '../../latencyCompensation/compensation/externalLatencyRegistry';
 import { resetAudioGraph } from '../resetAudioGraph';
 
 import type { TrackChannelStrip } from '../../../models/AudioEngineState';
@@ -56,7 +58,12 @@ describe('resetAudioGraph monitor teardown (project-switch path)', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        audioEngine.resetGraph();
+        vi.unstubAllGlobals();
+        Reflect.deleteProperty(context, 'playbackStats');
+        externalLatencyRegistry.clear();
         delete context.createMediaStreamSource;
+        Reflect.deleteProperty(context, 'createStereoPanner');
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: originalMediaDevices,
             configurable: true,
@@ -81,6 +88,59 @@ describe('resetAudioGraph monitor teardown (project-switch path)', () => {
         // capture-wide disconnect drops anything else the source fed.
         expect(source.disconnect).toHaveBeenCalledWith(stripGain);
         expect(source.disconnect).toHaveBeenCalledWith();
+    });
+
+    it('clears the real graph and reported latency after one of two acquired sources refuses disconnect', async () => {
+        vi.restoreAllMocks();
+        const graphContext = createMockAudioContext();
+        Object.defineProperty(context, 'playbackStats', { value: graphContext.playbackStats, configurable: true });
+        vi.stubGlobal(
+            'AudioWorkletNode',
+            class {
+                port = { postMessage: vi.fn(), close: vi.fn() };
+                connect = vi.fn();
+                disconnect = vi.fn();
+            }
+        );
+        Object.defineProperty(context, 'createStereoPanner', {
+            value: graphContext.createStereoPanner,
+            configurable: true,
+        });
+        const firstStop = vi.fn<() => void>();
+        const secondStop = vi.fn<() => void>();
+        const firstSource = { connect: vi.fn(), disconnect: vi.fn() };
+        const secondSource = { connect: vi.fn(), disconnect: vi.fn() };
+        const sources = [firstSource, secondSource];
+        context.createMediaStreamSource = () => {
+            const next = sources.shift();
+            if (!next) {
+                throw new Error('Unexpected capture acquisition');
+            }
+            return next as unknown as MediaStreamAudioSourceNode;
+        };
+        getUserMedia.mockResolvedValueOnce(createStream(firstStop)).mockResolvedValueOnce(createStream(secondStop));
+        await expect(startInputMonitoring('faulting-input', 'input-1')).resolves.toBe(true);
+        await expect(startInputMonitoring('healthy-input', 'input-2')).resolves.toBe(true);
+        audioEngine.ensureBusStrip('monitor-bus');
+        audioEngine.setSend('healthy-input', 'monitor-bus', 0.5);
+        expect(audioEngine.getDiagnostics().graph).toMatchObject({ trackStrips: 2, busStrips: 1, sends: 1 });
+        externalLatencyRegistry.set('outgoing-device', 12);
+        const failure = new Error('monitor source refused disconnect');
+        firstSource.disconnect.mockImplementation((...destinations: unknown[]) => {
+            if (destinations.length === 0) {
+                throw failure;
+            }
+        });
+
+        expect(() => resetAudioGraph()).toThrow(failure);
+
+        expect(firstStop).toHaveBeenCalledTimes(1);
+        expect(secondStop).toHaveBeenCalledTimes(1);
+        expect(secondSource.disconnect).toHaveBeenCalledWith();
+        expect(inputMonitoringSession.captures.size).toBe(0);
+        expect(inputMonitoringSession.trackKeys.size).toBe(0);
+        expect(audioEngine.getDiagnostics().graph).toMatchObject({ trackStrips: 0, busStrips: 0, sends: 0 });
+        expect(externalLatencyRegistry.size).toBe(0);
     });
 
     it('does not stop an already-released stream when the graph resets again', async () => {

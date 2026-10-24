@@ -6,6 +6,7 @@ import {
     createMockAudioContext,
     createMockAudioNode,
 } from '../../../../helpers/__tests__/audioContext.mock';
+import { AdjustmentBusNode } from '../AdjustmentBusNode';
 import { createAdjustmentLayerRuntime, type TrackRerouteDeps } from '../AdjustmentLayerRuntime';
 
 describe('AdjustmentLayerRuntime', () => {
@@ -100,6 +101,80 @@ describe('AdjustmentLayerRuntime', () => {
 
         expect(vi.mocked(ctx.createBiquadFilter).mock.calls.length).toBeGreaterThanOrEqual(3);
     });
+
+    it.each(['bus', 'reroute', 'multiple'] as const)(
+        'reset fault continuation retires every bus and timer after a %s failure',
+        (fault) => {
+            vi.useFakeTimers();
+            const dispose = vi.spyOn(AdjustmentBusNode.prototype, 'dispose');
+            try {
+                const runtime = createAdjustmentLayerRuntime(deps);
+                runtime.applyTick([
+                    { layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 1 },
+                    { layerId: 'L2', trackId: 't1', effectType: 'filter', parameters: {}, blend: 1 },
+                    { layerId: 'L3', trackId: 't2', effectType: 'eq', parameters: {}, blend: 1 },
+                ]);
+                runtime.applyTick([]);
+                expect(vi.getTimerCount()).toBe(3);
+                rerouteTrack.mockClear();
+                const firstBusFailure = new Error('first adjustment bus disposal refused');
+                const secondBusFailure = new Error('second adjustment bus disposal refused');
+                const rerouteFailure = new Error('first adjustment track reroute refused');
+                if (fault === 'bus' || fault === 'multiple') {
+                    dispose.mockImplementationOnce(() => {
+                        throw firstBusFailure;
+                    });
+                }
+                if (fault === 'multiple') {
+                    dispose.mockImplementationOnce(() => {
+                        throw secondBusFailure;
+                    });
+                }
+                const keysAtReroute: string[][] = [];
+                rerouteTrack.mockImplementation((trackId) => {
+                    keysAtReroute.push(runtime.listLiveBusKeys());
+                    if (trackId === 't1' && fault !== 'bus') {
+                        throw rerouteFailure;
+                    }
+                });
+
+                let observed: unknown;
+                try {
+                    runtime.reset();
+                } catch (error) {
+                    observed = error;
+                }
+
+                if (fault === 'multiple') {
+                    expect(observed).toBeInstanceOf(AggregateError);
+                    expect((observed as AggregateError).errors).toEqual([
+                        firstBusFailure,
+                        secondBusFailure,
+                        rerouteFailure,
+                    ]);
+                } else {
+                    const expectedFailure = fault === 'bus' ? firstBusFailure : rerouteFailure;
+                    expect(observed).toBe(expectedFailure);
+                }
+                expect(dispose).toHaveBeenCalledTimes(3);
+                expect(new Set(dispose.mock.contexts).size).toBe(3);
+                expect(vi.getTimerCount()).toBe(0);
+                expect(runtime.listLiveBusKeys()).toEqual([]);
+                expect(runtime.getDiagnostics()).toMatchObject({ buses: 0, audioNodes: 0 });
+                expect(runtime.getBusInputForTrack('t1')).toBeNull();
+                expect(runtime.getBusInputForTrack('t2')).toBeNull();
+                expect(rerouteTrack.mock.calls).toEqual([['t1'], ['t2']]);
+                expect(keysAtReroute).toEqual([[], []]);
+                vi.advanceTimersByTime(500);
+                runtime.reset();
+                expect(dispose).toHaveBeenCalledTimes(3);
+                expect(rerouteTrack).toHaveBeenCalledTimes(2);
+            } finally {
+                dispose.mockRestore();
+                vi.useRealTimers();
+            }
+        }
+    );
 
     it('reset disposes all buses and reroutes their tracks', () => {
         const runtime = createAdjustmentLayerRuntime(deps);
