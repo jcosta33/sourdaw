@@ -1731,6 +1731,7 @@ describe('binding a terse refinement to the pending card it refines', () => {
                     'turn Snare down 3 dB; Vocals stays as is',
                     'turn Snare down 3 dB and do not change Vocals',
                     'turn Snare down 3 dB and leave the Vocals fader alone',
+                    'turn Snare down 3 dB and leave the Vocal track alone',
                 ])('keeps the track a card named by its exact name in "%s"', (prompt) => {
                     const card = { prompt, calls: [snareBy(-3)] };
 

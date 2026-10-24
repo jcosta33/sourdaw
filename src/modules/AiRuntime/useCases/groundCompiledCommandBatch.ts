@@ -325,6 +325,8 @@ function composeGroundingBasis(
     const readProtections = readExplicitProtections(input.prompt, input.context);
     // The tracks and operations the request protects are recorded as they resolve now, so a later
     // refinement never reads this request's selection phrases against a selection that has since moved.
+    // The application's protected objects already carry the selection and VCA tracks the reading keeps;
+    // the tracks it names are added here.
     const promptProtections = unionProtectedObjects(
         getApplicationProtectedObjects({
             actions: guarded.actions,
@@ -332,7 +334,7 @@ function composeGroundingBasis(
             prompt: input.prompt,
         }),
         input.context.tracks
-            .filter((track) => readProtections.protectedTrackIds.includes(track.id))
+            .filter((track) => readProtections.namedTrackIds.includes(track.id))
             .map(({ id, name }) => ({ id, name }))
     );
     const protectedControls = readProtections.protectedControls.map(({ trackId, actionTypes }) => ({
