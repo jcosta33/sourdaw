@@ -32,6 +32,7 @@ export type SupersededPullRequest = {
     state: string;
     head: string;
     headRefName: string;
+    headRepository: string | null;
     repository: string;
     base: string;
     merged: boolean;
@@ -90,9 +91,19 @@ function repositoryFields(): string[] {
     }
     return ['-f', `owner=${owner}`, '-f', `name=${name}`];
 }
+function readHeadRepository(value: unknown, number: number): string | null {
+    if (value === null) {
+        return null;
+    }
+    const repository = value as { nameWithOwner?: unknown };
+    if (typeof repository?.nameWithOwner !== 'string') {
+        fail(`cannot inspect PR #${number}`);
+    }
+    return repository.nameWithOwner;
+}
 function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName baseRefName merged closedAt}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -103,6 +114,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
                     state?: unknown;
                     headRefOid?: unknown;
                     headRefName?: unknown;
+                    headRepository?: { nameWithOwner?: unknown } | null;
                     baseRefName?: unknown;
                     merged?: unknown;
                     closedAt?: unknown;
@@ -126,12 +138,14 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
     ) {
         fail(`cannot inspect PR #${number}`);
     }
+    const headRepository = readHeadRepository(pullRequest.headRepository, number);
     ids.set(number, pullRequest.id);
     return {
         number: pullRequest.number,
         state: pullRequest.state,
         head: pullRequest.headRefOid,
         headRefName: pullRequest.headRefName,
+        headRepository,
         repository: repository.nameWithOwner,
         base: pullRequest.baseRefName,
         merged: pullRequest.merged,

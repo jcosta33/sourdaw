@@ -97,6 +97,7 @@ type Input = {
     replacementState?: string;
     replacementStates?: string[];
     replacementBases?: string[];
+    replacementHeadRepository?: string | null;
     initialState?: string;
     throwAfterComment?: boolean;
     concurrentCommentOnThrow?: boolean;
@@ -122,6 +123,7 @@ type Input = {
     parentMerged?: boolean;
     parentHeads?: string[];
     parentHeadRefNames?: string[];
+    parentHeadRepositories?: (string | null)[];
     parentBases?: string[];
     parentRepositories?: string[];
     parentClosedAts?: (string | null)[];
@@ -129,6 +131,7 @@ type Input = {
     parentCommentsByInspection?: IssueComment[][];
     parentThreads?: SupersededReviewThread[];
     parentThreadsByRead?: SupersededReviewThread[][];
+    removeParentReceiptDuringClose?: boolean;
 };
 
 function fakePort(input: Input = {}) {
@@ -146,6 +149,7 @@ function fakePort(input: Input = {}) {
     let parentThreadReads = 0;
     let replacementInspections = 0;
     let comments: IssueComment[] = [oldComment];
+    let parentComments = Array.from(input.parentComments ?? validParentComments);
     const postedIds: string[] = [];
     const allocate = (body: string): IssueComment => {
         postedCount += 1;
@@ -183,6 +187,7 @@ function fakePort(input: Input = {}) {
                 state,
                 head: input.heads?.[inspection] ?? head,
                 headRefName: 'fix/old-pull-request',
+                headRepository: 'jcosta33/sourdaw',
                 repository: 'jcosta33/sourdaw',
                 base: input.bases?.[inspection] ?? 'main',
                 merged: false,
@@ -192,16 +197,18 @@ function fakePort(input: Input = {}) {
         }
         if (number === parentNumber) {
             const inspection = parentInspections++;
+            const headRepository = input.parentHeadRepositories?.[inspection];
             return {
                 number,
                 state: input.parentStates?.[inspection] ?? 'CLOSED',
                 head: input.parentHeads?.[inspection] ?? parentHead,
                 headRefName: input.parentHeadRefNames?.[inspection] ?? parentBranch,
+                headRepository: headRepository === undefined ? 'jcosta33/sourdaw' : headRepository,
                 repository: input.parentRepositories?.[inspection] ?? 'jcosta33/sourdaw',
                 base: input.parentBases?.[inspection] ?? 'main',
                 merged: input.parentMerged ?? false,
                 closedAt: input.parentClosedAts?.[inspection] ?? '2026-08-19T12:00:00Z',
-                comments: input.parentCommentsByInspection?.[inspection] ?? input.parentComments ?? validParentComments,
+                comments: input.parentCommentsByInspection?.[inspection] ?? parentComments,
             };
         }
         const inspection = replacementInspections++;
@@ -210,6 +217,8 @@ function fakePort(input: Input = {}) {
             state: input.replacementStates?.[inspection] ?? input.replacementState ?? 'MERGED',
             head: 'c'.repeat(40),
             headRefName: 'fix/replacement-pull-request',
+            headRepository:
+                input.replacementHeadRepository === undefined ? 'jcosta33/sourdaw' : input.replacementHeadRepository,
             repository: 'jcosta33/sourdaw',
             base: input.replacementBases?.[inspection] ?? 'main',
             merged: true,
@@ -304,6 +313,9 @@ function fakePort(input: Input = {}) {
             }
             state = 'CLOSED';
             closedAt = '2026-08-20T12:00:00Z';
+            if (input.removeParentReceiptDuringClose) {
+                parentComments = parentComments.filter((comment) => comment.body !== receiptBody);
+            }
             return { closedAt };
         },
         deleteComment: (id) => {
@@ -416,7 +428,7 @@ describe('pull-request supersession', () => {
         expect(source).toContain(
             'closePullRequest(input:{pullRequestId:$pullRequestId,clientMutationId:$clientMutationId})'
         );
-        expect(source).toContain('headRefOid headRefName baseRefName merged closedAt');
+        expect(source).toContain('headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
     });
@@ -733,10 +745,43 @@ describe('pull-request supersession', () => {
             'log:pull-request-superseded:2244:2246',
         ]);
     });
-    it('accepts a cross-base child when its closed stack parent was natively superseded by the replacement', () => {
-        const { port, calls } = fakePort({ bases: [parentBranch, parentBranch, parentBranch, parentBranch] });
+    it('accepts a cross-base child when its own-repository parent was natively superseded', () => {
+        const { port, calls } = fakePort({
+            bases: [parentBranch, parentBranch, parentBranch, parentBranch],
+            parentHeadRepositories: ['jcosta33/sourdaw', 'jcosta33/sourdaw', 'jcosta33/sourdaw', 'jcosta33/sourdaw'],
+        });
         expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it.each([null, 'fork-owner/sourdaw'])('does not require a %s replacement head repository', (headRepository) => {
+        const { port, calls } = fakePort({ replacementHeadRepository: headRepository });
+        expect(run(port)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it.each([
+        ['fork parent', ['fork-owner/sourdaw']],
+        ['missing parent head repository', [null]],
+        ['changed parent head repository', ['jcosta33/sourdaw', 'fork-owner/sourdaw']],
+    ] satisfies [string, (string | null)[]][])(
+        'refuses a %s identity before child writes',
+        (_case, parentHeadRepositories) => {
+            const { port, calls } = fakePort({
+                bases: [parentBranch, parentBranch, parentBranch, parentBranch],
+                parentHeadRepositories,
+            });
+            expect(() => runWithParent(port)).toThrow(/head repository/i);
+            expect(calls.filter((call) => /^(?:comment|delete|close):/.test(call))).toEqual([]);
+        }
+    );
+    it('reports ambiguity and preserves closed-child evidence when parent authority disappears during close', () => {
+        const { port, calls, state } = fakePort({
+            bases: [parentBranch, parentBranch, parentBranch, parentBranch],
+            removeParentReceiptDuringClose: true,
+        });
+        expect(() => runWithParent(port)).toThrow(/ambiguous/i);
+        expect(state().state).toBe('CLOSED');
+        expect(state().comments.map((comment) => comment.body)).toEqual([oldComment.body, receiptBody, lineageBody]);
+        expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
     });
     it('keeps the exact-base requirement when no superseded parent is named', () => {
         const { port, calls } = fakePort({ bases: [parentBranch] });
@@ -877,7 +922,7 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
         expect(state().comments).toEqual([oldComment]);
     });
-    it('reuses existing child markers while revalidating the stacked parent before close', () => {
+    it('reuses existing child markers while revalidating the stacked parent through close', () => {
         const { port, calls } = fakePort({
             bases: [parentBranch, parentBranch, parentBranch, parentBranch],
             existingCommentCount: 1,
@@ -886,7 +931,7 @@ describe('pull-request supersession', () => {
         expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
         expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([]);
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
-        expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(3);
+        expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(4);
     });
     it('posts and validates the lineage marker before the close', () => {
         const { port, calls, authorNodeId } = fakePort();
