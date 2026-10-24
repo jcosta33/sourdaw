@@ -1,0 +1,19 @@
+AGENTS.md
+  s_993e8cd4f5fad8::t_945be36eeab660 264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1069c9f7d1521a6a6e378b5c6ac64268209120e6",
+  "prompts": {},
+  "sessions": {
+    "s_993e8cd4f5fad8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffd-2641-7f40-9221-3bd2de725b9b",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
