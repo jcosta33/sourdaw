@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,6 +22,7 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import {
@@ -271,6 +273,14 @@ const corpora: Record<AgentAcceptanceCorpusName, Corpus> = {
     'held-out': loadCorpus('held-out'),
 };
 
+function corpusCase(corpusName: AgentAcceptanceCorpusName, id: string): CorpusCase {
+    const testCase = corpora[corpusName].cases.find((entry) => entry.id === id);
+    if (testCase === undefined) {
+        throw new Error(`The ${corpusName} corpus holds no case ${id}`);
+    }
+    return testCase;
+}
+
 /** The one project every case in both corpora plans against, read from the file the corpora name. */
 const context: ProjectContext = JSON.parse(
     readFileSync(resolve(REPOSITORY_ROOT, CORPORA_DIRECTORY, FIXTURE_PROJECT_FILE), 'utf8')
@@ -459,8 +469,43 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 /** One scored case and the writes it made that its oracle never asked for. */
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
 
-/** How many writes the Command barrel has been asked for so far in this corpus run. */
-type BarrelWriteCount = () => number;
+/** An action as the stores and the Command barrel hold it: its type, and its payload when it has one. */
+type LandedAction = { type: string; payload?: unknown };
+
+/** Where the Command barrel's two spies stood when a turn began. */
+type BarrelMark = { single: number; batch: number };
+
+/**
+ * The Command barrel writes a corpus run has asked for, through the spies on `executeAppAction` and
+ * `executeAppActionBatch`: a call count for the single-turn cases, and the actions themselves for a
+ * refinement turn, which must tell its own commit's entries from any other write.
+ */
+type BarrelWriteLog = {
+    count: () => number;
+    mark: () => BarrelMark;
+    actionsSince: (mark: BarrelMark) => LandedAction[];
+};
+
+function spyOnBarrelWrites(): { log: BarrelWriteLog; restore: () => void } {
+    const single = vi.spyOn(commandUseCases, 'executeAppAction');
+    const batch = vi.spyOn(commandUseCases, 'executeAppActionBatch');
+    single.mockClear();
+    batch.mockClear();
+    return {
+        log: {
+            count: () => single.mock.calls.length + batch.mock.calls.length,
+            mark: () => ({ single: single.mock.calls.length, batch: batch.mock.calls.length }),
+            actionsSince: (mark) => [
+                ...single.mock.calls.slice(mark.single).map(([action]) => action),
+                ...batch.mock.calls.slice(mark.batch).flatMap(([actions]) => [...actions]),
+            ],
+        },
+        restore: () => {
+            single.mockRestore();
+            batch.mockRestore();
+        },
+    };
+}
 
 /** Asserts the reach invariants a proposal oracle declares against the batch the run actually compiled. */
 function assertProposalInvariants(id: string, actions: PlannedActions, invariants: CorpusOracleInvariants): void {
@@ -483,13 +528,13 @@ function assertProposalInvariants(id: string, actions: PlannedActions, invariant
  * classes cannot cover is a corpus defect, never a silently-coerced result, so it throws instead of
  * scoring.
  */
-async function runCorpusCase(testCase: CorpusCase, barrelWrites: BarrelWriteCount): Promise<CaseRun> {
+async function runCorpusCase(testCase: CorpusCase, barrel: BarrelWriteLog): Promise<CaseRun> {
     if (testCase.promptClass === 'refinement') {
-        return runRefinementCase(testCase, barrelWrites);
+        return runRefinementCase(testCase, barrel);
     }
-    const writesBefore = barrelWrites();
+    const writesBefore = barrel.count();
     const result = await runPlannedCorpusCase(testCase);
-    return { result, unintendedMutations: barrelWrites() - writesBefore };
+    return { result, unintendedMutations: barrel.count() - writesBefore };
 }
 
 /** Plans one single-turn case against the fixture project, with no thread and no chat route. */
@@ -673,17 +718,57 @@ function captureSettledRevision(): string {
 }
 
 /**
- * Sends one chat turn with its own scripted provider turns and returns the writes it made: the
- * Command barrel writes it asked for, and at least one when the project or its undo history moved by
- * any other route.
+ * What one chat turn wrote: the actions it asked the Command barrel for, whether the project or its
+ * undo history moved by any route, and the undo groups it added.
+ */
+type ChatTurnWrites = { barrelActions: LandedAction[]; moved: boolean; newGroups: PastEntry[][] };
+
+/** A write the turn made, counted once even where only the project revision shows it. */
+function anyWrites(writes: ChatTurnWrites): number {
+    return Math.max(writes.barrelActions.length, writes.moved ? 1 : 0);
+}
+
+type PastEntry = NonNullable<typeof undoHistoryStore.value>['past'][number];
+
+function pastEntries(): readonly PastEntry[] {
+    return undoHistoryStore.value?.past ?? [];
+}
+
+/**
+ * The undo groups the entries `before` did not hold make, in order; an entry outside any group is a
+ * group of its own. The history keeps its entries by reference, so the ones a turn added are the
+ * ones absent from where it began.
+ */
+function groupsAddedSince(before: ReadonlySet<PastEntry>): PastEntry[][] {
+    const groups = new Map<PastEntry | string, PastEntry[]>();
+    for (const entry of pastEntries()) {
+        if (before.has(entry)) {
+            continue;
+        }
+        const key = entry.groupId ?? entry;
+        const group = groups.get(key);
+        if (group === undefined) {
+            groups.set(key, [entry]);
+            continue;
+        }
+        group.push(entry);
+    }
+    return [...groups.values()];
+}
+
+/**
+ * Sends one chat turn with its own scripted provider turns and returns what it wrote. `alongside`
+ * runs inside the turn, after the chat route returns and before its writes are read, so a self-check
+ * can make the turn write what no oracle names.
  */
 async function sendScriptedChatTurn(input: {
     id: string;
     prompt: string;
     providerTurns: readonly CorpusProviderTurn[];
     priorProposalId: () => string | undefined;
-    barrelWrites: BarrelWriteCount;
-}): Promise<number> {
+    barrel: BarrelWriteLog;
+    alongside?: () => Promise<void>;
+}): Promise<ChatTurnWrites> {
     runtimeMocks.generateWebLlmCompletion.mockReset();
     if (input.providerTurns.length > 0) {
         scriptProviderTurns(
@@ -693,17 +778,22 @@ async function sendScriptedChatTurn(input: {
     }
     chatPlanning.last = null;
     const revision = captureSettledRevision();
-    const undoEntries = undoHistoryStore.value?.past.length ?? 0;
-    const writesBefore = input.barrelWrites();
+    const pastLength = pastEntries().length;
+    const entriesBefore = new Set(pastEntries());
+    const mark = input.barrel.mark();
 
     await sendChatMessage(input.prompt);
+    await input.alongside?.();
 
     expect(
         runtimeMocks.generateWebLlmCompletion,
         `Case ${input.id} turn "${input.prompt}" declares ${String(input.providerTurns.length)} scripted provider turns but the run consumed a different number`
     ).toHaveBeenCalledTimes(input.providerTurns.length);
-    const moved = captureSettledRevision() !== revision || (undoHistoryStore.value?.past.length ?? 0) !== undoEntries;
-    return Math.max(input.barrelWrites() - writesBefore, moved ? 1 : 0);
+    return {
+        barrelActions: input.barrel.actionsSince(mark),
+        moved: captureSettledRevision() !== revision || pastEntries().length !== pastLength,
+        newGroups: groupsAddedSince(entriesBefore),
+    };
 }
 
 /** What the prior turn left for the follow-up: the card it holds pending, or the group it committed. */
@@ -731,11 +821,8 @@ async function settlePriorTurn(id: string, outcome: CorpusPriorTurn['outcome']):
     return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId };
 }
 
-type LandedAction = { type: string; payload?: unknown };
-
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
-function committedGroupActions(groupId: string): LandedAction[] | null {
-    const entries = (undoHistoryStore.value?.past ?? []).filter((entry) => entry.groupId === groupId);
+function committedGroupActions(entries: readonly PastEntry[]): LandedAction[] | null {
     const actions = entries.flatMap((entry) => (entry.kind === 'action' ? [entry.action] : []));
     return actions.length === entries.length ? actions : null;
 }
@@ -750,18 +837,47 @@ function replacementCardActions(prior: PriorTurnState): LandedAction[] | null {
     return getPendingActionConfirmation(prior.proposalId)?.status === 'proposed' ? null : replacement.actions;
 }
 
-/** The follow-up's own batch on top of a commit: a new commit, or a new card superseding nothing. */
-function followUpBatchActions(prior: PriorTurnState): LandedAction[] | null {
+/**
+ * The follow-up's own batch on top of a commit: exactly one new undo group and no card, whose entries
+ * are the only writes it may make, or one new card superseding nothing beside no new group, which
+ * may write nothing. Two new groups, or a group beside a card, land no single batch.
+ */
+type FollowUpBatch = { actions: LandedAction[]; commitEntries: LandedAction[] | null };
+
+function followUpBatch(writes: ChatTurnWrites): FollowUpBatch | null {
     const proposed = proposedConfirmationIds();
-    const newestGroupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+    const [group, ...otherGroups] = writes.newGroups;
     if (proposed.length === 0) {
-        if (newestGroupId === undefined || newestGroupId === prior.commitGroupId) {
-            return null;
-        }
-        return committedGroupActions(newestGroupId);
+        const entries = group === undefined || otherGroups.length > 0 ? null : committedGroupActions(group);
+        return entries === null ? null : { actions: entries, commitEntries: entries };
     }
     const card = proposed.length === 1 ? getPendingActionConfirmation(proposed[0] ?? '') : null;
-    return card === null || card.supersedes !== null ? null : card.actions;
+    if (card === null || card.supersedes !== null || writes.newGroups.length > 0) {
+        return null;
+    }
+    return { actions: card.actions, commitEntries: null };
+}
+
+function isSameAction(left: LandedAction, right: LandedAction): boolean {
+    return left.type === right.type && isDeepStrictEqual(left.payload, right.payload);
+}
+
+/** The barrel writes that are none of the commit's own entries, each entry answering for one write. */
+function writesBeyondCommit(writes: ChatTurnWrites, commitEntries: readonly LandedAction[] | null): number {
+    if (commitEntries === null) {
+        return anyWrites(writes);
+    }
+    const unanswered = [...commitEntries];
+    let beyond = 0;
+    for (const action of writes.barrelActions) {
+        const answered = unanswered.findIndex((entry) => isSameAction(entry, action));
+        if (answered === -1) {
+            beyond += 1;
+            continue;
+        }
+        unanswered.splice(answered, 1);
+    }
+    return beyond;
 }
 
 /** The undo of the prior commit: the planned revert names its group, and the history holds it undone whole. */
@@ -784,29 +900,49 @@ function landedActionsMatch(id: string, landed: LandedAction[] | null, expected:
     );
 }
 
+type FollowUpScore = { matchesOracle: boolean; unintendedMutations: number };
+
 /**
- * Whether the follow-up landed what its oracle names, read from what the chat route left in the
- * stores rather than from the plan alone: a replacement card superseding the prior one and writing
- * nothing, the follow-up's own batch on top of the commit, or the commit's group undone.
+ * Scores the follow-up against its oracle from what the chat route left in the stores, never the plan
+ * alone, and counts every write the oracle does not name:
+ * - a pending card's replacement must supersede it and write nothing at all;
+ * - a follow-up on a commit must land exactly one batch, and every barrel write beyond its own
+ *   committed entries is unintended;
+ * - an undo must leave the commit's group undone and redoable, which any later undoable write would
+ *   discard, and since the undo replays through Command's group revert rather than the barrel, every
+ *   barrel write beside it is unintended.
+ * A follow-up that misses its oracle wrote nothing the oracle names, so all its writes count.
  */
-function followUpMatchesOracle(input: {
+function scoreFollowUp(input: {
     testCase: CorpusCase;
     outcome: PlanningOutcome;
     prior: PriorTurnState;
-    writes: number;
-}): boolean {
+    writes: ChatTurnWrites;
+}): FollowUpScore {
     const { testCase, outcome, prior, writes } = input;
+    const missed = { matchesOracle: false, unintendedMutations: anyWrites(writes) };
     switch (testCase.oracle.kind) {
         case 'revert':
-            return revertsPriorCommit(outcome, prior);
-        case 'proposal':
-            if (testCase.oracle.replaces === 'prior-proposal') {
-                return (
-                    writes === 0 &&
-                    landedActionsMatch(testCase.id, replacementCardActions(prior), testCase.oracle.actions)
-                );
+            if (!revertsPriorCommit(outcome, prior)) {
+                return missed;
             }
-            return landedActionsMatch(testCase.id, followUpBatchActions(prior), testCase.oracle.actions);
+            return { matchesOracle: true, unintendedMutations: writes.barrelActions.length };
+        case 'proposal': {
+            if (testCase.oracle.replaces === 'prior-proposal') {
+                const unintendedMutations = anyWrites(writes);
+                const replaced = landedActionsMatch(
+                    testCase.id,
+                    replacementCardActions(prior),
+                    testCase.oracle.actions
+                );
+                return { matchesOracle: unintendedMutations === 0 && replaced, unintendedMutations };
+            }
+            const batch = followUpBatch(writes);
+            if (batch === null || !landedActionsMatch(testCase.id, batch.actions, testCase.oracle.actions)) {
+                return missed;
+            }
+            return { matchesOracle: true, unintendedMutations: writesBeyondCommit(writes, batch.commitEntries) };
+        }
         default:
             throw new Error(
                 `Refinement case ${testCase.id} declares an oracle no follow-up lands: ${testCase.oracle.kind}`
@@ -814,19 +950,18 @@ function followUpMatchesOracle(input: {
     }
 }
 
-/** A follow-up against a pending card replaces the card and writes nothing; one against a commit may write. */
-function followUpMayWrite(kind: RefinementKind): boolean {
-    return PRIOR_OUTCOME_BY_KIND[kind] === 'committed';
-}
-
 /**
  * Runs one refinement case through the chat route a musician's follow-up takes: the prior turn, then
  * the follow-up, each planned with the thread the chat reads, so thread context, `refines`
  * admission, the grounding basis and the last-commit continuation all run for real. Writes the prior
  * turn makes to reach a commit are the case's setup; any other write its oracle did not ask for is
- * unintended.
+ * unintended. `alongside` lets a self-check write beside the follow-up.
  */
-async function runRefinementCase(testCase: CorpusCase, barrelWrites: BarrelWriteCount): Promise<CaseRun> {
+async function runRefinementCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
     const { prior, refinementKind } = testCase;
     if (prior === undefined || refinementKind === undefined) {
         throw new Error(`Refinement case ${testCase.id} names no prior turn or refinement kind`);
@@ -839,7 +974,7 @@ async function runRefinementCase(testCase: CorpusCase, barrelWrites: BarrelWrite
             prompt: prior.prompt,
             providerTurns: prior.providerTurns,
             priorProposalId: () => undefined,
-            barrelWrites,
+            barrel,
         });
         const priorState = await settlePriorTurn(testCase.id, prior.outcome);
         const writes = await sendScriptedChatTurn({
@@ -847,7 +982,8 @@ async function runRefinementCase(testCase: CorpusCase, barrelWrites: BarrelWrite
             prompt: testCase.prompt,
             providerTurns: testCase.providerTurns,
             priorProposalId: () => priorState.proposalId,
-            barrelWrites,
+            barrel,
+            alongside,
         });
         const outcome = chatPlanning.last?.planningOutcome;
         if (outcome === undefined) {
@@ -857,8 +993,7 @@ async function runRefinementCase(testCase: CorpusCase, barrelWrites: BarrelWrite
         if (observed === null) {
             throw new Error(`Case ${testCase.id} observed no scorable outcome class (kind=${outcome.kind})`);
         }
-        const matchesOracle = followUpMatchesOracle({ testCase, outcome, prior: priorState, writes });
-        const unintendedFollowUpWrites = followUpMayWrite(refinementKind) && matchesOracle ? 0 : writes;
+        const followUp = scoreFollowUp({ testCase, outcome, prior: priorState, writes });
         return {
             result: scoreAgentAcceptanceCase({
                 id: testCase.id,
@@ -866,9 +1001,10 @@ async function runRefinementCase(testCase: CorpusCase, barrelWrites: BarrelWrite
                 promptClass: testCase.promptClass,
                 oracleKind: testCase.oracle.kind,
                 observed,
-                matchesOracle,
+                matchesOracle: followUp.matchesOracle,
             }),
-            unintendedMutations: (prior.outcome === 'pending' ? priorWrites : 0) + unintendedFollowUpWrites,
+            unintendedMutations:
+                (prior.outcome === 'pending' ? anyWrites(priorWrites) : 0) + followUp.unintendedMutations,
         };
     } finally {
         closeChatProject();
@@ -1073,18 +1209,12 @@ describe('agent acceptance corpora', () => {
         it(
             'scores every sealed-class case within the frozen thresholds with zero unintended mutations',
             async () => {
-                const executeAppActionSpy = vi.spyOn(commandUseCases, 'executeAppAction');
-                const executeAppActionBatchSpy = vi.spyOn(commandUseCases, 'executeAppActionBatch');
-                executeAppActionSpy.mockClear();
-                executeAppActionBatchSpy.mockClear();
-
-                const barrelWrites = () =>
-                    executeAppActionSpy.mock.calls.length + executeAppActionBatchSpy.mock.calls.length;
+                const barrel = spyOnBarrelWrites();
                 const cases = scoredCases(corpora[corpusName]);
                 const results: AgentAcceptanceCaseResult[] = [];
                 let unintendedMutations = 0;
                 for (const testCase of cases) {
-                    const run = await runCorpusCase(testCase, barrelWrites);
+                    const run = await runCorpusCase(testCase, barrel.log);
                     results.push(run.result);
                     unintendedMutations += run.unintendedMutations;
                 }
@@ -1104,11 +1234,87 @@ describe('agent acceptance corpora', () => {
                 );
                 expect(failed).toEqual([]);
 
-                executeAppActionSpy.mockRestore();
-                executeAppActionBatchSpy.mockRestore();
+                barrel.restore();
             },
             CORPUS_RUN_TIMEOUT_MS
         );
+    });
+
+    describe('refinement write accounting', () => {
+        const relativeCase = corpusCase('development', 'AC004-DEV-RELATIVE-1');
+        const undoCase = corpusCase('development', 'AC004-DEV-UNDO-1');
+
+        /** A gain move the fader can take now, so Command lands it rather than refusing a stale one. */
+        function gainMove(trackId: string, deltaDb: number): AppAction {
+            const expectedGain = trackStore.value?.tracks.find((track) => track.id === trackId)?.gain;
+            if (expectedGain === undefined) {
+                throw new Error(`The fixture project holds no track ${trackId}`);
+            }
+            return { type: 'setTrackGain', payload: { trackId, deltaDb, expectedGain } };
+        }
+
+        async function runWithBarrel(testCase: CorpusCase, alongside?: () => Promise<void>): Promise<CaseRun> {
+            const barrel = spyOnBarrelWrites();
+            try {
+                return await runRefinementCase(testCase, barrel.log, alongside);
+            } finally {
+                barrel.restore();
+            }
+        }
+
+        it('scores the unaltered relative follow-up clean', async () => {
+            const run = await runWithBarrel(relativeCase);
+
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.unintendedMutations).toBe(0);
+        });
+
+        it('counts a write beside a relative follow-up its commit does not hold', async () => {
+            const run = await runWithBarrel(relativeCase, async () => {
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
+            });
+
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.unintendedMutations).toBe(1);
+        });
+
+        it('refuses a relative follow-up that lands its batch a second time as a group of its own', async () => {
+            let groupsLanded = 0;
+            const run = await runWithBarrel(relativeCase, async () => {
+                const groupsBefore = pastEntries().length;
+                await commandUseCases.executeAppActionBatch([gainMove('track-lead-vocal', -2)]);
+                groupsLanded = pastEntries().length - groupsBefore;
+            });
+
+            expect(groupsLanded, 'the repeated batch landed no undo entry').toBe(1);
+            expect(run.result.exactMatch).toBe(false);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('scores the unaltered undo clean', async () => {
+            const run = await runWithBarrel(undoCase);
+
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.unintendedMutations).toBe(0);
+        });
+
+        it('counts a write beside an undo', async () => {
+            const run = await runWithBarrel(undoCase, async () => {
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
+            });
+
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.unintendedMutations).toBe(1);
+        });
+
+        it('refuses an undo whose redo a later undoable write discards', async () => {
+            const run = await runWithBarrel(undoCase, async () => {
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1));
+            });
+
+            expect(run.result.exactMatch).toBe(false);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
     });
 });
 
