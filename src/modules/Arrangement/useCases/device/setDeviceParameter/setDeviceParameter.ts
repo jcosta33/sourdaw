@@ -12,6 +12,8 @@ import { type AutomationMode } from '../../../stores/trackStore';
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
 type SetDeviceParameterOptions = {
+    /** Runtime gesture sample; canonical parameter values change only on commit. */
+    transient?: boolean;
     deleteParameter?: boolean;
     projectOnly?: boolean;
     /**
@@ -27,6 +29,10 @@ export function setDeviceParameter(
     value: number,
     options: SetDeviceParameterOptions = {}
 ): boolean {
+    if (options.transient && (options.projectOnly || options.deleteParameter)) {
+        return false;
+    }
+
     // Guard against invalid values that could crash the audio engine
     if (!Number.isFinite(value)) {
         return false;
@@ -68,27 +74,29 @@ export function setDeviceParameter(
         updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
     }
 
-    // Update only the affected track's store state (not all tracks)
-    updateTrack(target.trackId, (currentTrack) => ({
-        ...currentTrack,
-        devices: currentTrack.devices.map((device) => {
-            if (device.id !== target.deviceId) {
-                return device;
-            }
+    if (!options.transient) {
+        // Update only the affected track's store state (not all tracks)
+        updateTrack(target.trackId, (currentTrack) => ({
+            ...currentTrack,
+            devices: currentTrack.devices.map((device) => {
+                if (device.id !== target.deviceId) {
+                    return device;
+                }
 
-            const parameterValues = { ...device.parameterValues };
-            if (options.deleteParameter) {
-                delete parameterValues[paramId];
-            } else {
-                parameterValues[paramId] = clamped;
-            }
+                const parameterValues = { ...device.parameterValues };
+                if (options.deleteParameter) {
+                    delete parameterValues[paramId];
+                } else {
+                    parameterValues[paramId] = clamped;
+                }
 
-            return {
-                ...device,
-                parameterValues,
-            };
-        }),
-    }));
+                return {
+                    ...device,
+                    parameterValues,
+                };
+            }),
+        }));
+    }
 
     // Record automation if playing in a recording mode, unless this write
     // declares itself a static edit rather than a gesture. The beat comes from
