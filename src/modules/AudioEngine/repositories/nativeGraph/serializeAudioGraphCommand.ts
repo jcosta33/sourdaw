@@ -54,6 +54,7 @@ import {
     type AudioGraphSetDeviceBypassCommand,
     type AudioGraphSetDeviceModAssignmentsCommand,
     type AudioGraphSetDeviceParametersCommand,
+    type AudioGraphSetGrinderModelCommand,
     type AudioGraphSetTransportCommand,
     type AudioGraphStepWrite,
     type AudioGraphStripParameterTarget,
@@ -74,6 +75,7 @@ export type NativeGraphWireDevice = Readonly<{
     externalInstanceId?: string;
     sampleBankKey?: string;
     modAssignments?: readonly NativeModAssignmentRow[];
+    grinderModel?: Readonly<{ requestId: string; modelJson: string }>;
 }>;
 
 /** `ClipSourcePayload` in `graph.rs`: the identity, never the realisation. */
@@ -143,6 +145,14 @@ export type NativeGraphWireCommand =
           deviceId: string;
           values: Readonly<Record<string, number>>;
       }>
+    | Readonly<{
+          kind: 'set-grinder-model';
+          trackId: string;
+          deviceId: string;
+          requestId: string;
+          modelJson: string | null;
+          values: Readonly<Record<string, number>>;
+      }>
     | Readonly<{ kind: 'set-device-bypass'; trackId: string; deviceId: string; bypassed: boolean }>
     | Readonly<{
           kind: 'set-device-mod-assignments';
@@ -186,24 +196,36 @@ export type NativeGraphWireCommand =
 
 /** `GraphBatchPayload` in `graph.rs`. */
 export type NativeGraphWireBatch = Readonly<{
-    schemaVersion: 1;
+    schemaVersion: 1 | 2;
     correlation?: AudioGraphCorrelation;
     replaceTopology?: boolean;
     commands: readonly NativeGraphWireCommand[];
 }>;
 
 function serializeDevice(device: AudioGraphDevice): NativeGraphWireDevice {
-    return {
+    const wire: { -readonly [Key in keyof NativeGraphWireDevice]: NativeGraphWireDevice[Key] } = {
         id: device.id,
         name: device.name,
         type: device.type,
         bypassed: device.bypassed,
         parameterValues: { ...device.parameterValues },
-        ...(device.externalPluginId !== undefined ? { externalPluginId: device.externalPluginId } : {}),
-        ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
-        ...(device.sampleBankKey !== undefined ? { sampleBankKey: device.sampleBankKey } : {}),
-        ...(device.modAssignments !== undefined ? { modAssignments: [...device.modAssignments] } : {}),
     };
+    if (device.externalPluginId !== undefined) {
+        wire.externalPluginId = device.externalPluginId;
+    }
+    if (device.externalInstanceId !== undefined) {
+        wire.externalInstanceId = device.externalInstanceId;
+    }
+    if (device.sampleBankKey !== undefined) {
+        wire.sampleBankKey = device.sampleBankKey;
+    }
+    if (device.modAssignments !== undefined) {
+        wire.modAssignments = [...device.modAssignments];
+    }
+    if (device.grinderModel !== undefined) {
+        wire.grinderModel = { requestId: device.grinderModel.requestId, modelJson: device.grinderModel.modelJson };
+    }
+    return wire;
 }
 
 function serializeFade(fade: AudioGraphClipFade): AudioGraphClipFade {
@@ -357,6 +379,7 @@ function serializeDeviceWrite(
         | AudioGraphWriteParameterCommand
         | AudioGraphWriteDeviceParameterCommand
         | AudioGraphSetDeviceParametersCommand
+        | AudioGraphSetGrinderModelCommand
         | AudioGraphSetDeviceBypassCommand
         | AudioGraphSetDeviceModAssignmentsCommand
 ): NativeGraphWireCommand {
@@ -365,6 +388,15 @@ function serializeDeviceWrite(
             return { kind: 'write-parameter', target: { ...command.target }, write: { ...command.write } };
         case 'write-device-parameter':
             return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
+        case 'set-grinder-model':
+            return {
+                kind: 'set-grinder-model',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                requestId: command.requestId,
+                modelJson: command.modelJson,
+                values: { ...command.values },
+            };
         case 'set-device-parameters':
             return {
                 kind: 'set-device-parameters',
@@ -396,6 +428,7 @@ type AudioGraphDeviceWriteCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphSetDeviceParametersCommand
+    | AudioGraphSetGrinderModelCommand
     | AudioGraphSetDeviceBypassCommand
     | AudioGraphSetDeviceModAssignmentsCommand;
 
@@ -403,6 +436,7 @@ const DEVICE_WRITE_COMMAND_KINDS: ReadonlySet<AudioGraphDeviceWriteCommand['kind
     'write-parameter',
     'write-device-parameter',
     'set-device-parameters',
+    'set-grinder-model',
     'set-device-bypass',
     'set-device-mod-assignments',
 ]);

@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
+import { grinderNeuralLibraryStore, DEFAULT_GRINDER_NEURAL_LIBRARY_STATE } from '#/modules/Grinder/stores';
 import { getLevainEngineParameterName, projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
@@ -1116,5 +1117,95 @@ describe('the scoring body', () => {
             expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
             expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
         }
+    });
+});
+
+describe('native Grinder full-network patch classification', () => {
+    afterEach(() => {
+        grinderNeuralLibraryStore.set(DEFAULT_GRINDER_NEURAL_LIBRARY_STATE);
+    });
+    it('lets an explicit imported record resolve its actual model ahead of a retained factory slot', () => {
+        const entry: NonNullable<typeof grinderNeuralLibraryStore.value>['entries'][number] = {
+            id: 'imported',
+            source: 'imported',
+            name: 'Linear reference',
+            family: 'Reference',
+            placement: 'amp-capture',
+            description: 'test',
+            importedAt: 1,
+            sourceFileName: 'linear.nam',
+            sourceFileText: null,
+            profile: {
+                derivedFrom: 'nam',
+                sourceArchitecture: 'Linear',
+                sourceSampleRate: 48000,
+                sourceWeightCount: 2,
+                preferredTier: 'standard',
+                inputDrive: 1,
+                asymmetry: 0,
+                outputTrim: 1,
+                contourMix: 0,
+                recurrentBias: 0,
+                convWeights: [[0, 1, 0]],
+                modelDigest: '0001-0002-0003-0004',
+                model: {
+                    architecture: 'Linear',
+                    version: null,
+                    sampleRate: 48000,
+                    config: { receptive_field: 2, bias: false },
+                    weights: [0.25, -0.5],
+                },
+            },
+        };
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, hydrated: true, entries: [entry] });
+        const record = {
+            neuralModelMode: 1,
+            neuralModelSlot: 0,
+            neuralCustomTier: 0,
+            neuralCustomInputDrive: 1,
+            neuralCustomAsymmetry: 0,
+            neuralCustomOutputTrim: 1,
+            neuralCustomContourMix: 0,
+            neuralCustomLstmBias: 0,
+            neuralCustomConvWeight0_0: 0,
+            neuralCustomConvWeight0_1: 1,
+            neuralCustomConvWeight0_2: 0,
+            neuralCustomModelDigest0: 1,
+            neuralCustomModelDigest1: 2,
+            neuralCustomModelDigest2: 3,
+            neuralCustomModelDigest3: 4,
+        };
+        const body = bodyOf('grinder');
+        const modelJson = body.neuralPatch?.(record);
+        expect(typeof modelJson).toBe('string');
+        expect(JSON.parse(modelJson ?? 'null')).toEqual({
+            architecture: 'Linear',
+            sample_rate: 48000,
+            config: { receptive_field: 2, bias: false },
+            weights: [0.25, -0.5],
+        });
+        expect(body.neuralPatch?.({ neuralModelMode: 'imported', neuralModelSlot: 0, modelJson })).toBe(modelJson);
+        expect(body.projectPatch({ neuralModelMode: 'imported', neuralModelSlot: 0, modelJson, gain: 5 })).toEqual({
+            gain: 5,
+        });
+        expect(body.neuralPatch?.({ ...record, neuralModelMode: 0 })).toBeNull();
+        expect(body.neuralPatch?.({ neuralModelSlot: 1 })).toBeNull();
+    });
+
+    it('keeps structured model content and distinguishes clear, legacy and ordinary scalar writes', () => {
+        const body = bodyOf('grinder');
+        const modelJson = '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}';
+        expect(body.neuralPatch?.({ neuralModelMode: 'imported', modelJson, profile: { modelDigest: 'hint' } })).toBe(
+            modelJson
+        );
+        expect(() => body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: 'hint' } })).toThrow(
+            /unavailable/
+        );
+        expect(() => body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: 'hint' } })).toThrow(
+            TypeError
+        );
+        expect(body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: null } })).toBeNull();
+        expect(body.neuralPatch?.({ neuralModelMode: 'builtin', neuralModelSlot: 2 })).toBeNull();
+        expect(body.neuralPatch?.({ gain: 5, neuralModelMode: 1 })).toBeUndefined();
     });
 });

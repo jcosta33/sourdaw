@@ -32,7 +32,7 @@ use scheduler::{
     PluginCore, RetiredGraphObjects, TransportPositionReader, TransportPositionSnapshot,
     CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
 };
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
@@ -86,7 +86,15 @@ pub enum GraphBatchError {
     },
 }
 
+static NEXT_ENGINE_INSTANCE: AtomicU64 = AtomicU64::new(1);
+
+fn reserve_engine_instance_id(next: &AtomicU64) -> Result<u64, String> {
+    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| "Native engine instance identity exhausted".to_string())
+}
+
 pub struct EngineHandle {
+    instance_id: u64,
     command_tx: Producer<GraphCommand>,
     /// Hands freshly provisioned retirement consumers to the reclaimer thread
     /// when the command channel is reallocated for a large batch.
@@ -214,6 +222,10 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
     /// Boot the native audio engine (spawns the audio stream).
     ///
     /// Two attempts, the second without the negotiated buffer period — see
@@ -234,6 +246,9 @@ impl EngineHandle {
     /// channels, which is why the retry lives here rather than inside
     /// `spawn_audio_thread`.
     fn spawn(force_default_buffer: bool) -> Result<Self, String> {
+        // Reserve before opening a stream. Failed construction burns an id;
+        // retirement or a fallback start can never reuse an old receipt.
+        let instance_id = reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)?;
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
         let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
@@ -295,6 +310,7 @@ impl EngineHandle {
         )?;
 
         Ok(Self {
+            instance_id,
             command_tx: tx,
             retired_adoption_tx: spawned.retired_adoption_tx,
             audio_thread: spawned.handle,
@@ -1465,6 +1481,8 @@ fn engine_handle_fixture(
     output_stream_fault: Arc<AtomicU8>,
 ) -> EngineHandle {
     EngineHandle {
+        instance_id: reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)
+            .expect("fixture engine identity exhausted"),
         command_tx,
         retired_adoption_tx,
         audio_thread: audio_thread::detached_audio_thread_handle(),
@@ -1537,8 +1555,8 @@ pub fn engine_handle_for_command_capture(
 #[cfg(test)]
 mod tests {
     use super::{
-        engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
-        GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+        engine_handle_fixture, engine_handle_for_command_capture, reserve_engine_instance_id,
+        spawn_with_fallback, GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_thread::{observed_audio_thread_handle, OwnerCommand};
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
@@ -1558,6 +1576,21 @@ mod tests {
     use std::any::Any;
     use std::cell::RefCell;
     use triple_buffer::Input;
+
+    #[test]
+    fn native_grinder_model_engine_identity_is_unique_for_actual_handle_recreation() {
+        let (first, _, _) = engine_handle_for_command_capture(8);
+        let id = first.instance_id();
+        drop(first);
+        let (next, _, _) = engine_handle_for_command_capture(8);
+        assert!(next.instance_id() > id);
+        let exhausted = std::sync::atomic::AtomicU64::new(u64::MAX);
+        assert!(reserve_engine_instance_id(&exhausted).is_err());
+        assert_eq!(
+            exhausted.load(std::sync::atomic::Ordering::Relaxed),
+            u64::MAX
+        );
+    }
 
     /// The pre-built instance a detached-effect batch carries, built here on
     /// the control side exactly as [`crate::EngineHandle::add_effect`] builds

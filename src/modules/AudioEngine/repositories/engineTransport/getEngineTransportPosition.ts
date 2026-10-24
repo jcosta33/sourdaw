@@ -1,5 +1,6 @@
 import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
+import { type NativeGrinderModelReceipt } from '../../models/AudioGraphBackend';
 import {
     stoppedEngineTransportPosition,
     type EngineTransportPosition,
@@ -94,13 +95,56 @@ function asTunerReading(value: unknown): NativeTunerReading | null {
     return { active: entry.active, frequency, cents, confidence, noteIndex, octave, midiNote };
 }
 
+function nativeIdentity(value: unknown): value is string {
+    return (
+        typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18_446_744_073_709_551_615n
+    );
+}
+function readGrinderReceipts(value: unknown): readonly NativeGrinderModelReceipt[] | undefined {
+    if (!Array.isArray(value) || value.length > 64) {
+        return undefined;
+    }
+    const receipts: NativeGrinderModelReceipt[] = [];
+    for (const raw of value) {
+        if (typeof raw !== 'object' || raw === null) {
+            return undefined;
+        }
+        const row = raw as Record<string, unknown>;
+        if (
+            typeof row.trackId !== 'string' ||
+            typeof row.deviceId !== 'string' ||
+            typeof row.requestId !== 'string' ||
+            !row.requestId ||
+            row.requestId.length > 128 ||
+            !nativeIdentity(row.engineId) ||
+            !nativeIdentity(row.targetGeneration) ||
+            typeof row.contentHash !== 'string' ||
+            !/^[0-9a-f]{64}$/.test(row.contentHash)
+        ) {
+            return undefined;
+        }
+        if (receipts.some((old) => old.deviceId === row.deviceId)) {
+            return undefined;
+        }
+        receipts.push({
+            trackId: row.trackId,
+            deviceId: row.deviceId,
+            requestId: row.requestId,
+            engineId: row.engineId,
+            targetGeneration: row.targetGeneration,
+            contentHash: row.contentHash,
+        });
+    }
+    return receipts;
+}
+
 function toEngineTransportPosition(response: unknown): EngineTransportPosition {
     if (typeof response !== 'object' || response === null) {
         return stoppedEngineTransportPosition;
     }
 
     const payload = response as Record<string, unknown>;
-    return {
+    const position: EngineTransportPosition = {
         running: payload.running === true,
         playing: payload.playing === true,
         positionSeconds: readNumber(payload, 'positionSeconds'),
@@ -114,6 +158,14 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         stripPeaks: readStripPeaks(payload),
         tunerTelemetry: readTunerTelemetry(payload),
     };
+    if (nativeIdentity(payload.engineId)) {
+        position.engineId = payload.engineId;
+    }
+    const models = readGrinderReceipts(payload.grinderModels);
+    if (models) {
+        position.grinderModels = models;
+    }
+    return position;
 }
 
 /**

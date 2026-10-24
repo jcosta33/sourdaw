@@ -17,6 +17,7 @@ import { trackStore, type Device, type Track } from '#/modules/Arrangement/store
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { isDeviceCarriedByNativeSession } from '../../livePlayback/isDeviceCarriedByNativeSession';
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
+import { sendNativeGrinderNeuralPatch } from '../../livePlayback/sendNativeGrinderNeuralPatch';
 import { updateDevicePatch } from '../updateDevicePatch';
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
@@ -32,6 +33,11 @@ vi.mock('../../livePlayback/isDeviceCarriedByNativeSession', () => ({
 vi.mock('../../livePlayback/sendNativeDeviceParameters', () => ({
     sendNativeDeviceParameters: vi.fn(async () => true),
 }));
+
+vi.mock('../../livePlayback/sendNativeGrinderNeuralPatch', () => ({
+    sendNativeGrinderNeuralPatch: vi.fn(async () => {}),
+}));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 function createDevice(overrides: Partial<Device> & { id: string }): Device {
     return { name: overrides.id, type: 'fermenter', bypassed: false, parameterValues: {}, ...overrides };
@@ -163,5 +169,37 @@ describe('updateDevicePatch', () => {
 
         expect(audioEngine.updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', patch);
         expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
+    });
+});
+
+describe('native Grinder model patch route', () => {
+    it('keeps the Web Audio twin current and carries every model byte with its scalar gesture', () => {
+        projectHolding(createDevice({ id: 'd-nam', type: 'grinder' }));
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        vi.mocked(sendNativeDeviceParameters).mockClear();
+        const patch = {
+            gain: 7,
+            neuralModelMode: 'imported',
+            modelJson: '{"architecture":"Linear","weights":[0.5]}',
+            profile: { modelDigest: 'hint' },
+        };
+        updateDevicePatch('t1', 'd-nam', patch);
+        expect(audioEngine.updateDevicePatch).toHaveBeenCalledWith('t1', 'd-nam', patch);
+        expect(sendNativeGrinderNeuralPatch).toHaveBeenCalledWith({
+            kind: 'write',
+            trackId: 't1',
+            deviceId: 'd-nam',
+            modelJson: patch.modelJson,
+            values: { gain: 7, neuralModelMode: 1 },
+        });
+        expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
+        updateDevicePatch('t1', 'd-nam', { neuralModelMode: 'builtin', neuralModelSlot: 1 });
+        expect(sendNativeGrinderNeuralPatch).toHaveBeenLastCalledWith({
+            kind: 'write',
+            trackId: 't1',
+            deviceId: 'd-nam',
+            modelJson: null,
+            values: { neuralModelSlot: 1, neuralModelMode: 0 },
+        });
     });
 });

@@ -31,6 +31,7 @@ use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
 use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::grinder::engine::GrinderEngine;
+use daw_dsp::grinder::nam::native_admission::{NativeGrinderModelRequest, NativePreparedNam};
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
@@ -449,6 +450,12 @@ pub enum GraphCommand {
     /// [`GraphCommand::AddEffect`]'s.
     AddDetachedEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     SetParam(usize, DeviceParam, f32),
+    /// Control-prepared network and a reusable return box. Even a rejected
+    /// incoming request leaves through the off-callback reclaimer.
+    SetGrinderModel {
+        effect_id: usize,
+        request: Box<NativeGrinderModelRequest>,
+    },
     SetBypass(usize, bool),
     /// Drop a Bacteria body's whole modulation-assignment table.
     ///
@@ -972,6 +979,7 @@ impl GraphCommand {
             // `RemoveBusDevice` leave the effect registered — detached, or
             // back on the master chain — so none of them frees a slot.
             Self::SetParam(..)
+            | Self::SetGrinderModel { .. }
             | Self::SetBypass(..)
             | Self::ClearModAssignments(..)
             | Self::AddModAssignment { .. }
@@ -1074,6 +1082,7 @@ impl GraphCommand {
             | Self::AddPlugin(..)
             | Self::AddHostedPlugin(..)
             | Self::SetParam(..)
+            | Self::SetGrinderModel { .. }
             | Self::SetBypass(..)
             | Self::ClearModAssignments(..)
             | Self::AddModAssignment { .. }
@@ -2581,6 +2590,23 @@ impl GrinderBody {
     fn new(sample_rate: f32) -> Self {
         Self {
             engine: GrinderEngine::new(sample_rate),
+        }
+    }
+
+    pub fn swap_native_model(
+        &mut self,
+        model: Option<NativePreparedNam>,
+    ) -> Option<NativePreparedNam> {
+        self.engine.swap_native_neural_model(model)
+    }
+
+    pub fn has_native_model(&self) -> bool {
+        self.engine.native_neural_model().is_some()
+    }
+
+    fn activate_native_model(&self) {
+        if let Some(model) = self.engine.native_neural_model() {
+            model.lease.activate();
         }
     }
 
@@ -4505,6 +4531,27 @@ impl ScoringBody {
 /// `false` here is not an unknown parameter but a producer that lost track of
 /// what an effect id holds. The caller counts it rather than the engine
 /// guessing which body the value was meant for.
+fn take_cleared_grinder_model(
+    instance: &mut PluginCore,
+    param: DeviceParam,
+    value: f32,
+) -> Option<NativePreparedNam> {
+    let DeviceParam::BuiltinNamed(name) = param else {
+        return None;
+    };
+    if name.as_str() != "neuralModelSlot" && !(name.as_str() == "neuralModelMode" && value <= 0.5) {
+        return None;
+    }
+    let PluginCore::Grinder(body) = instance else {
+        return None;
+    };
+    let old = body.swap_native_model(None);
+    if let Some(model) = &old {
+        model.lease.invalidate();
+    }
+    old
+}
+
 fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32) -> bool {
     match (instance, param) {
         (PluginCore::Knead(engine), DeviceParam::ShiftSemitones) => {
@@ -5169,6 +5216,8 @@ impl MasterWorkList {
 /// `Producer` of these across the public command vocabulary; the fields and
 /// constructors stay crate-private.
 pub struct RetiredGraphObjects {
+    grinder_request: Option<Box<NativeGrinderModelRequest>>,
+    grinder_model: Option<NativePreparedNam>,
     effect: Option<ActiveEffect>,
     midi_fx: Option<Box<dyn MidiFx>>,
     /// A track, bus, or clip the graph gave up. Each owns sample buffers, so
@@ -5190,6 +5239,8 @@ pub struct RetiredGraphObjects {
 impl RetiredGraphObjects {
     fn removed(effect: Option<ActiveEffect>, midi_fx: Option<Box<dyn MidiFx>>) -> Self {
         Self {
+            grinder_request: None,
+            grinder_model: None,
             effect,
             midi_fx,
             timeline_object: None,
@@ -5247,6 +5298,8 @@ impl RetiredGraphObjects {
         let mut pending = pending.unwrap_or_else(|| Self::removed(None, None));
 
         Self {
+            grinder_request: pending.grinder_request.take(),
+            grinder_model: pending.grinder_model.take(),
             effect: pending.effect.take(),
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
@@ -6482,7 +6535,33 @@ impl AudioScheduler {
                 GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }
+                GraphCommand::SetGrinderModel {
+                    effect_id,
+                    mut request,
+                } => {
+                    if request.authority.load(Ordering::Acquire) == request.request
+                        && request
+                            .model
+                            .as_ref()
+                            .map_or(true, |model| model.lease.is_current())
+                    {
+                        if let Some(slot) = self.effect_index.lookup(effect_id) {
+                            if let PluginCore::Grinder(body) = &mut self.effects[slot].instance {
+                                request.model = body.swap_native_model(request.model.take());
+                                body.activate_native_model();
+                                request.applied.store(true, Ordering::Release);
+                            }
+                        }
+                    }
+                    if let Some(model) = &request.model {
+                        model.lease.retire();
+                    }
+                    let mut retired = RetiredGraphObjects::removed(None, None);
+                    retired.grinder_request = Some(request);
+                    Some(retired)
+                }
                 GraphCommand::SetParam(id, param, value) => {
+                    let mut retired_model = None;
                     let mut moved_latency = false;
                     if let Some(slot) = self.effect_index.lookup(id) {
                         if let Some(effect) = self.effects.get_mut(slot) {
@@ -6491,6 +6570,8 @@ impl AudioScheduler {
                             // travel on its control path, and a built-in
                             // address aimed at the other built-in is a
                             // producer that lost track of what this id holds.
+                            retired_model =
+                                take_cleared_grinder_model(&mut effect.instance, param, value);
                             if apply_builtin_param(&mut effect.instance, param, value) {
                                 // A body that reports its own latency may have
                                 // moved it on this very write, and the write is
@@ -6502,7 +6583,11 @@ impl AudioScheduler {
                         }
                     }
                     self.pdc_dirty |= moved_latency;
-                    None
+                    retired_model.map(|model| {
+                        let mut retired = RetiredGraphObjects::removed(None, None);
+                        retired.grinder_model = Some(model);
+                        retired
+                    })
                 }
                 // Neither addition nor clear moves a declared latency, so
                 // both are absent from `dirties_compensation` — and both are
@@ -7222,7 +7307,7 @@ impl AudioScheduler {
             !(sounds_notes && placement == EffectPlacement::MasterChain),
             "a note-sink built-in must never be registered onto the master chain"
         );
-        let effect = if sounds_notes {
+        let mut effect = if sounds_notes {
             ActiveEffect::detached(id, instance)
         } else {
             ActiveEffect::with_placement(id, instance, placement)
@@ -7236,8 +7321,27 @@ impl AudioScheduler {
             self.timeline.record_capacity_refusal();
             return Some(RetiredGraphObjects::effect(effect));
         }
+        let mut stale_model = None;
+        if let PluginCore::Grinder(body) = &mut effect.instance {
+            if body
+                .engine
+                .native_neural_model()
+                .is_some_and(|model| !model.lease.is_current())
+            {
+                stale_model = body.swap_native_model(None);
+                if let Some(model) = &stale_model {
+                    model.lease.retire();
+                }
+            } else {
+                body.activate_native_model();
+            }
+        }
         self.push_effect(effect);
-        None
+        stale_model.map(|model| {
+            let mut retired = RetiredGraphObjects::removed(None, None);
+            retired.grinder_model = Some(model);
+            retired
+        })
     }
 
     /// Refuse an `AddEffect` naming a note-sink built-in: the master insert
@@ -7831,6 +7935,12 @@ impl AudioScheduler {
             {
                 visits += 1;
             }
+            let holds_model = matches!(&self.effects[slot].instance, PluginCore::Grinder(body) if body.has_native_model());
+            if holds_model && (self.pending_retirement.is_some() || self.retired_tx.slots() <= 1) {
+                work_index += 1;
+                continue;
+            }
+            let mut retired_model = None;
             let effect = &mut self.effects[slot];
             let receives_no_block = effect.receives_no_block();
             let mut wrote_builtin = false;
@@ -7872,6 +7982,10 @@ impl AudioScheduler {
                         }
                     }
                     (instance, DeviceParamTarget::Builtin(param)) => {
+                        let old = take_cleared_grinder_model(instance, param, event.value as f32);
+                        if old.is_some() {
+                            retired_model = old;
+                        }
                         if apply_builtin_param(instance, param, event.value as f32) {
                             wrote_builtin = true;
                         } else {
@@ -7894,6 +8008,13 @@ impl AudioScheduler {
                 self.parameter_work.remove(slot);
             } else {
                 work_index += 1;
+            }
+            if let Some(model) = retired_model {
+                let mut retired = RetiredGraphObjects::removed(None, None);
+                retired.grinder_model = Some(model);
+                if !self.retire(retired) {
+                    break;
+                }
             }
         }
         self.pdc_dirty |= moved_latency;
@@ -23884,6 +24005,273 @@ mod timeline_tests {
              (largest difference {})",
             max_abs_difference(&hosted_right, &worklet_right)
         );
+    }
+
+    static NATIVE_GRINDER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn native_grinder_prepared(
+        text: &str,
+        authority: Arc<std::sync::atomic::AtomicU64>,
+        request: u64,
+    ) -> daw_dsp::grinder::nam::native_admission::NativePreparedNam {
+        use daw_dsp::grinder::nam::native_admission::*;
+        let plan = NativeNamPlan::inspect(text, GRINDER_RATE).unwrap();
+        let transaction = NativeNamTransaction::begin(text.len(), 1).unwrap();
+        let mut leases = transaction
+            .reserve(&[NativeNamReservation {
+                plan: plan.clone(),
+                target: NativeNamTarget {
+                    engine: 1,
+                    effect: 7,
+                },
+                authority,
+                request,
+            }])
+            .unwrap();
+        NativePreparedNam::build(text, &plan, leases.remove(0), [0; 32]).unwrap()
+    }
+
+    #[test]
+    fn native_grinder_model_actual_scheduler_matches_direct_network_and_retires_on_clear() {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use daw_dsp::grinder::engine::GrinderEngine;
+        use daw_dsp::grinder::nam::native_admission::NativeGrinderModelRequest;
+        use std::sync::atomic::AtomicU64;
+        let text = r#"{"architecture":"Linear","sample_rate":48000,"config":{"receptive_field":2,"bias":false},"weights":[0.25,-0.5]}"#;
+        let authority = Arc::new(AtomicU64::new(1));
+        let model = native_grinder_prepared(text, Arc::clone(&authority), 1);
+        let witness = Arc::downgrade(&model.lease);
+        let mut harness = Harness::new(64);
+        let material = grinder_burst_material(4096);
+        track_with_grinder(&mut harness, material.clone(), &grinder_patch());
+        let command = GraphCommand::SetGrinderModel {
+            effect_id: 7,
+            request: Box::new(NativeGrinderModelRequest {
+                model: Some(model),
+                authority,
+                request: 1,
+                applied: Arc::new(AtomicBool::new(false)),
+            }),
+        };
+        assert!(harness.command_tx.push(command).is_ok());
+        #[cfg(debug_assertions)]
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        #[cfg(not(debug_assertions))]
+        harness.scheduler.update_graph();
+        harness.playing();
+        let (actual, _) = render_master(&mut harness, 512, 8);
+        let mut reference = GrinderEngine::new(GRINDER_RATE);
+        for (name, value) in GRINDER_PATCH {
+            reference.set_param(name, value);
+        }
+        reference.load_neural_model(text).unwrap();
+        let mut expected = material.clone();
+        let mut right = material;
+        for (left, right) in expected.chunks_mut(128).zip(right.chunks_mut(128)) {
+            reference.process_block(left, right);
+        }
+        assert!(actual.iter().any(|sample| *sample != 0.0));
+        assert!(
+            max_abs_difference(&actual, &expected) < 1e-6,
+            "native full network differs from direct reference"
+        );
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::SetParam(
+                7,
+                DeviceParam::BuiltinNamed(grinder_name("neuralModelSlot")),
+                1.0
+            ))
+            .is_ok());
+        #[cfg(debug_assertions)]
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        #[cfg(not(debug_assertions))]
+        harness.scheduler.update_graph();
+        assert!(
+            witness.strong_count() > 0,
+            "removing a map entry is not final reclamation"
+        );
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(
+            witness.strong_count(),
+            0,
+            "the actual off-callback last owner releases the lease"
+        );
+    }
+
+    #[test]
+    fn native_grinder_model_retired_queue_retains_budget_and_stale_incoming_ownership() {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use daw_dsp::grinder::nam::native_admission::*;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let text = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}"#;
+        let authority = Arc::new(AtomicU64::new(1));
+        let mut harness = Harness::new(128);
+        track_with_grinder(&mut harness, grinder_burst_material(4096), &grinder_patch());
+        for request in 1..=32 {
+            authority.store(request, Ordering::Release);
+            let model = native_grinder_prepared(text, Arc::clone(&authority), request);
+            harness.send(GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority: Arc::clone(&authority),
+                    request,
+                    applied: Arc::new(AtomicBool::new(false)),
+                }),
+            });
+        }
+        let plan = NativeNamPlan::inspect(text, GRINDER_RATE).unwrap();
+        let transaction = NativeNamTransaction::begin(text.len(), 1).unwrap();
+        assert!(transaction
+            .reserve(&[NativeNamReservation {
+                plan,
+                target: NativeNamTarget {
+                    engine: 1,
+                    effect: 7
+                },
+                authority: Arc::clone(&authority),
+                request: 33
+            }])
+            .is_err());
+        drop(transaction);
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        authority.store(33, Ordering::Release);
+        let stale = native_grinder_prepared(text, Arc::clone(&authority), 33);
+        let witness = Arc::downgrade(&stale.lease);
+        authority.store(34, Ordering::Release);
+        harness.send(GraphCommand::SetGrinderModel {
+            effect_id: 999,
+            request: Box::new(NativeGrinderModelRequest {
+                model: Some(stale),
+                authority,
+                request: 33,
+                applied: Arc::new(AtomicBool::new(false)),
+            }),
+        });
+        assert!(
+            witness.strong_count() > 0,
+            "wrong-target model must retire, not free oncallback"
+        );
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(witness.strong_count(), 0);
+    }
+
+    #[test]
+    fn native_grinder_scheduled_clear_waits_for_retirement_capacity_and_shutdown_keeps_pending_owner(
+    ) {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use std::sync::atomic::AtomicU64;
+        let text = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}"#;
+        let authority = Arc::new(AtomicU64::new(1));
+        let mut harness = Harness::new(4);
+        track_with_grinder(&mut harness, grinder_burst_material(4096), &grinder_patch());
+        let mut witness = None;
+        for request in 1..=3 {
+            authority.store(request, Ordering::Release);
+            let model = native_grinder_prepared(text, Arc::clone(&authority), request);
+            witness = Some(Arc::downgrade(&model.lease));
+            let command = GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority: Arc::clone(&authority),
+                    request,
+                    applied: Arc::new(AtomicBool::new(false)),
+                }),
+            };
+            assert!(harness.command_tx.push(command).is_ok());
+            assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        }
+        let witness = witness.unwrap();
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(grinder_name(
+                "neuralModelMode",
+            ))),
+            value: 0.0,
+            at_frame: 0,
+        });
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64));
+        let slot = harness.scheduler.effect_index.lookup(7).unwrap();
+        assert!(
+            !harness.scheduler.effects[slot].pending_params.is_empty(),
+            "full retirement channel must preserve the actual clear event"
+        );
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body) if body.has_native_model())
+        );
+        drop(harness.retired_rx.pop().unwrap());
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64));
+        assert!(harness.scheduler.effects[slot].pending_params.is_empty());
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body) if !body.has_native_model())
+        );
+        assert!(witness.strong_count() > 0);
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(witness.strong_count(), 0);
+
+        authority.store(4, Ordering::Release);
+        let model = native_grinder_prepared(text, Arc::clone(&authority), 4);
+        let removed = Arc::downgrade(&model.lease);
+        harness.send(GraphCommand::SetGrinderModel {
+            effect_id: 7,
+            request: Box::new(NativeGrinderModelRequest {
+                model: Some(model),
+                authority: Arc::clone(&authority),
+                request: 4,
+                applied: Arc::new(AtomicBool::new(false)),
+            }),
+        });
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::RemovePlugin(7))
+            .is_ok());
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        assert!(removed.strong_count() > 0);
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(removed.strong_count(), 0);
+
+        authority.store(5, Ordering::Release);
+        let model = native_grinder_prepared(text, Arc::clone(&authority), 5);
+        let pending = Arc::downgrade(&model.lease);
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority,
+                    request: 5,
+                    applied: Arc::new(AtomicBool::new(false))
+                })
+            })
+            .is_ok());
+        let Harness {
+            scheduler,
+            mut retired_rx,
+            command_tx,
+        } = harness;
+        drop(scheduler);
+        drop(command_tx);
+        assert!(
+            pending.strong_count() > 0,
+            "shutdown must hand queued model ownership to the existing reclaimer"
+        );
+        while let Ok(retired) = retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(pending.strong_count(), 0);
     }
 
     /// A Grinder on the strip, optionally written to after registration, and

@@ -52,6 +52,7 @@ import {
     type AudioGraphAttachedPlugin,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
+    type NativeGrinderModelReceipt,
 } from '../../models/AudioGraphBackend';
 
 import { type NativeGraphTransport } from './nativeGraphTransport';
@@ -148,6 +149,111 @@ function readAttachedCrumbsInstances(value: unknown): readonly AudioGraphAttache
     });
 }
 
+function nativeIdentity(value: unknown): value is string {
+    return (
+        typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18_446_744_073_709_551_615n
+    );
+}
+
+function readGrinderReceipts(value: unknown): readonly NativeGrinderModelReceipt[] {
+    if (!Array.isArray(value) || value.length > 16) {
+        throw new Error('Native NAM model receipts are missing or exceed the limit');
+    }
+    const receipts: NativeGrinderModelReceipt[] = [];
+    for (const raw of value) {
+        if (typeof raw !== 'object' || raw === null) {
+            throw new Error('Native NAM model receipt is malformed');
+        }
+        const row = raw as Record<string, unknown>;
+        if (
+            typeof row.trackId !== 'string' ||
+            typeof row.deviceId !== 'string' ||
+            typeof row.requestId !== 'string' ||
+            !row.requestId ||
+            row.requestId.length > 128 ||
+            !nativeIdentity(row.engineId) ||
+            !nativeIdentity(row.targetGeneration) ||
+            typeof row.contentHash !== 'string' ||
+            !/^[0-9a-f]{64}$/.test(row.contentHash)
+        ) {
+            throw new Error('Native NAM model receipt identity is malformed');
+        }
+        if (receipts.some((old) => old.deviceId === row.deviceId)) {
+            throw new Error('Native NAM duplicate model receipt');
+        }
+        receipts.push({
+            trackId: row.trackId,
+            deviceId: row.deviceId,
+            requestId: row.requestId,
+            engineId: row.engineId,
+            targetGeneration: row.targetGeneration,
+            contentHash: row.contentHash,
+        });
+    }
+    return receipts;
+}
+
+function readNativeModelAdmission(
+    payload: Record<string, unknown>,
+    batch: AudioGraphCommandBatch,
+    result: Extract<AudioGraphApplyResult, { application: 'applied' }>
+): AudioGraphApplyResult {
+    const wire = serializeAudioGraphCommandBatch(batch);
+    if (wire.schemaVersion !== 2) {
+        if (nativeIdentity(payload.engineId)) {
+            return { ...result, engineId: payload.engineId };
+        }
+        return result;
+    }
+    const admitted = payload.admittedBatch;
+    if (
+        !nativeIdentity(payload.engineId) ||
+        typeof admitted !== 'number' ||
+        !Number.isSafeInteger(admitted) ||
+        admitted < 1
+    ) {
+        throw new Error('Native NAM engine identity or fence is invalid');
+    }
+    const grinderModels = readGrinderReceipts(payload.grinderModels);
+    const expected: { trackId: string; deviceId: string; requestId: string }[] = [];
+    for (const command of wire.commands) {
+        if (command.kind === 'set-grinder-model') {
+            expected.push(command);
+        }
+        if (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') {
+            const trackId = command.kind === 'create-track-strip' ? command.trackId : command.busId;
+            for (const device of command.devices) {
+                if (device.grinderModel) {
+                    expected.push({ trackId, deviceId: device.id, requestId: device.grinderModel.requestId });
+                }
+            }
+        }
+        if (command.kind === 'insert-device' && command.device.grinderModel) {
+            expected.push({
+                trackId: command.trackId,
+                deviceId: command.device.id,
+                requestId: command.device.grinderModel.requestId,
+            });
+        }
+    }
+    if (
+        grinderModels.length !== expected.length ||
+        expected.some(
+            (target) =>
+                !grinderModels.some(
+                    (receipt) =>
+                        receipt.engineId === payload.engineId &&
+                        receipt.trackId === target.trackId &&
+                        receipt.deviceId === target.deviceId &&
+                        receipt.requestId === target.requestId
+                )
+        )
+    ) {
+        throw new Error('Native NAM admission did not report every requested model');
+    }
+    return { ...result, engineId: payload.engineId, grinderModels };
+}
+
 /**
  * Read `apply_graph_commands`'s mirror of {@link AudioGraphApplyResult}.
  *
@@ -186,7 +292,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         const admitted = payload.admittedBatch;
         const admittedBatch =
             typeof admitted === 'number' && Number.isFinite(admitted) ? { admittedBatch: admitted } : {};
-        return {
+        const result: Extract<AudioGraphApplyResult, { application: 'applied' }> = {
             acceptance: 'accepted',
             application: 'applied',
             ...correlation,
@@ -196,6 +302,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
             attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
         };
+        return readNativeModelAdmission(payload, batch, result);
     }
     const reason = payload.reason;
     return {
@@ -229,6 +336,9 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
 
     return {
         backendId: NATIVE_LIVE_BACKEND_ID,
+        get disposed(): boolean {
+            return disposed;
+        },
 
         async apply(batch: AudioGraphCommandBatch): Promise<AudioGraphApplyResult> {
             if (disposed) {
@@ -249,11 +359,17 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
                     backendId: claimBackendId,
                 });
             }
+            if (disposed) {
+                return rejected('backend disposed before native admission');
+            }
             let raw: unknown;
             try {
                 raw = await transport.applyGraphCommands({ batch: serializeAudioGraphCommandBatch(batch) });
             } catch (error) {
                 return rejected(reasonOf(error));
+            }
+            if (disposed) {
+                throw new Error('Native backend disposed during admission');
             }
             return readAppliedResult(raw, batch);
         },

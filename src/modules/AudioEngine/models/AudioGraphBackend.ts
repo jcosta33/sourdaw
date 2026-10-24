@@ -176,7 +176,19 @@ export type NativeModAssignmentRow = Readonly<{
  * lacks makes the type-aware lint resolve those calls to the injectable's
  * `any` signature.
  */
+/** Runtime projection only. Neither request nor native receipt belongs in a project. */
+export type NativeGrinderModel = Readonly<{ requestId: string; modelJson: string }>;
+export type NativeGrinderModelReceipt = Readonly<{
+    trackId: string;
+    deviceId: string;
+    engineId: string;
+    targetGeneration: string;
+    requestId: string;
+    contentHash: string;
+}>;
+
 export type AudioGraphDevice = Device & {
+    grinderModel?: NativeGrinderModel;
     sampleBankKey?: string;
     modAssignments?: readonly NativeModAssignmentRow[];
 };
@@ -548,6 +560,14 @@ export type AudioGraphWriteDeviceParameterCommand = Readonly<{
  * AudioGraphWriteDeviceParameterCommand} does: a batch reported applied while
  * some of its values went nowhere is worse than one refused.
  */
+export type AudioGraphSetGrinderModelCommand = Readonly<{
+    kind: 'set-grinder-model';
+    target: AudioGraphDeviceTarget;
+    requestId: string;
+    modelJson: string | null;
+    values: Readonly<Record<string, number>>;
+}>;
+
 export type AudioGraphSetDeviceParametersCommand = Readonly<{
     kind: 'set-device-parameters';
     target: AudioGraphDeviceTarget;
@@ -848,6 +868,7 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphSetDeviceParametersCommand
+    | AudioGraphSetGrinderModelCommand
     | AudioGraphSetDeviceBypassCommand
     | AudioGraphSetDeviceModAssignmentsCommand
     | AudioGraphScheduleClipCommand
@@ -1008,6 +1029,8 @@ export type AudioGraphApplyResult =
            * applied.
            */
           admittedBatch?: number;
+          engineId?: string;
+          grinderModels?: readonly NativeGrinderModelReceipt[];
           reports: readonly AudioGraphStripReport[];
           /**
            * External plugin instances this batch handed to the engine.
@@ -1057,6 +1080,8 @@ export type AudioGraphApplyResult =
 export type AudioGraphBackend = Readonly<{
     /** Identifies the implementation in diagnostics and in parity reports. */
     backendId: string;
+    /** Native model completion requires the actual handle's lifetime readback. */
+    disposed?: boolean;
     /**
      * Apply one batch. Commands are applied in order, and a command the
      * backend does not implement refuses the **whole** batch before any of it

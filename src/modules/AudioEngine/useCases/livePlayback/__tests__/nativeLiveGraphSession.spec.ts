@@ -28,6 +28,7 @@ import {
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
+import { getEngineTransportPosition } from '../../../repositories/engineTransport/getEngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
@@ -61,6 +62,8 @@ const mocks = vi.hoisted(() => ({
     availability: null as unknown,
     /** Runs when the probe is awaited, which is before the project is read. */
     onProbe: vi.fn(),
+    onProgrammeRead: vi.fn<() => void>(),
+    onTopologyProjection: vi.fn<(input: LiveGraphTopologyInput) => void>(),
     applyGraphCommands: vi.fn<(input: { batch: unknown }) => Promise<unknown>>(),
     /**
      * The engine's own answer about the pair it installed, `loopEnabled`
@@ -154,6 +157,9 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
         return Promise.resolve(mocks.availability as NativeGraphAvailability);
     },
 }));
+vi.mock('../../../repositories/engineTransport/getEngineTransportPosition', () => ({
+    getEngineTransportPosition: vi.fn(),
+}));
 vi.mock('../../../repositories/engineTransport/setEngineTransportMaps', () => ({
     setEngineTransportMaps: (maps: unknown) => mocks.setEngineTransportMaps(maps),
 }));
@@ -185,9 +191,13 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../readLiveGraphProgramme')>();
     return {
-        readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) =>
-            (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
-            actual.readLiveGraphProgramme(input),
+        readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) => {
+            mocks.onProgrammeRead();
+            return (
+                (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
+                actual.readLiveGraphProgramme(input)
+            );
+        },
     };
 });
 vi.mock('../readLiveMidiProgramme', () => ({
@@ -243,6 +253,9 @@ vi.mock('../../../repositories/nativeGraph/createNativeLiveGraphBackend', async 
             mocks.openedBackends.push(handle);
             return {
                 ...backend,
+                get disposed(): boolean {
+                    return backend.disposed ?? true;
+                },
                 dispose: () => {
                     handle.disposed = true;
                     backend.dispose();
@@ -266,8 +279,13 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
 vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../projectLiveGraphTopology')>();
     return {
-        projectLiveGraphTopology: (input: LiveGraphTopologyInput): readonly AudioGraphCommand[] =>
-            (mocks.topologyOverride as readonly AudioGraphCommand[] | null) ?? actual.projectLiveGraphTopology(input),
+        projectLiveGraphTopology: (input: LiveGraphTopologyInput): readonly AudioGraphCommand[] => {
+            mocks.onTopologyProjection(input);
+            return (
+                (mocks.topologyOverride as readonly AudioGraphCommand[] | null) ??
+                actual.projectLiveGraphTopology(input)
+            );
+        },
     };
 });
 
@@ -637,6 +655,8 @@ function attachReportedInstancesInStore(): void {
 beforeEach(() => {
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
+    mocks.onProgrammeRead.mockReset();
+    mocks.onTopologyProjection.mockReset();
     mocks.applyGraphCommands.mockReset();
     mocks.applyGraphCommands.mockResolvedValue(APPLIED);
     mocks.setEngineTransportMaps.mockClear();
@@ -741,6 +761,62 @@ describe('startNativeLiveGraphSession', () => {
         expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
     });
 
+    it('rejects preparation failures unchanged and settles the synchronous pending count without opening a backend', async () => {
+        const failure = new Error('programme snapshot failed');
+        mocks.onProgrammeRead.mockImplementation(() => {
+            throw failure;
+        });
+        const epoch = nativeLiveGraphSession.rearmEpoch;
+        const pendingCount = nativeLiveGraphSession.startsPending;
+
+        const pending = startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(nativeLiveGraphSession.rearmEpoch).toBe(epoch + 1);
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount + 1);
+        await expect(pending).rejects.toBe(failure);
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount);
+        expect(mocks.openedBackends).toEqual([]);
+        expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect(mocks.carriedClaims).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('disposes only the newly prepared backend when its first projection fails before any claim or apply', async () => {
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        const previous = nativeLiveGraphSession.backend;
+        const chains = nativeLiveGraphSession.nativeChainByStripId;
+        expect(previous).not.toBeNull();
+        const failure = new Error('first topology projection failed');
+        mocks.onTopologyProjection.mockImplementation(() => {
+            throw failure;
+        });
+        mocks.applyGraphCommands.mockClear();
+        mocks.setEngineTransportMaps.mockClear();
+        mocks.carriedClaims = [];
+        const epoch = nativeLiveGraphSession.rearmEpoch;
+        const pendingCount = nativeLiveGraphSession.startsPending;
+
+        const pending = startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(nativeLiveGraphSession.rearmEpoch).toBe(epoch + 1);
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount + 1);
+        await expect(pending).resolves.toEqual({ outcome: 'declined', reason: failure.message });
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount);
+        expect(mocks.openedBackends).toEqual([{ disposed: false }, { disposed: true }]);
+        expect(previous?.disposed).toBe(false);
+        expect(nativeLiveGraphSession.backend).toBe(previous);
+        expect(nativeLiveGraphSession.nativeChainByStripId).toBe(chains);
+        expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect(mocks.carriedClaims).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Native audio engine did not start: first topology projection failed. ' +
+                'Playing through Web Audio; external plugins are silent until it starts.',
+            'warning'
+        );
+    });
+
     // This batch is what starts the native engine, so it is also what takes over
     // every plugin instance loaded before there was one. Those instances were
     // reported to their devices as loaded but processing no audio, and this
@@ -834,6 +910,36 @@ describe('startNativeLiveGraphSession', () => {
         ]);
         // The second batch replaced every strip the first built, so its reports
         // are the only ones describing the graph the engine now holds.
+        expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
+    });
+
+    it('reads the current master level again when the real start rebinds a newly attached plugin', async () => {
+        attachReportedInstancesInStore();
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const boundReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: ['device-i1'] }];
+        mocks.applyGraphCommands
+            .mockImplementationOnce(async () => {
+                masterGainState.gain = 0.25;
+                return { ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] };
+            })
+            .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2, reports: boundReports });
+
+        const result = await startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        const [first, second] = topologyBatches();
+        expect(topologyBatches()).toHaveLength(2);
+        expect(first?.commands).toContainEqual({ kind: 'set-master-gain', gain: 0.8 });
+        expect(second?.commands).toContainEqual({ kind: 'set-master-gain', gain: 0.25 });
+        expect(stripCreation(first, 'audio-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'audio-1')).toMatchObject({ contributesAudio: true });
         expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
     });
 
@@ -2938,5 +3044,139 @@ describe('an edit issued while the start apply is pending (#4785)', () => {
             });
         });
         expect(mocks.wireCalls).toEqual(['apply', 'apply', 'apply']);
+    });
+});
+
+describe('native NAM initial ownership requires actual model drain', () => {
+    it('leaves Web Audio audible until the same engine and model target cross the admitted fence', async () => {
+        const receipt = {
+            trackId: 'audio-1',
+            deviceId: 'd-nam',
+            engineId: '9007199254740993',
+            targetGeneration: '42',
+            requestId: 'cold',
+            contentHash: 'a'.repeat(64),
+        };
+        const modelJson = '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}';
+        mocks.topologyOverride = [
+            {
+                ...CARRIED_STRIP,
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Lead',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'd-nam',
+                        name: 'Grinder',
+                        type: 'grinder',
+                        bypassed: false,
+                        parameterValues: { engineMode: 1 },
+                        grinderModel: { requestId: 'cold', modelJson },
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ];
+        mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+            const wire = batch as NativeGraphWireBatch;
+            if (wire.replaceTopology) {
+                expect(wire.schemaVersion).toBe(2);
+                return {
+                    ...APPLIED,
+                    admittedBatch: 7,
+                    engineId: receipt.engineId,
+                    grinderModels: [receipt],
+                    reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['d-nam'] }],
+                };
+            }
+            return APPLIED;
+        });
+        let observed!: () => void;
+        const firstReading = new Promise<void>((resolve) => {
+            observed = resolve;
+        });
+        let release!: (value: EngineTransportPosition) => void;
+        const matching = new Promise<EngineTransportPosition>((resolve) => {
+            release = resolve;
+        });
+        vi.mocked(getEngineTransportPosition)
+            .mockImplementationOnce(async () => {
+                observed();
+                return { ...rollingReading(0), engineId: receipt.engineId, batchesApplied: 6, grinderModels: [] };
+            })
+            .mockImplementation(() => matching);
+        const starting = startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            monitor: 'audible',
+        });
+        await firstReading;
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        release({ ...rollingReading(0), engineId: receipt.engineId, batchesApplied: 7, grinderModels: [receipt] });
+        await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).toContain('audio-1');
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+    });
+
+    it('refuses a model result from a successor engine at the same counter and retains the web carrier', async () => {
+        const receipt = {
+            trackId: 'audio-1',
+            deviceId: 'd-nam',
+            engineId: '1',
+            targetGeneration: '42',
+            requestId: 'cold',
+            contentHash: 'a'.repeat(64),
+        };
+        mocks.topologyOverride = [
+            {
+                ...CARRIED_STRIP,
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Lead',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'd-nam',
+                        name: 'Grinder',
+                        type: 'grinder',
+                        bypassed: false,
+                        parameterValues: {},
+                        grinderModel: {
+                            requestId: 'cold',
+                            modelJson:
+                                '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                        },
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ];
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            admittedBatch: 7,
+            engineId: '1',
+            grinderModels: [receipt],
+        });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingReading(0),
+            engineId: '2',
+            batchesApplied: 7,
+            grinderModels: [receipt],
+        });
+        await expect(
+            startHeldSession({
+                positionSeconds: 0,
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            })
+        ).resolves.toMatchObject({ outcome: 'declined', reason: expect.stringContaining('engine') });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
     });
 });

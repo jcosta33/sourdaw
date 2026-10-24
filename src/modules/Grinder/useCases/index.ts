@@ -9,3 +9,4 @@ export * from './exportGrinderNeuralModel';
 export * from './importGrinderNeuralModels';
 export * from './removeGrinderNeuralModel';
 export * from './restoreGrinderNeuralLibrary';
+export * from './captureNativeGrinderNeuralPatch';
