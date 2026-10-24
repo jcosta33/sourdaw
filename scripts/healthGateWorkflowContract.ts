@@ -98,6 +98,7 @@ const STATIC_SUITE_STEPS = [
     'Desktop shell types',
     'Format',
     'Command argument schemas',
+    'Release inventory',
     'Test collection scope',
     'Barrel mock coverage',
     'Device write boundary census',
@@ -105,14 +106,7 @@ const STATIC_SUITE_STEPS = [
     'Agent delivery scripts',
     'Health gate infrastructure',
 ] as const;
-// Release provenance (tracked sets, licenses, trademark, asset digests) is
-// checked nightly and by the release proof, never on a pull request: a pull
-// request that edits package.json must not need a restamp to pass.
-const NIGHTLY_STATIC_SUITE_STEPS = [
-    ...STATIC_SUITE_STEPS.slice(0, STATIC_SUITE_STEPS.indexOf('Test collection scope')),
-    'Release inventory',
-    ...STATIC_SUITE_STEPS.slice(STATIC_SUITE_STEPS.indexOf('Test collection scope')),
-] as const;
+const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
 // or `null` for a reusable-workflow caller that must never grow steps. A

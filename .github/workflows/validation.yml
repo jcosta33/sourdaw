@@ -305,6 +305,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Release inventory reads immutable Levain measurement provenance.
+          fetch-depth: 0
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
@@ -357,10 +360,8 @@ jobs:
         if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:command-schema
 
-      # Release provenance (tracked sets, licenses, trademark, asset digests)
-      # is not checked here. `test:release-inventory` runs in nightly.yml and
-      # in `release:proof:assemble`, so an ordinary pull request never needs
-      # a restamp.
+      - name: Release inventory
+        run: pnpm test:release-inventory
 
       - name: Test collection scope
         if: needs.decide.outputs.tooling != 'true'

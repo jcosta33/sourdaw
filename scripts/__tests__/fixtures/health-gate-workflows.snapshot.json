@@ -682,7 +682,10 @@
         "steps": [
           {
             "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0
+            }
           },
           {
             "name": "Set up pnpm",
@@ -739,6 +742,10 @@
             "name": "Command argument schemas",
             "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm test:command-schema"
+          },
+          {
+            "name": "Release inventory",
+            "run": "pnpm test:release-inventory"
           },
           {
             "name": "Test collection scope",
