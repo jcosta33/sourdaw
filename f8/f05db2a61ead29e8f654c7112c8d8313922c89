@@ -1,0 +1,28 @@
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_59e31a5c6f3e31::t_5fd0ece8d65b5e 9-10,51,57-59,65-66
+  s_59e31a5c6f3e31::t_ee301d9e083b7b 40-41
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_d66f69357e296b 9,87,111-114,291-296,298-312,314-330,418
+  s_59e31a5c6f3e31::t_a987a0c4445986 76,79-83,297,313,362,378,428-430
+  s_59e31a5c6f3e31::t_f9748ee980d99d 331,333-349,380-381,390,431
+  s_59e31a5c6f3e31::t_cf9e6d0d63abde 358,361,363,372-374
+  s_59e31a5c6f3e31::t_7c5ae0ee9d340b 332,375-377,379,432-433
+src/modules/Levain/useCases/setLevainPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_5fd0ece8d65b5e 10,28,30,49,57-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8f05db2a61ead29e8f654c7112c8d8313922c89",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
