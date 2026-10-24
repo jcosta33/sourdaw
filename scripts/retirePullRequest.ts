@@ -21,7 +21,7 @@ import {
     type RetirementRecord,
 } from './retirementRecord.ts';
 import { parseReviewRepairReplyForRole, reviewRepairRecordDigest } from './reviewRepair.ts';
-import { closePullRequestWithMarkers } from './supersedePullRequest.ts';
+import { assertCompletedClosureWithMarkers, closePullRequestWithMarkers } from './supersedePullRequest.ts';
 import { shellPort, type SupersedePullRequestPort } from './supersedePullRequestGh.ts';
 
 export type RetirementReviewState = {
@@ -170,6 +170,7 @@ export function retirePullRequest(
     if (
         before.number !== number ||
         before.repository !== REQUIRED_REPOSITORY ||
+        before.headRepository !== REQUIRED_REPOSITORY ||
         before.head !== head ||
         before.base !== record.base ||
         before.merged
@@ -179,25 +180,31 @@ export function retirePullRequest(
     assertReviewProof(record, port.inspectRetirementReviewState(number));
     const marker = { body: renderRetirementMarker(record), label: 'retirement-v1 marker' };
     if (before.state === PR_STATE.CLOSED) {
-        const matching = before.comments.filter(
-            (comment) =>
-                comment.body === marker.body &&
-                comment.authorNodeId === AUTHOR_BOT_NODE_ID &&
-                comment.authorType === 'Bot'
-        );
-        if (matching.length !== 1 || !before.closedAt) {
-            fail(`PR #${number} is closed without an exact retirement marker`);
+        if (!before.closedAt) {
+            fail(`PR #${number} has no closure timestamp`);
         }
+        assertCompletedClosureWithMarkers(before, number, head, record.base, [marker]);
     } else {
         if (before.state !== PR_STATE.OPEN) {
             fail(`PR #${number} is ${before.state.toLowerCase()}`);
         }
         closePullRequestWithMarkers(number, head, before, [marker], port, {
-            beforeClose: () => assertReviewProof(record, port.inspectRetirementReviewState(number)),
+            beforeClose: () => {
+                const current = port.inspect(number);
+                if (
+                    current.headRepository !== REQUIRED_REPOSITORY ||
+                    current.head !== head ||
+                    current.base !== record.base
+                ) {
+                    fail(`PR #${number} source identity moved before retirement close`);
+                }
+                assertReviewProof(record, port.inspectRetirementReviewState(number));
+            },
             afterClose: (verified, ids, receipt) => {
                 if (
                     verified.number !== number ||
                     verified.repository !== REQUIRED_REPOSITORY ||
+                    verified.headRepository !== REQUIRED_REPOSITORY ||
                     verified.head !== head ||
                     verified.base !== record.base ||
                     verified.state !== PR_STATE.CLOSED ||
@@ -212,6 +219,7 @@ export function retirePullRequest(
                 ) {
                     fail(`PR #${number} retirement close was not verified`);
                 }
+                assertCompletedClosureWithMarkers(verified, number, head, record.base, [marker]);
                 assertReviewProof(record, port.inspectRetirementReviewState(number));
             },
         });
@@ -291,7 +299,7 @@ function readReviewPage(
         kind === 'reviewThreads'
             ? `reviewThreads(first:100${after}){nodes{id isResolved comments(first:100){nodes{databaseId body author{__typename ... on Bot{id}} pullRequestReview{id}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}`
             : `reviews(first:100${after}){nodes{id state body commit{oid}} pageInfo{hasNextPage endCursor}}`;
-    const query = `query(${variables}){repository(owner:$owner,name:$name){pullRequest(number:$number){${selection}}}}`;
+    const query = `query(${variables}){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){number ${selection}}}}`;
     const args = [
         'api',
         'graphql',
@@ -308,11 +316,19 @@ function readReviewPage(
         args.push('-f', `cursor=${cursor}`);
     }
     const parsed = JSON.parse(gh(args)) as {
-        data?: { repository?: { pullRequest?: Record<string, unknown> } };
+        data?: { repository?: { nameWithOwner?: unknown; pullRequest?: Record<string, unknown> } };
         errors?: unknown[];
     };
-    const page = parsed.data?.repository?.pullRequest?.[kind] as ReviewConnection | undefined;
-    if (parsed.errors?.length || !Array.isArray(page?.nodes) || typeof page.pageInfo?.hasNextPage !== 'boolean') {
+    const repository = parsed.data?.repository;
+    const pullRequest = repository?.pullRequest;
+    const page = pullRequest?.[kind] as ReviewConnection | undefined;
+    if (
+        parsed.errors?.length ||
+        repository?.nameWithOwner !== REQUIRED_REPOSITORY ||
+        pullRequest?.number !== number ||
+        !Array.isArray(page?.nodes) ||
+        typeof page.pageInfo?.hasNextPage !== 'boolean'
+    ) {
         fail(`cannot inspect retirement ${kind} for PR #${number}`);
     }
     return page;

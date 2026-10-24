@@ -4,6 +4,7 @@ import { renderConfirmationReply } from '../confirmReviewRepairs.ts';
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { parseRetirementRecord, renderRetirementMarker, type RetirementRecord } from '../retirementRecord.ts';
 import {
+    inspectRetirementReviewState,
     parseRetirePullRequestArgs,
     retirePullRequest,
     type RetirePullRequestPort,
@@ -87,6 +88,7 @@ function reviewState(): RetirementReviewState {
 
 type FixtureOptions = {
     head?: string;
+    headRepository?: string | null;
     base?: string;
     reviewState?: RetirementReviewState;
     afterCommentReviewState?: RetirementReviewState;
@@ -106,6 +108,7 @@ function fixture(options: FixtureOptions = {}) {
         state,
         head: currentHead,
         headRefName: 'agent/4944/nightly-secret-scan-bacteria-fingerprint',
+        headRepository: options.headRepository === undefined ? 'jcosta33/sourdaw' : options.headRepository,
         repository: 'jcosta33/sourdaw',
         base: options.base ?? 'main',
         merged: false,
@@ -206,6 +209,20 @@ describe('native obsolete pull-request retirement', () => {
         expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual([]);
     });
 
+    it.each([null, 'fork-owner/sourdaw'])('refuses a %s source repository before any write', (headRepository) => {
+        const { calls, port } = fixture({ headRepository });
+        expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, port)).toThrow();
+        expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual([]);
+    });
+
+    it('refuses a retirement with no confirmed finding or requested review', () => {
+        const { calls, port } = fixture({ reviewState: { threads: [], requestedReviews: [] } });
+        expect(() =>
+            retirePullRequest(pr, head, { ...record, findings: [], reviewBodies: [] }, AUTHOR_BOT_NODE_ID, port)
+        ).toThrow();
+        expect(calls.filter((call) => call === 'comment' || call === 'close')).toEqual([]);
+    });
+
     it('compensates a newly posted marker when the review-root set changes before close', () => {
         const changed = reviewState();
         changed.threads.push({ ...changed.threads[0]!, threadId: 'PRRT_new', rootCommentId: '1004' });
@@ -228,6 +245,14 @@ describe('native obsolete pull-request retirement', () => {
         expect(calls).not.toContain('delete');
     });
 
+    it('refuses post-close head movement and preserves the marker for investigation', () => {
+        const { calls, port, state } = fixture({ closeMovesHead: true });
+        expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, port)).toThrow();
+        expect(state().state).toBe('CLOSED');
+        expect(state().comments).toHaveLength(1);
+        expect(calls).not.toContain('delete');
+    });
+
     it('rejects malformed, duplicate-key and credential-shaped records before publication', () => {
         expect(() => parseRetirementRecord('{"format":"retirement-v1","format":"retirement-v1"}')).toThrow();
         expect(() => parseRetirementRecord(JSON.stringify({ ...record, rationale: 'Bearer abc123' }))).toThrow();
@@ -240,5 +265,22 @@ describe('native obsolete pull-request retirement', () => {
             recordPath: '/tmp/retirement.json',
         });
         expect(() => parseRetirePullRequestArgs(['5361', '--record', '/tmp/retirement.json'])).toThrow();
+    });
+
+    it.each([
+        ['other-owner/sourdaw', pr],
+        ['jcosta33/sourdaw', pr + 1],
+    ])('refuses review read bound to repository %s and PR %i', (repository, number) => {
+        const page = { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } };
+        const gh = () =>
+            JSON.stringify({
+                data: {
+                    repository: {
+                        nameWithOwner: repository,
+                        pullRequest: { number, reviewThreads: page, reviews: page },
+                    },
+                },
+            });
+        expect(() => inspectRetirementReviewState(pr, gh)).toThrow();
     });
 });

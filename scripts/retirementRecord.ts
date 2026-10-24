@@ -67,6 +67,21 @@ function array(value: unknown, label: string, max: number): unknown[] {
     return value;
 }
 
+function assertRetirementEvidence(value: unknown): void {
+    const evidence = array(value, 'retirement evidence', MAX_EVIDENCE);
+    if (evidence.length === 0) {
+        fail('retirement evidence is required');
+    }
+    for (const item of evidence) {
+        const entry = object(item, ['url', 'observation'], 'retirement evidence entry');
+        const url = text(entry.url, 'retirement evidence URL');
+        text(entry.observation, 'retirement evidence observation');
+        if (!url.startsWith('https://github.com/jcosta33/sourdaw/')) {
+            fail('retirement evidence URL must name this repository');
+        }
+    }
+}
+
 export function assertRetirementRecord(value: unknown): asserts value is RetirementRecord {
     const root = object(
         value,
@@ -87,19 +102,11 @@ export function assertRetirementRecord(value: unknown): asserts value is Retirem
     if (typeof root.base !== 'string' || root.base.length > 128) {
         fail('retirement base is too long');
     }
-    const evidence = array(root.evidence, 'retirement evidence', MAX_EVIDENCE);
-    if (evidence.length === 0) {
-        fail('retirement evidence is required');
-    }
-    for (const item of evidence) {
-        const entry = object(item, ['url', 'observation'], 'retirement evidence entry');
-        const url = text(entry.url, 'retirement evidence URL');
-        text(entry.observation, 'retirement evidence observation');
-        if (!url.startsWith('https://github.com/jcosta33/sourdaw/')) {
-            fail('retirement evidence URL must name this repository');
-        }
-    }
+    assertRetirementEvidence(root.evidence);
     const findings = array(root.findings, 'retirement findings', MAX_FINDINGS);
+    if (findings.length === 0) {
+        fail('retirement requires at least one confirmed review finding');
+    }
     const roots = new Set<string>();
     const threads = new Set<string>();
     for (const item of findings) {
@@ -119,6 +126,9 @@ export function assertRetirementRecord(value: unknown): asserts value is Retirem
         threads.add(thread);
     }
     const bodies = array(root.reviewBodies, 'retirement review bodies', MAX_FINDINGS);
+    if (bodies.length === 0) {
+        fail('retirement requires at least one mapped REQUEST_CHANGES review');
+    }
     const reviews = new Set<string>();
     for (const item of bodies) {
         const entry = object(item, ['reviewId', 'rootCommentIds'], 'retirement review body');

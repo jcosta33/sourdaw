@@ -734,8 +734,9 @@ function assertFinalSupersession(
     if (!hasExpectedComment(value.comments, lineageId, markers[1].body)) {
         fail(`finding lineage marker ${lineageId} is not present on PR #${number}`);
     }
-    requireOneCommentMarker(value.comments, markers[0], markers, number);
-    requireOneCommentMarker(value.comments, markers[1], markers, number);
+    for (const marker of markers) {
+        requireOneCommentMarker(value.comments, marker, markers, number);
+    }
 }
 function assertCompletedSupersession(
     value: SupersededPullRequest,
@@ -743,6 +744,16 @@ function assertCompletedSupersession(
     head: string,
     base: string,
     markers: MarkerPair
+): void {
+    assertCompletedClosureWithMarkers(value, number, head, base, markers);
+}
+
+export function assertCompletedClosureWithMarkers(
+    value: SupersededPullRequest,
+    number: number,
+    head: string,
+    base: string,
+    markers: readonly MarkerSpec[]
 ): void {
     if (
         value.number !== number ||
@@ -753,8 +764,9 @@ function assertCompletedSupersession(
     ) {
         fail(`PR #${number} is not the expected completed supersession`);
     }
-    requireOneCommentMarker(value.comments, markers[0], markers, number);
-    requireOneCommentMarker(value.comments, markers[1], markers, number);
+    for (const marker of markers) {
+        requireOneCommentMarker(value.comments, marker, markers, number);
+    }
 }
 function assertCommentReceipt(value: AddedIssueCommentReceipt, expectedClientMutationId: string): string {
     if (
