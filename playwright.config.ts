@@ -3,7 +3,7 @@ import { env } from 'node:process';
 
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 
-import { e2eOrigin, resolveE2ePort } from './scripts/e2eServerIdentity';
+import { e2eOrigin, resolveE2ePort, SOURDAW_E2E_PORT_ENV } from './scripts/e2eServerIdentity';
 import { devServerOnlySpecs } from './tests/e2e/devServerOnlySpecs';
 
 // One lane-scoped port feeds baseURL and webServer together, so lanes sharing
@@ -29,7 +29,13 @@ function selectedShardSpecs(): readonly string[] {
 // A build serves no `/src/` module URLs, so these files keep a dev server.
 const devServerOnlyPaths = devServerOnlySpecs.map((path) => resolve(import.meta.dirname, path));
 const shardNeedsDevServer = builtShardRun && selectedShardSpecs().some((path) => devServerOnlySpecs.includes(path));
-const devServerPort = port + 1;
+
+function devServerPort(): number {
+    if (port === 65535) {
+        throw new RangeError(`${SOURDAW_E2E_PORT_ENV}=65535 leaves no valid port for this CI shard's dev companion`);
+    }
+    return port + 1;
+}
 
 const defaultIgnore = ['**/__tests__/**'];
 
@@ -62,7 +68,7 @@ function builtShardProjects(): Project[] {
         projects.push({
             name: 'chromium-dev',
             testMatch: devServerOnlyPaths,
-            use: { ...devices['Desktop Chrome'], baseURL: e2eOrigin(devServerPort) },
+            use: { ...devices['Desktop Chrome'], baseURL: e2eOrigin(devServerPort()) },
         });
     }
     return projects;
@@ -79,9 +85,10 @@ function builtShardWebServers(): WebServer[] {
         },
     ];
     if (shardNeedsDevServer) {
+        const companionPort = devServerPort();
         servers.push({
-            command: `pnpm dev --mode e2e --port ${devServerPort} --strictPort`,
-            url: e2eOrigin(devServerPort),
+            command: `pnpm dev --mode e2e --port ${companionPort} --strictPort`,
+            url: e2eOrigin(companionPort),
             reuseExistingServer: false,
         });
     }
