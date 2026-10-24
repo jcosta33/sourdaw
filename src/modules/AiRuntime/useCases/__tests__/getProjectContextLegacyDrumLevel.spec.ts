@@ -29,7 +29,21 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 function seedLegacyKit(type: string): void {
     const track = createTrack({ id: 'legacy-drums', name: 'Drums', kind: 'midi' });
-    track.devices = [{ id: 'old-kit', name: 'Old kit', type, bypassed: false, parameterValues: { kit: 0, gain: 0.8 } }];
+    const parameterValues: Record<string, number> = { gain: 0.8 };
+    if (type === 'drum-kit') {
+        parameterValues.kitId = 0;
+    } else {
+        parameterValues.kit = 0;
+    }
+    track.devices = [
+        {
+            id: 'old-kit',
+            name: 'Old kit',
+            type,
+            bypassed: false,
+            parameterValues,
+        },
+    ];
     trackStore.set(sanitizeTrackSnapshot({ tracks: [track], selectedTrackId: track.id }));
     flushAutomergeStorageWrites();
     clearUndoHistory();
@@ -71,9 +85,13 @@ function values() {
     return trackStore.value!.tracks[0]!.devices[0]!.parameterValues;
 }
 
-function storedValues() {
+function storedDevice() {
     const document = getCrdtDoc<{ tracks: ReturnType<typeof sanitizeTrackSnapshot> }>('root');
-    return document!.tracks.tracks[0]!.devices[0]!.parameterValues;
+    return document!.tracks.tracks[0]!.devices[0]!;
+}
+
+function storedValues() {
+    return storedDevice().parameterValues;
 }
 
 beforeEach(() => {
@@ -98,6 +116,7 @@ afterEach(() => {
 
 describe('legacy drum Level through project context and Command', () => {
     it.each([
+        'drum-kit',
         'builtin-drum-kit',
         'builtin-drum-machine-808',
         'builtin-drum-machine-analog',
@@ -109,105 +128,128 @@ describe('legacy drum Level through project context and Command', () => {
         const parameters = getProjectContext().tracks[0]!.devices[0]!.parameters;
         expect(parameters).toContainEqual(expect.objectContaining({ id: 'level', value: 0, valuePresent: false }));
         expect(parameters?.some(({ id }) => id === 'gain')).toBe(false);
-        expect(levelAction().payload).toMatchObject({ expectedValuePresent: false });
+        expect(levelAction().payload).toMatchObject({
+            expectedValuePresent: false,
+            expectedDeviceType: type,
+            valueUnit: 'dB',
+        });
         expect(levelAction().payload.expectedValue).toBeUndefined();
         expect(values()).toEqual(before);
         expect(values()).not.toHaveProperty('level');
     });
 
-    it('offers the effective Level in both provider messages while the bridge retains absence authority', () => {
-        seedLegacyKit('builtin-drum-kit');
-        const context = getProjectContext();
-        for (const profile of ['hosted', 'local'] as const) {
-            const message = buildLlmActionUserMessage({ prompt: 'set old kit Level to -6 dB', context, profile });
-            const serialized = message.split('<project_context>')[1]!.split('</project_context>')[0]!;
-            const payload = JSON.parse(serialized);
-            const device = payload.tracks[0].devices[0];
-            if (profile === 'hosted') {
-                expect(device.parameters).toContainEqual(
-                    expect.objectContaining({ id: 'level', value: 0, valuePresent: false })
-                );
-            } else {
-                expect(device.parameterValues).toEqual({ kit: 0, level: 0 });
+    it.each(['drum-kit', 'builtin-drum-kit'])(
+        'offers the effective Level in both provider messages for %s while the bridge retains absence authority',
+        (type) => {
+            seedLegacyKit(type);
+            const context = getProjectContext();
+            for (const profile of ['hosted', 'local'] as const) {
+                const message = buildLlmActionUserMessage({ prompt: 'set old kit Level to -6 dB', context, profile });
+                const serialized = message.split('<project_context>')[1]!.split('</project_context>')[0]!;
+                const payload = JSON.parse(serialized);
+                const device = payload.tracks[0].devices[0];
+                if (profile === 'hosted') {
+                    expect(device.parameters).toContainEqual(
+                        expect.objectContaining({ id: 'level', value: 0, valuePresent: false })
+                    );
+                } else {
+                    expect(device.parameterValues).toEqual(type === 'drum-kit' ? { level: 0 } : { kit: 0, level: 0 });
+                }
             }
+            expect(levelAction().payload.expectedValuePresent).toBe(false);
+            expect(values()).not.toHaveProperty('level');
         }
-        expect(levelAction().payload.expectedValuePresent).toBe(false);
-        expect(values()).not.toHaveProperty('level');
-    });
+    );
 
-    it('keeps an explicitly stored unity Level present and guards its value', () => {
-        seedLegacyKit('builtin-drum-kit');
-        const state = trackStore.value!;
-        const track = state.tracks[0]!;
-        trackStore.set({
-            ...state,
-            tracks: [
-                {
-                    ...track,
-                    devices: track.devices.map((device) => ({
-                        ...device,
-                        parameterValues: { ...device.parameterValues, level: 0 },
-                    })),
-                },
-            ],
-        });
-        flushAutomergeStorageWrites();
-        expect(getProjectContext().tracks[0]!.devices[0]!.parameters).toContainEqual(
-            expect.objectContaining({ id: 'level', value: 0 })
-        );
-        expect(levelAction().payload.expectedValue).toBe(0);
-        expect(levelAction().payload.expectedValuePresent).not.toBe(false);
-    });
+    it.each(['drum-kit', 'builtin-drum-kit'])(
+        'keeps an explicitly stored %s unity Level present and guards its value',
+        (type) => {
+            seedLegacyKit(type);
+            const state = trackStore.value!;
+            const track = state.tracks[0]!;
+            trackStore.set({
+                ...state,
+                tracks: [
+                    {
+                        ...track,
+                        devices: track.devices.map((device) => ({
+                            ...device,
+                            parameterValues: { ...device.parameterValues, level: 0 },
+                        })),
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(getProjectContext().tracks[0]!.devices[0]!.parameters).toContainEqual(
+                expect.objectContaining({ id: 'level', value: 0 })
+            );
+            expect(levelAction().payload.expectedValue).toBe(0);
+            expect(levelAction().payload.expectedValuePresent).not.toBe(false);
+        }
+    );
 
-    it('commits Level, undoes to exact missing-field mix, then redoes through the real handler', async () => {
-        seedLegacyKit('builtin-drum-kit');
-        const before = values();
-        await executeAppAction(levelAction());
-        expect(values()).toEqual({ ...before, level: -6 });
-        expect(storedValues()).toEqual(values());
-        await undo();
-        expect(values()).toEqual(before);
-        expect(storedValues()).toEqual(before);
-        await redo();
-        expect(values()).toEqual({ ...before, level: -6 });
-        expect(storedValues()).toEqual(values());
-    });
+    it.each(['drum-kit', 'builtin-drum-kit'])(
+        'commits %s Level, undoes to exact missing-field mix, then redoes through the real handler',
+        async (type) => {
+            seedLegacyKit(type);
+            const before = values();
+            expect(before).toEqual(type === 'drum-kit' ? { kitId: 0, gain: 0.8 } : { kit: 0, gain: 0.8 });
+            expect(storedValues()).toEqual(before);
+            await executeAppAction(levelAction());
+            expect(values()).toEqual({ ...before, level: -6 });
+            expect(storedValues()).toEqual(values());
+            await undo();
+            expect(values()).toEqual(before);
+            expect(storedValues()).toEqual(before);
+            await redo();
+            expect(values()).toEqual({ ...before, level: -6 });
+            expect(storedValues()).toEqual(values());
+            expect(storedDevice().type).toBe(type);
+            expect(trackStore.value!.tracks[0]!.devices[0]!.type).toBe(type);
+        }
+    );
 
-    it('rejects an absent-Level proposal after a concurrent writer stores the same effective unity', async () => {
-        seedLegacyKit('builtin-drum-kit');
-        const proposal = levelProposal();
-        const command = levelAction();
-        await executeAppAction({
-            type: 'setDeviceParameter',
-            payload: { deviceId: 'old-kit', paramId: 'level', value: 0 },
-        });
-        const validated = validateActions([proposal]);
-        expect(validated).toEqual([proposal]);
-        expect(materializeActionStateGuards(validated, getProjectContext())).toEqual({
-            status: 'rejected',
-            reason: 'Device parameter state is unavailable or protected: old-kit/level',
-        });
-        await expect(executeAppAction(command)).rejects.toMatchObject({ name: 'AppActionConflictError' });
-        expect(values().level).toBe(0);
-        expect(storedValues().level).toBe(0);
-    });
+    it.each(['drum-kit', 'builtin-drum-kit'])(
+        'rejects an absent-%s-Level proposal after a concurrent writer stores the same effective unity',
+        async (type) => {
+            seedLegacyKit(type);
+            const proposal = levelProposal();
+            const command = levelAction();
+            await executeAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'old-kit', paramId: 'level', value: 0 },
+            });
+            const validated = validateActions([proposal]);
+            expect(validated).toEqual([proposal]);
+            expect(materializeActionStateGuards(validated, getProjectContext())).toEqual({
+                status: 'rejected',
+                reason: 'Device parameter state is unavailable or protected: old-kit/level',
+            });
+            await expect(executeAppAction(command)).rejects.toMatchObject({ name: 'AppActionConflictError' });
+            expect(values().level).toBe(0);
+            expect(storedValues().level).toBe(0);
+        }
+    );
 
-    it('refuses an absent-value proposal after a concurrent writer installs Level', async () => {
-        seedLegacyKit('builtin-drum-kit');
-        const stale = levelAction();
-        await executeAppAction({
-            type: 'setDeviceParameter',
-            payload: { deviceId: 'old-kit', paramId: 'level', value: -3 },
-        });
-        await expect(executeAppAction(stale)).rejects.toMatchObject({ name: 'AppActionConflictError' });
-        expect(values().level).toBe(-3);
-        const present = levelAction(-12);
-        expect(present.payload.expectedValue).toBe(-3);
-        await executeAppAction({
-            type: 'setDeviceParameter',
-            payload: { deviceId: 'old-kit', paramId: 'level', value: -9 },
-        });
-        await expect(executeAppAction(present)).rejects.toMatchObject({ name: 'AppActionConflictError' });
-        expect(values().level).toBe(-9);
-    });
+    it.each(['drum-kit', 'builtin-drum-kit'])(
+        'refuses an absent-value %s proposal after a concurrent writer installs Level',
+        async (type) => {
+            seedLegacyKit(type);
+            const stale = levelAction();
+            await executeAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'old-kit', paramId: 'level', value: -3 },
+            });
+            await expect(executeAppAction(stale)).rejects.toMatchObject({ name: 'AppActionConflictError' });
+            expect(values().level).toBe(-3);
+            const present = levelAction(-12);
+            expect(present.payload.expectedValue).toBe(-3);
+            await executeAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'old-kit', paramId: 'level', value: -9 },
+            });
+            await expect(executeAppAction(present)).rejects.toMatchObject({ name: 'AppActionConflictError' });
+            expect(values().level).toBe(-9);
+        }
+    );
 });

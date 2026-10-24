@@ -31,6 +31,18 @@ describe('drum kit level', () => {
 });
 
 describe('getPluginById', () => {
+    it('declares only the shared Level contract for the playable legacy drum-kit without offering another catalog entry', () => {
+        const legacy = getPluginById('drum-kit');
+        const level = getPluginById('builtin-drum-kit')!.parameters.find((parameter) => parameter.id === 'level')!;
+        expect(legacy).toMatchObject({ id: 'drum-kit', parameters: [{ ...level, deviceId: 'drum-kit' }] });
+        expect(legacy!.parameters).toHaveLength(1);
+        expect(legacy!.guidance?.parameters).toEqual({
+            level: getPluginById('builtin-drum-kit')!.guidance!.parameters.level,
+        });
+        expect(BUILTIN_PLUGINS.some((plugin) => plugin.id === 'drum-kit')).toBe(false);
+        expect(getPluginById('builtin-drum-machine-unknown')).toBeUndefined();
+    });
+
     it('returns a descriptor for a known built-in id', () => {
         const eq = getPluginById('builtin-eq');
         expect(eq).toBeDefined();
