@@ -63,6 +63,11 @@ SHA-256 digest of that exact review body's UTF-8 bytes (without trimming or norm
 The command checks this binding initially, before marker writes, before closing, after closing,
 and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new
 close or replay and must never be adopted as bound evidence.
+Each review proof reads both complete review-thread and requested-changes-review connections in
+one GraphQL response. Eligibility is bounded to 100 threads, 100 requested-changes reviews and 100
+comments per thread, with every `hasNextPage` false. Missing, malformed or truncated connections
+refuse without pagination or stitching separate responses. One response does not establish
+GraphQL resolver atomicity or prevent later changes.
 The command refuses an unconfirmed
 or unresolved root, unmatched review body, changed head/base/root set, or ambiguous role actor;
 it posts one author-App marker and closes through the native transaction. The reason, evidence,
@@ -669,6 +674,9 @@ fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
 author Bot or historical orchestrator User as merger. Clearing records a
 dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
+The shared owner does not identify the original command. Fresh recovery and receipt replay guide
+rerunning that original operation with its original bound inputs; they do not prescribe delivery,
+certify completion or authorize a merge. All original operation and delivery gates still apply.
 
 Already-merged recovery accepts the immutable author Bot or historical
 orchestrator User as merger; fresh delivery requires the author App and rejects

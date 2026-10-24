@@ -108,6 +108,54 @@ function reviewState(): RetirementReviewState {
     };
 }
 
+function providerProjection(state: RetirementReviewState = reviewState()) {
+    return {
+        data: {
+            repository: {
+                nameWithOwner: 'jcosta33/sourdaw',
+                pullRequest: {
+                    number: pr,
+                    reviewThreads: {
+                        nodes: state.threads.map((thread) => ({
+                            id: thread.threadId,
+                            isResolved: thread.resolved,
+                            comments: {
+                                nodes: [
+                                    {
+                                        databaseId: Number(thread.rootCommentId),
+                                        pullRequestReview: { id: thread.rootReviewId },
+                                    },
+                                    ...thread.replies.map((reply) => {
+                                        if (reply.authorNodeId === null) {
+                                            return { databaseId: Number(reply.id), body: reply.body, author: null };
+                                        }
+                                        return {
+                                            databaseId: Number(reply.id),
+                                            body: reply.body,
+                                            author: { __typename: 'Bot', id: reply.authorNodeId },
+                                        };
+                                    }),
+                                ],
+                                pageInfo: { hasNextPage: false },
+                            },
+                        })),
+                        pageInfo: { hasNextPage: false },
+                    },
+                    reviews: {
+                        nodes: state.requestedReviews.map((review) => ({
+                            id: review.reviewId,
+                            state: 'CHANGES_REQUESTED',
+                            body: review.body,
+                            commit: { oid: review.head },
+                        })),
+                        pageInfo: { hasNextPage: false },
+                    },
+                },
+            },
+        },
+    };
+}
+
 type FixtureOptions = {
     head?: string;
     headRepository?: string | null;
@@ -204,6 +252,214 @@ function ownerOid(root: string): string | undefined {
 }
 
 describe('native obsolete pull-request retirement', () => {
+    it.each(['OPEN', 'CLOSED'] as const)('refuses a fractured thread/review projection on an %s PR', (state) => {
+        const current = fixture();
+        if (state === 'CLOSED') {
+            retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, current.port);
+        }
+        const first = reviewState();
+        first.requestedReviews[0]!.body += ' A later body blocker.';
+        const second = reviewState();
+        second.threads[0]!.resolved = false;
+        let providerCalls = 0;
+        current.port.inspectRetirementReviewState = () =>
+            inspectRetirementReviewState(pr, () => {
+                providerCalls += 1;
+                if (providerCalls % 2 === 1) {
+                    return JSON.stringify(providerProjection(first));
+                }
+                return JSON.stringify(providerProjection(second));
+            });
+        const writes = current.calls.filter((call) => ['comment', 'delete', 'close'].includes(call));
+        expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, current.port)).toThrow();
+        expect(current.calls.filter((call) => ['comment', 'delete', 'close'].includes(call))).toEqual(writes);
+        expect(providerCalls).toBe(1);
+    });
+
+    it('reads both complete authority connections from one provider response', () => {
+        const calls: string[][] = [];
+        expect(
+            inspectRetirementReviewState(pr, (args) => {
+                calls.push(args);
+                return JSON.stringify(providerProjection());
+            })
+        ).toEqual(reviewState());
+        expect(calls).toHaveLength(1);
+        const query = calls[0]!.find((arg) => arg.startsWith('query='));
+        expect(query).toContain('reviewThreads(first:100)');
+        expect(query).toContain('reviews(first:100,states:[CHANGES_REQUESTED])');
+        expect(query).toContain('comments(first:100)');
+    });
+
+    it('keeps plain deleted-author and foreign replies eligible in a complete provider response', () => {
+        const response = providerProjection();
+        const comments = response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments.nodes;
+        comments.push({ databaseId: 1004, body: 'Plain deleted-author reply.', author: null });
+        comments.push({
+            databaseId: 1005,
+            body: 'Plain foreign reply.',
+            author: { __typename: 'User', id: 'USER_foreign' },
+        });
+        const current = fixture();
+        current.port.inspectRetirementReviewState = () =>
+            inspectRetirementReviewState(pr, () => JSON.stringify(response));
+        expect(retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, current.port)).toBe('pull-request-retired:5361');
+        expect(current.state().state).toBe('CLOSED');
+    });
+
+    it.each<[string, (response: ReturnType<typeof providerProjection>) => void]>([
+        [
+            'missing threads',
+            (response) => {
+                Reflect.deleteProperty(response.data.repository.pullRequest, 'reviewThreads');
+            },
+        ],
+        [
+            'missing reviews',
+            (response) => {
+                Reflect.deleteProperty(response.data.repository.pullRequest, 'reviews');
+            },
+        ],
+        [
+            'truncated threads',
+            (response) => {
+                response.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage = true;
+            },
+        ],
+        [
+            'truncated reviews',
+            (response) => {
+                response.data.repository.pullRequest.reviews.pageInfo.hasNextPage = true;
+            },
+        ],
+        [
+            'missing thread page info',
+            (response) => {
+                Reflect.deleteProperty(response.data.repository.pullRequest.reviewThreads, 'pageInfo');
+            },
+        ],
+        [
+            'invalid review page info',
+            (response) => {
+                Object.assign(response.data.repository.pullRequest.reviews.pageInfo, { hasNextPage: 'false' });
+            },
+        ],
+        [
+            'invalid thread nodes',
+            (response) => {
+                Object.assign(response.data.repository.pullRequest.reviewThreads, { nodes: null });
+            },
+        ],
+        [
+            'invalid review nodes',
+            (response) => {
+                Object.assign(response.data.repository.pullRequest.reviews, { nodes: null });
+            },
+        ],
+        [
+            'truncated nested comments',
+            (response) => {
+                response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments.pageInfo.hasNextPage = true;
+            },
+        ],
+        [
+            'missing nested comments',
+            (response) => {
+                Reflect.deleteProperty(response.data.repository.pullRequest.reviewThreads.nodes[0]!, 'comments');
+            },
+        ],
+        [
+            'missing comment page info',
+            (response) => {
+                Reflect.deleteProperty(
+                    response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments,
+                    'pageInfo'
+                );
+            },
+        ],
+        [
+            'empty comment roots',
+            (response) => {
+                response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments.nodes = [];
+            },
+        ],
+        [
+            'oversized nested comments',
+            (response) => {
+                const comments = response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments;
+                comments.nodes = Array.from({ length: 101 }, () => comments.nodes[0]!);
+            },
+        ],
+        [
+            'invalid thread node',
+            (response) => {
+                Object.assign(response.data.repository.pullRequest.reviewThreads.nodes, { 0: null });
+            },
+        ],
+        [
+            'invalid requested review node',
+            (response) => {
+                Object.assign(response.data.repository.pullRequest.reviews.nodes, { 0: null });
+            },
+        ],
+        [
+            'missing review commit',
+            (response) => {
+                Reflect.deleteProperty(response.data.repository.pullRequest.reviews.nodes[0]!, 'commit');
+            },
+        ],
+        [
+            'invalid extra reply actor',
+            (response) => {
+                response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments.nodes.push({
+                    databaseId: 1004,
+                    body: 'Plain extra reply.',
+                    author: null,
+                });
+                Object.assign(response.data.repository.pullRequest.reviewThreads.nodes[0]!.comments.nodes[3]!, {
+                    author: false,
+                });
+            },
+        ],
+        [
+            'unexpected review state',
+            (response) => {
+                response.data.repository.pullRequest.reviews.nodes[0]!.state = 'APPROVED';
+            },
+        ],
+        [
+            'unsupported query',
+            (response) => {
+                Object.assign(response, { errors: [{ message: 'unsupported query' }] });
+            },
+        ],
+    ])('refuses %s in the single provider response before writes', (_label, damage) => {
+        const response = providerProjection();
+        damage(response);
+        const current = fixture();
+        let providerCalls = 0;
+        current.port.inspectRetirementReviewState = () =>
+            inspectRetirementReviewState(pr, () => {
+                providerCalls += 1;
+                return JSON.stringify(response);
+            });
+        expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, current.port)).toThrow();
+        expect(current.calls.filter((call) => ['comment', 'delete', 'close'].includes(call))).toEqual([]);
+        expect(providerCalls).toBe(1);
+    });
+
+    it('refuses malformed provider JSON before writes without another provider call', () => {
+        const current = fixture();
+        let providerCalls = 0;
+        current.port.inspectRetirementReviewState = () =>
+            inspectRetirementReviewState(pr, () => {
+                providerCalls += 1;
+                return '{invalid';
+            });
+        expect(() => retirePullRequest(pr, head, record, AUTHOR_BOT_NODE_ID, current.port)).toThrow();
+        expect(current.calls.filter((call) => ['comment', 'delete', 'close'].includes(call))).toEqual([]);
+        expect(providerCalls).toBe(1);
+    });
     it('reproduces the missing native path by requiring a confirmed-repair record to close exactly once', () => {
         const { calls, port, state } = fixture();
 

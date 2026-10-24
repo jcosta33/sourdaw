@@ -395,7 +395,6 @@ function retirementShellPort(session: Parameters<typeof shellPort>[0]): RetirePu
     };
 }
 
-type ReviewConnection = { nodes: unknown[]; pageInfo: { hasNextPage: boolean; endCursor?: string } };
 type ReadGh = (args: string[]) => string;
 
 export function retirementIsAncestor(commit: string, head: string, gh: ReadGh): boolean {
@@ -415,72 +414,84 @@ export function retirementIsAncestor(commit: string, head: string, gh: ReadGh): 
     return fail('cannot verify retirement repair-head ancestry');
 }
 
-function readReviewPage(
-    number: number,
-    kind: 'reviewThreads' | 'reviews',
-    cursor: string | undefined,
-    gh: ReadGh
-): ReviewConnection {
+function projectionObject(value: unknown, label: string): Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        fail(`${label} is missing or invalid`);
+    }
+    return value as Record<string, unknown>;
+}
+
+function completeConnection(value: unknown, label: string): unknown[] {
+    const connection = projectionObject(value, label);
+    const pageInfo = projectionObject(connection.pageInfo, `${label} page info`);
+    if (!Array.isArray(connection.nodes) || connection.nodes.length > 100 || pageInfo.hasNextPage !== false) {
+        fail(`${label} cannot be fully read in one retirement response`);
+    }
+    return connection.nodes;
+}
+
+function readReviewProjection(number: number, gh: ReadGh): { threads: unknown[]; reviews: unknown[] } {
     const [owner, name] = REQUIRED_REPOSITORY.split('/');
     if (!owner || !name) {
         fail('invalid repository');
     }
-    const after = cursor ? ',after:$cursor' : '';
-    const variables = `$owner:String!,$name:String!,$number:Int!${cursor ? ',$cursor:String!' : ''}`;
-    const selection =
-        kind === 'reviewThreads'
-            ? `reviewThreads(first:100${after}){nodes{id isResolved comments(first:100){nodes{databaseId body author{__typename ... on Bot{id}} pullRequestReview{id}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}`
-            : `reviews(first:100${after}){nodes{id state body commit{oid}} pageInfo{hasNextPage endCursor}}`;
-    const query = `query(${variables}){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){number ${selection}}}}`;
-    const args = [
-        'api',
-        'graphql',
-        '-f',
-        `query=${query}`,
-        '-f',
-        `owner=${owner}`,
-        '-f',
-        `name=${name}`,
-        '-F',
-        `number=${number}`,
-    ];
-    if (cursor) {
-        args.push('-f', `cursor=${cursor}`);
+    const threads =
+        'reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId body author{__typename ... on Bot{id}} pullRequestReview{id}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}}';
+    const reviews =
+        'reviews(first:100,states:[CHANGES_REQUESTED]){nodes{id state body commit{oid}} pageInfo{hasNextPage}}';
+    const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){number ${threads} ${reviews}}}}`;
+    const parsed = projectionObject(
+        JSON.parse(
+            gh([
+                'api',
+                'graphql',
+                '-f',
+                `query=${query}`,
+                '-f',
+                `owner=${owner}`,
+                '-f',
+                `name=${name}`,
+                '-F',
+                `number=${number}`,
+            ])
+        ),
+        'retirement response'
+    );
+    if (parsed.errors !== undefined && (!Array.isArray(parsed.errors) || parsed.errors.length > 0)) {
+        fail(`cannot inspect retirement reviews for PR #${number}`);
     }
-    const parsed = JSON.parse(gh(args)) as {
-        data?: { repository?: { nameWithOwner?: unknown; pullRequest?: Record<string, unknown> } };
-        errors?: unknown[];
+    const data = projectionObject(parsed.data, 'retirement response data');
+    const repository = projectionObject(data.repository, 'retirement repository');
+    const pullRequest = projectionObject(repository.pullRequest, 'retirement pull request');
+    if (repository.nameWithOwner !== REQUIRED_REPOSITORY || pullRequest.number !== number) {
+        fail(`cannot inspect retirement reviews for PR #${number}`);
+    }
+    return {
+        threads: completeConnection(pullRequest.reviewThreads, 'retirement review threads'),
+        reviews: completeConnection(pullRequest.reviews, 'retirement requested reviews'),
     };
-    const repository = parsed.data?.repository;
-    const pullRequest = repository?.pullRequest;
-    const page = pullRequest?.[kind] as ReviewConnection | undefined;
-    if (
-        parsed.errors?.length ||
-        repository?.nameWithOwner !== REQUIRED_REPOSITORY ||
-        pullRequest?.number !== number ||
-        !Array.isArray(page?.nodes) ||
-        typeof page.pageInfo?.hasNextPage !== 'boolean'
-    ) {
-        fail(`cannot inspect retirement ${kind} for PR #${number}`);
-    }
-    return page;
 }
 
-function readRequestedReview(value: unknown): RetirementReviewState['requestedReviews'][number] | undefined {
-    const node = value as Record<string, unknown>;
+function readRequestedReview(value: unknown): RetirementReviewState['requestedReviews'][number] {
+    const node = projectionObject(value, 'retirement requested review');
     if (node.state !== 'CHANGES_REQUESTED') {
-        return undefined;
+        fail('retirement requested review has an unexpected state');
     }
     const commit = node.commit as { oid?: unknown } | undefined;
-    if (typeof node.id !== 'string' || typeof node.body !== 'string' || typeof commit?.oid !== 'string') {
+    if (
+        typeof node.id !== 'string' ||
+        node.id === '' ||
+        typeof node.body !== 'string' ||
+        typeof commit?.oid !== 'string' ||
+        !/^[0-9a-f]{40}$/u.test(commit.oid)
+    ) {
         fail('invalid REQUEST_CHANGES review');
     }
     return { reviewId: node.id, body: node.body, head: commit.oid };
 }
 
 function readRetirementReply(value: unknown): RetirementReviewState['threads'][number]['replies'][number] {
-    const reply = value as Record<string, unknown>;
-    const author = reply.author as { __typename?: unknown; id?: unknown } | undefined;
+    const reply = projectionObject(value, 'retirement review reply');
     if (
         typeof reply.databaseId !== 'number' ||
         !Number.isSafeInteger(reply.databaseId) ||
@@ -489,24 +500,36 @@ function readRetirementReply(value: unknown): RetirementReviewState['threads'][n
         fail('invalid retirement review reply');
     }
     return {
-        id: String(reply.databaseId),
+        id: String(readCommentDatabaseId(reply.databaseId, 'retirement review reply')),
         body: reply.body,
-        authorNodeId: author?.__typename === 'Bot' && typeof author.id === 'string' ? author.id : null,
+        authorNodeId: retirementReplyActor(reply.author),
     };
 }
 
+function retirementReplyActor(value: unknown): string | null {
+    if (value === null) {
+        return null;
+    }
+    const author = projectionObject(value, 'retirement reply actor');
+    if (typeof author.__typename !== 'string' || author.__typename === '') {
+        fail('retirement reply actor type is invalid');
+    }
+    if (author.__typename !== 'Bot') {
+        return null;
+    }
+    if (typeof author.id !== 'string' || author.id === '') {
+        fail('retirement reply Bot identity is invalid');
+    }
+    return author.id;
+}
+
 function readRetirementThread(value: unknown): RetirementReviewState['threads'][number] {
-    const node = value as Record<string, unknown>;
-    const comments = node.comments as { nodes?: unknown[]; pageInfo?: { hasNextPage?: boolean } } | undefined;
-    if (
-        typeof node.id !== 'string' ||
-        typeof node.isResolved !== 'boolean' ||
-        !Array.isArray(comments?.nodes) ||
-        comments.pageInfo?.hasNextPage !== false
-    ) {
+    const node = projectionObject(value, 'retirement review thread');
+    const comments = completeConnection(node.comments, 'retirement thread comments');
+    if (typeof node.id !== 'string' || node.id === '' || typeof node.isResolved !== 'boolean') {
         fail('retirement review thread cannot be fully read');
     }
-    const [rawRoot, ...rawReplies] = comments.nodes;
+    const [rawRoot, ...rawReplies] = comments;
     const root = rawRoot as Record<string, unknown> | undefined;
     const rootReview = root?.pullRequestReview as { id?: unknown } | undefined;
     if (
@@ -518,7 +541,7 @@ function readRetirementThread(value: unknown): RetirementReviewState['threads'][
     }
     return {
         threadId: node.id,
-        rootCommentId: String(root.databaseId),
+        rootCommentId: String(readCommentDatabaseId(root.databaseId, 'retirement review root')),
         rootReviewId: rootReview.id,
         resolved: node.isResolved,
         replies: rawReplies.map(readRetirementReply),
@@ -527,44 +550,11 @@ function readRetirementThread(value: unknown): RetirementReviewState['threads'][
 
 // The read-side projection is kept separate from the existing mutation port. No untrusted record supplies a query.
 export function inspectRetirementReviewState(number: number, gh: ReadGh): RetirementReviewState {
-    const threads: RetirementReviewState['threads'] = [];
-    const requestedReviews: RetirementReviewState['requestedReviews'] = [];
-    for (const kind of ['reviewThreads', 'reviews'] as const) {
-        let cursor: string | undefined;
-        const seen = new Set<string>();
-        for (;;) {
-            const page = readReviewPage(number, kind, cursor, gh);
-            appendReviewNodes(kind, page.nodes, threads, requestedReviews);
-            if (!page.pageInfo.hasNextPage) {
-                break;
-            }
-            const next = page.pageInfo.endCursor;
-            if (!next || seen.has(next)) {
-                fail(`invalid retirement ${kind} pagination`);
-            }
-            seen.add(next);
-            cursor = next;
-        }
-    }
-    return { threads, requestedReviews };
-}
-
-function appendReviewNodes(
-    kind: 'reviewThreads' | 'reviews',
-    nodes: unknown[],
-    threads: RetirementReviewState['threads'],
-    requestedReviews: RetirementReviewState['requestedReviews']
-): void {
-    for (const raw of nodes) {
-        if (kind === 'reviewThreads') {
-            threads.push(readRetirementThread(raw));
-            continue;
-        }
-        const review = readRequestedReview(raw);
-        if (review !== undefined) {
-            requestedReviews.push(review);
-        }
-    }
+    const projection = readReviewProjection(number, gh);
+    return {
+        threads: projection.threads.map(readRetirementThread),
+        requestedReviews: projection.reviews.map(readRequestedReview),
+    };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

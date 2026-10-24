@@ -36,6 +36,9 @@ Keep a real marker after a valid creation receipt while every later inspection o
 both serialized retirement and supersession; require zero unverified deletes, the real journaled
 owner retained, and its exact native recovery command. Pair that with observed exact deletion and
 verified OPEN rollback release. A missing read cannot discharge a known remote write.
+After shared-owner recovery on stable OPEN or CLOSED state, require guidance to rerun the original
+operation with its original bound inputs. Clearing a shared owner does not select delivery or
+authorize a merge.
 
 ### 2026-10-24 — supersession bypassed its trusted process-tool launcher (introduced by PR #5639)
 

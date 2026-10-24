@@ -66,6 +66,8 @@ markers, attempted closes and unavailable rollback verification must retain the 
 only proven compensation or a read-only refusal may release. Exercise the existing native
 recovery route with stable OPEN and CLOSED unmerged observations, and require no false success
 after refusal or lock-release failure. A second PR and completed replay are positive controls.
+Inspect the recovery output on fresh reconciliation and receipt replay: it must guide the original
+operation with its original bound inputs, without selecting one consumer of the shared owner.
 
 ### 2026-10-24 — cold stylesheet work consumed a composition spec's deadline (PR #5363 repair)
 
