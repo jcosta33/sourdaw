@@ -768,7 +768,7 @@ the reviewer, not something to leave to the author's local run. If the author mu
 `pnpm release:restamp:tracked-set` refuses while tracked-set source changes are uncommitted, so the
 source commit comes first.
 
-### 2026-10-24 — script-only package routes left dependency provenance stale (escaped via PRs #5642 and #5625)
+### 2026-10-25 — script-only package routes left dependency provenance stale (escaped via PRs #5642 and #5625)
 
 PR #5642 changed the `pr:supersede` script in `package.json`; PR #5625 added `pr:retire` and a
 repository URL prefix in `scripts/retirementRecord.ts`. Neither updated release provenance. The
