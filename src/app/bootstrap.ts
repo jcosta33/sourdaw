@@ -73,6 +73,7 @@ import {
     createOfflineAutomationEvaluator,
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
+    isValidAutomationTimeStateRestorePlan,
     recordAutomationValue,
     setAutomationRecordingDependencies,
     setAutomationParameterRangeResolver,
@@ -149,6 +150,7 @@ import {
 import {
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
+    isValidMidiTimeStateRestorePlan,
     createChordPitchProjector,
     createGrooveMidiEventProjector,
     projectChannelBend,
@@ -195,6 +197,7 @@ import {
     beatAtSecondsFromAnchor,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+    isValidTimelineMapStateRestorePlan,
     readNativeEngineCursorBeats,
     resolveTempoAtBeat,
     setStopPlaybackCallback,
@@ -410,6 +413,11 @@ setNotificationEventBus(eventBus);
 // a sealed origin. Anything they had to hold is delivered here. See #1557.
 flushDeferredStorageNotice();
 setTimeOperationDependencies({
+    savedRestorePlanValidators: {
+        automation: isValidAutomationTimeStateRestorePlan,
+        midi: isValidMidiTimeStateRestorePlan,
+        timelineMap: isValidTimelineMapStateRestorePlan,
+    },
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
     prepareMidiGlobalTimeTransaction,

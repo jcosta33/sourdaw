@@ -1,6 +1,5 @@
 import {
     type ClipSatelliteSnapshot,
-    type ClipSatelliteStateRestorePlan,
     readClipSatelliteEntry,
     writeClipSatelliteEntry,
 } from '../../stores/clipSatelliteState';
@@ -23,39 +22,6 @@ import { timeOperationStateCodec } from './timeOperationStateCodec';
  * find a stale captured reference and refuse to publish.
  */
 type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
-
-const PLAN_KEYS = ['version', 'expected', 'replacement'] as const;
-const SNAPSHOT_KEYS = ['version', 'entries'] as const;
-
-function validateSnapshot(value: unknown): ClipSatelliteSnapshot | null {
-    const properties = clipSatelliteStateCodec.readDataObject(value, SNAPSHOT_KEYS);
-    if (!properties || properties.version !== 1) {
-        return null;
-    }
-    const entries = clipSatelliteStateCodec.decodeEntries(properties.entries);
-    return entries === null ? null : { version: 1, entries };
-}
-
-function validatePlan(value: unknown): ClipSatelliteStateRestorePlan | null {
-    const properties = clipSatelliteStateCodec.readDataObject(value, PLAN_KEYS);
-    if (!properties || properties.version !== 1) {
-        return null;
-    }
-
-    const expected = validateSnapshot(properties.expected);
-    const replacement = validateSnapshot(properties.replacement);
-    if (!expected || !replacement || expected.entries.length !== replacement.entries.length) {
-        return null;
-    }
-    // Both sides must address the same clip ids in the same order, so `apply`
-    // and `revert` write exactly the entries the guard checked.
-    for (const [index, entry] of expected.entries.entries()) {
-        if (replacement.entries[index]?.clipId !== entry.clipId) {
-            return null;
-        }
-    }
-    return { version: 1, expected, replacement };
-}
 
 function snapshotMatchesStores(snapshot: ClipSatelliteSnapshot): boolean {
     for (const entry of snapshot.entries) {
@@ -90,7 +56,7 @@ export function prepareClipSatelliteStateRestore(value: unknown): {
     apply: () => boolean;
     revert: () => boolean;
 } {
-    const validatedPlan = validatePlan(value);
+    const validatedPlan = clipSatelliteStateCodec.decodeRestorePlan(value);
     if (!validatedPlan) {
         return rejectedPreparation();
     }

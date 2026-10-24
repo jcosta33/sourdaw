@@ -1,5 +1,9 @@
 import { decodeStretchMode, type WarpMarker, type WarpMarkerOrigin, type WarpState } from '../../models/WarpMarker';
-import { type ClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import {
+    type ClipSatelliteEntry,
+    type ClipSatelliteSnapshot,
+    type ClipSatelliteStateRestorePlan,
+} from '../../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
 import { isDefaultWarpState } from '../../stores/warpStates';
 
@@ -213,5 +217,38 @@ function decodeEntries(value: unknown): ClipSatelliteEntry[] | null {
     return entries;
 }
 
+const PLAN_KEYS = ['version', 'expected', 'replacement'] as const;
+const SNAPSHOT_KEYS = ['version', 'entries'] as const;
+
+function validateSnapshot(value: unknown): ClipSatelliteSnapshot | null {
+    const properties = readDataObject(value, SNAPSHOT_KEYS);
+    if (!properties || properties.version !== 1) {
+        return null;
+    }
+    const entries = decodeEntries(properties.entries);
+    return entries === null ? null : { version: 1, entries };
+}
+
+function decodeRestorePlan(value: unknown): ClipSatelliteStateRestorePlan | null {
+    const properties = readDataObject(value, PLAN_KEYS);
+    if (!properties || properties.version !== 1) {
+        return null;
+    }
+
+    const expected = validateSnapshot(properties.expected);
+    const replacement = validateSnapshot(properties.replacement);
+    if (!expected || !replacement || expected.entries.length !== replacement.entries.length) {
+        return null;
+    }
+    // Both sides must address the same clip ids in the same order, so `apply`
+    // and `revert` write exactly the entries the guard checked.
+    for (const [index, entry] of expected.entries.entries()) {
+        if (replacement.entries[index]?.clipId !== entry.clipId) {
+            return null;
+        }
+    }
+    return { version: 1, expected, replacement };
+}
+
 /** Shared saved-capture and time-operation decoder for complete clip satellites. */
-export const clipSatelliteStateCodec = { readDataObject, decodeEntries };
+export const clipSatelliteStateCodec = { readDataObject, decodeEntries, decodeRestorePlan };

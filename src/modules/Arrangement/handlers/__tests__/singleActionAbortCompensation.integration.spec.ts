@@ -131,6 +131,7 @@ describe('a single action aborted after it learned its inverse', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
             prepareAutomationTimeOperation,
             prepareAutomationTimeStateRestore,
             prepareMidiGlobalTimeTransaction,

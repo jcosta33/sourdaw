@@ -8,6 +8,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { planTakeRetirement } from '../comping/planTakeRetirement';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
+import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
 import { reverseTakeLaneTransitionPlan } from './reverseTakeLaneTransitionPlan';
@@ -266,7 +267,18 @@ function validateCombinedPlan(value: unknown): CombinedStateRestorePlan | null {
 /** Validate a persisted replay plan without consulting or writing live project state. */
 export const timeOperationRestorePlan = {
     isValid(value: unknown): boolean {
-        return validateCombinedPlan(value) !== null;
+        const validators = timeOperationDependencies?.savedRestorePlanValidators;
+        if (!validators) {
+            return false;
+        }
+        const plan = validateCombinedPlan(value);
+        return (
+            plan !== null &&
+            (plan.automation === null || validators.automation(plan.automation)) &&
+            (plan.midi === null || validators.midi(plan.midi)) &&
+            (plan.timelineMap === null || validators.timelineMap(plan.timelineMap)) &&
+            (plan.clipSatellites === null || isValidClipSatelliteStateRestorePlan(plan.clipSatellites))
+        );
     },
 };
 

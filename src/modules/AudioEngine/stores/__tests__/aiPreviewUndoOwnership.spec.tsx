@@ -106,6 +106,7 @@ function noChangeTimeOperationPreparation() {
 
 function installTimeOperationDependencies(): void {
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: () => ({
             status: 'ready' as const,
             hasChanges: false,

@@ -240,6 +240,7 @@ function installDependencies(input: InstallDependenciesInput = {}) {
     );
     const noChange = createNoChangePreparation();
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: vi.fn(() => noChange),
         prepareAutomationTimeStateRestore: prepareAutomation,
         prepareMidiGlobalTimeTransaction: vi.fn(() => ({

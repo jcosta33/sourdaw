@@ -22,6 +22,7 @@ export { removeAutomationLanesForTrack } from './automation/removeAutomationLane
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
 export { removeAutomationPointById } from './automation/removeAutomationPointById';
 export { prepareAutomationTimeOperation } from './automation/prepareAutomationTimeOperation';
+export { isValidAutomationTimeStateRestorePlan } from './automation/isValidAutomationTimeStateRestorePlan';
 export { prepareAutomationTimeStateRestore } from './automation/prepareAutomationTimeStateRestore';
 export { prepareClipAutomationShiftTransaction } from './automation/prepareClipAutomationShiftTransaction';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';

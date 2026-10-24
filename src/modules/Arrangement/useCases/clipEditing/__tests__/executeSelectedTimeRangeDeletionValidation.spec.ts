@@ -31,6 +31,7 @@ function noChangePreparation() {
 
 function installRealMidiPreparation() {
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: noChangePreparation,
         prepareAutomationTimeStateRestore: noChangePreparation,
         prepareMidiGlobalTimeTransaction,
@@ -477,6 +478,7 @@ describe('executeSelectedTimeRangeDeletion midi preparation rejection', () => {
             };
         }
         setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
             prepareAutomationTimeOperation: noChangePreparation,
             prepareAutomationTimeStateRestore: noChangePreparation,
             prepareMidiGlobalTimeTransaction: rejectedMidi,

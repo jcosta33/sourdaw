@@ -2,12 +2,6 @@ import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 import { midiTimeStateCodec } from './midiTimeStateCodec';
 
-type MidiTimeStateRestorePlan = {
-    version: 1;
-    expected: MidiStoreState;
-    replacement: MidiStoreState;
-};
-
 type PreparedRestoreState = {
     capturedState: MidiStoreState;
     capturedValueSnapshot: MidiStoreState;
@@ -17,62 +11,6 @@ type PreparedRestoreState = {
 };
 
 type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
-
-function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        return null;
-    }
-
-    const prototype: unknown = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-        return null;
-    }
-
-    const ownKeys = Reflect.ownKeys(value);
-    if (ownKeys.length !== expectedKeys.length) {
-        return null;
-    }
-
-    const expectedKeySet = new Set(expectedKeys);
-    const properties: Record<string, unknown> = {};
-    for (const ownKey of ownKeys) {
-        if (typeof ownKey !== 'string' || !expectedKeySet.has(ownKey)) {
-            return null;
-        }
-
-        const descriptor = Object.getOwnPropertyDescriptor(value, ownKey);
-        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
-            return null;
-        }
-        Object.defineProperty(properties, ownKey, {
-            configurable: true,
-            enumerable: true,
-            value: descriptor.value,
-            writable: true,
-        });
-    }
-
-    return properties;
-}
-
-function validateRestorePlanUnchecked(value: unknown): MidiTimeStateRestorePlan | null {
-    const properties = readDataObject(value, ['version', 'expected', 'replacement']);
-    if (!properties || properties.version !== 1) {
-        return null;
-    }
-
-    const expected = midiTimeStateCodec.decodeState(properties.expected);
-    const replacement = midiTimeStateCodec.decodeState(properties.replacement);
-    if (!expected || !replacement) {
-        return null;
-    }
-
-    return {
-        version: 1,
-        expected,
-        replacement,
-    };
-}
 
 function cloneValidatedState(state: MidiStoreState): MidiStoreState | null {
     const encodedState = midiTimeStateCodec.encodeState(state);
@@ -88,7 +26,7 @@ function prepareRestoreStateUnchecked(plan: unknown, currentState: MidiStoreStat
         return null;
     }
 
-    const validatedPlan = validateRestorePlanUnchecked(plan);
+    const validatedPlan = midiTimeStateCodec.decodeRestorePlan(plan);
     if (!validatedPlan || !midiTimeStateCodec.statesEqual(currentState, validatedPlan.expected)) {
         return null;
     }
