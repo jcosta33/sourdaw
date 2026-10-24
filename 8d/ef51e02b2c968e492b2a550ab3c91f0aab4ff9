@@ -1,0 +1,29 @@
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_29d8df116c5b92::t_846bcb8ed719d8 188-195
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_29d8df116c5b92::t_7b576b5cdb8048 1,1178-1201,1265-1325,1341-1370
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_29d8df116c5b92::t_c94f65c07ddb14 1,49-72,136-196,212-241
+public/wasm/manifest.json
+  s_29d8df116c5b92::t_dee2c99c60f1c2 12,16-18,21
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_3478f8a6e8db4b 1211-1212,1345,1351,1771
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_29d8df116c5b92::t_038411aca60bb9 1,1178-1201,1265-1325,1341-1370
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8def51e02b2c968e492b2a550ab3c91f0aab4ff9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
