@@ -1,6 +1,6 @@
 import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
@@ -178,7 +178,14 @@ export const trackCommands: CallableCommandEntry[] = [
                         'warning'
                     );
                 }
-            })().catch(() => {
+            })().catch((error: unknown) => {
+                if (isAppActionCommittedError(error)) {
+                    notifyUser(
+                        'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
+                        'error'
+                    );
+                    return;
+                }
                 notifyUser('Flatten could not finish. Check the track before trying again.', 'error');
             });
         },

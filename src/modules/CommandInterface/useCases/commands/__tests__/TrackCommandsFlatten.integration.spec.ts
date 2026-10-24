@@ -41,7 +41,11 @@ import {
 
 import { trackCommands } from '../TrackCommands';
 
-const actionHarness = vi.hoisted(() => ({ opens: [] as Promise<void>[], decisions: [] as Promise<boolean>[] }));
+const actionHarness = vi.hoisted(() => ({
+    opens: [] as Promise<void>[],
+    decisions: [] as Promise<boolean>[],
+    committedFailure: undefined as Error | undefined,
+}));
 
 // Observe the public dispatcher settling while retaining its real transaction and handlers.
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
@@ -49,7 +53,11 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     return {
         ...actual,
         executeUserAppAction: (...args: Parameters<typeof actual.executeUserAppAction>) => {
-            const opening = actual.executeUserAppAction(...args);
+            const opening = actual.executeUserAppAction(...args).then(() => {
+                if (actionHarness.committedFailure !== undefined) {
+                    throw actionHarness.committedFailure;
+                }
+            });
             actionHarness.opens.push(opening);
             return opening;
         },
@@ -199,6 +207,7 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
         notices.length = 0;
         actionHarness.opens.length = 0;
         actionHarness.decisions.length = 0;
+        actionHarness.committedFailure = undefined;
         unsubscribeConfirm = notifications.on('ui.confirm', (payload) => {
             confirmations.push(payload);
         });
@@ -596,5 +605,33 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
             ])
         );
         expectIntact(original);
+    });
+
+    it('reports a committed follow-up failure after the canonical Flatten write', async () => {
+        const { createAppActionCommittedError } = await import('#/modules/Command/useCases');
+        const original = readTruth();
+        actionHarness.committedFailure = createAppActionCommittedError({
+            actionType: 'flattenTrack',
+            cause: new Error('history receipt'),
+        });
+
+        invokeFlatten();
+        await expect(settleConfirmation(true)).rejects.toBe(actionHarness.committedFailure);
+
+        const committed = readTruth();
+        expect(committed).not.toEqual(original);
+        expect(committed.tracks.tracks[0]).toMatchObject({ kind: 'audio', devices: [], frozen: false });
+        expect(committed.takeLanes).toEqual({ lanes: [] });
+        expect(committed.actionHistory.entries).toHaveLength(1);
+        expect(actionHarness.opens).toHaveLength(1);
+        await vi.waitFor(() =>
+            expect(notices).toEqual([
+                {
+                    message:
+                        'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
+                    level: 'error',
+                },
+            ])
+        );
     });
 });

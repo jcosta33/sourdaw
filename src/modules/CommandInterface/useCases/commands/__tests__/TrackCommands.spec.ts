@@ -5,7 +5,8 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { type CallableCommandEntry } from '../../searchCommandRegistry';
 import { trackCommands } from '../TrackCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
 }));

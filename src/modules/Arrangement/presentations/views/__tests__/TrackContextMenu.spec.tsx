@@ -578,7 +578,7 @@ describe('TrackContextMenu', () => {
             'committed failure',
             createAppActionCommittedError({ actionType: 'flattenTrack', cause: new Error('receipt') }),
         ],
-    ])('shows one failure notice for a %s without retrying Flatten', async (_kind, error) => {
+    ])('shows one failure notice for a %s without retrying Flatten', async (kind, error) => {
         vi.mocked(confirmUser).mockResolvedValue(true);
         vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [frozenTrack], selectedTrackId: frozenTrack.id });
         vi.mocked(executeUserAppAction).mockRejectedValue(error);
@@ -586,7 +586,9 @@ describe('TrackContextMenu', () => {
         openFrozenMenu();
         await vi.waitFor(() =>
             expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
-                'Flatten could not finish. Check the track before trying again.',
+                kind === 'committed failure'
+                    ? 'Flatten changed the project, but follow-up processing failed. Check the project before continuing.'
+                    : 'Flatten could not finish. Check the track before trying again.',
                 'error'
             )
         );
@@ -1263,7 +1265,7 @@ describe('TrackContextMenu Flatten failure with canonical project truth', () => 
         openFrozenMenu(sourceTrack);
         await vi.waitFor(() =>
             expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
-                'Flatten could not finish. Check the track before trying again.',
+                'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
                 'error'
             )
         );

@@ -5,7 +5,7 @@ import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Grid } from '#/components/layout';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
@@ -151,7 +151,14 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                     'warning'
                 );
             }
-        })().catch(() => {
+        })().catch((error: unknown) => {
+            if (isAppActionCommittedError(error)) {
+                notifyUser(
+                    'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
+                    'error'
+                );
+                return;
+            }
             notifyUser('Flatten could not finish. Check the track before trying again.', 'error');
         });
     };

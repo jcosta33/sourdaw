@@ -28,7 +28,8 @@ const { mockConfirmUser, mockNotifyUser } = vi.hoisted(() => ({
     mockNotifyUser: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -150,6 +151,24 @@ describe('trackCommands — guarded action commands', () => {
                 'error'
             )
         );
+    });
+
+    it('flatten-track reports committed follow-up failure without suggesting a retry', async () => {
+        const { createAppActionCommittedError } = await import('#/modules/Command/useCases');
+        mockConfirmUser.mockResolvedValue(true);
+        executeUserAppAction.mockRejectedValue(
+            createAppActionCommittedError({ actionType: 'flattenTrack', cause: new Error('history receipt') })
+        );
+
+        runAction('flatten-track');
+
+        await vi.waitFor(() =>
+            expect(mockNotifyUser).toHaveBeenCalledExactlyOnceWith(
+                'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
+                'error'
+            )
+        );
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('flatten-track is still listed with the same metadata and does nothing without selection', () => {
