@@ -97,6 +97,7 @@ type FakePort = MessagePort & {
     peakUnacknowledgedChunks: () => number;
     /** Run the answers a 'queued' worklet holds, in arrival order. */
     drainWorklet: () => void;
+    readNextWorkletMessage: () => void;
 };
 
 type MakePortOptions = {
@@ -149,6 +150,8 @@ type MakePortOptions = {
      * in the order the messages arrived).
      */
     chunkAnswers?: 'now' | 'later' | 'never' | 'queued';
+    /** Refuse the first queued chunk; later queued chunks are still read but receive no ACK. */
+    refuseFirstQueuedChunk?: boolean;
     /**
      * Model a port that is closed by the time the loader aborts: posting
      * `abortSampleBank` throws.
@@ -172,6 +175,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
     let releaseRequests = 0;
+    let refusedChunk = false;
     const workletQueue: Array<() => void> = [];
     const tally: ChunkTally = options.chunkTally ?? { unanswered: 0, peak: 0 };
     function emit(message: unknown): void {
@@ -198,6 +202,15 @@ function makePort(options: MakePortOptions = {}): FakePort {
             tally.peak = Math.max(tally.peak, tally.unanswered);
             const answer = (): void => {
                 tally.unanswered--;
+                if (options.refuseFirstQueuedChunk && !refusedChunk) {
+                    refusedChunk = true;
+                    pendingToken = null;
+                    emit({ type: 'sampleBankError', loadToken: message.loadToken, message: 'first chunk refused' });
+                    return;
+                }
+                if (options.refuseFirstQueuedChunk) {
+                    return;
+                }
                 if (message.type === 'sampleChunk') {
                     emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
                     return;
@@ -307,6 +320,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
                 run();
             }
         },
+        readNextWorkletMessage: () => workletQueue.shift()?.(),
         addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
             if (typeof listener === 'function') {
                 listeners.add(listener);
@@ -1320,6 +1334,45 @@ describe('loadInstrumentFromManifest', () => {
                 await expect(pending).rejects.toThrow(/does not fit/);
                 expect(postedTypes(port)).not.toContain('sealSample');
             }, 2000);
+
+            it('holds stale queued chunks after the first refusal until the ordered release fence', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const refused = makePort({
+                    chunkAnswers: 'queued',
+                    refuseFirstQueuedChunk: true,
+                    chunkTally: tally,
+                });
+                const successor = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                stubManyChunks();
+                const first = loadChunkBank(refused, 'refused-first');
+                void first.catch(() => {});
+                await vi.waitFor(() => expect(chunkCount(refused)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT));
+                const second = loadChunkBank(successor, 'refused-successor');
+                try {
+                    await vi.waitFor(() => expect(postedTypes(successor)).toContain('beginSample'));
+                    expect(chunkCount(successor)).toBe(0);
+
+                    refused.readNextWorkletMessage();
+                    await expect(first).rejects.toThrow('first chunk refused');
+                    expect(postedTypes(refused)).toContain('releaseRetiredBank');
+                    expect(chunkCount(successor)).toBe(0);
+                    expect(tally.unanswered).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - 1);
+
+                    for (let index = 1; index < LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT; index++) {
+                        refused.readNextWorkletMessage();
+                        expect(chunkCount(successor)).toBe(0);
+                    }
+                    expect(tally.unanswered).toBe(0);
+                    refused.readNextWorkletMessage();
+                    await second;
+                    expect(chunkCount(successor)).toBe(8);
+                    expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                } finally {
+                    refused.emit({ type: 'disposed' });
+                    successor.emit({ type: 'disposed' });
+                    await Promise.allSettled([first, second]);
+                }
+            }, 5000);
 
             it('settles the load when it is aborted while it waits for an acknowledgement', async () => {
                 stubManyChunks();

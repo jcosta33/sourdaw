@@ -208,7 +208,26 @@ type RealProcessor = {
 };
 let realProcessorConstructor: (new (...args: unknown[]) => RealProcessor) | undefined;
 
-async function installRealShipment(stall?: 'builder' | 'zone-ack') {
+async function installRealShipment(stall?: 'builder' | 'zone-ack' | 'owner-zone-ack') {
+    const instrumentId = stall === 'owner-zone-ack' ? 'piccolo' : 'solo-cello';
+    const zoneArticulationTypes = [
+        'sustain',
+        'sustain-non-vib',
+        'con-sordino',
+        'flautando',
+        'sul-tasto',
+        'sul-ponticello',
+        'harmonics',
+        'spiccato',
+        'staccato',
+        'staccatissimo',
+        'pizzicato',
+        'bartok-pizz',
+        'col-legno',
+        'tremolo',
+        'trill-half',
+        'trill-whole',
+    ] as const;
     const wasmModule = new WebAssembly.Module(
         readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm'))
     );
@@ -287,7 +306,10 @@ async function installRealShipment(stall?: 'builder' | 'zone-ack') {
             if (data.type === 'sampleChunkWritten' && !releaseOwner) {
                 ownerAcknowledgements.push(() => emit(data));
                 notify();
-            } else if (data.type === 'zoneTableChunkWritten' && stall === 'zone-ack' && index === 1) {
+            } else if (
+                data.type === 'zoneTableChunkWritten' &&
+                ((stall === 'zone-ack' && index === 1) || (stall === 'owner-zone-ack' && index === 0))
+            ) {
                 heldZoneAcknowledgements.push(() => emit(data));
                 notify();
             } else {
@@ -303,7 +325,7 @@ async function installRealShipment(stall?: 'builder' | 'zone-ack') {
                 id,
                 {
                     ...defaultLevainState,
-                    patch: { ...defaultLevainState.patch, instrumentId: 'solo-cello' },
+                    patch: { ...defaultLevainState.patch, instrumentId },
                 },
             ])
         )
@@ -312,7 +334,27 @@ async function installRealShipment(stall?: 'builder' | 'zone-ack') {
         'fetch',
         vi.fn((url: string) => {
             if (url.endsWith('/manifest.json')) {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest('solo-cello')) });
+                const source = manifest(instrumentId);
+                let offered = source;
+                if (stall === 'owner-zone-ack') {
+                    offered = {
+                        ...source,
+                        articulations: zoneArticulationTypes.map((type, id) => {
+                            if (id === 0) {
+                                return { type, id, zones: source.articulations[0]!.zones };
+                            }
+                            return {
+                                type,
+                                id,
+                                zones: [{ ...source.articulations[0]!.zones[0]!, file: 'sample-0.wav' }],
+                            };
+                        }),
+                    };
+                }
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(offered),
+                });
             }
             return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
         })
@@ -1095,6 +1137,44 @@ describe('live Levain content progress', () => {
             expect(diagnostics.counts).toMatchObject({ failed: 0, cancelled: 0 });
             expect(diagnostics.devices.filter((device) => device.status === 'content-pending')).toHaveLength(5);
             shipment.finishOwner();
+            await expect(waiting).resolves.toMatchObject({
+                status: 'ready',
+                devices: DEVICE_IDS.map((deviceId) => ({ deviceId, status: 'ready', stage: null })),
+            });
+            expect(shipment.engine.getDeviceReadinessDiagnostics().counts).toMatchObject({
+                contentReady: 5,
+                playableReady: 5,
+                failed: 0,
+            });
+            expect(getDecodedBankDiagnostics().activeLeases).toBe(0);
+        } finally {
+            await shipment.dispose();
+        }
+    });
+
+    it('keeps fully staged followers alive when the real owner acknowledges required zone work', async () => {
+        const shipment = await installRealShipment('owner-zone-ack');
+        try {
+            await shipment.stageFollowers();
+            const waiting = shipment.engine.waitForDevices();
+            const started = Date.now();
+            shipment.finishOwner();
+            await shipment.until(() => shipment.heldZoneAcknowledgements.length === 4);
+            expect(shipment.processors.filter((processor) => processor._pendingBankCommit)).toHaveLength(4);
+            await vi.advanceTimersByTimeAsync(9000);
+            shipment.heldZoneAcknowledgements.shift()!();
+            expect(
+                progressEvents
+                    .filter((event) => typeof event.progress !== 'number' && event.atMs === started + 9000)
+                    .map((event) => event.deviceId)
+            ).toEqual(DEVICE_IDS);
+            await vi.advanceTimersByTimeAsync(1020);
+            expect(Date.now() - started).toBeGreaterThan(10000);
+            expect(shipment.engine.getDeviceReadinessDiagnostics().counts).toMatchObject({ failed: 0, cancelled: 0 });
+            await shipment.until(() => shipment.heldZoneAcknowledgements.length === 4);
+            for (const acknowledge of shipment.heldZoneAcknowledgements.splice(0)) {
+                acknowledge();
+            }
             await expect(waiting).resolves.toMatchObject({
                 status: 'ready',
                 devices: DEVICE_IDS.map((deviceId) => ({ deviceId, status: 'ready', stage: null })),

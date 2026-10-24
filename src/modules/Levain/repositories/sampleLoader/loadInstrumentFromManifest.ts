@@ -377,8 +377,8 @@ type BudgetWaiter = { resolve: (granted: boolean) => void; granted: boolean };
  * load that ends with chunks unacknowledged (aborted, failed) keeps those
  * credits: its chunks are still queued ahead of its abort on the port, and the
  * worklet still copies them. They return one per acknowledgement, and all at
- * once at the first answer that must follow those chunks, or when the port is
- * closed or the processor ends. Waiters are served first come, first served: a
+ * once at the ordered retired-bank release fence, or when the port is closed
+ * or the processor ends. Waiters are served first come, first served: a
  * returned credit goes straight to the oldest waiter, and a new reservation
  * never takes a free credit past a queue.
  */
@@ -418,8 +418,9 @@ function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
  * The pacer outlives its load while it still holds credits. The worklet reads
  * its port in order, so once the load's chunks are passed it answers the
  * token's `sampleBankError` (the abort's reply), or the `retiredBankReleased`
- * the loader asks for next; the first of those, or the processor ending, hands
- * back whatever is still held, and the listener is removed.
+ * the loader asks for next. A refusal of an early chunk can precede later
+ * queued chunks with no acknowledgements, so only the ordered release fence
+ * or processor end hands back whatever is still held.
  */
 function createChunkPacer(
     nodePort: MessagePort,
@@ -495,7 +496,6 @@ function createChunkPacer(
         }
         if (message.type === 'sampleBankError') {
             fail(sampleBankFailure(message));
-            passedAllChunks();
             return;
         }
         if (message.type === 'retiredBankReleased') {
@@ -726,6 +726,7 @@ export async function loadInstrumentFromManifest({
     let shipment: SharedShipment | undefined;
     let registeredLoadToken: number | undefined;
     let ownerLoadToken: number | undefined;
+    let uploadsPcm = false;
     let commitPosted = false;
     // PCM is the only shared prerequisite. An independently stalled builder
     // or zone upload must keep its own inactivity deadline.
@@ -767,7 +768,11 @@ export async function loadInstrumentFromManifest({
         sharedShipments.set(loadToken, shipment);
         registeredLoadToken = loadToken;
         const pacer = createChunkPacer(nodePort, loadToken, signal, lease.reportSharedShipmentActivity, () => {
-            lease.reportActivity();
+            if (uploadsPcm && sharedShipments.get(loadToken) === shipment) {
+                lease.reportSharedShipmentActivity();
+            } else {
+                lease.reportActivity();
+            }
             joinOwnerShipment();
         });
         chunkPacer = pacer;
@@ -784,6 +789,7 @@ export async function loadInstrumentFromManifest({
         ownerLoadToken = decision.ownerLoadToken;
         signal?.throwIfAborted();
         if (uploadRequired) {
+            uploadsPcm = true;
             lease.setSharedShipmentGroup(shipment.group);
         }
         lease.reportActivity();
