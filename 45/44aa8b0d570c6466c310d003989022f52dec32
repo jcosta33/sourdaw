@@ -1,0 +1,31 @@
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_59e31a5c6f3e31::t_eda0461966330b 1,5-6,10,21-22,30,34-38,41-46,57-58,88,95-101,107-108,199,252,270-297,299-321,323-324
+src/modules/Arrangement/handlers/track/__tests__/freezeTrackFailure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_5ebeb099b9410c 1-638
+src/modules/Arrangement/handlers/track/restoreFreezeState.ts
+  s_59e31a5c6f3e31::t_cb95f4fb7dc7c5 11-13
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_59e31a5c6f3e31::t_7ba5e322c18ae2 3,5,20-26,61-69,449-464,466-500,502,504-521,629,647-658,717-728
+src/modules/Arrangement/useCases/freezeBounce/__tests__/silentBakeGuard.spec.ts
+  s_59e31a5c6f3e31::t_a78b1557005604 1,5,8,116-117,122-124
+src/modules/Command/useCases/__tests__/executeAppActionAsyncTransaction.spec.ts
+  s_59e31a5c6f3e31::t_8abac0e6efb289 12,144-319
+src/modules/Command/useCases/executeAppAction.ts
+  s_59e31a5c6f3e31::t_ce6a4b9cec3056 42-48,352-359,407,411,433-442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4544aa8b0d570c6466c310d003989022f52dec32",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
