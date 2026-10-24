@@ -27,6 +27,12 @@ test.describe('Toaster kit shelf and sequencer', () => {
     });
 
     test('Kick step 1 toggles on and Close dismisses Toaster', async ({ page }) => {
+        const view = page.getByRole('combobox', { name: 'Toaster view', exact: true });
+        await expect(view).toBeVisible();
+        await expect(view).toHaveValue('simple');
+        await view.selectOption('full');
+        await expect(view).toHaveValue('full');
+
         const off = page.getByRole('checkbox', { name: 'Kick step 1, off', exact: true });
         await expect(off).toHaveAttribute('aria-checked', 'false');
 

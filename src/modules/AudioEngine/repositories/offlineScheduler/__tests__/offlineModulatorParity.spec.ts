@@ -339,7 +339,9 @@ describe('modulator project phase reaches every terminal binding', () => {
             ],
         };
         scheduleTrackAutomationFixture(input);
-        expect(param.setValueAtTime.mock.calls.map(([value]) => value)).toEqual([4, 4, 5]);
+        // The skipped rounded 4 still advances the continuous slot, so the
+        // next tick delivers 5 without re-sending the held 4.
+        expect(param.setValueAtTime.mock.calls.map(([value]) => value)).toEqual([4, 5]);
     });
 
     it('refuses a resolved modulator without its inverse, while lane-only scheduling needs none', () => {

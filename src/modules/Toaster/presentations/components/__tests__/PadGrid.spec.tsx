@@ -121,6 +121,35 @@ describe('PadGrid — selection and aria', () => {
 });
 
 describe('PadGrid — pad state display', () => {
+    it('keeps a complete pad name available when its compact label is truncated', () => {
+        const name = 'Closed hi-hat with a long name';
+        const pads = [makePad(0, { name, engineType: 'hihat-closed', chokeGroup: 1 })];
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
+
+        const pad = screen.getByRole('button', { name: `Trigger ${name}` });
+        expect(pad).toHaveAttribute('title', `Trigger ${name}`);
+        expect(screen.getByText('closed')).toHaveAttribute('title', 'hihat-closed');
+        expect(screen.getByText('C1')).toBeTruthy();
+        expect(screen.getByText('80%')).toBeTruthy();
+    });
+
+    it('keeps the full target name and level available in 16 Levels mode', () => {
+        const name = 'Open hi-hat with a long name';
+        render(
+            <PadGrid
+                pads={[makePad(0)]}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                sixteenLevelsTarget="filter"
+                targetPadName={name}
+            />
+        );
+
+        const label = `Trigger level 1 (31Hz) of ${name}`;
+        expect(screen.getByRole('button', { name: label })).toHaveAttribute('title', label);
+    });
+
     it('shows Mute overlay when pad is muted', () => {
         const pads = [makePad(0, { muted: true })];
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);

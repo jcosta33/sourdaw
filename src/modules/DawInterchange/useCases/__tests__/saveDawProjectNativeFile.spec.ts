@@ -23,8 +23,9 @@ describe('saveDawProjectNativeFile', () => {
     it('should write DAWproject bytes when the native save dialog returns a path', async () => {
         vi.mocked(saveDawProjectFileDialog).mockResolvedValue('/tmp/session.dawproject');
 
-        await saveDawProjectNativeFile({ bytes, suggestedName: 'session.dawproject' });
+        const outcome = await saveDawProjectNativeFile({ bytes, suggestedName: 'session.dawproject' });
 
+        expect(outcome).toBe('saved');
         expect(saveDawProjectFileDialog).toHaveBeenCalledWith({ suggestedName: 'session.dawproject' });
         expect(writeDawProjectFile).toHaveBeenCalledWith({ filePath: '/tmp/session.dawproject', bytes });
     });
@@ -32,8 +33,9 @@ describe('saveDawProjectNativeFile', () => {
     it('should return without writing when the native save dialog is cancelled', async () => {
         vi.mocked(saveDawProjectFileDialog).mockResolvedValue(null);
 
-        await saveDawProjectNativeFile({ bytes, suggestedName: 'session.dawproject' });
+        const outcome = await saveDawProjectNativeFile({ bytes, suggestedName: 'session.dawproject' });
 
+        expect(outcome).toBe('cancelled');
         expect(saveDawProjectFileDialog).toHaveBeenCalledWith({ suggestedName: 'session.dawproject' });
         expect(writeDawProjectFile).not.toHaveBeenCalled();
     });

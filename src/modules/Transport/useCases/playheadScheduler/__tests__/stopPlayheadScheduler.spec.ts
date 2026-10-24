@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
+import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { postStoredControllerMove } from '../../scheduling/postStoredControllerMove';
+import { takeHeldNoteExpression } from '../../scheduling/takeHeldNoteExpression';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
 
 /** The device nodes each track's strip holds, as the engine double answers `getTrackStrip`. */
@@ -146,5 +148,40 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         stopPlayheadScheduler();
 
         expect(getTrackStrip).not.toHaveBeenCalled();
+    });
+});
+
+describe('stopPlayheadScheduler forgetting parked note expression', () => {
+    it('drops the changes a started note parked, which a stop, a pause and a seek would otherwise replay', () => {
+        holdNoteExpression({
+            trackId: 'track-1',
+            pitch: 64,
+            channel: 0,
+            receiverId: 'device-1',
+            releaseBeat: 4,
+            followsChannelBend: false,
+            timeline: {
+                startFrame: 0,
+                releaseFrame: 192_000,
+                frameAtBeat: (beat) => beat * 48_000,
+                own: { pressure: 10 },
+                channel: undefined,
+                bendOwner: 'note',
+                advancedBeat: Number.NEGATIVE_INFINITY,
+                pending: [{ beat: 2, frame: 96_000, expression: { pressure: 80 }, claimsBend: false }],
+            },
+        });
+
+        stopPlayheadScheduler();
+
+        expect(
+            takeHeldNoteExpression({
+                trackId: 'track-1',
+                fromBeat: 0,
+                toBeat: 8,
+                fromFrame: 0,
+                readChannelBend: () => [],
+            })
+        ).toEqual([]);
     });
 });

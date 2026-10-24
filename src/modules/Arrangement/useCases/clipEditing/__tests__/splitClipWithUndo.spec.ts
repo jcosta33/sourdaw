@@ -39,6 +39,7 @@ vi.mock('../../../stores/clipSatelliteState', () => ({
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { gainSeamPointId } from '../../../models/GainSeamPointId';
 import { type Clip } from '../../../models/Track';
 import { splitClipWithUndo } from '../splitClipWithUndo';
 
@@ -233,7 +234,7 @@ describe('splitClipWithUndo', () => {
                 enabled: true,
                 points: [
                     { id: 'p0', beatOffset: 0, gainDb: -3 },
-                    { id: 'gep-split-right-1-left', beatOffset: 4, gainDb: -3 },
+                    { id: gainSeamPointId('right-1', 'left'), beatOffset: 4, gainDb: -3 },
                 ],
             },
             warpState: null,
@@ -243,7 +244,7 @@ describe('splitClipWithUndo', () => {
             gainEnvelope: {
                 clipId: 'right-1',
                 enabled: true,
-                points: [{ id: 'gep-split-right-1-right', beatOffset: 0, gainDb: -3 }],
+                points: [{ id: gainSeamPointId('right-1', 'right'), beatOffset: 0, gainDb: -3 }],
             },
             warpState: null,
         };
