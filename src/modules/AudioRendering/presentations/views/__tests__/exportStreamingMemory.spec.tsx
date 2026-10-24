@@ -5,7 +5,7 @@ import { join, resolve as resolvePath } from 'node:path';
 
 import { type ReactNode } from 'react';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { unzipSync } from 'fflate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -878,8 +878,10 @@ describe('connected stem export output ownership', () => {
             try {
                 render(<ExportDialog open onClose={() => {}} />);
                 fireEvent.click(screen.getByTestId('export-mode-stems'));
-                fireEvent.click(screen.getByTestId('export-start'));
-                await finished;
+                await act(async () => {
+                    fireEvent.click(screen.getByTestId('export-start'));
+                    await finished;
+                });
                 expect(closed).toBe(true);
                 expect(ownership.rendered).toBe(64);
                 expect(ownership.peakRetained).toBe(1);
