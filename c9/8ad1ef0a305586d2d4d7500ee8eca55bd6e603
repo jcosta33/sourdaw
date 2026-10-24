@@ -1,0 +1,46 @@
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_7acdc945b846b6::t_aedaaac82077f4 27-35,39,73,92
+  s_7acdc945b846b6::t_2ad476de700afb 398-416,440-451,453-462,464-469,471-482,484-485,496,505
+  s_7acdc945b846b6::t_eddc434147faa6 452,463,470,483
+  s_7acdc945b846b6::t_cf3c31ae18063c 384-388,392,486-488,490-491,497
+  s_7acdc945b846b6::t_41a871c1139ea3 389-391,489,492-495
+  s_7acdc945b846b6::t_060d92384d2c01 498-504
+scripts/fileTrackerIssue.ts
+  s_7acdc945b846b6::t_cf7d490af874ee 224
+  s_7acdc945b846b6::t_507f45bba1fff7 41,44-47,164,167,171,470
+  s_7acdc945b846b6::t_fe843244330c14 3,39-40,42-43,163,165-166,168-170,469,471-477
+  s_7acdc945b846b6::t_ea6f21720f7d4b 225-226
+  s_29d8df116c5b92::t_3b1166d2f8084c 172
+.github/ISSUE_TEMPLATE/spec.yml
+  s_7acdc945b846b6::t_4317d6306a02a1 4
+.github/ISSUE_TEMPLATE/feature_request.yml
+  s_7acdc945b846b6::t_4317d6306a02a1 4
+.github/ISSUE_TEMPLATE/campaign.yml
+  s_7acdc945b846b6::t_4317d6306a02a1 4
+AGENTS.md
+  s_7acdc945b846b6::t_baea6e8522f8a5 417-422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c98ad1ef0a305586d2d4d7500ee8eca55bd6e603",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
