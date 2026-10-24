@@ -214,6 +214,162 @@ describe('createConsoleWriter', () => {
             expect(call?.[2]).not.toContain('unrelated getter detail');
         });
 
+        it('does not enter an error name getter that logs the same error', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new TypeError('outer', { cause: new Error('inner') });
+            let reads = 0;
+            Object.defineProperty(error, 'name', {
+                get() {
+                    reads += 1;
+                    if (reads < 65) {
+                        writer.error(error);
+                    }
+                    return 'HostileError';
+                },
+            });
+
+            writer.error(error);
+
+            expect(reads).toBe(0);
+            expect(console.error).toHaveBeenCalledTimes(1);
+            expect(console.error).toHaveBeenCalledWith(
+                '[DEV][ERROR]',
+                error,
+                expect.stringContaining('TypeError: outer')
+            );
+        });
+
+        it('does not enter an error message getter that logs the same error', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new Error('outer', { cause: new Error('inner') });
+            let reads = 0;
+            Object.defineProperty(error, 'message', {
+                get() {
+                    reads += 1;
+                    if (reads < 65) {
+                        writer.error(error);
+                    }
+                    return 'hidden message';
+                },
+            });
+
+            writer.error(error);
+
+            expect(reads).toBe(0);
+            expect(console.error).toHaveBeenCalledTimes(1);
+            const diagnostic = vi.mocked(console.error).mock.calls[0]?.[2];
+            expect(diagnostic).toContain('[unreadable message]');
+            expect(diagnostic).not.toContain('hidden message');
+        });
+
+        it('does not enter a cause getter that logs the same error', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new Error('outer');
+            let reads = 0;
+            Object.defineProperty(error, 'cause', {
+                get() {
+                    reads += 1;
+                    if (reads < 65) {
+                        writer.error(error);
+                    }
+                    return new Error('hidden cause');
+                },
+            });
+
+            writer.error(error);
+
+            expect(reads).toBe(0);
+            expect(console.error).toHaveBeenCalledTimes(1);
+            expect(console.error).toHaveBeenCalledWith(
+                '[DEV][ERROR]',
+                error,
+                expect.stringContaining('[unreadable cause]')
+            );
+        });
+
+        it('does not enter an aggregate child getter that logs the same error', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const children = [new Error('original child')];
+            const error = new AggregateError(children, 'outer');
+            let reads = 0;
+            Object.defineProperty(children, 0, {
+                get() {
+                    reads += 1;
+                    if (reads < 65) {
+                        writer.error(error);
+                    }
+                    return new Error('hidden child');
+                },
+            });
+            Object.defineProperty(error, 'errors', { value: children });
+
+            writer.error(error);
+
+            expect(reads).toBe(0);
+            expect(console.error).toHaveBeenCalledTimes(1);
+            expect(console.error).toHaveBeenCalledWith(
+                '[DEV][ERROR]',
+                error,
+                expect.stringContaining('[unreadable error]')
+            );
+        });
+
+        it('bounds logging reentry from an aggregate array proxy trap', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new AggregateError([], 'outer');
+            let reads = 0;
+            const children = new Proxy([new Error('inner')], {
+                get(target, key, receiver) {
+                    reads += 1;
+                    if (reads < 65) {
+                        writer.error(error);
+                    }
+                    return Reflect.get(target, key, receiver);
+                },
+                getOwnPropertyDescriptor(target, key) {
+                    writer.error(error);
+                    return Reflect.getOwnPropertyDescriptor(target, key);
+                },
+            });
+            Object.defineProperty(error, 'errors', { value: children });
+
+            writer.error(error);
+
+            expect(reads).toBe(0);
+            expect(console.error).toHaveBeenCalledTimes(1);
+            expect(console.error).toHaveBeenCalledWith('[DEV][ERROR]', error, expect.stringContaining('Error: inner'));
+        });
+
+        it('bounds logging reentry from an error prototype proxy trap', () => {
+            const writer = createConsoleWriter({ mode: 'development' });
+            const error = new TypeError('outer', { cause: new Error('inner') });
+            const prototype: unknown = Object.getPrototypeOf(error);
+            if (prototype === null || typeof prototype !== 'object') {
+                throw new TypeError('Missing error prototype');
+            }
+            let reads = 0;
+            Object.setPrototypeOf(
+                error,
+                new Proxy(prototype, {
+                    getOwnPropertyDescriptor(target, key) {
+                        if (key === 'name') {
+                            reads += 1;
+                            writer.error(error);
+                        }
+                        return Reflect.getOwnPropertyDescriptor(target, key);
+                    },
+                })
+            );
+
+            writer.error(error);
+
+            const call = vi.mocked(console.error).mock.calls[0];
+            expect(reads).toBe(1);
+            expect(console.error).toHaveBeenCalledTimes(1);
+            expect(call?.[1]).toBe(error);
+            expect(call?.[2]).toContain('TypeError: outer');
+        });
+
         it('describes a shared child twice without calling it a cycle', () => {
             const writer = createConsoleWriter({ mode: 'development' });
             const shared = new Error('shared failure');

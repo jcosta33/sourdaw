@@ -39,11 +39,88 @@ const boundedText = (value: unknown, fallback: string): string => {
     return value.length > MAX_ERROR_TEXT_LENGTH ? `${value.slice(0, MAX_ERROR_TEXT_LENGTH)}[truncated]` : value;
 };
 
+type DataProperty = { kind: 'value'; value: unknown } | { kind: 'missing' | 'unreadable' };
+
+const readDataProperty = (object: object, key: PropertyKey, inherited = false, skipAccessors = false): DataProperty => {
+    let current: object | null = object;
+    for (let depth = 0; current !== null && depth <= MAX_NESTED_DEPTH; depth += 1) {
+        try {
+            const descriptor = Object.getOwnPropertyDescriptor(current, key);
+            if (descriptor !== undefined) {
+                if ('value' in descriptor) {
+                    return { kind: 'value', value: descriptor.value };
+                }
+                if (!skipAccessors) {
+                    return { kind: 'unreadable' };
+                }
+            }
+            if (!inherited) {
+                return { kind: 'missing' };
+            }
+            const prototype: unknown = Object.getPrototypeOf(current);
+            current = prototype !== null && typeof prototype === 'object' ? prototype : null;
+        } catch {
+            return { kind: 'unreadable' };
+        }
+    }
+    return { kind: 'missing' };
+};
+
 const errorLabel = (error: Error): string => {
+    const name = readDataProperty(error, 'name', true, true);
+    const message = readDataProperty(error, 'message', true);
+    const nameText = boundedText(name.kind === 'value' ? name.value : undefined, 'Error');
+    const messageText = boundedText(message.kind === 'value' ? message.value : undefined, '[unreadable message]');
+    return `${nameText}: ${messageText}`;
+};
+
+const appendAggregateErrors = (
+    error: Error,
+    path: string,
+    depth: number,
+    parts: string[],
+    visitChild: (child: unknown, path: string, depth: number) => void
+): boolean => {
+    const errors = readDataProperty(error, 'errors');
+    if (errors.kind === 'missing') {
+        return false;
+    }
     try {
-        return `${boundedText(error.name, 'Error')}: ${boundedText(error.message, '[unreadable message]')}`;
+        if (errors.kind !== 'value' || !Array.isArray(errors.value)) {
+            parts.push(`${path}.errors: [unreadable errors]`);
+            return true;
+        }
+        const children = errors.value;
+        const length = readDataProperty(children, 'length');
+        if (
+            length.kind !== 'value' ||
+            typeof length.value !== 'number' ||
+            !Number.isSafeInteger(length.value) ||
+            length.value < 0
+        ) {
+            parts.push(`${path}.errors: [unreadable errors]`);
+            return true;
+        }
+        if (length.value === 0) {
+            return false;
+        }
+        const count = Math.min(length.value, MAX_AGGREGATE_CHILDREN);
+        for (let index = 0; index < count; index += 1) {
+            const childPath = `${path}.errors[${index}]`;
+            const child = readDataProperty(children, index.toString());
+            if (child.kind === 'value') {
+                visitChild(child.value, childPath, depth + 1);
+            } else {
+                parts.push(`${childPath}: [unreadable error]`);
+            }
+        }
+        if (length.value > count) {
+            parts.push(`${path}.errors: [${length.value - count} more errors]`);
+        }
+        return true;
     } catch {
-        return 'Error: [unreadable message]';
+        parts.push(`${path}.errors: [unreadable errors]`);
+        return true;
     }
 };
 
@@ -83,50 +160,21 @@ const formatNestedErrors = (root: Error): string | undefined => {
         ancestors.add(error);
         parts.push(`${path}: ${errorLabel(error)}`);
 
-        try {
-            const cause = error.cause;
-            if (cause !== undefined) {
-                nested = true;
-                if (isNativeError(cause)) {
-                    visit(cause, `${path}.cause`, depth + 1);
-                } else {
-                    parts.push(`${path}.cause: [non-Error cause]`);
-                }
-            }
-        } catch {
+        const cause = readDataProperty(error, 'cause');
+        if (cause.kind === 'unreadable') {
             nested = true;
             parts.push(`${path}.cause: [unreadable cause]`);
+        } else if (cause.kind === 'value' && cause.value !== undefined) {
+            nested = true;
+            if (isNativeError(cause.value)) {
+                visit(cause.value, `${path}.cause`, depth + 1);
+            } else {
+                parts.push(`${path}.cause: [non-Error cause]`);
+            }
         }
 
-        const errorsDescriptor = Object.getOwnPropertyDescriptor(error, 'errors');
-        if (errorsDescriptor !== undefined) {
-            try {
-                if (!('value' in errorsDescriptor)) {
-                    nested = true;
-                    parts.push(`${path}.errors: [unreadable errors]`);
-                    ancestors.delete(error);
-                    return;
-                }
-                const children: unknown = errorsDescriptor.value;
-                if (!Array.isArray(children)) {
-                    nested = true;
-                    parts.push(`${path}.errors: [unreadable errors]`);
-                } else if (children.length > 0) {
-                    nested = true;
-                    const count = Math.min(children.length, MAX_AGGREGATE_CHILDREN);
-                    for (let index = 0; index < count; index += 1) {
-                        const child: unknown = children[index];
-                        const childPath = `${path}.errors[${index}]`;
-                        visitChild(child, childPath, depth + 1);
-                    }
-                    if (children.length > count) {
-                        parts.push(`${path}.errors: [${children.length - count} more errors]`);
-                    }
-                }
-            } catch {
-                nested = true;
-                parts.push(`${path}.errors: [unreadable errors]`);
-            }
+        if (appendAggregateErrors(error, path, depth, parts, visitChild)) {
+            nested = true;
         }
 
         ancestors.delete(error);
@@ -151,6 +199,7 @@ const formatNestedErrors = (root: Error): string | undefined => {
 };
 
 export const createConsoleWriter = ({ mode }: { mode: ConsoleWriterMode }): LogWriter => {
+    let reportingDevelopmentError = false;
     const write = (severity: LogSeverity, ...args: unknown[]): void => {
         if (!shouldWrite(severity, mode)) {
             return;
@@ -164,12 +213,25 @@ export const createConsoleWriter = ({ mode }: { mode: ConsoleWriterMode }): LogW
         info: (...args: unknown[]) => write('info', ...args),
         warn: (...args: unknown[]) => write('warn', ...args),
         error: (error: Error) => {
-            const nestedErrors = mode === 'development' ? formatNestedErrors(error) : undefined;
-            if (nestedErrors === undefined) {
+            if (mode !== 'development') {
                 write('error', error);
                 return;
             }
-            write('error', error, nestedErrors);
+            if (reportingDevelopmentError) {
+                return;
+            }
+            // A proxy trap during diagnostic inspection may itself report this error.
+            reportingDevelopmentError = true;
+            try {
+                const nestedErrors = formatNestedErrors(error);
+                if (nestedErrors === undefined) {
+                    write('error', error);
+                    return;
+                }
+                write('error', error, nestedErrors);
+            } finally {
+                reportingDevelopmentError = false;
+            }
         },
     };
 };
