@@ -7,7 +7,12 @@ import {
     type ResumeChunk,
     type ResumeMetadata,
 } from '../../models/AssetTransferResume';
-import { ASSET_CHUNK_SIZE, ASSET_REQUEST_RETRY_COOLDOWN_MS, type PeerMessage } from '../../models/CollaborationTypes';
+import {
+    ASSET_CHUNK_SIZE,
+    ASSET_REQUEST_MAX_ATTEMPTS,
+    ASSET_REQUEST_RETRY_COOLDOWN_MS,
+    type PeerMessage,
+} from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import * as resumeIndexedDb from '../../repositories/assetTransferResumeIndexedDb';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
@@ -147,6 +152,117 @@ async function finish(
 }
 
 describe('persisted asset restart over production serialized frames', () => {
+    it('recovers valid progress without materializing thirty-two out-of-geometry rows', async () => {
+        const { sender, receiver, hash, bytes } = await partialFixture();
+        receiver.transfer.dispose();
+        const stored = (await journalRows()).chunks[0]!;
+        const database = await resumeIndexedDb.openAssetTransferResumeDatabase();
+        await new Promise<void>((resolve, reject) => {
+            const transaction = database.transaction(ASSET_RESUME_CHUNKS, 'readwrite');
+            for (let index = 3; index < 35; index++) {
+                transaction.objectStore(ASSET_RESUME_CHUNKS).put({
+                    ...stored,
+                    index,
+                    data: new Uint8Array([index]),
+                });
+            }
+            transaction.oncomplete = () => {
+                database.close();
+                resolve();
+            };
+            transaction.onabort = () => {
+                database.close();
+                reject(transaction.error);
+            };
+        });
+        const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+        const restarted = endpoint();
+        const request = await restarted.request(hash);
+        expect(control(request).missingChunks).toEqual([1, 2]);
+        expect(cursor).toHaveBeenCalledTimes(2);
+        expect(receivedIndices(await journalRows())).toEqual([[0]]);
+        await finish(sender, restarted, request);
+        expect(restarted.callbacks.onAssetAvailable).toHaveBeenCalledExactlyOnceWith(hash);
+        expect(new Uint8Array(await restarted.transfer.getAsset(hash)!.arrayBuffer())).toEqual(bytes);
+        expect(await journalRows()).toEqual({ metadata: [], chunks: [] });
+    });
+
+    it.each(['local claim', 'emitted request'] as const)(
+        'allows five deliberate cancellations during %s followed by a real successful request',
+        async (phase) => {
+            const { sender, receiver, hash, bytes } = await partialFixture();
+            receiver.transfer.dispose();
+            const restarted = endpoint();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+            for (let index = 0; index < 5; index++) {
+                if (phase === 'local claim') {
+                    const started = Promise.withResolvers<void>();
+                    const release = Promise.withResolvers<void>();
+                    const open = resumeIndexedDb.openAssetTransferResumeDatabase;
+                    const held = vi
+                        .spyOn(resumeIndexedDb, 'openAssetTransferResumeDatabase')
+                        .mockImplementationOnce(async () => {
+                            started.resolve();
+                            await release.promise;
+                            return open();
+                        });
+                    restarted.transfer.requestAsset(hash);
+                    await started.promise;
+                    const cancelled = restarted.transfer.cancelAssetRequest(hash);
+                    release.resolve();
+                    await cancelled;
+                    held.mockRestore();
+                } else {
+                    await restarted.request(hash);
+                    await restarted.transfer.cancelAssetRequest(hash);
+                    expect(await journalRows()).toEqual({ metadata: [], chunks: [] });
+                }
+                await vi.advanceTimersByTimeAsync(ASSET_REQUEST_RETRY_COOLDOWN_MS + 1);
+            }
+            expect(restarted.sent).toHaveLength(phase === 'local claim' ? 0 : 5);
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+            const request = await restarted.request(hash);
+            expect(control(request).missingChunks).toEqual(phase === 'local claim' ? [1, 2] : []);
+            await finish(sender, restarted, request);
+            expect(restarted.callbacks.onAssetAvailable).toHaveBeenCalledExactlyOnceWith(hash);
+            expect(new Uint8Array(await restarted.transfer.getAsset(hash)!.arrayBuffer())).toEqual(bytes);
+            expect(restarted.callbacks.onTransferFailed).not.toHaveBeenCalled();
+        }
+    );
+
+    it('keeps real peer failures and their cooldown across deliberate cancellation and abandons at five', async () => {
+        const { receiver, hash } = await partialFixture();
+        receiver.transfer.dispose();
+        const restarted = endpoint();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+        for (let index = 0; index < ASSET_REQUEST_MAX_ATTEMPTS; index++) {
+            await restarted.request(hash);
+            await vi.advanceTimersByTimeAsync(ASSET_TRANSFER_STALL_TIMEOUT_MS);
+            expect(restarted.callbacks.onTransferFailed).toHaveBeenCalledTimes(index + 1);
+            expect(restarted.callbacks.onTransferFailed).toHaveBeenLastCalledWith(
+                hash,
+                'the sending peer stopped responding',
+                index === ASSET_REQUEST_MAX_ATTEMPTS - 1 ? 'abandoned' : 'cooldown'
+            );
+            const sentBeforeCancel = restarted.sent.length;
+            await restarted.transfer.cancelAssetRequest(hash);
+            restarted.transfer.requestAsset(hash);
+            expect(restarted.sent).toHaveLength(sentBeforeCancel);
+            if (index === 0) {
+                await vi.advanceTimersByTimeAsync(ASSET_REQUEST_RETRY_COOLDOWN_MS);
+                await restarted.request(hash);
+                await restarted.transfer.cancelAssetRequest(hash);
+                expect(restarted.callbacks.onTransferFailed).toHaveBeenCalledTimes(1);
+            }
+            await vi.advanceTimersByTimeAsync(ASSET_REQUEST_RETRY_COOLDOWN_MS);
+        }
+        const sentBeforeRetry = restarted.sent.length;
+        await restarted.transfer.cancelAssetRequest(hash);
+        restarted.transfer.requestAsset(hash);
+        expect(restarted.sent).toHaveLength(sentBeforeRetry);
+        expect(restarted.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+    });
+
     it.each([
         { phase: 'claim', complete: false },
         { phase: 'stored digest', complete: false },
@@ -638,7 +754,7 @@ describe('persisted asset restart over production serialized frames', () => {
                     !retained.includes(index)
             )
         ).toBe(true);
-        expect(cursor).toHaveBeenCalledTimes(4);
+        expect(cursor).toHaveBeenCalledTimes(3);
         expect(digests).toBe(3);
         getAll.mockRestore();
         expect(receivedIndices(await journalRows())).toEqual([retained]);

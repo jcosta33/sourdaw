@@ -174,9 +174,12 @@ function isMetadata(value: unknown): value is StoredResumeMetadata {
 }
 
 function chunkRange(metadata: Pick<ResumeMetadata, 'ownerId' | 'hash' | 'generation'>): IDBKeyRange {
+    // The next string boundary includes every index type in exactly this generation.
     return IDBKeyRange.bound(
-        [metadata.ownerId, metadata.hash, metadata.generation, 0],
-        [metadata.ownerId, metadata.hash, metadata.generation, Number.MAX_SAFE_INTEGER]
+        [metadata.ownerId, metadata.hash, metadata.generation],
+        [metadata.ownerId, metadata.hash, `${metadata.generation}\0`],
+        false,
+        true
     );
 }
 
@@ -223,25 +226,28 @@ function chunkKeyIndex(key: IDBValidKey): number {
     return key[3];
 }
 
-// A v1 row is committed only when its index is listed. Migrate that authority
-// once without loading the chunk payloads.
-function preserveLegacyMembership(transaction: IDBTransaction, metadata: LegacyResumeMetadata): Promise<void> {
-    const received = new Set(metadata.received);
-    return new Promise((resolve, reject) => {
-        const request = transaction.objectStore(ASSET_RESUME_CHUNKS).openKeyCursor(chunkRange(metadata));
-        request.onerror = () => reject(request.error ?? new Error('Asset resume migration failed'));
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (!cursor) {
-                resolve();
-                return;
-            }
-            if (!received.has(chunkKeyIndex(cursor.primaryKey))) {
-                transaction.objectStore(ASSET_RESUME_CHUNKS).delete(cursor.primaryKey);
-            }
-            cursor.continue();
-        };
-    });
+// A v1 row is committed only when its index is listed. Delete the gaps between
+// bounded committed indices without enumerating orphan keys or loading payloads.
+function preserveLegacyMembership(transaction: IDBTransaction, metadata: LegacyResumeMetadata): void {
+    const chunks = transaction.objectStore(ASSET_RESUME_CHUNKS);
+    const range = chunkRange(metadata);
+    let lower: IDBValidKey = [metadata.ownerId, metadata.hash, metadata.generation];
+    let lowerOpen = false;
+    for (const index of [...new Set(metadata.received)].sort((left, right) => left - right)) {
+        const key = [metadata.ownerId, metadata.hash, metadata.generation, index];
+        chunks.delete(IDBKeyRange.bound(lower, key, lowerOpen, true));
+        lower = key;
+        lowerOpen = true;
+    }
+    chunks.delete(IDBKeyRange.bound(lower, range.upper, lowerOpen, true));
+}
+
+function retireOutsideGeometry(transaction: IDBTransaction, metadata: ResumeMetadata): void {
+    const chunks = transaction.objectStore(ASSET_RESUME_CHUNKS);
+    const range = chunkRange(metadata);
+    const prefix = [metadata.ownerId, metadata.hash, metadata.generation];
+    chunks.delete(IDBKeyRange.bound(range.lower, [...prefix, 0], false, true));
+    chunks.delete(IDBKeyRange.bound([...prefix, metadata.manifest.chunkCount - 1], range.upper, true, true));
 }
 
 function isChunkData(value: unknown): value is Uint8Array {
@@ -278,8 +284,8 @@ async function* readJournalChunks(
     metadata: ResumeMetadata,
     authority?: ResumeAuthority
 ): AsyncIterable<ResumeJournalEntry> {
-    let afterIndex: number | undefined;
-    while (true) {
+    let nextIndex = 0;
+    while (nextIndex < metadata.manifest.chunkCount) {
         const entry: ResumeJournalEntry | null = await transact(
             'readonly',
             async (transaction) => {
@@ -290,9 +296,8 @@ async function* readJournalChunks(
                     throw new Error('Asset resume reader was superseded');
                 }
                 const range = IDBKeyRange.bound(
-                    [metadata.ownerId, metadata.hash, metadata.generation, afterIndex ?? 0],
-                    [metadata.ownerId, metadata.hash, metadata.generation, Number.MAX_SAFE_INTEGER],
-                    afterIndex !== undefined
+                    [metadata.ownerId, metadata.hash, metadata.generation, nextIndex],
+                    [metadata.ownerId, metadata.hash, metadata.generation, metadata.manifest.chunkCount - 1]
                 );
                 // Leave this transaction before the caller hashes the single cloned row.
                 const cursor = await requestValue(transaction.objectStore(ASSET_RESUME_CHUNKS).openCursor(range));
@@ -309,7 +314,8 @@ async function* readJournalChunks(
         if (!entry) {
             return;
         }
-        afterIndex = entry.index;
+        // A malformed fractional key cannot create extra work within one integer slot.
+        nextIndex = Math.floor(entry.index) + 1;
         yield entry;
     }
 }
@@ -337,7 +343,9 @@ async function claimResumeJournal(
                 return null;
             }
             if (value.schemaVersion === 1) {
-                await preserveLegacyMembership(transaction, value);
+                preserveLegacyMembership(transaction, value);
+            } else {
+                retireOutsideGeometry(transaction, value);
             }
             const next: ResumeMetadata = {
                 schemaVersion: 2,

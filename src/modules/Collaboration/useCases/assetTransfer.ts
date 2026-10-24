@@ -289,15 +289,15 @@ export class AssetTransfer {
      *
      * The scheduler calls `requestAsset` on every tick for every missing clip,
      * so the request path has no memory of its own; this is that memory. An
-     * entry is written on abort and dropped once the asset resolves.
+     * entry is written on failure and dropped once the asset resolves.
      */
     private retryNotBefore = new Map<string, number>();
 
-    /** Aborted attempts per hash, counted toward {@link ASSET_REQUEST_MAX_ATTEMPTS}. */
+    /** Failed attempts per hash, counted toward {@link ASSET_REQUEST_MAX_ATTEMPTS}. */
     private failedAttempts = new Map<string, number>();
 
     /**
-     * Hashes abandoned for the rest of the session after too many aborts. A
+     * Hashes abandoned for the rest of the session after too many failures. A
      * peer can write any string into `clip.assetHash`, so without a terminal
      * state a hash no peer holds re-broadcasts forever.
      */
@@ -1356,12 +1356,17 @@ export class AssetTransfer {
      * user-facing seam: an abandoned transfer used to be a `logger.warn` and
      * nothing else, leaving clips silently unplayable.
      *
-     * Recovery is rate-limited, not free: the abort arms a cooldown and spends
+     * Failure recovery is rate-limited: a failure arms a cooldown and spends
      * one of the hash's attempts. Its caller is the per-tick scheduler, so an
      * uncooled re-open turns every immediately-aborting failure class into a
      * request/abort loop at peer-RTT speed.
      */
-    private abortTransfer(hash: string, reason: string, retainPartial = false): void {
+    private abortTransfer(
+        hash: string,
+        reason: string,
+        retainPartial = false,
+        outcome: 'failure' | 'cancelled' = 'failure'
+    ): void {
         if (this.disposed) {
             return;
         }
@@ -1377,13 +1382,15 @@ export class AssetTransfer {
             return;
         }
 
-        const attempts = (this.failedAttempts.get(hash) ?? 0) + 1;
-        this.failedAttempts.set(hash, attempts);
-        if (attempts >= ASSET_REQUEST_MAX_ATTEMPTS) {
-            this.abandonedHashes.add(hash);
-            this.retryNotBefore.delete(hash);
-        } else {
-            this.retryNotBefore.set(hash, Date.now() + ASSET_REQUEST_RETRY_COOLDOWN_MS);
+        if (outcome === 'failure') {
+            const attempts = (this.failedAttempts.get(hash) ?? 0) + 1;
+            this.failedAttempts.set(hash, attempts);
+            if (attempts >= ASSET_REQUEST_MAX_ATTEMPTS) {
+                this.abandonedHashes.add(hash);
+                this.retryNotBefore.delete(hash);
+            } else {
+                this.retryNotBefore.set(hash, Date.now() + ASSET_REQUEST_RETRY_COOLDOWN_MS);
+            }
         }
 
         if (retainPartial && !this.abandonedHashes.has(hash) && partial?.attemptToken && partial.chunks.size > 0) {
@@ -1426,11 +1433,13 @@ export class AssetTransfer {
                 }
             });
         }
-        logger.warn(`[AssetTransfer] Transfer for ${hash} aborted: ${reason}`);
-        this.callbacks.onTransferFailed(hash, reason, this.abandonedHashes.has(hash) ? 'abandoned' : 'cooldown');
+        if (outcome === 'failure') {
+            logger.warn(`[AssetTransfer] Transfer for ${hash} aborted: ${reason}`);
+            this.callbacks.onTransferFailed(hash, reason, this.abandonedHashes.has(hash) ? 'abandoned' : 'cooldown');
+        }
     }
 
-    /** Explicit cancellation deletes the exact partial generation; disconnect/dispose retains it. */
+    /** Explicit cancellation deletes its exact generation without changing peer failures or reporting one. */
     async cancelAssetRequest(hash: string): Promise<void> {
         if (this.disposed) {
             return;
@@ -1439,7 +1448,7 @@ export class AssetTransfer {
         const pending = this.cleanupByHash.get(hash);
         const repository = this.resumeRepository;
         const active = this.receiveAttempts.has(hash);
-        this.abortTransfer(hash, 'the asset request was cancelled');
+        this.abortTransfer(hash, 'the asset request was cancelled', false, 'cancelled');
         if (active) {
             await this.cleanupByHash.get(hash);
             return;

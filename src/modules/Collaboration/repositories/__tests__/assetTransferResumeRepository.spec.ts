@@ -122,6 +122,91 @@ async function rawRows(): Promise<unknown[][]> {
 }
 
 describe('temporary asset journal transactions', () => {
+    it.each([1, 2] as const)(
+        'range-retires out-of-geometry rows before bounded v%s recovery',
+        async (schemaVersion) => {
+            const repository = createAssetTransferResumeRepository(OWNER);
+            const initial = await repository.begin(
+                { ...manifest, size: MIN_ASSET_CHUNK_SIZE * 3, chunkCount: 3 },
+                'original-writer'
+            );
+            const metadata = schemaVersion === 1 ? { ...initial, schemaVersion, received: [2] } : initial;
+            const valid = {
+                ownerId: OWNER,
+                hash: HASH,
+                generation: initial.generation,
+                index: 2,
+                data: new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(9),
+                digest: DIGEST,
+            };
+            const invalid = Array.from({ length: 32 }, (_, offset) => ({
+                ...valid,
+                index: 3 + offset,
+                data: new Uint8Array([offset]),
+            }));
+            await writeRows(metadata, [valid, ...invalid]);
+            const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+            const keys = vi.spyOn(IDBObjectStore.prototype, 'openKeyCursor');
+            const getAllKeys = vi.spyOn(IDBObjectStore.prototype, 'getAllKeys');
+            const journal = await repository.claim(HASH, 'recovery-writer');
+            expect(cursor).not.toHaveBeenCalled();
+            const recovered = await collectChunks(journal);
+            expect(recovered.map((chunk) => chunk.index)).toEqual([2]);
+            expect(Array.from(recovered[0]!.data)).toEqual(Array.from(valid.data));
+            expect(cursor).toHaveBeenCalledTimes(1);
+            expect(keys).not.toHaveBeenCalled();
+            expect(getAllKeys).not.toHaveBeenCalled();
+            expect(journal?.metadata).toMatchObject({
+                generation: initial.generation,
+                writerId: 'recovery-writer',
+                revision: initial.revision + 1,
+                lastVerifiedProgressAt: initial.lastVerifiedProgressAt,
+            });
+            expect(await counts()).toEqual([1, 1]);
+        }
+    );
+
+    it('rolls back geometry range retirement when runtime authority is revoked before commit', async () => {
+        const repository = createAssetTransferResumeRepository(OWNER);
+        const metadata = await repository.begin(manifest, 'original-writer');
+        await writeRows(metadata, [
+            {
+                ownerId: OWNER,
+                hash: HASH,
+                generation: metadata.generation,
+                index: 32,
+                data: new Uint8Array([1]),
+                digest: DIGEST,
+            },
+        ]);
+        const before = await rawRows();
+        const controller = new AbortController();
+        const nativeDelete = IDBObjectStore.prototype.delete;
+        let retired = false;
+        vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (this: IDBObjectStore, ...args) {
+            const request = nativeDelete.apply(this, args);
+            if (this.name === ASSET_RESUME_CHUNKS) {
+                request.addEventListener(
+                    'success',
+                    () => {
+                        retired = true;
+                        controller.abort();
+                    },
+                    { once: true }
+                );
+            }
+            return request;
+        });
+        await expect(
+            repository.claim(HASH, 'cancelled-writer', {
+                signal: controller.signal,
+                isCurrent: () => !controller.signal.aborted,
+            })
+        ).rejects.toThrow();
+        expect(retired).toBe(true);
+        expect(await rawRows()).toEqual(before);
+    });
+
     it('persists only six manifest fields from an extended network object across a reopened connection', async () => {
         const wireManifest = { ...manifest, integrityVersion: 1, unrelatedMarker: 'bounded-unknown-wire-field' };
         await createAssetTransferResumeRepository(OWNER).begin(wireManifest, 'writer');
@@ -345,7 +430,7 @@ describe('temporary asset journal transactions', () => {
         const repository = createAssetTransferResumeRepository(OWNER);
         const journal = await repository.claim(HASH, 'new-writer');
         expect(cursor).not.toHaveBeenCalled();
-        expect(keys).toHaveBeenCalledTimes(1);
+        expect(keys).not.toHaveBeenCalled();
         expect(journal?.metadata).toEqual({
             schemaVersion: 2,
             ownerId: OWNER,
