@@ -110,8 +110,9 @@ async function journalState(): Promise<{ received: number[][]; chunks: number }>
                                 key[2] === row.generation
                         )
                         .map((key) => {
-                            if (!Array.isArray(key) || typeof key[3] !== 'number')
-                                throw new Error('Expected a chunk key');
+                            if (!Array.isArray(key) || typeof key[3] !== 'number') {
+                                throw new TypeError('Expected a chunk key');
+                            }
                             return key[3];
                         })
                 ),

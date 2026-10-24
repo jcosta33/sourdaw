@@ -395,9 +395,15 @@ describe('persisted asset restart over production serialized frames', () => {
                     } else if (fullDigests === 2) {
                         secondStarted.resolve();
                         await secondRelease.promise;
-                        if (outcome === 'rejection') throw new Error('Controlled final digest rejection');
-                        if (outcome === 'mismatch') return new Uint8Array(32).buffer;
-                        if (outcome === 'dispose' || outcome === 'rebind') return verifiedDigest;
+                        if (outcome === 'rejection') {
+                            throw new Error('Controlled final digest rejection');
+                        }
+                        if (outcome === 'mismatch') {
+                            return new Uint8Array(32).buffer;
+                        }
+                        if (outcome === 'dispose' || outcome === 'rebind') {
+                            return verifiedDigest;
+                        }
                     }
                 }
                 return nativeDigest(...args);
@@ -422,7 +428,9 @@ describe('persisted asset restart over production serialized frames', () => {
                     const handoff = await restarted.transfer.prepareDurableOwnerRebind(
                         'bbbbbbbb-bbbb-8bbb-8bbb-bbbbbbbbbbbb'
                     );
-                    if (handoff.status !== 'prepared') throw new Error('Expected prepared owner handoff');
+                    if (handoff.status !== 'prepared') {
+                        throw new Error('Expected prepared owner handoff');
+                    }
                     expect(await handoff.commit()).toMatchObject({ status: 'committed' });
                 }
             } finally {
@@ -504,7 +512,9 @@ describe('persisted asset restart over production serialized frames', () => {
             this: IDBObjectStore,
             ...args
         ) {
-            if (this.name === ASSET_RESUME_CHUNKS) throw new Error('Whole-range chunk materialization is forbidden');
+            if (this.name === ASSET_RESUME_CHUNKS) {
+                throw new Error('Whole-range chunk materialization is forbidden');
+            }
             return nativeGetAll.apply(this, args);
         });
         const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
@@ -530,7 +540,9 @@ describe('persisted asset restart over production serialized frames', () => {
             release.resolve();
         }
         const missing = control(await requested).missingChunks;
-        if (!Array.isArray(missing)) throw new Error('Expected missing indices');
+        if (!Array.isArray(missing)) {
+            throw new TypeError('Expected missing indices');
+        }
         expect(missing).toHaveLength(131069);
         expect(new Set(missing).size).toBe(131069);
         expect(
@@ -565,16 +577,20 @@ describe('persisted asset restart over production serialized frames', () => {
                         'success',
                         () => {
                             const cursor = request.result;
-                            if (!cursor) return;
+                            if (!cursor) {
+                                return;
+                            }
                             const stored: unknown = cursor.value;
-                            if (!stored || typeof stored !== 'object') throw new Error('Expected stored row');
-                            const malformed: Record<string, unknown> = { ...stored };
+                            if (!stored || typeof stored !== 'object') {
+                                throw new Error('Expected stored row');
+                            }
+                            let malformed: Record<string, unknown>;
                             if (kind === 'payload-index') {
-                                malformed.index = 1;
+                                malformed = { ...stored, index: 1 };
                             } else if (kind === 'typed-data') {
-                                malformed.data = new Uint16Array(4);
+                                malformed = { ...stored, data: new Uint16Array(4) };
                             } else {
-                                malformed.digest = 'invalid-digest';
+                                malformed = { ...stored, digest: 'invalid-digest' };
                             }
                             Object.defineProperty(cursor, 'value', { value: malformed });
                         },

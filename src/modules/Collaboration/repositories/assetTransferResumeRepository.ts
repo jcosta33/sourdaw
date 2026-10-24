@@ -218,7 +218,7 @@ async function removeExact(expected: StoredResumeMetadata, authority?: ResumeAut
 
 function chunkKeyIndex(key: IDBValidKey): number {
     if (!Array.isArray(key) || typeof key[3] !== 'number') {
-        throw new Error('Asset resume chunk key is invalid');
+        throw new TypeError('Asset resume chunk key is invalid');
     }
     return key[3];
 }

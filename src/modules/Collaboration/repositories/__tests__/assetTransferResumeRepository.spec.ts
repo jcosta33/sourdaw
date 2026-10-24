@@ -54,7 +54,9 @@ async function collectChunks(journal: ResumeJournal | null): Promise<ResumeChunk
     const chunks: ResumeChunk[] = [];
     if (journal) {
         for await (const entry of journal.chunks) {
-            if (entry.chunk) chunks.push(entry.chunk);
+            if (entry.chunk) {
+                chunks.push(entry.chunk);
+            }
         }
     }
     return chunks;
@@ -65,7 +67,9 @@ async function writeRows(metadata: unknown, chunks: unknown[]): Promise<void> {
     return new Promise((resolve, reject) => {
         const transaction = database.transaction([ASSET_RESUME_METADATA, ASSET_RESUME_CHUNKS], 'readwrite');
         transaction.objectStore(ASSET_RESUME_METADATA).put(metadata);
-        for (const chunk of chunks) transaction.objectStore(ASSET_RESUME_CHUNKS).put(chunk);
+        for (const chunk of chunks) {
+            transaction.objectStore(ASSET_RESUME_CHUNKS).put(chunk);
+        }
         transaction.oncomplete = () => {
             database.close();
             resolve();
@@ -402,8 +406,9 @@ describe('temporary asset journal transactions', () => {
     it.each(['successor', 'abort'] as const)('loads one row per consumer step and fences a later %s', async (mode) => {
         const repository = createAssetTransferResumeRepository(OWNER);
         let metadata = await repository.begin(manifest, 'first');
-        for (const index of [0, 1])
+        for (const index of [0, 1]) {
             metadata = await repository.append(metadata, index, new Uint8Array(MIN_ASSET_CHUNK_SIZE), DIGEST);
+        }
         const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll');
         const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
         const controller = new AbortController();
@@ -412,13 +417,18 @@ describe('temporary asset journal transactions', () => {
             isCurrent: () => !controller.signal.aborted,
         });
         expect(cursor).not.toHaveBeenCalled();
-        if (!journal) throw new Error('Expected journal');
+        if (!journal) {
+            throw new Error('Expected journal');
+        }
         const iterator = journal.chunks[Symbol.asyncIterator]();
         expect((await iterator.next()).value).toMatchObject({ index: 0, chunk: { index: 0 } });
         expect(cursor).toHaveBeenCalledTimes(1);
         expect(getAll).not.toHaveBeenCalled();
-        if (mode === 'successor') await repository.claim(HASH, 'successor');
-        else controller.abort();
+        if (mode === 'successor') {
+            await repository.claim(HASH, 'successor');
+        } else {
+            controller.abort();
+        }
         await expect(iterator.next()).rejects.toThrow('superseded');
         expect(cursor).toHaveBeenCalledTimes(1);
         expect(await counts()).toEqual([1, 2]);

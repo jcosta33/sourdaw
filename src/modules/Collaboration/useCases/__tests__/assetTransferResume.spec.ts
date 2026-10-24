@@ -1,6 +1,7 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ASSET_RESUME_DATABASE } from '../../models/AssetTransferResume';
 import {
     ASSET_CHUNK_SIZE,
     ASSET_REQUEST_MAX_ATTEMPTS,
@@ -10,8 +11,17 @@ import { type PeerMessage } from '../../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
 
+import { installFakeDurableAssetIndexedDb } from './fakeDurableAssetIndexedDb';
+
 beforeEach(() => {
-    vi.stubGlobal('indexedDB', new IDBFactory());
+    // Complete-asset fixtures preserve jsdom Blobs; partial journals need actual key/cursor semantics.
+    installFakeDurableAssetIndexedDb();
+    const durableDatabase = globalThis.indexedDB;
+    const partialDatabase = new IDBFactory();
+    vi.stubGlobal('indexedDB', {
+        open: (name: string, version?: number) =>
+            name === ASSET_RESUME_DATABASE ? partialDatabase.open(name, version) : durableDatabase.open(name, version),
+    });
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 const instances: AssetTransfer[] = [];
