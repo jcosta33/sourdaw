@@ -1,0 +1,119 @@
+.agents/skills/review-stances/README.md
+  s_29d8df116c5b92::t_e441b10825c32a 26-27
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_61c7012cba3b3c 647-675
+evidence/agent-campaign/manifest.json
+  s_29d8df116c5b92::t_2dbcc9ccf878c6 816
+scripts/__tests__/prValidationScope.spec.ts
+  s_29d8df116c5b92::t_2952e391b04f48 32-33,206-222,224-225,227-250,252-350,564-568,570-573,575-579,744-807,809-833,835,837,839-846,848-850,852-951,954-967,1100-1147,1149-1200,1444-1527,1638-1667,1669-1703,1705-1735,1784-1801,1803-1820,1822-1835
+src/modules/AiRuntime/AGENTS.md
+  s_29d8df116c5b92::t_4f0ee4fdc7d307 46
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_29d8df116c5b92::t_4b89f05093c9d5 543-546
+src/modules/AiRuntime/models/PlanningOutcome.ts
+  s_29d8df116c5b92::t_6e5dedf6700572 19-23
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  s_29d8df116c5b92::t_a26cff607aa488 42-44
+src/modules/AiRuntime/transformers/readLastCommitRequest.ts
+  s_29d8df116c5b92::t_d99cce5728c772 1-80
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_29d8df116c5b92::t_726d4e389fd3c8 1-1634
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_29d8df116c5b92::t_d85b9f4e3089a1 12-17,33,44,396-490,516-527
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_29d8df116c5b92::t_2ba2021023c7c4 1-55
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_29d8df116c5b92::t_52a77a3424537a 92,431-478,516-524
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_29d8df116c5b92::t_afa743fe5ce09e 1-423
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  s_29d8df116c5b92::t_94b01f1979c8f3 1-210
+src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx
+  s_29d8df116c5b92::t_5ba88c9938fe5f 1-372
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_29d8df116c5b92::t_5c222ce9cfcde1 291-298
+src/modules/Arrangement/presentations/views/index.ts
+  s_29d8df116c5b92::t_0f1b02cb8aad53 10
+src/modules/Arrangement/useCases/getTimelineClipNavigationSnapshot.ts
+  s_29d8df116c5b92::t_d2d148ef620ad7 1-24
+src/modules/AudioEngine/engine/AdjustmentLayerRuntime.ts
+  s_29d8df116c5b92::t_d436166a5f8b23 2,224-240
+src/modules/AudioEngine/engine/__tests__/AdjustmentLayerRuntime.spec.ts
+  s_29d8df116c5b92::t_3fbe02ee21e361 9,105-178
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_29d8df116c5b92::t_24e2bd1a601a65 7,103-104,373,1877-2284
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_29d8df116c5b92::t_c74e5c9b811d7f 12,2655-2718,2748-2779
+src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.monitorTeardown.spec.ts
+  s_29d8df116c5b92::t_0cbe40d3151eab 3,7,61-64,66,93-145
+src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.spec.ts
+  s_29d8df116c5b92::t_8d70f399bcac88 40-51
+src/modules/AudioEngine/useCases/engineAccess/resetAudioGraph.ts
+  s_29d8df116c5b92::t_dfcfb9d367fdc9 1-2,7
+src/modules/Command/AGENTS.md
+  s_29d8df116c5b92::t_338bd3765fba3e 9
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_29d8df116c5b92::t_588b593a9f742f 6,19,35-38,267-461
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_29d8df116c5b92::t_e27dd64568b5f6 3-5,164-199
+src/modules/Command/useCases/commitRevertedEntries.ts
+  s_29d8df116c5b92::t_7161123cd23820 1-20
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_29d8df116c5b92::t_5d1a16b53df5ab 1-90
+src/modules/Command/useCases/index.ts
+  s_29d8df116c5b92::t_451ce3ba5e12be 107
+src/modules/Command/useCases/revertActionGroup.ts
+  s_29d8df116c5b92::t_cc5c683898ba57 4
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_29d8df116c5b92::t_3cdc5a45873056 1-76
+src/modules/Command/useCases/undo.ts
+  s_29d8df116c5b92::t_08ad3ed596aada 7
+src/modules/Project/useCases/arrangement/__tests__/createArrangement.spec.ts
+  s_29d8df116c5b92::t_6bd379c9f46b8f 1-4,8,13-25,34,43,64-112
+src/modules/Project/useCases/arrangement/__tests__/duplicateArrangement.spec.ts
+  s_29d8df116c5b92::t_fe809364a7d02c 1-4,13-25,34,43,65-111
+src/modules/Project/useCases/arrangement/createArrangement.ts
+  s_29d8df116c5b92::t_12b4a6d3339f34 19,30
+src/modules/Project/useCases/arrangement/duplicateArrangement.ts
+  s_29d8df116c5b92::t_867f97f013cec7 17,19,30
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_29d8df116c5b92::t_8bd02b4004eb10 4-5,517-631
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenuFocus.integration.spec.tsx
+  s_29d8df116c5b92::t_2db8a5ebe94e32 1-234
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_29d8df116c5b92::t_ba4343a17a176e 46-47,120-122
+src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx
+  s_29d8df116c5b92::t_cfaa37b7140f49 1,48-96,111-184
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_59e31a5c6f3e31::t_3bd76f13947e4c 3,8,12,65-66,69,73,91-100,182-185,190-202,379-440,442-446,448-460,462-466
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_59e31a5c6f3e31::t_2d174abec6378b 3-4,9-15,19-20,206-256,298-507
+tests/e2e/timelineClipAccessibility.spec.ts
+  s_59e31a5c6f3e31::t_971bd29b5432a9 1-130
+tests/e2e/tooltipPopoverPointer.spec.ts
+  s_59e31a5c6f3e31::t_a573e2c000d9e3 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9cdfe15047b9d8e2264d726085bf3a308526f62",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
