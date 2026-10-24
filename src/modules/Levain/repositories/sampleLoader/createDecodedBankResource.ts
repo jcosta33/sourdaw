@@ -378,21 +378,22 @@ export function createDecodedBankResource({
             }
             admittedBank = next;
             next.granted.resolve();
+            notifyAdmissionActivity(next, undefined, true);
             return;
         }
     }
 
-    function notifyAdmissionActivity(admission: BankAdmission, activeToken?: symbol): void {
+    function notifyAdmissionActivity(admission: BankAdmission, activeToken?: symbol, includeAdmitted = false): void {
         if (admittedBank !== admission || admission.controller.signal.aborted) {
             return;
         }
-        const cohorts = activeToken ? [admission, ...bankQueue] : bankQueue;
+        const cohorts = activeToken || includeAdmitted ? [admission, ...bankQueue] : bankQueue;
         for (const cohort of cohorts) {
             if (cohort.controller.signal.aborted) {
                 continue;
             }
             for (const [token, listener] of cohort.consumers) {
-                if (!listener || (cohort === admission && token !== activeToken)) {
+                if (!listener || (cohort === admission && activeToken !== undefined && token !== activeToken)) {
                     continue;
                 }
                 try {
@@ -438,6 +439,12 @@ export function createDecodedBankResource({
             }
             released = true;
             cohort.consumers.delete(token);
+            if (cohort.consumers.size === 0 && admittedBank !== cohort) {
+                const index = bankQueue.indexOf(cohort);
+                if (index !== -1) {
+                    bankQueue.splice(index, 1);
+                }
+            }
             drainBankQueue();
         };
         try {

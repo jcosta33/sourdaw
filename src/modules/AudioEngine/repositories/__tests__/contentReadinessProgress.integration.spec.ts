@@ -436,9 +436,12 @@ describe('live Levain content progress', () => {
                 await vi.advanceTimersByTimeAsync(9000);
                 samples.shift()!.resolve(response());
                 await vi.waitFor(() =>
-                    expect(progressEvents.filter((event) => typeof event.progress !== 'number')).toHaveLength(
-                        (step + 1) * 4
-                    )
+                    expect(
+                        progressEvents.filter(
+                            (event) =>
+                                typeof event.progress !== 'number' && DEVICE_IDS.slice(1).includes(event.deviceId)
+                        )
+                    ).toHaveLength((step + 1) * 4)
                 );
                 expect(DEVICE_IDS.slice(1).map((id) => levainStore.value?.[id]?.sampleLoadProgress)).toEqual([
                     0, 0, 0, 0,
@@ -642,6 +645,73 @@ describe('live Levain content progress', () => {
             pendingWorkletAcks[0]!();
             await expect(waiting).resolves.toMatchObject({ status: 'ready' });
             expect(getDecodedBankDiagnostics().activeLeases).toBe(0);
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('gives a newly admitted bank ten seconds of its own activity window after predecessor failure', async () => {
+        const instruments = ['flute', 'oboe'] as const;
+        levainStore.set(
+            Object.fromEntries(
+                DEVICE_IDS.slice(0, 2).map((id, index) => [
+                    id,
+                    {
+                        ...defaultLevainState,
+                        patch: { ...defaultLevainState.patch, instrumentId: instruments[index]! },
+                    },
+                ])
+            )
+        );
+        const predecessorRejectors: Array<(error: Error) => void> = [];
+        const successorFetchStarted = Promise.withResolvers<void>();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string, options?: RequestInit) => {
+                if (url.endsWith('/manifest.json')) {
+                    const id = instruments.find((instrument) => url.includes(`/${instrument}/`))!;
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve(manifest(id)) });
+                }
+                return new Promise((_resolve, reject) => {
+                    if (url.includes('/flute/')) {
+                        predecessorRejectors.push(reject);
+                    } else {
+                        successorFetchStarted.resolve();
+                    }
+                    options?.signal?.addEventListener(
+                        'abort',
+                        () => reject(new DOMException('aborted', 'AbortError')),
+                        { once: true }
+                    );
+                });
+            })
+        );
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            for (const deviceId of DEVICE_IDS.slice(0, 2)) {
+                engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            }
+            await vi.waitFor(() => expect(predecessorRejectors).toHaveLength(4));
+            const waiting = engine.waitForDevices();
+            await vi.advanceTimersByTimeAsync(9_990);
+            predecessorRejectors[0]!(new Error('flute fetch refused'));
+            await successorFetchStarted.promise;
+            expect(
+                progressEvents
+                    .filter((event) => event.deviceId === DEVICE_IDS[1] && typeof event.progress !== 'number')
+                    .map((event) => event.atMs)
+            ).toEqual([Date.now()]);
+            const successor = () =>
+                engine.getDeviceReadinessDiagnostics().devices.find((device) => device.deviceId === DEVICE_IDS[1]);
+            expect(successor()).toMatchObject({ status: 'content-pending' });
+            await vi.advanceTimersByTimeAsync(20);
+            expect(successor()).toMatchObject({ status: 'content-pending' });
+            await vi.advanceTimersByTimeAsync(9_980);
+            await expect(waiting).resolves.toMatchObject({ status: 'failed' });
+            expect(successor()).toMatchObject({ status: 'failed', failureStage: 'content' });
         } finally {
             for (const end of endWorklets) {
                 end();

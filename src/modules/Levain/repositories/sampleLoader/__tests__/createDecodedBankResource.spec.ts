@@ -918,6 +918,61 @@ describe('createDecodedBankResource', () => {
         }
     });
 
+    it('retires an empty cancelled cohort before a late request for its key', async () => {
+        const instruments = ['violin-1', 'cello', 'viola'] as const;
+        const inputFor = (instrumentId: (typeof instruments)[number]) => ({
+            ...DEFAULT_INPUT,
+            manifestUrl: `/${instrumentId}/manifest.json`,
+            basePath: `/${instrumentId}`,
+            expectedInstrumentId: instrumentId,
+        });
+        const loadSample = vi.fn(() => Promise.resolve(createSample(1)));
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            loadManifest: (url) =>
+                Promise.resolve(
+                    createManifest({
+                        instrumentId: instruments.find((instrumentId) => url.includes(`/${instrumentId}/`))!,
+                        files: ['note.wav'],
+                    })
+                ),
+            loadSample,
+        });
+        const held = await resource.acquire(inputFor('violin-1'));
+        const cancelled = new AbortController();
+        const celloProgress = vi.fn();
+        const violaProgress = vi.fn();
+        const cello = resource.acquire({ ...inputFor('cello'), signal: cancelled.signal, onProgress: celloProgress });
+        const celloRejection = expect(cello).rejects.toMatchObject({ name: 'AbortError' });
+        await vi.waitFor(() => expect(celloProgress).toHaveBeenCalledWith(0));
+        const viola = resource.acquire({ ...inputFor('viola'), onProgress: violaProgress });
+        await vi.waitFor(() => expect(violaProgress).toHaveBeenCalledWith(0));
+        cancelled.abort();
+        await celloRejection;
+        const lateProgress = vi.fn();
+        const lateCello = resource.acquire({ ...inputFor('cello'), onProgress: lateProgress });
+        const outcomes = Promise.allSettled([viola, lateCello]);
+        let violaLease: Awaited<typeof viola> | undefined;
+        let celloLease: Awaited<typeof lateCello> | undefined;
+        try {
+            await vi.waitFor(() => expect(lateProgress).toHaveBeenCalledWith(0));
+            held.release();
+            await vi.waitFor(() => expect(loadSample).toHaveBeenCalledTimes(2));
+            expect(loadSample.mock.calls[1]?.[0]).toBe('/viola/note.wav');
+            violaLease = await viola;
+            violaLease.release();
+            celloLease = await lateCello;
+            celloLease.release();
+            expect((await outcomes).every((outcome) => outcome.status === 'fulfilled')).toBe(true);
+        } finally {
+            held.release();
+            violaLease?.release();
+            celloLease?.release();
+            resource.clear();
+            await outcomes;
+        }
+    });
+
     it.each(['abort', 'invalidate', 'clear'] as const)(
         'withdraws a queued bank on %s without disturbing the held PCM',
         async (reason) => {
