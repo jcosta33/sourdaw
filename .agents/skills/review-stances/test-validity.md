@@ -6,6 +6,26 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-24 — rollback fixtures omitted adoption after their OPEN snapshot (PRs #2357 and #4420)
+
+The compensation snapshot from PR #2357 and two-marker rollback from PR #4420 were tested as one
+invocation's cleanup. They did not interleave another real supersession after that snapshot, so a
+successful close could lose both canonical proofs. Historical exact review stance and tier are
+unestablished. The first retention-only repair also omitted a newly arriving finding followed by
+a corrected-lineage retry, which the retained stale lineage refused.
+
+Capture an OPEN compensation response and invoke the actual serialized production entrypoint
+for the competitor. Require the real Git-ref owner to refuse it before any PR port call, then
+prove that a later invocation closes with both canonical proofs after verified rollback. Pure
+core calls do not acquire the production lock. Keep the unsafe interleaving in this entrypoint
+probe, and require an updated finding set to recover with the complete lineage.
+
+Record a boundary before every comment, delete and close. Unknown comment results, altered
+markers, attempted closes and unavailable rollback verification must retain the exact journal;
+only proven compensation or a read-only refusal may release. Exercise the existing native
+recovery route with stable OPEN and CLOSED unmerged observations, and require no false success
+after refusal or lock-release failure. A second PR and completed replay are positive controls.
+
 ### 2026-10-24 — cold stylesheet work consumed a composition spec's deadline (PR #5363 repair)
 
 PR #3270 (`43f7a11dd6815befaa18f3b332b2b7c96a43880a`) introduced the composition fixture without a
