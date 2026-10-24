@@ -24,10 +24,19 @@ function load(name: string): string {
 }
 
 describe('parseIssueForm', () => {
+    it('marks only Features-specific forms for native project routing', () => {
+        for (const name of ['feature_request.yml', 'spec.yml', 'campaign.yml']) {
+            expect(parseIssueForm(load(name)).labels).toContain('project:features');
+        }
+        for (const name of ['task.yml', 'audit.yml', 'research.yml', 'inventory.yml']) {
+            expect(parseIssueForm(load(name)).labels).not.toContain('project:features');
+        }
+    });
+
     it('keeps markdown blocks out of fillable fields', () => {
         const form = parseIssueForm(load('spec.yml'));
         expect(form.titlePrefix).toBe('spec(scope): ');
-        expect(form.labels).toEqual(['status:tracking']);
+        expect(form.labels).toEqual(['status:tracking', 'project:features']);
         expect(form.fields.map((field) => field.id)).toEqual([
             'scope',
             'priority',
@@ -61,7 +70,7 @@ describe('renderIssueSubmission', () => {
         });
 
         expect(submission.title).toBe('spec(arrangement): mixer: mute groups');
-        expect(submission.labels).toEqual(['status:tracking', 'priority:P1']);
+        expect(submission.labels).toEqual(['status:tracking', 'project:features', 'priority:P1']);
         expect(submission.body).toContain('### Intent\n\nMute groups exist for the mixer operator.');
         expect(submission.body).toContain('### Boundary\n\n_No response_');
         expect(submission.body).not.toContain('Secrets stay in');
@@ -80,7 +89,7 @@ describe('renderIssueSubmission', () => {
             },
         });
         expect(submission.body).toContain('### Operating loop\n\n1. Read this campaign and every authority.');
-        expect(submission.labels).toEqual(['epic', 'status:tracking', 'priority:P2']);
+        expect(submission.labels).toEqual(['epic', 'status:tracking', 'project:features', 'priority:P2']);
     });
 
     it('accepts the Bug scope token without the parenthetical', () => {
@@ -372,11 +381,39 @@ describe('parseCliArgs', () => {
             /duplicate option: --project/
         );
     });
+
+    it('rejects a comma-separated project list before gh can attach both projects', () => {
+        expect(() => parseCliArgs([...base, '--project', 'Sourdaw Bugs,Sourdaw Features'])).toThrow(
+            /--project accepts one project title/
+        );
+        expect(() => parseCliArgs([...base, '--project', '"sourdaw features"'])).toThrow(
+            /--project accepts one project title/
+        );
+    });
 });
 
 describe('runCli', () => {
     const fields = '{"scope":"arrangement","priority":"P1","intent":"i","requirements":"r"}';
     const filing = ['spec', '--title', 'mixer: mute groups', '--fields', fields];
+    const taskFields = JSON.stringify({
+        parent_spec: '2037',
+        scope: 'ai',
+        priority: 'P2',
+        requirements: 'AC-001',
+        affected_areas: 'scripts/',
+        do_not_change: 'None',
+        siblings: 'None',
+        preservation: 'None',
+        verify: 'n/a',
+    });
+    const taskFiling = ['task', '--title', 'route an issue', '--fields', taskFields];
+    const featureFields = JSON.stringify({
+        scope: 'ai',
+        priority: 'P2',
+        intent: 'Enable a command.',
+        done_when: 'The command runs.',
+    });
+    const featureFiling = ['feature', '--title', 'new command', '--fields', featureFields];
 
     /**
      * The runner is injected rather than mocked at `node:child_process`, because filing is an
@@ -398,6 +435,72 @@ describe('runCli', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('leaves a generic Task unclassified without an explicit project', () => {
+        const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+        const gh = fakeGh(created);
+
+        expect(runCli(taskFiling, gh.run)).toBe(0);
+        expect(gh.calls).toEqual([]);
+        expect(JSON.parse(String(stdout.mock.calls[0]?.[0])).labels).toEqual(['status:ready', 'priority:P2']);
+    });
+
+    it('routes a generic Task to Features in both preview and create arguments', () => {
+        const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+        const gh = fakeGh(created);
+        const args = [...taskFiling, '--project', 'sOuRdAw FeAtUrEs'];
+
+        expect(runCli(args, gh.run)).toBe(0);
+        expect(JSON.parse(String(stdout.mock.calls[0]?.[0])).labels).toEqual([
+            'status:ready',
+            'priority:P2',
+            'project:features',
+        ]);
+        expect(runCli([...args, '--create'], gh.run)).toBe(0);
+        expect(gh.calls).toHaveLength(1);
+        expect(gh.calls[0]?.filter((arg) => arg === 'project:features')).toEqual(['project:features']);
+        expect(gh.calls[0]?.slice(-2)).toEqual(['--project', 'sOuRdAw FeAtUrEs']);
+        expect(JSON.parse(String(stdout.mock.calls[1]?.[0])).labels).toContain('project:features');
+    });
+
+    it('suppresses a Feature form route when Bugs or Refactors is selected', () => {
+        const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+        const gh = fakeGh(created);
+        for (const project of ['sOuRdAw BuGs', 'sOuRdAw ReFaCtOrS']) {
+            const args = [...featureFiling, '--project', project];
+            expect(runCli(args, gh.run)).toBe(0);
+            expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0])).labels).not.toContain('project:features');
+            expect(runCli([...args, '--create'], gh.run)).toBe(0);
+            expect(gh.calls.at(-1)).not.toContain('project:features');
+        }
+    });
+
+    it('refuses Bug and Change plan forms targeting Features before an issue is created', () => {
+        const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+        const gh = fakeGh(created);
+        for (const template of ['bug', 'change-plan']) {
+            expect(
+                runCli(
+                    [template, '--title', 'misrouted', '--fields', '{}', '--project', 'sOuRdAw FeAtUrEs', '--create'],
+                    gh.run
+                )
+            ).toBe(1);
+            expect(String(consoleError.mock.calls.at(-1)?.[0])).toContain('Sourdaw Features');
+        }
+        expect(gh.calls).toEqual([]);
+    });
+
+    it('refuses CSV project syntax on a Bug form before invoking gh', () => {
+        const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+        const gh = fakeGh(created);
+        for (const project of ['Sourdaw Bugs,Sourdaw Features', '"sourdaw features"']) {
+            expect(
+                runCli(['bug', '--title', 'misrouted', '--fields', '{}', '--project', project, '--create'], gh.run)
+            ).toBe(1);
+            expect(String(consoleError.mock.calls.at(-1)?.[0])).toContain('--project accepts one project title');
+        }
+        expect(gh.calls).toEqual([]);
     });
 
     /**

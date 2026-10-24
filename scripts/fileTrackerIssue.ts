@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type IssueFormField = {
@@ -35,6 +35,15 @@ const TEMPLATE_ALIASES: Record<string, string> = {
     feature: 'feature_request',
     'change-plan': 'change_plan',
 };
+
+const FEATURES_PROJECT = 'Sourdaw Features';
+const FEATURES_ROUTE_LABEL = 'project:features';
+const NON_FEATURES_PROJECTS = ['Sourdaw Bugs', 'Sourdaw Refactors'];
+const NON_FEATURES_TEMPLATES = new Set(['bug_report', 'change_plan']);
+
+function isProject(project: string | undefined, title: string): boolean {
+    return project?.toLowerCase() === title.toLowerCase();
+}
 
 const USAGE =
     'pnpm issue:file <template> --title <title> --fields <json> [--create] [--milestone <value>] [--project <value>]';
@@ -151,6 +160,16 @@ export function renderIssueSubmission(
     };
 }
 
+function routeIssueSubmission(submission: IssueSubmission, project: string | undefined): IssueSubmission {
+    if (isProject(project, FEATURES_PROJECT) && !submission.labels.includes(FEATURES_ROUTE_LABEL)) {
+        return { ...submission, labels: [...submission.labels, FEATURES_ROUTE_LABEL] };
+    }
+    if (NON_FEATURES_PROJECTS.some((title) => isProject(project, title))) {
+        return { ...submission, labels: submission.labels.filter((label) => label !== FEATURES_ROUTE_LABEL) };
+    }
+    return submission;
+}
+
 export function parseCliArgs(args: string[]): {
     help: boolean;
     create: boolean;
@@ -202,6 +221,9 @@ export function parseCliArgs(args: string[]): {
                 fail('duplicate option: --project');
             }
             project = optionValue(flag, value);
+            if (/[",\r\n]/.test(project)) {
+                fail('--project accepts one project title');
+            }
             index += 1;
             continue;
         }
@@ -444,11 +466,15 @@ export function runCli(argv: string[], runGh: GhRunner = spawnGh): number {
             fail(`usage: ${USAGE}`);
         }
         const templatesDir = join(dirname(fileURLToPath(import.meta.url)), '..', '.github/ISSUE_TEMPLATE');
-        const form = parseIssueForm(readFileSync(resolveTemplatePath(templatesDir, parsed.template), 'utf8'));
-        const submission = renderIssueSubmission(form, {
-            title: parsed.title,
-            fields: readFields(parsed.fieldsPath),
-        });
+        const templatePath = resolveTemplatePath(templatesDir, parsed.template);
+        if (isProject(parsed.project, FEATURES_PROJECT) && NON_FEATURES_TEMPLATES.has(basename(templatePath, '.yml'))) {
+            fail(`${parsed.template} cannot target ${FEATURES_PROJECT}`);
+        }
+        const form = parseIssueForm(readFileSync(templatePath, 'utf8'));
+        const submission = routeIssueSubmission(
+            renderIssueSubmission(form, { title: parsed.title, fields: readFields(parsed.fieldsPath) }),
+            parsed.project
+        );
         if (!parsed.create) {
             process.stdout.write(`${JSON.stringify(submission, null, 2)}\n`);
             return 0;
