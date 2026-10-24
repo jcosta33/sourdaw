@@ -1203,6 +1203,218 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('a referenced level phrase in a refinement means every pending command on its object, the value binder deciding', () => {
+        const SEND_TRACKS: readonly ProjectTrack[] = [
+            projectTrack('track-vocals', 'Vocals', { sends: [{ busId: 'track-reverb', level: 0.5, preFader: false }] }),
+            ...BASE_TRACKS.slice(1),
+            projectTrack('track-reverb', 'Reverb', { kind: 'bus' }),
+            projectTrack('track-drums', 'Drums'),
+        ];
+        const SEND_CONTEXT = projectContext(SEND_TRACKS);
+        const sendAt = (levelDb: number): ProviderCall => ({
+            name: 'setSend',
+            arguments: { trackId: 'track-vocals', busId: 'track-reverb', levelDb },
+        });
+        const SEND_CARD = { prompt: 'set send from Vocals to Reverb to -6 dB', calls: [sendAt(-6)] };
+        const RAISED_SEND_CARD = { prompt: 'raise Vocals send to Reverb to -6 dB', calls: [sendAt(-6)] };
+        const muteDrums: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-drums', muted: true } };
+        const MUTE_AND_SEND_CARD = {
+            prompt: 'set send from Vocals to Reverb to -6 dB and mute Drums',
+            calls: [sendAt(-6), muteDrums],
+        };
+
+        function sendLevelsOf(result: ReturnType<typeof ground>) {
+            if (result.status !== 'grounded') {
+                return result.status;
+            }
+            return result.actions.flatMap((action) =>
+                action.type === 'setSend' ? [payloadOf(action).levelDb] : [action.type]
+            );
+        }
+
+        it.each([
+            ['Reverb down 2 dB', -8],
+            ['Reverb down 2 dB please', -8],
+            ['Reverb up 2 dB', -4],
+            ['Vocals down 2 dB', -8],
+            ['Vocals up 2 dB', -4],
+        ])('"%s" moves the pending send level, never the fader of the track it names', (refinement, levelDb) => {
+            const result = refine(SEND_CARD, refinement, [sendAt(levelDb)], SEND_CONTEXT);
+
+            expect(sendLevelsOf(result)).toEqual([levelDb]);
+        });
+
+        it('refuses a fader level for the object when the pending send takes the level', () => {
+            const fader: ProviderCall = { name: 'setTrackGain', arguments: { trackId: 'track-reverb', deltaDb: -2 } };
+
+            expect(refine(SEND_CARD, 'Reverb down 2 dB', [fader], SEND_CONTEXT).status).toBe('rejected');
+        });
+
+        it('refuses a send level that is not the pending one moved by the stated change', () => {
+            expect(refine(SEND_CARD, 'Reverb down 2 dB', [sendAt(-4)], SEND_CONTEXT).status).toBe('rejected');
+            expect(refine(SEND_CARD, 'Reverb down 2 dB', [sendAt(-6)], SEND_CONTEXT).status).toBe('rejected');
+        });
+
+        it('reads the phrase on a card that also holds a command on another object', () => {
+            const result = refine(MUTE_AND_SEND_CARD, 'Reverb down 2 dB', [sendAt(-8), muteDrums], SEND_CONTEXT);
+
+            expect(sendLevelsOf(result)).toEqual([-8, 'muteTrack']);
+        });
+
+        it('reads the phrase on a send card whose request was worded as a fader verb', () => {
+            const result = refine(RAISED_SEND_CARD, 'Reverb down 2 dB', [sendAt(-8)], SEND_CONTEXT);
+
+            expect(sendLevelsOf(result)).toEqual([-8]);
+        });
+
+        it('still reads the phrase as a fader level when no pending command on its object takes a level', () => {
+            const result = refine(P0_CARD, 'Vocals down 2 dB', [vocalsBy(-2)]);
+
+            expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -2 }]);
+        });
+
+        it('reads a phrase on an object only a mute card holds as a fader level, which the card does not take', () => {
+            const muteCard = { prompt: 'mute Drums', calls: [muteDrums] };
+
+            expect(refine(muteCard, 'Drums down 2 dB', [vocalsBy(-2)], SEND_CONTEXT).status).toBe('rejected');
+        });
+    });
+
+    describe('a refinement never takes the referenced level fallback', () => {
+        const DRUMS_CONTEXT = projectContext([...BASE_TRACKS, projectTrack('track-drums', 'Drums')]);
+        const drumsBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-drums', deltaDb },
+        });
+        const DRUMS_CARD = {
+            prompt: 'set Drums to -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-drums', gainDb: -6 } }],
+        };
+
+        it.each([
+            ['Drums down 2 dB', -2],
+            ['Drums up 2 dB', 2],
+        ])('refuses "%s" as a change of the pending absolute Drums level', (refinement, deltaDb) => {
+            const result = refine(DRUMS_CARD, refinement, [drumsBy(deltaDb)], DRUMS_CONTEXT);
+
+            expect(result.status).toBe('rejected');
+        });
+
+        it('refuses a new track level a refinement states only as a referenced level phrase', () => {
+            const result = refine(
+                P0_CARD,
+                'Vocals down 1 dB, Drums up 2 dB',
+                [vocalsBy(-1), drumsBy(2)],
+                DRUMS_CONTEXT
+            );
+
+            expect(result.status).toBe('rejected');
+        });
+    });
+
+    describe('a referenced level phrase on a device parameter, a pan or a mixed card is read as main reads it', () => {
+        const toneDevice: ProjectTrack['devices'][number] = {
+            id: 'device-tone',
+            type: 'Tone',
+            bypassed: false,
+            parameters: [{ id: 'tilt', name: 'Tilt', type: 'float', value: 0, minValue: -6, maxValue: 6, unit: 'dB' }],
+        };
+        const compDevice: ProjectTrack['devices'][number] = {
+            id: 'device-comp',
+            type: 'Comp',
+            bypassed: false,
+            parameters: [
+                {
+                    id: 'threshold',
+                    name: 'Threshold',
+                    type: 'float',
+                    value: -10,
+                    minValue: -60,
+                    maxValue: 0,
+                    unit: 'dB',
+                },
+            ],
+        };
+        const DEVICE_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-piano', 'Piano', { deviceCount: 1, devices: [toneDevice] }),
+            projectTrack('track-guitar', 'Guitar', { deviceCount: 1, devices: [compDevice] }),
+        ]);
+        const tilt = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-tone', paramId: 'tilt', value },
+        });
+        const threshold = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-comp', paramId: 'threshold', value },
+        });
+        const pianoBy = (deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-piano', deltaDb },
+        });
+        const bassPan = (pan: number): ProviderCall => ({
+            name: 'setTrackPan',
+            arguments: { trackId: 'track-bass', pan },
+        });
+        const TONE_CARD = { prompt: 'set Tone tilt to 3', calls: [tilt(3)] };
+        const COMP_CARD = { prompt: 'set Comp threshold to -20 dB', calls: [threshold(-20)] };
+        const MIXED_CARD = { prompt: 'turn Piano down 3 dB and set Tone tilt to 3', calls: [pianoBy(-3), tilt(3)] };
+        const PAN_CARD = { prompt: 'pan Bass 30% left', calls: [bassPan(-30)] };
+
+        it.each(['set Tilt to 5 dB', 'set the Tilt to 5 dB', 'set Tone to 5 dB'])(
+            'grounds "%s" as the pending tilt, which the device parameter takes',
+            (refinement) => {
+                const result = refine(TONE_CARD, refinement, [tilt(5)], DEVICE_CONTEXT);
+
+                expect(commandsOf(result)).toEqual([
+                    { type: 'setDeviceParameter', deviceId: 'device-tone', paramId: 'tilt', value: 5 },
+                ]);
+            }
+        );
+
+        it('grounds "set Tilt to 5 dB" as the tilt beside a fader the card also holds', () => {
+            const result = refine(MIXED_CARD, 'set Tilt to 5 dB', [pianoBy(-3), tilt(5)], DEVICE_CONTEXT);
+
+            expect(commandsOf(result)).toEqual([
+                { type: 'setTrackGain', trackId: 'track-piano', deltaDb: -3 },
+                { type: 'setDeviceParameter', deviceId: 'device-tone', paramId: 'tilt', value: 5 },
+            ]);
+        });
+
+        it.each(['Tilt up 2 dB', 'Tilt down 2 dB', 'Tone up 2 dB'])(
+            'asks about "%s", a relative figure for a device parameter',
+            (refinement) => {
+                expect(refine(TONE_CARD, refinement, [tilt(5)], DEVICE_CONTEXT).status).toBe('clarify');
+            }
+        );
+
+        it.each([
+            'set Threshold to -12 dB',
+            'set Comp to -12 dB',
+            'Threshold down 6 dB',
+            'Threshold up 6 dB',
+            'Comp down 6 dB',
+        ])('asks about "%s", a signed or relative figure for a device parameter', (refinement) => {
+            expect(refine(COMP_CARD, refinement, [threshold(-12)], DEVICE_CONTEXT).status).toBe('clarify');
+        });
+
+        it.each(['Bass up 2 dB', 'Bass down 2 dB'])(
+            'asks about "%s" on a pan card, whose pending value is in percent',
+            (refinement) => {
+                expect(refine(PAN_CARD, refinement, [bassPan(-30)], DEVICE_CONTEXT).status).toBe('clarify');
+            }
+        );
+
+        it('asks which pending change "Piano down 2 dB" means when the card holds a fader and a device on Piano', () => {
+            const result = refine(MIXED_CARD, 'Piano down 2 dB', [pianoBy(-2), tilt(3)], DEVICE_CONTEXT);
+
+            expect(result.status).toBe('clarify');
+            expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain(
+                'Which pending change should 2 dB apply to?'
+            );
+        });
+    });
+
     describe('protections a refinement inherits', () => {
         const decayDevice: ProjectTrack['devices'][number] = {
             ...reverbDevice,
