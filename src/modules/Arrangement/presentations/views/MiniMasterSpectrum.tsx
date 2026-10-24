@@ -124,6 +124,14 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
                     role="button"
                     tabIndex={0}
                     onClick={() => selectTrack(masterTrack.id)}
+                    onPointerLeave={(event) => {
+                        if (
+                            !freezeErrorMessage &&
+                            event.currentTarget.ownerDocument.activeElement !== event.currentTarget
+                        ) {
+                            setIsTooltipOpen(false);
+                        }
+                    }}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();

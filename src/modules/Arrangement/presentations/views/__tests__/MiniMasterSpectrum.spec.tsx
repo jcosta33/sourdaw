@@ -225,6 +225,7 @@ describe('MiniMasterSpectrum', () => {
         expect(spectrum.querySelector('canvas')).toBeInTheDocument();
         expect(selectTrack).not.toHaveBeenCalled();
 
+        fireEvent.pointerLeave(spectrum, { pointerType: 'mouse' });
         vi.mocked(useTracks).mockReturnValue({
             tracks: [{ ...master, freezeState: { status: 'error', errorMessage: reason } }],
             selectedTrackId: 'master',
@@ -237,6 +238,45 @@ describe('MiniMasterSpectrum', () => {
 
         expect(await screen.findByRole('tooltip')).toHaveTextContent(reason);
         expect(spectrum).toHaveAccessibleDescription(reason);
+    });
+
+    it('retires hover intent on pointer exit during recovery and accepts a renewed hover', async () => {
+        const master = normalizeTrack({ id: 'master', name: 'Master', kind: 'master' });
+        const withError = (errorMessage: string) => ({
+            ...master,
+            freezeState: { status: 'error' as const, errorMessage },
+        });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('First failure')], selectedTrackId: 'master' });
+        const { rerender } = renderWithImmediateTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByRole('button', { name: 'Master Track Spectrum' });
+
+        fireEvent.pointerMove(spectrum, { pointerType: 'mouse' });
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('First failure');
+
+        vi.mocked(useTracks).mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+
+        fireEvent.pointerLeave(spectrum, { pointerType: 'mouse' });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [withError('Second failure')], selectedTrackId: 'master' });
+        rerender(
+            <TooltipProvider delayDuration={0}>
+                <MiniMasterSpectrum />
+            </TooltipProvider>
+        );
+
+        expect(screen.getByTestId('master-freeze-error-marker')).toBeVisible();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(spectrum).not.toHaveAttribute('aria-describedby');
+
+        fireEvent.pointerMove(spectrum, { pointerType: 'mouse' });
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('Second failure');
+        expect(spectrum).toHaveAccessibleDescription('Second failure');
     });
 
     it('does not create an error description when the normal master receives focus', () => {
