@@ -1,0 +1,19 @@
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_7acdc945b846b6::t_af3781400868e4 507-513
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2f4fd20c1a66685227fc21ef414923ed19ef8ae",
+  "prompts": {},
+  "sessions": {
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
