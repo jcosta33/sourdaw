@@ -427,6 +427,12 @@ After create, attach parent/child issues as GitHub sub-issues.
 Every issue needs priority, status, and descriptive labels. On `issue:file`, set an applicable
 milestone by title, never UI number (validation against **open** milestones rejects it before filing),
 and roadmap project membership when applicable; leave either empty rather than force a fit.
+Sourdaw Features auto-add requires `project:features` and excludes `bug`; unfiltered sub-issue
+inheritance is disabled because it cannot filter by category. Feature, Spec, and Campaign forms set
+the route label. Generic Task, Audit, Research, and Inventory forms remain neutral: select
+`--project "Sourdaw Features"` with `issue:file` or add the label manually when they belong there.
+Selecting Bugs or Refactors removes the Features route, and Bug or Change plan forms cannot target
+Features.
 No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
 <issue>` swaps the status labels and moves the boards, and `pnpm issue:reconcile` applies
 digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
