@@ -361,7 +361,10 @@ describe('stopPlayheadScheduler', () => {
         stopPlayheadScheduler();
 
         // The ref, not the store, is the live boundary on every teardown route.
-        expect(harness.stop_recording).toHaveBeenCalledWith(1.5);
+        expect(harness.stop_recording).toHaveBeenCalledWith(1.5, {
+            contextSeconds: 0,
+            beatAtContextSeconds: expect.any(Function),
+        });
 
         // A following user-facing stop waits on the lifecycle. While the
         // teardown's commit is held that wait must stay pending, or the stop
@@ -750,7 +753,12 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function), undefined);
+        expect(harness.start_audio_recording).toHaveBeenCalledWith(
+            'track-audio-1',
+            expect.any(Function),
+            undefined,
+            expect.any(Function)
+        );
 
         // The `.catch` on startAudioRecording must surface the rejection as an
         // Error whose message names the punch-in path and whose cause is the
