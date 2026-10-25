@@ -16,8 +16,9 @@
  * of the thread.
  */
 
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+
+import { shellIsAncestor } from './gitAncestry.ts';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -51,6 +52,8 @@ import {
     type ReviewRepairRecord,
 } from './reviewRepair.ts';
 import { logReviewRoundFreezeAtThreshold } from './reviewRoundEscalation.ts';
+
+export { isAncestorExitStatus, shellIsAncestor } from './gitAncestry.ts';
 
 export const REPAIR_USAGE =
     'usage: pnpm review:repair <pr-number> --thread <thread-node-id> --head <full-sha> --commit <full-sha> --summary <single-line> [--evidence <path-to-json>]';
@@ -591,44 +594,6 @@ export function postRepairReply(threadId: string, body: string, clientMutationId
     if (receipt?.clientMutationId !== clientMutationId || receipt.comment?.body !== body) {
         fail(`addPullRequestReviewThreadReply returned an invalid result for ${threadId}`);
     }
-}
-
-/** The exit status is the answer: exit 1 is the false answer rather than a failure. */
-export function isAncestorExitStatus(status: number | null, stderr: string): boolean {
-    if (status === 0) {
-        return true;
-    }
-    if (status === 1) {
-        return false;
-    }
-    throw new Error(stderr.trim() || 'git merge-base --is-ancestor failed');
-}
-
-type AncestorSpawn = (
-    command: string,
-    args: string[],
-    options: { cwd: string; env?: NodeJS.ProcessEnv; encoding: 'utf8'; shell: false }
-) => { status: number | null; stderr: string };
-
-/**
- * `git merge-base --is-ancestor` answers with its exit status and writes nothing, so it is spawned
- * directly rather than through a capturing helper. The spawn is injectable so the exit-status
- * reading can be exercised without a repository.
- */
-export function shellIsAncestor(
-    primaryRoot: string,
-    env?: NodeJS.ProcessEnv,
-    spawn: AncestorSpawn = spawnSync
-): (commit: string, head: string) => boolean {
-    return (commit, head) => {
-        const result = spawn('git', ['merge-base', '--is-ancestor', commit, head], {
-            cwd: primaryRoot,
-            env,
-            encoding: 'utf8',
-            shell: false,
-        });
-        return isAncestorExitStatus(result.status, result.stderr);
-    };
 }
 
 export function shellPort(

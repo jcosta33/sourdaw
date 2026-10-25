@@ -1416,10 +1416,11 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:repair' as const,
                 entry: 'scripts/repairReviewFinding.ts',
-                required: 'scripts/pullRequestMutationLock.ts',
+                required: 'scripts/gitAncestry.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/repairReviewFinding.ts',
+                    'scripts/gitAncestry.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/reviewDossierViews.ts',

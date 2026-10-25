@@ -6,13 +6,16 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    coordinateConfirmReviewRepairs,
+    defaultConfirmReviewRepairsCoordinatorDependencies,
+} from '../confirmReviewRepairs.ts';
+import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import {
     withPullRequestMutationLock,
     withPullRequestReviewPublicationMutationLock,
     type PullRequestMutationSerialization,
 } from '../pullRequestMutationLock.ts';
 import { runRecoverDeliveryLockCli } from '../recoverDeliveryLock.ts';
-
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     REPAIR_USAGE,
     coordinateRepairReviewFinding,
@@ -32,10 +35,6 @@ import {
     type RepairReviewFindingPort,
     type RepairReviewFindingThread,
 } from '../repairReviewFinding.ts';
-import {
-    coordinateConfirmReviewRepairs,
-    defaultConfirmReviewRepairsCoordinatorDependencies,
-} from '../confirmReviewRepairs.ts';
 import { parseReviewRepairReply, renderReviewRepairReply } from '../reviewRepair.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 

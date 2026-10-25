@@ -28,10 +28,9 @@ import {
     type ConfirmReviewRepairsCoordinatorDependencies,
     type ConfirmReviewRepairsPort,
 } from '../confirmReviewRepairs.ts';
+import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import { withPullRequestMutationLock, type PullRequestMutationSerialization } from '../pullRequestMutationLock.ts';
 import { runRecoverDeliveryLockCli } from '../recoverDeliveryLock.ts';
-
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     confirmClientMutationId,
     parseReviewRepairReply,

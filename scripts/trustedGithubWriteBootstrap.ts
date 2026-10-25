@@ -353,6 +353,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'review:repair': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/repairReviewFinding.ts',
+        'scripts/gitAncestry.ts',
         'scripts/reconstructReviewRounds.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/reviewDossierViews.ts',
