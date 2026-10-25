@@ -36,8 +36,11 @@ export type OfflineTrackAdjustmentComposition = {
     gainMultiplier: number;
     /** Every active pan layer's blended offset, in stored pan units (±{@link PAN_SCALE_MAX}). */
     panOffset: number;
-    /** Active DSP layers in project stack order — the order `AdjustmentLayerRuntime` chains buses in. */
-    dsp: OfflineAdjustmentDspLayerPlan[];
+    /**
+     * Active DSP layers in project stack order, each retaining its own blend
+     * constancy so unrelated mixer moves cannot exclude steady processing.
+     */
+    dsp: (OfflineAdjustmentDspLayerPlan & { constant: boolean })[];
     /**
      * Whether the whole composition is constant across the span. A constant
      * composition folds into the strip seed; a moving one needs per-block
@@ -143,7 +146,7 @@ export function resolveTrackAdjustmentComposition(input: {
     let gainMultiplier = 1;
     let panOffset = 0;
     let constant = true;
-    const dsp: OfflineAdjustmentDspLayerPlan[] = [];
+    const dsp: OfflineTrackAdjustmentComposition['dsp'] = [];
 
     // Project stack order: the applier walks the layers array, and
     // `AdjustmentLayerRuntime` chains buses in that order (#4603).
@@ -164,6 +167,7 @@ export function resolveTrackAdjustmentComposition(input: {
         }
         dsp.push({
             layerId: layer.id,
+            constant: layerConstant,
             effectType: layer.effectType,
             parameters: Object.fromEntries(layer.parameters.map((parameter) => [parameter.name, parameter.value])),
             blend,

@@ -1,8 +1,10 @@
+import { Counter, ImmutableString } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
+import { type mutateCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { handleRepairProjectData } from '../handleRepairProjectData';
 
@@ -10,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: {
         value: null as AgentProjectRepairState | null,
     },
-    mutateCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn<typeof mutateCrdtDoc<Record<string, unknown>>>(),
     projectCrdtToStores: vi.fn(),
     rolling: false,
 }));
@@ -94,8 +96,7 @@ describe('handleRepairProjectData', () => {
                 message: 'Repair project data: keep the resolved value of each conflicted field',
             })
         );
-        const changeFn = mocks.mutateCrdtDoc.mock.calls[0]?.[0]?.changeFn as
-            ((draft: Record<string | number, unknown>) => void) | undefined;
+        const changeFn = mocks.mutateCrdtDoc.mock.calls[0]?.[0]?.changeFn;
         if (!changeFn) {
             throw new Error('Expected the repair to mutate the document');
         }
@@ -122,6 +123,37 @@ describe('handleRepairProjectData', () => {
         ]);
 
         expect(mocks.projectCrdtToStores).toHaveBeenCalledWith({ resetProjections: true });
+    });
+
+    it('rebuilds nested containers and preserves scalar values without flattening their types', async () => {
+        setRepairState([
+            { kind: 'choose-automerge-conflict-value', conflictIds: ['map'], path: ['targets'], targetIds: [] },
+        ]);
+        mocks.projectCrdtToStores.mockImplementation(() => {
+            mocks.agentProjectRepairStateStore.value = null;
+        });
+        const source = {
+            fractional: 0.9999999999999999,
+            nested: [null, false, 0, 'Bass', { emptyMap: {}, emptyList: [] }],
+            timestamp: new Date('2026-01-01T00:00:00Z'),
+            bytes: new Uint8Array([0, 127, 255]),
+            counter: new Counter(3),
+            label: new ImmutableString('Bass'),
+        };
+        const draft = { targets: source };
+        mocks.mutateCrdtDoc.mockImplementationOnce(({ changeFn }) => {
+            changeFn(draft);
+        });
+
+        await expect(executeAppAction({ type: 'repairProjectData' })).resolves.toBeUndefined();
+
+        expect(draft.targets).toEqual(source);
+        expect(draft.targets).not.toBe(source);
+        expect(draft.targets.nested).not.toBe(source.nested);
+        expect(draft.targets.timestamp).toBeInstanceOf(Date);
+        expect(draft.targets.bytes).toBeInstanceOf(Uint8Array);
+        expect(draft.targets.counter).toBeInstanceOf(Counter);
+        expect(draft.targets.label).toBeInstanceOf(ImmutableString);
     });
 
     it('re-projects without touching the document when the only candidates are invariant repairs', async () => {

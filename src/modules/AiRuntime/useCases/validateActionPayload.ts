@@ -461,6 +461,7 @@ const validators = {
             'expectedDeviceType',
             'expectedDeviceIds',
             'expectedValue',
+            'expectedValuePresent',
             'expectedTrackFrozen',
         ]) &&
         isNonEmptyString(param.deviceId) &&
@@ -475,6 +476,7 @@ const validators = {
         isOptional(param.expectedDeviceType, isNonEmptyString) &&
         isOptional(param.expectedDeviceIds, isUniqueNonEmptyStringArray) &&
         isOptional(param.expectedValue, isNumber) &&
+        isOptional(param.expectedValuePresent, (value): value is boolean => typeof value === 'boolean') &&
         isOptional(param.expectedTrackFrozen, (value): value is boolean => typeof value === 'boolean'),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 

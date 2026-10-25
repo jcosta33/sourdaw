@@ -4,6 +4,7 @@ import { importAudioFile, importMidiFile } from '#/modules/Arrangement/useCases'
 import {
     captureProjectTransitionAuthority,
     newProject,
+    pendingProjectReplacements,
     saveProject,
     saveProjectBeforeReplacement,
     exportProjectFile,
@@ -46,7 +47,19 @@ const projectEpoch = vi.hoisted(() => {
     };
 });
 
+const withdrawals = vi.hoisted(() => ({ count: 0 }));
+
 vi.mock('#/modules/Project/useCases', () => ({
+    // The registry's contract: a withdrawal turns false every check captured before it.
+    pendingProjectReplacements: {
+        capture: () => {
+            const captured = withdrawals.count;
+            return () => withdrawals.count === captured;
+        },
+        withdraw: () => {
+            withdrawals.count += 1;
+        },
+    },
     newProject: vi.fn(),
     saveProject: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),
@@ -86,6 +99,29 @@ describe('Workspace Project Handlers', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(newProject).not.toHaveBeenCalled();
+    });
+
+    // Choosing the open project's Recent entry while New is pending withdraws it.
+    it('handleNewProject does not start once a pre-save that the open project choice outlasted finishes', async () => {
+        const save = Promise.withResolvers<boolean>();
+        vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(save.promise);
+        void handleNewProject.execute({ type: 'newProject' });
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        pendingProjectReplacements.withdraw();
+        save.resolve(true);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(newProject).not.toHaveBeenCalled();
+    });
+
+    it('handleNewProject hands the replacement a check that the open project choice turns false', async () => {
+        void handleNewProject.execute({ type: 'newProject' });
+        await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+
+        const shouldProceed = vi.mocked(newProject).mock.calls[0]?.[1]?.shouldProceed;
+        expect(shouldProceed?.()).toBe(true);
+        pendingProjectReplacements.withdraw();
+        expect(shouldProceed?.()).toBe(false);
     });
 
     it('handleSaveProject should delegate to saveProject', () => {

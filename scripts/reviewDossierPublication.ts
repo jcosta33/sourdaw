@@ -19,10 +19,10 @@ import {
 import { acceptedFindings, discardedDispositions, publishedReviewId } from './reviewDossierViews.ts';
 
 import type { ReviewDraw } from './reviewDocumentParser.ts';
-import type { ReviewDossier, ReviewDossierEvent } from './reviewDossier.ts';
+import type { AcceptedReviewFinding, ReviewDossier, ReviewDossierEvent, ReviewFindingSource } from './reviewDossier.ts';
 import type { ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
-type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
+type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT'; sources?: ReviewFindingSource[] };
 type ReviewRecommendation = 'approve' | 'request-changes';
 type ReviewDossierBuildInput = {
     plan: ReviewRiskPlan;
@@ -60,6 +60,15 @@ export function persistedReviewDossier(raw: unknown): ReviewDossier | undefined 
     return parseReviewDossier(raw);
 }
 
+function requiredFindingSources(comment: ReviewDossierComment, index: number): ReviewFindingSource[] {
+    if (comment.sources === undefined) {
+        fail(
+            `review.json comment ${index} requires sources: non-empty { stance, reviewerModel } pairs naming the completed findings draws that independently detected it`
+        );
+    }
+    return comment.sources;
+}
+
 function assembleFromDraws(input: ReviewDossierBuildInput, draws: readonly ReviewDraw[]): ReviewDossier {
     const stanceEvents = draws.map((draw): ReviewDossierEvent => ({
         kind: 'stance-completed',
@@ -74,6 +83,7 @@ function assembleFromDraws(input: ReviewDossierBuildInput, draws: readonly Revie
         path: comment.path,
         line: comment.line,
         side: comment.side,
+        sources: requiredFindingSources(comment, index),
     }));
     return assembleReviewDossier({
         plan: input.plan,
@@ -97,8 +107,15 @@ function assertEqualList(label: string, actual: readonly string[], expected: rea
     fail(`${label} mismatch: record has [${actual.join(', ')}], expected [${expected.join(', ')}]`);
 }
 
+function sourceKeys(sources: readonly ReviewFindingSource[] | undefined): string | undefined {
+    if (sources === undefined) {
+        return undefined;
+    }
+    return JSON.stringify(sources.map((source) => [source.stance, source.reviewerModel]));
+}
+
 function assertFindingsMatchComments(
-    accepted: readonly { findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }[],
+    accepted: readonly AcceptedReviewFinding[],
     comments: readonly ReviewDossierComment[]
 ): void {
     if (accepted.length !== comments.length) {
@@ -115,6 +132,9 @@ function assertFindingsMatchComments(
             fail(
                 `review dossier publication accepted finding ${index} id ${finding.findingId} must be comment-${index}`
             );
+        }
+        if (sourceKeys(finding.sources) !== sourceKeys(comment.sources)) {
+            fail(`review dossier publication accepted finding ${index} sources mismatch with review comment`);
         }
         if (finding.path !== comment.path || finding.line !== comment.line || finding.side !== comment.side) {
             fail(
@@ -152,9 +172,9 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
 /**
  * The record a publication persists or replays. A persisted record that already binds its
  * publication replays unchanged. Otherwise the record is derived from the document's `draws`; a
- * document without them falls back to a persisted record that never bound its publication — the
- * shape a pre-ADR-0054 run left behind when it crashed before its POST — and with neither the
- * publication is refused. A persisted record that claims a publication is not trusted on that claim
+ * document without them may fall back to an unpublished persisted record only when its findings
+ * carry explicit sources. Historical unknown attribution is reserved for proven landed recovery.
+ * With neither draws nor a record the publication is refused. A claimed publication is not trusted
  * alone: the publish path's replay must still prove the named review stands live and exact.
  */
 export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
@@ -164,12 +184,34 @@ export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossie
     return { dossier, canonical: serializeReviewDossier(dossier), fromPersisted: dossier === persisted };
 }
 
+/**
+ * Recovery has already proven a stable exact landed reviewer publication and its journal payload.
+ * Reuse the verified record that preceded that POST, preserving unknown historical attribution.
+ * This path never authorizes a new POST; fresh publications must use buildReviewDossier instead.
+ */
+export function recoverReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
+    const persisted = persistedReviewDossier(input.persisted);
+    if (persisted === undefined) {
+        return buildReviewDossier(input);
+    }
+    assertPublicationAgreement(persisted, input);
+    return { dossier: persisted, canonical: serializeReviewDossier(persisted), fromPersisted: true };
+}
+
 function selectPublicationRecord(persisted: ReviewDossier | undefined, input: ReviewDossierBuildInput): ReviewDossier {
-    if (persisted !== undefined && (publishedReviewId(persisted) !== undefined || input.draws === undefined)) {
+    if (persisted !== undefined && publishedReviewId(persisted) !== undefined) {
         return persisted;
     }
     if (input.draws !== undefined) {
         return assembleFromDraws(input, input.draws);
+    }
+    if (persisted !== undefined) {
+        // An unpublished record is no evidence that a review landed. A fresh publication still
+        // needs explicit finding sources when a pre-ADR document carries no draws of its own.
+        for (const [index, comment] of input.comments.entries()) {
+            requiredFindingSources(comment, index);
+        }
+        return persisted;
     }
     return fail(
         `review.json must carry draws for head ${input.plan.headSha}: one { stance, reviewerModel, tier, outcome } entry per completed blind draw`

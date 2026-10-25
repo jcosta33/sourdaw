@@ -1374,7 +1374,17 @@ type LinuxFilePorts = {
     isGone: (pid: number) => boolean;
     startedBeforeSupervisor?: (pid: number) => boolean;
     now?: () => number;
+    wait?: (milliseconds: number) => void;
 };
+
+function waitSynchronously(milliseconds: number): void {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+// A denied FD list is resampled at this pace inside the proof deadline. The cap equals
+// the deadline at this pace, so termination never depends on the clock port alone.
+const LINUX_EXIT_RESAMPLE_MS = 10;
+const LINUX_EXIT_RESAMPLES = 500;
 
 export function parseLinuxStartTicks(stat: string): number | undefined {
     // The command name may contain spaces and parentheses; fields resume after its last ')'.
@@ -1474,6 +1484,20 @@ export function linuxStorageFileState(
         return 'unknown';
     };
     const now = ports.now ?? Date.now;
+    const wait = ports.wait ?? waitSynchronously;
+    const sampleStatus = (pid: number): LinuxFileSnapshot | undefined => {
+        if (now() > deadline) {
+            return undefined;
+        }
+        try {
+            return parseLinuxFileSnapshot(ports.readStatus(pid));
+        } catch {
+            // Diagnostics cannot turn an unavailable inspection into proof.
+            return undefined;
+        }
+    };
+    const filesReleased = (pid: number, zombieProves: boolean, snapshot: LinuxFileSnapshot | undefined) =>
+        ports.isGone(pid) || (zombieProves && now() <= deadline && linuxTerminalFilesReleased(snapshot, pid, uid));
     let descriptors = 0;
     for (const pid of pids) {
         if (now() > deadline) {
@@ -1518,19 +1542,23 @@ export function linuxStorageFileState(
                 // changes privilege, outside what this census can prove.
                 continue;
             }
-            let snapshot: LinuxFileSnapshot | undefined;
-            if (now() <= deadline) {
-                try {
-                    snapshot = parseLinuxFileSnapshot(ports.readStatus(pid));
-                } catch {
-                    // Diagnostics cannot turn an unavailable inspection into proof.
+            // An exiting task drops its mm before tearing down its address space, closing its
+            // files and turning zombie; from the first step the kernel owns /proc/<pid>/fd as
+            // root. A same-UID exit therefore denies the FD list while its status still reads
+            // live, or zombie with other threads, until it settles. Only a later gone or
+            // single-thread zombie sample proves that the denial was the exit.
+            const exitDenial = code === 'EACCES' && phase === 'fd-list';
+            let snapshot = sampleStatus(pid);
+            let released = filesReleased(pid, code === 'ENOENT' || exitDenial, snapshot);
+            for (let resample = 0; !released && exitDenial && resample < LINUX_EXIT_RESAMPLES; resample++) {
+                if (now() >= deadline) {
+                    break;
                 }
+                wait(LINUX_EXIT_RESAMPLE_MS);
+                snapshot = sampleStatus(pid);
+                released = filesReleased(pid, true, snapshot);
             }
-            if (
-                (error as NodeJS.ErrnoException).code === 'ENOENT' &&
-                now() <= deadline &&
-                linuxTerminalFilesReleased(snapshot, pid, uid)
-            ) {
+            if (released) {
                 continue;
             }
             return unknown(linuxInspectionFailure(pid, phase, error, snapshot));
@@ -1541,6 +1569,11 @@ export function linuxStorageFileState(
     }
     return 'dead';
 }
+
+// Unrelated same-account work, such as a concurrent census's own `ps`, can be born between
+// any inspection and its re-list. Each such arrival discards the whole observation for a
+// complete replacement until this bound or the original proof deadline runs out.
+const LINUX_CENSUS_OBSERVATIONS = 32;
 
 export function linuxStorageFileCensus(
     pids: number[],
@@ -1560,8 +1593,21 @@ export function linuxStorageFileCensus(
         return 'unknown';
     };
     const now = ports.now ?? Date.now;
-    for (let observation = 0; observation < 2; observation++) {
-        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report, ports.files);
+    const files = ports.files ?? linuxFilePorts();
+    const waitForExit = files.wait ?? waitSynchronously;
+    // Processes inspected before a paced exit resample are stale by its end, so an
+    // observation that waited can only lead to a fresh complete one, never to proof.
+    const resamples = { count: 0 };
+    const observedFiles: LinuxFilePorts = {
+        ...files,
+        wait: (milliseconds) => {
+            resamples.count += 1;
+            waitForExit(milliseconds);
+        },
+    };
+    for (let observation = 0; observation < LINUX_CENSUS_OBSERVATIONS; observation++) {
+        resamples.count = 0;
+        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report, observedFiles);
         if (state !== 'dead') {
             return state;
         }
@@ -1573,13 +1619,15 @@ export function linuxStorageFileCensus(
         if (now() >= deadline) {
             return unknown('proc-time-bound');
         }
-        if (uninspectedPid === undefined) {
+        if (uninspectedPid === undefined && resamples.count === 0) {
             return 'dead';
         }
-        if (observation === 1) {
-            return unknown(`proc-live-pid-uninspected:pid=${uninspectedPid}`);
+        if (observation === LINUX_CENSUS_OBSERVATIONS - 1) {
+            return unknown(
+                uninspectedPid === undefined ? 'proc-time-bound' : `proc-live-pid-uninspected:pid=${uninspectedPid}`
+            );
         }
-        // Discard the stale inspection once; replacement covers the whole fresh list.
+        // Discard the stale inspection; each replacement covers the whole fresh list.
         pids = currentPids;
     }
     return unknown('file-census-unavailable');
@@ -1932,7 +1980,6 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             durationMs: 0,
         };
     }
-    let storageEvidenceReported = false;
     // The last census verdict and its diagnostics, kept per sessionState call so the final release
     // attempt can tell a proved holder or a stable obstruction from a transient lost proof.
     const storageProof: {
@@ -1941,14 +1988,11 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         // The first census of this run that proved a holder or hit a stable obstruction. A later,
         // weaker census never clears it: the holder may still be running.
         obstruction: string | undefined;
-    } = { verdict: undefined, reasons: [], obstruction: undefined };
+        diagnostic: string | undefined;
+    } = { verdict: undefined, reasons: [], obstruction: undefined, diagnostic: undefined };
     const storagePorts = storageRecoveryPorts(
         (reason) => {
             storageProof.reasons.push(reason);
-            if (!storageEvidenceReported) {
-                output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
-                storageEvidenceReported = true;
-            }
         },
         { ...storageRecoveryHost, ...input.storageHost }
     );
@@ -1962,8 +2006,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         const [owner] = args;
         const stable =
             verdict === 'alive' || (verdict === 'unknown' && !areTransientProofReasons(storageProof.reasons));
-        if (owner.token === processToken && stable) {
-            storageProof.obstruction ??= describeCensus(verdict, storageProof.reasons);
+        if (owner.token === processToken && stable && storageProof.obstruction === undefined) {
+            storageProof.obstruction = describeCensus(verdict, storageProof.reasons);
+            storageProof.diagnostic = verdict === 'unknown' ? storageProof.reasons[0] : undefined;
         }
         return verdict;
     };
@@ -2295,6 +2340,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             retainedStorage = { path: storage.payloadPath(), reason: storageProof.reasons.join('; ') };
         } else {
             census = storageProof.obstruction ?? describeCensus(storageProof.verdict, storageProof.reasons);
+            if (storageProof.diagnostic !== undefined) {
+                output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${storageProof.diagnostic}\n`));
+            }
             output.append(
                 Buffer.from(
                     `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
@@ -2580,6 +2628,114 @@ export function clearGuardFailureReceiptIfUnchanged(
         };
     }
     return { status: 'mismatch' };
+}
+
+export type RecoverGuardFailureReceiptPorts = {
+    readdirSync?: typeof readdirSync;
+    readFileSync?: typeof readFileSync;
+    linkSync?: typeof linkSync;
+    rmSync?: typeof rmSync;
+};
+
+type RecoveredGuardFailureReceipt = {
+    receipt: GuardFailureReceipt | undefined;
+    adoptedFromClaimPath?: string;
+};
+
+function listGuardFailureReceiptClaimPaths(receiptsDir: string, laneName: string, list: typeof readdirSync): string[] {
+    let entries: string[];
+    try {
+        entries = list(receiptsDir);
+    } catch (error) {
+        if (isFileSystemError(error, 'ENOENT')) {
+            return [];
+        }
+        throw error;
+    }
+    const prefix = `${laneName}.json.claim-`;
+    return entries
+        .filter((name) => name.startsWith(prefix))
+        .sort()
+        .map((name) => join(receiptsDir, name));
+}
+
+// Recovery read for a lane whose canonical receipt is absent: a kill between the clear flow's
+// claim rename and its remove or restore strands the receipt bytes under
+// `<receipt>.claim-<uuid>` while nothing reads them (#4514). A single orphan holding this lane's
+// receipt is restored to the canonical path so the lane's stopped obligation is honored instead
+// of silently dropped; anything else found under the claim namespace is refused rather than
+// dropped or guessed at.
+function readGuardFailureReceiptAdoptingOrphans(
+    primaryRoot: string,
+    laneName: string,
+    ports: RecoverGuardFailureReceiptPorts = {}
+): RecoveredGuardFailureReceipt {
+    const canonical = readGuardFailureReceipt(primaryRoot, laneName);
+    if (canonical !== undefined) {
+        return { receipt: canonical };
+    }
+
+    const list = ports.readdirSync ?? readdirSync;
+    const read = ports.readFileSync ?? readFileSync;
+    const link = ports.linkSync ?? linkSync;
+    const remove = ports.rmSync ?? rmSync;
+    const claimPaths = listGuardFailureReceiptClaimPaths(join(primaryRoot, GUARD_FAILURES_DIR), laneName, list);
+    if (claimPaths.length === 0) {
+        return { receipt: undefined };
+    }
+    if (claimPaths.length > 1) {
+        throw new Error(
+            `multiple orphaned guard-failure receipt claims for lane ${laneName} (${claimPaths.join(', ')}); refusing to pick one`
+        );
+    }
+    const claimPath = claimPaths[0];
+    if (claimPath === undefined) {
+        throw new Error(`expected exactly one orphaned guard-failure receipt claim for lane ${laneName}`);
+    }
+
+    let claimed: GuardFailureReceipt;
+    try {
+        claimed = parseGuardFailureReceipt(read(claimPath, 'utf8'), claimPath);
+    } catch (error) {
+        throw new Error(
+            `orphaned guard-failure receipt claim for lane ${laneName} at ${claimPath} does not hold this lane's receipt (${errorMessage(error)}); refusing to drop or adopt it`,
+            { cause: error }
+        );
+    }
+    if (claimed.lane !== laneName) {
+        throw new Error(
+            `orphaned guard-failure receipt claim for lane ${laneName} at ${claimPath} records lane ${claimed.lane}; refusing to drop or adopt it`
+        );
+    }
+
+    const receiptPath = guardFailureReceiptPath(primaryRoot, laneName);
+    try {
+        // linkSync refuses an existing target, so a receipt a concurrent writer installs at the
+        // canonical path between the absent read and this link is preserved rather than clobbered.
+        link(claimPath, receiptPath);
+    } catch (error) {
+        if (!isFileSystemError(error, 'EEXIST')) {
+            throw new Error(
+                `could not restore the orphaned guard-failure receipt claim for lane ${laneName} from ${claimPath}: ${errorMessage(error)}`,
+                { cause: error }
+            );
+        }
+        // The canonical receipt is intact, so the obligation is honored from it and the stale
+        // claim may go.
+        try {
+            remove(claimPath);
+        } catch {
+            // A leftover claim file is harmless while the canonical receipt is intact.
+        }
+        return { receipt: readGuardFailureReceipt(primaryRoot, laneName) };
+    }
+    try {
+        remove(claimPath);
+    } catch {
+        // The canonical receipt holds the claimed bytes through the hard link; a leftover claim
+        // file is harmless.
+    }
+    return { receipt: readGuardFailureReceipt(primaryRoot, laneName), adoptedFromClaimPath: claimPath };
 }
 
 type CliInput = {
@@ -2938,6 +3094,7 @@ export async function main(
         runCommand?: typeof runGuardedCommand;
         assertModulesPreflight?: (cwd: string) => void;
         clearReceiptPorts?: ClearGuardFailureReceiptPorts;
+        recoverReadPorts?: RecoverGuardFailureReceiptPorts;
         log?: (message: string) => void;
         error?: (message: string) => void;
     } = {}
@@ -2965,7 +3122,17 @@ export async function main(
             if (lane === undefined) {
                 throw new Error('--recover must be run inside an author worktree');
             }
-            const receipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+            const recoveredReceipt = readGuardFailureReceiptAdoptingOrphans(
+                lane.primaryRoot,
+                lane.laneName,
+                options.recoverReadPorts
+            );
+            if (recoveredReceipt.adoptedFromClaimPath !== undefined) {
+                log(
+                    `guard: restored an orphaned guard-failure receipt for lane ${lane.laneName} from ${recoveredReceipt.adoptedFromClaimPath}`
+                );
+            }
+            const receipt = recoveredReceipt.receipt;
             if (receipt === undefined) {
                 if (input.lintTargetReplacements.length > 0) {
                     throw new Error('--replace-lint-target requires an active pnpm lint guard-failure receipt');

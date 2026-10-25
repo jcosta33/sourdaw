@@ -170,6 +170,7 @@ function fakePort(
         actorNodeId?: string;
         login?: string;
         labels?: { name: string; description?: string }[];
+        unresolvedThreads?: number;
     } = {}
 ) {
     const calls: string[] = [];
@@ -239,6 +240,14 @@ function fakePort(
         },
         publicReviews: () => [],
         publicReviewComments: () => [],
+        // Every approval publication now proves no review thread is open, so the
+        // default state reads zero; a case sets `unresolvedThreads` to exercise
+        // the refusal.
+        reviewState: () => ({
+            latestReviewerStateOnHead: null,
+            latestReviewerReviewDatabaseId: null,
+            unresolvedThreads: input.unresolvedThreads ?? 0,
+        }),
         applyApprovalLabel: (number) => labelWrites.push(`apply:${number}`),
         removeApprovalLabel: (number) => labelWrites.push(`remove:${number}`),
         log: (message) => logs.push(message),
@@ -370,6 +379,25 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                     if (command === 'gh' && args[0] === 'api' && args.includes('--paginate')) {
                         return '[]';
                     }
+                    if (command === 'gh' && args[0] === 'api' && args[1] === 'graphql') {
+                        // The approval-thread gate reads the live review state before the
+                        // post; this head carries no reviews and no open threads.
+                        return JSON.stringify({
+                            data: {
+                                repository: {
+                                    pullRequest: {
+                                        id: 'PR_kwDOfixture',
+                                        headRefOid: head,
+                                        reviews: {
+                                            nodes: [],
+                                            pageInfo: { hasPreviousPage: false, startCursor: null },
+                                        },
+                                        reviewThreads: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                                    },
+                                },
+                            },
+                        });
+                    }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
                     }
@@ -493,6 +521,35 @@ describe('review publish', () => {
             publishPreparedReview(42, { head: 'headsha', document, payloadDigest: 'unused' }, fixture.port)
         ).toThrow(/approval context/);
         expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it('refuses a reviewer approval over unresolved review threads before any remote write', () => {
+        const fixture = fakePort({ unresolvedThreads: 2 });
+        const journal = vi.fn();
+        expect(() =>
+            publishReview(42, fixture.port, {
+                ownerOid: 'owner',
+                journalReviewPublication: journal,
+                markRemoteMutationAttempt: vi.fn(),
+                markDefinitiveNoMutationHttpStatus: vi.fn(),
+                registerSuccessfulCompletion: vi.fn(),
+            })
+        ).toThrow(/has 2 unresolved review thread\(s\); an approval cannot authorize delivery/u);
+        // The refusal lands before the publication journal, so no mutation was
+        // attempted and nothing posted (#5436).
+        expect(journal).not.toHaveBeenCalled();
+        expect(fixture.posted.review).toBeUndefined();
+        expect(fixture.calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('still posts a change request over unresolved review threads', () => {
+        const fixture = fakePort({
+            unresolvedThreads: 1,
+            json: { event: 'REQUEST_CHANGES', body: 'Please fix the merge gate.', comments: [validComment] },
+        });
+
+        expect(publishReview(42, fixture.port)).toBe(99);
+        expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
     });
 
     it.each(['baseSha', 'baseRefName', 'headSha', 'pr'] as const)(
@@ -996,6 +1053,36 @@ describe('review publish', () => {
         expect(acquired).toBe(false);
     });
 
+    it('refuses a reviewer approval over unresolved threads on the production coordinator route', async () => {
+        // The gate lives in the publication preflight every route takes, so the
+        // real command path — coordinate to publishPreparedReview — refuses
+        // before the lock is acquired, nothing is journaled, and nothing posts
+        // (#5436).
+        const fixture = fakePort({ unresolvedThreads: 2 });
+        let acquired = false;
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async () => {
+                acquired = true;
+                throw new Error('lock must not be acquired');
+            },
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => fixture.port,
+            publish: publishPreparedReview,
+        };
+
+        await expect(coordinatePublishReview(42, dependencies)).rejects.toThrow(
+            /has 2 unresolved review thread\(s\); an approval cannot authorize delivery/u
+        );
+        expect(acquired).toBe(false);
+        expect(fixture.posted.review).toBeUndefined();
+        expect(fixture.calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
     it.each([
         ['closes', { state: 'CLOSED', head: 'headsha' }],
         ['moves', { state: 'OPEN', head: 'moved-head' }],
@@ -1082,6 +1169,11 @@ describe('review publish', () => {
                     readBundleDiff: () => '',
                     publicReviews: () => [],
                     publicReviewComments: () => [],
+                    reviewState: () => ({
+                        latestReviewerStateOnHead: null,
+                        latestReviewerReviewDatabaseId: null,
+                        unresolvedThreads: 0,
+                    }),
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
                         if (oid === undefined) {
@@ -5104,6 +5196,11 @@ describe('fresh reviewer dossier publication', () => {
         { stance: 'stale binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
     ];
 
+    const findingDraws = defaultDraws.map((draw, index): ReviewDraw =>
+        index === 0 ? { ...draw, outcome: 'findings' } : draw
+    );
+    const findingSources = [{ stance: defaultDraws[0]!.stance, reviewerModel: defaultDraws[0]!.reviewerModel }];
+
     const reviewDocument: ReviewDocument = {
         format: 'compact-v1',
         event: 'APPROVE',
@@ -5117,7 +5214,12 @@ describe('fresh reviewer dossier publication', () => {
     function derivedRecord(
         input: {
             draws?: ReviewDraw[];
-            comments?: { path: string; line: number; side: 'LEFT' | 'RIGHT' }[];
+            comments?: {
+                path: string;
+                line: number;
+                side: 'LEFT' | 'RIGHT';
+                sources?: { stance: string; reviewerModel: string }[];
+            }[];
             recommendation?: 'approve' | 'request-changes';
             evidence?: { observable: string; verification: string; observed: string }[];
         } = {}
@@ -5149,6 +5251,7 @@ describe('fresh reviewer dossier publication', () => {
     function changesDocument(): Record<string, unknown> {
         return {
             event: 'REQUEST_CHANGES',
+            draws: findingDraws,
             body: 'One blocking finding.',
             comments: [
                 {
@@ -5158,6 +5261,7 @@ describe('fresh reviewer dossier publication', () => {
                     defect: 'the gate reads the wrong base',
                     consequence: 'a foreign commit slips the authorship gate',
                     done: 'read the comparison base',
+                    sources: findingSources,
                 },
             ],
             reviewerModel: 'glm-5.3-flash',
@@ -5417,6 +5521,41 @@ describe('fresh reviewer dossier publication', () => {
             message: /review risk plan baseSha d{40} does not match the bundle manifest baseSha a{40}/u,
         },
     ];
+
+    it.each([
+        ['missing sources', undefined, /comment 0 requires sources/u],
+        [
+            'unknown source',
+            [{ stance: 'uncompleted', reviewerModel: 'review-model' }],
+            /source.*does not name a completed findings draw/u,
+        ],
+        [
+            'clean source',
+            [{ stance: 'test-validity', reviewerModel: 'review-model' }],
+            /source.*does not name a completed findings draw/u,
+        ],
+    ])('refuses %s before any dossier write, journal, or remote publication', (_label, sources, message) => {
+        const fixture = dossierFixture({
+            plan: toolingRiskPlan(),
+            diff: targetDiff,
+            document: {
+                ...changesDocument(),
+                comments: [
+                    {
+                        ...validComment,
+                        path: 'scripts/target.ts',
+                        line: 5,
+                        ...(sources === undefined ? {} : { sources }),
+                    },
+                ],
+            },
+        });
+        try {
+            expect(refusedBeforeSideEffects(fixture)).toMatch(message);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
 
     it('publishes a matching plan, deriving the canonical record from review.json and writing it beside it', () => {
         const fixture = dossierFixture({
@@ -5956,6 +6095,62 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('replays a recorded approval over reopened threads and retries the label', async () => {
+        // The replay exemption is load-bearing: a label write that failed after a successful
+        // approval promises that a re-run replays the review and retries the label, and a thread
+        // reopened in between must not turn that re-run into a refusal (#5436 gates fresh
+        // approvals only). Driven through the coordinator, whose label sync is the retry.
+        const landedReview: RemotePublishedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({ plan: riskPlan(), remoteReviews: { 99: landedReview } });
+        const reopenedThreadsPort: PublishReviewPort = {
+            ...fixture.port,
+            reviewState: () => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: 99,
+                latestReviewerCommitOid: head,
+                unresolvedThreads: 1,
+            }),
+        };
+        const dependencies = (port: PublishReviewPort): PublishReviewCoordinatorDependencies => ({
+            primaryRoot: () => fixture.root,
+            serializeMutation: (_primaryRoot, _number, operation) =>
+                operation({
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: () => undefined,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            publish: publishPreparedReview,
+        });
+        try {
+            await coordinatePublishReview(number, dependencies(fixture.port));
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+
+            // The thread reopened after the approval posted; the re-run replays the
+            // recorded publication, posts nothing new, and retries the label.
+            fixture.labelWrites.length = 0;
+            await coordinatePublishReview(number, dependencies(reopenedThreadsPort));
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            expect(fixture.labelWrites).toEqual([`apply:${number}`]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('refuses to re-post when the recorded publication no longer stands live and exact', () => {
         const fixture = dossierFixture({ plan: riskPlan() });
         try {
@@ -6103,9 +6298,11 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const changesDocument = {
             event: 'REQUEST_CHANGES',
+            draws: findingDraws,
             body: 'One blocking finding.',
             comments: [comment],
             reviewerModel: 'glm-5.3-flash',
@@ -6143,7 +6340,13 @@ describe('fresh reviewer dossier publication', () => {
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.recommendation).toBe('request-changes');
             expect(acceptedFindings(persisted)).toEqual([
-                { findingId: 'comment-0', path: comment.path, line: comment.line, side: 'RIGHT' },
+                {
+                    findingId: 'comment-0',
+                    path: comment.path,
+                    line: comment.line,
+                    side: 'RIGHT',
+                    sources: findingSources,
+                },
             ]);
             expect(publishedReviewId(persisted)).toBe(99);
             expect(publishedFindings(persisted)).toEqual([
@@ -6165,11 +6368,13 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         return dossierFixture({
             plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6352,6 +6557,7 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6369,6 +6575,7 @@ describe('fresh reviewer dossier publication', () => {
             plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6393,6 +6600,7 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6410,6 +6618,7 @@ describe('fresh reviewer dossier publication', () => {
             plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6458,6 +6667,7 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6472,7 +6682,8 @@ describe('fresh reviewer dossier publication', () => {
             '',
         ].join('\n');
         const { canonical } = derivedRecord({
-            comments: [{ path: comment.path, line: comment.line, side: comment.side }],
+            draws: findingDraws,
+            comments: [{ path: comment.path, line: comment.line, side: comment.side, sources: findingSources }],
             recommendation: 'request-changes',
             evidence: [],
         });
@@ -6485,6 +6696,7 @@ describe('fresh reviewer dossier publication', () => {
             dossier: JSON.parse(serializeReviewDossier(bound)),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6539,7 +6751,8 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses a recorded publication whose dossier chain was tampered with', () => {
         const { canonical } = derivedRecord({
-            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            draws: findingDraws,
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const, sources: findingSources }],
             recommendation: 'request-changes',
             evidence: [],
         });
@@ -6863,7 +7076,8 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses orchestrator acceptance when an accepted finding lacks its public binding', async () => {
         const { canonical } = derivedRecord({
-            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            draws: findingDraws,
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const, sources: findingSources }],
             recommendation: 'request-changes',
             evidence: [],
         });
@@ -7068,6 +7282,43 @@ describe('review.json round record', () => {
         reviewerModel: 'glm-5.3-flash',
     };
     const draw = { stance: 'stale replay binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' };
+
+    it('retains explicit source pairs while leaving historical comments source-absent', () => {
+        const sources = [{ stance: draw.stance, reviewerModel: draw.reviewerModel }];
+        const attributed = parseReviewDocument({ ...base, comments: [{ ...validComment, sources }] });
+        expect(attributed.comments[0]).toEqual({ ...validComment, sources });
+        expect(parseReviewDocument(base).comments[0]).not.toHaveProperty('sources');
+        expect(JSON.parse(reviewPublicationPayload({ commitId: 'headsha', ...attributed }))).toMatchObject({
+            comments: [{ body: composeReviewCommentBody(validComment) }],
+        });
+    });
+
+    it.each([
+        ['empty', [], /sources must be a non-empty array/u],
+        ['bare model', ['review-model'], /sources\[0\] must be an object/u],
+        ['missing stance', [{ reviewerModel: 'review-model' }], /fields must be reviewerModel,stance/u],
+        [
+            'unknown field',
+            [{ stance: 's', reviewerModel: 'm', tier: 'standard' }],
+            /fields must be reviewerModel,stance/u,
+        ],
+        [
+            'duplicate pair',
+            [
+                { stance: 's', reviewerModel: 'm' },
+                { stance: 's', reviewerModel: 'm' },
+            ],
+            /repeats source/u,
+        ],
+        ['blank stance', [{ stance: '', reviewerModel: 'm' }], /stance.*blank/u],
+        [
+            'unsafe model',
+            [{ stance: 's', reviewerModel: `ghp_${'A'.repeat(24)}` }],
+            /reviewerModel.*contains a GitHub token/u,
+        ],
+    ])('refuses %s finding source data', (_label, sources, message) => {
+        expect(() => parseReviewDocument({ ...base, comments: [{ ...validComment, sources }] })).toThrow(message);
+    });
 
     it('parses draws and discards, and omits both keys when absent', () => {
         expect(

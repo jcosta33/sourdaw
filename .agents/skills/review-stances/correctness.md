@@ -68,6 +68,18 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
+
+PR #5639 serialized supersession with the shared fenced owner, but its package command still
+called the transaction script directly. The actual command refused before PR I/O because the
+default fence had no launcher-pinned `ps`. Strongest-tier review was present; the missing stance
+was actual native CLI and platform-tool admission, while lock fixtures injected owner fences.
+
+Trace a newly required capability from the package command through the protected launcher to
+its real consumer. Invoke that route with controlled remote ports and the default owner fence;
+observe the acquired process identity before the first PR read. Restoring a direct package route
+or omitting the command from the launcher's fenced set must fail that probe before remote I/O.
+
 ### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
 
 PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
@@ -498,6 +510,27 @@ reported a successful write to that follower. Review point mutations against the
 decibel forms must refuse follower, dangling, and cyclic targets without redirecting or detaching them, while a source
 write must still change the follower's sampled value.
 
+### 2026-10-24 — OPEN compensation erased markers another supersession had adopted (PRs #2357 and #4420)
+
+PR #2357 introduced the compensation snapshot; PR #4420 extended rollback to receipt and lineage
+markers. An invocation could read OPEN during compensation, then delete its verified canonical
+markers after another invocation adopted them, closed the pull request, and verified success.
+Historical exact review stance and tier are unestablished. Checking OPEN again before DELETE
+leaves the same gap. Retention alone is also insufficient: if finding 1002 arrives after lineage
+1001 was posted, the retained old lineage prevents a retry with the complete corrected lineage.
+
+Serialize the production operation's reads, replay, writes and compensation under the existing
+per-PR mutation owner. A verified pre-close rollback may release only after OPEN state, the exact
+original comment IDs and absence of its created IDs are proven; the invocation still fails.
+Ambiguous writes, altered markers, attempted closure and incomplete compensation retain the
+journal for native recovery. Preserve prior and foreign comments.
+
+Pause one invocation after its OPEN compensation snapshot. A second real serialized entrypoint
+must refuse before any PR port call; after verified rollback releases, its later invocation must
+close with both canonical proofs intact. Also add a finding before close, then require the
+complete updated lineage to succeed on retry without relaxing marker validation. A lock-release
+failure must never print a supersession success.
+
 ### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
 
 PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane
@@ -610,4 +643,4 @@ PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — 
 
 Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
 
-Probe: before merging, when the base tip has moved since the head's last Gate, verify the actual merge ref (base tip + head) compiles — `pnpm typecheck` and `typecheck:e2e` — not just the head. Reverting the base-side hunk or the head-side removal must each fail to compile in the combined tree when the other side stays, which is what no validated run observed here.
+Probe: before merging, when the base tip has moved since the head's last Gate, require fresh CI evidence that covers the resulting base-plus-head tree, not just the earlier head. Reverting either contributing hunk should make that combined-tree typecheck fail, which is what no validated run observed here.

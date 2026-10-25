@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
+import { pendingProjectReplacements } from '../../pendingProjectReplacements';
 import { pickAndImportProjectFile } from '../pickAndImportProjectFile';
 
 import type { ProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
@@ -20,7 +21,7 @@ const mocks = vi.hoisted(() => {
     return {
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
         runProjectLoadTransaction: vi.fn<() => ProjectLoadTransaction>(),
-        applyImportedProjectData: vi.fn<() => Promise<boolean>>(),
+        applyImportedProjectData: vi.fn<(input: { shouldProceed?: () => boolean }) => Promise<boolean>>(),
         notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
         loggerError: vi.fn<(error: Error) => void>(),
         saveProject: vi.fn<() => Promise<boolean>>(),
@@ -108,6 +109,7 @@ describe('pickAndImportProjectFile', () => {
         expect(mocks.runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(mocks.applyImportedProjectData).toHaveBeenCalledWith({
             data: projectJson,
+            shouldProceed: expect.any(Function),
             transaction: transactionSentinel,
         });
         expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -232,5 +234,59 @@ describe('pickAndImportProjectFile', () => {
         await expect(pickAndImportProjectFile()).resolves.toBe(true);
 
         expect(mocks.saveProject).not.toHaveBeenCalled();
+    });
+
+    // Choosing the open project's Recent entry while the import is pending
+    // withdraws it, so the session stays in the project the user chose last.
+    describe('when the open project is chosen while the import is pending', () => {
+        it('does not start the import once its pre-save finishes', async () => {
+            mocks.pickFiles.mockResolvedValue([makeFile('{"version":1}')]);
+            mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
+            const save = Promise.withResolvers<boolean>();
+            mocks.saveProject.mockImplementationOnce(() => {
+                mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: false };
+                return save.promise;
+            });
+
+            const importOperation = pickAndImportProjectFile();
+            await vi.waitFor(() => expect(mocks.saveProject).toHaveBeenCalledOnce());
+            pendingProjectReplacements.withdraw();
+            save.resolve(true);
+
+            await expect(importOperation).resolves.toBe(false);
+            expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
+            expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('does not hand over a file whose read finishes after the choice', async () => {
+            const read = Promise.withResolvers<string>();
+            const file = makeFile('');
+            vi.spyOn(file, 'text').mockReturnValue(read.promise);
+            mocks.pickFiles.mockResolvedValue([file]);
+
+            const importOperation = pickAndImportProjectFile();
+            await vi.waitFor(() => expect(file.text).toHaveBeenCalledOnce());
+            pendingProjectReplacements.withdraw();
+            read.resolve('{"version":1}');
+
+            await expect(importOperation).resolves.toBe(false);
+            expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('hands the replacement a check that the choice turns false, and does not blame the file', async () => {
+            mocks.pickFiles.mockResolvedValue([makeFile('{"version":1}')]);
+            mocks.applyImportedProjectData.mockImplementationOnce(({ shouldProceed }) => {
+                expect(shouldProceed?.()).toBe(true);
+                pendingProjectReplacements.withdraw();
+                return Promise.resolve(shouldProceed?.() ?? true);
+            });
+
+            await expect(pickAndImportProjectFile()).resolves.toBe(false);
+
+            expect(mocks.applyImportedProjectData).toHaveBeenCalledOnce();
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
     });
 });
