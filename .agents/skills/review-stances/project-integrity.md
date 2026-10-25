@@ -15,6 +15,39 @@ unscoped value. Raw truth and projection must keep the newer commit. Repeat with
 hook, an empty journal whose owner applies no operation, and a real journal rebased over peer truth;
 neither array length nor truthiness may substitute for the nullable contract.
 
+## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
+
+An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
+because a queued selection flush writes no new content. A real edit followed by a same-lineage
+replacement of earlier heads also leaves those heads unchanged, but discards the edited history.
+After a checkpoint, an ancestry scan of the installed document cannot recover that discarded edit.
+At every same-lineage replacement and same-membership snapshot restore, require the new _active_
+heads to retain every prior active head in their causal ancestry. Record a monotonic discard epoch
+when they do not, and reject approvals captured before it even if current heads match. A forward
+merge with concurrent heads and a checkpoint-only change must remain eligible; a foreign write
+after authorization capture must still revoke execution.
+
+## 2026-10-25 — queued selection writes revoked confirmed command authority (introduced by PR #2747)
+
+PR #2747 (`06fb56e389`) added a strict mutation-owner authorization check for confirmed AI
+batches. A track selection is transient project UI state, but its CRDT-backed store still queues
+an unscoped flush. That flush can advance the repository mutation epoch without changing document
+contents or heads. If it lands after the batch captures authorization, the unchanged proposal is
+invalidated as a foreign project write. The public approvals covered collaborator changes and
+CRDT ownership; the exact historical reviewer prompts are unavailable, so no named stance or tier
+can be assigned this missed timing input.
+
+Drive a real two-track selection through `trackStore.set` after proposal, observe its pending
+write, and release the actual flush at the confirmed batch's execution boundary. Require the
+approved command to execute once, with identical root contents and heads across that selection
+flush. Check the final risk-approval binding too: it must use the same unchanged-project proof,
+or the advanced epoch still rejects the old approved source revision. Preserve the original
+serialized batch and idempotency key through execution and replay. Pair this with a real
+conflicting edit before confirmation, which must invalidate or require new approval, and an
+independent writer after authorization capture, whose mutation must still revoke execution even
+when it changes no document value. Removing admission settlement or final binding alignment must
+fail the unchanged-selection case.
+
 ## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
 
 `waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
@@ -517,3 +550,29 @@ constant and the stop to a no-op cannot see it. A guard on the revision or the p
 object needs a real root document, the real capture, and waits that span a frame; a close or
 discard that already drops every edit guards on project identity (`captureProjectIdentity`)
 instead. Mutation probe: restore the revision comparison; the frame-spanning cases must fail.
+
+### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
+
+PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
+At #5613 head `af579c26`, real Undo-first peer sync could publish an unrelated surviving-clip
+rename after restoreClip staged its track write but before Command committed. Hydration erased
+the local restoration; Undo still consumed history. Historical introducing-review stance coverage
+is unverified. The missing probe was actual commit preservation after replay admission.
+
+Drive real Command removal/Undo and actual AutomergeSync continuations in both admission orders.
+Require either both edits in raw authority/projection or zero-write refusal with past retained.
+Repeat with identical and different same-ID recreation, plus no-peer, fully published unrelated
+peer, grouped/ripple and same-target placement/split controls. A setter-injected microtask alone
+does not establish the production receive protocol. Authenticate affected raw pre-images and the
+prospective committed owners; a written handler result or optimistic store does not prove either.
+A projection may run inside an entered transaction scope, so ambient owner equality cannot
+certify its data as newly authored intent. Interpose publication and hydration there, with an
+unrelated notification before hydration, and require the original restoration obligation to remain.
+
+Track presence does not certify the restored source programme. Independently race MIDI notes,
+controllers/bend, clip-scoped automation, gain and warp owners without changing raw tracks; a late
+peer owner must survive refusal and history must remain pending. Preserve captured child-ID
+availability in its existing namespace, including unrelated owner buckets. Exercise the prospective
+mutable document as well as the immutable root: proxy identity is not an ownership witness, and
+canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
+unrelated programme edit and a valid same-target successor that commits the final owning projection.

@@ -14,6 +14,7 @@ import {
     type ExecuteOptions,
     type HandlerAfterCommit,
     type HandlerDescribeResult,
+    type HandlerCommitValidation,
     type HandlerExecutionResult,
     type HandlerPostCommitEffect,
     type HandlerValidationContext,
@@ -41,6 +42,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
@@ -127,6 +129,7 @@ type PreparedBatchAction = {
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
     postCommitEffect: HandlerPostCommitEffect | null;
+    commitValidation: HandlerCommitValidation | null;
     requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
@@ -321,6 +324,7 @@ async function executeRuntimeAction(
             onDeferredEffectAttempt,
             workOwner,
         });
+        result?.commitValidation?.release();
         if (result?.status === 'no-write') {
             return { status: 'no-op', actions: [] };
         }
@@ -385,40 +389,47 @@ async function executePreparedBatch(
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
     let approvalConsumed = false;
-    for (const [actionIndex, prepared] of preparedActions.entries()) {
-        assertExecutionAuthorized(shouldExecute);
-        if (prepared.handler.isNoop?.(prepared.action)) {
-            continue;
-        }
-        if (!approvalConsumed) {
-            const approvalFailure = authorizeFirstHandler?.() ?? null;
-            if (approvalFailure) {
-                throw new AppActionBatchApprovalError(approvalFailure);
+    try {
+        for (const [actionIndex, prepared] of preparedActions.entries()) {
+            assertExecutionAuthorized(shouldExecute);
+            if (prepared.handler.isNoop?.(prepared.action)) {
+                continue;
             }
-            approvalConsumed = true;
+            if (!approvalConsumed) {
+                const approvalFailure = authorizeFirstHandler?.() ?? null;
+                if (approvalFailure) {
+                    throw new AppActionBatchApprovalError(approvalFailure);
+                }
+                approvalConsumed = true;
+            }
+            prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
+            attemptedActions.push(prepared);
+            const result: HandlerExecutionResult | void = await scope(() =>
+                prepared.handler.execute(prepared.action, {
+                    actions: preparedActions.map((candidate) => candidate.action),
+                    actionIndex,
+                    signal,
+                    onDeferredEffectAttempt,
+                    workOwner,
+                })
+            );
+            prepared.commitValidation = result?.commitValidation ?? null;
+            if (result?.status === 'no-write' || result?.status === 'conflict') {
+                attemptedActions.pop();
+                throw new AppActionConflictError(prepared.action.type, result.reason);
+            }
+            prepared.afterCommit = result?.afterCommit ?? null;
+            prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
+            prepared.postCommitEffect = result?.postCommitEffect ?? null;
+            executedActions.push(prepared);
         }
-        prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
-        attemptedActions.push(prepared);
-        const result: HandlerExecutionResult | void = await scope(() =>
-            prepared.handler.execute(prepared.action, {
-                actions: preparedActions.map((candidate) => candidate.action),
-                actionIndex,
-                signal,
-                onDeferredEffectAttempt,
-                workOwner,
-            })
-        );
-        if (result?.status === 'no-write' || result?.status === 'conflict') {
-            attemptedActions.pop();
-            throw new AppActionConflictError(prepared.action.type, result.reason);
+        assertExecutionAuthorized(shouldExecute);
+        return executedActions;
+    } finally {
+        for (const prepared of preparedActions) {
+            prepared.commitValidation?.release();
         }
-        prepared.afterCommit = result?.afterCommit ?? null;
-        prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
-        prepared.postCommitEffect = result?.postCommitEffect ?? null;
-        executedActions.push(prepared);
     }
-    assertExecutionAuthorized(shouldExecute);
-    return executedActions;
 }
 
 function rollbackAttemptedBatch(
@@ -798,6 +809,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     afterCommit: null,
                     afterAmbiguousCommit: null,
                     postCommitEffect: null,
+                    commitValidation: null,
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
@@ -970,12 +982,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'cancelled', reason: failureReason(error), actions: [] };
             }
 
-            if (batchValidation) {
-                storageTransaction.validateDocument(
-                    batchValidation.postconditions.documentId,
-                    batchValidation.postconditions.validate
-                );
-            }
+            registerHandlerCommitValidation(
+                storageTransaction,
+                executedActions.flatMap((prepared) => (prepared.commitValidation ? [prepared.commitValidation] : [])),
+                batchValidation?.postconditions
+            );
 
             const committedActions = executedActions.map(({ requestedAction }) => requestedAction);
             const captureActions = executedActions.map(({ action }) => action);

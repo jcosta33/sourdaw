@@ -38,6 +38,8 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/CrdtDocument
+pnpm test:run <changed-spec>
 ```

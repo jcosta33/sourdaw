@@ -1,3 +1,5 @@
+import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
+
 import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
 import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 
@@ -38,6 +40,9 @@ function isPitchBend(value: unknown): value is MidiPitchBend {
         hasExactKeys(value, ['id', 'value', 'beat', 'channel']) &&
         typeof value.id === 'string' &&
         isFiniteNumber(value.value) &&
+        Number.isInteger(value.value) &&
+        value.value >= PITCH_BEND_MIN &&
+        value.value <= PITCH_BEND_MAX &&
         isFiniteNumber(value.beat) &&
         isFiniteNumber(value.channel)
     );

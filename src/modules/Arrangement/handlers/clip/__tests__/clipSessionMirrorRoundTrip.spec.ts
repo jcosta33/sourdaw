@@ -42,7 +42,7 @@ import {
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { decodeMidiClipDataSnapshots, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -2166,6 +2166,113 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
         }
     );
+
+    it.each(['valid', 'malformed'] as const)('preserves a saved split articulation for %s MIDI', async (kind) => {
+        const originalNote = {
+            id: 'independent-articulation-note',
+            pitch: 60,
+            startBeat: 1,
+            duration: 2,
+            velocity: 100,
+            articulation: 'staccato',
+        };
+        midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [originalNote] } });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'independent-right' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        const capture = () => {
+            const raw = getCrdtDoc<PeerProject>('root');
+            if (!raw) {
+                throw new Error('Expected independent MIDI root');
+            }
+            return {
+                raw: structuredClone(raw),
+                storeMidi: structuredClone(midiStore.value),
+                history: structuredClone(undoHistoryStore.value),
+                executablePast: undoStore.value?.past.length,
+                executableFuture: undoStore.value?.future.length,
+                persistedMirror: parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)),
+            };
+        };
+        const producedMidi = capture().raw.midi;
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const originalSaved = structuredClone(saved);
+        if (!Array.isArray(saved.past)) {
+            throw new Error('Expected produced MIDI split history');
+        }
+        const readSourceNote = (snapshot: Record<string, unknown>) => {
+            const source = snapshot.sourceMidi;
+            if (!isRecord(source) || !isRecord(source.notes) || !Array.isArray(source.notes.value)) {
+                throw new Error('Expected produced MIDI source notes slot');
+            }
+            const note = source.notes.value[0];
+            if (!isRecord(note)) {
+                throw new Error('Expected produced MIDI source note');
+            }
+            return { note, notes: source.notes.value };
+        };
+        for (const [action, side] of [
+            ['inverseAction', 'replacement'],
+            ['redoAction', 'expected'],
+        ] as const) {
+            const { note } = readSourceNote(savedSplitSnapshot(saved.past[0], action, side));
+            expect(note.articulation).toBe('staccato');
+            if (kind === 'malformed') {
+                note.articulation = ' bad ';
+            }
+        }
+        const onlyTwoChanges = structuredClone(saved);
+        if (!Array.isArray(onlyTwoChanges.past)) {
+            throw new Error('Expected copied MIDI split history');
+        }
+        for (const [action, side] of [
+            ['inverseAction', 'replacement'],
+            ['redoAction', 'expected'],
+        ] as const) {
+            readSourceNote(savedSplitSnapshot(onlyTwoChanges.past[0], action, side)).note.articulation = 'staccato';
+        }
+        expect(onlyTwoChanges).toEqual(originalSaved);
+        const replacement = readSourceNote(savedSplitSnapshot(saved.past[0], 'inverseAction', 'replacement'));
+        const decodedReplacement = decodeMidiClipDataSnapshots({
+            notesSnapshot: replacement.notes,
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+        expect(decodedReplacement !== null).toBe(kind === 'valid');
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        reloadSavedProject();
+        const beforeUndo = capture();
+        expect(beforeUndo.raw.midi.notesByClipId['clip-a']?.[0]?.articulation).toBe('staccato');
+        expect(beforeUndo.storeMidi?.notesByClipId['clip-a']?.[0]?.articulation).toBe('staccato');
+        expect(beforeUndo.raw.midi).toEqual(producedMidi);
+        const outcome = await undo();
+        flushAutomergeStorageWrites();
+        const afterUndo = capture();
+        if (kind === 'valid') {
+            expect(outcome.headConsumed).toBe(true);
+            expect(afterUndo.raw.midi.notesByClipId['clip-a']).toEqual([originalNote]);
+            expect(afterUndo.storeMidi?.notesByClipId['clip-a']).toEqual([originalNote]);
+            expect(afterUndo.executablePast).toBe(0);
+            expect(afterUndo.executableFuture).toBe(1);
+            await redo();
+            expect(getCrdtDoc<PeerProject>('root')?.midi).toEqual(producedMidi);
+            expect(midiStore.value?.notesByClipId['clip-a']?.[0]?.articulation).toBe('staccato');
+        } else {
+            expect(outcome.headConsumed).toBe(false);
+            expect(afterUndo.raw.midi).toEqual(beforeUndo.raw.midi);
+            expect(afterUndo.storeMidi).toEqual(beforeUndo.storeMidi);
+            expect(afterUndo.executablePast).toBe(beforeUndo.executablePast);
+            expect(afterUndo.executableFuture).toBe(beforeUndo.executableFuture);
+            expect(afterUndo.history).toEqual(beforeUndo.history);
+        }
+    });
 
     it('rejects a saved split whose paired captures change the surviving left source', async () => {
         const source = createClipFixture('clip-b', 4, 12);

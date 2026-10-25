@@ -1,5 +1,5 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
-import { decodeMidiClipDataSnapshots } from '#/modules/MIDI/useCases';
+import { decodeMidiClipDataSnapshots, isExactMidiClipDataActionSnapshot } from '#/modules/MIDI/useCases';
 import { captureAudioSourceState, hasValidAudioSourceState, hasValidAudioSourceTiles } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
@@ -387,6 +387,8 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
             'audioSourceTempoAtStart',
             (tempo) => typeof tempo === 'number' && Number.isFinite(tempo) && tempo > 0
         ) &&
+        isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
+        isExactMidiClipDataActionSnapshot(value.rightMidi) &&
         hasFiniteNumbers(value)
     );
 }

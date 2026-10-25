@@ -156,6 +156,8 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/pullRequestMutationLock.ts',
     'scripts/pullRequestReviewState.ts',
     'scripts/reconcileTrackerIssue.ts',
+    'scripts/retirePullRequest.ts',
+    'scripts/retirementRecord.ts',
     'scripts/reconstructReviewRounds.ts',
     'scripts/recoverDeliveryLock.ts',
     'scripts/recoverPublishReviewLock.ts',

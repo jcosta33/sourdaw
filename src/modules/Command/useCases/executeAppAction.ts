@@ -34,6 +34,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
@@ -196,6 +197,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                         onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                         workOwner: options?.workOwner,
                     });
+                    runtime_result?.commitValidation?.release();
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                     throw error;
@@ -346,6 +348,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             });
             try {
                 execution_result = await storage_transaction.value;
+                execution_result?.commitValidation?.release();
             } catch (error) {
                 const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
                 commitRedoInverseCapture({ phase: 'discard', actions: [action] });
@@ -383,6 +386,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
 
             try {
+                registerHandlerCommitValidation(
+                    storage_transaction,
+                    execution_result?.commitValidation ? [execution_result.commitValidation] : []
+                );
                 storage_transaction.commit();
             } catch (error) {
                 // A commit that already reached storage cannot be undone by rolling the

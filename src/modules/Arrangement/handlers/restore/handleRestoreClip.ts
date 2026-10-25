@@ -6,6 +6,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot } from '../../stores/clipSatelliteState';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
+import { captureRestoreClipCommitValidation } from '../../useCases/clipEditing/captureRestoreClipCommitValidation';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
@@ -218,51 +219,61 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
         ) {
             return { status: 'conflict' };
         }
-        const {
-            clipId,
-            trackId,
-            clipSnapshot,
-            clipIndex,
-            ripplePlan,
-            midiNotesSnapshot,
-            midiCcSnapshot,
-            midiPitchBendSnapshot,
-            retiredTakeLanes,
-        } = alpha.payload;
-
-        if (ripplePlan) {
-            const input: Parameters<typeof undoRippleDelete>[0] = {
+        const proof = captureRestoreClipCommitValidation(alpha);
+        try {
+            const {
+                clipId,
                 trackId,
-                removedClips: ripplePlan.removedClips,
-                shiftedClips: ripplePlan.shiftedClips,
-                clipSatellites: ripplePlan.clipSatellites,
-                clipAutomationLanes: ripplePlan.clipAutomationLanes,
+                clipSnapshot,
+                clipIndex,
+                ripplePlan,
+                midiNotesSnapshot,
+                midiCcSnapshot,
+                midiPitchBendSnapshot,
                 retiredTakeLanes,
-            };
-            if (clipIndex !== undefined) {
-                input.clipIndex = clipIndex;
-            }
-            undoRippleDelete(input);
-        } else {
-            updateTrack(trackId, (time) => {
-                const clips = [...time.clips];
-                clips.splice(
-                    clipIndex === undefined ? clips.length : Math.min(clipIndex, clips.length),
-                    0,
-                    clipSnapshot
-                );
-                return { ...time, clips };
-            });
-            restoreTakesForClip(retiredTakeLanes ?? []);
-        }
+            } = alpha.payload;
 
-        restoreMidiClipData({
-            clipId,
-            notesSnapshot: midiNotesSnapshot,
-            controlChangeSnapshot: midiCcSnapshot,
-            pitchBendSnapshot: midiPitchBendSnapshot,
-        });
-        return { status: 'written' };
+            if (ripplePlan) {
+                const input: Parameters<typeof undoRippleDelete>[0] = {
+                    trackId,
+                    removedClips: ripplePlan.removedClips,
+                    shiftedClips: ripplePlan.shiftedClips,
+                    clipSatellites: ripplePlan.clipSatellites,
+                    clipAutomationLanes: ripplePlan.clipAutomationLanes,
+                    retiredTakeLanes,
+                };
+                if (clipIndex !== undefined) {
+                    input.clipIndex = clipIndex;
+                }
+                undoRippleDelete(input);
+            } else {
+                updateTrack(trackId, (time) => {
+                    const clips = [...time.clips];
+                    clips.splice(
+                        clipIndex === undefined ? clips.length : Math.min(clipIndex, clips.length),
+                        0,
+                        clipSnapshot
+                    );
+                    return { ...time, clips };
+                });
+                restoreTakesForClip(retiredTakeLanes ?? []);
+            }
+
+            restoreMidiClipData({
+                clipId,
+                notesSnapshot: midiNotesSnapshot,
+                controlChangeSnapshot: midiCcSnapshot,
+                pitchBendSnapshot: midiPitchBendSnapshot,
+            });
+            if (proof && !proof.captureWrittenState()) {
+                proof.validation.release();
+                return { status: 'conflict' };
+            }
+            return { status: 'written', commitValidation: proof?.validation };
+        } catch (error) {
+            proof?.validation.release();
+            throw error;
+        }
     },
     describe: () => ({ label: 'Restore clip' }),
     undoable: false,
