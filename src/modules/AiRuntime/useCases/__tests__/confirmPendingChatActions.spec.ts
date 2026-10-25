@@ -835,6 +835,64 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
     });
 
+    it('binds an unchanged epoch advance but rejects a real unrelated document edit at the final approval boundary', () => {
+        const confirmationId = 'confirmation-direct-binding-revision';
+        const commandBatch = configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-direct-binding-revision',
+        });
+        const approval = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.agentApproval;
+        if (!approval) {
+            throw new Error('Expected the proposed batch to carry its exact risk approval.');
+        }
+        const approvedRevision = captureProjectRevision();
+        const rootBefore = JSON.stringify(getCrdtDoc('root'));
+        const issuer = vi.spyOn(commandUseCases, 'issueCommandApprovalBinding');
+        try {
+            const binding = issueAgentCommandApprovalBinding({ approval, commandBatch });
+            expect(binding.kind).toBe('command-approval-binding');
+            expect(issuer).toHaveBeenCalledOnce();
+            const issued = issuer.mock.calls[0]?.[0];
+            if (!issued) {
+                throw new Error('Expected the Command boundary to receive the approval binding.');
+            }
+            expect(issued.authority).toEqual(commandBatch.authority);
+            expect(issued.serialized).toBe(commandBatch.serialized);
+
+            mutateCrdtDoc({ id: 'independent', changeFn: () => {} });
+            const afterNoopRevision = captureProjectRevision();
+            const approvedSnapshot = JSON.parse(approvedRevision) as {
+                documentIdentityEpoch: number;
+                mutationEpoch: number;
+                documents: unknown;
+            };
+            expect(JSON.parse(afterNoopRevision)).toMatchObject({
+                documentIdentityEpoch: approvedSnapshot.documentIdentityEpoch,
+                mutationEpoch: approvedSnapshot.mutationEpoch + 1,
+                documents: approvedSnapshot.documents,
+            });
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBefore);
+            expect(issued.validate()).toEqual({ status: 'valid' });
+
+            mutateCrdtDoc<Record<string, unknown>>({
+                id: 'independent',
+                changeFn: (doc) => {
+                    doc.unrelatedEdit = 'changed after approval';
+                },
+            });
+            expect(captureProjectRevision()).not.toBe(afterNoopRevision);
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBefore);
+            expect(issued.validate()).toEqual({
+                status: 'invalid',
+                reason: 'The approved source revision is stale.',
+                stale: true,
+            });
+        } finally {
+            issuer.mockRestore();
+        }
+    });
+
     it.each(['conflicting edit', 'edit then restore', 'project switch'] as const)(
         'does not execute the old approval after a real %s before confirmation',
         async (change) => {
