@@ -57,6 +57,8 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { proposalProtection } from './agentReference/proposalProtection';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { readStoredCardRemoval } from './agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
@@ -928,6 +930,8 @@ const planPromptIntent = inject({ logger })(
                     refinement.status === 'refines' ? getPendingActionConfirmation(refinement.confirmationId) : null;
                 const refinedBasis =
                     refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.groundingBasis : undefined;
+                const refinedProtections =
+                    refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.protectionFacts : undefined;
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
                 const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
@@ -1124,6 +1128,21 @@ const planPromptIntent = inject({ logger })(
                             context,
                             createdObject: proposalCommandShape.createdObject,
                             readRemoval: readStoredCardRemoval,
+                            ...(refinedProtections === undefined
+                                ? {}
+                                : {
+                                      protection: {
+                                          facts: refinedProtections,
+                                          readTouchedObjectIds: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>
+                                          ) => proposalCommandShape.touchedObjectIds(type, payload, context),
+                                          readControlOwnerIds: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>
+                                          ) => proposalCommandShape.controlOwnerIds(type, payload, context),
+                                      },
+                                  }),
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1160,6 +1179,7 @@ const planPromptIntent = inject({ logger })(
                     creativeAuthority,
                     providerProposal,
                     ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
+                    ...(refinedProtections === undefined ? {} : { refinementProtections: refinedProtections }),
                 });
                 if (grounded.status === 'rejected') {
                     return {
@@ -1185,6 +1205,36 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 if (grounded.status === 'grounded') {
+                    if (batchSchedule !== undefined && compiledList.compilerEvidence !== undefined) {
+                        const changed = proposalProtection.findChange(
+                            compiledList.compilerEvidence.commands.map((command) => ({
+                                type: command.name,
+                                payload: command.arguments,
+                            })),
+                            grounded.protectionFacts,
+                            context
+                        );
+                        if (changed !== null) {
+                            return {
+                                actions: [],
+                                rawText: prompt,
+                                requiresConfirmation: false,
+                                ...applicationToolReceiptFields,
+                                rejectionReason: `Provider action rejected: scheduled request changes protected ${changed.name} (${changed.id}).`,
+                            };
+                        }
+                    }
+                    let scheduledProtections: IntentResult['batchSchedule'];
+                    if (batchSchedule !== undefined) {
+                        scheduledProtections = {
+                            ...batchSchedule,
+                            requestProtections: {
+                                request: prompt,
+                                facts: structuredClone(grounded.protectionFacts),
+                                resolvedTrackClauses: readExplicitProtections(prompt, context).resolvedTrackClauses,
+                            },
+                        };
+                    }
                     // Grounding against the card's basis already held every pending command to an
                     // explicit removal; only a card without one is checked against its stored batch.
                     if (refinement.status === 'refines' && grounded.refinement === undefined) {
@@ -1196,6 +1246,13 @@ const planPromptIntent = inject({ logger })(
                             context,
                             createdObject: proposalCommandShape.createdObject,
                             readRemoval: readStoredCardRemoval,
+                            protection: {
+                                facts: grounded.protectionFacts,
+                                readTouchedObjectIds: (type, payload) =>
+                                    proposalCommandShape.touchedObjectIds(type, payload, context),
+                                readControlOwnerIds: (type, payload) =>
+                                    proposalCommandShape.controlOwnerIds(type, payload, context),
+                            },
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1228,10 +1285,11 @@ const planPromptIntent = inject({ logger })(
                         ...(measuredPreview === null ? {} : { measuredPreview }),
                         ...(grounded.providerProposal === null ? {} : { providerProposal: grounded.providerProposal }),
                         ...creativeAuthorityFields,
-                        ...(batchSchedule === undefined ? {} : { batchSchedule }),
-                        ...(grounded.groundingBasis === undefined || batchSchedule !== undefined
+                        ...(scheduledProtections === undefined ? {} : { batchSchedule: scheduledProtections }),
+                        ...(grounded.groundingBasis === undefined || scheduledProtections !== undefined
                             ? {}
                             : { groundingBasis: grounded.groundingBasis }),
+                        protectionFacts: grounded.protectionFacts,
                         ...(grounded.refinement === undefined
                             ? {}
                             : {
