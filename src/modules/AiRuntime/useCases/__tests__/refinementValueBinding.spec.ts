@@ -6311,6 +6311,8 @@ describe('refining a held card through the chat', () => {
                         proposalCommandShape.touchedObjectIds(type, payload, CONTEXT),
                     readControlOwnerIds: (type, payload) =>
                         proposalCommandShape.controlOwnerIds(type, payload, CONTEXT),
+                    readControlOperations: (type, payload, trackId) =>
+                        proposalCommandShape.controlOperations(type, payload, CONTEXT, trackId),
                 },
             });
 
@@ -6750,6 +6752,8 @@ describe('recorded protection facet owners', () => {
                             proposalCommandShape.touchedObjectIds(type, payload, context),
                         readControlOwnerIds: (type, payload) =>
                             proposalCommandShape.controlOwnerIds(type, payload, context),
+                        readControlOperations: (type, payload, trackId) =>
+                            proposalCommandShape.controlOperations(type, payload, context, trackId),
                     },
                 });
             expect(validate(incoming).status).toBe('valid');
@@ -6777,6 +6781,8 @@ describe('recorded protection facet owners', () => {
                         proposalCommandShape.touchedObjectIds(type, payload, context),
                     readControlOwnerIds: (type, payload) =>
                         proposalCommandShape.controlOwnerIds(type, payload, context),
+                    readControlOperations: (type, payload, trackId) =>
+                        proposalCommandShape.controlOperations(type, payload, context, trackId),
                 },
             });
         for (const name of ['addSend', 'setSend', 'removeSend']) {

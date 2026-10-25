@@ -7123,9 +7123,15 @@ function bridgeUnrefinedLlmToolCalls(
         let complete = true;
         let protectedObjects = requestProtections?.facts.protectedUnchanged;
         if (requestProtections === undefined) {
+            const trackProtections = readExplicitProtections(prompt, context);
+            if (trackProtections.unresolved.length > 0) {
+                const references = trackProtections.unresolved.map((reference) => `"${reference}"`).join(', ');
+                return refuseProtectedRequest(
+                    `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+                );
+            }
             let clipProtection = getExplicitClipProtection(prompt, context);
             if (!clipProtection.complete) {
-                const trackProtections = readExplicitProtections(prompt, context);
                 // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
                 const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
                     (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,

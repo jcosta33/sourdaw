@@ -1141,6 +1141,11 @@ const planPromptIntent = inject({ logger })(
                                               type: string,
                                               payload: Readonly<Record<string, unknown>>
                                           ) => proposalCommandShape.controlOwnerIds(type, payload, context),
+                                          readControlOperations: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>,
+                                              trackId: string
+                                          ) => proposalCommandShape.controlOperations(type, payload, context, trackId),
                                       },
                                   }),
                         });
@@ -1252,6 +1257,8 @@ const planPromptIntent = inject({ logger })(
                                     proposalCommandShape.touchedObjectIds(type, payload, context),
                                 readControlOwnerIds: (type, payload) =>
                                     proposalCommandShape.controlOwnerIds(type, payload, context),
+                                readControlOperations: (type, payload, trackId) =>
+                                    proposalCommandShape.controlOperations(type, payload, context, trackId),
                             },
                         });
                         if (preservation.status === 'refused') {

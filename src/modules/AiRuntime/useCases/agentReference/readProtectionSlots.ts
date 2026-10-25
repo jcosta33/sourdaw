@@ -1,3 +1,4 @@
+import { protectionObjectForms } from './protectionObjectForms';
 import { refinementProtectionForms } from './refinementProtectionForms';
 
 /** Where an explicit protection clause sits in a request: the references it protects and how it was closed. */
@@ -40,7 +41,7 @@ const OPENS_WITH_PROTECTION_VERB = new RegExp(String.raw`^\s*${PROTECTION_VERB}\
 const LAST_WITH = /\bwith\s+(?![\s\S]*\bwith\s)/iu;
 
 type StartKind = 'verb' | 'prohibition' | 'carve-out';
-type Event = { index: number; end: number; kind: StartKind | 'cut' };
+type Event = { index: number; end: number; kind: StartKind | 'cut' | 'instruction' };
 type Piece = {
     start: number;
     end: number;
@@ -87,6 +88,13 @@ function isSentenceInitial(masked: string, index: number): boolean {
     return before.length === 0 || /[.!?\n]$/u.test(before);
 }
 
+/** An instruction verb cuts a clause only where a new instruction can start, never inside its owner's name. */
+function opensInstruction(masked: string, index: number): boolean {
+    return (
+        opensClause(masked, index) || followsConjunction(masked, index) || /,$/u.test(masked.slice(0, index).trimEnd())
+    );
+}
+
 function collectEvents(masked: string): Event[] {
     const starts: Event[] = startPatterns.flatMap(({ kind, pattern }) =>
         Array.from(masked.matchAll(pattern), (match) => ({
@@ -96,14 +104,39 @@ function collectEvents(masked: string): Event[] {
         })).filter((start) => !opensTitleCasedPhrase(masked, start.index))
     );
     const insideStart = (index: number) => starts.some((start) => index >= start.index && index < start.end);
-    const cuts: Event[] = [hardBoundaryPattern, instructionPattern, conjunctionPattern].flatMap((pattern) =>
+    const cuts: Event[] = [hardBoundaryPattern, conjunctionPattern].flatMap((pattern) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
             kind: 'cut' as const,
         })).filter((cut) => !insideStart(cut.index))
     );
-    return [...starts, ...cuts].toSorted((left, right) => left.index - right.index || right.end - left.end);
+    const instructions: Event[] = Array.from(masked.matchAll(instructionPattern), (match) => ({
+        index: match.index,
+        end: match.index + match[0].length,
+        kind: 'instruction' as const,
+    })).filter((cut) => !insideStart(cut.index) && opensInstruction(masked, cut.index));
+    return [...starts, ...cuts, ...instructions].toSorted(
+        (left, right) => left.index - right.index || right.end - left.end
+    );
+}
+
+/** A closed object-form member remains an owner even when its first word can also begin an instruction. */
+function continuesProtectionOwner(masked: string, event: Event, lead: Piece['lead']): boolean {
+    if (lead === null || lead.kind === 'carve-out') {
+        return false;
+    }
+    if (findCloser(masked, lead.end, event.index, closerPattern, lead.text) !== null) {
+        return false;
+    }
+    const boundary = masked.slice(event.end).search(hardBoundaryPattern);
+    const end = boundary === -1 ? masked.length : event.end + boundary;
+    const closer = findCloser(masked, event.end, end, closerPattern, lead.text);
+    if (closer === null) {
+        return false;
+    }
+    const tokens = protectionObjectForms.readTokens(masked, masked, { start: event.index, end: closer.start });
+    return protectionObjectForms.readObjectForm(tokens, false, []) !== null;
 }
 
 /** The text cut at boundaries, instruction verbs and conjunctions, and before every protection start. */
@@ -114,6 +147,9 @@ function splitPieces(masked: string): Piece[] {
     let memberSeparators: Range[] = [];
     for (const event of collectEvents(masked)) {
         if (event.index < cursor) {
+            continue;
+        }
+        if (event.kind === 'instruction' && continuesProtectionOwner(masked, event, lead)) {
             continue;
         }
         if (
@@ -127,7 +163,7 @@ function splitPieces(masked: string): Piece[] {
         }
         pieces.push({ start: cursor, end: event.index, lead, memberSeparators });
         memberSeparators = [];
-        if (event.kind === 'cut') {
+        if (event.kind === 'cut' || event.kind === 'instruction') {
             cursor = event.end;
             lead = null;
         } else {

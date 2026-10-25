@@ -325,6 +325,59 @@ describe('readExplicitProtections', () => {
     });
 
     describe('reserved and complete owners', () => {
+        it.each(['Render', 'Export'])(
+            'retains a missing instruction-word owner %s inside a closed object form',
+            (owner) => {
+                const prompt = `turn the Drums down 3 dB; leave the ${owner} bus alone`;
+
+                expect(readExplicitProtections(prompt, context)).toMatchObject({
+                    unresolved: [owner],
+                    protectedTrackIds: [],
+                    resolvedTrackClauses: [],
+                });
+            }
+        );
+
+        it('keeps a known instruction-word owner as one complete UTF16 protection span', () => {
+            const emojiDrums = createTrack('track-emoji-drums', '🥁 Drums');
+            const render = createTrack('track-render', 'Render', { kind: 'bus' });
+            const protection = 'leave the Render bus alone';
+            const prompt = `turn "🥁 Drums" down 3 dB; ${protection}; turn Keys down 2 dB`;
+            const reading = readExplicitProtections(prompt, {
+                ...context,
+                tracks: [...context.tracks, emojiDrums, render],
+            });
+
+            expect(reading.unresolved).toEqual([]);
+            expect(reading.protectedTrackIds).toEqual([render.id]);
+            expect(reading.resolvedTrackClauses).toEqual([
+                { start: prompt.indexOf(protection), end: prompt.indexOf(protection) + protection.length },
+            ]);
+        });
+
+        it('retains a missing instruction-word owner after bounded and', () => {
+            const prompt = 'turn Drums down 3 dB; leave the Bass track and Render bus alone';
+
+            expect(readExplicitProtections(prompt, context)).toMatchObject({
+                unresolved: ['Render'],
+                protectedTrackIds: [bass.id],
+                resolvedTrackClauses: [],
+            });
+        });
+
+        it.each(['and turn', 'then turn', ', turn'])(
+            'ends a closed protection before a genuine following instruction introduced by %s',
+            (connector) => {
+                const protection = 'leave the Bass track alone';
+                const prompt = `${protection} ${connector} the Keys down 2 dB`;
+                const reading = readExplicitProtections(prompt, context);
+
+                expect(reading.unresolved).toEqual([]);
+                expect(reading.protectedTrackIds).toEqual([bass.id]);
+                expect(reading.protectedTrackIds).not.toContain(keys.id);
+            }
+        );
+
         it('retains a whole-track candidate without consuming a mixed track-and-device name', () => {
             const sameNameBass = createTrack('track-device-name-bass', 'Bass', {
                 devices: [{ id: 'device-same-name-bass', name: 'Bass', type: 'builtin-eq', bypassed: false }],

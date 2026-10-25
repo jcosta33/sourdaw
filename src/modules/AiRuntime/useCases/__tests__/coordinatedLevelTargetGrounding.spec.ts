@@ -229,9 +229,7 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         for (const compiled of [false, true]) {
             expect(groundGainList(prompt, [emojiDrums], context, compiled)).toMatchObject({
                 status: 'rejected',
-                rejectionReason: expect.stringContaining(
-                    compiled ? 'Transform compilation includes a protected or unresolved target' : 'Bass Amp'
-                ),
+                rejectionReason: expect.stringContaining('Bass Amp'),
             });
         }
     });
@@ -1748,6 +1746,41 @@ describe('a protection grounds what main grounds outside its object forms', () =
 describe('complete protection owners at every grounding boundary', () => {
     const collision = createTrack({ id: 'track-selected-name', name: 'Selected Track' });
     const project = { ...projectContext, tracks: [...projectContext.tracks, collision] };
+
+    it.each(['Render', 'Export'])(
+        'refuses a missing instruction-word owner %s on direct and atomic compiled routes',
+        (owner) => {
+            const prompt = `turn the Drums down 3 dB; leave the ${owner} bus alone`;
+
+            expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt)).toMatchObject({
+                actions: [],
+                rejections: [{ reason: expect.stringContaining(owner) }],
+            });
+            for (const compiled of [false, true]) {
+                expect(groundGainList(prompt, [drums], projectContext, compiled)).toMatchObject({
+                    status: 'rejected',
+                    rejectionReason: expect.stringContaining(owner),
+                });
+            }
+            expect(bridgeCompiledGainList(prompt, [drums])).toMatchObject({
+                actions: [],
+                rejections: [{ reason: expect.stringContaining(owner) }],
+            });
+        }
+    );
+
+    it('admits a cut beside a known instruction-word protection owner on every route', () => {
+        const render = createTrack({ id: 'track-render', name: 'Render', kind: 'bus' });
+        const context = { ...projectContext, tracks: [...projectContext.tracks, render] };
+        const prompt = 'turn the Drums down 3 dB; leave the Render bus alone';
+
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, context).actions).toEqual([
+            gainAction(drums.id, { deltaDb: -3 }),
+        ]);
+        expect(bridgeCompiledGainList(prompt, [drums], context).rejections).toEqual([]);
+        expect(groundGainList(prompt, [drums], context).status).toBe('grounded');
+        expect(groundGainList(prompt, [drums], context, true).status).toBe('grounded');
+    });
 
     it.each([null, drums.id])('gives reserved selection priority with selection %s', (selectedTrackId) => {
         const context = { ...project, selectedTrackId };

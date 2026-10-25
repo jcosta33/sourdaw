@@ -8,6 +8,7 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingTarget, type ProposalGroundingValue } from '../../models/ProposalGroundingBasis';
+import { proposalControlProtection } from '../../services/proposalControlProtection';
 
 import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
 
@@ -275,7 +276,7 @@ function getCreatedObject(
 }
 
 /** Every object a command touches and the owning tracks of its targets, using the registry's capabilities. */
-function getTouchedObjectIds(
+function getDeclaredTouchedObjectIds(
     actionType: string,
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
@@ -292,7 +293,7 @@ function getTouchedObjectIds(
  * child edit and a placement can change owners beyond a single source. Whole-object protection
  * always uses touchedObjectIds, including routing destinations.
  */
-function getControlOwnerIds(
+function getDeclaredControlOwnerIds(
     actionType: string,
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
@@ -312,8 +313,17 @@ function getControlOwnerIds(
         mutations.some((rule) => rule.resourceFamily === 'send') &&
         destinations.every((rule) => rule.capability === 'bus');
     const sources = rules?.targetRules.filter((rule) => rule.promptRole === 'source') ?? [];
-    if ((!ownsTrackField && !ownsSend) || sources.length === 0) {
-        return getTouchedObjectIds(actionType, payload, context);
+    const ownsAutomatedSend =
+        getExecutableAppActionEffect(actionType)?.dimensions.includes('automation') === true &&
+        destinations.length > 0 &&
+        destinations.every((rule) => rule.capability === 'bus') &&
+        mutations.some((rule) =>
+            [...sources, ...destinations].every((target) =>
+                rule.arguments.some((argument) => argument.argument === target.argument)
+            )
+        );
+    if ((!ownsTrackField && !ownsSend && !ownsAutomatedSend) || sources.length === 0) {
+        return getDeclaredTouchedObjectIds(actionType, payload, context);
     }
     const targets = getTargetObjects(actionType, payload, sources);
     return [
@@ -323,9 +333,49 @@ function getControlOwnerIds(
     ];
 }
 
+function getControlEffects(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
+    const laneRules = (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).filter(
+        (rule) => rule.capability === 'automation-lane'
+    );
+    return proposalControlProtection.readEffects({
+        actionType,
+        payload,
+        context,
+        declaredOwners: getDeclaredControlOwnerIds(actionType, payload, context),
+        automation: getExecutableAppActionEffect(actionType)?.dimensions.includes('automation') === true,
+        laneTargetIds: getTargetObjects(actionType, payload, laneRules).map((target) => target.id),
+    });
+}
+
+function getControlOwnerIds(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
+    return getControlEffects(actionType, payload, context).map((effect) => effect.trackId);
+}
+
+function getControlOperations(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext,
+    trackId: string
+): readonly string[] {
+    return (
+        getControlEffects(actionType, payload, context).find((effect) => effect.trackId === trackId)?.operations ?? []
+    );
+}
+
+/** Whole-object protection retains broad target coverage and includes actual linked-control owners. */
+function getTouchedObjectIds(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
+    return [
+        ...new Set([
+            ...getDeclaredTouchedObjectIds(actionType, payload, context),
+            ...getControlOwnerIds(actionType, payload, context),
+        ]),
+    ];
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
     controlOwnerIds: getControlOwnerIds,
+    controlOperations: getControlOperations,
     createdObject: getCreatedObject,
     identity: getIdentity,
     objectIds: getObjectIds,

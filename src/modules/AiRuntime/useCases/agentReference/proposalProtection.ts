@@ -1,5 +1,6 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../../models/ProposalGroundingBasis';
+import { proposalControlProtection } from '../../services/proposalControlProtection';
 
 import { proposalCommandShape } from './proposalCommandShape';
 
@@ -20,14 +21,16 @@ function findChange(
             return whole;
         }
         const owners = new Set(proposalCommandShape.controlOwnerIds(action.type, payload, context));
-        const control = facts.protectedControls.find(({ trackId, operations, exceptOperations }) => {
+        const control = facts.protectedControls.find((restriction) => {
+            const { trackId } = restriction;
             if (!owners.has(trackId)) {
                 return false;
             }
-            if (exceptOperations !== undefined) {
-                return !exceptOperations.includes(action.type);
-            }
-            return operations.includes(action.type);
+            return proposalControlProtection.matches(
+                restriction,
+                action.type,
+                proposalCommandShape.controlOperations(action.type, payload, context, trackId)
+            );
         });
         if (control !== undefined) {
             return {

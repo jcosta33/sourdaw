@@ -3,6 +3,7 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type ThreadContext } from '../models/ThreadContext';
+import { proposalControlProtection } from '../services/proposalControlProtection';
 
 type ProposalRefinementAdmission =
     { status: 'none' } | { status: 'refines'; confirmationId: string } | { status: 'refused'; reason: string };
@@ -145,22 +146,29 @@ export function validateRefinedProposalActions(input: {
         facts: ProposalProtectionFacts;
         readTouchedObjectIds: (actionType: string, payload: Readonly<Record<string, unknown>>) => readonly string[];
         readControlOwnerIds: (actionType: string, payload: Readonly<Record<string, unknown>>) => readonly string[];
+        readControlOperations: (
+            actionType: string,
+            payload: Readonly<Record<string, unknown>>,
+            trackId: string
+        ) => readonly string[];
     };
 }): { status: 'valid' } | { status: 'refused'; reason: string } {
     if (input.protection !== undefined) {
-        const { facts, readTouchedObjectIds, readControlOwnerIds } = input.protection;
+        const { facts, readTouchedObjectIds, readControlOwnerIds, readControlOperations } = input.protection;
         for (const action of input.actions) {
             const touched = new Set(readTouchedObjectIds(action.type, payloadOf(action)));
             const whole = facts.protectedUnchanged.find((object) => touched.has(object.id));
             const owners = new Set(readControlOwnerIds(action.type, payloadOf(action)));
-            const control = facts.protectedControls.find(({ trackId, operations, exceptOperations }) => {
+            const control = facts.protectedControls.find((restriction) => {
+                const { trackId } = restriction;
                 if (!owners.has(trackId)) {
                     return false;
                 }
-                if (exceptOperations !== undefined) {
-                    return !exceptOperations.includes(action.type);
-                }
-                return operations.includes(action.type);
+                return proposalControlProtection.matches(
+                    restriction,
+                    action.type,
+                    readControlOperations(action.type, payloadOf(action), trackId)
+                );
             });
             if (whole !== undefined || control !== undefined) {
                 const name = whole?.name ?? input.context.tracks.find((track) => track.id === control?.trackId)?.name;
