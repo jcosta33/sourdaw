@@ -137,8 +137,8 @@ export function parseReviewLanePrNumber(name: string): number | undefined {
  */
 const DISPOSABLE_ROOT_PATHS = ['electron/out', 'release/desktop', '.agents/guard-storage-fixtures'];
 
-function underDisposableRootPath(normalized: string): boolean {
-    return DISPOSABLE_ROOT_PATHS.some((root) => normalized === root || normalized.startsWith(`${root}/`));
+function underDisposableRootPath(rawPath: string): boolean {
+    return DISPOSABLE_ROOT_PATHS.some((root) => rawPath === root || rawPath.startsWith(`${root}/`));
 }
 
 /**
@@ -147,8 +147,8 @@ function underDisposableRootPath(normalized: string): boolean {
  * and a build-product-named component inside them (`dist/x` in a review bundle) is data, not
  * output. Only the specific `.agents/` forms `disposableIgnored` admits explicitly may pass.
  */
-function underProtectedAgentState(normalized: string): boolean {
-    return normalized === '.agents' || normalized.startsWith('.agents/');
+function underProtectedAgentState(rawPath: string): boolean {
+    return rawPath === '.agents' || rawPath.startsWith('.agents/');
 }
 
 /**
@@ -157,24 +157,26 @@ function underProtectedAgentState(normalized: string): boolean {
  * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
  */
 export function disposableIgnored(path: string): boolean {
-    const normalized = path.replaceAll('\\', '/');
+    // Git's `-z` pathname output is verbatim. Its slash separators define path components; a
+    // backslash in an ignored path is part of a component and must not create a disposable match.
+    const rawPath = path;
     // The explicit `.agents/` admissions run first: everything else under `.agents/` is protected
     // agent state the component regex below must never reach (#5560).
     if (
-        normalized === '.DS_Store' ||
-        normalized.endsWith('/.DS_Store') ||
-        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized) ||
-        underDisposableRootPath(normalized)
+        rawPath === '.DS_Store' ||
+        rawPath.endsWith('/.DS_Store') ||
+        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(rawPath) ||
+        underDisposableRootPath(rawPath)
     ) {
         return true;
     }
-    if (underProtectedAgentState(normalized)) {
+    if (underProtectedAgentState(rawPath)) {
         return false;
     }
     return (
-        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
-        /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
-        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(normalized)
+        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(rawPath) ||
+        /^crates\/sourdaw-native\/[^/]+\.node$/.test(rawPath) ||
+        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(rawPath)
     );
 }
 

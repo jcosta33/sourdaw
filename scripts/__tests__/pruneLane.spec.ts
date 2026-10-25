@@ -377,12 +377,12 @@ describe('prunes a real worktree without touching git state', () => {
             git(['config', 'user.email', 'fixture@example.com']);
             writeFileSync(
                 join(repository, '.gitignore'),
-                'node_modules/\ntarget/\ndist/\n.env\nelectron/out/\nrelease/desktop/\n'
+                '*.json\nnode_modules/\ntarget/\ndist/\n.env\nelectron/out/\nrelease/desktop/\n'
             );
             writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
             mkdirSync(join(repository, 'release'), { recursive: true });
             writeFileSync(join(repository, 'release/desktop-runtime-material.json'), '{}\n');
-            git(['add', '.']);
+            git(['add', '-f', '.']);
             git(['commit', '-m', 'fixture']);
             mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
             git(['worktree', 'add', lane, '-b', 'feat/work']);
@@ -415,9 +415,11 @@ describe('prunes a real worktree without touching git state', () => {
             mkdirSync(join(lane, 'release/desktop'), { recursive: true });
             writeFileSync(join(lane, 'release/desktop/Sourdaw.zip'), 'generated\n');
             writeFileSync(join(lane, '.env'), 'SECRET=keep\n');
+            writeFileSync(join(lane, 'node_modules\\receipt.json'), 'user data\n');
 
             const deleted = pruneTarget(resolvedLane, port);
 
+            expect(existsSync(join(lane, 'node_modules\\receipt.json'))).toBe(true);
             expect(deleted).toEqual(['dist/', 'electron/out/', 'node_modules/', 'release/desktop/', 'target/']);
             expect(existsSync(join(lane, 'node_modules'))).toBe(false);
             expect(existsSync(join(lane, 'target'))).toBe(false);

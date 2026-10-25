@@ -11,3 +11,19 @@ For every Git-derived pathname that can authorize deletion, use `-z` and split o
 The first #5655 repair added `-z` to the removal reader, but both removal and pruning shell captures still called `stdout.trim()`. With a first ignored record named `<literal line feed>dist/receipt.json`, trimming dropped the leading byte and produced the different, disposable path `dist/receipt.json`. The remove and strand gates admitted it; pruning selected the wrong path and removed a tracked sentinel there in a disposable Git fixture. NUL framing alone is insufficient when a generic capture transforms stdout before the split.
 
 Use an explicit raw-stdout capture option for Git pathname streams while leaving non-path command output trimming and error handling intact. Plant the leading-line-feed ignored file with a tracked sibling so Git reports its exact path, plus a tracked `dist/receipt.json` sentinel and an ignored `node_modules/` control. Require remove and strand refusal before every destructive effect; require prune to select only `node_modules/` and preserve both protected data and the sentinel. Changing either pathname reader back to trimmed stdout must fail the corresponding real-Git test.
+
+## 2026-10-25 — literal backslash was reinterpreted as a Git path separator (#5655)
+
+PR #5655 preserved raw NUL-delimited Git pathnames at cleanup admission, but its shared
+`disposableIgnored` classifier replaced each backslash with `/`. Git's `-z` contract emits the
+pathname verbatim; on POSIX, a backslash is a valid filename character, not a directory separator.
+An ignored regular file literally named `node_modules\\receipt.json` therefore passed the
+disposable `node_modules/` component rule. Removal and stranding admitted deletion, and pruning
+deleted the literal ignored leaf.
+
+Treat Git pathname components as opaque and split only on the slash Git emits. Do not convert
+backslashes before applying disposable rules. Keep direct cases for backslash-only lookalikes and
+slash-delimited controls, plus a real Git fixture containing the literal backslash leaf: removal
+and stranding must refuse before mutation, and pruning must preserve the file. The baseline missed
+stance was Git pathname component framing: it checked NUL framing and stdout preservation but did
+not attack whether classification changed the raw pathname's component boundaries.
