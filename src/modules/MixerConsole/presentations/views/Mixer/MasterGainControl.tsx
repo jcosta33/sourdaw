@@ -52,13 +52,31 @@ const MasterGainFader = ({ value, onChange }: MasterGainFaderProps): ReactElemen
 );
 
 const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: MasterGainMenuProps): ReactElement => {
-    const handleActivationKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
+    useEffect(() => {
+        menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    }, [menuRef]);
+
+    const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
             return;
         }
-
+        const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        if (items.length === 0) {
+            return;
+        }
         event.preventDefault();
-        onReset();
+        event.stopPropagation();
+        const currentIndex = items.findIndex((item) => item === document.activeElement);
+        let nextIndex: number;
+        if (event.key === 'Home') {
+            nextIndex = 0;
+        } else if (event.key === 'End') {
+            nextIndex = items.length - 1;
+        } else {
+            const direction = event.key === 'ArrowDown' ? 1 : -1;
+            nextIndex = (currentIndex + direction + items.length) % items.length;
+        }
+        items[nextIndex]?.focus();
     };
 
     return (
@@ -69,7 +87,7 @@ const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: M
             x={position.x}
             y={position.y}
             onClose={onClose}
-            onKeyDown={handleActivationKeyDown}
+            onKeyDown={handleNavigationKeyDown}
         >
             <DawMenuButton role="menuitem" onClick={onReset}>
                 Reset to Default

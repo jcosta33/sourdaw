@@ -216,10 +216,13 @@ describe('MasterChannelStrip', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
 
         await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain, expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
         expect(promptMocks.promptUser).toHaveBeenCalledWith(
             expect.objectContaining({ initialValue: `${formatGainDb(0.8)} dB` })
         );
@@ -244,18 +247,26 @@ describe('MasterChannelStrip', () => {
         fireEvent.contextMenu(fader);
         fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
         await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2));
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'setMasterGain',
-            payload: { gain: 1, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 1, expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
 
         fireEvent.contextMenu(fader);
         fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
         await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(3));
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(3, {
-            type: 'setMasterGain',
-            payload: { gain: dbToGain(-6), expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            3,
+            {
+                type: 'setMasterGain',
+                payload: { gain: dbToGain(-6), expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
     });
 
     it('does not let a typed entry arm coalescing for a later keyboard nudge near startup', async () => {
@@ -323,7 +334,7 @@ describe('MasterChannelStrip', () => {
 
         fireEvent.keyDown(fader, { key, shiftKey });
 
-        expect(screen.getByRole('menu', { name: 'Master gain actions' })).toHaveFocus();
+        expect(screen.getByRole('menuitem', { name: 'Reset to Default' })).toHaveFocus();
         act(() => {
             fireEvent.keyDown(document, { key: 'Escape' });
         });
@@ -355,11 +366,13 @@ describe('MasterChannelStrip', () => {
             fader.focus();
 
             fireEvent.keyDown(fader, { key: openKey, shiftKey });
-            const menu = screen.getByRole('menu', { name: 'Master gain actions' });
-            expect(menu).toHaveFocus();
-            expect(screen.getByRole('menuitem', { name: 'Reset to Default' }).tagName).toBe('BUTTON');
+            const reset = screen.getByRole('menuitem', { name: 'Reset to Default' });
+            expect(reset).toHaveFocus();
+            expect(reset.tagName).toBe('BUTTON');
 
-            fireEvent.keyDown(menu, { key: activateKey });
+            fireEvent.keyDown(reset, { key: activateKey });
+            // jsdom does not synthesize the browser's native button click.
+            fireEvent.click(reset);
 
             await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
             expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
@@ -403,7 +416,8 @@ describe('MasterChannelStrip', () => {
         fireEvent.keyDown(fader, { key: 'ContextMenu' });
 
         const enterButton = screen.getByRole('menuitem', { name: 'Enter Value' });
-        enterButton.focus();
+        fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Reset to Default' }), { key: 'ArrowDown' });
+        expect(enterButton).toHaveFocus();
         act(() => {
             fireEvent.keyDown(enterButton, { key });
             enterButton.click();
@@ -411,10 +425,13 @@ describe('MasterChannelStrip', () => {
 
         await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
         expect(promptMocks.promptUser).toHaveBeenCalledOnce();
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: dbToGain(-6), expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: dbToGain(-6), expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
         expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
         expect(fader).toHaveFocus();
     });

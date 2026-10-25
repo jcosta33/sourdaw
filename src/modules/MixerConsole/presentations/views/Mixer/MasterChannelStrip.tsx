@@ -36,8 +36,17 @@ function restoreEngineFromProjectTruth(): void {
     setMasterGain(storeMasterGain, true);
 }
 
-async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?: boolean): Promise<void> {
-    const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
+async function dispatchMasterGainAction(
+    action: AppAction,
+    coalesceWithPrevious?: boolean,
+    entryAuthority?: ProjectTransitionAuthority
+): Promise<void> {
+    // Command rechecks this authority after waiting for snapshot ownership.
+    const options = entryAuthority
+        ? { coalesceWithPrevious: coalesceWithPrevious === true, shouldExecute: entryAuthority.isCurrent }
+        : coalesceWithPrevious
+          ? { coalesceWithPrevious: true }
+          : undefined;
     if (options) {
         await executeUserAppAction(action, options);
     } else {
@@ -58,7 +67,7 @@ async function dispatchCurrentMasterGainAction(
         return null;
     }
     const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
-    await dispatchMasterGainAction(action, coalesceWithPrevious);
+    await dispatchMasterGainAction(action, coalesceWithPrevious, entryAuthority);
     return action;
 }
 

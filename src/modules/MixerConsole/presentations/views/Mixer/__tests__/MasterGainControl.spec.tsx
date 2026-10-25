@@ -206,6 +206,36 @@ describe('MasterGainControl', () => {
         expect(onChange).toHaveBeenCalledWith(dbToGain(-6));
     });
 
+    it('focuses the first action and moves to Enter Value with ArrowDown', () => {
+        const onReset = vi.fn();
+        render(<MasterGainControl value={0.8} onChange={vi.fn()} onEnterValue={vi.fn()} onResetToDefault={onReset} />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        slider.focus();
+        fireEvent.keyDown(slider, { key: 'ContextMenu' });
+        const reset = screen.getByRole('menuitem', { name: 'Reset to Default' });
+        const enter = screen.getByRole('menuitem', { name: 'Enter Value' });
+
+        expect(reset).toHaveFocus();
+        fireEvent.keyDown(reset, { key: 'ArrowDown' });
+        expect(enter).toHaveFocus();
+        fireEvent.keyDown(enter, { key: 'ArrowDown' });
+        expect(reset).toHaveFocus();
+        fireEvent.keyDown(reset, { key: 'ArrowUp' });
+        expect(enter).toHaveFocus();
+        fireEvent.keyDown(enter, { key: 'Home' });
+        expect(reset).toHaveFocus();
+        fireEvent.keyDown(reset, { key: 'End' });
+        expect(enter).toHaveFocus();
+        // Native buttons own activation. Keydown must not invoke an extra action.
+        fireEvent.keyDown(enter, { key: 'Enter' });
+        fireEvent.keyDown(enter, { key: ' ' });
+        expect(onReset).not.toHaveBeenCalled();
+        expect(promptMocks.promptUser).not.toHaveBeenCalled();
+        fireEvent.click(enter);
+        expect(promptMocks.promptUser).toHaveBeenCalledOnce();
+        expect(onReset).not.toHaveBeenCalled();
+    });
+
     it.each([
         { key: 'ContextMenu', shiftKey: false },
         { key: 'F10', shiftKey: true },
@@ -218,7 +248,7 @@ describe('MasterGainControl', () => {
         slider.focus();
 
         fireEvent.keyDown(slider, { key, shiftKey });
-        expect(screen.getByRole('menu', { name: 'Master gain actions' })).toHaveFocus();
+        expect(screen.getByRole('menuitem', { name: 'Reset to Default' })).toHaveFocus();
         fireEvent.keyDown(document, { key: 'Escape' });
 
         expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
