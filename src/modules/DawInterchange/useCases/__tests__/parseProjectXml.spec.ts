@@ -2486,30 +2486,19 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 supported: true,
             },
         ])('$name', ({ playStart, duration, points, supported }) => {
-            const leaf =
-                `<Clip id="leaf" name="Window" time="0" ${duration} playStart="${playStart}">` +
-                '<Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>' +
-                points
-                    .map(
-                        ([time, contentTime]) =>
-                            `<Warp time="${time}"${contentTime === undefined ? '' : ` contentTime="${contentTime}"`}/>`
-                    )
-                    .join('') +
-                '</Warps></Clip>';
+            const leaf = `<Clip id="leaf" name="Window" time="0" ${duration} playStart="${playStart}"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>${points
+                .map(
+                    ([time, contentTime]) =>
+                        `<Warp time="${time}"${contentTime === undefined ? '' : ` contentTime="${contentTime}"`}/>`
+                )
+                .join('')}</Warps></Clip>`;
             let content = leaf;
             if (placement === 'nested') {
-                content =
-                    '<Clip name="Parent" time="0" duration="16"><Audio file="parent.wav"/><Clips>' +
-                    leaf +
-                    '</Clips></Clip>';
+                content = `<Clip name="Parent" time="0" duration="16"><Audio file="parent.wav"/><Clips>${leaf}</Clips></Clip>`;
             }
             const parsed = parseProjectXml(
                 project(
-                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
-                        '<Arrangement><Lanes><Clips track="audio">' +
-                        content +
-                        '<Clip name="Plain" time="20" duration="1"><Audio file="plain.wav"/></Clip>' +
-                        '</Clips></Lanes></Arrangement>'
+                    `<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure><Arrangement><Lanes><Clips track="audio">${content}<Clip name="Plain" time="20" duration="1"><Audio file="plain.wav"/></Clip></Clips></Lanes></Arrangement>`
                 )
             );
             const mapped = mapToProjectData({
