@@ -560,6 +560,7 @@ describe('a compiled selector the request authorizes still grounds', () => {
 });
 
 const UNAUTHORIZED_TRACK = 'Compiled target trackId is not authorized by the user request';
+const PROTECTED_TRACK = 'Compiled target trackId is protected or excluded';
 
 const mixVocals = createTrack({
     id: 'track-mix-vocals',
@@ -689,7 +690,7 @@ describe('a selection never reaches a track the request excepts', () => {
         const mixed = compileMixedPrefix(mixGuitar);
 
         expect(targetsOf(mixed.result)).toEqual([mixGuitar.id, mixDrums.id, mixBass.id, mixGuitar.id]);
-        expect(mixed.result.rejections).toEqual([{ index: 1, name: 'addDevice', reason: UNAUTHORIZED_TRACK }]);
+        expect(mixed.result.rejections).toEqual([{ index: 1, name: 'addDevice', reason: PROTECTED_TRACK }]);
         expect(
             groundCompiledCommandBatch({
                 toolCalls: mixed.calls,
@@ -706,7 +707,7 @@ describe('a selection never reaches a track the request excepts', () => {
             })
         ).toMatchObject({
             status: 'rejected',
-            rejectionReason: `Provider action rejected: addDevice: ${UNAUTHORIZED_TRACK}`,
+            rejectionReason: `Provider action rejected: addDevice: ${PROTECTED_TRACK}`,
         });
     });
 
@@ -730,9 +731,7 @@ describe('a selection never reaches a track the request excepts', () => {
         ]);
 
         expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
-        expect(result.rejections).toEqual([
-            { index: 0, name: 'addDevice', reason: 'Compiled target trackId is not authorized by the user request' },
-        ]);
+        expect(result.rejections).toEqual([{ index: 0, name: 'addDevice', reason: PROTECTED_TRACK }]);
     });
 
     it('refuses the executable compiled batch when per-target admission rejects a protected member', () => {
@@ -766,7 +765,7 @@ describe('a selection never reaches a track the request excepts', () => {
 
         expect(result).toMatchObject({
             status: 'rejected',
-            rejectionReason: `Provider action rejected: addDevice: ${UNAUTHORIZED_TRACK}`,
+            rejectionReason: `Provider action rejected: addDevice: ${PROTECTED_TRACK}`,
         });
     });
 });
@@ -850,7 +849,7 @@ describe('whole-track compiled protections include owned targets', () => {
 
         expect(targetsOf(result, argument)).toEqual([kept]);
         expect(result.rejections).toEqual([
-            { index: 1, name: item.name, reason: `Compiled target ${argument} is not authorized by the user request` },
+            { index: 1, name: item.name, reason: `Compiled target ${argument} is protected or excluded` },
         ]);
     });
 
@@ -887,7 +886,7 @@ describe('whole-track compiled protections include owned targets', () => {
             {
                 index: 1,
                 name: 'bypassDevice',
-                reason: 'Compiled target deviceId is not authorized by the user request',
+                reason: 'Compiled target deviceId is protected or excluded',
             },
         ]);
     });
@@ -917,7 +916,7 @@ describe('whole-track compiled protections include owned targets', () => {
                 {
                     index: 1,
                     name: item.name,
-                    reason: `Compiled target ${argument} is not authorized by the user request`,
+                    reason: `Compiled target ${argument} is protected or excluded`,
                 },
             ]);
         }
@@ -991,7 +990,7 @@ describe('a compiled selector cannot take authority the request does not give', 
         ]);
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: PROTECTED_TRACK });
     });
 
     it('refuses a selection member that meets the selection but the request protects', () => {
@@ -1000,7 +999,7 @@ describe('a compiled selector cannot take authority the request does not give', 
         ]);
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: PROTECTED_TRACK });
     });
 
     it('refuses a device on a track the request protects', () => {
@@ -1010,7 +1009,7 @@ describe('a compiled selector cannot take authority the request does not give', 
         expect(result.rejections).toContainEqual({
             index: 0,
             name: 'bypassDevice',
-            reason: 'Compiled target deviceId is not authorized by the user request',
+            reason: 'Compiled target deviceId is protected or excluded',
         });
     });
 
@@ -1384,19 +1383,63 @@ function authorityRefusals(result: ReturnType<typeof compileAndBridge>) {
     return result.rejections.filter((rejection) => rejection.reason.startsWith('Compiled target'));
 }
 
-describe('a name the request states beside a negation is a stated name (negation reading is #5351)', () => {
-    it.each([
-        "set Vocals volume to 75% but don't touch Keys",
-        'set Vocals volume to 75% without touching Keys',
-        'set Vocals volume to 75%, skip Keys',
-    ])('admits a Keys selector for "%s" as main does (#5351)', (prompt) => {
+describe('supported named prohibitions protect rather than state their object', () => {
+    const prompts = ["set Vocals volume to 75% but don't touch Keys", 'set Vocals volume to 75% without touching Keys'];
+
+    it.each(prompts)('refuses the protected Keys selector in "%s"', (prompt) => {
         const result = compileMix(prompt, [trackItem('setTrackGain', mixKeys, { gain: 0.75 })]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([{ index: 0, name: 'setTrackGain', reason: PROTECTED_TRACK }]);
+    });
+
+    it.each(prompts)('retains permitted mixed Vocals in "%s" while refusing the executable batch', (prompt) => {
+        const compilerEvidence = compileEvidence(
+            prompt,
+            [trackItem('setTrackGain', mixVocals, { gain: 0.75 }), trackItem('setTrackGain', mixKeys, { gain: 0.75 })],
+            [],
+            mixContext
+        );
+        const mixed = bridgeGroundedLlmToolCalls({
+            calls: compilerEvidence.commands,
+            compilerEvidence,
+            context: mixContext,
+            prompt,
+            projectRevision: REVISION,
+        });
+        expect(targetsOf(mixed)).toEqual([mixVocals.id]);
+        expect(mixed.rejections).toEqual([{ index: 1, name: 'setTrackGain', reason: PROTECTED_TRACK }]);
+        expect(
+            groundCompiledCommandBatch({
+                toolCalls: compilerEvidence.commands,
+                compilerEvidence,
+                context: mixContext,
+                prompt,
+                projectRevision: REVISION,
+                workflowCapabilityId: undefined,
+                selectedCompilations: [],
+                transformCommands: [],
+                transformTargetIds: [],
+                creativeAuthority: undefined,
+                providerProposal: null,
+            })
+        ).toMatchObject({
+            status: 'rejected',
+            rejectionReason: `Provider action rejected: setTrackGain: ${PROTECTED_TRACK}`,
+        });
+    });
+
+    it('retains the unsupported skip-Keys name-pick gap tracked by open #5385', () => {
+        const result = compileMix('set Vocals volume to 75%, skip Keys', [
+            trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
+        ]);
 
         expect(authorityRefusals(result)).toEqual([]);
     });
 
     it.each([
         "set Vocals volume to 75% but don't touch Keys",
+        'set Vocals volume to 75% without touching Keys',
         'set Vocals volume to 75%, skip Keys',
         'set Vocals volume to 75%, Keys unchanged',
         'turn Vocals down 3 dB to make room for Keys',

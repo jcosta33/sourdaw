@@ -4183,6 +4183,9 @@ function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argumen
     if (authority.status === 'admitted') {
         return null;
     }
+    if (authority.reason === 'protected-or-excluded') {
+        return `Compiled target ${argument} is protected or excluded`;
+    }
     return `Compiled target ${argument} is not authorized by the user request`;
 }
 
