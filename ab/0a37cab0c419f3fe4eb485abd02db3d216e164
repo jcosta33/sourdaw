@@ -1,0 +1,25 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/useDeviceParameterGesture.spec.tsx
+  s_b3201877f50e8a::t_fb79e05af868af 9,97,123,188,190,262,281-305
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_b3201877f50e8a::t_6c861492838939 487,792-795,831-834,876-879
+  s_b3201877f50e8a::t_b32306f38ef952 1-2,44,54,161-177,489-491,495,512,515,706-708,720-722,772,774,776,778-791,796-830,835-875,880,882-928
+  s_b3201877f50e8a::t_51241935c5945d 741-771,773,775,777,881,929
+src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts
+  s_b3201877f50e8a::t_13f4282cb1403d 14,114-123,135,242,344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab0a37cab0c419f3fe4eb485abd02db3d216e164",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
