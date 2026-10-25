@@ -600,11 +600,10 @@ function parentReceipt(parent: SupersededPullRequest, replacementNumber: number)
     return proofMarker(comment, `superseded parent PR #${parent.number} receipt`);
 }
 
-function parentLineage(
+function parentLineageRecord(
     parent: SupersededPullRequest,
-    replacementNumber: number,
-    port: SupersedePullRequestPort
-): { marker: ProofMarker; findingIds: string[] } {
+    replacementNumber: number
+): { marker: ProofMarker; lineage: FindingLineage } {
     const candidates = parent.comments.filter((comment) =>
         comment.body.split('\n').some((line) => line.startsWith(LINEAGE_MARKER))
     );
@@ -621,6 +620,15 @@ function parentLineage(
         fail(`superseded parent PR #${parent.number} finding lineage marker is not canonical`);
     }
     assertLineageBinding(lineage, parent.number, replacementNumber);
+    return { marker, lineage };
+}
+
+function parentLineage(
+    parent: SupersededPullRequest,
+    replacementNumber: number,
+    port: SupersedePullRequestPort
+): { marker: ProofMarker; findingIds: string[] } {
+    const { marker, lineage } = parentLineageRecord(parent, replacementNumber);
     const findings = lineageFindings(parent.number, port);
     assertFindingLineage(lineage, findings);
     return {
@@ -751,7 +759,28 @@ function assertStackedParentProofUnchanged(
     }
 }
 
-/** Finish composite proof reads with each authority's independent core witness. */
+function assertParentMarkersCurrent(initial: StackedParentProof, port: SupersedePullRequestPort): void {
+    const parent = port.inspect(initial.parent.number);
+    const successor = initial.dependency?.parentReplacement.number ?? initial.replacement.number;
+    const receipt = parentReceipt(parent, successor);
+    const { marker, lineage } = parentLineageRecord(parent, successor);
+    // This boundary's full parent proof already confirmed this exact live finding set.
+    assertFindingLineage(
+        lineage,
+        initial.findingIds.map((findingId) => ({ findingId, pr: initial.parent.number }))
+    );
+    if (
+        JSON.stringify(receipt) !== JSON.stringify(initial.receipt) ||
+        JSON.stringify(marker) !== JSON.stringify(initial.lineage)
+    ) {
+        fail(`superseded parent PR #${initial.parent.number} proof changed during supersession; compensating`);
+    }
+}
+
+/**
+ * Finish dependent reads with bound parent markers, then each authority's independent core witness.
+ * This finite client observation cut cannot prevent external changes after its final reads.
+ */
 function assertSupersessionAuthoritiesCurrent(
     replacement: SupersededPullRequest,
     stacked: StackedParentProof | undefined,
@@ -759,6 +788,7 @@ function assertSupersessionAuthoritiesCurrent(
 ): void {
     const authorities: PullRequestProof[] = [pullRequestProof(replacement)];
     if (stacked !== undefined) {
+        assertParentMarkersCurrent(stacked, port);
         authorities.push(stacked.parent);
         if (stacked.dependency !== undefined) {
             authorities.push(stacked.dependency.parentReplacement);

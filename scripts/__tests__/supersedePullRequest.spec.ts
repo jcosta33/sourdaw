@@ -288,10 +288,10 @@ function fakePort(input: Input = {}) {
         }
         if (number === parentNumber) {
             const inspection = parentInspections++;
-            if (inspection === 2 && input.precloseParentProofChildComments !== undefined) {
+            if (inspection === 3 && input.precloseParentProofChildComments !== undefined) {
                 comments = input.precloseParentProofChildComments(comments);
             }
-            if (inspection === 3 && input.finalParentProofChildComments !== undefined) {
+            if (inspection === 5 && input.finalParentProofChildComments !== undefined) {
                 comments = input.finalParentProofChildComments(comments);
             }
             const headRepository = input.parentHeadRepositories?.[inspection];
@@ -757,6 +757,10 @@ function nativeSupersessionFixture(
     type AuthorityChange = Partial<Pick<SupersededPullRequest, 'state' | 'head' | 'headRefName' | 'closedAt'>>;
     const authorityChanges = new Map<number, AuthorityChange>();
     let pendingChange: { number: number; atParentThreadRead: number; patch: AuthorityChange } | undefined;
+    let liveParentComments = [...distinctParentComments];
+    let pendingParentCommentsChange:
+        | { atParentThreadRead: number; change: (comments: IssueComment[]) => IssueComment[] }
+        | undefined;
     let moveAt = moveAtRead;
     const nativeBindingBody = bindingBody({
         ...parentBinding,
@@ -886,6 +890,11 @@ function nativeSupersessionFixture(
                     events.push(`authority-changed:${pendingChange.number}`);
                     pendingChange = undefined;
                 }
+                if (pendingParentCommentsChange?.atParentThreadRead === parentThreadReads) {
+                    liveParentComments = pendingParentCommentsChange.change(liveParentComments);
+                    events.push(`parent-markers-changed:${parentThreadReads}`);
+                    pendingParentCommentsChange = undefined;
+                }
             }
             return output;
         }
@@ -904,7 +913,8 @@ function nativeSupersessionFixture(
             if (id === 'PR_old') {
                 commentsToSerialize = comments;
             } else if (id === `PR_${parentNumber}`) {
-                commentsToSerialize = distinctParentComments;
+                events.push('parent-comments');
+                commentsToSerialize = liveParentComments;
             }
             return JSON.stringify({
                 data: {
@@ -1013,6 +1023,9 @@ function nativeSupersessionFixture(
         },
         changeAuthorityDuringParentThreads: (number: number, read: number, patch: AuthorityChange) => {
             pendingChange = { number, atParentThreadRead: parentThreadReads + read, patch };
+        },
+        changeParentCommentsDuringParentThreads: (read: number, change: (comments: IssueComment[]) => IssueComment[]) => {
+            pendingParentCommentsChange = { atParentThreadRead: parentThreadReads + read, change };
         },
     };
 }
@@ -1311,6 +1324,204 @@ describe('pull-request supersession', () => {
                 lineageBody,
                 current.bindingBody,
             ]);
+        });
+    });
+    describe.each([
+        ['receipt', supersessionCommentBody(parentReplacementNumber)],
+        ['lineage', renderFindingLineage(distinctParentLineage)],
+    ])('native parent %s binding', (_marker, body) => {
+        it.each([
+            ['removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== body)],
+            [
+                'body change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, body: `${body}\nEdited` })),
+            ],
+            [
+                'node identity change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, id: 'IC_changed_parent_marker' })),
+            ],
+            [
+                'database identity change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({
+                        ...comment,
+                        fullDatabaseId: String(databaseBase + 50n),
+                    })),
+            ],
+            [
+                'actor change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID })),
+            ],
+            [
+                'actor type change',
+                (comments: IssueComment[]) =>
+                    changeMarker(comments, body, (comment) => ({ ...comment, authorType: 'User' })),
+            ],
+            [
+                'duplicate',
+                (comments: IssueComment[]) => [
+                    ...comments,
+                    markerComment('IC_duplicate_parent_marker', String(databaseBase + 51n), body),
+                ],
+            ],
+        ] satisfies [string, (comments: IssueComment[]) => IssueComment[]][])(
+            'refuses %s during the final pre-close thread response before closing',
+            async (_case, change) => {
+                await withLockRoot(async (root) => {
+                    const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
+                    current.changeParentCommentsDuringParentThreads(3, change);
+                    await expect(
+                        runSerialized(
+                            root,
+                            current.port,
+                            repairedLineage,
+                            serializeFixture,
+                            parentNumber,
+                            parentReplacementNumber
+                        )
+                    ).rejects.toThrow(/parent.*(?:receipt|lineage|proof)/i);
+                    const changedAt = current.events.indexOf('parent-markers-changed:3');
+                    expect(changedAt).toBeGreaterThan(-1);
+                    expect(current.events.slice(changedAt + 1)).toContain('parent-comments');
+                    expect(current.state()).toBe('OPEN');
+                    expect(current.events.filter((event) => event === 'comment')).toHaveLength(3);
+                    expect(current.events.filter((event) => event === 'delete')).toHaveLength(3);
+                    expect(current.comments()).toEqual([oldComment]);
+                    expect(current.events.filter((event) => /^(?:close|pull-request-superseded:)/.test(event))).toEqual([]);
+                    expect(
+                        readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                    ).toBeUndefined();
+                });
+            }
+        );
+        it('refuses CLOSED replay when the marker is revoked during its final thread response', async () => {
+            await withLockRoot(async (root) => {
+                const current = nativeSupersessionFixture(root, undefined, true);
+                await runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                );
+                const replayStart = current.events.length;
+                current.changeParentCommentsDuringParentThreads(1, (comments) =>
+                    comments.filter((comment) => comment.body !== body)
+                );
+                await expect(
+                    runSerialized(
+                        root,
+                        current.port,
+                        repairedLineage,
+                        serializeFixture,
+                        parentNumber,
+                        parentReplacementNumber
+                    )
+                ).rejects.toThrow(/parent.*exactly one/i);
+                const replay = current.events.slice(replayStart);
+                const changedAt = replay.findIndex((event) => event.startsWith('parent-markers-changed:'));
+                expect(changedAt).toBeGreaterThan(-1);
+                expect(replay.slice(changedAt + 1)).toContain('parent-comments');
+                expect(replay.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+                expect(current.state()).toBe('CLOSED');
+                expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+                expect(current.comments().map((comment) => comment.body)).toEqual([
+                    oldComment.body,
+                    receiptBody,
+                    lineageBody,
+                    current.bindingBody,
+                ]);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
+            });
+        });
+    });
+    it.each([
+        { phase: 'before write', read: 2, closed: false, created: 0 },
+        { phase: 'after close', read: 4, closed: true, created: 3 },
+    ])('refreshes the native parent receipt after its dependent thread response $phase', async (testCase) => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
+            current.changeParentCommentsDuringParentThreads(testCase.read, (comments) =>
+                comments.filter((comment) => comment.body !== supersessionCommentBody(parentReplacementNumber))
+            );
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).rejects.toThrow(testCase.closed ? /ambiguous/i : /parent.*exactly one supersession receipt/i);
+            expect(current.events).toContain(`parent-markers-changed:${testCase.read}`);
+            expect(current.state()).toBe(testCase.closed ? 'CLOSED' : 'OPEN');
+            expect(current.events.filter((event) => event === 'comment')).toHaveLength(testCase.created);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(testCase.closed ? 1 : 0);
+            expect(current.events.filter((event) => /^(?:delete|pull-request-superseded:)/.test(event))).toEqual([]);
+            if (testCase.closed) {
+                expect(current.comments().map((comment) => comment.body)).toEqual([
+                    oldComment.body,
+                    receiptBody,
+                    lineageBody,
+                    current.bindingBody,
+                ]);
+                expect(retainedOwner(root)).toBeDefined();
+            } else {
+                expect(current.comments()).toEqual([oldComment]);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
+            }
+        });
+    });
+    it('keeps stable native parent markers valid through close and CLOSED replay without replay writes', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true);
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).resolves.toBe('pull-request-superseded:2244:2246');
+            const closeEvents = current.events.slice(0, current.events.indexOf('close'));
+            expect(closeEvents.lastIndexOf('parent-comments')).toBeGreaterThan(
+                closeEvents.lastIndexOf(`threads:${parentNumber}`)
+            );
+            expect(closeEvents.slice(closeEvents.lastIndexOf('parent-comments') + 1)).toContain(`core:${parentNumber}`);
+            const replayStart = current.events.length;
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).resolves.toBe('pull-request-superseded:2244:2246');
+            const replay = current.events.slice(replayStart);
+            expect(replay.lastIndexOf('parent-comments')).toBeGreaterThan(replay.lastIndexOf(`threads:${parentNumber}`));
+            expect(replay.slice(replay.lastIndexOf('parent-comments') + 1)).toContain(`core:${parentNumber}`);
+            expect(replay.filter((event) => /^(?:comment|close|delete)$/.test(event))).toEqual([]);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            expect(current.comments().map((comment) => comment.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                lineageBody,
+                current.bindingBody,
+            ]);
+            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)).toBeUndefined();
         });
     });
     it('retains the native owner and every marker after an ambiguous third-marker write', async () => {
@@ -2347,7 +2558,7 @@ describe('pull-request supersession', () => {
                 let changed = false;
                 port.inspect = (pr) => {
                     const value = baseInspect(pr);
-                    if (pr === parentNumber && ++parentReads === boundary + 1) {
+                    if (pr === parentNumber && ++parentReads === boundary * 2) {
                         changed = true;
                     }
                     return value;
@@ -2548,7 +2759,7 @@ describe('pull-request supersession', () => {
                 const originalInspect = port.inspect;
                 let parentReads = 0;
                 let changed = false;
-                const parentRead = { 'before-write': 2, 'before-close': 3, 'after-close': 4 }[phase];
+                const parentRead = { 'before-write': 2, 'before-close': 4, 'after-close': 6 }[phase];
                 port.inspect = (number) => {
                     const value = originalInspect(number);
                     if (number === parentNumber && ++parentReads === parentRead) {
@@ -2600,7 +2811,7 @@ describe('pull-request supersession', () => {
         let changed = false;
         port.inspect = (number) => {
             const value = originalInspect(number);
-            if (number === parentNumber && ++parentReads === 3) {
+            if (number === parentNumber && ++parentReads === 4) {
                 changed = true;
             }
             return value;
@@ -2630,7 +2841,7 @@ describe('pull-request supersession', () => {
             let changed = false;
             port.inspect = (number) => {
                 const value = originalInspect(number);
-                if (number === parentNumber && ++parentReads === 4) {
+                if (number === parentNumber && ++parentReads === 6) {
                     changed = true;
                 }
                 return value;
@@ -2975,7 +3186,7 @@ describe('pull-request supersession', () => {
         ];
         const { port, calls, state } = fakePort({
             bases: [parentBranch, parentBranch, parentBranch],
-            parentCommentsByInspection: [validParentComments, validParentComments, changedParentComments],
+            parentCommentsByInspection: [validParentComments, validParentComments, validParentComments, changedParentComments],
         });
         expect(() => runWithParent(port)).toThrow(/proof changed during supersession/i);
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
@@ -3000,7 +3211,7 @@ describe('pull-request supersession', () => {
                 bound ? [] : [`comment:2244:${parentBindingBody}`]
             );
             expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
-            expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(4);
+            expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(7);
         }
     );
     it('posts and validates the lineage marker before the close', () => {
@@ -3498,7 +3709,7 @@ describe('pull-request supersession', () => {
                 expect(competingCheck).toBeDefined();
                 await competingCheck;
                 expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(
-                    mode === 'fresh' ? 4 : 1
+                    mode === 'fresh' ? 7 : 2
                 );
                 expect(calls.filter((call) => call === `threads:${parentNumber}`)).toHaveLength(
                     mode === 'fresh' ? 4 : 1
@@ -3525,7 +3736,7 @@ describe('pull-request supersession', () => {
                     },
                 };
                 if (stage === 'before close') {
-                    input.parentCommentsByInspection = [validParentComments, validParentComments, []];
+                    input.parentCommentsByInspection = [validParentComments, validParentComments, validParentComments, []];
                 } else {
                     input.removeParentReceiptDuringClose = true;
                 }
