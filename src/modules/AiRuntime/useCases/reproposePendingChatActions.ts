@@ -339,8 +339,6 @@ export async function reproposePendingChatActions(
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
     }
-    const { affectedIds, matchSelectorPredicates: carriedMatchSelectorPredicates } = carriedSelection;
-
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
         id: assistantMessageId,
@@ -358,7 +356,7 @@ export async function reproposePendingChatActions(
         commandEnvelopes: refreshed.commandEnvelopes,
         commandBatch: refreshed.commandBatch,
         agentApproval: approval,
-        affectedIds: [...affectedIds],
+        affectedIds: [...carriedSelection.affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
         // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
         // in the working batch's commands rather than re-resolving any `match` selector, so this
@@ -368,7 +366,7 @@ export async function reproposePendingChatActions(
         // survives that check is carried forward so a later `resolveConfirmationAdmission`
         // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
         // guards a first-proposed one.
-        matchSelectorPredicates: carriedMatchSelectorPredicates,
+        matchSelectorPredicates: carriedSelection.matchSelectorPredicates,
         // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
         // carried only for the whole proposal, never guessed for a part of it.
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,

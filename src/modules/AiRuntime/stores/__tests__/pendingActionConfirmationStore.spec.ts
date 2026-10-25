@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ProposalProtectionFacts } from '../../models/ProposalGroundingBasis';
-
 import {
     commitPendingActionResourceLease,
     clearPendingActionConfirmations,
