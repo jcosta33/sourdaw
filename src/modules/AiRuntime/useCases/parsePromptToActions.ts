@@ -30,6 +30,7 @@ import {
     WORKFLOW_CAPABILITY_TOOL_NAME,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
+import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import { buildPlanningSystemPrompt } from '../transformers/buildPlanningSystemPrompt';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
@@ -40,6 +41,7 @@ import {
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
+import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
@@ -54,6 +56,8 @@ import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVoca
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
+import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { readStoredCardRemoval } from './agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -837,6 +841,35 @@ const planPromptIntent = inject({ logger })(
                 const proposedBatch = planningOutcome.toolCalls.find(
                     (call) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
                 );
+                const refinement = admitProposalRefinement(proposedBatch?.arguments.refines, thread);
+                if (refinement.status === 'refused') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        rejectionReason: `Provider action rejected: ${refinement.reason}`,
+                        rejectionEvidence: {
+                            kind: 'constraint',
+                            argumentPath: 'refines',
+                            reason: refinement.reason,
+                            rejectedFragment: boundedProviderFragment(proposedBatch?.arguments.refines),
+                        },
+                    };
+                }
+                // A refinement replaces the pending card, so it is always put to the user, whatever the
+                // risk policy would let a fresh batch of the same commands do on its own.
+                const refinementFields =
+                    refinement.status === 'refines'
+                        ? { refines: refinement.confirmationId, requiresConfirmation: true }
+                        : {};
+                // The basis is read from the stored card, never from thread_context, which a provider
+                // budget may have cut; a card no longer proposed is refused where the replacement persists.
+                const refinedCard =
+                    refinement.status === 'refines' ? getPendingActionConfirmation(refinement.confirmationId) : null;
+                const refinedBasis =
+                    refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.groundingBasis : undefined;
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
                 const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
@@ -847,12 +880,14 @@ const planPromptIntent = inject({ logger })(
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
+                // The adopted compilations and the refined proposal are both read above, so the
+                // compiler sees only the commands the batch states.
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
-                    if (call !== proposedBatch || !Array.isArray(selectedIds)) {
+                    if (call !== proposedBatch) {
                         return call;
                     }
                     const argumentsWithoutReferences = Object.fromEntries(
-                        Object.entries(call.arguments).filter(([key]) => key !== 'compiledCallIds')
+                        Object.entries(call.arguments).filter(([key]) => key !== 'compiledCallIds' && key !== 'refines')
                     );
                     return { ...call, arguments: argumentsWithoutReferences };
                 });
@@ -1022,10 +1057,31 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
+                    if (refinement.status === 'refines') {
+                        const pending = getPendingActionConfirmation(refinement.confirmationId);
+                        const preservation = validateRefinedProposalActions({
+                            pendingActions: pending?.status === 'proposed' ? pending.approvalSnapshot.actions : null,
+                            actions: [stemImport.action],
+                            prompt,
+                            context,
+                            createdObject: proposalCommandShape.createdObject,
+                            readRemoval: readStoredCardRemoval,
+                        });
+                        if (preservation.status === 'refused') {
+                            return {
+                                actions: [],
+                                rawText: prompt,
+                                requiresConfirmation: false,
+                                ...applicationToolReceiptFields,
+                                rejectionReason: `Provider action rejected: ${preservation.reason}`,
+                            };
+                        }
+                    }
                     return {
                         actions: [stemImport.action],
                         rawText: prompt,
                         requiresConfirmation: true,
+                        ...refinementFields,
                         ...applicationToolReceiptFields,
                         ...creativeAuthorityFields,
                         executionMode: 'atomic',
@@ -1045,6 +1101,7 @@ const planPromptIntent = inject({ logger })(
                     transformTargetIds,
                     creativeAuthority,
                     providerProposal,
+                    ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
                 });
                 if (grounded.status === 'rejected') {
                     return {
@@ -1070,6 +1127,28 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 if (grounded.status === 'grounded') {
+                    // Grounding against the card's basis already held every pending command to an
+                    // explicit removal; only a card without one is checked against its stored batch.
+                    if (refinement.status === 'refines' && grounded.refinement === undefined) {
+                        const pending = getPendingActionConfirmation(refinement.confirmationId);
+                        const preservation = validateRefinedProposalActions({
+                            pendingActions: pending?.status === 'proposed' ? pending.approvalSnapshot.actions : null,
+                            actions: grounded.actions,
+                            prompt,
+                            context,
+                            createdObject: proposalCommandShape.createdObject,
+                            readRemoval: readStoredCardRemoval,
+                        });
+                        if (preservation.status === 'refused') {
+                            return {
+                                actions: [],
+                                rawText: prompt,
+                                requiresConfirmation: false,
+                                ...applicationToolReceiptFields,
+                                rejectionReason: `Provider action rejected: ${preservation.reason}`,
+                            };
+                        }
+                    }
                     return {
                         actions: grounded.actions,
                         ...(grounded.actionCommandGraph === undefined
@@ -1077,6 +1156,7 @@ const planPromptIntent = inject({ logger })(
                             : { actionCommandGraph: grounded.actionCommandGraph }),
                         rawText: prompt,
                         requiresConfirmation: grounded.requiresConfirmation,
+                        ...refinementFields,
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
@@ -1091,6 +1171,15 @@ const planPromptIntent = inject({ logger })(
                         ...(grounded.providerProposal === null ? {} : { providerProposal: grounded.providerProposal }),
                         ...creativeAuthorityFields,
                         ...(batchSchedule === undefined ? {} : { batchSchedule }),
+                        ...(grounded.groundingBasis === undefined || batchSchedule !== undefined
+                            ? {}
+                            : { groundingBasis: grounded.groundingBasis }),
+                        ...(grounded.refinement === undefined
+                            ? {}
+                            : {
+                                  refinementProtectedUnchanged: grounded.refinement.protectedUnchanged,
+                                  keptDirectionActionIndexes: grounded.refinement.keptDirectionActionIndexes,
+                              }),
                     };
                 }
 

@@ -4,6 +4,7 @@ import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { declareGluedRegisteredParameters } from './declareGluedRegisteredParameters';
 import { projectMidiClipWindow } from './projectMidiClipWindow';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
@@ -126,12 +127,31 @@ export function prepareMidiClipGlueState({
         const projected = projectMidiClipWindow({
             notes: sourceNotes,
             controlChanges,
-            pitchBends,
+            // The carry moves a row to the window start, so each row takes the beat it was recorded at along.
+            pitchBends: pitchBends.map((bend) => ({ ...bend, recordedBeat: bend.beat })),
             window: { ...source, closingLineBeat: closingLineBeatOf(sources, sourceIndex) },
+            carriesRegisteredParameterLanes: false,
+        });
+        const glueBeat = source.visibleStartBeat + source.beatOffset;
+        const registeredParameters = declareGluedRegisteredParameters({
+            gluedSoFar: mergedControlChanges,
+            sourceControlChanges: controlChanges,
+            visibleStartBeat: source.visibleStartBeat,
+            glueBeat,
+            glueEndBeat: source.visibleEndBeat + source.beatOffset,
+            carriedBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat < source.visibleStartBeat),
+            windowBends: projected.pitchBends.filter(({ recordedBeat }) => recordedBeat >= source.visibleStartBeat),
+            windowControlChanges: projected.controlChanges,
+            createId: (key) => `cc-glue:${targetClipId}:${sourceIndex}:${key}`,
         });
         mergedNotes.push(...projected.notes);
-        mergedControlChanges.push(...projected.controlChanges, ...projected.closingControlChanges);
-        mergedPitchBends.push(...projected.pitchBends);
+        // Ahead of the window's own rows, so a declaration on a beat they share is read first.
+        mergedControlChanges.push(
+            ...registeredParameters,
+            ...projected.controlChanges,
+            ...projected.closingControlChanges
+        );
+        mergedPitchBends.push(...projected.pitchBends.map(({ recordedBeat: _recordedBeat, ...bend }) => bend));
     }
     if (
         mergedNotes.some((row) => !Number.isFinite(row.startBeat) || !Number.isFinite(row.duration)) ||

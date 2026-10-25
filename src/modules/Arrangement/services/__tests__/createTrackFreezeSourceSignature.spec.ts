@@ -27,9 +27,10 @@ describe('createTrackFreezeSourceSignature', () => {
         });
 
         // clip = id:start:duration:assetHash:gain:type:bufferId:audioOffset:
-        // midiOffset:fadeIn:fadeOut:muted:stretchMode:stretchRatio:loopEnabled:loopLength
+        // midiOffset:fadeIn:fadeOut:muted:stretchMode:stretchRatio:loopEnabled:loopLength:
+        // loopOrigin(folded to the anchored start the render reads)
         // ; device params sorted by name.
-        expect(sig).toBe('c1:0:4::1:audio::0:0:0:0:false:::false:0||d1:reverb:decay=2,mix=0.5:false');
+        expect(sig).toBe('c1:0:4::1:audio::0:0:0:0:false:::false:0:0||d1:reverb:decay=2,mix=0.5:false');
     });
 
     it('includes the asset hash when a clip carries one', () => {
@@ -66,8 +67,8 @@ describe('createTrackFreezeSourceSignature', () => {
         });
 
         // The hash arm (?? '') produces a non-empty slot vs an empty one.
-        expect(withHash).toBe('c1:0:4:sha-abc:1:audio::0:0:0:0:false:::false:0||');
-        expect(withoutHash).toBe('c1:0:4::1:audio::0:0:0:0:false:::false:0||');
+        expect(withHash).toBe('c1:0:4:sha-abc:1:audio::0:0:0:0:false:::false:0:0||');
+        expect(withoutHash).toBe('c1:0:4::1:audio::0:0:0:0:false:::false:0:0||');
         expect(withHash).not.toBe(withoutHash);
     });
 
@@ -130,7 +131,7 @@ describe('createTrackFreezeSourceSignature', () => {
 
         // alpha before beta regardless of input order.
         expect(sigOrdered).toBe(
-            'alpha:0:2::1:audio::0:0:0:0:false:::false:0|beta:0:2::1:audio::0:0:0:0:false:::false:0||'
+            'alpha:0:2::1:audio::0:0:0:0:false:::false:0:0|beta:0:2::1:audio::0:0:0:0:false:::false:0:0||'
         );
         expect(sigOrdered).toBe(sigReversed);
     });
@@ -353,6 +354,47 @@ describe('createTrackFreezeSourceSignature', () => {
         const base: Clip = ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, audioBufferId: 'buffer-1' });
 
         expect(signatureOf({ ...base, ...change })).not.toBe(signatureOf(base));
+    });
+
+    // The loop anchor (#4988) moves the loop region a start trim shows, and a
+    // trim chain can return every other listed field to its frozen value while
+    // the anchor differs — audit #4591's class again (#5198 review): the
+    // frozen track must go stale on the anchor alone.
+    it('changes when only the loop anchor differs on a looped clip', () => {
+        const looped: Clip = ClipDummy.create({
+            id: 'c1',
+            startBeat: 2,
+            endBeat: 10,
+            audioBufferId: 'buffer-1',
+            loopEnabled: true,
+            loopLength: 4,
+        });
+        const anchoredAtZero: Clip = { ...looped, loopOriginBeat: 0 };
+
+        expect(signatureOf({ ...anchoredAtZero, loopOriginBeat: 1 })).not.toBe(signatureOf(anchoredAtZero));
+        expect(signatureOf(anchoredAtZero)).not.toBe(signatureOf(looped));
+    });
+
+    // The anchor reads only while the loop is on, and an anchor at the clip's
+    // own start advances zero: both sign exactly as the absent anchor they
+    // render as, per clipSignatureEntry's fold to the renderer's reading.
+    it('signs an inert anchor as the unanchored reading the render takes', () => {
+        const looped: Clip = ClipDummy.create({
+            id: 'c1',
+            startBeat: 2,
+            endBeat: 10,
+            audioBufferId: 'buffer-1',
+            loopEnabled: true,
+            loopLength: 4,
+        });
+        const anchoredAtItsOwnStart: Clip = { ...looped, loopOriginBeat: looped.startBeat };
+
+        expect(signatureOf(anchoredAtItsOwnStart)).toBe(signatureOf(looped));
+
+        const unlooped: Clip = { ...looped, loopEnabled: false };
+        const keptStaleAnchor: Clip = { ...unlooped, loopOriginBeat: 5 };
+
+        expect(signatureOf(keptStaleAnchor)).toBe(signatureOf(unlooped));
     });
 
     it('does not change when a field no renderer reads changes', () => {

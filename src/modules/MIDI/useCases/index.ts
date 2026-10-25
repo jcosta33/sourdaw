@@ -26,6 +26,9 @@ export { getChordTrackHandlers } from './getChordTrackHandlers';
 export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
+export { commitRecordedControllers } from './recordedControllerTake/commitRecordedControllers';
+export { discardRecordedControllers } from './recordedControllerTake/discardRecordedControllers';
+export { planRecordedControllers } from './recordedControllerTake/planRecordedControllers';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 export { downloadMidiFile } from './exportMidiFile';
@@ -51,6 +54,7 @@ export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
 export { projectMidiClipPlayback } from './midiClipData/projectMidiClipPlayback';
 export { projectClipControllerEvents } from './midiClipData/projectClipControllerEvents';
 export { projectClipControllerRestore } from './midiClipData/projectClipControllerRestore';
+export { projectChannelBend } from './midiClipData/projectChannelBend';
 export { midiClipGlueStateMatches } from './midiClipData/midiClipGlueStateMatches';
 export { restoreMidiClipGlueState } from './midiClipData/restoreMidiClipGlueState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';

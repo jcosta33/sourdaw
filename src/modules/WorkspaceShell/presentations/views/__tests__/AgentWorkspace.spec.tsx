@@ -231,6 +231,7 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
     error: null,
     prompt: 'Add a bassline',
     batchPosition: null,
+    previousProposalDiff: null,
     actionLabels: ['Create track Bass'],
     scope: { targetIds: ['track-9'], protectedTargetIds: ['track-1'], protectedRanges: [{ startBeat: 0, endBeat: 4 }] },
     risk: {
@@ -768,6 +769,67 @@ describe('AgentWorkspace', () => {
         getAgentApprovalViewMock.mockReturnValue(approvalView());
         render(<AgentWorkspace />);
         expect(screen.queryByText(/^Batch \d+ of \d+$/u)).toBeNull();
+    });
+
+    // Red when a refined proposal stops showing what it changes against the proposal it replaced, or
+    // shows it below the command list instead of above it.
+    it('shows the changes from the previous proposal above the proposed commands', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                actionLabels: ['Set Drums gain by -1.5 dB', 'Mute Room'],
+                previousProposalDiff: {
+                    changes: [
+                        {
+                            kind: 'changed',
+                            label: 'Set Drums gain by -1.5 dB',
+                            fields: [{ field: 'deltaDb', previous: '-3 dB', next: '-1.5 dB' }],
+                        },
+                        { kind: 'added', label: 'Mute Room' },
+                        { kind: 'removed', label: 'Pan Guitar -20' },
+                    ],
+                    unchangedCount: 2,
+                },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const changes = screen.getByRole('region', { name: 'Changes from the previous proposal' });
+        expect(
+            within(changes)
+                .getAllByRole('listitem')
+                .map((item) => item.textContent)
+        ).toEqual([
+            'Changed: Set Drums gain by -1.5 dB (deltaDb -3 dB → -1.5 dB)',
+            'Added: Mute Room',
+            'Removed: Pan Guitar -20',
+        ]);
+        expect(within(changes).getByText('2 unchanged commands')).toBeInTheDocument();
+        const commands = screen.getByRole('list', { name: 'Proposed actions' });
+        expect(changes.compareDocumentPosition(commands) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    // Red when a proposal a refinement replaced still offers a Confirm the backend would refuse.
+    it('offers no Confirm or Cancel for a proposal a refinement replaced, and says why', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({ status: 'invalidated', error: 'Replaced by a refined proposal.' })
+        );
+
+        render(<AgentWorkspace />);
+
+        const approvals = within(screen.getByRole('region', { name: 'Approvals' }));
+        expect(approvals.getByText('Replaced by a refined proposal.')).toBeInTheDocument();
+        expect(approvals.getByText('Status: invalidated')).toBeInTheDocument();
+        expect(approvals.queryByRole('button', { name: 'Confirm agent actions' })).not.toBeInTheDocument();
+        expect(approvals.queryByRole('button', { name: 'Cancel agent actions' })).not.toBeInTheDocument();
     });
 
     it('renders no recipe list for a proposal that adopted none', () => {

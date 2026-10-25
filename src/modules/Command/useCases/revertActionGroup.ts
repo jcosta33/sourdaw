@@ -3,6 +3,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
+import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
@@ -12,7 +13,11 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
  * `executeUndo` for why a non-undoable entry must not be consumed.
  *
  * The inverse is an internal replay driven by the undo engine, so it must not
- * commit its own undo entry or appear in an active macro recording.
+ * commit its own undo entry or appear in an active macro recording. It goes
+ * through the same legacy-anchor normalization seam the `undo` paths use
+ * (#5198): a keyless legacy trim/loop/slip inverse in a persisted group must
+ * restore anchorless — a slip's captured offset verbatim, rows unmoved — not
+ * replay the fresh-action mint or wrap laws.
  */
 async function revertEntry(entry: UndoEntry): Promise<boolean> {
     if (entry.kind === 'callback') {
@@ -20,7 +25,7 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
         return true;
     }
     if (entry.inverseAction) {
-        await executeAppAction(entry.inverseAction, {
+        await executeAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), {
             skipUndo: true,
             skipMacroRecording: true,
         });

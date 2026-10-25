@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { channelControllerState } from '../channelControllerState';
 import { getChannelBendRangeSemitones } from '../getChannelBendRangeSemitones';
+import { heldPedalState } from '../heldPedalState';
 import { ingestChannelControlChange } from '../ingestChannelControlChange';
 import { resetChannelControllerState } from '../resetChannelControllerState';
+import { resetInputDeviceControllerState } from '../resetInputDeviceControllerState';
 
 const CHANNEL = 3;
 
@@ -25,7 +27,7 @@ function declareBendRange(semitones: number, cents: number, channel = CHANNEL): 
 
 describe('ingestChannelControlChange', () => {
     beforeEach(() => {
-        resetChannelControllerState();
+        resetInputDeviceControllerState();
     });
 
     describe('14-bit high-resolution controllers (MD-7)', () => {
@@ -167,11 +169,85 @@ describe('ingestChannelControlChange', () => {
             expect(getChannelBendRangeSemitones(CHANNEL)).toBe(11);
         });
 
+        it('steps a channel that never declared a range from the MIDI 1.0 default of two semitones', () => {
+            ingest(101, 0);
+            ingest(100, 0);
+            ingest(96, 0);
+            expect(getChannelBendRangeSemitones(CHANNEL)).toBe(3);
+
+            ingest(97, 0);
+            ingest(97, 0);
+            expect(getChannelBendRangeSemitones(CHANNEL)).toBe(1);
+        });
+
         it('does not let a Data Increment drive the range below zero', () => {
             declareBendRange(0, 0);
             ingest(97, 0);
 
             expect(getChannelBendRangeSemitones(CHANNEL)).toBe(0);
+        });
+    });
+
+    describe('held pedals', () => {
+        it('keeps the last position of sustain, sostenuto and soft per channel, as the wire carried it', () => {
+            ingest(64, 127);
+            ingest(64, 40);
+            ingest(66, 90);
+            ingest(67, 1);
+            ingest(64, 100, 5);
+
+            expect(heldPedalState.get(CHANNEL)).toEqual(
+                new Map([
+                    [64, 40],
+                    [66, 90],
+                    [67, 1],
+                ])
+            );
+            expect(heldPedalState.get(5)).toEqual(new Map([[64, 100]]));
+        });
+
+        it('keeps a pedal that has been lifted as a zero position', () => {
+            ingest(64, 127);
+            ingest(64, 0);
+
+            expect(heldPedalState.get(CHANNEL)?.get(64)).toBe(0);
+        });
+
+        it('does not keep controllers that are not held pedals', () => {
+            ingest(1, 90);
+            ingest(65, 127);
+            ingest(7, 100);
+
+            expect(heldPedalState.get(CHANNEL)?.size ?? 0).toBe(0);
+        });
+
+        it('lifts every pedal of the channel on Reset All Controllers and leaves other channels held', () => {
+            ingest(64, 127);
+            ingest(66, 127);
+            ingest(64, 127, 5);
+
+            ingest(121, 0);
+
+            expect(heldPedalState.get(CHANNEL)?.size).toBe(0);
+            expect(heldPedalState.get(5)?.get(64)).toBe(127);
+        });
+
+        it('stands through a reset of the decoded channel state, which a transport stop, pause and seek run', () => {
+            ingest(64, 127);
+
+            resetChannelControllerState();
+
+            expect(heldPedalState.get(CHANNEL)?.get(64)).toBe(127);
+        });
+
+        it('drops every held pedal when the input device is reset or torn down', () => {
+            ingest(64, 127);
+            ingest(66, 90, 5);
+
+            resetInputDeviceControllerState();
+
+            expect(heldPedalState.size).toBe(0);
+            expect(channelControllerState.size).toBe(0);
         });
     });
 

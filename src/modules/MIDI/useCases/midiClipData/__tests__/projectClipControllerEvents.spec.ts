@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type MidiCC } from '../../../models/MidiNote';
+import { getGrooveProjection } from '../../grooveTemplates/getGrooveProjection';
 import { projectClipControllerEvents } from '../projectClipControllerEvents';
 
 function controller(id: string, beat: number, value: number, cc = 64, channel = 0): MidiCC {
@@ -213,6 +214,61 @@ describe('projectClipControllerEvents', () => {
             expect(events.map(({ id, closesClip }) => [id, closesClip])).toEqual([
                 ['sostenuto-off', true],
                 ['una-corda-off', true],
+            ]);
+        });
+
+        it.each([
+            ['a portamento release', 'portamento-off', 65],
+            ['a legato release', 'legato-off', 68],
+            ['a hold 2 release', 'hold-2-off', 69],
+        ])('plays %s on the closing line, below the latch threshold', (_kind, id, cc) => {
+            // Portamento, legato and hold 2 are not pedals, so their closing-line
+            // releases are admitted only through the switch-controller fallthrough,
+            // which reaches the whole way to CC69 — sostenuto and una corda sit on
+            // the same fallthrough and are pinned above.
+            const events = projectClipControllerEvents({
+                controlChanges: [controller(id, 4, 0, cc)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id: eventId, beat, closesClip }) => [eventId, beat, closesClip])).toEqual([
+                [id, 4, true],
+            ]);
+        });
+
+        it.each([
+            ['a half sustain', 63],
+            ['the lightest partial sustain', 1],
+        ])('plays %s on the closing line nowhere, while a full lift beside it still plays', (_kind, value) => {
+            // Sustain is a continuous position, not an on/off switch: only value 0 lifts it,
+            // so a partial sustain on the final line is dropped like every other row — it
+            // would leave the pedal partly down for whatever follows the clip.
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('partial', 4, value), controller('lift', 4, 0)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, closesClip }) => [id, beat, closesClip])).toEqual([
+                ['down', 0, false],
+                ['lift', 4, true],
+            ]);
+        });
+
+        it('keeps a half sustain stored inside the clip an ordinary move', () => {
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('half', 2, 63)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, value, closesClip }) => [id, beat, value, closesClip])).toEqual([
+                ['down', 0, 127, false],
+                ['half', 2, 63, false],
             ]);
         });
     });
@@ -523,6 +579,101 @@ describe('projectClipControllerEvents', () => {
             const events = projectClipControllerEvents({ controlChanges, clip, fromBeat: 0, toBeat: 8 });
 
             expect(events.map((event) => event.beat)).toEqual([0, 2, 4]);
+        });
+    });
+
+    describe('with the loop window anchored across a start trim (#5198)', () => {
+        type Clip = Parameters<typeof projectClipControllerEvents>[0]['clip'];
+
+        // Loop [0,4) anchored at 0, then the start trimmed to 2: the offset
+        // advanced with the trim, so the anchored region is content [0, 4),
+        // entered two beats in — the pass head plays content [2, 4) and the
+        // region head wraps onto the pass tail.
+        const clip: Clip = {
+            startBeat: 2,
+            endBeat: 10,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        };
+
+        it('plays the region head at the wrapped phase, and leaves a press stored past the region end dry', () => {
+            const events = projectClipControllerEvents({
+                controlChanges: [
+                    controller('region-head-press', 0.5, 127),
+                    controller('in-window', 3, 64),
+                    // Stored past the region end: the sliding per-pass window
+                    // kept firing it at the wrapped head's phase, a stuck
+                    // pedal. The anchored law plays it dry.
+                    controller('past-region-press', 4.5, 127),
+                ],
+                clip,
+                fromBeat: 0,
+                toBeat: 12,
+            });
+
+            expect(placed(events)).toEqual([
+                // Each pass opens with the region-head press in force at its head...
+                { beat: 2, value: 127 },
+                { beat: 3, value: 64 },
+                // ...and the press itself sounds where the note at content 0.5
+                // sounds, the pass tail's wrapped phase.
+                { beat: 4.5, value: 127 },
+                { beat: 6, value: 127 },
+                { beat: 7, value: 64 },
+                { beat: 8.5, value: 127 },
+            ]);
+            expect(events.some((event) => event.id === 'past-region-press')).toBe(false);
+        });
+
+        it('wraps the region head onto the same phase the note window plays it at', () => {
+            const straightProjection = getGrooveProjection({ templates: [], assignments: [] });
+            const wrappedNoteBeats = [0, 1].flatMap((pass) =>
+                straightProjection
+                    .projectClipMidiEvents({
+                        events: [{ id: 'note-at-region-head', startBeat: 0.5, duration: 1, velocity: 100 }],
+                        clipId: 'clip-1',
+                        clipStartBeat: clip.startBeat,
+                        clipEndBeat: clip.endBeat,
+                        iterationStartBeat: clip.startBeat + pass * 4,
+                        loopLengthBeats: 4,
+                        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                        loopEnabled: true,
+                        loopOriginBeat: clip.loopOriginBeat,
+                    })
+                    .map((event) => event.startBeat)
+            );
+            const pressBeats = projectClipControllerEvents({
+                controlChanges: [controller('region-head-press', 0.5, 127)],
+                clip,
+                fromBeat: 0,
+                toBeat: 12,
+            })
+                // The pass-head carries sit exactly on a pass head; the press
+                // replays sit at the wrapped phase.
+                .filter((event) => (event.beat - clip.startBeat) % 4 !== 0)
+                .map((event) => event.beat);
+
+            expect(pressBeats).toEqual(wrappedNoteBeats);
+        });
+
+        it('owns the wrapped head in the scheduler window that holds it, once', () => {
+            const before = projectClipControllerEvents({
+                controlChanges: [controller('region-head-press', 0.5, 127)],
+                clip,
+                fromBeat: 4,
+                toBeat: 5,
+            });
+            const after = projectClipControllerEvents({
+                controlChanges: [controller('region-head-press', 0.5, 127)],
+                clip,
+                fromBeat: 5,
+                toBeat: 6,
+            });
+
+            expect(placed(before)).toEqual([{ beat: 4.5, value: 127 }]);
+            expect(after).toEqual([]);
         });
     });
 });

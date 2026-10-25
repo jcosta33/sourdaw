@@ -76,6 +76,7 @@ describe('discardProjectChanges', () => {
         await expect(discardProjectChanges()).resolves.toBe(true);
 
         expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', {
+            outgoingProject: 'discard',
             requireDurable: true,
             shouldProceed: expect.any(Function),
         });
@@ -166,6 +167,7 @@ describe('discardProjectChanges', () => {
 
         await expect(discard).resolves.toBe(false);
         expect(load.loadRecentProject).toHaveBeenCalledWith('sourdaw:project:10', {
+            outgoingProject: 'discard',
             requireDurable: true,
             shouldProceed: expect.any(Function),
         });
@@ -188,7 +190,7 @@ describe('discardProjectChanges', () => {
         await expect(discardProjectChanges()).resolves.toBe(true);
 
         expect(load.loadRecentProject).not.toHaveBeenCalled();
-        expect(create.newProject).toHaveBeenCalledTimes(1);
+        expect(create.newProject).toHaveBeenCalledExactlyOnceWith('Untitled Project', { outgoingProject: 'discard' });
         expect(crdt.compactProject).toHaveBeenCalledTimes(1);
         expect(state.project?.dirty).toBe(false);
         expect(state.project?.identityPersistencePending).toBe(false);

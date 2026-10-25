@@ -15,10 +15,10 @@ import { type RealtimeMidiEvent } from '../../repositories/webMidi/realtimeMidiP
 import { releaseCapturedYeastVoices } from '../../repositories/webMidi/releaseCapturedYeastVoices';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
-import { captureEventBeatAt } from './captureEventBeat';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
+import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -56,14 +56,7 @@ export const handleWebMidiNoteOn = inject({
 
             const generation = memberExpressionGeneration.current;
             const eventTime = resolveInputEventTime({ timeStamp });
-            let admittedBeat: number;
-            if (typeof timeStamp === 'object' && timeStamp !== null && Number.isFinite(timeStamp.recordingBeat)) {
-                admittedBeat = timeStamp.recordingBeat!;
-            } else {
-                // No dispatcher-captured beat: derive it from this event's own
-                // instant anyway (#4875).
-                admittedBeat = captureEventBeatAt({ audioTime: eventTime });
-            }
+            const admittedBeat = resolveAdmittedEventBeat({ timeStamp, eventTime });
 
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
