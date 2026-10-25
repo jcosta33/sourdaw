@@ -1,0 +1,27 @@
+src/components/ui/bipolar-slider.tsx
+  s_59e31a5c6f3e31::t_2ac2faeef942bd 70,79-81,137-142
+  s_59e31a5c6f3e31::t_41bfe78a6d6fb9 78,82-85,88-91,93-94
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  s_59e31a5c6f3e31::t_c5300e82578e2b 76-113
+  s_59e31a5c6f3e31::t_d88516445876b7 114-133
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_8118a1816447f6 412,422,441
+  s_59e31a5c6f3e31::t_b80ffa08ddeccd 487-533
+  s_59e31a5c6f3e31::t_919109483e29b6 398-411,413-421,423-440,442-486
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6488f1004a92ed95f12155753ddeb22140e2486",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
