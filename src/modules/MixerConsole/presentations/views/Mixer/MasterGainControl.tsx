@@ -13,7 +13,7 @@ import { DawMenuButton } from '#/components/daw/DawMenuParts';
 import { Fader } from '#/components/daw/Fader';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { FADER_HEADROOM_DB, FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, formatGainDb, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { promptUser } from '#/utils/Notification/promptUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -36,6 +36,44 @@ type MasterGainMenuProps = {
 };
 
 type MasterGainFaderProps = Pick<MasterGainControlProps, 'value' | 'onChange'>;
+
+function useMasterGainPromptFocus(controlRef: RefObject<HTMLDivElement | null>) {
+    const latestPrompt = useRef(0);
+    const mounted = useRef(false);
+    const focusFrame = useRef<number | null>(null);
+    const invalidatePrompt = (): void => {
+        latestPrompt.current += 1;
+        if (focusFrame.current !== null) {
+            window.cancelAnimationFrame(focusFrame.current);
+            focusFrame.current = null;
+        }
+    };
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            latestPrompt.current += 1;
+            if (focusFrame.current !== null) {
+                window.cancelAnimationFrame(focusFrame.current);
+                focusFrame.current = null;
+            }
+        };
+    }, []);
+    const restoreFocus = (request: number, authority: ReturnType<typeof captureProjectTransitionAuthority>): void => {
+        focusFrame.current = window.requestAnimationFrame(() => {
+            focusFrame.current = null;
+            if (
+                mounted.current &&
+                request === latestPrompt.current &&
+                authority.isCurrent() &&
+                document.activeElement === document.body
+            ) {
+                controlRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
+            }
+        });
+    };
+    return { latestPrompt, mounted, invalidatePrompt, restoreFocus };
+}
 
 const MasterGainFader = ({ value, onChange }: MasterGainFaderProps): ReactElement => (
     <Fader
@@ -108,16 +146,7 @@ export const MasterGainControl = ({
     const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
     const masterGainControlRef = useRef<HTMLDivElement>(null);
     const masterGainMenuRef = useRef<HTMLDivElement>(null);
-    const latestPrompt = useRef(0);
-    const mounted = useRef(false);
-
-    useEffect(() => {
-        mounted.current = true;
-        return () => {
-            mounted.current = false;
-            latestPrompt.current += 1;
-        };
-    }, []);
+    const { latestPrompt, mounted, invalidatePrompt, restoreFocus } = useMasterGainPromptFocus(masterGainControlRef);
 
     const closeMasterGainMenu = (): void => setMasterGainMenu(null);
     useContextMenuDismiss(masterGainMenuRef, closeMasterGainMenu);
@@ -145,22 +174,27 @@ export const MasterGainControl = ({
     };
 
     const handleFaderChange = (gain: number, isTransient?: boolean): void => {
-        latestPrompt.current += 1;
+        invalidatePrompt();
         onChange(gain, isTransient);
     };
 
     const enterValue = async (): Promise<void> => {
-        const request = ++latestPrompt.current;
+        invalidatePrompt();
+        const request = latestPrompt.current;
         const authority = captureProjectTransitionAuthority();
         const initialValue = `${formatGainDb(value)} dB`;
         closeMasterGainMenu();
         const input = await promptUser({
             title: 'Enter Master Gain',
-            message: `Enter master gain in dB (maximum +${FADER_HEADROOM_DB} dB; -∞ for silence).`,
+            message: `Enter master gain from ${TRACK_FADER_LAW.floorDb} to +${TRACK_FADER_LAW.ceilingDb} dB; -∞ for silence.`,
             initialValue,
             confirmLabel: 'Set Gain',
         });
-        if (!mounted.current || request !== latestPrompt.current || !authority.isCurrent() || input === null) {
+        if (!mounted.current || request !== latestPrompt.current || !authority.isCurrent()) {
+            return;
+        }
+        restoreFocus(request, authority);
+        if (input === null) {
             return;
         }
         // The readout rounds to one decimal; submitting it untouched must not
@@ -170,14 +204,17 @@ export const MasterGainControl = ({
         }
         const gain = parseMasterGainEntry(input);
         if (gain === null) {
-            notifyUser(`Enter a valid master gain in dB at or below +${FADER_HEADROOM_DB} dB.`, 'error');
+            notifyUser(
+                `Enter a valid master gain from ${TRACK_FADER_LAW.floorDb} to +${TRACK_FADER_LAW.ceilingDb} dB, or -∞ for silence.`,
+                'error'
+            );
             return;
         }
         onEnterValue(gain);
     };
 
     const resetGain = (): void => {
-        latestPrompt.current += 1;
+        invalidatePrompt();
         onResetToDefault();
         closeMasterGainMenu();
     };

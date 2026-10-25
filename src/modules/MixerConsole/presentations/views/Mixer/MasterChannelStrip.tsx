@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { logger } from '#/infra/logger/appLogger';
@@ -28,6 +28,68 @@ type MasterChannelSurfaceProps = MasterChannelStripProps & {
 
 type ProjectTransitionAuthority = ReturnType<typeof captureProjectTransitionAuthority>;
 
+type PendingMasterGainCommit = {
+    expectedPercent?: number;
+    targetPercent: number;
+    committed: boolean;
+};
+
+type MasterGainEntry = {
+    authority: ProjectTransitionAuthority;
+    expectedPercent: number;
+    predecessors: PendingMasterGainCommit[];
+};
+
+function useMasterGainCommitQueue() {
+    const pending = useRef<PendingMasterGainCommit[]>([]);
+    const queue = useRef<Promise<void>>(Promise.resolve());
+    const mounted = useRef(false);
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            pending.current = [];
+        };
+    }, []);
+    const captureEntry = (): MasterGainEntry | null => {
+        const expectedPercent = transportStore.value?.masterGain;
+        if (expectedPercent === undefined) {
+            return null;
+        }
+        const authority = captureProjectTransitionAuthority();
+        return {
+            authority: { ...authority, isCurrent: () => mounted.current && authority.isCurrent() },
+            expectedPercent,
+            predecessors: pending.current.filter((commit) => !commit.committed),
+        };
+    };
+    const enqueue = (value: number, commit: (record: PendingMasterGainCommit) => Promise<void>): void => {
+        const record: PendingMasterGainCommit = { targetPercent: value * 100, committed: false };
+        pending.current.push(record);
+        queue.current = queue.current
+            .then(() => commit(record))
+            .finally(() => {
+                pending.current = pending.current.filter((candidate) => candidate !== record);
+            });
+    };
+    return { captureEntry, enqueue };
+}
+
+function resolveEntryExpectedPercent(entry: MasterGainEntry): number | null {
+    // Only the captured queue's own committed writes may advance this entry's CAS.
+    let expectedPercent = entry.expectedPercent;
+    for (const predecessor of entry.predecessors) {
+        if (!predecessor.committed) {
+            continue;
+        }
+        if (predecessor.expectedPercent !== expectedPercent) {
+            return null;
+        }
+        expectedPercent = predecessor.targetPercent;
+    }
+    return expectedPercent;
+}
+
 function restoreEngineFromProjectTruth(): void {
     const storeMasterGain = transportStore.value?.masterGain;
     if (storeMasterGain === undefined) {
@@ -38,38 +100,46 @@ function restoreEngineFromProjectTruth(): void {
 
 async function dispatchMasterGainAction(
     action: AppAction,
+    record: PendingMasterGainCommit,
     coalesceWithPrevious?: boolean,
-    entryAuthority?: ProjectTransitionAuthority
+    entry?: MasterGainEntry
 ): Promise<void> {
+    const onCommitted = (): void => {
+        // A later effect failure cannot undo this witness; a resolved refusal cannot supply it.
+        record.committed = true;
+    };
     // Command rechecks this authority after waiting for snapshot ownership.
-    if (entryAuthority) {
+    if (entry) {
         await executeUserAppAction(action, {
             coalesceWithPrevious: coalesceWithPrevious === true,
-            shouldExecute: entryAuthority.isCurrent,
+            shouldExecute: entry.authority.isCurrent,
+            onCommitted,
         });
         return;
     }
     if (coalesceWithPrevious) {
-        await executeUserAppAction(action, { coalesceWithPrevious: true });
+        await executeUserAppAction(action, { coalesceWithPrevious: true, onCommitted });
         return;
     }
-    await executeUserAppAction(action);
+    await executeUserAppAction(action, { onCommitted });
 }
 
 async function dispatchCurrentMasterGainAction(
     value: number,
     coalesceWithPrevious: boolean,
-    entryAuthority?: ProjectTransitionAuthority
+    record: PendingMasterGainCommit,
+    entry?: MasterGainEntry
 ): Promise<AppAction | null> {
-    if (entryAuthority && !entryAuthority.isCurrent()) {
+    if (entry && !entry.authority.isCurrent()) {
         return null;
     }
-    const expectedPercent = transportStore.value?.masterGain;
-    if (expectedPercent === undefined) {
+    const expectedPercent = entry ? resolveEntryExpectedPercent(entry) : transportStore.value?.masterGain;
+    if (expectedPercent === undefined || expectedPercent === null) {
         return null;
     }
     const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
-    await dispatchMasterGainAction(action, coalesceWithPrevious, entryAuthority);
+    record.expectedPercent = expectedPercent;
+    await dispatchMasterGainAction(action, record, coalesceWithPrevious, entry);
     return action;
 }
 
@@ -158,11 +228,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
      * engine instead of reasserting its own, now-stale, gain.
      */
     const displayedValue = useRef<number | null>(null);
-    // Serialises settled dispatches: chaining each one onto the previous
-    // gesture's settled dispatch — rather than firing them independently —
-    // is what lets a later commit's `expectedPercent` read the store only
-    // after an earlier, barrier-held commit has actually landed.
-    const pendingCommit = useRef<Promise<void>>(Promise.resolve());
+    const commitQueue = useMasterGainCommitQueue();
     // Recency stamp arming the double-click reset's coalescing. Only a
     // gesture settle's own recording arms it, and only when its commit
     // actually recorded an undo entry: a jittered first click re-committing
@@ -201,7 +267,8 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         token: number,
         wasGestureSettle: boolean,
         allowPriorCoalesce: boolean,
-        entryAuthority?: ProjectTransitionAuthority
+        record: PendingMasterGainCommit,
+        entry?: MasterGainEntry
     ): Promise<void> => {
         const coalesceWithPrevious = consumeRecordedGrooveWindow(
             lastGrooveSettleTime,
@@ -209,7 +276,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             allowPriorCoalesce
         );
         try {
-            const action = await dispatchCurrentMasterGainAction(value, coalesceWithPrevious, entryAuthority);
+            const action = await dispatchCurrentMasterGainAction(value, coalesceWithPrevious, record, entry);
             // Only a gesture settle's own recording arms the window; a
             // discrete commit never re-arms. A keyboard nudge records too,
             // but letting it re-arm would chain the next burst of nudges into
@@ -234,7 +301,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         value: number,
         wasGestureSettle: boolean,
         allowPriorCoalesce: boolean,
-        entryAuthority?: ProjectTransitionAuthority
+        entry?: MasterGainEntry
     ): void => {
         gestureToken.current += 1;
         const token = gestureToken.current;
@@ -242,8 +309,8 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         setGestureGain(value);
         setMasterGain(value * 100, true);
 
-        pendingCommit.current = pendingCommit.current.then(() =>
-            commitMasterGain(value, token, wasGestureSettle, allowPriorCoalesce, entryAuthority)
+        commitQueue.enqueue(value, (record) =>
+            commitMasterGain(value, token, wasGestureSettle, allowPriorCoalesce, record, entry)
         );
     };
 
@@ -264,10 +331,13 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     };
 
     const enterGain = (value: number): void => {
-        const authority = captureProjectTransitionAuthority();
+        const entry = commitQueue.captureEntry();
+        if (!entry) {
+            return;
+        }
         gestureOpen.current = false;
         lastGrooveSettleTime.current = null;
-        settleMasterGain(value, false, false, authority);
+        settleMasterGain(value, false, false, entry);
     };
 
     const resetMasterGainFromMenu = (): void => {

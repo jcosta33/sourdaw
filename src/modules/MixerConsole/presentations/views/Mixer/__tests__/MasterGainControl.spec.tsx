@@ -65,6 +65,7 @@ describe('MasterGainControl', () => {
     it.each([
         { input: '0', gain: 1 },
         { input: '-6 dB', gain: dbToGain(-6) },
+        { input: '-60 dB', gain: dbToGain(-60) },
         { input: '+6DB', gain: dbToGain(6) },
         { input: '.5 db', gain: dbToGain(0.5) },
         { input: '-inf', gain: 0 },
@@ -85,7 +86,7 @@ describe('MasterGainControl', () => {
         expect(screen.getByRole('slider', { name: 'Master gain' })).toHaveFocus();
     });
 
-    it.each(['+7', 'NaN', '+Infinity', '1 dB extra', '1e1', '- 6'])(
+    it.each(['-61', '-120', '+7', 'NaN', '+Infinity', '1 dB extra', '1e1', '- 6'])(
         'rejects nonempty invalid input %s',
         async (input) => {
             const onChange = vi.fn();

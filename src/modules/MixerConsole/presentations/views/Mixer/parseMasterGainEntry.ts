@@ -1,4 +1,4 @@
-import { dbToGain, FADER_HEADROOM_DB } from '#/utils/audioLevelLaw';
+import { resolveLevelArgument, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 
 /** Interprets one entered master-fader level as a linear gain. */
 export function parseMasterGainEntry(input: string): number | null {
@@ -10,9 +10,6 @@ export function parseMasterGainEntry(input: string): number | null {
     if (!match) {
         return null;
     }
-    const db = Number(match[1]);
-    if (!Number.isFinite(db) || db > FADER_HEADROOM_DB) {
-        return null;
-    }
-    return dbToGain(db);
+    const result = resolveLevelArgument({ absoluteDb: Number(match[1]) }, 0, TRACK_FADER_LAW);
+    return result.ok ? result.linear : null;
 }
