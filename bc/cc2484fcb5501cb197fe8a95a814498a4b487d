@@ -1,0 +1,197 @@
+.agents/skills/architecture/SKILL.md
+  s_3168504f6ce387::t_cc2fd089f2bc54 97
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_7afc81d34caa69 9-39,364-381,413-416,791-792,804-807,815-817,821-836,928-930,1027
+.github/ISSUE_TEMPLATE/campaign.yml
+  s_b3201877f50e8a::t_934c0f9c85b5d3 4
+.github/ISSUE_TEMPLATE/feature_request.yml
+  s_b3201877f50e8a::t_6b2acce14f50d8 4
+.github/ISSUE_TEMPLATE/spec.yml
+  s_b3201877f50e8a::t_ff5be7c070ba54 4
+.github/workflows/validation.yml
+  s_b3201877f50e8a::t_93772bda450308 308-311,364-365
+AGENTS.md
+  s_b3201877f50e8a::t_9aa8b36a5ecc7d 36-52,96-100,242-245,257-259,265-278,322-323,430-435,503-505,559-563
+CONTRIBUTING.md
+  s_b3201877f50e8a::t_edda4bdfa7d751 28
+crates/daw-collab/AGENTS.md
+  s_b3201877f50e8a::t_8fdac8ce9f37a5 20-21,23
+crates/daw-core/AGENTS.md
+  s_b3201877f50e8a::t_ed760a0e6a213f 19-20,22
+crates/daw-engine/AGENTS.md
+  s_b3201877f50e8a::t_95eeb65b449c8a 159-160,162
+crates/daw-io/AGENTS.md
+  s_b3201877f50e8a::t_0cd596f492fcb0 19-20,22
+crates/daw-plugin-host/AGENTS.md
+  s_b3201877f50e8a::t_fa2b0165e590e0 23-24,26
+crates/proof-chamber/AGENTS.md
+  s_b3201877f50e8a::t_32473352b7f817 21-22,24
+crates/scoring/AGENTS.md
+  s_b3201877f50e8a::t_7374a798e501c1 19-20,22
+docs/06-testing.md
+  s_b3201877f50e8a::t_b6f739537b8fd8 705-707,711-713
+docs/modern-primitives.md
+  s_b3201877f50e8a::t_7421954e4a6aea 21-22
+docs/release.md
+  s_b3201877f50e8a::t_0f61bd84cd6285 57-58
+electron/AGENTS.md
+  s_b3201877f50e8a::t_17315f6f46c8de 22-23,25
+release/dependency-license-proofs.json
+  s_b3201877f50e8a::t_d25eb74d948205 64
+release/open-source-inventory.json
+  s_b3201877f50e8a::t_95e27dc9bbd184 170,1743,2252-2256
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_b3201877f50e8a::t_6136db3c37ff4b 27-35,39,73,92,191-196,390-398,404-439,463-539
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_b3201877f50e8a::t_059e75a73c0df5 685-689,747-750
+scripts/__tests__/fixtures/resourceGuardSignal.ts
+  s_b3201877f50e8a::t_848e78eea9adf8 1-194
+scripts/__tests__/fixtures/resourceGuardSignalChild.ts
+  s_b3201877f50e8a::t_62d969d9bbdd9b 1-35
+scripts/__tests__/fixtures/resourceGuardSignalHarness.ts
+  s_b3201877f50e8a::t_c5518f668cfc81 1-186
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_b3201877f50e8a::t_d1085617f978e9 1966-1973,1990-1995,4658,4661-4669,4671-4673,4675-4704,5421
+scripts/__tests__/resourceGuard.spec.ts
+  s_b3201877f50e8a::t_6f5a528b91b735 15,45-46,479-483,486-504,506-508,510-511,513-581,583-589,593-663
+scripts/fileTrackerIssue.ts
+  s_b3201877f50e8a::t_07bcea49e49511 3,39-49,54-55,166-175,227-229,472-483
+scripts/healthGateWorkflowContract.ts
+  s_b3201877f50e8a::t_930065d7d768c1 101,109
+server/AGENTS.md
+  s_b3201877f50e8a::t_2fdd55c7949fe9 19-21,23,25-27
+src/app/AGENTS.md
+  s_b3201877f50e8a::t_87ad578859a5a6 22-23,25
+src/infra/AGENTS.md
+  s_b3201877f50e8a::t_d451e2c804cc93 22-23,25
+src/modules/AgentAdapters/AGENTS.md
+  s_b3201877f50e8a::t_bd6700fa7c4afc 37-38,40
+src/modules/AiGeneration/AGENTS.md
+  s_b3201877f50e8a::t_2301b73e6b5991 28-29,31
+src/modules/AiRuntime/AGENTS.md
+  s_b3201877f50e8a::t_8d44e0f3e94b5d 60-61,63
+src/modules/Arrangement/AGENTS.md
+  s_b3201877f50e8a::t_c5594cbafef312 33-34,36
+src/modules/AudioAnalysis/AGENTS.md
+  s_b3201877f50e8a::t_9c39725f2fadf5 34-37
+src/modules/AudioEngine/AGENTS.md
+  s_b3201877f50e8a::t_6096e72648cf1f 29,55-59
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_b3201877f50e8a::t_6c5dd497b5ed6b 295-354
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_b3201877f50e8a::t_ef3593ae66838d 338,343-357,364,366-375
+src/modules/AudioRendering/AGENTS.md
+  s_b3201877f50e8a::t_1a09a304b9162e 38-41
+src/modules/Automation/AGENTS.md
+  s_b3201877f50e8a::t_32ec71917c1aab 30-31,33
+src/modules/Bacteria/AGENTS.md
+  s_b3201877f50e8a::t_0bbe0ecdbcda97 29-33
+src/modules/BrowserAi/AGENTS.md
+  s_b3201877f50e8a::t_dfef41e901d862 28-29,31
+src/modules/Collaboration/AGENTS.md
+  s_b3201877f50e8a::t_7586204f09647f 29-30,32
+src/modules/Command/AGENTS.md
+  s_b3201877f50e8a::t_574bf1767d62ec 42-43,45
+src/modules/CommandInterface/AGENTS.md
+  s_b3201877f50e8a::t_cf49c7a0341c15 24-25,27
+src/modules/ContentBrowser/AGENTS.md
+  s_b3201877f50e8a::t_66c884ab2c881c 25-26,28
+src/modules/ControlRoom/AGENTS.md
+  s_b3201877f50e8a::t_bc36f7d5b2ff05 31-34
+src/modules/ControlSurface/AGENTS.md
+  s_b3201877f50e8a::t_fdd2ccb61c4794 34-37
+src/modules/CrdtDocument/AGENTS.md
+  s_b3201877f50e8a::t_6aaaa0ac3c5e74 41-42,44
+src/modules/Crumbs/AGENTS.md
+  s_b3201877f50e8a::t_36d8c1676b3e2e 30-34
+src/modules/Crust/AGENTS.md
+  s_3168504f6ce387::t_eb613ff1d563d3 26-30
+src/modules/CvGate/AGENTS.md
+  s_3168504f6ce387::t_febf19f0f3f22d 24-27
+src/modules/DawInterchange/AGENTS.md
+  s_3168504f6ce387::t_b5626dc28d79ec 26-27,29
+src/modules/ElasticAudio/AGENTS.md
+  s_3168504f6ce387::t_84d4270ad105d8 32-35
+src/modules/FactorySynthesis/AGENTS.md
+  s_3168504f6ce387::t_7302fb7420e7cf 22-25
+src/modules/Fermenter/AGENTS.md
+  s_3168504f6ce387::t_1f2a8d6a259833 27-31
+src/modules/Gluten/AGENTS.md
+  s_3168504f6ce387::t_719e057943ac12 27-31
+src/modules/GrandBoule/AGENTS.md
+  s_3168504f6ce387::t_15b7226c77380e 28-32
+src/modules/Grinder/AGENTS.md
+  s_3168504f6ce387::t_b1fe46cbbea209 27-31
+src/modules/Knead/AGENTS.md
+  s_3168504f6ce387::t_242fe755b19a67 25-28
+src/modules/Levain/AGENTS.md
+  s_3168504f6ce387::t_223ccf56d801cc 26-30
+src/modules/MIDI/AGENTS.md
+  s_3168504f6ce387::t_4927959a7f02d9 32-33,35
+src/modules/Metering/AGENTS.md
+  s_3168504f6ce387::t_687d885ef3b7a3 30-33
+src/modules/MixerConsole/AGENTS.md
+  s_3168504f6ce387::t_d02a6a4cf32f37 26-27,29
+src/modules/Onboarding/AGENTS.md
+  s_3168504f6ce387::t_2357dab0e599f8 25-26,28
+src/modules/PluginHost/AGENTS.md
+  s_3168504f6ce387::t_ca268cd7ca7dd9 40-43
+src/modules/Preferences/AGENTS.md
+  s_3168504f6ce387::t_dbb51e84514223 23-24,26
+src/modules/Project/AGENTS.md
+  s_3168504f6ce387::t_59376a938ee849 48-49,51
+src/modules/ProjectVersioning/AGENTS.md
+  s_3168504f6ce387::t_bbf2c9fc4ce67a 27-28,30
+src/modules/Proof/AGENTS.md
+  s_3168504f6ce387::t_cf62013f5a63b3 27-31
+src/modules/ProofChamber/AGENTS.md
+  s_3168504f6ce387::t_9ab6ca994f8af6 27-31
+src/modules/PunchRecording/AGENTS.md
+  s_3168504f6ce387::t_dcf3ec20c24c47 28-29,31
+src/modules/Routing/AGENTS.md
+  s_3168504f6ce387::t_b6a02ee2974f8b 32-35
+src/modules/SampleLibrary/AGENTS.md
+  s_3168504f6ce387::t_27d3ddf61c1ddc 28-29,31
+src/modules/SessionLauncher/AGENTS.md
+  s_3168504f6ce387::t_177720f4d85352 29-30,32
+src/modules/Setlist/AGENTS.md
+  s_3168504f6ce387::t_6989708d5a152c 27-28,30
+src/modules/Synth/AGENTS.md
+  s_3168504f6ce387::t_e16826af209fb6 25-28
+src/modules/TimelineEditor/AGENTS.md
+  s_3168504f6ce387::t_54df40a2c504b8 27-28,30
+src/modules/Toaster/AGENTS.md
+  s_3168504f6ce387::t_fd1d37a51714c3 28-32
+src/modules/Transport/AGENTS.md
+  s_3168504f6ce387::t_bf9c99262d8b3d 37-38,40
+src/modules/Tuner/AGENTS.md
+  s_3168504f6ce387::t_c527cb5c01d420 23-24,26
+src/modules/WorkspaceShell/AGENTS.md
+  s_3168504f6ce387::t_0e9db4c37bf9ca 36-37,39
+src/modules/Yeast/AGENTS.md
+  s_3168504f6ce387::t_eea7ab7b0ddae0 28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bccc2484fcb5501cb197fe8a95a814498a4b487d",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
