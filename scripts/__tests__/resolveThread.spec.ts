@@ -58,6 +58,8 @@ async function runResolutionSnapshot(args: string[]): Promise<{ result: number |
     const sources = new Map(
         trustedDependencyPaths('review:resolve').map((path) => [path, readFileSync(join(root, path), 'utf8')])
     );
+    // Retain this trap even outside the retired command's closure: restoring the old writer must
+    // reach its authenticated mutations instead of passing the refusal assertion on a missing import.
     sources.set('scripts/githubAppIdentity.ts', resolutionIdentityFixture(logPath));
     try {
         let result: number | string;

@@ -49,5 +49,5 @@ export async function runResolveReviewThreadCli(args: string[]): Promise<number>
         console.log(RESOLUTION_RETIRED_MESSAGE);
         return 0;
     }
-    fail(RESOLUTION_RETIRED_MESSAGE);
+    return fail(RESOLUTION_RETIRED_MESSAGE);
 }
