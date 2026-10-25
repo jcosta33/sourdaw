@@ -1,0 +1,52 @@
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_29d8df116c5b92::t_063362e2391f02 23-24,27-35,41-44,60-70,171-174,191-193
+  s_29d8df116c5b92::t_c4ab96dd94e0b3 36,45-59,167-170
+  s_29d8df116c5b92::t_9e11871c916190 37-40
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_5911fca3dff9d3 310-332,345-346,355-356,378
+.agents/skills/review-stances/project-integrity.md
+  s_29d8df116c5b92::t_cbdac931469d18 451-455
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_839f24be18fc41 973-974,976-982,993
+  s_29d8df116c5b92::t_7b8ff8d52a5693 785-791,816,822-835,839-853,855,989
+  s_29d8df116c5b92::t_8acfb69d40c78a 836,854
+  s_29d8df116c5b92::t_6428658aa67a2b 65,73,792-804,806-815,817-821,837-838
+  s_29d8df116c5b92::t_b52fb32ad74518 805,870,886-887
+  s_29d8df116c5b92::t_4200c2c6b77c0c 857-869,871-885,888-930,932-933,939-951,953,962,975,987-988,996,1044
+  s_29d8df116c5b92::t_b30631f5d27562 931,934-938
+  s_29d8df116c5b92::t_b9b951320d5c99 856,952,954-961,963-972,983-986,990-992,994-995,997-1016,1045-1049
+src/modules/Arrangement/useCases/clipEditing/captureRestoreClipSplitCommitValidation.ts
+  s_29d8df116c5b92::t_8128dcfdb9d978 43-46,76-89,119,129-130,134,146-147,149-152,213-214,216,231-232
+  s_29d8df116c5b92::t_c4220d16dc1cde 233
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_29d8df116c5b92::t_9be99bec05d426 95-105,112
+src/modules/Arrangement/handlers/clip/handleMoveClip.ts
+  s_29d8df116c5b92::t_b8da517924f2d8 21,65,70,78
+  s_29d8df116c5b92::t_1e61a3d889170a 22-29,66-69,71-77
+  s_29d8df116c5b92::t_aaf7d599beb17e 15-16,18-20
+  s_29d8df116c5b92::t_b4997d3d0053f5 83-84
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_cbdac931469d18 665-669
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_aaf7d599beb17e 184-186
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_29d8df116c5b92::t_20452682f5be17 802-809,813-814,946-951,1000-1006
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_554f7176d3654b 1318-1320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ae1bd6623a4e0e67adef2d8a7613cb9adc16e35",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
