@@ -991,6 +991,9 @@ setInterval(() => {}, 1000);
             // hosted runner those stalls reached ~400 ms, landing a sample inside a shorter delay's
             // window between the descendant's birth and the parent's exit — the sample then closed
             // the hidden user into the tracked tree and the guard's normal-exit cleanup killed it.
+            // The two-second birth also clears the 2 000 ms host-publication gate; the
+            // `sampleIntervalMs` override below removes every later sample tick, so no census can
+            // run while the descendant lives under a still-alive parent.
             const parent = `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)}, String(process.pid)); setTimeout(() => { const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore', env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 2_000); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(marker)}) && ${JSON.stringify(scenario === 'parent exit')}) { clearInterval(timer); process.exit(0); } }, 5);`;
             const options = {
                 command: process.execPath,
@@ -1001,6 +1004,7 @@ setInterval(() => {}, 1000);
                 admissionRoot: root,
                 storageRoot: join(root, 'storage'),
                 diskReserveBytes: 1,
+                sampleIntervalMs: 60_000,
             };
             const supervisor = spawn(
                 process.execPath,
@@ -1081,7 +1085,8 @@ setInterval(() => {}, 1000);
             const descendant = `const fs=require('node:fs'); const tmp=process.cwd(); const fd=fs.openSync('held','w'); ${consumer === 'open file' ? "process.chdir('/');" : 'fs.closeSync(fd);'} fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp})); let n=0; setInterval(()=>{${consumer === 'open file' ? "fs.writeSync(fd,'x');" : "fs.writeFileSync('held',String(n));"} fs.writeFileSync(${JSON.stringify(heartbeat)},String(++n));},50);`;
             // Same reason as the descendant-spawn delay above: the hidden user may only be born
             // after the guard's synchronous startup and its first process-table sample settle, so
-            // no sample can close it into the tracked tree and have the exit cleanup kill it.
+            // no sample can close it into the tracked tree and have the exit cleanup kill it; the
+            // 60-second `sampleIntervalMs` override below removes every later sample tick outright.
             const parent = `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)},String(process.pid)); setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',cwd:process.env.TMPDIR,env:{PATH:process.env.PATH}});child.unref();},2_000); setInterval(()=>{if(fs.existsSync(${JSON.stringify(marker)})&&${scenario === 'parent exit'})process.exit(0)},5);`;
             const options = {
                 command: process.execPath,
