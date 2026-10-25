@@ -6694,6 +6694,12 @@ describe('recorded protection facet owners', () => {
     it.each([false, true])(
         'applies recorded output ownership in preservation validation with complement=%s',
         (complement) => {
+            let protectedControls: Array<{ trackId: string; operations: string[]; exceptOperations?: string[] }> = [
+                protection,
+            ];
+            if (complement) {
+                protectedControls = [{ trackId: 'track-drum-bus', operations: [], exceptOperations: ['setTrackGain'] }];
+            }
             const validate = (call: ProviderCall, whole = false) =>
                 validateRefinedProposalActions({
                     pendingActions: null,
@@ -6705,11 +6711,7 @@ describe('recorded protection facet owners', () => {
                     protection: {
                         facts: {
                             protectedUnchanged: whole ? [{ id: 'track-drum-bus', name: 'Drum Bus' }] : [],
-                            protectedControls: [
-                                complement
-                                    ? { trackId: 'track-drum-bus', operations: [], exceptOperations: ['setTrackGain'] }
-                                    : protection,
-                            ],
+                            protectedControls,
                         },
                         readTouchedObjectIds: (type, payload) =>
                             proposalCommandShape.touchedObjectIds(type, payload, context),

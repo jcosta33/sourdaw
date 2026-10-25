@@ -1,3 +1,4 @@
+import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -1641,7 +1642,7 @@ describe('bulk set commands across successive batches', () => {
             }
             requestProtections.resolvedTrackClauses = [{ start: 5, end: 1 }];
 
-            const restored = sanitizeAgentRunState(JSON.parse(JSON.stringify(stored)));
+            const restored = sanitizeAgentRunState(stored);
 
             expect(restored.runs.find((run) => run.runId === 'run-invalid-binding')?.plan?.batchSchedule).toBeDefined();
             expect(
@@ -1889,7 +1890,12 @@ describe('a bulk request confirmed one batch at a time', () => {
             facts: { protectedUnchanged: [{ id: vocalsId, name: 'Vocals' }], protectedControls: [] },
         });
         expect(schedule?.requestProtections?.resolvedTrackClauses.length).toBeGreaterThan(0);
-        const restored = sanitizeAgentRunState(JSON.parse(JSON.stringify(readAgentRunState())));
+        const persistedText = window.localStorage.getItem('sourdaw-agent-runs');
+        if (persistedText === null) {
+            throw new Error('Expected the scheduled run to be persisted.');
+        }
+        expect(persistedText).toContain('requestProtections');
+        const restored = sanitizeAgentRunState(parsePersistedValue<unknown>(persistedText));
         expect(restored.runs.find((run) => run.runId === first.runId)?.plan?.batchSchedule?.requestProtections).toEqual(
             schedule?.requestProtections
         );
