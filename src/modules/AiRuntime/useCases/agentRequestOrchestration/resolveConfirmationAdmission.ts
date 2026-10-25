@@ -20,6 +20,7 @@ import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
 import { type CommandVerifiedBatchReceipt } from './confirmedBatchOutcomeSupport';
+import { readApprovedProtectionFailure } from './readApprovedProtectionFailure';
 import { revalidateApprovedMatchSelectors } from './revalidateApprovedMatchSelectors';
 
 type ApprovalDivergence = Extract<
@@ -245,6 +246,18 @@ async function resolveConfirmationAdmission(input: {
     const recoveringPendingEffects =
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
         priorVerifiedBatchReceipt.pendingEffects.length > 0;
+    if (!hasPriorVerifiedBatchReceipt) {
+        const protectionFailure = readApprovedProtectionFailure(confirmation);
+        if (protectionFailure !== null) {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.invalidateForProjectChange(
+                    confirmation,
+                    protectionFailure
+                ),
+            };
+        }
+    }
     if (
         !hasPriorVerifiedBatchReceipt &&
         !projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)
