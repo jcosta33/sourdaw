@@ -1,0 +1,96 @@
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_602cfc8daee837 20,73-89,103-104,109
+  s_29d8df116c5b92::t_56864cef96ebb6 1,10,46-47,49-60,241
+  s_29d8df116c5b92::t_e8ba1763b5545f 110-112
+src/modules/CrdtDocument/useCases/index.ts
+  s_29d8df116c5b92::t_56864cef96ebb6 12
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 73
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 99
+src/modules/Arrangement/stores/trackStore.ts
+  s_29d8df116c5b92::t_1d35c1f3651ee3 2-5,66-72,803,805-807
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 81
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 157
+src/modules/Command/useCases/__tests__/commitRedoInverseCapture.spec.ts
+  s_29d8df116c5b92::t_65b81a1bc36f10 15,40,66,76,78-90,96-98,102-124,126-132,134-175,177-178
+  s_29d8df116c5b92::t_eef7554623d41a 176,179-180,184,186
+src/modules/CrdtDocument/useCases/readOwnedProjectPublications.ts
+  s_29d8df116c5b92::t_56864cef96ebb6 1-6
+src/modules/Arrangement/repositories/track/updateTrackState.ts
+  s_29d8df116c5b92::t_1d35c1f3651ee3 1,11-15
+src/modules/CrdtDocument/useCases/__tests__/readOwnedProjectPublications.spec.ts
+  s_29d8df116c5b92::t_13813705e0bcad 1-117
+  s_29d8df116c5b92::t_ea1f8ea678bb43 118-149
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 113
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 69
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 30
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 144
+src/modules/Arrangement/useCases/clip/buildDuplicateClipInput.ts
+  s_29d8df116c5b92::t_4822968cfb4137 1-35
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 61
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_5b1846e3e74442 23,782-784
+  s_29d8df116c5b92::t_3e67a730c71d6d 788-795,797-852,877-881
+  s_29d8df116c5b92::t_a702be28cab288 853-875
+  s_29d8df116c5b92::t_7ed130de69306b 876
+  s_29d8df116c5b92::t_1d46981c1d76b5 785-787,796,882-883
+  s_29d8df116c5b92::t_f2cf232286e3b4 723-781,884
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_29d8df116c5b92::t_b0a6b74676c9f4 78-84
+  s_29d8df116c5b92::t_4822968cfb4137 12
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 142
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 54
+src/modules/Arrangement/repositories/track/__tests__/updateTrackState.spec.ts
+  s_29d8df116c5b92::t_1d35c1f3651ee3 8
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 118
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 82
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 201
+src/modules/Arrangement/stores/__tests__/trackStoreTransientState.spec.ts
+  s_29d8df116c5b92::t_27a907c8c8b416 233-256
+  s_29d8df116c5b92::t_5b1846e3e74442 257-280
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 21
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 126
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_4822968cfb4137 6,58-63
+  s_29d8df116c5b92::t_602cfc8daee837 36-42,49-57,68-74
+  s_29d8df116c5b92::t_b0a6b74676c9f4 5,7,27-35,43-48,64-67,75-77,185-192
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 143
+src/modules/Command/useCases/commitRedoInverseCapture.ts
+  s_29d8df116c5b92::t_56864cef96ebb6 12,26,75,80-88,149
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  s_29d8df116c5b92::t_8eec9ad7374b71 97
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_29d8df116c5b92::t_56864cef96ebb6 33-37,259,342-346,434,438-446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3bf4c8899339213658b8a0baf0f39f8cec45ec7f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
