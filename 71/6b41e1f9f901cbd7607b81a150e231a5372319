@@ -1,0 +1,27 @@
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_b3201877f50e8a::t_c8608c9a9f28de 39-49,70
+src/modules/MixerConsole/presentations/views/Mixer/MasterGainControl.tsx
+  s_b3201877f50e8a::t_813dd121e6ee76 55-64,68-79,90
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.commandAdmission.spec.tsx
+  s_b3201877f50e8a::t_a7a1d08def8265 1-104
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_b3201877f50e8a::t_58b3263f9ba1ee 219-225,250-257,262-269,337,369-371,373-375,419-420,428-434
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterGainControl.spec.tsx
+  s_b3201877f50e8a::t_e04b472de0dfb8 209-238,251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "716b41e1f9f901cbd7607b81a150e231a5372319",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
