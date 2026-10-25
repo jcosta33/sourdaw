@@ -465,19 +465,19 @@ describe('live store edits on the existing writer pass', () => {
             const sent = new Promise<void>((resolve) => {
                 observed = resolve;
             });
-            const batches = await playingWith(
-                [...(route === 'new-device' ? [] : [lane]), bystander, pan],
-                async () => {
-                    if (!pending) {
-                        return applied;
-                    }
-                    observed();
-                    return new Promise((resolve) => {
-                        settle = resolve;
-                    });
-                },
-                [trackHolding([FIRST_PLUGIN]), other]
-            );
+            const initialLanes = [bystander, pan];
+            if (route !== 'new-device') {
+                initialLanes.unshift(lane);
+            }
+            const batches = await playingWith(initialLanes, async () => {
+                if (!pending) {
+                    return applied;
+                }
+                observed();
+                return new Promise((resolve) => {
+                    settle = resolve;
+                });
+            }, [trackHolding([FIRST_PLUGIN]), other]);
             const target: AudioGraphParameterTarget =
                 route === 'strip'
                     ? { kind: 'track-pan', trackId: STRIP_ID }
@@ -520,7 +520,11 @@ describe('live store edits on the existing writer pass', () => {
                     value: 0.24,
                 });
             }
-            automationStore.set({ lanes: [...(change === 'revert' ? [lane] : []), bystander, pan] });
+            const currentLanes = [bystander, pan];
+            if (change === 'revert') {
+                currentLanes.unshift(lane);
+            }
+            automationStore.set({ lanes: currentLanes });
             // A feed tick may observe the reverted truth while the edited apply is still unanswered.
             await pump();
             rearmNativeLiveAutomationWriterInPlace({ positionSeconds: 0.02, provenAfterBatch: 11 });
