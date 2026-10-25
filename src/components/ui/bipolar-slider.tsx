@@ -67,6 +67,7 @@ export const BipolarSlider = ({
     const pendingValue = useRef<number | null>(null);
     const settledValue = useRef<number | null>(null);
     const activePointerId = useRef<number | null>(null);
+    const handlingSliderKey = useRef(false);
     useLayoutEffect(() => {
         if (settledValue.current !== value) {
             settledValue.current = null;
@@ -74,19 +75,23 @@ export const BipolarSlider = ({
     }, [value]);
     const commitPending = (committed?: number[]): void => {
         const normalizedCommit = committed?.[0];
-        const committedBeforeChange =
-            pendingValue.current === null && normalizedCommit !== undefined && activePointerId.current === null
-                ? min + (normalizedCommit / 100) * range
-                : null;
-        const pending = pendingValue.current ?? committedBeforeChange;
+        const pending = pendingValue.current;
+        if (pending === null && activePointerId.current === null && !handlingSliderKey.current) {
+            return;
+        }
+        let finalValue = pending;
+        if (normalizedCommit !== undefined) {
+            finalValue = min + (normalizedCommit / 100) * range;
+        }
         pendingValue.current = null;
         activePointerId.current = null;
-        if (pending !== null && pending !== settledValue.current) {
-            if (committedBeforeChange !== null) {
-                onValueChange(committedBeforeChange);
+        if (finalValue !== null && finalValue !== settledValue.current) {
+            // Radix can commit a keyboard value before its change callback, even during a pointer edit.
+            if (finalValue !== pending) {
+                onValueChange(finalValue);
             }
-            settledValue.current = pending;
-            onValueCommit?.(pending);
+            settledValue.current = finalValue;
+            onValueCommit?.(finalValue);
         }
     };
     useBipolarSliderCompletion(onValueCommit !== undefined, commitPending);
@@ -129,6 +134,12 @@ export const BipolarSlider = ({
     return (
         <div
             className={cn('flex flex-col gap-1 w-full', className)}
+            onKeyDownCapture={(event) => {
+                handlingSliderKey.current = event.target instanceof HTMLElement && event.target.role === 'slider';
+            }}
+            onKeyDown={() => {
+                handlingSliderKey.current = false;
+            }}
             onPointerCancel={finishPointer}
             onLostPointerCapture={finishPointer}
             onBlur={(event) => {

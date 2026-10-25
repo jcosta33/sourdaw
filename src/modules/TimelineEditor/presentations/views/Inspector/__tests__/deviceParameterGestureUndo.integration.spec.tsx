@@ -395,6 +395,142 @@ describe('Inspector continuous parameter gestures through real history', () => {
         expect(depth()).toBe(1);
     });
 
+    it('settles End during a held pointer preview before release and replays the terminal value', async () => {
+        const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+        const root = sliderTrack();
+        const slider = screen.getByRole('slider', { name: 'Threshold' });
+        fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+        fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+        expect(values(compressor.id)['comp-threshold']).toBe(-20);
+        expect(screen.getAllByText('-48.0 dB')).toHaveLength(2);
+        expect(depth()).toBe(0);
+
+        fireEvent.keyDown(slider, { key: 'End' });
+        await expectCommitted('comp-threshold', 0, 1, compressor.id);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(writes(compressor.id)).toEqual([-36, -48, -20, 0, 0, 0]);
+        await act(() => undo());
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+        expect(values(compressor.id)['comp-threshold']).toBe(-20);
+        expect(writes(compressor.id).at(-1)).toBe(-20);
+        await act(() => redo());
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(0);
+        expect(values(compressor.id)['comp-threshold']).toBe(0);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(writes(compressor.id).at(-1)).toBe(0);
+        const completedWrites = writes(compressor.id);
+
+        fireEvent.pointerUp(root, { pointerId: 2 });
+        fireEvent.keyDown(slider, { key: 'End' });
+        fireEvent.blur(slider);
+        view.unmount();
+        await act(async () => {
+            await executeUserAppAction({
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: compressor.id,
+                    paramId: 'comp-ratio',
+                    value: 4,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            });
+        });
+        expect(depth()).toBe(1);
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(0);
+        expect(writes(compressor.id)).toEqual(completedWrites);
+        await act(() => undo());
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+    });
+
+    it('keeps Home, arrow and End entries independent through replay and drained cleanup', async () => {
+        const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+        const slider = screen.getByRole('slider', { name: 'Threshold' });
+        fireEvent.keyDown(slider, { key: 'Home' });
+        await expectCommitted('comp-threshold', -60, 1, compressor.id);
+        fireEvent.keyDown(slider, { key: 'ArrowRight' });
+        await expectCommitted('comp-threshold', -59.7, 2, compressor.id);
+        fireEvent.keyDown(slider, { key: 'End' });
+        await expectCommitted('comp-threshold', 0, 3, compressor.id);
+        for (const value of [-59.7, -60, -20]) {
+            await act(() => undo());
+            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(value);
+            expect(values(compressor.id)['comp-threshold']).toBe(value);
+            expect(writes(compressor.id).at(-1)).toBe(value);
+        }
+        for (const value of [-60, -59.7, 0]) {
+            await act(() => redo());
+            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(value);
+            expect(values(compressor.id)['comp-threshold']).toBe(value);
+            expect(writes(compressor.id).at(-1)).toBe(value);
+        }
+        fireEvent.keyDown(slider, { key: 'End' });
+        fireEvent.blur(slider);
+        view.unmount();
+        await act(async () => {
+            await executeUserAppAction({
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: compressor.id,
+                    paramId: 'comp-ratio',
+                    value: 4,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            });
+        });
+        expect(depth()).toBe(3);
+        expect(writes(compressor.id).at(-1)).toBe(0);
+        await act(() => undo());
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-59.7);
+    });
+
+    it.each(['write', 'touch', 'latch'] as const)(
+        'records the terminal End sample once after a held pointer preview in %s mode',
+        async (automationMode) => {
+            let beat = 1;
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(compressor)]), automationMode }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+            const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+            const root = sliderTrack();
+            const slider = screen.getByRole('slider', { name: 'Threshold' });
+            fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+            beat = 2;
+            fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
+            beat = 3;
+            fireEvent.keyDown(slider, { key: 'End' });
+            await expectCommitted('comp-threshold', 0, 1, compressor.id);
+            const expectedSamples = [
+                ['track-1', 'compressor-1:comp-threshold', -36, 1],
+                ['track-1', 'compressor-1:comp-threshold', -48, 2],
+                ['track-1', 'compressor-1:comp-threshold', 0, 3],
+            ];
+            expect(recording.mock.calls).toEqual(expectedSamples);
+            beat = 4;
+            fireEvent.pointerUp(root, { pointerId: 2 });
+            fireEvent.keyDown(slider, { key: 'End' });
+            fireEvent.blur(slider);
+            view.unmount();
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setDeviceParameter',
+                    payload: {
+                        deviceId: compressor.id,
+                        paramId: 'comp-ratio',
+                        value: 4,
+                        automationRecordingPolicy: 'suppressed',
+                    },
+                });
+            });
+            expect(recording.mock.calls).toEqual(expectedSamples);
+            expect(depth()).toBe(1);
+        }
+    );
+
     it('gives two parameter identities on two devices two independent entries', async () => {
         render(
             <>
