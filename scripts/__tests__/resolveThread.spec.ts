@@ -18,15 +18,18 @@ const HEAD = 'a'.repeat(40);
 const THREAD = 'PRRT_kwDOabc';
 const NUMBER = 42;
 
-function resolutionIdentityFixture(logPath: string): string {
+function resolutionIdentityFixture(): string {
     return [
         "import { appendFileSync } from 'node:fs';",
-        `const log = (event) => appendFileSync(${JSON.stringify(logPath)}, event + '\\n');`,
+        "import { join } from 'node:path';",
+        'const root = process.env.SOURDAW_REVIEW_RESOLUTION_TEST_ROOT;',
+        "if (typeof root !== 'string') throw new Error('resolution fixture root is missing');",
+        "const log = (event) => appendFileSync(join(root, 'remote-calls.log'), event + '\\n');",
         `export const AUTHOR_BOT_NODE_ID = ${JSON.stringify(AUTHOR_BOT_NODE_ID)};`,
         'export const isAuthorBotNodeId = (id) => id === AUTHOR_BOT_NODE_ID;',
         'export const assertRequiredRepository = () => {};',
         'export const parseGraphqlResponse = (response) => JSON.parse(response);',
-        `export const resolvePrimaryRoot = () => ${JSON.stringify(join(logPath, '..'))};`,
+        'export const resolvePrimaryRoot = () => root;',
         'export async function authenticateRole() {',
         "  log('authenticate-author');",
         "  return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { env: {}, dispose: () => log('dispose') } };",
@@ -52,7 +55,7 @@ function resolutionIdentityFixture(logPath: string): string {
 
 /** The entry and launcher are production source; only authenticated GitHub I/O is controlled. */
 async function runResolutionSnapshot(args: string[]): Promise<{ result: number | string; calls: string }> {
-    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-retired-resolution-'));
+    const directory = mkdtempSync(join(tmpdir(), "sourdaw-retired-resolution-'quoted space-"));
     const logPath = join(directory, 'remote-calls.log');
     const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
     const sources = new Map(
@@ -60,7 +63,10 @@ async function runResolutionSnapshot(args: string[]): Promise<{ result: number |
     );
     // Retain this trap even outside the retired command's closure: restoring the old writer must
     // reach its authenticated mutations instead of passing the refusal assertion on a missing import.
-    sources.set('scripts/githubAppIdentity.ts', resolutionIdentityFixture(logPath));
+    sources.set('scripts/githubAppIdentity.ts', resolutionIdentityFixture());
+    const previousRoot = process.env.SOURDAW_REVIEW_RESOLUTION_TEST_ROOT;
+    // Pass the path as child-process data, never as executable module source.
+    process.env.SOURDAW_REVIEW_RESOLUTION_TEST_ROOT = directory;
     try {
         let result: number | string;
         try {
@@ -73,6 +79,11 @@ async function runResolutionSnapshot(args: string[]): Promise<{ result: number |
         }
         return { result, calls: existsSync(logPath) ? readFileSync(logPath, 'utf8') : '' };
     } finally {
+        if (previousRoot === undefined) {
+            delete process.env.SOURDAW_REVIEW_RESOLUTION_TEST_ROOT;
+        } else {
+            process.env.SOURDAW_REVIEW_RESOLUTION_TEST_ROOT = previousRoot;
+        }
         rmSync(directory, { recursive: true, force: true });
     }
 }
