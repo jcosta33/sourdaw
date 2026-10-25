@@ -10,6 +10,7 @@ import {
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
+import { resetPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -133,26 +134,26 @@ describe('useAppInitialization — solo mode preference projection', () => {
         }
     });
 
-    it('applies the saved mode and later preference writes synchronously, then unsubscribes', () => {
+    it('applies the saved mode and explicit owner outcomes, then unsubscribes and reapplies on remount', () => {
         const { unmount } = renderHook(() => useAppInitialization());
         expect(setSoloMode).toHaveBeenCalledWith('afl');
 
         vi.mocked(setSoloMode).mockClear();
-        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'pfl', autoSave: false };
         act(() => {
-            for (const listener of preferenceListeners) {
-                listener();
-            }
+            updatePreferences({ patch: { soloMode: 'pfl' } });
             expect(setSoloMode).toHaveBeenCalledWith('pfl');
         });
 
         vi.mocked(setSoloMode).mockClear();
         unmount();
-        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'sip', autoSave: false };
-        for (const listener of preferenceListeners) {
-            listener();
-        }
+        updatePreferences({ patch: { soloMode: 'sip' } });
         expect(setSoloMode).not.toHaveBeenCalled();
+
+        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'sip', autoSave: false };
+        const remounted = renderHook(() => useAppInitialization());
+        expect(setSoloMode).toHaveBeenCalledWith('sip');
+        remounted.unmount();
+        resetPreferences();
     });
 });
 
