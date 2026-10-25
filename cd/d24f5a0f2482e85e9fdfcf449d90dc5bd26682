@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/hooks/useDeviceParameterGesture.ts
+  s_b3201877f50e8a::t_3a6625934d6e40 130-131
+  s_b3201877f50e8a::t_9b432742d6d559 63-66,68,250
+  s_b3201877f50e8a::t_a798d4772b3d0e 1-9,15,22-30,33-35,100-102,129,173,176-178,198-203,216,249,282-286,304,325,345-349,351,382-383,388-391
+  s_b3201877f50e8a::t_1a161d9c8695c8 251-252,392-393
+src/modules/TimelineEditor/presentations/hooks/deviceParameterGesturePreview.ts
+  s_b3201877f50e8a::t_a798d4772b3d0e 1-73
+  s_b3201877f50e8a::t_fa4cd522eee87f 74-77
+src/modules/TimelineEditor/presentations/hooks/__tests__/useDeviceParameterGesture.spec.tsx
+  s_b3201877f50e8a::t_51bf79e6050ed2 18,79,81-84
+  s_b3201877f50e8a::t_0429850c1166e5 1-17,19-78,80,85-304
+  s_b3201877f50e8a::t_4a78dfbcca4bc3 305-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdd24f5a0f2482e85e9fdfcf449d90dc5bd26682",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
