@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
@@ -39,33 +41,27 @@ export function retireLaneInsertion(lane: TakeLane): void {
     const landed = state.lanes[landedIndex]!;
     const retiredTakeIds = new Set(lane.takes.map((take) => take.id));
 
-    if (landed.id === lane.id) {
-        const takes = landed.takes.filter((take) => !retiredTakeIds.has(take.id));
-        const activeCompRegions = landed.activeCompRegions.filter((region) => !retiredTakeIds.has(region.takeId));
-        if (takes.length === 0 && activeCompRegions.length === 0) {
-            removeTakeLane(landed.id);
-            return;
-        }
-        if (takes.length === landed.takes.length && activeCompRegions.length === landed.activeCompRegions.length) {
-            return;
-        }
-        const lanes = [...state.lanes];
-        lanes[landedIndex] = { ...landed, takes, activeCompRegions };
-        takeLaneStore.set({ lanes });
-        return;
-    }
-
     const takes = landed.takes.filter((take) => !retiredTakeIds.has(take.id));
-    if (takes.length === landed.takes.length) {
-        return;
-    }
     const activeCompRegions = landed.activeCompRegions.filter((region) => !retiredTakeIds.has(region.takeId));
-    if (takes.length === 0 && activeCompRegions.length === 0) {
+    const gaps = landed.baseGapAudioSources?.filter(
+        (tile) => !lane.baseGapAudioSources?.some((captured) => valuesEqual(tile, captured))
+    );
+    if (takes.length === 0 && activeCompRegions.length === 0 && !gaps?.length) {
         removeTakeLane(landed.id);
         return;
     }
-
+    if (
+        takes.length === landed.takes.length &&
+        activeCompRegions.length === landed.activeCompRegions.length &&
+        gaps?.length === landed.baseGapAudioSources?.length
+    )
+        return;
     const lanes = [...state.lanes];
-    lanes[landedIndex] = { ...landed, takes, activeCompRegions };
+    lanes[landedIndex] = {
+        ...landed,
+        takes,
+        activeCompRegions,
+        ...(gaps === undefined ? {} : { baseGapAudioSources: gaps }),
+    };
     takeLaneStore.set({ lanes });
 }

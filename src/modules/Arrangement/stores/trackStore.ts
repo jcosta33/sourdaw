@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { hasValidAudioSourceState } from '#/utils/audioSourceTime';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
@@ -269,6 +270,16 @@ function normalize_clip(value: unknown): Clip | null {
     }
     if (is_finite_number(value.audioOffsetBeats)) {
         clip.audioOffsetBeats = value.audioOffsetBeats;
+    }
+    if (clip.type === 'audio' && hasValidAudioSourceState(value) && is_finite_number(value.audioOffsetSeconds)) {
+        clip.audioOffsetSeconds = value.audioOffsetSeconds;
+        if (is_finite_number(value.audioUnwrappedOffsetSeconds))
+            clip.audioUnwrappedOffsetSeconds = value.audioUnwrappedOffsetSeconds;
+        if (is_finite_number(value.audioLoopStartSeconds)) clip.audioLoopStartSeconds = value.audioLoopStartSeconds;
+        if (is_finite_number(value.audioLoopPassEntrySeconds))
+            clip.audioLoopPassEntrySeconds = value.audioLoopPassEntrySeconds;
+        if (is_finite_number(value.audioLoopPassOriginBeat))
+            clip.audioLoopPassOriginBeat = value.audioLoopPassOriginBeat;
     }
     if (is_finite_number(value.midiOffsetBeats)) {
         clip.midiOffsetBeats = value.midiOffsetBeats;

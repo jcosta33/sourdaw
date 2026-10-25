@@ -15,6 +15,7 @@ import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRes
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
 import { handleRestoreCompRegionInterval } from '../handlers/comping/handleRestoreCompRegionInterval';
+import { handleRemoveCompRegion } from '../handlers/comping/handleRemoveCompRegion';
 import { handleSetCompRegion } from '../handlers/comping/handleSetCompRegion';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
 import { handleAddSend } from '../handlers/device/handleAddSend';
@@ -244,6 +245,7 @@ export function getArrangementHandlers() {
         ...adjustmentLayerHandlers,
         ...clipHandlers,
         setCompRegion: handleSetCompRegion,
+        removeCompRegion: handleRemoveCompRegion,
         restoreCompRegionInterval: handleRestoreCompRegionInterval,
     };
 }

@@ -148,7 +148,7 @@ export function flattenComp(trackId: string): boolean {
     }
     const laneIndex = laneState.lanes.indexOf(lane);
 
-    if (lane.activeCompRegions.length === 0 || track.clips.length === 0) {
+    if ((lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length) || track.clips.length === 0) {
         removeTakeLane(lane.id);
         // The entry captures only the removed lane (#4081): replaying a
         // whole-store snapshot on undo erased every later edit to any other lane.

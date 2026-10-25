@@ -23,8 +23,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBufferWaveformPeaks: mocks.getCachedAudioBufferWaveformPeaks,
 }));
 
-const create_test_audio_buffer = (sampleRate = 48_000): AudioBuffer => {
-    const channel_data = new Float32Array(96_000);
+const create_test_audio_buffer = (sampleRate = 48_000, length = 96_000): AudioBuffer => {
+    const channel_data = new Float32Array(length);
     return {
         copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
             destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
@@ -71,6 +71,7 @@ const create_audio_clip = (overrides: Partial<ClipRenderModel> = {}): ClipRender
     audioBufferId: 'buf-1',
     audioOffsetBeats: 1,
     stretchRatio: 2,
+    stretchMode: 'timestretch',
     loopEnabled: false,
     loopLength: undefined,
     midiOffsetBeats: 0,
@@ -258,7 +259,7 @@ describe('drawClip (Coordinate Conventions)', () => {
     });
 
     it('should draw cached audio waveform peaks through AudioEngine owner use cases', () => {
-        const buffer = create_test_audio_buffer();
+        const buffer = create_test_audio_buffer(48_000, 480_000);
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
 
@@ -274,11 +275,49 @@ describe('drawClip (Coordinate Conventions)', () => {
     });
 
     it('requests the clip-start-tempo source window when the map tempo differs from base tempo', () => {
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
-        drawClip(mockCtx, create_audio_clip({ clipStartTempo: 90 }), create_test_model(), 0, 40);
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
+        drawClip(
+            mockCtx,
+            create_audio_clip({ clipStartTempo: 90 }),
+            create_test_model({
+                sourceTimeline: { secondsAtBeat: (beat) => (beat * 2) / 3, beatAtSeconds: (seconds) => seconds * 1.5 },
+            }),
+            0,
+            40
+        );
         expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
             expect.objectContaining({ startSample: 32_000, endSample: 288_000 })
         );
+    });
+
+    it('requests canonical PCM and places its bins through the captured tempo map', () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
+        const clip = create_audio_clip({
+            startBeat: 4,
+            endBeat: 8,
+            audioOffsetBeats: 12,
+            audioOffsetSeconds: 0,
+            clipStartTempo: 60,
+        });
+        const model = create_test_model({
+            sourceTimeline: {
+                secondsAtBeat: (beat) => (beat <= 4 ? beat / 2 : beat <= 6 ? 2 + beat - 4 : 4 + (beat - 6) / 2),
+                beatAtSeconds: (seconds) =>
+                    seconds <= 2 ? seconds * 2 : seconds <= 4 ? 4 + seconds - 2 : 6 + (seconds - 4) * 2,
+            },
+        });
+
+        drawClip(mockCtx, clip, model, 0, 40);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 100,
+            startSample: 0,
+            endSample: 288000,
+        });
+        const waveform = mockCtx.lineTo.mock.calls.filter((args: number[]) => args[1] !== 2.5);
+        expect(waveform.slice(0, 3).map((point: number[]) => point[0])).toEqual([102, 127, 152]);
     });
 
     it('should not read waveform peaks when the cached audio buffer is missing', () => {

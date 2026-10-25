@@ -73,6 +73,21 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         },
     },
     {
+        title: 'removeCompRegion refuses to write against a diverged interval',
+        actionType: 'removeCompRegion',
+        divergedAction: {
+            type: 'removeCompRegion',
+            payload: {
+                laneId: 'lane-live',
+                trackId: 'track-comp',
+                startBeat: 2,
+                endBeat: 4,
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [],
+            },
+        },
+    },
+    {
         // Live selection is take-a in [2,4); the captured replay guard expects take-b.
         title: 'restoreCompRegionInterval refuses to write against a diverged interval',
         actionType: 'restoreCompRegionInterval',

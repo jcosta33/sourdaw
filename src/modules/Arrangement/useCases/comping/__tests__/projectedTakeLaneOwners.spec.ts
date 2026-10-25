@@ -68,8 +68,8 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
     it('retains a sole re-keyed owner on the restored source without publishing or changing peer owners', () => {
         const before = structuredClone(mocks.state.value);
         expect(projectedTakeLaneOwners([undoSplit])).toEqual([
-            { id: 'source-lane', trackId: 'track', takes: [originalTake] },
-            { id: 'peer-lane', trackId: 'peer-track', takes: [peerTake] },
+            { id: 'source-lane', trackId: 'track', takes: [originalTake], activeCompRegions: [] },
+            { id: 'peer-lane', trackId: 'peer-track', takes: [peerTake], activeCompRegions: [] },
         ]);
         expect(mocks.state.value).toEqual(before);
     });

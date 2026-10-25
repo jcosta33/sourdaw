@@ -99,6 +99,63 @@ function warnings(): string[] {
 }
 
 describe('flattenComp', () => {
+    it('materializes audible base-gap tiles before retiring a lane with no selections or takes', () => {
+        const clip = ClipDummy.create({
+            id: 'source',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 12,
+            audioBufferId: 'buffer',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0,
+            audioLoopPassOriginBeat: 0,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        seedTrack([clip]);
+        const lane = {
+            ...createTakeLane(TRACK_ID),
+            baseGapAudioSources: [
+                {
+                    clipId: clip.id,
+                    startBeat: 1,
+                    endBeat: 11,
+                    audioSource: {
+                        startBeat: 1,
+                        audioOffsetSeconds: 0.5,
+                        audioLoopStartSeconds: 0,
+                        audioLoopPassEntrySeconds: 0.5,
+                        audioLoopPassOriginBeat: 1,
+                        loopOriginBeat: 0,
+                        loopLength: 4,
+                    },
+                },
+            ],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        const sourceWindows = () =>
+            resolveClipsWithComping(TRACK_ID, liveClips()).map((part) => ({
+                startBeat: part.startBeat,
+                endBeat: part.endBeat,
+                audioOffsetSeconds: part.audioOffsetSeconds,
+                audioLoopStartSeconds: part.audioLoopStartSeconds,
+                audioLoopPassEntrySeconds: part.audioLoopPassEntrySeconds,
+                audioLoopPassOriginBeat: part.audioLoopPassOriginBeat,
+                loopOriginBeat: part.loopOriginBeat,
+                loopLength: part.loopLength,
+            }));
+        const before = sourceWindows();
+        expect(before).toHaveLength(3);
+        expect(flattenComp(TRACK_ID)).toBe(true);
+        expect(liveClips()).toHaveLength(3);
+        expect(sourceWindows()).toEqual(before);
+        expect(laneIds()).toEqual([]);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         clearUndoHistory();
@@ -200,9 +257,27 @@ describe('flattenComp', () => {
         for (const key of ['regionStartBeat', 'regionEndBeat', 'sourceStartBeat']) {
             expect(liveClips().filter((clip) => Object.hasOwn(clip, key))).toEqual([]);
         }
-        const sourceKeys = new Set(Object.keys(sourceClip));
-        for (const fragment of liveClips()) {
-            expect(new Set(Object.keys(fragment))).toEqual(sourceKeys);
+        const sourceKeys = Object.keys(sourceClip);
+        const canonicalKeys = [
+            'audioOffsetSeconds',
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+            'loopOriginBeat',
+        ];
+        expect(liveClips()[1]).toMatchObject({
+            audioOffsetSeconds: 1.25,
+            audioUnwrappedOffsetSeconds: 1.25,
+            audioLoopStartSeconds: 1.25,
+            audioLoopPassEntrySeconds: 1.25,
+            audioLoopPassOriginBeat: 2,
+            loopOriginBeat: 2,
+        });
+        for (const [index, fragment] of liveClips().entries()) {
+            expect(new Set(Object.keys(fragment))).toEqual(
+                new Set(index === 1 ? [...sourceKeys, ...canonicalKeys] : sourceKeys)
+            );
         }
     });
 

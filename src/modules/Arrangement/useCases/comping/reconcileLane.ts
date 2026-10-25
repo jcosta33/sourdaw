@@ -1,3 +1,5 @@
+import { type AudioSourceTile } from '#/utils/audioSourceTime';
+
 import { type Take, type TakeLane } from '../../models/TakeLane';
 
 import { regionsOverlap } from './regionsOverlap';
@@ -36,7 +38,12 @@ import { regionsOverlap } from './regionsOverlap';
  * takes precedence over a restored take's captured selection. When live has no
  * selection, at most one restored selected take regains it.
  */
-export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: readonly string[]): TakeLane | null {
+export function reconcileLane(
+    live: TakeLane,
+    captured: TakeLane,
+    retiredTakeIds: readonly string[],
+    retiredTiles: readonly AudioSourceTile[] = []
+): TakeLane | null {
     const retiredTakeIdSet = new Set(retiredTakeIds);
     const liveTakesById = new Map(live.takes.map((take) => [take.id, take]));
 
@@ -71,13 +78,24 @@ export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds
             !live.activeCompRegions.some((liveRegion) => regionsOverlap(liveRegion, region))
     );
 
-    if (reAddedTakeIds.size === 0 && restoredRegions.length === 0) {
+    const liveTiles = live.baseGapAudioSources ?? [];
+    const restoredTiles = retiredTiles.filter(
+        (tile) => !liveTiles.some((existing) => existing.clipId === tile.clipId && regionsOverlap(existing, tile))
+    );
+    if (reAddedTakeIds.size === 0 && restoredRegions.length === 0 && restoredTiles.length === 0) {
         return null;
     }
 
     return {
         ...live,
         takes,
+        ...(restoredTiles.length === 0
+            ? {}
+            : {
+                  baseGapAudioSources: [...liveTiles, ...structuredClone(restoredTiles)].sort(
+                      (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
+                  ),
+              }),
         activeCompRegions: [...live.activeCompRegions, ...restoredRegions].sort(
             (alpha, buffer) => alpha.startBeat - buffer.startBeat
         ),

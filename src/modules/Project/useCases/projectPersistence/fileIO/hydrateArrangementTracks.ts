@@ -17,6 +17,21 @@ function hydrateClip(clip: SerializedProjectClip): ProjectClip {
         fileId: clip.fileId,
         assetHash: clip.assetHash,
         audioOffsetBeats: clip.sampleStartBeat ?? clip.audioOffsetBeats,
+        ...(clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
+            ? { audioOffsetSeconds: clip.audioOffsetSeconds }
+            : {}),
+        ...(clip.type === 'audio' && clip.audioUnwrappedOffsetSeconds !== undefined
+            ? { audioUnwrappedOffsetSeconds: clip.audioUnwrappedOffsetSeconds }
+            : {}),
+        ...(clip.type === 'audio' && clip.audioLoopStartSeconds !== undefined
+            ? { audioLoopStartSeconds: clip.audioLoopStartSeconds }
+            : {}),
+        ...(clip.type === 'audio' && clip.audioLoopPassEntrySeconds !== undefined
+            ? { audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds }
+            : {}),
+        ...(clip.type === 'audio' && clip.audioLoopPassOriginBeat !== undefined
+            ? { audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat }
+            : {}),
         midiOffsetBeats: clip.midiOffsetBeats,
         fadeInBeats: clip.fadeInBeats,
         fadeOutBeats: clip.fadeOutBeats,

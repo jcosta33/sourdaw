@@ -45,6 +45,70 @@ const validTrackBase = {
 };
 
 describe('sanitizeTrackSnapshot — clip optional field round-trip', () => {
+    it.each([0, -0.25, 3.5])(
+        'preserves signed canonical source second %s and its independent loop boundary',
+        (entry) => {
+            const clip = {
+                ...validClipBase,
+                audioOffsetBeats: 12,
+                audioOffsetSeconds: entry,
+                audioUnwrappedOffsetSeconds: -2.5,
+                audioLoopStartSeconds: -1,
+                audioLoopPassEntrySeconds: 0,
+                audioLoopPassOriginBeat: -2,
+            };
+            const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
+
+            expect(result.tracks[0]?.clips[0]).toMatchObject({
+                audioOffsetSeconds: entry,
+                audioUnwrappedOffsetSeconds: -2.5,
+                audioLoopStartSeconds: -1,
+                audioLoopPassEntrySeconds: 0,
+                audioLoopPassOriginBeat: -2,
+            });
+        }
+    );
+
+    it.each(['legacy', 'midi', 'non-finite'])('leaves canonical source fields absent for %s input', (kind) => {
+        const clip = {
+            ...validClipBase,
+            ...(kind === 'midi' ? { type: 'midi', audioOffsetSeconds: 0, audioLoopStartSeconds: 1 } : {}),
+            ...(kind === 'non-finite'
+                ? { audioOffsetSeconds: Number.NaN, audioLoopStartSeconds: Number.POSITIVE_INFINITY }
+                : {}),
+        };
+        const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
+        const restored = result.tracks[0]?.clips[0];
+
+        expect(restored).toBeDefined();
+        expect(Object.hasOwn(restored!, 'audioOffsetSeconds')).toBe(false);
+        expect(Object.hasOwn(restored!, 'audioLoopStartSeconds')).toBe(false);
+    });
+
+    it.each([
+        { audioUnwrappedOffsetSeconds: 0 },
+        { audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: Number.POSITIVE_INFINITY },
+        { audioLoopStartSeconds: 0 },
+        { audioLoopPassEntrySeconds: 0 },
+        { audioLoopPassOriginBeat: 0 },
+        { audioOffsetSeconds: 0, audioLoopPassEntrySeconds: Number.NaN },
+    ])('rejects orphan or malformed canonical source provenance %j', (fields) => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({ ...validTrackBase, clips: [{ ...validClipBase, ...fields }] })
+        );
+        const restored = result.tracks[0]?.clips[0];
+        expect(restored).toBeDefined();
+        for (const key of [
+            'audioOffsetSeconds',
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+        ]) {
+            expect(Object.hasOwn(restored!, key)).toBe(false);
+        }
+    });
+
     it('preserves audio clip source and offset fields through the round-trip', () => {
         const clip = {
             ...validClipBase,

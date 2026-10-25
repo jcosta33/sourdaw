@@ -5,27 +5,26 @@ import {
 } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { type Take } from '../../models/TakeLane';
+import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';
 
-type TakeLaneOwners = { id: string; trackId: string; takes: Take[] };
+import { reconcileLane } from './reconcileLane';
+import { reconcileTransitionBaseGaps, reconcileTransitionRegions } from './reconcileTakeReKeySources';
+
+type TakeLaneOwners = TakeLane;
 
 function restoreRetiredOwners(lanes: TakeLaneOwners[], captures: readonly RetiredTakeLaneSnapshot[]): void {
-    for (const { lane, retiredTakeIds } of captures) {
-        const restored = lane.takes.filter((take) => retiredTakeIds?.includes(take.id));
-        if (restored.length === 0) {
-            continue;
-        }
-        const target = lanes.find((live) => live.id === lane.id || live.trackId === lane.trackId);
-        if (!target) {
-            lanes.push({ id: lane.id, trackId: lane.trackId, takes: [...restored] });
-            continue;
-        }
-        for (const take of restored) {
-            if (!target.takes.some((live) => live.id === take.id)) {
-                target.takes.push(take);
-            }
-        }
+    for (const { lane, retiredTakeIds, retiredBaseGapAudioSources } of captures) {
+        const targetIndex = lanes.findIndex((live) => live.id === lane.id || live.trackId === lane.trackId);
+        const target =
+            targetIndex === -1
+                ? { id: lane.id, trackId: lane.trackId, takes: [], activeCompRegions: [] }
+                : lanes[targetIndex]!;
+        const reconciled = reconcileLane(target, lane, retiredTakeIds ?? [], retiredBaseGapAudioSources ?? []);
+        if (!reconciled) continue;
+        if (targetIndex === -1) lanes.push(reconciled);
+        else lanes[targetIndex] = reconciled;
     }
 }
 
@@ -52,13 +51,26 @@ function projectReKeyOwners(
             // other facets authorize restoring a missing take from its capture.
             const modified = !source || !valuesEqual({ ...source, selected: false }, { ...target, selected: false });
             if (modified) {
-                takes.push(target);
+                takes.push({ ...target, selected: live?.selected ?? target.selected });
             } else if (live) {
                 takes.push(live);
             }
         }
         takes.push(...lane.takes.filter((take) => !fromById.has(take.id) && !toIds.has(take.id)));
+        const removedIds = new Set(
+            lane.takes.filter((take) => !takes.some((next) => next.id === take.id)).map((take) => take.id)
+        );
+        const regionsFrom = direction === 'apply' ? transition.regionsBefore : transition.regionsAfter;
+        const regionsTo = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
+        const regions = reconcileTransitionRegions(lane.activeCompRegions, regionsFrom, regionsTo, takes, removedIds);
+        const gaps = reconcileTransitionBaseGaps(lane, transition, direction);
         lane.takes = takes;
+        lane.activeCompRegions = [...regions];
+        if (gaps) {
+            const replacement = replaceBaseGapAudioSources(lane, gaps);
+            if (replacement.baseGapAudioSources === undefined) delete lane.baseGapAudioSources;
+            else lane.baseGapAudioSources = replacement.baseGapAudioSources;
+        }
     }
 }
 
@@ -66,22 +78,22 @@ function retireClipOwners(lanes: TakeLaneOwners[], clipId: string): void {
     for (let index = lanes.length - 1; index >= 0; index -= 1) {
         const lane = lanes[index]!;
         const takes = lane.takes.filter((take) => take.clipId !== clipId);
-        if (takes.length === lane.takes.length) {
-            continue;
-        }
-        if (takes.length === 0) {
+        const gaps = lane.baseGapAudioSources?.filter((tile) => tile.clipId !== clipId);
+        if (takes.length === lane.takes.length && gaps?.length === lane.baseGapAudioSources?.length) continue;
+        if (takes.length === 0 && !gaps?.length) {
             lanes.splice(index, 1);
         } else {
             lane.takes = takes;
+            const ids = new Set(takes.map((take) => take.id));
+            lane.activeCompRegions = lane.activeCompRegions.filter((region) => ids.has(region.takeId));
+            if (gaps !== undefined) lane.baseGapAudioSources = gaps;
         }
     }
 }
 
 /** Reserve only owners produced by preceding replay members, without publishing any state. */
 export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): TakeLaneOwners[] {
-    const lanes: TakeLaneOwners[] =
-        takeLaneStore.value?.lanes.map((lane) => ({ id: lane.id, trackId: lane.trackId, takes: [...lane.takes] })) ??
-        [];
+    const lanes: TakeLaneOwners[] = takeLaneStore.value?.lanes.map((lane) => structuredClone(lane)) ?? [];
     for (const action of priorActions) {
         if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
             retireClipOwners(lanes, action.payload.clipId);

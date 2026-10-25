@@ -292,6 +292,10 @@ export const executableAppActionEffectsByType = {
         dimensions: ['arrangement'],
         scope: 'target',
     },
+    removeCompRegion: {
+        dimensions: ['arrangement'],
+        scope: 'target',
+    },
     setSoloSafe: {
         dimensions: ['monitoring'],
         scope: 'target',

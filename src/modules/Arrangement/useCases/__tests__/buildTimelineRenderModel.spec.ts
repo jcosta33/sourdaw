@@ -125,6 +125,74 @@ vi.mock('../../stores/activeRecordingRef', async (importOriginal) => {
 });
 
 describe('buildTimelineRenderModel', () => {
+    it('carries canonical audio source fields and the map the waveform will invert', () => {
+        const source = clip({
+            id: 'audio-source',
+            type: 'audio',
+            audioOffsetBeats: 12,
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: -1,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+            loopOriginBeat: 2,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        seedStores({ tracks: [{ ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }), clips: [source] }] });
+        tempoMapStoreMock.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+
+        const model = buildTimelineRenderModel();
+
+        expect(model.tracks[0]?.clips[0]).toMatchObject({
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: -1,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+            loopOriginBeat: 2,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        const timeline = model.sourceTimeline;
+        if (!timeline) throw new Error('Expected the captured source timeline');
+        expect(timeline.secondsAtBeat(5)).toBe(3);
+        expect(timeline.beatAtSeconds(3)).toBe(5);
+        // Neither mutating the former store array nor publishing its replacement may move this model.
+        tempoMapStoreMock.value.changes[1]!.tempo = 45;
+        expect(timeline.secondsAtBeat(5)).toBe(3);
+        expect(timeline.beatAtSeconds(3)).toBe(5);
+        tempoMapStoreMock.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 45, curve: 'instant' },
+            ],
+        };
+        const replacement = buildTimelineRenderModel().sourceTimeline;
+        expect(replacement?.secondsAtBeat(5)).toBeCloseTo(10 / 3, 12);
+        expect(replacement?.beatAtSeconds(10 / 3)).toBe(5);
+        expect(timeline.secondsAtBeat(5)).toBe(3);
+    });
+
+    it('keeps the captured flat base tempo when a later model uses a different one', () => {
+        seedStores({ transport: { tempo: 120 } });
+        const timeline = buildTimelineRenderModel().sourceTimeline;
+        if (!timeline) throw new Error('Expected the captured source timeline');
+        expect(timeline.secondsAtBeat(4)).toBe(2);
+        expect(timeline.beatAtSeconds(2)).toBe(4);
+
+        transportStoreMock.value = { tempo: 60 };
+
+        const replacement = buildTimelineRenderModel().sourceTimeline;
+        expect(replacement?.secondsAtBeat(4)).toBe(4);
+        expect(replacement?.beatAtSeconds(4)).toBe(4);
+        expect(timeline.secondsAtBeat(4)).toBe(2);
+        expect(timeline.beatAtSeconds(2)).toBe(4);
+    });
+
     it('keeps the shared track fixture reactive through both read channels', async () => {
         const [{ trackStore: definingTrackStore }, { trackStore: barrelTrackStore }] = await Promise.all([
             import('../../stores/trackStore'),

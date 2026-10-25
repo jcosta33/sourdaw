@@ -1,6 +1,14 @@
+import {
+    audioSourceSnapshotAtBeat,
+    captureAudioSourceSnapshot,
+    partitionAudioSourceTiles,
+    audioTakeFragmentSource,
+} from '#/utils/audioSourceTime';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
-import { takeLaneStore } from '../stores/takeLaneStore';
+import { type TempoTimeline } from '../models/TempoTimeline';
+import { takeLaneStore, type TakeLaneStoreState } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
 import { clipMediaOffsetAt } from './clipMediaOffsetAt';
@@ -15,7 +23,16 @@ export type ResolvedClip = Clip & {
 };
 
 export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
-    const laneState = takeLaneStore.value;
+    return resolveCompingProgramme(trackId, clips, takeLaneStore.value, liveTempoTimeline);
+}
+
+/** Private value projection used while materializing a prefix's source owners. */
+export function resolveCompingProgramme(
+    trackId: string,
+    clips: Clip[],
+    laneState: TakeLaneStoreState | null,
+    timeline: TempoTimeline
+): ResolvedClip[] {
     if (!laneState) {
         return clips.map((context) => ({
             ...context,
@@ -35,7 +52,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
     }
 
     const lane = laneState.lanes.find((length) => length.trackId === trackId);
-    if (!lane || lane.activeCompRegions.length === 0) {
+    if (!lane || (lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length)) {
         return clips.map((context) => ({
             ...context,
             regionStartBeat: context.startBeat,
@@ -61,7 +78,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             continue;
         }
 
-        const media = resolveTakeMedia(take, sourceClip, liveTempoTimeline);
+        const media = resolveTakeMedia(take, sourceClip, timeline);
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
@@ -84,8 +101,27 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         // there unchanged.
         const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
         const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
+        const audioSource =
+            sourceClip.type === 'audio'
+                ? region.audioSource && take.passAnchorSeconds === undefined
+                    ? audioSourceSnapshotAtBeat(
+                          region.audioSource,
+                          overlapStart,
+                          sourceClip.stretchMode && sourceClip.stretchMode !== 'off'
+                              ? boundStretchRatio(sourceClip.stretchRatio ?? 1)
+                              : 1,
+                          sourceClip.loopEnabled ?? false,
+                          timeline.secondsAtBeat
+                      )
+                    : audioTakeFragmentSource(
+                          media.offsetSecondsAt?.(overlapStart) ??
+                              media.offsetAt(overlapStart) * (60 / timeline.tempoAtBeat(overlapStart)),
+                          overlapStart
+                      )
+                : null;
         resolved.push({
             ...takeFragmentBasis,
+            ...audioSource,
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -119,20 +155,55 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         }
 
         for (const gap of gaps) {
-            resolved.push({
-                ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, gap.start, liveTempoTimeline)),
-                startBeat: gap.start,
-                endBeat: gap.end,
-                regionStartBeat: gap.start,
-                regionEndBeat: gap.end,
-                sourceStartBeat: resolveLoopAnchoredStartBeat({
-                    startBeat: clip.startBeat,
-                    loopOriginBeat: clip.loopOriginBeat,
-                    loopEnabled: clip.loopEnabled ?? false,
-                }),
-            });
+            const windows = partitionAudioSourceTiles(
+                clip.id,
+                gap.start,
+                gap.end,
+                clip.type === 'audio' ? (lane.baseGapAudioSources ?? []) : []
+            );
+            for (const window of windows) {
+                resolved.push(resolveCompBaseGapWindow(clip, window, timeline));
+            }
         }
     }
 
     return resolved.sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
+}
+
+/** The actual base-gap window producer, also used to authenticate support conversions. */
+export function resolveCompBaseGapWindow(
+    clip: Clip,
+    window: {
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly audioSource?: import('#/utils/audioSourceTime').AudioSourceSnapshot;
+    },
+    timeline: TempoTimeline
+): ResolvedClip {
+    const rate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+    const snapshot =
+        window.audioSource ??
+        (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
+            ? captureAudioSourceSnapshot(
+                  clip,
+                  clip.loopLength ?? clip.endBeat - clip.startBeat,
+                  timeline.tempoAtBeat(clip.startBeat)
+              )
+            : null);
+    const source = snapshot
+        ? audioSourceSnapshotAtBeat(snapshot, window.startBeat, rate, clip.loopEnabled ?? false, timeline.secondsAtBeat)
+        : null;
+    return {
+        ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, window.startBeat, timeline)),
+        ...source,
+        startBeat: window.startBeat,
+        endBeat: window.endBeat,
+        regionStartBeat: window.startBeat,
+        regionEndBeat: window.endBeat,
+        sourceStartBeat: resolveLoopAnchoredStartBeat({
+            startBeat: clip.startBeat,
+            loopOriginBeat: clip.loopOriginBeat,
+            loopEnabled: clip.loopEnabled ?? false,
+        }),
+    };
 }

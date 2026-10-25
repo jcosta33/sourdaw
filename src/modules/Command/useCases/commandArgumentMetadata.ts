@@ -108,6 +108,14 @@ function appendValueMetadata(metadata: CommandArgumentMetadata, value: unknown, 
     }
 }
 
+export function isCompSourceSupportPath(operation: string | undefined, path: string): boolean {
+    if (operation !== 'setCompRegion' && operation !== 'removeCompRegion' && operation !== 'restoreCompRegionInterval')
+        return false;
+    return (
+        path.startsWith('audioSourcePromotions[') || /^(expected|replacement)\[\d+\]\.audioSource(?:\.|$)/.test(path)
+    );
+}
+
 export function compileCommandArgumentMetadata(
     argumentsValue: Readonly<Record<string, unknown>>,
     operation?: string
@@ -129,5 +137,15 @@ export function compileCommandArgumentMetadata(
             }
         }
     }
-    return metadata;
+    // Source preservation on complements is derived support. Its owner still
+    // validates every value; it does not expand the musician's requested scope.
+    return {
+        objectReferences: metadata.objectReferences.filter(
+            (reference) => !isCompSourceSupportPath(operation, reference.argument)
+        ),
+        parameterUnits: metadata.parameterUnits.filter(
+            (parameter) => !isCompSourceSupportPath(operation, parameter.argument)
+        ),
+        time: metadata.time.filter((time) => !isCompSourceSupportPath(operation, time.argument)),
+    };
 }

@@ -1,16 +1,15 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';
 import { getTrackStoreState } from '../getTrackStoreState';
 
-import { regionsOverlap } from './regionsOverlap';
+import { reconcileTransitionBaseGaps, reconcileTransitionRegions } from './reconcileTakeReKeySources';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 export type TakeReKeyWriteDirection = 'apply' | 'restore';
-
-function regionKey(region: CompRegion): string {
-    return `${region.startBeat}:${region.endBeat}:${region.takeId}`;
-}
 
 function isModifiedByTransition(take: Take, other: Take): boolean {
     return (
@@ -19,9 +18,12 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
         take.endBeat !== other.endBeat ||
         take.name !== other.name ||
         take.sourceOffsetBeats !== other.sourceOffsetBeats ||
+        take.sourceOffsetSeconds !== other.sourceOffsetSeconds ||
         take.passAnchorSeconds !== other.passAnchorSeconds ||
         take.passDepthSeconds !== other.passDepthSeconds ||
-        take.passSourceEndSeconds !== other.passSourceEndSeconds
+        take.passSourceEndSeconds !== other.passSourceEndSeconds ||
+        take.passOriginBeat !== other.passOriginBeat ||
+        take.passOriginSourceSeconds !== other.passOriginSourceSeconds
     );
 }
 
@@ -114,71 +116,6 @@ function reconcileTransitionTakes(
     );
 }
 
-/**
- * Merge the additions into the kept live regions — both sorted by start — in
- * one linear walk: an addition that overlaps a kept region is refused. That is
- * the non-overlap law the store itself keeps, so a comp authored after the
- * capture is never displaced by the replay. Collision with the last merged
- * region needs no check: the while loop only passes kept regions ending at or
- * before the addition's start, and lawful additions — the plan validator
- * re-checks every side — are themselves sorted and non-overlapping.
- */
-function mergeRegionsRefusingOverlaps(kept: readonly CompRegion[], additions: readonly CompRegion[]): CompRegion[] {
-    const merged: CompRegion[] = [];
-    let keptIndex = 0;
-    for (const addition of additions) {
-        while (keptIndex < kept.length && kept[keptIndex]!.endBeat <= addition.startBeat) {
-            merged.push(kept[keptIndex]!);
-            keptIndex++;
-        }
-        let collides = false;
-        for (
-            let scan = keptIndex;
-            !collides && scan < kept.length && kept[scan]!.startBeat < addition.endBeat;
-            scan++
-        ) {
-            if (regionsOverlap(kept[scan]!, addition)) {
-                collides = true;
-            }
-        }
-        if (!collides) {
-            merged.push(addition);
-        }
-    }
-    merged.push(...kept.slice(keptIndex));
-    return merged;
-}
-
-/**
- * The comp-region facet of one lane, reconciled toward the target side.
- * Regions carry no id, so the deltas are by value: a region only the source
- * side holds leaves, a region only the target side holds comes back — unless
- * its take is gone or it overlaps a region already live, the same
- * non-overlap law the store itself keeps, so a comp authored after the
- * capture is never displaced by the replay.
- */
-function reconcileTransitionRegions(
-    live: readonly CompRegion[],
-    fromRegions: readonly CompRegion[],
-    toRegions: readonly CompRegion[],
-    takes: readonly Take[],
-    removedTakeIds: ReadonlySet<string>
-): readonly CompRegion[] {
-    const fromKeys = new Set(fromRegions.map(regionKey));
-    const toKeys = new Set(toRegions.map(regionKey));
-    const liveTakeIds = new Set(takes.map((take) => take.id));
-
-    const kept = live.filter(
-        (region) =>
-            !removedTakeIds.has(region.takeId) && (!fromKeys.has(regionKey(region)) || toKeys.has(regionKey(region)))
-    );
-    const additions = toRegions.filter(
-        (region) =>
-            !fromKeys.has(regionKey(region)) && region.endBeat > region.startBeat && liveTakeIds.has(region.takeId)
-    );
-    return mergeRegionsRefusingOverlaps(kept, additions);
-}
-
 function takesMatch(left: readonly Take[], right: readonly Take[]): boolean {
     return (
         left.length === right.length &&
@@ -192,26 +129,19 @@ function takesMatch(left: readonly Take[], right: readonly Take[]): boolean {
                 take.endBeat === other.endBeat &&
                 take.selected === other.selected &&
                 take.sourceOffsetBeats === other.sourceOffsetBeats &&
+                take.sourceOffsetSeconds === other.sourceOffsetSeconds &&
                 take.passAnchorSeconds === other.passAnchorSeconds &&
                 take.passDepthSeconds === other.passDepthSeconds &&
-                take.passSourceEndSeconds === other.passSourceEndSeconds
+                take.passSourceEndSeconds === other.passSourceEndSeconds &&
+                take.passOriginBeat === other.passOriginBeat &&
+                take.passOriginSourceSeconds === other.passOriginSourceSeconds
             );
         })
     );
 }
 
 function regionsMatch(left: readonly CompRegion[], right: readonly CompRegion[]): boolean {
-    return (
-        left.length === right.length &&
-        left.every((region, index) => {
-            const other = right[index]!;
-            return (
-                region.startBeat === other.startBeat &&
-                region.endBeat === other.endBeat &&
-                region.takeId === other.takeId
-            );
-        })
-    );
+    return valuesEqual(left, right);
 }
 
 function reconcileLaneTransition(
@@ -225,14 +155,21 @@ function reconcileLaneTransition(
     const fromRegions = direction === 'apply' ? transition.regionsBefore : transition.regionsAfter;
     const toRegions = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
 
+    const baseGaps = reconcileTransitionBaseGaps(lane, transition, direction);
+    if (!baseGaps) return null;
     const takes = reconcileTransitionTakes(lane.takes, fromTakes, toTakes, requireLiveClipIds);
     const liveTakeIds = new Set(takes.map((take) => take.id));
     const removedTakeIds = new Set(lane.takes.filter((take) => !liveTakeIds.has(take.id)).map((take) => take.id));
     const regions = reconcileTransitionRegions(lane.activeCompRegions, fromRegions, toRegions, takes, removedTakeIds);
-    if (takesMatch(lane.takes, takes) && regionsMatch(lane.activeCompRegions, regions)) {
+    const next = replaceBaseGapAudioSources({ ...lane, takes: [...takes], activeCompRegions: [...regions] }, baseGaps);
+    if (
+        takesMatch(lane.takes, takes) &&
+        regionsMatch(lane.activeCompRegions, regions) &&
+        valuesEqual(lane.baseGapAudioSources, next.baseGapAudioSources)
+    ) {
         return null;
     }
-    return { ...lane, takes: [...takes], activeCompRegions: [...regions] };
+    return next;
 }
 
 /**

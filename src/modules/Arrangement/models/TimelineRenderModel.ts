@@ -12,6 +12,11 @@ export type TimelineRenderModel = {
     trackHeight: number;
     scrollY: number;
     tempo: number;
+    /** Paired mapping captured from this model's immutable tempo snapshot. Absent is the legacy flat mode. */
+    sourceTimeline?: {
+        secondsAtBeat: (beat: number) => number;
+        beatAtSeconds: (seconds: number) => number;
+    };
     timeSignatureNumerator: number;
     timeSignatureDenominator: number;
 };
@@ -56,11 +61,16 @@ export type ClipRenderModel = {
      *  waveform renderer so that trimmed or split clips show the correct
      *  portion of the underlying sample instead of the whole buffer. */
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    audioLoopPassEntrySeconds?: number;
+    audioLoopPassOriginBeat?: number;
+    loopOriginBeat?: number;
     /** Tempo governing this clip's source offset, which may differ from the project base tempo. */
     clipStartTempo?: number;
-    /** Tempo/stretch factor. `1.0` plays at native rate; `0.5` plays at half
-     *  speed (so twice as many buffer samples are consumed per beat). */
+    /** Source seconds consumed per destination second while stretch is enabled. */
     stretchRatio?: number;
+    stretchMode?: 'off' | 'repitch' | 'timestretch';
     loopEnabled?: boolean;
     loopLength?: number;
     midiOffsetBeats?: number;

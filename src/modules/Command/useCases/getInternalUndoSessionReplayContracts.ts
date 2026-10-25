@@ -16,7 +16,8 @@ function createInternalReplayContract(
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
-        | 'restoreTimeOperationState',
+        | 'restoreTimeOperationState'
+        | 'restoreCompRegionInterval',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -67,5 +68,6 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),
         createInternalReplayContract('restoreTimeOperationState', 1, 'required'),
+        createInternalReplayContract('restoreCompRegionInterval', 1, 'required'),
     ];
 }

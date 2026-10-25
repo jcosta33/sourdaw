@@ -26,8 +26,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 const original_device_pixel_ratio = window.devicePixelRatio;
 
-const create_test_audio_buffer = (sampleRate = 48_000): AudioBuffer => {
-    const channel_data = new Float32Array(96_000);
+const create_test_audio_buffer = (sampleRate = 48_000, length = 96_000): AudioBuffer => {
+    const channel_data = new Float32Array(length);
     return {
         copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
             destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
@@ -69,6 +69,7 @@ const create_test_model = (): TimelineRenderModel => ({
                     audioBufferId: 'buf-1',
                     audioOffsetBeats: 1,
                     stretchRatio: 2,
+                    stretchMode: 'timestretch',
                     loopEnabled: false,
                     loopLength: undefined,
                     midiOffsetBeats: 0,
@@ -825,7 +826,7 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         if (!renderer) {
             throw new Error('expected WebGPU renderer');
         }
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
 
         renderer.render(create_test_model());
@@ -851,14 +852,50 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         if (!renderer) {
             throw new Error('expected WebGPU renderer');
         }
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
         const model = create_test_model();
         model.tracks[0]!.clips[0]!.clipStartTempo = 90;
+        model.sourceTimeline = { secondsAtBeat: (beat) => (beat * 2) / 3, beatAtSeconds: (seconds) => seconds * 1.5 };
         renderer.render(model);
         expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
             expect.objectContaining({ startSample: 32_000, endSample: 288_000 })
         );
+    });
+
+    it('requests canonical PCM and places its bins through the captured tempo map', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) throw new Error('expected WebGPU renderer');
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
+        const model = create_test_model();
+        Object.assign(model.tracks[0]!.clips[0]!, {
+            startBeat: 4,
+            endBeat: 8,
+            audioOffsetBeats: 12,
+            audioOffsetSeconds: 0,
+            clipStartTempo: 60,
+        });
+        model.sourceTimeline = {
+            secondsAtBeat: (beat) => (beat <= 4 ? beat / 2 : beat <= 6 ? 2 + beat - 4 : 4 + (beat - 6) / 2),
+            beatAtSeconds: (seconds) =>
+                seconds <= 2 ? seconds * 2 : seconds <= 4 ? 4 + seconds - 2 : 6 + (seconds - 4) * 2,
+        };
+
+        renderer.render(model);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 100,
+            startSample: 0,
+            endSample: 288000,
+        });
+        expect(decode_waveform_rect_left_edges(handles, canvas)).toEqual([100, 125, 150]);
     });
 
     it('draws the pre-roll as leading silence and shortens the material for a negative offset (#2519)', async () => {
@@ -1869,7 +1906,7 @@ describe('audio waveform span parity across renderers (#2519)', () => {
     const render_through_both = async (audioOffsetBeats: number, stretchRatio: number) => {
         const base = create_test_model();
         const clip = { ...base.tracks[0]!.clips[0]!, audioOffsetBeats, stretchRatio };
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.6, 0.6, 0.6, 0.6]));
 
         // Canvas2D: clip beats 2..6 at 25 px/beat → x = 50, w = 100, inset 2.

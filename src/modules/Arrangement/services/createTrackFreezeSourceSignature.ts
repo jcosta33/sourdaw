@@ -24,6 +24,10 @@ type RenderAffectingClipFields = Pick<
     | 'audioBufferId'
     | 'assetHash'
     | 'audioOffsetBeats'
+    | 'audioOffsetSeconds'
+    | 'audioLoopStartSeconds'
+    | 'audioLoopPassEntrySeconds'
+    | 'audioLoopPassOriginBeat'
     | 'midiOffsetBeats'
     | 'fadeInBeats'
     | 'fadeOutBeats'
@@ -66,25 +70,40 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         loopOriginBeat: clip.loopOriginBeat,
         loopEnabled: clip.loopEnabled ?? false,
     });
-    return [
-        clip.id,
-        clip.startBeat,
-        duration,
-        clip.assetHash ?? '',
-        clip.gain,
-        clip.type,
-        clip.audioBufferId ?? '',
-        clip.audioOffsetBeats ?? 0,
-        clip.midiOffsetBeats ?? 0,
-        clip.fadeInBeats,
-        clip.fadeOutBeats,
-        clip.muted,
-        clip.stretchMode ?? '',
-        clip.stretchRatio ?? '',
-        clip.loopEnabled ?? false,
-        clip.loopLength ?? 0,
-        loopAnchoredStartBeat,
-    ].join(':');
+    const sourceSignature =
+        clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
+            ? `:${canonicalJson({
+                  entry: clip.audioOffsetSeconds,
+                  ...(clip.loopEnabled
+                      ? {
+                            reset: clip.audioLoopStartSeconds ?? clip.audioOffsetSeconds,
+                            passEntry: clip.audioLoopPassEntrySeconds ?? clip.audioOffsetSeconds,
+                            passOrigin: clip.audioLoopPassOriginBeat ?? clip.startBeat,
+                        }
+                      : {}),
+              })}`
+            : '';
+    return (
+        [
+            clip.id,
+            clip.startBeat,
+            duration,
+            clip.assetHash ?? '',
+            clip.gain,
+            clip.type,
+            clip.audioBufferId ?? '',
+            clip.audioOffsetBeats ?? 0,
+            clip.midiOffsetBeats ?? 0,
+            clip.fadeInBeats,
+            clip.fadeOutBeats,
+            clip.muted,
+            clip.stretchMode ?? '',
+            clip.stretchRatio ?? '',
+            clip.loopEnabled ?? false,
+            clip.loopLength ?? 0,
+            loopAnchoredStartBeat,
+        ].join(':') + sourceSignature
+    );
 }
 
 /*

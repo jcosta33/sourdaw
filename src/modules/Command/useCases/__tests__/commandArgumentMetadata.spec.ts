@@ -78,6 +78,41 @@ describe('compileCommandArgumentMetadata object references', () => {
         ]);
     });
 
+    it.each(['setCompRegion', 'removeCompRegion', 'restoreCompRegionInterval'])(
+        'keeps %s source-support captures out of semantic scope without erasing its requested interval',
+        (operation) => {
+            const payload = {
+                trackId: 'track-a',
+                startBeat: 2,
+                endBeat: 4,
+                expected: [
+                    {
+                        startBeat: 2,
+                        endBeat: 4,
+                        takeId: 'take-a',
+                        audioSource: { startBeat: 0, audioOffsetSeconds: 9 },
+                    },
+                ],
+                audioSourcePromotions: [
+                    {
+                        expected: { clipId: 'source', startBeat: 0, endBeat: 8 },
+                        sourceInputs: { clipId: 'source', startBeat: 0, endBeat: 8 },
+                    },
+                ],
+            };
+            const metadata = compileCommandArgumentMetadata(payload, operation);
+            expect(metadata.objectReferences).not.toEqual(
+                expect.arrayContaining([expect.objectContaining({ id: 'source' })])
+            );
+            expect(metadata.time.map((time) => time.value)).toEqual([2, 4, 2, 4]);
+            const ordinary = compileCommandArgumentMetadata(payload, 'glueClips');
+            expect(ordinary.objectReferences).toEqual(
+                expect.arrayContaining([expect.objectContaining({ id: 'source' })])
+            );
+            expect(ordinary.time.map((time) => time.value)).toContain(8);
+        }
+    );
+
     // setDeviceParameter declares paramId a device-parameter target, so the preflight still checks
     // the parameter exists before the batch runs.
     it('keeps a setDeviceParameter paramId as a reference', () => {

@@ -75,6 +75,7 @@ export function splitClip(
     // of staying bounded by the left clip's end. Captured before any write,
     // applied right after the clip state publishes.
     const takeReKeyTransitions = captureClipSplitTakeReKeyTransitions({
+        sourceClip: cloneClipStateSnapshot(plan.previous.leftClip),
         trackId: plan.next.trackId,
         clipId,
         rightClipId: plan.rightClipId,

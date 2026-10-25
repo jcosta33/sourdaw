@@ -64,7 +64,7 @@ function capturedUndoEntry(): { label: string; undoFn: () => void; redoFn: () =>
     return { label: call[0], undoFn: call[1], redoFn: call[2] };
 }
 
-describe('splitClipWithUndo', () => {
+describe('splitClipWithUndo legacy MIDI closure', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getMidiStoreState.mockReturnValue(null);
@@ -95,7 +95,7 @@ describe('splitClipWithUndo', () => {
     });
 
     it('does not push an undo entry when the split is rejected', () => {
-        setState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 })]);
+        setState([ClipDummy.create({ id: 'c1', type: 'midi', startBeat: 0, endBeat: 8 })]);
         mocks.splitClip.mockReturnValue(null);
 
         splitClipWithUndo('c1', 0);
@@ -107,7 +107,7 @@ describe('splitClipWithUndo', () => {
     });
 
     it('pushes a Split clip undo entry after a successful split', () => {
-        setState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 })]);
+        setState([ClipDummy.create({ id: 'c1', type: 'midi', startBeat: 0, endBeat: 8 })]);
         mocks.splitClip.mockReturnValue('right-1');
 
         splitClipWithUndo('c1', 4);
@@ -119,7 +119,9 @@ describe('splitClipWithUndo', () => {
     });
 
     it('undo removes the right clip and restores the left clip fields frozen before the split', () => {
-        setState([ClipDummy.create({ id: 'c1', name: 'Groove', startBeat: 0, endBeat: 8, fadeOutBeats: 0.5 })]);
+        setState([
+            ClipDummy.create({ id: 'c1', type: 'midi', name: 'Groove', startBeat: 0, endBeat: 8, fadeOutBeats: 0.5 }),
+        ]);
         mocks.splitClip.mockReturnValue('right-1');
 
         splitClipWithUndo('c1', 4);
@@ -143,7 +145,7 @@ describe('splitClipWithUndo', () => {
     });
 
     it('redo replays the same split reusing the original right clip id', () => {
-        setState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 })]);
+        setState([ClipDummy.create({ id: 'c1', type: 'midi', startBeat: 0, endBeat: 8 })]);
         mocks.splitClip.mockReturnValue('right-1');
 
         splitClipWithUndo('c1', 4);
@@ -199,7 +201,7 @@ describe('splitClipWithUndo', () => {
     });
 
     it('reports REDO_NOT_APPLIED without restoring MIDI when the deterministic destination is occupied', () => {
-        setState([ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 8 })]);
+        setState([ClipDummy.create({ id: 'c1', type: 'midi', trackId: 't1', startBeat: 0, endBeat: 8 })]);
         mocks.splitClip.mockReturnValueOnce('right-1').mockReturnValueOnce(null);
 
         splitClipWithUndo('c1', 4);
@@ -217,7 +219,7 @@ describe('splitClipWithUndo', () => {
     });
 
     it('restores the frozen source satellites on undo and the repartitioned ones on redo', () => {
-        setState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 })]);
+        setState([ClipDummy.create({ id: 'c1', type: 'midi', startBeat: 0, endBeat: 8 })]);
         const sourceBefore = {
             clipId: 'c1',
             gainEnvelope: {

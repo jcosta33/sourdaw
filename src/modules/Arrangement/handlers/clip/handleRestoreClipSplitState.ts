@@ -123,7 +123,12 @@ function applySplitTakeTransition(
         );
         // Capture late right-side material before the transition's liveness
         // filter retires it. Transition-owned ids remain its sole responsibility.
-        const stagedRetired = planTakeRetirement([payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
+        const reKeyedTiles = (payload.reKeyedTakeLanes ?? []).flatMap(
+            (transition) => transition.baseGapAudioSourcesAfter ?? []
+        );
+        const stagedRetired =
+            planTakeRetirement([payload.rightClipId], reKeyedTakeIds, { preservedBaseGapAudioSources: reKeyedTiles })
+                ?.retiredLanes ?? [];
         // The split's re-key (#5048) rides the shared payload array: with
         // the clips back on the track and the lane still present, put its
         // pre-split facets back before retiring any remaining right material.

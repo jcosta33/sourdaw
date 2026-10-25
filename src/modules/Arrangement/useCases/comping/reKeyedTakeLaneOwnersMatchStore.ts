@@ -3,6 +3,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type Take } from '../../models/TakeLane';
 
+import { takeReKeySourceValuesMatch } from './reconcileTakeReKeySources';
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
 
 function replayFacets(take: Take): Record<string, unknown> {
@@ -27,6 +28,7 @@ export function reKeyedTakeLaneOwnersMatchStore(
         }
         const targetTakes = new Map(to.map((take) => [take.id, take]));
         return (
+            takeReKeySourceValuesMatch(target, transition, direction) &&
             lanes.every((live) => live.id !== transition.laneId || live.trackId === transition.trackId) &&
             lanes.every((live) =>
                 live.takes.every(

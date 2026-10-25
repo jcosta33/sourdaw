@@ -1,9 +1,12 @@
+import { type Clip } from '../../models/Track';
+
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type CaptureClipSplitTakeReKeyInput = {
     /** The track whose lane holds the split clip's takes. */
     trackId: string;
+    sourceClip: Clip;
     clipId: string;
     /** The fresh id the right fragment carries — the plan's committed id. */
     rightClipId: string;
@@ -28,6 +31,7 @@ export function captureClipSplitTakeReKeyTransitions(
     input: CaptureClipSplitTakeReKeyInput
 ): readonly TakeReKeyLaneTransition[] {
     return captureTakeReKeyTransitions({
+        sourceClips: [input.sourceClip],
         windowsByTrackId: new Map([
             [
                 input.trackId,

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { type Clip, takeLaneStore, type TakeLaneStoreState, trackStore } from '#/modules/Arrangement/stores';
+import { normalizeTrack, resolveClipsWithComping, splitClip } from '#/modules/Arrangement/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import { projectPpqEndpoints } from '#/modules/Transport/useCases';
+import { captureAudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
 import { renderTempoTimeline } from '../renderTempoTimeline';
@@ -122,6 +123,342 @@ const cases: readonly { name: string; state: TakeLaneStoreState; clip: Clip }[] 
         clip: recording(1, 12, 1),
     },
 ];
+
+function audioSourceIntervals(clips: readonly Clip[]) {
+    const intervals = clips
+        .flatMap((clip) =>
+            projectOfflineAudioClipPlaybacks({
+                clip,
+                bufferDurationSeconds: 40,
+                regionStartBeat: 0,
+                regionStartSec: 0,
+                durationSeconds: 40,
+                compensationDelay: 0,
+                projectBeatToSeconds: (beat) => beat / 2,
+                resolveTempoAtBeat: () => 120,
+            }).map(({ startSec, bufferOffsetSec, playDuration, playbackRate }) => ({
+                timelineStart: Math.round(startSec * 48000),
+                timelineEnd: Math.round((startSec + playDuration) * 48000),
+                sourceStart: Math.round(bufferOffsetSec * 48000),
+                sourceEnd: Math.round((bufferOffsetSec + playDuration * playbackRate) * 48000),
+                playbackRate,
+            }))
+        )
+        .sort((left, right) => left.timelineStart - right.timelineStart);
+    const joined: typeof intervals = [];
+    for (const interval of intervals) {
+        const previous = joined.at(-1);
+        if (
+            previous &&
+            previous.timelineEnd === interval.timelineStart &&
+            previous.sourceEnd === interval.sourceStart &&
+            previous.playbackRate === interval.playbackRate
+        ) {
+            previous.timelineEnd = interval.timelineEnd;
+            previous.sourceEnd = interval.sourceEnd;
+        } else joined.push({ ...interval });
+    }
+    return joined;
+}
+
+describe('split looped comp source preservation', () => {
+    it.each([false, true])(
+        'keeps placed eligibility authoritative after splitting and changing rate with prior region snapshot %s',
+        (withSnapshot) => {
+            tempoMapStore.set({ changes: [{ id: 'flat', beat: 0, tempo: 120, curve: 'instant' }] });
+            const clip: Clip = {
+                ...recording(17, 30, 17),
+                audioOffsetSeconds: 8.5,
+                audioUnwrappedOffsetSeconds: 8.5,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            };
+            const take = {
+                ...placedPass('placed', [17, 30], 10.5, 2),
+                passSourceEndSeconds: 6,
+                passOriginBeat: 17,
+                passOriginSourceSeconds: 8.5,
+            };
+            const state = lane([take], take.id, 17, 30);
+            takeLaneStore.set(state);
+            const oldFragment = resolveClipsWithComping('t1', [clip])[0]!;
+            expect(oldFragment.startBeat).toBe(19);
+            expect(oldFragment.audioOffsetSeconds).toBe(2);
+            const source = captureAudioSourceSnapshot(oldFragment, oldFragment.endBeat - oldFragment.startBeat, 120);
+            expect(source).not.toBeNull();
+            if (withSnapshot) {
+                state.lanes[0]!.activeCompRegions[0]!.audioSource = source!;
+                takeLaneStore.set(state);
+            }
+            const track = { ...normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio' }), clips: [clip] };
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            expect(splitClip(clip.id, 18, 'right-placed')).toBe('right-placed');
+            const clips = trackStore.value!.tracks[0]!.clips.map((part) => ({ ...part, stretchRatio: 1 }));
+            const current = takeLaneStore.value!;
+            const live = resolveClipsWithComping('t1', clips);
+            const offline = resolveTrackClipsWithComping('t1', clips, current);
+            for (const programme of [live, offline]) {
+                const projected = audioSourceIntervals(programme);
+                expect(projected).toEqual([
+                    {
+                        timelineStart: 21 * 24000,
+                        timelineEnd: 29 * 24000,
+                        sourceStart: 2 * 48000,
+                        sourceEnd: 6 * 48000,
+                        playbackRate: 1,
+                    },
+                ]);
+            }
+            expect(offline).toEqual(live);
+            if (withSnapshot)
+                expect(current.lanes[0]!.activeCompRegions.every((region) => region.audioSource)).toBe(true);
+            else
+                expect(current.lanes[0]!.activeCompRegions.every((region) => region.audioSource === undefined)).toBe(
+                    true
+                );
+        }
+    );
+
+    it('plays preserved base-gap source windows with no active comp regions or takes', () => {
+        const clip: Clip = {
+            ...recording(0, 12),
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0,
+            audioLoopPassOriginBeat: 0,
+        };
+        const tiledLane = {
+            id: 'lane-1',
+            trackId: 't1',
+            takes: [],
+            activeCompRegions: [],
+            baseGapAudioSources: [
+                {
+                    clipId: clip.id,
+                    startBeat: 1,
+                    endBeat: 11,
+                    audioSource: {
+                        startBeat: 1,
+                        audioOffsetSeconds: 0.5,
+                        audioLoopStartSeconds: 0,
+                        audioLoopPassEntrySeconds: 0.5,
+                        audioLoopPassOriginBeat: 1,
+                        loopOriginBeat: 0,
+                        loopLength: 4,
+                    },
+                },
+            ],
+        };
+        takeLaneStore.set({ lanes: [tiledLane] });
+        const expected = [
+            { timelineStart: 0, timelineEnd: 24000, sourceStart: 0, sourceEnd: 48000, playbackRate: 2 },
+            { timelineStart: 24000, timelineEnd: 96000, sourceStart: 24000, sourceEnd: 168000, playbackRate: 2 },
+            { timelineStart: 96000, timelineEnd: 120000, sourceStart: 0, sourceEnd: 48000, playbackRate: 2 },
+            { timelineStart: 120000, timelineEnd: 192000, sourceStart: 24000, sourceEnd: 168000, playbackRate: 2 },
+            { timelineStart: 192000, timelineEnd: 216000, sourceStart: 0, sourceEnd: 48000, playbackRate: 2 },
+            { timelineStart: 216000, timelineEnd: 264000, sourceStart: 24000, sourceEnd: 120000, playbackRate: 2 },
+            { timelineStart: 264000, timelineEnd: 288000, sourceStart: 144000, sourceEnd: 192000, playbackRate: 2 },
+        ];
+        expect(audioSourceIntervals(resolveClipsWithComping('t1', [clip]))).toEqual(expected);
+        expect(audioSourceIntervals(resolveTrackClipsWithComping('t1', [clip]))).toEqual(expected);
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+    });
+
+    it.each([4, undefined])(
+        'keeps selected source intervals and region seams through re-key with period %s',
+        (period) => {
+            tempoMapStore.set({ changes: [] });
+            const clip: Clip = {
+                ...recording(0, 12),
+                loopEnabled: true,
+                ...(period === undefined ? {} : { loopLength: period }),
+                loopOriginBeat: 0,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            };
+            const track = normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', clips: [clip] });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            const selected = pass('selected', [0, 12], 4);
+            takeLaneStore.set(lane([selected], selected.id, 1, 11));
+            const before = audioSourceIntervals(resolveClipsWithComping('t1', [clip]));
+            expect(audioSourceIntervals(resolveTrackClipsWithComping('t1', [clip]))).toEqual(before);
+            expect(before).toContainEqual({
+                timelineStart: 24000,
+                timelineEnd: period === undefined ? 264000 : 120000,
+                sourceStart: 120000,
+                sourceEnd: period === undefined ? 600000 : 312000,
+                playbackRate: 2,
+            });
+
+            expect(splitClip(clip.id, 2, 'right')).toBe('right');
+
+            const fragments = trackStore.value!.tracks[0]!.clips;
+            expect(audioSourceIntervals(resolveClipsWithComping('t1', fragments))).toEqual(before);
+            expect(audioSourceIntervals(resolveTrackClipsWithComping('t1', fragments))).toEqual(before);
+        }
+    );
+
+    it('keeps independent source grids for two regions selecting the same take', () => {
+        const clip: Clip = {
+            ...recording(0, 12),
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        };
+        const track = normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        const selected = pass('selected', [0, 12], 4);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [selected],
+                    activeCompRegions: [
+                        { startBeat: 1, endBeat: 3, takeId: selected.id },
+                        { startBeat: 7, endBeat: 11, takeId: selected.id },
+                    ],
+                },
+            ],
+        });
+        const before = audioSourceIntervals(resolveClipsWithComping('t1', [clip]));
+        expect(before).toContainEqual({
+            timelineStart: 24000,
+            timelineEnd: 72000,
+            sourceStart: 120000,
+            sourceEnd: 216000,
+            playbackRate: 2,
+        });
+        expect(before).toContainEqual({
+            timelineStart: 168000,
+            timelineEnd: 264000,
+            sourceStart: 264000,
+            sourceEnd: 456000,
+            playbackRate: 2,
+        });
+        expect(splitClip(clip.id, 2, 'right')).toBe('right');
+        const fragments = trackStore.value!.tracks[0]!.clips;
+        expect(audioSourceIntervals(resolveClipsWithComping('t1', fragments))).toEqual(before);
+        expect(audioSourceIntervals(resolveTrackClipsWithComping('t1', fragments))).toEqual(before);
+    });
+
+    it.each([
+        { depth: 0, legacy: 4 },
+        { depth: 1.25, legacy: undefined },
+    ])('reads authoritative take source seconds $depth with legacy depth $legacy', ({ depth, legacy }) => {
+        const clip = recording(0, 4);
+        const selected: Take = {
+            id: 'selected',
+            clipId: clip.id,
+            name: 'Selected',
+            startBeat: 0,
+            endBeat: 4,
+            selected: false,
+            sourceOffsetSeconds: depth,
+            ...(legacy === undefined ? {} : { sourceOffsetBeats: legacy }),
+        };
+        takeLaneStore.set(lane([selected], selected.id, 0, 4));
+        const expected = [
+            {
+                timelineStart: 0,
+                timelineEnd: 96000,
+                sourceStart: depth * 48000,
+                sourceEnd: (depth + 2) * 48000,
+                playbackRate: 1,
+            },
+        ];
+        expect(audioSourceIntervals(resolveClipsWithComping('t1', [clip]))).toEqual(expected);
+        expect(audioSourceIntervals(resolveTrackClipsWithComping('t1', [clip]))).toEqual(expected);
+    });
+
+    it.each([2, 4.5])(
+        'keeps first entry, reset and repeat when splitting a stretched legacy loop at %s',
+        (splitBeat) => {
+            tempoMapStore.set({ changes: [] });
+            const clip: Clip = {
+                ...recording(1, 9, 1),
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            };
+            const track = normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', clips: [clip] });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            takeLaneStore.set({ lanes: [] });
+            const before = audioSourceIntervals([clip]);
+            expect(before).toEqual([
+                { timelineStart: 24000, timelineEnd: 96000, sourceStart: 24000, sourceEnd: 168000, playbackRate: 2 },
+                { timelineStart: 96000, timelineEnd: 120000, sourceStart: 0, sourceEnd: 48000, playbackRate: 2 },
+                { timelineStart: 120000, timelineEnd: 192000, sourceStart: 24000, sourceEnd: 168000, playbackRate: 2 },
+                { timelineStart: 192000, timelineEnd: 216000, sourceStart: 0, sourceEnd: 48000, playbackRate: 2 },
+            ]);
+            expect(splitClip(clip.id, splitBeat, 'right')).toBe('right');
+            expect(audioSourceIntervals(trackStore.value!.tracks[0]!.clips)).toEqual(before);
+        }
+    );
+});
+
+describe('split audio loop source compatibility', () => {
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+    });
+
+    it.each([false, true])('preserves every played loop window when canonical entry is %s', (canonical) => {
+        tempoMapStore.set({ changes: [] });
+        const clip: Clip = {
+            ...recording(1, 13, 1),
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+            ...(canonical ? { audioOffsetSeconds: 0.5, audioLoopStartSeconds: 0 } : {}),
+        };
+        const track = normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        const project = (clips: readonly Clip[]) =>
+            clips
+                .flatMap((fragment) =>
+                    projectOfflineAudioClipPlaybacks({
+                        clip: fragment,
+                        bufferDurationSeconds: 40,
+                        regionStartBeat: 0,
+                        regionStartSec: 0,
+                        durationSeconds: 40,
+                        compensationDelay: 0,
+                        projectBeatToSeconds: (beat) => beat / 2,
+                        resolveTempoAtBeat: () => 120,
+                    }).map(({ startSec, bufferOffsetSec, playDuration, playbackRate }) => ({
+                        startSec,
+                        bufferOffsetSec,
+                        playDuration,
+                        playbackRate,
+                    }))
+                )
+                .sort((left, right) => left.startSec - right.startSec);
+        const before = project([clip]);
+
+        expect(splitClip(clip.id, 5, 'right')).toBe('right');
+
+        expect(project(trackStore.value!.tracks[0]!.clips)).toEqual(before);
+    });
+});
 
 describe('live and offline comp resolution', () => {
     afterEach(() => {

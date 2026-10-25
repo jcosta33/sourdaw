@@ -10,7 +10,11 @@ import {
     timeSignatureMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
-import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
+import {
+    createSamplePositionProjector,
+    getTimeSignatureAtBeat,
+    secondsBetweenBeats,
+} from '#/modules/Transport/useCases';
 
 import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
@@ -23,6 +27,21 @@ import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformer
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
+}
+
+function captureWaveformTimeline(
+    tempo: number,
+    changes: Parameters<typeof secondsBetweenBeats>[0]
+): NonNullable<TimelineRenderModel['sourceTimeline']> {
+    const capturedChanges = changes.map((change) => ({ ...change }));
+    const projectSamples = createSamplePositionProjector({
+        transport: { tempo },
+        tempoMap: { changes: capturedChanges },
+    });
+    return {
+        secondsAtBeat: (beat) => secondsBetweenBeats(capturedChanges, 0, beat, tempo),
+        beatAtSeconds: (seconds) => projectSamples({ samples: seconds, sampleRate: 1 }),
+    };
 }
 
 // §143.1 — During recording, buildTimelineRenderModel is called on every
@@ -244,9 +263,15 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopEnabled: clip.loopEnabled,
                     loopLength: clip.loopLength,
                     audioOffsetBeats: clip.audioOffsetBeats,
+                    audioOffsetSeconds: clip.audioOffsetSeconds,
+                    audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                    audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
+                    audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
                     clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
                     midiOffsetBeats: clip.midiOffsetBeats,
                     stretchRatio: clip.stretchRatio,
+                    stretchMode: clip.stretchMode,
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
                     generating: clip.generating,
@@ -277,9 +302,15 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopEnabled: ghost.loopEnabled,
                     loopLength: ghost.loopLength,
                     audioOffsetBeats: ghost.audioOffsetBeats,
+                    audioOffsetSeconds: ghost.audioOffsetSeconds,
+                    audioLoopStartSeconds: ghost.audioLoopStartSeconds,
+                    audioLoopPassEntrySeconds: ghost.audioLoopPassEntrySeconds,
+                    audioLoopPassOriginBeat: ghost.audioLoopPassOriginBeat,
+                    loopOriginBeat: ghost.loopOriginBeat,
                     clipStartTempo: readTempoAtBeat({ beat: ghost.startBeat }),
                     midiOffsetBeats: ghost.midiOffsetBeats,
                     stretchRatio: ghost.stretchRatio,
+                    stretchMode: ghost.stretchMode,
                     fadeInBeats: ghost.fadeInBeats,
                     fadeOutBeats: ghost.fadeOutBeats,
                     isGhost: true,
@@ -321,9 +352,15 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                                   loopEnabled: clip.loopEnabled,
                                   loopLength: clip.loopLength,
                                   audioOffsetBeats: clip.audioOffsetBeats,
+                                  audioOffsetSeconds: clip.audioOffsetSeconds,
+                                  audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                                  audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
+                                  audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
+                                  loopOriginBeat: clip.loopOriginBeat,
                                   clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
                                   midiOffsetBeats: clip.midiOffsetBeats,
                                   stretchRatio: clip.stretchRatio,
+                                  stretchMode: clip.stretchMode,
                                   fadeInBeats: clip.fadeInBeats,
                                   fadeOutBeats: clip.fadeOutBeats,
                                   generating: clip.generating,
@@ -355,6 +392,10 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             trackHeight,
             scrollY: viewState?.scrollY ?? 0,
             tempo: transportState?.tempo ?? DEFAULT_TEMPO_BPM,
+            sourceTimeline: captureWaveformTimeline(
+                transportState?.tempo ?? DEFAULT_TEMPO_BPM,
+                tempoMapState?.changes ?? []
+            ),
             timeSignatureNumerator: numerator,
             timeSignatureDenominator: denominator,
         };
@@ -416,6 +457,11 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         startBeat: pos.startBeat,
                         endBeat: pos.endBeat,
                         audioOffsetBeats: pos.audioOffsetBeats ?? base.audioOffsetBeats,
+                        audioOffsetSeconds: pos.audioOffsetSeconds ?? base.audioOffsetSeconds,
+                        audioLoopStartSeconds: pos.audioLoopStartSeconds ?? base.audioLoopStartSeconds,
+                        audioLoopPassEntrySeconds: pos.audioLoopPassEntrySeconds ?? base.audioLoopPassEntrySeconds,
+                        audioLoopPassOriginBeat: pos.audioLoopPassOriginBeat ?? base.audioLoopPassOriginBeat,
+                        loopOriginBeat: pos.loopOriginBeat ?? base.loopOriginBeat,
                         clipStartTempo: readTempoAtBeat({ beat: pos.startBeat }),
                         midiOffsetBeats: pos.midiOffsetBeats ?? base.midiOffsetBeats,
                     });

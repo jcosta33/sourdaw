@@ -6,6 +6,90 @@ import { hydrateArrangementTracks } from '../hydrateArrangementTracks';
 import { serializeArrangementTracks } from '../serializeArrangementTracks';
 
 describe('serializeArrangementTracks (clip-shape mapping)', () => {
+    it.each([0, -0.25, 3.5])('round-trips canonical source second %s independently of legacy beats', (entry) => {
+        const track = normalizeTrack({
+            id: 'track-source',
+            name: 'Source',
+            kind: 'audio',
+            clips: [
+                {
+                    id: 'clip-source',
+                    trackId: 'track-source',
+                    name: 'Phrase',
+                    type: 'audio',
+                    startBeat: 2,
+                    endBeat: 8,
+                    audioOffsetBeats: 12,
+                    audioOffsetSeconds: entry,
+                    audioUnwrappedOffsetSeconds: -2.5,
+                    audioLoopStartSeconds: -1,
+                    audioLoopPassEntrySeconds: 0,
+                    audioLoopPassOriginBeat: -2,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '',
+                    locked: false,
+                    muted: false,
+                },
+            ],
+        });
+
+        const serialized = JSON.parse(JSON.stringify(serializeArrangementTracks([track])));
+        expect(serialized[0].clips[0]).toMatchObject({
+            sampleStartBeat: 12,
+            audioOffsetSeconds: entry,
+            audioUnwrappedOffsetSeconds: -2.5,
+            audioLoopStartSeconds: -1,
+            audioLoopPassEntrySeconds: 0,
+            audioLoopPassOriginBeat: -2,
+        });
+        const [restored] = hydrateArrangementTracks(serialized);
+        expect(restored?.clips[0]).toMatchObject({
+            audioOffsetBeats: 12,
+            audioOffsetSeconds: entry,
+            audioUnwrappedOffsetSeconds: -2.5,
+            audioLoopStartSeconds: -1,
+            audioLoopPassEntrySeconds: 0,
+            audioLoopPassOriginBeat: -2,
+        });
+    });
+
+    it('keeps a legacy clip canonical-field-free through file serialization and hydration', () => {
+        const track = normalizeTrack({
+            id: 'track-source',
+            name: 'Legacy',
+            kind: 'audio',
+            clips: [
+                {
+                    id: 'clip-source',
+                    trackId: 'track-source',
+                    name: 'Phrase',
+                    type: 'audio',
+                    startBeat: 2,
+                    endBeat: 8,
+                    audioOffsetBeats: 3,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '',
+                    locked: false,
+                    muted: false,
+                },
+            ],
+        });
+        const serialized = JSON.parse(JSON.stringify(serializeArrangementTracks([track])));
+        const [restored] = hydrateArrangementTracks(serialized);
+
+        for (const clip of [serialized[0].clips[0], restored?.clips[0]]) {
+            expect(Object.hasOwn(clip, 'audioOffsetSeconds')).toBe(false);
+            expect(Object.hasOwn(clip, 'audioUnwrappedOffsetSeconds')).toBe(false);
+            expect(Object.hasOwn(clip, 'audioLoopStartSeconds')).toBe(false);
+            expect(Object.hasOwn(clip, 'audioLoopPassEntrySeconds')).toBe(false);
+            expect(Object.hasOwn(clip, 'audioLoopPassOriginBeat')).toBe(false);
+        }
+    });
+
     it('maps the runtime audioBufferId onto the serialized bufferId', () => {
         const track = normalizeTrack({
             id: 'track-1',

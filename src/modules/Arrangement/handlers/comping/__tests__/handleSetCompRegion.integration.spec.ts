@@ -44,6 +44,7 @@ import {
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -58,7 +59,6 @@ import { trackStore } from '../../../stores/trackStore';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { addTake } from '../../../useCases/comping/addTake';
 import { compRegionInterval } from '../../../useCases/comping/compRegionInterval';
-import { removeCompRegion } from '../../../useCases/comping/removeCompRegion';
 import { setCompRegion } from '../../../useCases/comping/setCompRegion';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -100,13 +100,89 @@ const otherLane = {
     activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-d' }],
 };
 
+// At 120 BPM, an unlooped source clip beginning at beat 0 enters at media
+// second 0. The retained original owner keeps its eight-beat grid after cuts.
+const originalAudioSource = {
+    startBeat: 0,
+    audioOffsetSeconds: 0,
+    audioLoopStartSeconds: 0,
+    audioLoopPassEntrySeconds: 0,
+    audioLoopPassOriginBeat: 0,
+    loopOriginBeat: 0,
+    loopLength: 8,
+};
+
+// A new two-beat selection at beat 2 enters its unplaced take one second into
+// the clip, with a fresh two-beat fragment grid.
+const middleAudioSource = {
+    startBeat: 2,
+    audioOffsetSeconds: 1,
+    audioLoopStartSeconds: 1,
+    audioLoopPassEntrySeconds: 1,
+    audioLoopPassOriginBeat: 2,
+    loopOriginBeat: 2,
+    loopLength: 2,
+};
+
+const offsetOneAudioSource = {
+    startBeat: 1,
+    audioOffsetSeconds: 0.5,
+    audioLoopStartSeconds: 0.5,
+    audioLoopPassEntrySeconds: 0.5,
+    audioLoopPassOriginBeat: 1,
+    loopOriginBeat: 1,
+    loopLength: 7,
+};
+
+const threeAudioSource = {
+    startBeat: 3,
+    audioOffsetSeconds: 1.5,
+    audioLoopStartSeconds: 1.5,
+    audioLoopPassEntrySeconds: 1.5,
+    audioLoopPassOriginBeat: 3,
+    loopOriginBeat: 3,
+    loopLength: 2,
+};
+
+const fiveAudioSource = {
+    startBeat: 5,
+    audioOffsetSeconds: 2.5,
+    audioLoopStartSeconds: 2.5,
+    audioLoopPassEntrySeconds: 2.5,
+    audioLoopPassOriginBeat: 5,
+    loopOriginBeat: 5,
+    loopLength: 1,
+};
+
+const sixAudioSource = {
+    startBeat: 6,
+    audioOffsetSeconds: 3,
+    audioLoopStartSeconds: 3,
+    audioLoopPassEntrySeconds: 3,
+    audioLoopPassOriginBeat: 6,
+    loopOriginBeat: 6,
+    loopLength: 1,
+};
+
+function originalRegion(startBeat: number, endBeat: number) {
+    return { startBeat, endBeat, takeId: 'take-a', audioSource: originalAudioSource };
+}
+
+function middleRegion(startBeat: number, endBeat: number) {
+    return { startBeat, endBeat, takeId: 'take-b', audioSource: middleAudioSource };
+}
+
+function selectedCRegion(startBeat: number, endBeat: number, audioSource: typeof middleAudioSource) {
+    return { startBeat, endBeat, takeId: 'take-c', audioSource };
+}
+
 // restoreTrack replays its captured lanes through insertTakeLane, which drops a
 // take whose clip is not in the project: the removed-track fixtures below must
 // carry the clips their takes name, or the restore strips the lane bare (#4527).
 const compedTrackClips = () => [
-    ClipDummy.create({ id: 'clip-a' }),
-    ClipDummy.create({ id: 'clip-b' }),
-    ClipDummy.create({ id: 'clip-c' }),
+    ClipDummy.create({ id: 'clip-a', startBeat: 0, endBeat: 8, audioOffsetSeconds: 0 }),
+    ClipDummy.create({ id: 'clip-b', startBeat: 0, endBeat: 8, audioOffsetSeconds: 0 }),
+    ClipDummy.create({ id: 'clip-c', startBeat: 0, endBeat: 8, audioOffsetSeconds: 0 }),
 ];
 
 function activeRegions(laneId = 'lane-1') {
@@ -184,6 +260,13 @@ describe('setCompRegion command integration', () => {
             notifications.push(notification);
         });
         setNotificationEventBus(notificationEventBus);
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', clips: compedTrackClips() })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
         takeLaneStore.set({ lanes: [structuredClone(lane), structuredClone(otherLane)] });
         flushAutomergeStorageWrites();
     });
@@ -199,6 +282,9 @@ describe('setCompRegion command integration', () => {
         clearHandlerRegistry();
         unsubscribeFromNotifications();
         takeLaneStore.set({ lanes: [] });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
         configureAutomergeStoragePort(null);
@@ -208,11 +294,7 @@ describe('setCompRegion command integration', () => {
     it('replaces only the requested interval in projected and CRDT state', async () => {
         await applyBToTwoThroughFour();
 
-        const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-        ];
+        const expected = [originalRegion(0, 2), middleRegion(2, 4), originalRegion(4, 8)];
         await vi.waitFor(() => {
             expect(activeRegions()).toEqual(expected);
         });
@@ -224,6 +306,17 @@ describe('setCompRegion command integration', () => {
     });
 
     it('settles an immediately added take before applying its comp region command', async () => {
+        const track = trackStore.value!.tracks[0]!;
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [
+                {
+                    ...track,
+                    clips: [...track.clips, ClipDummy.create({ id: 'clip-new', endBeat: 8, audioOffsetSeconds: 0 })],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
         addTake('track-1', 'clip-new', 'New take', 0, 8);
         const newTake = takeLaneStore.value?.lanes[0]?.takes.find((take) => take.clipId === 'clip-new');
         if (!newTake) {
@@ -239,9 +332,9 @@ describe('setCompRegion command integration', () => {
         const rawLanes = getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes;
         expect(rawLanes?.[0]?.takes.some((take) => take.id === newTake.id)).toBe(true);
         expect(rawLanes?.[0]?.activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: newTake.id },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+            originalRegion(0, 2),
+            { startBeat: 2, endBeat: 4, takeId: newTake.id, audioSource: middleAudioSource },
+            originalRegion(4, 8),
         ]);
         expect(activeRegions()).toEqual(rawLanes?.[0]?.activeCompRegions);
     });
@@ -292,7 +385,7 @@ describe('setCompRegion command integration', () => {
             startBeat: 2,
             endBeat: 4,
             expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
-            replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+            replacement: [middleRegion(2, 4)],
         });
         expect(command.time).toEqual(
             expect.arrayContaining([
@@ -388,11 +481,11 @@ describe('setCompRegion command integration', () => {
                             take.id === 'take-a' ? { ...take, name: 'A renamed later' } : take
                         ),
                         activeCompRegions: [
-                            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-                            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-                            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+                            originalRegion(0, 2),
+                            middleRegion(2, 4),
+                            originalRegion(4, 5),
                             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-                            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+                            originalRegion(6, 8),
                         ],
                     };
                 }
@@ -407,9 +500,9 @@ describe('setCompRegion command integration', () => {
 
         expect(await undo()).toEqual({ headConsumed: true });
         expect(activeRegions()).toEqual([
-            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ]);
         expect(takeLaneStore.value?.lanes[0]?.takes[0]?.name).toBe('A renamed later');
         expect(takeLaneStore.value?.lanes[1]).toMatchObject({
@@ -426,11 +519,11 @@ describe('setCompRegion command integration', () => {
         await redo();
         expect(undoStore.value).toMatchObject({ past: [{ label: 'Set comp region' }], future: [] });
         expect(activeRegions()).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 4),
+            originalRegion(4, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ]);
         expect(takeLaneStore.value?.lanes[0]?.takes[0]?.name).toBe('A renamed later');
     });
@@ -486,9 +579,9 @@ describe('setCompRegion command integration', () => {
         await applyBToTwoThroughFour();
         expect(activeRegions()).toEqual([
             { startBeat: 0, endBeat: 1, takeId: 'take-a' },
-            { startBeat: 1, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+            { startBeat: 1, endBeat: 2, takeId: 'take-a', audioSource: offsetOneAudioSource },
+            middleRegion(2, 4),
+            { startBeat: 4, endBeat: 8, takeId: 'take-a', audioSource: offsetOneAudioSource },
         ]);
 
         expect(await undo()).toEqual({ headConsumed: true });
@@ -614,9 +707,9 @@ describe('setCompRegion command integration', () => {
 
     it('preserves a compatible outside edit while an admitted batch waits', async () => {
         const outsideEdit = [
-            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ];
         const held = holdSnapshotRegionEdit(outsideEdit);
         await held.transactionStarted;
@@ -637,11 +730,11 @@ describe('setCompRegion command integration', () => {
 
         await expect(execution).resolves.toMatchObject({ status: 'committed' });
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 4),
+            originalRegion(4, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ];
         expect(activeRegions()).toEqual(expected);
         flushAutomergeStorageWrites();
@@ -653,9 +746,9 @@ describe('setCompRegion command integration', () => {
 
     it('preserves an outside edit committed after the handler returns but before its storage commit', async () => {
         const outsideEdit = [
-            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ];
 
         const result = await executeAppActionBatch(
@@ -688,11 +781,11 @@ describe('setCompRegion command integration', () => {
 
         expect(result).toMatchObject({ status: 'committed' });
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 4),
+            originalRegion(4, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ];
         expect(activeRegions()).toEqual(expected);
         expect(
@@ -703,9 +796,9 @@ describe('setCompRegion command integration', () => {
 
     it('preserves a compatible outside edit in a single action commit window', async () => {
         const outsideEdit = [
-            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ];
         let scheduled = false;
         const unsubscribe = takeLaneStore.subscribe((state) => {
@@ -733,11 +826,11 @@ describe('setCompRegion command integration', () => {
         }
 
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 4),
+            originalRegion(4, 5),
             { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(6, 8),
         ];
         expect(scheduled).toBe(true);
         expect(activeRegions()).toEqual(expected);
@@ -802,11 +895,7 @@ describe('setCompRegion command integration', () => {
                 payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
             })
         ).resolves.toBeUndefined();
-        const recoveredRegions = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-        ];
+        const recoveredRegions = [originalRegion(0, 2), middleRegion(2, 4), originalRegion(4, 8)];
         expect(activeRegions()).toEqual(recoveredRegions);
         expect(
             getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
@@ -882,17 +971,17 @@ describe('setCompRegion command integration', () => {
                 trackId: 'track-1',
                 startBeat: 2,
                 endBeat: 4,
-                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
-                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+                expected: [middleRegion(2, 4)],
+                replacement: [originalRegion(2, 4)],
             },
         };
 
         await executeAppAction(restore);
-        expect(activeRegions()).toEqual([{ startBeat: 0, endBeat: 8, takeId: 'take-a' }]);
+        expect(activeRegions()).toEqual([originalRegion(0, 8)]);
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
 
         await expect(executeAppAction(restore)).rejects.toMatchObject({ name: 'AppActionConflictError' });
-        expect(activeRegions()).toEqual([{ startBeat: 0, endBeat: 8, takeId: 'take-a' }]);
+        expect(activeRegions()).toEqual([originalRegion(0, 8)]);
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
     });
 
@@ -930,11 +1019,7 @@ describe('setCompRegion command integration', () => {
         expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[1]?.takes[0]?.name).toBe(
             'D renamed by listener'
         );
-        expect(activeRegions()).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-        ]);
+        expect(activeRegions()).toEqual([originalRegion(0, 2), middleRegion(2, 4), originalRegion(4, 8)]);
     });
 
     it('retains owner-local field intent across hydration between two writes', () => {
@@ -1012,11 +1097,11 @@ describe('setCompRegion command integration', () => {
         ).resolves.toMatchObject({ status: 'committed' });
 
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
-            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 4),
+            originalRegion(4, 5),
+            selectedCRegion(5, 6, fiveAudioSource),
+            originalRegion(6, 8),
         ];
         expect(activeRegions()).toEqual(expected);
         flushAutomergeStorageWrites();
@@ -1043,10 +1128,10 @@ describe('setCompRegion command integration', () => {
 
         expect(result).toMatchObject({ status: 'committed' });
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 3, takeId: 'take-b' },
-            { startBeat: 3, endBeat: 5, takeId: 'take-c' },
-            { startBeat: 5, endBeat: 8, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 3),
+            selectedCRegion(3, 5, threeAudioSource),
+            originalRegion(5, 8),
         ];
         expect(activeRegions()).toEqual(expected);
         flushAutomergeStorageWrites();
@@ -1074,11 +1159,7 @@ describe('setCompRegion command integration', () => {
             status: 'committed',
             actions: [{ action: { type: 'setCompRegion' } }],
         });
-        expect(activeRegions()).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-        ]);
+        expect(activeRegions()).toEqual([originalRegion(0, 2), middleRegion(2, 4), originalRegion(4, 8)]);
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
     });
 
@@ -1130,10 +1211,10 @@ describe('setCompRegion command integration', () => {
             options
         );
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 3, takeId: 'take-b' },
-            { startBeat: 3, endBeat: 5, takeId: 'take-c' },
-            { startBeat: 5, endBeat: 8, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 3),
+            selectedCRegion(3, 5, threeAudioSource),
+            originalRegion(5, 8),
         ];
         expect(activeRegions()).toEqual(expected);
 
@@ -1147,11 +1228,7 @@ describe('setCompRegion command integration', () => {
     });
 
     it('preserves an outside edit while overlapping siblings await sequential execution', async () => {
-        const outsideEdit = [
-            { startBeat: 0, endBeat: 6, takeId: 'take-a' },
-            { startBeat: 6, endBeat: 7, takeId: 'take-c' },
-            { startBeat: 7, endBeat: 8, takeId: 'take-a' },
-        ];
+        const outsideEdit = [originalRegion(0, 6), selectedCRegion(6, 7, sixAudioSource), originalRegion(7, 8)];
         let scheduled = false;
         const unsubscribe = takeLaneStore.subscribe((state) => {
             if (scheduled || state?.lanes[0]?.activeCompRegions[1]?.takeId !== 'take-b') {
@@ -1185,12 +1262,12 @@ describe('setCompRegion command integration', () => {
         expect(result).toMatchObject({ status: 'committed' });
         expect(scheduled).toBe(true);
         const expected = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 3, takeId: 'take-b' },
-            { startBeat: 3, endBeat: 5, takeId: 'take-c' },
-            { startBeat: 5, endBeat: 6, takeId: 'take-a' },
-            { startBeat: 6, endBeat: 7, takeId: 'take-c' },
-            { startBeat: 7, endBeat: 8, takeId: 'take-a' },
+            originalRegion(0, 2),
+            middleRegion(2, 3),
+            selectedCRegion(3, 5, threeAudioSource),
+            originalRegion(5, 6),
+            selectedCRegion(6, 7, sixAudioSource),
+            originalRegion(7, 8),
         ];
         expect(activeRegions()).toEqual(expected);
         expect(
@@ -1224,11 +1301,7 @@ describe('setCompRegion command integration', () => {
             flushAutomergeStorageWrites();
             const expectedCompLane = {
                 ...lane,
-                activeCompRegions: [
-                    { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-                    { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-                    { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-                ],
+                activeCompRegions: [originalRegion(0, 2), middleRegion(2, 4), originalRegion(4, 8)],
             };
 
             const result = await executeAppActionBatch(
@@ -1555,7 +1628,9 @@ describe('setCompRegion command integration', () => {
             })
         );
         vi.stubGlobal('cancelAnimationFrame', vi.fn());
-        removeCompRegion('track-1', 0);
+        const patch = compRegionInterval.captureRemovePatch({ trackId: 'track-1', startBeat: 0 });
+        if (!patch) throw new Error('Expected a removable unscoped interval');
+        expect(compRegionInterval.applyPatch(patch)).toBe('written');
         expect(frames).toHaveLength(1);
         mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
             id: 'root',
@@ -1847,11 +1922,7 @@ describe('setCompRegion command integration', () => {
         });
 
         expect(retry).toMatchObject({ status: 'committed' });
-        const recoveredRegions = [
-            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-        ];
+        const recoveredRegions = [originalRegion(0, 2), middleRegion(2, 4), originalRegion(4, 8)];
         expect(activeRegions()).toEqual(recoveredRegions);
         expect(
             getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions

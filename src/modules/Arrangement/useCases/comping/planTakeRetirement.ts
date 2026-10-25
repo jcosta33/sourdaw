@@ -1,3 +1,5 @@
+import { type AudioSourceTile } from '#/utils/audioSourceTime';
+import { valuesEqual } from '#/utils/structuralEquality';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type TakeLane } from '../../models/TakeLane';
@@ -30,7 +32,10 @@ export type TakeRetirementPlan = {
 export function planTakeRetirement(
     clipIds: readonly string[],
     preservedTakeIds?: ReadonlySet<string>,
-    options?: { readonly preservedLaneIds: ReadonlySet<string> }
+    options?: {
+        readonly preservedLaneIds?: ReadonlySet<string>;
+        readonly preservedBaseGapAudioSources?: readonly AudioSourceTile[];
+    }
 ): TakeRetirementPlan | null {
     const state = takeLaneStore.value;
     if (!state || clipIds.length === 0) {
@@ -49,21 +54,32 @@ export function planTakeRetirement(
                 .filter((take) => retiringClipIds.has(take.clipId) && !preservedTakeIds?.has(take.id))
                 .map((take) => take.id)
         );
-        if (removedTakeIds.size === 0) {
+        const removesTile = (tile: AudioSourceTile) =>
+            retiringClipIds.has(tile.clipId) &&
+            !options?.preservedBaseGapAudioSources?.some((owned) => valuesEqual(owned, tile));
+        const removedTiles = lane.baseGapAudioSources?.filter(removesTile) ?? [];
+        if (removedTakeIds.size === 0 && removedTiles.length === 0) {
             nextLanes.push(lane);
             continue;
         }
 
         changed = true;
-        retiredLanes.push({ lane: structuredClone(lane), laneIndex: index, retiredTakeIds: [...removedTakeIds] });
+        retiredLanes.push({
+            lane: structuredClone(lane),
+            laneIndex: index,
+            retiredTakeIds: [...removedTakeIds],
+            ...(removedTiles.length === 0 ? {} : { retiredBaseGapAudioSources: structuredClone(removedTiles) }),
+        });
 
         const takes = lane.takes.filter((take) => !removedTakeIds.has(take.id));
-        if (takes.length === 0 && !options?.preservedLaneIds.has(lane.id)) {
+        const gaps = lane.baseGapAudioSources?.filter((tile) => !removesTile(tile));
+        if (takes.length === 0 && !gaps?.length && !options?.preservedLaneIds?.has(lane.id)) {
             continue;
         }
         nextLanes.push({
             ...lane,
             takes,
+            ...(gaps === undefined ? {} : { baseGapAudioSources: gaps }),
             activeCompRegions: lane.activeCompRegions.filter((region) => !removedTakeIds.has(region.takeId)),
         });
     }

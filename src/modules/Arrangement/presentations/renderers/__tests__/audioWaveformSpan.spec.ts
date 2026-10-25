@@ -1,11 +1,110 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeAudioWaveformDrawSpan } from '../audioWaveformSpan';
+import type { ClipRenderModel, TimelineRenderModel } from '../../../models/TimelineRenderModel';
+import {
+    computeAudioWaveformDrawSpan,
+    getAudioWaveformOccurrences,
+    getAudioWaveformPeakPositions,
+} from '../audioWaveformSpan';
 
 const secondsPerBeatAt120Bpm = 60 / 120;
 const sampleRate48k = 48_000;
 
 describe('computeAudioWaveformDrawSpan', () => {
+    it('places every source part on its own original beat span after an interior loop cut', () => {
+        const clip: ClipRenderModel = {
+            id: 'cut',
+            startBeat: 2,
+            endBeat: 9,
+            name: 'Cut',
+            color: '',
+            type: 'audio',
+            muted: false,
+            midiNotes: [],
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            audioOffsetSeconds: 1.5,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+            loopOriginBeat: 0,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        };
+        const model: TimelineRenderModel = {
+            dataDirty: true,
+            tracks: [],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 12,
+            beatsPerPixel: 0.01,
+            pixelsPerBeat: 100,
+            trackHeight: 80,
+            scrollY: 0,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        const occurrences = getAudioWaveformOccurrences({
+            clip,
+            model,
+            sampleRate: sampleRate48k,
+            bufferLength: sampleRate48k * 10,
+            maxBins: 1000,
+        });
+        expect(occurrences.map(({ span }) => [span.startSample, span.endSample])).toEqual([
+            [72000, 168000],
+            [0, 48000],
+            [24000, 72000],
+            [72000, 168000],
+            [0, 48000],
+        ]);
+        expect(
+            occurrences.map((occurrence) => [
+                ...getAudioWaveformPeakPositions({ clip, model, occurrence, binCount: 1 }),
+            ])
+        ).toEqual([
+            [200, 400],
+            [400, 500],
+            [500, 600],
+            [600, 800],
+            [800, 900],
+        ]);
+    });
+
+    it.each([
+        { offsetSeconds: 0, leading: 0, endSample: 288000 },
+        { offsetSeconds: -1, leading: 0.5, endSample: 240000 },
+    ])(
+        'draws canonical source $offsetSeconds through the internal tempo map',
+        ({ offsetSeconds, leading, endSample }) => {
+            const span = computeAudioWaveformDrawSpan({
+                offsetBeats: 12,
+                offsetSeconds,
+                stretchRatio: 2,
+                clipBeats: 4,
+                secondsPerBeat: 1,
+                sampleRate: sampleRate48k,
+                clipStartBeat: 4,
+                timeline: {
+                    secondsAtBeat: (beat) => (beat <= 4 ? beat / 2 : beat <= 6 ? 2 + beat - 4 : 4 + (beat - 6) / 2),
+                    beatAtSeconds: (seconds) =>
+                        seconds <= 2 ? seconds * 2 : seconds <= 4 ? 4 + seconds - 2 : 6 + (seconds - 4) * 2,
+                },
+            });
+
+            expect(span.startSample).toBe(0);
+            expect(span.endSample).toBe(endSample);
+            expect(span.leadingSilenceBeats).toBe(leading);
+            expect(span.audibleTimelineBeats).toBe(4 - leading);
+        }
+    );
+
     it('should show B * r source beats over B destination beats at ratio 0.5', () => {
         // Fit-to-beats stores ratio 0.5 when stretching 4 beats of material to
         // 8 destination beats. The scheduler consumes T * stretchRatio of

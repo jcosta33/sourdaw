@@ -15,7 +15,7 @@ export const MAX_TEMPO = 300;
  * projector, an import before the project loads). Every `?? tempo` default in
  * the module reads this so all such paths assume the same fallback BPM.
  */
-export const DEFAULT_TEMPO_BPM = 120;
+export { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 const MIN_TIME_SIGNATURE_NUMERATOR = 1;
 const MAX_TIME_SIGNATURE_NUMERATOR = 32;
 const MIN_BARS = 1;
