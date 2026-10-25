@@ -17,8 +17,8 @@ type RecordingLifecycle = {
     /** Own the commit a capture terminal started, so a stop can await it. */
     trackCommit: (commit: Promise<void>) => void;
     /**
-     * Track a stop's promise for the settled-TAKE count: a stop that resolved
-     *  (#5517) closed nothing, so it must not read as a take this
+     * Track a stop's promise for the settled-TAKE count: a stop that resolved `refused`
+     * (#5517) closed nothing, so it must not read as a take this
      * project gained. Failures still count — a discarded take is a settled
      * gesture the #4439 semantics keep counting.
      */
@@ -82,7 +82,7 @@ function trackTakeCommit(commit: Promise<'refused' | 'closed'>): void {
     pendingCommits.add(
         commit.then((outcome) => {
             void outcome;
-        }) as Promise<void>
+        })
     );
 }
 

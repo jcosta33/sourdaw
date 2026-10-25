@@ -220,6 +220,76 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
         expect(activeRecordingRef.capturedRootIdentity).toBeNull();
     });
 
+    it.each(['audio', 'missing'] as const)('reports closed when the stop has no MIDI commits (%s)', async (kind) => {
+        trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+        if (kind === 'audio') {
+            startRecording();
+        } else {
+            activeRecordingRef.current = ['missing-clip'];
+        }
+
+        await expect(stopRecording()).resolves.toBe('closed');
+
+        expect(commitRecording).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('reports closed when one clip of a multi-clip stop landed before the root moved', async () => {
+        // A partially-landed stop still owes the outgoing project the save
+        // for the landed clip (#5517): the first clip's real commit resolves
+        // before the replacement, the second is held across it and refuses,
+        // and the gesture outcome must stay `closed` so the landed entry
+        // counts.
+        trackStore.set({
+            tracks: [recordingTrack('midi'), { ...recordingTrack('midi'), id: TRACK_ID + '-2' }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+        const clips = startRecording();
+        expect(clips).toHaveLength(2);
+        flushAutomergeStorageWrites();
+        let landSecond: (() => void) | undefined;
+        commitRecording.mockImplementationOnce((clip, _capture, _options, real) => {
+            if (!real) {
+                throw new Error('delegating mock: the real commit was not provided');
+            }
+            return real(clip);
+        });
+        commitRecording.mockImplementationOnce(
+            (clip, _capture, options, real) =>
+                new Promise<void>((resolve) => {
+                    if (!real) {
+                        throw new Error('held mock: the real commit was not provided');
+                    }
+                    const land = real;
+                    landSecond = () => {
+                        resolve(land(clip, undefined, options));
+                    };
+                })
+        );
+
+        const stopping = stopRecording();
+        // The first clip's real commit lands before the root moves.
+        await vi.waitFor(() => {
+            expect(committedEntryCount()).toBe(1);
+            expect(landSecond).toBeDefined();
+        });
+
+        installRootReplacement();
+        landSecond?.();
+        await expect(stopping).resolves.toBe('closed');
+
+        // The landed entry survives the replacement on the owning root, and
+        // the refused clip drew the branch-move notice.
+        expect(committedEntryCount()).toBe(1);
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+            'warning'
+        );
+    });
+
     it('closes and commits the take on the same root', async () => {
         startRecording();
         const [clip] = getTrackState()?.tracks.find((track) => track.id === TRACK_ID)?.clips ?? [];
@@ -251,7 +321,7 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
                     // handing the real commit over (call-shape drift): a
                     // vacuous resolve would observe nothing.
                     if (typeof real !== 'function') {
-                        throw new Error('parked mock: the real commit was not provided');
+                        throw new TypeError('parked mock: the real commit was not provided');
                     }
                     landed = () => {
                         resolve(real(clip, undefined, options));

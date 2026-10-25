@@ -71,8 +71,8 @@ function closeTakeAt(take: Take, endBeat: number): Take {
 /**
  * Why a dispatched commit refused to resume: the root was replaced while the
  * dispatch was parked on the snapshot-transaction queue (#5517). Thrown from
- * the  hook so the refusal rejects into 's
- * catch — a silent  return cannot be told apart from a
+ * the `shouldExecute` hook so the refusal rejects into `executeAppAction`'s
+ * catch — a silent `false` return cannot be told apart from a
  * commit that landed just before the root moved.
  */
 class RecordingRootMovedRefusal extends Error {
@@ -81,7 +81,7 @@ class RecordingRootMovedRefusal extends Error {
     }
 }
 
-/** What a stop did:  closed nothing (the root moved),  finished normally. */
+/** What a stop did: `refused` closed nothing (the root moved), `closed` finished normally. */
 export type StopRecordingOutcome = 'refused' | 'closed';
 
 export async function stopRecording(atBeat?: number): Promise<StopRecordingOutcome> {
@@ -211,8 +211,8 @@ export async function stopRecording(atBeat?: number): Promise<StopRecordingOutco
                 return 'closed' as const;
             });
     });
-    // A stop that refused even one clip's resume closed nothing this project
-    // gained; callers read the outcome to decide what the stop counted as.
+    // A landed or retired sibling still settles this gesture even when another
+    // clip refuses. With no MIDI commits, the audio finalizer also closes normally.
     const outcomes = await Promise.all(commits);
-    return outcomes.includes('refused') ? 'refused' : 'closed';
+    return outcomes.length > 0 && outcomes.every((outcome) => outcome === 'refused') ? 'refused' : 'closed';
 }
