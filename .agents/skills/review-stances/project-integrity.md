@@ -442,6 +442,12 @@ A durable-head change alone cannot authorize refresh of a removal inverse; roll 
 its lineage from a committed observer before the finalizer, and require the old inverse to survive
 on ordinary and ambiguous commit paths. Keep genuine own-commit warning and refused-flush controls.
 
+PR #1425 (`9aebb8837ddc9c6640a7a8037c2b7b25eaea204d`) compared an absent split right clip's
+remembered insertion slot with current track length; PR #2287 later extracted that guard. The missed
+probe was valid saved Redo after unrelated same-track growth: split, Undo, append a peer clip, binary
+reload, then Redo twice. Preserve the peer clip and captured insertion position; a present right
+clip still requires its exact slot and value, and an invalid replacement slot still refuses.
+
 Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
 Preoccupy the preferred generated identity under an unrelated owner before the split, then require
 binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer

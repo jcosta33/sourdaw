@@ -780,7 +780,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         Container.clear();
     });
 
-    it.each(['none'] as const)(
+    it.each(['none', 'unrelated-append'] as const)(
         'replays a saved split after %s without losing its captured insertion slot',
         async (peer: 'none' | 'unrelated-append') => {
             seedSplitTakeLane();

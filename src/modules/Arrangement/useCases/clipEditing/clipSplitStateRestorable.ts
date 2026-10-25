@@ -19,11 +19,12 @@ function trackSnapshotMatches(
     const leftClip = clips.find((clip) => clip.id === clipId);
     const rightClipIndex = clips.findIndex((clip) => clip.id === rightClipId);
     const rightClip = rightClipIndex < 0 ? null : clips[rightClipIndex]!;
-    const effectiveRightIndex = rightClipIndex < 0 ? clips.length : rightClipIndex;
     return (
         valuesEqual(leftClip ?? null, expected.leftClip) &&
         valuesEqual(rightClip, expected.rightClip) &&
-        effectiveRightIndex === expected.rightClipIndex
+        Number.isSafeInteger(expected.rightClipIndex) &&
+        expected.rightClipIndex >= 0 &&
+        (expected.rightClip === null || rightClipIndex === expected.rightClipIndex)
     );
 }
 
@@ -64,7 +65,11 @@ export function clipSplitStateRestorable(
     }
     if (replacement.rightClip) {
         const clipsAfterRemoval = track.clips.filter((clip) => clip.id !== rightClipId).length;
-        if (replacement.rightClipIndex < 0 || replacement.rightClipIndex > clipsAfterRemoval) {
+        if (
+            !Number.isSafeInteger(replacement.rightClipIndex) ||
+            replacement.rightClipIndex < 0 ||
+            replacement.rightClipIndex > clipsAfterRemoval
+        ) {
             return false;
         }
     }

@@ -24,6 +24,71 @@ function snapshot(leftClip: ClipSplitActionSnapshot['leftClip']): ClipSplitActio
 }
 
 describe('clipSplitStateRestorable', () => {
+    it('accepts an absent right clip after an unrelated same-track append', () => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+        const peer = ClipDummy.create({ id: 'peer', trackId: 'track-1' });
+        const expected = snapshot(left);
+        const replacement = { ...expected, rightClip: right };
+        const state = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, peer] })] };
+
+        expect(clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement }, state)).toBe(
+            true
+        );
+    });
+
+    it('still authenticates a present right clip at its captured slot and with its exact value', () => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+        const peer = ClipDummy.create({ id: 'peer', trackId: 'track-1' });
+        const expected = { ...snapshot(left), rightClip: right };
+        const payload = { clipId: 'left', rightClipId: 'right', expected, replacement: snapshot(left) };
+        const atSlot = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, right, peer] })] };
+        const moved = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, peer, right] })] };
+        const edited = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [left, { ...right, name: 'Peer edit' }, peer] })],
+        };
+
+        expect(clipSplitStateRestorable(payload, atSlot)).toBe(true);
+        expect(clipSplitStateRestorable(payload, moved)).toBe(false);
+        expect(clipSplitStateRestorable(payload, edited)).toBe(false);
+    });
+
+    it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 3])(
+        'refuses an invalid replacement insertion slot %s',
+        (rightClipIndex) => {
+            const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+            const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+            const expected = snapshot(left);
+            const replacement = { ...expected, rightClip: right, rightClipIndex };
+            const state = {
+                tracks: [
+                    TrackDummy.create({
+                        id: 'track-1',
+                        clips: [left, ClipDummy.create({ id: 'peer', trackId: 'track-1' })],
+                    }),
+                ],
+            };
+
+            expect(
+                clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement }, state)
+            ).toBe(false);
+        }
+    );
+
+    it('refuses a malformed remembered insertion slot even while the right clip is absent', () => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const expected = { ...snapshot(left), rightClipIndex: Number.NaN };
+        const state = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left] })] };
+
+        expect(
+            clipSplitStateRestorable(
+                { clipId: 'left', rightClipId: 'right', expected, replacement: snapshot(left) },
+                state
+            )
+        ).toBe(false);
+    });
+
     it.each(['left', 'right'] as const)('refuses a %s identity reused under another project track', (id) => {
         const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
         const expected = snapshot(left);
