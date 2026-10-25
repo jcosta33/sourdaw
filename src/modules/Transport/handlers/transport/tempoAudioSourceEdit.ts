@@ -3,9 +3,15 @@ import {
     canApplyTempoAudioSources,
     prepareTempoAudioSources,
 } from '#/modules/Arrangement/useCases';
-import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import { type AppAction, type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
-import { isTempoAudioSourcePromotion } from '#/utils/tempoAudioSourcePromotion';
+import {
+    isTempoAudioSourcePromotion,
+    projectTempoSourceClock,
+    type TempoSourceClock,
+    type TempoScalarTransition,
+    type TempoSourceClockPath,
+} from '#/utils/tempoAudioSourcePromotion';
 
 import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -16,23 +22,63 @@ import { runWithTempoSourcePreservation } from '../../stores/tempoWriteIntent';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type RestoreAction = Extract<AppAction, { type: 'restoreTempoEdit' }>;
+type PrefixContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
 
-function clockBeforeEdit(tempoChangeId: string | null, originalBpm: number) {
+function prefixActions(context?: PrefixContext): readonly AppAction[] {
+    return context?.actions.slice(0, context.actionIndex) ?? [];
+}
+
+function prefixClock(actions: readonly AppAction[]): TempoSourceClock | null {
+    const transport = transportStore.value;
+    if (!transport) {
+        return null;
+    }
+    let clock: TempoSourceClock = structuredClone({
+        tempo: transport.tempo,
+        changes: tempoMapStore.value?.changes ?? [],
+    });
+    for (const action of actions) {
+        if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
+            continue;
+        }
+        const { tempoChangeId, expectedBpm, bpm } = action.payload;
+        if (tempoChangeId === undefined || expectedBpm === undefined) {
+            return null;
+        }
+        const next = projectTempoSourceClock(clock, [{ tempoChangeId, expectedBpm, bpm }]);
+        if (!next) {
+            return null;
+        }
+        clock = next;
+    }
+    return clock;
+}
+
+export function tempoPrefixTarget(action: SetTempoAction | RestoreAction, context?: PrefixContext) {
+    const clock = prefixClock(prefixActions(context));
+    return clock ? getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId, clock }) : null;
+}
+
+function clockBeforeEdit(tempoChangeId: string | null, originalBpm: number, priorActions: readonly AppAction[] = []) {
     const transport = transportStore.value;
     if (!transport) {
         return null;
     }
     const tempoMap = tempoMapStore.value;
-    const changes = structuredClone(tempoMap?.changes ?? []);
+    const prefix = prefixClock(priorActions);
+    if (!prefix) {
+        return null;
+    }
+    const changes = prefix.changes;
     if (tempoChangeId !== null && !changes.some((change) => change.id === tempoChangeId)) {
         return null;
     }
     const oldChanges = changes.map((change) =>
         change.id === tempoChangeId ? { ...change, tempo: originalBpm } : change
     );
-    const oldTempo = tempoChangeId === null ? originalBpm : transport.tempo;
+    const oldTempo = tempoChangeId === null ? originalBpm : prefix.tempo;
     return {
-        clock: { transport, tempoMap },
+        clock: { transport: { ...transport, tempo: prefix.tempo }, tempoMap: { ...tempoMap, changes } },
         timeline: {
             tempoAtBeat: (beat: number) => getTempoAtBeat(oldChanges, beat, oldTempo),
             secondsAtBeat: (beat: number) => secondsBetweenBeats(oldChanges, 0, beat, oldTempo),
@@ -41,20 +87,21 @@ function clockBeforeEdit(tempoChangeId: string | null, originalBpm: number) {
     };
 }
 
-export function materializeTempoAudioSources(action: SetTempoAction): void {
+export function materializeTempoAudioSources(action: SetTempoAction, context?: PrefixContext): void {
     // Caller JSON can carry snapshots, but only the actual producer grants this capture.
     delete action.payload.audioSourcePromotion;
-    const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
+    const priorActions = prefixActions(context);
+    const target = tempoPrefixTarget(action, context);
     if (
         !target?.writable ||
         (action.payload.expectedBpm !== undefined && action.payload.expectedBpm !== target.tempo)
     ) {
         return;
     }
-    const source = clockBeforeEdit(target.tempoChangeId, target.tempo);
+    const source = clockBeforeEdit(target.tempoChangeId, target.tempo, priorActions);
     let promotion: ReturnType<typeof prepareTempoAudioSources> = null;
     if (source) {
-        promotion = prepareTempoAudioSources({ timeline: source.timeline });
+        promotion = prepareTempoAudioSources({ timeline: source.timeline, priorActions });
     }
     if (!promotion) {
         return;
@@ -64,9 +111,9 @@ export function materializeTempoAudioSources(action: SetTempoAction): void {
     action.payload.audioSourcePromotion = promotion;
 }
 
-function sourceInput(payload: RestoreAction['payload']) {
+function sourceInput(payload: RestoreAction['payload'], priorActions: readonly AppAction[] = []) {
     const originalBpm = payload.sourceDirection === 'promote' ? payload.expectedBpm : payload.bpm;
-    const source = clockBeforeEdit(payload.tempoChangeId, originalBpm);
+    const source = clockBeforeEdit(payload.tempoChangeId, originalBpm, priorActions);
     if (!source) {
         return null;
     }
@@ -78,23 +125,88 @@ function sourceInput(payload: RestoreAction['payload']) {
     };
 }
 
-export function tempoAudioSourcesApply(payload: RestoreAction['payload']): boolean {
-    const input = sourceInput(payload);
-    return input !== null && canApplyTempoAudioSources(input);
+export function tempoAudioSourcesApply(payload: RestoreAction['payload'], context?: PrefixContext): boolean {
+    const priorActions = prefixActions(context);
+    const input = sourceInput(payload, priorActions);
+    return input !== null && canApplyTempoAudioSources(input, priorActions);
 }
 
-export function writeTempoEdit(payload: RestoreAction['payload']): 'written' | 'conflict' {
+function capturedClockPath(payload: RestoreAction['payload'], context?: PrefixContext): TempoSourceClockPath | null {
+    const actions = context?.actions;
+    if (!actions) {
+        return null;
+    }
+    const current = actions[context.actionIndex];
+    if (
+        (current?.type !== 'setTempo' && current?.type !== 'restoreTempoEdit') ||
+        current.payload.tempoChangeId !== payload.tempoChangeId ||
+        current.payload.expectedBpm !== payload.expectedBpm ||
+        current.payload.bpm !== payload.bpm
+    ) {
+        return null;
+    }
+    const transitions: TempoScalarTransition[] = [];
+    const prior: TempoScalarTransition[] = [];
+    for (const [index, action] of actions.entries()) {
+        if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
+            continue;
+        }
+        const { tempoChangeId, expectedBpm, bpm } = action.payload;
+        if (tempoChangeId === undefined || expectedBpm === undefined) {
+            return null;
+        }
+        const transition = { tempoChangeId, expectedBpm, bpm };
+        transitions.push(transition);
+        if (index < context.actionIndex) {
+            prior.push(transition);
+        }
+    }
+    const actual = prefixClock([]);
+    if (!actual) {
+        return null;
+    }
+    const reversed = [...prior].reverse().map((row) => ({ ...row, expectedBpm: row.bpm, bpm: row.expectedBpm }));
+    const initial = projectTempoSourceClock(actual, reversed);
+    if (!initial || !projectTempoSourceClock(initial, transitions)) {
+        return null;
+    }
+    const before: TempoSourceClockPath['before'][number][] = [];
+    for (const id of new Set(transitions.map((row) => row.tempoChangeId))) {
+        const tempo = id === null ? actual.tempo : actual.changes.find((row) => row.id === id)?.tempo;
+        if (tempo === undefined) {
+            return null;
+        }
+        before.push({ tempoChangeId: id, tempo });
+    }
+    return { transitions, before };
+}
+
+export function writeTempoEdit(payload: RestoreAction['payload'], context?: PrefixContext) {
     const input = sourceInput(payload);
     if (!input) {
-        return 'conflict';
+        return { status: 'conflict' as const };
     }
-    if (applyTempoAudioSources(input) === 'conflict') {
-        return 'conflict';
+    const clockPath = capturedClockPath(payload, context);
+    if (context && !clockPath) {
+        return { status: 'conflict' as const };
     }
-    const result = runWithTempoSourcePreservation({ promotion: input.promotion, direction: input.direction }, () =>
-        setTempo({ bpm: payload.bpm, tempoChangeId: payload.tempoChangeId })
-    );
-    return result.status === 'written' ? 'written' : 'conflict';
+    const source = applyTempoAudioSources({ ...input, context, ...(clockPath ? { clockPath } : {}) });
+    if (source.status === 'conflict') {
+        return { status: 'conflict' as const };
+    }
+    try {
+        const result = runWithTempoSourcePreservation(source.sourcePreservation, () =>
+            setTempo({ bpm: payload.bpm, tempoChangeId: payload.tempoChangeId })
+        );
+        if (result.status !== 'written') {
+            source.commitValidation.release();
+            return { status: 'conflict' as const };
+        }
+        return { status: 'written' as const, commitValidation: source.commitValidation };
+    } catch (error) {
+        source.commitValidation.release();
+        throw error;
+    }
 }
 
 export function capturedTempoReplay(action: SetTempoAction, direction: 'promote' | 'restore'): RestoreAction | null {

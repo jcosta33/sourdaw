@@ -1,8 +1,9 @@
-import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { captureAudioSourceState, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type Clip } from '../../models/Track';
+import { type TempoTimeline } from '../../models/TempoTimeline';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { consumedStretchFactor } from './consumedStretchFactor';
 
 type SourceClip = Pick<
@@ -23,8 +24,8 @@ type SourceClip = Pick<
 >;
 
 /** A cut captures its actual entry but retains the original repeat grid and source anchors. */
-export function audioSourceAtBeat(clip: SourceClip, beat: number) {
-    const tempo = readTempoAtBeat({ beat: clip.startBeat });
+export function audioSourceAtBeat(clip: SourceClip, beat: number, timeline: TempoTimeline = liveTempoTimeline) {
+    const tempo = timeline.tempoAtBeat(clip.startBeat);
     const loop = projectClipLoopExpansion({
         clipDurationBeats: clip.endBeat - clip.startBeat,
         configuredLoopLengthBeats: clip.loopLength,
@@ -39,7 +40,7 @@ export function audioSourceAtBeat(clip: SourceClip, beat: number) {
         iterationEndBeat: beat + loop.loopLengthBeats,
         stretchRatio: consumedStretchFactor(clip),
         tempoAtClipStart: tempo,
-        secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+        secondsAtBeat: timeline.secondsAtBeat,
     })[0];
     if (!segment) return null;
     return {
@@ -47,9 +48,7 @@ export function audioSourceAtBeat(clip: SourceClip, beat: number) {
         audioOffsetSeconds: segment.sourceStartSeconds,
         // Unplaced take entry advances without rate; placed takes retain their own origin pair.
         audioUnwrappedOffsetSeconds:
-            source.audioUnwrappedOffsetSeconds +
-            readSecondsAtBeat({ beat }) -
-            readSecondsAtBeat({ beat: clip.startBeat }),
+            source.audioUnwrappedOffsetSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(clip.startBeat),
         ...(clip.loopEnabled ? { loopLength: loop.loopLengthBeats } : {}),
     };
 }

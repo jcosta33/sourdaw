@@ -1,8 +1,13 @@
 import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
-import { isTempoAudioSourcePromotion } from '#/utils/tempoAudioSourcePromotion';
-import { valuesEqual } from '#/utils/structuralEquality';
+import {
+    isTempoAudioSourcePromotion,
+    tempoSourcePromotionsEqual,
+    type TempoSourceClockPath,
+} from '#/utils/tempoAudioSourcePromotion';
 
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Track } from '../../models/Track';
+import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { projectTempoAudioSources } from '../../stores/tempoAudioSources';
 import { captureTempoAudioSourceWriteIntent } from '../../stores/tempoAudioSourceWriteIntent';
@@ -17,34 +22,16 @@ type Input = {
     readonly timeline: TempoTimeline;
     readonly clock: { readonly transport: unknown; readonly tempoMap: unknown };
     readonly target: { readonly tempoChangeId: string | null; readonly expectedBpm: number; readonly bpm: number };
+    readonly owners?: { readonly tracks: readonly Track[]; readonly lanes: readonly TakeLane[] };
+    readonly clockPath?: TempoSourceClockPath;
 };
-
-function sameMembers<Value>(actual: readonly Value[], expected: readonly Value[]): boolean {
-    return (
-        actual.length === expected.length && expected.every((value) => actual.some((row) => valuesEqual(row, value)))
-    );
-}
-
-/** A tempo edit governs every live legacy source, including one introduced
- * after admission. Its uncaptured conversion must refuse rather than silently
- * reinterpret it. Complete canonical and cosmetic peers need no conversion.
- * These are source deltas, never a whole-track or whole-lane snapshot CAS. */
-function sameRequiredCapture(
-    actual: TempoAudioSourcePromotionSnapshot,
-    expected: TempoAudioSourcePromotionSnapshot
-): boolean {
-    return (
-        sameMembers(actual.clips, expected.clips) &&
-        sameMembers(actual.takes, expected.takes) &&
-        sameMembers(actual.regions, expected.regions) &&
-        sameMembers(actual.gaps, expected.gaps)
-    );
-}
 
 export function prepareTempoAudioSourceWrite(input: Input) {
     const promotion = input.promotion;
-    const tracks = getTrackStoreState();
-    const lanes = takeLaneStore.value;
+    const liveTracks = getTrackStoreState();
+    const liveLanes = takeLaneStore.value;
+    const tracks = liveTracks ? { ...liveTracks, tracks: input.owners?.tracks ?? liveTracks.tracks } : null;
+    const lanes = liveLanes ? { ...liveLanes, lanes: input.owners?.lanes ?? liveLanes.lanes } : null;
     if (!isTempoAudioSourcePromotion(promotion)) {
         return null;
     }
@@ -55,7 +42,7 @@ export function prepareTempoAudioSourceWrite(input: Input) {
     const before =
         input.direction === 'promote' ? { tracks: tracks?.tracks ?? [], lanes: lanes?.lanes ?? [] } : projected;
     const captured = captureTempoAudioSources(before.tracks, before.lanes, input.timeline);
-    if (!captured || !sameRequiredCapture(captured, promotion)) {
+    if (!captured || !tempoSourcePromotionsEqual(captured, promotion)) {
         return null;
     }
     const intent = captureTempoAudioSourceWriteIntent({
@@ -63,6 +50,7 @@ export function prepareTempoAudioSourceWrite(input: Input) {
         direction: input.direction,
         target: input.target,
         context: { ...input.clock, tracks, takeLanes: lanes },
+        clockPath: input.clockPath,
     });
     return intent ? { tracks, lanes, projected, intent } : null;
 }

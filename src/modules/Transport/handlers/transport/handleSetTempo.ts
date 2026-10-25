@@ -11,6 +11,7 @@ import {
     materializeTempoAudioSources,
     tempoAudioSourcesApply,
     writeTempoEdit,
+    tempoPrefixTarget,
 } from './tempoAudioSourceEdit';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
@@ -38,17 +39,20 @@ export const handleSetTempo = createHandler<'setTempo'>({
     materializeCommandArgumentsAt: 'admission',
     validateSessionEntry: isTempoEditSessionEntry,
     canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
-    validate: (action) => {
-        const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
+    validate: (action, context) => {
+        const target = tempoPrefixTarget(action, context);
         const replay = capturedTempoReplay(action, 'promote');
         return (
             target?.writable === true &&
             (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm) &&
-            (!action.payload.audioSourcePromotion || (replay !== null && tempoAudioSourcesApply(replay.payload)))
+            (context.actionIndex === 0 || replay !== null) &&
+            (!action.payload.audioSourcePromotion ||
+                (replay !== null && tempoAudioSourcesApply(replay.payload, context)))
         );
     },
-    execute: (alpha): HandlerExecutionResult | void => {
+    execute: (alpha, context): HandlerExecutionResult | void => {
         let status: 'written' | 'no-write';
+        let commitValidation: HandlerExecutionResult['commitValidation'];
         const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
         if (alpha.payload.expectedBpm !== undefined) {
             const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
@@ -63,9 +67,14 @@ export const handleSetTempo = createHandler<'setTempo'>({
                 materializeTempoAudioSources(action);
             }
             const replay = capturedTempoReplay(action, 'promote');
-            if (!replay || writeTempoEdit(replay.payload) === 'conflict') {
+            if (!replay) {
                 return { status: 'conflict' };
             }
+            const result = writeTempoEdit(replay.payload, context);
+            if (result.status === 'conflict') {
+                return { status: 'conflict' };
+            }
+            commitValidation = result.commitValidation;
             status = 'written';
         } else {
             status = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId }).status;
@@ -80,6 +89,7 @@ export const handleSetTempo = createHandler<'setTempo'>({
         }
         return {
             status: 'written',
+            commitValidation,
             afterCommit: markTempoProjectWrite,
             afterAmbiguousCommit: markTempoProjectWrite,
         };

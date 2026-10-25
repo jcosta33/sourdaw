@@ -46,9 +46,10 @@ function regionsMatchReplayFootprint(
 export function reKeyedTakeLaneOwnersMatchStore(
     transitions: readonly TakeReKeyLaneTransitionSnapshot[],
     direction: 'apply' | 'restore',
-    priorActions: readonly AppAction[] = []
+    priorActions: readonly AppAction[] = [],
+    initialLanes?: Parameters<typeof projectedTakeLaneOwners>[1]
 ): boolean {
-    const lanes = projectedTakeLaneOwners(priorActions);
+    const lanes = projectedTakeLaneOwners(priorActions, initialLanes);
     return transitions.every((transition) => {
         const target = lanes.find((live) => live.id === transition.laneId || live.trackId === transition.trackId);
         const from = direction === 'apply' ? transition.takesBefore : transition.takesAfter;

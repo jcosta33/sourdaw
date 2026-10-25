@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { createCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { tempoProjectRevisionStore } from '../../../stores/tempoProjectRevisionStore';
@@ -64,10 +66,16 @@ function seekTo(beat: number): void {
 
 describe('transport handlers', () => {
     beforeEach(() => {
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
         vi.mocked(stopPlayback).mockClear();
         transportRef.value = { ...defaultTransportState, tempo: 110, playheadPosition: 0 };
         tempoMapRef.value = { changes: [] };
         livePlayheadRef.current = 0;
+    });
+
+    afterEach(() => {
+        removeCrdtDoc('root');
     });
 
     it('handleSetTempo writes the requested bpm', () => {

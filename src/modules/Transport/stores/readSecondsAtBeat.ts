@@ -1,10 +1,12 @@
 import { secondsBetweenBeats } from '../models/TempoMap';
+import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 
 import { tempoMapStore } from './tempoMapStore';
 import { DEFAULT_TEMPO_BPM, transportStore } from './transportStore';
 
 type ReadSecondsAtBeatInput = {
     beat: number;
+    clock?: TempoSourceClock;
 };
 
 /**
@@ -16,11 +18,11 @@ type ReadSecondsAtBeatInput = {
  * tempo at a beat says nothing about the span behind it, so dividing by it is
  * right only while that span holds no tempo change.
  */
-export function readSecondsAtBeat({ beat }: ReadSecondsAtBeatInput): number {
+export function readSecondsAtBeat({ beat, clock }: ReadSecondsAtBeatInput): number {
     return secondsBetweenBeats(
-        tempoMapStore.value?.changes ?? [],
+        clock?.changes ?? tempoMapStore.value?.changes ?? [],
         0,
         beat,
-        transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM
+        clock?.tempo ?? transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM
     );
 }

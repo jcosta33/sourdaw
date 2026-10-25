@@ -3,14 +3,15 @@ import {
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { isRecord } from '#/utils/structuralEquality';
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
+import { type applyTempoAudioSources } from '#/modules/Arrangement/useCases';
 import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
+import { normalizeTempoSourceOwnerContext } from '#/utils/tempoAudioSourcePromotion';
 
 type Slot = 'transport' | 'tempoMap';
-type SourcePreservation = {
-    readonly promotion: TempoAudioSourcePromotionSnapshot;
-    readonly direction: 'promote' | 'restore';
-};
+type SourcePreservation = Extract<
+    ReturnType<typeof applyTempoAudioSources>,
+    { status: 'written' }
+>['sourcePreservation'];
 export type TempoWriteIntent = {
     readonly tempoChangeId: string | null;
     readonly expectedBpm: number;
@@ -97,7 +98,8 @@ export function tempoWriteIntentsMatch(
 ): boolean {
     const current = new Map<string | null, number>();
     for (const intent of metadata) {
-        if (!tempoAudioSourceCoverageMatches(document, intent.sourcePreservation?.promotion)) {
+        const sourceContext = normalizeTempoSourceOwnerContext(document, intent.sourcePreservation?.ownerWitness);
+        if (!sourceContext || !tempoAudioSourceCoverageMatches(sourceContext, intent.sourcePreservation?.promotion)) {
             return false;
         }
         if (

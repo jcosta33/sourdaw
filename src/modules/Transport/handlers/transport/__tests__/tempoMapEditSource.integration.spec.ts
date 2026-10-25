@@ -48,7 +48,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
 import {
     setNotificationEventBus,
     type NotifyPayload,
@@ -130,6 +130,26 @@ function authority(): void {
         takeLanes: takeLaneStore.value,
         transport: { tempo: transportStore.value!.tempo },
         tempoMap: tempoMapStore.value,
+    });
+}
+
+function bindCommitGuard(
+    transaction: Pick<ReturnType<typeof runWithAutomergeStorageTransaction>, 'validateCommit' | 'validateDocument'>,
+    guard: HandlerCommitValidation
+): void {
+    transaction.validateCommit(() => {
+        const reason = guard.beforeCommit();
+        if (reason) {
+            throw new AutomergeStorageWriteConflictError(reason);
+        }
+        return null;
+    });
+    transaction.validateDocument(guard.documentId, (document) => {
+        const reason = guard.validateDocument(document);
+        if (reason) {
+            throw new AutomergeStorageWriteConflictError(reason);
+        }
+        return null;
     });
 }
 
@@ -218,6 +238,7 @@ describe('tempo edits preserve the physical audio programme', () => {
         });
         const before = sourceEntries();
         expect(before).toEqual([4, 6.5, 9.5]);
+        authority();
         await executeAppAction({ type: 'setTempo', payload: { bpm: 240 } });
 
         expect(sourceEntries()).toEqual(before);
@@ -472,9 +493,22 @@ describe('tempo edits preserve the physical audio programme', () => {
                 throw new Error('Expected the real registered tempo inverse');
             }
             const inverse = entry.inverseAction;
-            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
-                getTransportHandlers().restoreTempoEdit.execute(inverse)
-            );
+            const handler = getTransportHandlers().restoreTempoEdit;
+            if (handler.previewExecution !== 'isolated-project') {
+                throw new Error('Expected synchronous project tempo replay');
+            }
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => handler.execute(inverse));
+            if (transaction.status === 'threw') {
+                transaction.abort();
+                throw transaction.error;
+            }
+            const result = transaction.value;
+            if (!result || result.status !== 'written' || !result.commitValidation) {
+                transaction.abort();
+                throw new Error('Expected the actual source-owner commit guard');
+            }
+            const guard = result.commitValidation;
+            bindCommitGuard(transaction, guard);
             mutateCrdtDoc<{
                 tracks: { tracks: { clips: Clip[] }[] };
                 takeLanes: NonNullable<typeof takeLaneStore.value>;
@@ -494,10 +528,13 @@ describe('tempo edits preserve the physical audio programme', () => {
                 expect(() => transaction.commit()).toThrow(AutomergeStorageWriteConflictError);
             } finally {
                 transaction.abort();
+                guard.release();
             }
             expect(getCrdtDoc('root')).toBe(before);
             expect(undoHistoryStore.value).toEqual(history);
             expect(transportStore.value?.tempo).toBe(240);
+            projectCrdtToStores({ resetProjections: true });
+            expect(getCrdtDoc('root')).toBe(before);
             authority();
         }
     );
@@ -532,9 +569,22 @@ describe('tempo edits preserve the physical audio programme', () => {
                 throw new Error('Expected the real registered tempo inverse');
             }
             const inverse = entry.inverseAction;
-            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
-                getTransportHandlers().restoreTempoEdit.execute(inverse)
-            );
+            const handler = getTransportHandlers().restoreTempoEdit;
+            if (handler.previewExecution !== 'isolated-project') {
+                throw new Error('Expected synchronous project tempo replay');
+            }
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => handler.execute(inverse));
+            if (transaction.status === 'threw') {
+                transaction.abort();
+                throw transaction.error;
+            }
+            const result = transaction.value;
+            if (!result || result.status !== 'written' || !result.commitValidation) {
+                transaction.abort();
+                throw new Error('Expected the actual source-owner commit guard');
+            }
+            const guard = result.commitValidation;
+            bindCommitGuard(transaction, guard);
             mutateCrdtDoc<{
                 tracks: { tracks: { clips: Clip[] }[] };
                 takeLanes: NonNullable<typeof takeLaneStore.value>;
@@ -555,10 +605,13 @@ describe('tempo edits preserve the physical audio programme', () => {
                 expect(() => transaction.commit()).toThrow(AutomergeStorageWriteConflictError);
             } finally {
                 transaction.abort();
+                guard.release();
             }
             expect(getCrdtDoc('root')).toBe(before);
             expect(undoHistoryStore.value).toEqual(history);
             expect(transportStore.value?.tempo).toBe(240);
+            projectCrdtToStores({ resetProjections: true });
+            expect(getCrdtDoc('root')).toBe(before);
             authority();
         }
     );
@@ -596,6 +649,9 @@ describe('tempo edits preserve the physical audio programme', () => {
             }
             const action: Extract<AppAction, { type: 'setTempo' }> = { type: 'setTempo', payload: { bpm: 240 } };
             const handler = getTransportHandlers().setTempo;
+            if (handler.previewExecution !== 'isolated-project') {
+                throw new Error('Expected synchronous project tempo execution');
+            }
             if (!handler.materializeCommandArguments) {
                 throw new Error('Expected real tempo admission');
             }
@@ -717,6 +773,9 @@ describe('tempo edits preserve the physical audio programme', () => {
         (kind) => {
             const action: Extract<AppAction, { type: 'setTempo' }> = { type: 'setTempo', payload: { bpm: 240 } };
             const handler = getTransportHandlers().setTempo;
+            if (handler.previewExecution !== 'isolated-project') {
+                throw new Error('Expected synchronous project tempo execution');
+            }
             if (!handler.materializeCommandArguments) {
                 throw new Error('Expected real tempo admission');
             }
@@ -851,6 +910,9 @@ describe('tempo edits preserve the physical audio programme', () => {
         authority();
         const action: Extract<AppAction, { type: 'setTempo' }> = { type: 'setTempo', payload: { bpm: 240 } };
         const handler = getTransportHandlers().setTempo;
+        if (handler.previewExecution !== 'isolated-project') {
+            throw new Error('Expected synchronous project tempo execution');
+        }
         if (!handler.materializeCommandArguments) {
             throw new Error('Expected real tempo admission');
         }
@@ -1100,10 +1162,10 @@ describe('tempo edits preserve the physical audio programme', () => {
             ],
         });
         authority();
-        expect(resolveClipsWithComping('audio', trackStore.value!.tracks[0]!.clips)[0]).toMatchObject({
-            startBeat: 19,
-            audioOffsetSeconds: 2,
-        });
+        const legacyPass = resolveClipsWithComping('audio', trackStore.value!.tracks[0]!.clips)[0];
+        expect(legacyPass).toMatchObject({ startBeat: 19 });
+        expect(legacyPass).not.toHaveProperty('audioOffsetSeconds');
+        expect(sourceEntries()).toEqual([2]);
         await executeAppAction({ type: 'setTempo', payload: { bpm: 240 } });
 
         expect(takeLaneStore.value?.lanes[0]?.takes[0]).toMatchObject({

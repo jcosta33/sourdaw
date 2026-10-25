@@ -620,7 +620,7 @@ function applyOperation(
         return undefined;
     }
     if (operation.kind === 'tempo-audio-sources') {
-        if (!context || !tempoAudioSourceWriteIntentMatches(operation.intent, context)) {
+        if (!context || !tempoAudioSourceWriteIntentMatches(operation.intent, { ...context, takeLanes: current })) {
             return undefined;
         }
         const lanes = projectTempoAudioSourceLanes(

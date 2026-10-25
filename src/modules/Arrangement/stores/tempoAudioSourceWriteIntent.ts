@@ -4,6 +4,14 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type CompAudioSourceInputProof, type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import {
+    normalizeTempoSourceClockContext,
+    normalizeTempoSourceOwnerContext,
+    captureTempoSourceOwnerValue,
+    readTempoSourceClockValue,
+    type TempoSourceClockPath,
+    type TempoSourceOwnerWitness,
+} from '#/utils/tempoAudioSourcePromotion';
 
 import { captureCompAudioSourceInputProof, type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
@@ -21,47 +29,9 @@ export type TempoAudioSourceWriteIntent = {
     readonly direction: 'promote' | 'restore';
     readonly target: Target;
     readonly proofs: readonly Proof[];
+    readonly clockPath?: TempoSourceClockPath;
+    readonly ownerWitness?: TempoSourceOwnerWitness;
 };
-
-function targetTempo(context: CompAudioSourceInputContext, target: Target): number | null {
-    if (target.tempoChangeId === null) {
-        const tempo = isRecord(context.transport) ? context.transport.tempo : null;
-        return typeof tempo === 'number' && Number.isFinite(tempo) ? tempo : null;
-    }
-    const changes = isRecord(context.tempoMap) ? context.tempoMap.changes : undefined;
-    if (!Array.isArray(changes)) {
-        return null;
-    }
-    const matches = changes.filter((row) => isRecord(row) && row.id === target.tempoChangeId);
-    const row: unknown = matches.length === 1 ? matches[0] : null;
-    return isRecord(row) && typeof row.tempo === 'number' && Number.isFinite(row.tempo) ? row.tempo : null;
-}
-
-/** A sibling slot may already contain this same action's target write. Only
- * its two exact values normalize; unrelated current map data remains live. */
-function sourceClockContext(context: CompAudioSourceInputContext, target: Target): CompAudioSourceInputContext | null {
-    const tempo = targetTempo(context, target);
-    if (tempo !== target.expectedBpm && tempo !== target.bpm) {
-        return null;
-    }
-    if (target.tempoChangeId === null) {
-        if (context.transport !== undefined && context.transport !== null && !isRecord(context.transport)) {
-            return null;
-        }
-        const transport = isRecord(context.transport) ? context.transport : {};
-        return { ...context, transport: { ...transport, tempo: target.expectedBpm } };
-    }
-    if (!isRecord(context.tempoMap) || !Array.isArray(context.tempoMap.changes)) {
-        return null;
-    }
-    const changes = context.tempoMap.changes.map((row: unknown) => {
-        if (isRecord(row) && row.id === target.tempoChangeId) {
-            return { ...row, tempo: target.expectedBpm };
-        }
-        return row;
-    });
-    return { ...context, tempoMap: { ...context.tempoMap, changes } };
-}
 
 function locatedClip(context: CompAudioSourceInputContext, owner: TempoAudioSourcePromotionSnapshot['clips'][number]) {
     if (!isRecord(context.tracks) || !Array.isArray(context.tracks.tracks)) {
@@ -124,14 +94,14 @@ function locatedTake(context: CompAudioSourceInputContext, dependency: Dependenc
 
 function dependencyProof(
     context: CompAudioSourceInputContext,
-    intent: Pick<TempoAudioSourceWriteIntent, 'promotion' | 'direction' | 'target'>,
+    intent: Pick<TempoAudioSourceWriteIntent, 'promotion' | 'direction' | 'target' | 'clockPath'>,
     dependency: Dependency
 ): CompAudioSourceInputProof | null {
     const owner = intent.promotion.clips[dependency.clipIndex];
     if (!owner) {
         return null;
     }
-    const clock = sourceClockContext(context, intent.target);
+    const clock = normalizeTempoSourceClockContext(context, intent.target, intent.clockPath);
     const clip = locatedClip(context, owner);
     if (
         !clock ||
@@ -228,8 +198,9 @@ export function captureTempoAudioSourceWriteIntent(input: {
     readonly direction: 'promote' | 'restore';
     readonly target: Target;
     readonly context: CompAudioSourceInputContext;
+    readonly clockPath?: TempoSourceClockPath;
 }): TempoAudioSourceWriteIntent | null {
-    if (targetTempo(input.context, input.target) !== input.target.expectedBpm) {
+    if (readTempoSourceClockValue(input.context, input.target.tempoChangeId) !== input.target.expectedBpm) {
         return null;
     }
     const dependencies: Dependency[] = input.promotion.clips.map((_clip, clipIndex) => ({ clipIndex }));
@@ -261,6 +232,7 @@ export function captureTempoAudioSourceWriteIntent(input: {
         direction: input.direction,
         target: structuredClone(input.target),
         proofs,
+        ...(input.clockPath ? { clockPath: structuredClone(input.clockPath) } : {}),
     };
 }
 
@@ -268,7 +240,11 @@ export function tempoAudioSourceWriteIntentMatches(
     intent: TempoAudioSourceWriteIntent,
     context: CompAudioSourceInputContext
 ): boolean {
-    return intent.proofs.every((proof) => valuesEqual(dependencyProof(context, intent, proof), proof.inputs));
+    const normalized = normalizeTempoSourceOwnerContext(context, intent.ownerWitness);
+    return (
+        normalized !== null &&
+        intent.proofs.every((proof) => valuesEqual(dependencyProof(normalized, intent, proof), proof.inputs))
+    );
 }
 
 /** This slot has not written its own source fields yet. The alternate state
@@ -277,10 +253,25 @@ export function tempoAudioSourceTrackIntentMatches(
     intent: TempoAudioSourceWriteIntent,
     context: CompAudioSourceInputContext
 ): boolean {
+    // The track slot has not reconciled any of this transaction's clips yet.
+    // Cross-slot READ/final states cannot authorize a peer replacing raw FROM.
+    if (
+        intent.ownerWitness?.rows.some(
+            (row) =>
+                row.owner.kind === 'clip' &&
+                !valuesEqual(captureTempoSourceOwnerValue(context, row.owner, row.fields), row.before)
+        )
+    ) {
+        return false;
+    }
+    const normalized = normalizeTempoSourceOwnerContext(context, intent.ownerWitness);
+    if (!normalized) {
+        return false;
+    }
     const from = intent.direction === 'promote' ? 'before' : 'after';
     return (
         intent.promotion.clips.every((owner) => {
-            const clip = locatedClip(context, owner);
+            const clip = locatedClip(normalized, owner);
             return clip !== null && valuesEqual(captureTempoSourceFields(clip, tempoClipSourceFields), owner[from]);
         }) && tempoAudioSourceWriteIntentMatches(intent, context)
     );

@@ -8,11 +8,12 @@ import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type Clip } from '../../models/Track';
+import { type TempoTimeline } from '../../models/TempoTimeline';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
-import { resolveClipsWithComping } from '../resolveComping';
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
@@ -21,6 +22,8 @@ type CaptureTakeReKeyTransitionsInput = {
     windowsByTrackId: ReadonlyMap<string, readonly TakeReKeyClipWindow[]>;
     /** Exact source clips captured before the clip producer publishes. */
     sourceClips?: readonly Clip[];
+    lanes?: readonly TakeLane[];
+    timeline?: TempoTimeline;
     /** Clip ids the same operation removes outright — their takes retire separately (#4520), never re-key. */
     removedClipIds: ReadonlySet<string>;
     deleteStartBeat: number;
@@ -140,9 +143,9 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
  * hydrated state would mint colliding fragment ids here, an accepted
  * divergence on state no route produces.
  */
-function captureTakeSource(take: Take, clip: Clip | undefined): Take {
+function captureTakeSource(take: Take, clip: Clip | undefined, timeline: TempoTimeline): Take {
     if (clip?.type !== 'audio') return take;
-    const tempo = liveTempoTimeline.tempoAtBeat(clip.startBeat);
+    const tempo = timeline.tempoAtBeat(clip.startBeat);
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         if (take.passOriginBeat !== undefined && take.passOriginSourceSeconds !== undefined) return take;
         return {
@@ -219,7 +222,8 @@ function mapLaneTakes(
         }
         const capturedTake = captureTakeSource(
             take,
-            input.sourceClips?.find((clip) => clip.id === take.clipId)
+            input.sourceClips?.find((clip) => clip.id === take.clipId),
+            input.timeline ?? liveTempoTimeline
         );
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
@@ -426,7 +430,8 @@ function captureRegionAudioSources(lane: TakeLane, input: CaptureTakeReKeyTransi
     const sources = new Map<CompRegion, AudioSourceSnapshot>();
     const clips = input.sourceClips?.filter((clip) => clip.trackId === lane.trackId) ?? [];
     if (clips.length === 0) return sources;
-    const resolved = resolveClipsWithComping(lane.trackId, clips);
+    const timeline = input.timeline ?? liveTempoTimeline;
+    const resolved = resolveCompingProgramme(lane.trackId, clips, { lanes: [lane] }, timeline);
     const transformedIds = new Set(input.windowsByTrackId.get(lane.trackId)?.map((window) => window.sourceClipId));
     for (const region of lane.activeCompRegions) {
         if (region.audioSource) continue;
@@ -448,7 +453,7 @@ function captureRegionAudioSources(lane: TakeLane, input: CaptureTakeReKeyTransi
         const snapshot = captureAudioSourceSnapshot(
             fragment,
             loop.loopLengthBeats,
-            liveTempoTimeline.tempoAtBeat(fragment.startBeat)
+            timeline.tempoAtBeat(fragment.startBeat)
         );
         if (snapshot) sources.set(region, snapshot);
     }
@@ -464,7 +469,8 @@ function captureBaseGapSources(
     if (clips.length === 0) return lane.baseGapAudioSources;
     const transformed = new Set(windows.map((window) => window.sourceClipId));
     const tiles = (lane.baseGapAudioSources ?? []).filter((tile) => !transformed.has(tile.clipId));
-    for (const fragment of resolveClipsWithComping(lane.trackId, clips)) {
+    const timeline = input.timeline ?? liveTempoTimeline;
+    for (const fragment of resolveCompingProgramme(lane.trackId, clips, { lanes: [lane] }, timeline)) {
         if (
             fragment.type !== 'audio' ||
             !transformed.has(fragment.id) ||
@@ -481,7 +487,7 @@ function captureBaseGapSources(
         const source = captureAudioSourceSnapshot(
             fragment,
             loop.loopLengthBeats,
-            liveTempoTimeline.tempoAtBeat(fragment.startBeat)
+            timeline.tempoAtBeat(fragment.startBeat)
         );
         if (source)
             tiles.push({
@@ -523,13 +529,13 @@ function captureBaseGapSources(
 export function captureTakeReKeyTransitions(
     input: CaptureTakeReKeyTransitionsInput
 ): readonly TakeReKeyLaneTransition[] {
-    const state = takeLaneStore.value;
-    if (!state || input.windowsByTrackId.size === 0) {
+    const lanes = input.lanes ?? takeLaneStore.value?.lanes;
+    if (!lanes || input.windowsByTrackId.size === 0) {
         return [];
     }
 
     const transitions: TakeReKeyLaneTransition[] = [];
-    for (const lane of state.lanes) {
+    for (const lane of lanes) {
         const windows = input.windowsByTrackId.get(lane.trackId);
         if (!windows) {
             continue;

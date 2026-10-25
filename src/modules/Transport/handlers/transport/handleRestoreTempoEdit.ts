@@ -3,7 +3,12 @@ import { createHandler } from '#/utils/createHandler';
 import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { assertTempoWriteBpm } from '../../useCases/assertTempoWriteBpm';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
-import { isRestoreTempoEditPayload, tempoAudioSourcesApply, writeTempoEdit } from './tempoAudioSourceEdit';
+import {
+    isRestoreTempoEditPayload,
+    tempoAudioSourcesApply,
+    tempoPrefixTarget,
+    writeTempoEdit,
+} from './tempoAudioSourceEdit';
 
 export const handleRestoreTempoEdit = createHandler<'restoreTempoEdit'>({
     previewExecution: 'isolated-project',
@@ -12,16 +17,16 @@ export const handleRestoreTempoEdit = createHandler<'restoreTempoEdit'>({
     canReapplyAfterDivergence: (action) => isRestoreTempoEditPayload(action.payload),
     validateMaterializedCommandArguments: isRestoreTempoEditPayload,
     validateSessionActionArguments: isRestoreTempoEditPayload,
-    validate: (action) => {
-        const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
+    validate: (action, context) => {
+        const target = tempoPrefixTarget(action, context);
         return (
             isRestoreTempoEditPayload(action.payload) &&
             target?.writable === true &&
             target.tempo === action.payload.expectedBpm &&
-            tempoAudioSourcesApply(action.payload)
+            tempoAudioSourcesApply(action.payload, context)
         );
     },
-    execute: (action) => {
+    execute: (action, context) => {
         if (!isRestoreTempoEditPayload(action.payload)) {
             return { status: 'conflict' };
         }
@@ -30,10 +35,16 @@ export const handleRestoreTempoEdit = createHandler<'restoreTempoEdit'>({
             return { status: 'conflict' };
         }
         assertTempoWriteBpm(action.payload.bpm, target.tempoChangeId);
-        if (writeTempoEdit(action.payload) === 'conflict') {
+        const result = writeTempoEdit(action.payload, context);
+        if (result.status === 'conflict') {
             return { status: 'conflict' };
         }
-        return { status: 'written', afterCommit: markTempoProjectWrite, afterAmbiguousCommit: markTempoProjectWrite };
+        return {
+            status: 'written',
+            commitValidation: result.commitValidation,
+            afterCommit: markTempoProjectWrite,
+            afterAmbiguousCommit: markTempoProjectWrite,
+        };
     },
     describe: () => ({ label: 'Restore tempo edit', inverseAction: null }),
     undoable: false,

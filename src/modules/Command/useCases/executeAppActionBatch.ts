@@ -620,7 +620,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     admissionMaterializedActions.push({
-                        action: materializeCommandHandlerArguments(action, handler, { actions, actionIndex }),
+                        action: materializeCommandHandlerArguments(action, handler, {
+                            actions: [
+                                ...actions
+                                    .slice(0, actionIndex)
+                                    .map((prior, index) => admissionMaterializedActions[index]?.action ?? prior),
+                                ...actions.slice(actionIndex),
+                            ],
+                            actionIndex,
+                        }),
                         handler,
                     });
                 } catch (error) {
@@ -698,7 +706,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     if (!admissionMaterialized) {
-                        action = materializeCommandHandlerArguments(action, handler, { actions, actionIndex: index });
+                        action = materializeCommandHandlerArguments(action, handler, {
+                            actions: [...canonicalizedActions.map((prior) => prior.action), ...actions.slice(index)],
+                            actionIndex: index,
+                        });
                     }
                     if (
                         suppliedEnvelope &&

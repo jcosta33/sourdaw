@@ -1,4 +1,6 @@
 import { type Clip } from '../../models/Track';
+import { type TakeLane } from '../../models/TakeLane';
+import { type TempoTimeline } from '../../models/TempoTimeline';
 
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
@@ -14,6 +16,8 @@ type CaptureClipSplitTakeReKeyInput = {
     splitBeat: number;
     clipStartBeat: number;
     clipEndBeat: number;
+    lanes?: readonly TakeLane[];
+    timeline?: TempoTimeline;
 };
 
 /**
@@ -32,6 +36,8 @@ export function captureClipSplitTakeReKeyTransitions(
 ): readonly TakeReKeyLaneTransition[] {
     return captureTakeReKeyTransitions({
         sourceClips: [input.sourceClip],
+        lanes: input.lanes,
+        timeline: input.timeline,
         windowsByTrackId: new Map([
             [
                 input.trackId,

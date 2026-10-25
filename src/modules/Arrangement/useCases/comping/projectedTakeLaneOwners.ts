@@ -8,6 +8,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';
+import { preparedClipSplits } from '../clipEditing/preparedClipSplit';
 
 import { reconcileLane } from './reconcileLane';
 import { reconcileTransitionBaseGaps, reconcileTransitionRegions } from './reconcileTakeReKeySources';
@@ -106,10 +107,18 @@ function retireClipOwners(lanes: TakeLaneOwners[], clipId: string): void {
 }
 
 /** Reserve only owners produced by preceding replay members, without publishing any state. */
-export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): TakeLaneOwners[] {
-    const lanes: TakeLaneOwners[] = takeLaneStore.value?.lanes.map((lane) => structuredClone(lane)) ?? [];
+export function projectedTakeLaneOwners(
+    priorActions: readonly AppAction[],
+    initial: readonly TakeLaneOwners[] = takeLaneStore.value?.lanes ?? []
+): TakeLaneOwners[] {
+    const lanes = initial.map((lane) => structuredClone(lane));
     for (const action of priorActions) {
-        if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
+        if (action.type === 'splitClip') {
+            const prepared = preparedClipSplits.get(action);
+            if (prepared?.takeReKeyTransitions) {
+                projectReKeyOwners(lanes, prepared.takeReKeyTransitions, 'apply');
+            }
+        } else if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
             retireClipOwners(lanes, action.payload.clipId);
         } else if (action.type === 'restoreClip') {
             restoreRetiredOwners(lanes, action.payload.retiredTakeLanes ?? []);

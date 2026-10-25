@@ -230,7 +230,7 @@ describe('private tempo scalar write intent', () => {
     });
 
     it('binds private source context to the actual mutation owner and consumes no-op and thrown scopes', () => {
-        const context = { promotion: legacyPromotion, direction: 'promote' as const };
+        const context = { promotion: legacyPromotion, direction: 'promote' as const, ownerWitness: { rows: [] } };
         runWithTempoSourcePreservation(context, () => undefined);
         expect(() =>
             runWithTempoSourcePreservation(context, () => {
@@ -260,10 +260,13 @@ describe('private tempo scalar write intent', () => {
             release = resolve;
         });
         const pending = transaction.scope(() =>
-            runWithTempoSourcePreservation({ promotion: legacyPromotion, direction: 'promote' }, async () => {
-                await barrier;
-                return transaction.scope(() => setTempo({ bpm: 240, tempoChangeId: null }));
-            })
+            runWithTempoSourcePreservation(
+                { promotion: legacyPromotion, direction: 'promote', ownerWitness: { rows: [] } },
+                async () => {
+                    await barrier;
+                    return transaction.scope(() => setTempo({ bpm: 240, tempoChangeId: null }));
+                }
+            )
         );
         release();
         await pending;

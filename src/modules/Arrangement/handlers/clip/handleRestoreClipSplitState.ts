@@ -71,7 +71,7 @@ function clipAutomationLanesMatch(
 function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
     const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
     const projected = projectClipReplayPrefix(priorActions);
-    if (!projected) {
+    if (!projected || (action.payload.expected.leftClip.type === 'audio' && !projected.tracks)) {
         return false;
     }
     const tracks =
@@ -79,6 +79,15 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
             id: track.id,
             clips: projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip),
         })) ?? [];
+    let takePriorActions = priorActions;
+    let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
+    if (priorActions.some((action) => action.type === 'setTempo' || action.type === 'restoreTempoEdit')) {
+        if (!projected.tracks) {
+            return false;
+        }
+        takePriorActions = [];
+        takeLanes = projected.takeLanes;
+    }
     return (
         !hasForeignPendingProjectWrites() &&
         clipSplitCaptureOwnersMatch(action.payload) &&
@@ -86,7 +95,8 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         reKeyedTakeLaneOwnersMatchStore(
             action.payload.reKeyedTakeLanes ?? [],
             action.payload.replacement.rightClip ? 'apply' : 'restore',
-            priorActions
+            takePriorActions,
+            takeLanes
         ) &&
         clipSplitStateRestorable(action.payload, { tracks }) &&
         midiClipSplitStateMatches(
