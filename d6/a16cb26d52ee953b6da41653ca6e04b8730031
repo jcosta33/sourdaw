@@ -1,0 +1,95 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_d99a62fe2de3a3::t_6d55c5bf3dc387 33,38,96-107,113-125,131-156,357-367,381-382,389-396,419-420,424-431,436-441,445-446,470,475-476,631-637
+.agents/skills/review-stances/git-path-framing.md
+  s_d99a62fe2de3a3::t_7fb5866cc398fb 1-29
+.agents/skills/review-stances/native-unit-dependencies.md
+  s_d99a62fe2de3a3::t_7919a63ab88b71 1-29
+.agents/skills/review-stances/review-authorization.md
+  s_d99a62fe2de3a3::t_cefb7c6816588b 27-42
+.agents/skills/review-stances/security-and-platform.md
+  s_d99a62fe2de3a3::t_9d22db4ca9e398 22-55,59-96
+.agents/skills/review-stances/test-validity.md
+  s_d99a62fe2de3a3::t_e80ee53c2b2ff5 9-41
+AGENTS.md
+  s_d99a62fe2de3a3::t_f0e48fda6f6875 96-108,153-155,160-163,211-214,220,222,604,609-610
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_d99a62fe2de3a3::t_7f126bde371cf5 3,6-13,15-18,74,83-84,87,95-96,99,219-220,224,237-238,241,253,262-263,272,297,305,586,589,602,615
+release/open-source-inventory.json
+  s_d99a62fe2de3a3::t_06191c6d4963fd 2269-2274
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_d99a62fe2de3a3::t_c5ddaa7d90d836 1461,3485
+scripts/__tests__/prepareReview.spec.ts
+  s_d99a62fe2de3a3::t_8cec3536ead2bd 223
+scripts/__tests__/pruneLane.spec.ts
+  s_d99a62fe2de3a3::t_82fe8ef7b86462 99-150,380,385,418,422
+scripts/__tests__/publishReview.spec.ts
+  s_d99a62fe2de3a3::t_b4b7356548c6f1 219,342,1165,1389,1411,1415,1418,1425,1431,1438,1449,1453,1456,1468,2404,2418,2441,2454,5192,5194-5196,5210,5267,5529,5534,5605,5685,5689,5691,5693,5695-5715,5717,5719,6246,6253-6262,6335,6407,6608,6651,6729,6808-6811,6823,6832,6835,6905
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_d99a62fe2de3a3::t_10647682e8e8da 469-470,473-474,481,697-705,707,709-710
+scripts/__tests__/removeLane.spec.ts
+  s_d99a62fe2de3a3::t_540deec9abba1a 17,19,189-235,250,257-262,274-276,282-402
+scripts/__tests__/resolveThread.spec.ts
+  s_d99a62fe2de3a3::t_43a3bbf59c87ee 1,3-4,6,8,10,15,21-53,56-88,91-95,99-102,105-106,109-113,117-120,123,127-135,138-141,146-152,156-157,159-163,165,169-170
+scripts/__tests__/retirePullRequest.spec.ts
+  s_d99a62fe2de3a3::t_01964c0cde8d39 281,284,468-474
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  s_d99a62fe2de3a3::t_c59ec5f35cb654 24,63,65-66,70,72-79
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  s_d99a62fe2de3a3::t_620aeb9c0ad176 94,121,134,136,138,148,157-158,169,171,182,189,200,214,216,228,230,242,244,251-255,261,276,286,295,298-299,303,312,315,318,327,330-331,344,346,348-349,356-423
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_d99a62fe2de3a3::t_45568b79f76c11 1,10,13,15,22,24,27,30,32,39,49,54-56,131-171,219,267-269,298,301,329,336,463-562,587-588,597,615-773,775,779-797,799-826,828,831-833,839,841-926,931-942,944-950,955-968,981-993,999,1019-1020,1026-1095,1105,1107-1111,1115-1138,1142-1153,1229-1390,1401-1425,1444-1523,1526-2449,2469-2505,2709-2908,3027-3631,3644,3655,3667,3699,3726,3750,3778,3808,3829,3839-3853,3876-3881,3887,3961-3971,4153-4158,4162-4166,4169-4185,4659,4681,4687,4708-4713,4727,4739
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_d99a62fe2de3a3::t_a296fe9a6d53aa 38,135,306
+scripts/pruneLane.ts
+  s_d99a62fe2de3a3::t_203e2d64f05058 46-53,247,253,266,304-308
+scripts/removeLane.ts
+  s_d99a62fe2de3a3::t_8bfe033ed5bf0d 74-75,77,140-151,160-175,177-179,675,683,745-750
+scripts/resolveThread.ts
+  s_d99a62fe2de3a3::t_3ffab2a32a125f 2,5-6,41-43,45,49,52
+scripts/reviewStructuralAdmission.ts
+  s_d99a62fe2de3a3::t_250e315a19c7fe 5-6,23,36-38
+scripts/reviewerModelDiversity.ts
+  s_d99a62fe2de3a3::t_87c9378814fd97 2,37,40-52,65,68-71
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_d99a62fe2de3a3::t_731f1d9f8d4b96 66,111,6640-7120
+scripts/semanticReview/admissionCaseRule.ts
+  s_d99a62fe2de3a3::t_18bdc91b792013 1-26
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  s_d99a62fe2de3a3::t_0a94db4af76f5d 227-269,586-597,601,615,726,751,763,776-777,797,822,868,907
+scripts/semanticReview/evidence.ts
+  s_d99a62fe2de3a3::t_2a1a9ccd07fabf 82,166-167,673-692,797-806,812
+scripts/semanticReview/passes.ts
+  s_d99a62fe2de3a3::t_0cf06d02d0c3c3 18,31,183,193-194,219,234,249,312
+scripts/semanticReview/requiredEvidence.ts
+  s_d99a62fe2de3a3::t_71d0a7099db17b 20-21,28,65-78,110-111,119,136-137,147
+scripts/semanticReview/rules.ts
+  s_d99a62fe2de3a3::t_8fa5a5fb3f7a22 23,326
+scripts/semanticReview/run.ts
+  s_d99a62fe2de3a3::t_94c4f75c2480b2 40,85-86,151,242-295,351,380-399,404,747-753
+scripts/semanticReview/testCaseContext.ts
+  s_d99a62fe2de3a3::t_ec388dfa4f0068 1-339
+scripts/semanticReview/unitAssessment.ts
+  s_d99a62fe2de3a3::t_e8383a9549de12 154
+scripts/supersedePullRequest.ts
+  s_d99a62fe2de3a3::t_ef5eb82a7ea948 5-6,17,29,46,51,60-63,69,79-80,87,95-100,109,181,188,193-203,205-220,227-230,232-234,246,248,253-597,628,630-631,648-656,670-672,705-707,709-712,714-718,724,726-728,730-742,775-781,787-826,832,868-869,945-946,964-967,969-988,991,994,1004,1013,1018,1021-1031,1039,1043-1046,1051,1240-1242,1246-1248,1254-1262,1292,1423,1435-1436,1438-1439,1441-1444,1539
+scripts/supersedePullRequestGh.ts
+  s_d99a62fe2de3a3::t_e3afb32fd17fa8 15,22,40,43,55-56,87-95,103-215,240,243-245,257-293,302-316,319,332,335,343-346,359-373,376,388,391,396-402,406-410,413-414
+scripts/trustedGithubWriteBootstrap.ts
+  s_d99a62fe2de3a3::t_17d6b3ccf1e205 159,383,403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6a16cb26d52ee953b6da41653ca6e04b8730031",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
