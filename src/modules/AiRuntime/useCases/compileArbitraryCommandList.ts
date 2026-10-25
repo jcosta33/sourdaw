@@ -54,6 +54,11 @@ export type ArbitraryCommandListSelectorEvidence = {
     protectedExclusions: string[];
     preconditions: Array<{ stableId: string; fingerprint: string }>;
     /**
+     * The selector's `where` fields, present only when the selector used them, so grounding can ask
+     * whether the request states the name or owner track a selection picks its targets by.
+     */
+    where?: SemanticCommandListSelector['where'];
+    /**
      * The selector fields a `match` was compiled with, present only when the selector used one.
      * The evidence validator re-resolves this against its own context through the same shared
      * resolver; a different resolved id set means the precondition no longer holds.
@@ -227,31 +232,32 @@ function resolveSelector(input: {
     }
     const { stableIds } = resolution;
     const explicitlyExcludedIds = input.selector.excludeIds ?? [];
-    return {
+    const evidence: ArbitraryCommandListSelectorEvidence = {
+        itemId: input.itemId,
         stableIds,
-        evidence: {
-            itemId: input.itemId,
-            stableIds,
-            excludedIds: [...explicitlyExcludedIds],
-            protectedExclusions: [],
-            preconditions: stableIds.map((stableId) => {
-                const candidate = input.candidates.find((entry) => entry.id === stableId);
-                return { stableId, fingerprint: JSON.stringify(candidate) };
-            }),
-            ...(input.selector.match === undefined
-                ? {}
-                : {
-                      predicate: {
-                          entity: input.selector.entity,
-                          where: input.selector.where,
-                          match: input.selector.match,
-                          condition: input.selector.condition,
-                          excludeIds: input.selector.excludeIds,
-                          quantity: input.selector.quantity,
-                      },
-                  }),
-        },
+        excludedIds: [...explicitlyExcludedIds],
+        protectedExclusions: [],
+        preconditions: stableIds.map((stableId) => {
+            const candidate = input.candidates.find((entry) => entry.id === stableId);
+            return { stableId, fingerprint: JSON.stringify(candidate) };
+        }),
+        ...(input.selector.match === undefined
+            ? {}
+            : {
+                  predicate: {
+                      entity: input.selector.entity,
+                      where: input.selector.where,
+                      match: input.selector.match,
+                      condition: input.selector.condition,
+                      excludeIds: input.selector.excludeIds,
+                      quantity: input.selector.quantity,
+                  },
+              }),
     };
+    if (input.selector.where !== undefined) {
+        evidence.where = structuredClone(input.selector.where);
+    }
+    return { stableIds, evidence };
 }
 
 function toBulkSetReplaySelector(selector: SemanticCommandListSelector): BulkSetReplaySelector {
