@@ -40,7 +40,10 @@ function parameterOperation(parameterId: string, fallback: string): string {
     return parameterId.startsWith('send:') ? 'setSend' : fallback;
 }
 
-/** Whether this operation changes source points, which linked lanes read instead of their own. */
+/**
+ * Whether this operation changes source points, which linked lanes read instead of their own.
+ * Followers read those points independently of the source lane's enabled flag and track automation mode.
+ */
 function changesLinkedValues(actionType: string): boolean {
     return !['addAutomationLane', 'setAutomationLaneEnabled', 'setAutomationMode'].includes(actionType);
 }
