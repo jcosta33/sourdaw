@@ -6,6 +6,41 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-25 — same-head fixtures missed discarded edit history (caught in PR #5677 review)
+
+A positive no-op selection test and a negative edit-then-revert test both retained every change in
+the installed Automerge graph. They could not challenge approval after a _published_ real edit was
+replaced with earlier active heads. Capture nonempty approved heads, publish a different value,
+prove it was live, then install a cloned historical document and call both the final binding and
+public confirmation. The old approval must cause no command, undo, or durable replay; a second
+explicit approval at the current revision may execute once. Repeat with an un-cloned historical
+`view`: `hasHeads` can see the discarded edit in its shared handle even though its active heads
+cannot reach it. Pair root rewind followed by a checkpoint, child rewind, snapshot restore, and
+concurrent forward merge. Removing the discard-epoch guard must redden the old-approval case while
+the no-op selection case stays green.
+
+### 2026-10-25 — direct mutation-owner tests missed the queued selection producer (introduced by PR #2747)
+
+PR #2747 (`06fb56e389`) tested owner and foreign mutations, but its confirmation path lacked a
+real selected-track store write pending across authorization capture. A fixture that mutates only
+the raw CRDT document or mocks the authorization function cannot reveal a store write whose
+serialized value is unchanged while its flush advances the mutation epoch. The available public
+reviews do not expose the exact prompt that missed this case.
+
+Use the public confirmation entry with a real root and distinct tracks. Prove that changing only
+`selectedTrackId` adds a pending storage write while revision, document contents and heads remain
+unchanged; release the write at the batch boundary and require one approved execution with the
+original serialized batch and idempotency key. Remove admission settlement as one baseline
+mutation: the spec must fail on the original project-changed result. Remove final approval-binding
+alignment as a second mutation: the spec must fail on a stale approved source revision. Keep
+independent changed-project and later-foreign-writer controls.
+
+Holding animation frames does not hold a queued write when confirmation explicitly drains storage.
+For a fingerprint-only stale target, apply a real projection change after admission has settled and
+checked the revision, then require the exact fingerprint detail with unchanged document heads.
+Pair it with a queued real device edit before admission: its explicit settlement must take the
+revision path without executing the old approval.
+
 ### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
 
 Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
