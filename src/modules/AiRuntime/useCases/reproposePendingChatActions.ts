@@ -378,6 +378,7 @@ export async function reproposePendingChatActions(
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
         groundingBasis: selectsSubset ? undefined : confirmation.approvalSnapshot.groundingBasis,
+        protectionFacts: confirmation.approvalSnapshot.protectionFacts,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

@@ -9,6 +9,8 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingTarget, type ProposalGroundingValue } from '../../models/ProposalGroundingBasis';
 
+import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
+
 /** The arguments the action registry declares as this type's targets, in registry order. */
 function getTargetArguments(actionType: string): string[] {
     return (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).map((rule) => rule.argument);
@@ -271,6 +273,18 @@ function getCreatedObject(
     return { idFields, names };
 }
 
+/** Every object a command touches and the owning tracks of its targets, using the registry's capabilities. */
+function getTouchedObjectIds(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): string[] {
+    const owners = getTargetObjects(actionType, payload).flatMap((target) =>
+        findTargetOwnerTrackIds(target.capability, target.id, context)
+    );
+    return [...new Set([...getObjectIds(actionType, payload), ...owners])];
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
     createdObject: getCreatedObject,
@@ -278,6 +292,7 @@ export const proposalCommandShape = {
     objectIds: getObjectIds,
     targetObjects: getTargetObjects,
     targets: getTargets,
+    touchedObjectIds: getTouchedObjectIds,
     targetKey: getTargetKey,
     value: getValue,
 } as const;

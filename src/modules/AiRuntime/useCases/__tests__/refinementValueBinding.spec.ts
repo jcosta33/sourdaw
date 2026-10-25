@@ -5985,6 +5985,7 @@ function storeTrack(id: string, name: string): Track {
 
 type ProposalScript = {
     calls: readonly ProviderCall[];
+    compiled?: boolean;
     refines?: () => string;
     beforeProposal?: () => void;
     /** What the provider's plan says its batch leaves unchanged; a first card restates its request's protections. */
@@ -6026,6 +6027,33 @@ function asCommandBatchProposal(script: ProposalScript): ProviderCall {
     };
     if (refines !== undefined) {
         proposal.arguments.refines = refines;
+    }
+    if (script.compiled) {
+        delete proposal.arguments.commands;
+        proposal.arguments.list = {
+            schemaVersion: 1,
+            items: calls.map((call, index) => {
+                const { trackId, ...args } = call.arguments;
+                if (typeof trackId !== 'string') {
+                    throw new Error('Expected a track-scoped compiled fixture.');
+                }
+                const name = trackStore.value?.tracks.find((track) => track.id === trackId)?.name;
+                if (name === undefined) {
+                    throw new Error(`Expected the fixture track ${trackId}.`);
+                }
+                return {
+                    id: `compiled-${String(index)}`,
+                    name: call.name,
+                    arguments: args,
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { name },
+                        quantity: { unit: 'targets', exactly: 1 },
+                    },
+                };
+            }),
+        };
     }
     return proposal;
 }
@@ -6140,6 +6168,132 @@ describe('refining a held card through the chat', () => {
         transportStore.set(defaultTransportState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it.each(
+        [
+            { initialCompiled: false, finalCompiled: false },
+            { initialCompiled: false, finalCompiled: true },
+            { initialCompiled: true, finalCompiled: false },
+            { initialCompiled: true, finalCompiled: true },
+        ].flatMap((history) => [true, false].map((faderOnly) => ({ ...history, faderOnly })))
+    )(
+        'keeps immutable fader-only=$faderOnly protection through a compiled replacement from $initialCompiled to $finalCompiled',
+        async ({ initialCompiled, finalCompiled, faderOnly }) => {
+            let pendingId = '';
+            const bassBy = (deltaDb: number): ProviderCall => ({
+                name: 'setTrackGain',
+                arguments: { trackId: 'track-bass', deltaDb },
+            });
+            const vocalsPan = { name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan: -20 } };
+            const prohibited = faderOnly ? vocalsBy(-1) : vocalsPan;
+            const permitted = faderOnly ? vocalsPan : vocalsBy(-1);
+            scriptProvider([
+                { calls: [snareBy(-3), bassBy(-3)], compiled: initialCompiled },
+                { calls: [snareBy(-2), bassBy(-2)], compiled: true, refines: () => pendingId },
+            ]);
+            trackStore.set({ ...trackStore.value!, selectedTrackId: 'track-vocals' });
+            await sendChatMessage(
+                faderOnly
+                    ? "turn Snare and Bass down 3 dB; leave the selected track's fader alone"
+                    : 'turn Snare and Bass down 3 dB; leave the selected track alone except for the fader'
+            );
+            pendingId = onlyProposedId();
+            trackStore.set({ ...trackStore.value!, selectedTrackId: 'track-bass' });
+
+            await sendChatMessage('turn Snare and Bass down 2 dB');
+
+            const compiledReplacementId = onlyProposedId();
+            expect(compiledReplacementId).not.toBe(pendingId);
+            const replacement = getPendingActionConfirmation(compiledReplacementId);
+            expect(replacement?.approvalSnapshot.groundingBasis).toBeUndefined();
+            expect(replacement?.approvalSnapshot.protectionFacts?.protectedControls).toContainEqual({
+                trackId: 'track-vocals',
+                operations: faderOnly ? ['setTrackGain'] : [],
+                ...(faderOnly ? {} : { exceptOperations: ['setTrackGain'] }),
+            });
+            expect(replacement?.protectedUnchanged).toEqual([]);
+            expect(replacement?.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).toEqual([]);
+            pendingId = compiledReplacementId;
+
+            // A refused run may request one bounded correction; keep both attempts on the same violation.
+            scriptProvider([
+                { calls: [snareBy(-2), bassBy(-2), prohibited], compiled: finalCompiled, refines: () => pendingId },
+            ]);
+
+            await sendChatMessage(
+                `turn Snare and Bass down 2 dB; ${faderOnly ? 'turn Vocals down 1 dB' : 'pan Vocals 20% left'}`
+            );
+
+            expect(proposedIds()).toEqual([compiledReplacementId]);
+            expect(lastAssistantText()).toContain('Vocals');
+
+            scriptProvider([{ calls: [snareBy(-2), bassBy(-2), permitted], refines: () => pendingId }]);
+
+            await sendChatMessage(
+                `turn Snare and Bass down 2 dB; ${faderOnly ? 'pan Vocals 20% left' : 'turn Vocals down 1 dB'}`
+            );
+
+            expect(onlyProposedId()).not.toBe(compiledReplacementId);
+            expect(getPendingActionConfirmation(onlyProposedId())?.actions).toContainEqual(
+                expect.objectContaining({ type: permitted.name, payload: expect.objectContaining(permitted.arguments) })
+            );
+        }
+    );
+
+    it('keeps an initial compiled card whole-owner protection in its facts, display and execution scope', async () => {
+        const bassBy = { name: 'setTrackGain', arguments: { trackId: 'track-bass', deltaDb: -3 } };
+        scriptProvider([{ calls: [snareBy(-3), bassBy], compiled: true, protectedTargetIds: ['track-vocals'] }]);
+
+        await sendChatMessage('turn Snare and Bass down 3 dB; leave Vocals alone');
+
+        const card = getPendingActionConfirmation(onlyProposedId());
+        expect(card?.approvalSnapshot.groundingBasis).toBeUndefined();
+        expect(card?.approvalSnapshot.protectionFacts?.protectedUnchanged).toContainEqual({
+            id: 'track-vocals',
+            name: 'Vocals',
+        });
+        expect(card?.protectedUnchanged).toContainEqual({ id: 'track-vocals', name: 'Vocals' });
+        expect(card?.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).toContain('track-vocals');
+    });
+
+    it('checks immutable control and exception facts in the stored-card preservation validator', () => {
+        const validate = (action: ProviderCall) =>
+            validateRefinedProposalActions({
+                pendingActions: [{ type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -2 } }],
+                actions: [
+                    { type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -2 } },
+                    { type: action.name, payload: action.arguments },
+                ],
+                prompt: 'turn Snare down 2 dB',
+                context: CONTEXT,
+                createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
+                protection: {
+                    facts: {
+                        protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+                        protectedControls: [
+                            { trackId: 'track-vocals', operations: ['setTrackGain'] },
+                            { trackId: 'track-bass', operations: [], exceptOperations: ['setTrackGain'] },
+                        ],
+                    },
+                    readTouchedObjectIds: (type, payload) =>
+                        proposalCommandShape.touchedObjectIds(type, payload, CONTEXT),
+                },
+            });
+
+        expect(validate(vocalsBy(-1))).toMatchObject({ status: 'refused', reason: expect.stringContaining('Vocals') });
+        expect(validate({ name: 'setTrackPan', arguments: { trackId: 'track-bass', pan: -20 } })).toMatchObject({
+            status: 'refused',
+            reason: expect.stringContaining('Bass'),
+        });
+        expect(validate({ name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan: -20 } }).status).toBe(
+            'valid'
+        );
+        expect(validate({ name: 'setTrackGain', arguments: { trackId: 'track-bass', deltaDb: -1 } }).status).toBe(
+            'valid'
+        );
+        expect(validate(reverbMix(20))).toMatchObject({ status: 'refused', reason: expect.stringContaining('Keys') });
     });
 
     it('row 6: replaces the card with the bound Vocals change, diffs it, and applies it once', async () => {

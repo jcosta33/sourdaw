@@ -3,6 +3,7 @@ import {
     type ProposalGroundingCall,
     type ProposalGroundingCommand,
     type ProposalGroundingSource,
+    type ProposalProtectionFacts,
 } from '../../models/ProposalGroundingBasis';
 import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 
@@ -34,6 +35,14 @@ function unionProtectedControls(...groups: ReadonlyArray<readonly ProtectedContr
         ...Array.from(byTrack, ([trackId, operations]) => ({ trackId, operations: [...operations] })),
         ...complements,
     ];
+}
+
+/** Immutable restrictions outlive any command-aligned grounding witness a card can carry. */
+export function unionProposalProtectionFacts(...groups: readonly ProposalProtectionFacts[]): ProposalProtectionFacts {
+    return {
+        protectedUnchanged: unionProtectedObjects(...groups.map((group) => group.protectedUnchanged)),
+        protectedControls: unionProtectedControls(...groups.map((group) => group.protectedControls)),
+    };
 }
 
 type GroundedCall = { name: string; arguments: Readonly<Record<string, unknown>> };

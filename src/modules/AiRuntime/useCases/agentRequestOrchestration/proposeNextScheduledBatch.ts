@@ -133,6 +133,7 @@ function groundScheduledSlice(
             matchSelectorPredicates:
                 grounded.matchSelectorPredicates.length === 0 ? undefined : grounded.matchSelectorPredicates,
             providerProposal: grounded.providerProposal ?? undefined,
+            protectionFacts: grounded.protectionFacts,
             batchSchedule: plannedSchedule,
         },
     };
@@ -162,6 +163,7 @@ async function dispatchScheduledBatch(
         actions: grounded.result.actions,
         context: grounded.context,
         prompt: run.request,
+        inheritedProtectedUnchanged: grounded.result.protectionFacts?.protectedUnchanged,
     });
     const materialized = materializePromptCommandPlan({
         userText: run.request,
@@ -195,6 +197,7 @@ async function dispatchScheduledBatch(
             agentApproval: compiledActionExecution.agentApproval,
             affectedIds: description.affectedIds,
             protectedUnchanged: description.protectedUnchanged,
+            protectionFacts: grounded.result.protectionFacts,
             matchSelectorPredicates: grounded.result.matchSelectorPredicates,
             batchPosition: { index: position, total: schedule.total },
             executionMode: grounded.result.executionMode,

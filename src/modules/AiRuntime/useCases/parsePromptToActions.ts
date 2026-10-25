@@ -928,6 +928,8 @@ const planPromptIntent = inject({ logger })(
                     refinement.status === 'refines' ? getPendingActionConfirmation(refinement.confirmationId) : null;
                 const refinedBasis =
                     refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.groundingBasis : undefined;
+                const refinedProtections =
+                    refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.protectionFacts : undefined;
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
                 const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
@@ -1124,6 +1126,17 @@ const planPromptIntent = inject({ logger })(
                             context,
                             createdObject: proposalCommandShape.createdObject,
                             readRemoval: readStoredCardRemoval,
+                            ...(refinedProtections === undefined
+                                ? {}
+                                : {
+                                      protection: {
+                                          facts: refinedProtections,
+                                          readTouchedObjectIds: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>
+                                          ) => proposalCommandShape.touchedObjectIds(type, payload, context),
+                                      },
+                                  }),
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1160,6 +1173,7 @@ const planPromptIntent = inject({ logger })(
                     creativeAuthority,
                     providerProposal,
                     ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
+                    ...(refinedProtections === undefined ? {} : { refinementProtections: refinedProtections }),
                 });
                 if (grounded.status === 'rejected') {
                     return {
@@ -1196,6 +1210,11 @@ const planPromptIntent = inject({ logger })(
                             context,
                             createdObject: proposalCommandShape.createdObject,
                             readRemoval: readStoredCardRemoval,
+                            protection: {
+                                facts: grounded.protectionFacts,
+                                readTouchedObjectIds: (type, payload) =>
+                                    proposalCommandShape.touchedObjectIds(type, payload, context),
+                            },
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1232,6 +1251,7 @@ const planPromptIntent = inject({ logger })(
                         ...(grounded.groundingBasis === undefined || batchSchedule !== undefined
                             ? {}
                             : { groundingBasis: grounded.groundingBasis }),
+                        protectionFacts: grounded.protectionFacts,
                         ...(grounded.refinement === undefined
                             ? {}
                             : {

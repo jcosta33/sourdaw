@@ -75,8 +75,8 @@ export const TRACK_KIND_WORDS: ReadonlySet<string> = new Set([
 /** Words that point at the selection rather than name an object ("the selected clip"). */
 export const SELECTION_WORDS: ReadonlySet<string> = new Set(['selected', 'this', 'that', 'current']);
 /**
- * Words that stand for the project's own mix routing or a convention of one, never for a named object:
- * "the Master bus", "the FX return", "the Click track".
+ * Words that stand for the project's aggregate mix or conventional routing: "the overall level",
+ * "the Master bus", "the FX return", "the Click track". Quoting a name still makes its whole owner explicit.
  */
 export const CONVENTIONAL_WORDS: ReadonlySet<string> = new Set([
     'master',
@@ -87,6 +87,7 @@ export const CONVENTIONAL_WORDS: ReadonlySet<string> = new Set([
     'click',
     'parallel',
     'sidechain',
+    'overall',
 ]);
 
 function isControl(lower: string): boolean {
@@ -155,7 +156,8 @@ function readObjectForm(
     objects: readonly ProtectableObjectName[]
 ): ObjectForm {
     const unbound = (named: readonly Token[]): ObjectForm => {
-        const conventional = named.some((token) => CONVENTIONAL_WORDS.has(token.lower));
+        const conventional =
+            !named.some((token) => token.quoted) && named.some((token) => CONVENTIONAL_WORDS.has(token.lower));
         if (!isWrittenAsName(named) || conventional) {
             return null;
         }
@@ -176,10 +178,9 @@ function readObjectForm(
     const last = content.at(-1);
     // The control follows the name ("the Kick fader"); one before a word names a concept ("the Gain Staging").
     const endsOnControl = last !== undefined && (possessive ? isControl(last.lower) : CONTROL_WORDS.has(last.lower));
-    // A title-cased compound ("Overall Level") does not establish a separate owner. A possessive or
-    // quoted owner does, as does the ordinary name followed by a lowercase control ("the Kick pan").
-    const separatesOwner = possessive || last?.capitalized !== true || names.some((token) => token.quoted);
-    if (names.length > 0 && endsOnControl && separatesOwner) {
+    // A control's capitalization cannot change whether its preceding explicit owner must resolve.
+    // Aggregate and routing terminology is read by the same conventional vocabulary in every form.
+    if (names.length > 0 && endsOnControl) {
         return unbound(names);
     }
     const subject = content.slice(0, -1).filter((token) => token.lower !== 'vca');

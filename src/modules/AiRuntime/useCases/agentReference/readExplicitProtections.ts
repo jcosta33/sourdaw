@@ -530,9 +530,11 @@ export function readExplicitProtections(prompt: string, context: ProjectContext)
                 )
         );
     const blanked = blankRanges(prompt, references);
-    const masked = Array.from(blanked, (character, index) => (scanned[index] === prompt[index] ? character : ' ')).join(
-        ''
-    );
+    // Every scanner span and string slice uses UTF16 offsets, including the two units of an astral character.
+    const masked = blanked
+        .split('')
+        .map((character, index) => (scanned[index] === prompt[index] ? character : ' '))
+        .join('');
     const vcaGroups = new Map((context.vcaGroups ?? []).map((group) => [group.id, group.trackIds]));
     // Keep each protection separate until its own carve-out is read, so it cannot relax an earlier clause.
     const readings: Accumulator[] = [];

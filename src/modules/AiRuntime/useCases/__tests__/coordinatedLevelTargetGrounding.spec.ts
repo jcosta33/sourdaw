@@ -217,6 +217,41 @@ function groundGainList(
 }
 
 describe('one level change stated for a coordinated list of named tracks', () => {
+    it('refuses a missing quoted protected owner after an astral name on direct and compiled routes', () => {
+        const emojiDrums = createTrack({ id: 'track-emoji-drums', name: '🥁 Drums' });
+        const context = { ...projectContext, tracks: [emojiDrums, bass] };
+        const prompt = 'turn "🥁 Drums" down 3 dB; leave the fader of "Bass Amp" alone';
+
+        expect(bridge([gainCall(emojiDrums.id, { deltaDb: -3 })], prompt, context)).toMatchObject({
+            actions: [],
+            rejections: [expect.objectContaining({ reason: expect.stringContaining('Bass Amp') })],
+        });
+        for (const compiled of [false, true]) {
+            expect(groundGainList(prompt, [emojiDrums], context, compiled)).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining(
+                    compiled ? 'Transform compilation includes a protected or unresolved target' : 'Bass Amp'
+                ),
+            });
+        }
+    });
+
+    it.each(['overall level', 'Overall level', 'Overall Level', 'OVERALL LEVEL'])(
+        'grounds a valid cut beside conventional %s at either clause position',
+        (quality) => {
+            for (const prompt of [
+                `turn the Drums down 3 dB; keep the ${quality} the same`,
+                `keep the ${quality} the same; turn the Drums down 3 dB`,
+            ]) {
+                expect(bridge([gainCall(drums.id, { deltaDb: -3 })], prompt)).toMatchObject({
+                    rejections: [],
+                    actions: [gainAction(drums.id, { deltaDb: -3 })],
+                });
+                expect(groundGainList(prompt, [drums], projectContext).status).toBe('grounded');
+            }
+        }
+    );
+
     it.each([
         ['turn the Drums and the Bass down 3 dB'],
         ['turn Drums and Bass down 3 dB'],

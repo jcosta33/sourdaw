@@ -359,15 +359,58 @@ describe('readExplicitProtections', () => {
             expect(readExplicitProtections('leave the fader of "Bass Amp" alone', context).unresolved).toEqual([
                 'Bass Amp',
             ]);
+            expect(readExplicitProtections('leave the fader of "Main Bass" alone', context).unresolved).toEqual([
+                'Main Bass',
+            ]);
             expect(readExplicitProtections('leave the fader of "Drum Bus" alone', context)).toMatchObject({
                 unresolved: [],
                 protectedControls: [{ trackId: drumBus.id, actionTypes: ['setTrackGain'] }],
             });
         });
 
-        it('does not split a title-cased compound quality into an owner and control', () => {
-            expect(unresolvedIn('turn Drums down 3 dB; keep the Overall Level the same')).toEqual([]);
-            expect(unresolvedIn('turn Drums down 3 dB; keep the Kick pan as is')).toEqual(['Kick']);
+        it.each(['overall level', 'Overall level', 'Overall Level', 'OVERALL LEVEL'])(
+            'reads the conventional aggregate %s independently of capitalization and clause position',
+            (quality) => {
+                for (const prompt of [
+                    `turn Drums down 3 dB; keep the ${quality} the same`,
+                    `keep the ${quality} the same; turn Drums down 3 dB`,
+                ]) {
+                    expect(unresolvedIn(prompt)).toEqual([]);
+                }
+            }
+        );
+
+        it.each(['Kick pan', 'Kick Pan', 'KICK PAN', '"kick" pan', '"Overall" level', '"Master" level'])(
+            'keeps explicit missing-owner evidence strict in %s',
+            (owner) => {
+                expect(unresolvedIn(`turn Drums down 3 dB; keep the ${owner} as is`)).not.toEqual([]);
+                expect(unresolvedIn(`keep the ${owner} as is; turn Drums down 3 dB`)).not.toEqual([]);
+            }
+        );
+
+        it.each([
+            ['leave the fader of "Bass Amp" alone', ['Bass Amp']],
+            ["leave the selected track's fader alone", ["the selected track's fader"]],
+            ['keep its pan as is', []],
+        ])('keeps original UTF16 offsets after an astral project name before %s', (protection, unresolved) => {
+            const emojiDrums = createTrack('track-emoji-drums', '🥁 Drums');
+            const prompt = `turn "🥁 Drums" down 3 dB; ${protection}`;
+
+            expect(readExplicitProtections(prompt, { ...context, tracks: [emojiDrums] }).unresolved).toEqual(
+                unresolved
+            );
+        });
+
+        it('returns the original UTF16 source span of a resolved clause after astral text', () => {
+            const emojiDrums = createTrack('track-emoji-drums', '🥁 Drums');
+            const protection = 'leave the fader of "Bass" alone';
+            const prompt = `turn "🥁 Drums" down 3 dB; ${protection}`;
+            const reading = readExplicitProtections(prompt, { ...context, tracks: [emojiDrums, bass] });
+
+            expect(reading.protectedControls).toEqual([{ trackId: bass.id, actionTypes: ['setTrackGain'] }]);
+            expect(reading.resolvedTrackClauses.map(({ start, end }) => prompt.slice(start, end).trim())).toEqual([
+                protection,
+            ]);
         });
 
         it('does not protect the members of a VCA mentioned in an unclosed quality', () => {

@@ -40,6 +40,17 @@ export type ProposalGroundingCommand = {
     value: ProposalGroundingValue | null;
 };
 
+/** Protections resolved when a request was admitted, independent of command grounding. */
+export type ProposalProtectionFacts = {
+    protectedUnchanged: Array<{ id: string; name: string }>;
+    protectedControls: Array<{
+        trackId: string;
+        operations: string[];
+        /** When present, every operation except these is protected. */
+        exceptOperations?: string[];
+    }>;
+};
+
 /**
  * What an ordinary pending card was grounded in, kept so a terse refinement can inherit it. Authority
  * is never read from the provider: the sources are request texts the user typed, the first one the
@@ -49,16 +60,11 @@ export type ProposalGroundingBasis = {
     rootText: string;
     sources: ProposalGroundingSource[];
     commands: ProposalGroundingCommand[];
-    protectedUnchanged: Array<{ id: string; name: string }>;
+    protectedUnchanged: ProposalProtectionFacts['protectedUnchanged'];
     /**
      * The track operations the chain's requests keep as they are (a fader, a pan), as the project was
      * when each request was grounded. A basis without it predates it, and reads its sources' protections
      * against the live project instead.
      */
-    protectedControls?: Array<{
-        trackId: string;
-        operations: string[];
-        /** When present, every operation except these is protected; an absent field keeps positive-only semantics. */
-        exceptOperations?: string[];
-    }>;
+    protectedControls?: ProposalProtectionFacts['protectedControls'];
 };

@@ -1764,6 +1764,45 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(proposedConfirmations()).toEqual([]);
     });
 
+    it('carries named protection facts into each scheduled card scope', async () => {
+        await seedTracks([...layerNames(LAYER_COUNT), 'Vocals']);
+        const vocals = trackStore.value?.tracks.find((track) => track.name === 'Vocals');
+        if (vocals === undefined) {
+            throw new Error('Expected the protected Vocals track.');
+        }
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            () => searchCalls(['pan track']),
+            discoverSearchedCalls(['setTrackPan']),
+            proposeDiscoveredCalls(
+                [
+                    {
+                        id: 'pan-layers',
+                        name: 'setTrackPan',
+                        arguments: { pan: -20 },
+                        selector: matchTracks('layer', LAYER_COUNT),
+                    },
+                ],
+                ['setTrackPan']
+            ),
+        ]);
+        flushAutomergeStorageWrites();
+        await sendChatMessage('Pan all layer tracks 20% left; leave Vocals alone');
+        const first = requireOnlyProposedConfirmation();
+
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+
+        const second = requireOnlyProposedConfirmation();
+        expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        for (const card of [first, second]) {
+            expect(card.approvalSnapshot.protectionFacts).toEqual({
+                protectedUnchanged: [{ id: vocals.id, name: 'Vocals' }],
+                protectedControls: [],
+            });
+            expect(card.protectedUnchanged).toContainEqual({ id: vocals.id, name: 'Vocals' });
+            expect(card.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).toContain(vocals.id);
+        }
+    });
+
     describe('the last commit the next chat request reads', () => {
         /** The run's newest batch and the receipt it committed under. */
         function readNewestBatchReceipt(runId: string) {

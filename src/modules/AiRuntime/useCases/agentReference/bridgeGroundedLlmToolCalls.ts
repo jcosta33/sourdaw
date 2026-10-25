@@ -12,7 +12,11 @@ import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
+import {
+    type ProposalGroundingBasis,
+    type ProposalGroundingCommand,
+    type ProposalProtectionFacts,
+} from '../../models/ProposalGroundingBasis';
 import { type RetainedCommandSet } from '../../models/RetainedCompilation';
 import {
     SEMANTIC_CLIP_MAX_BEATS,
@@ -78,7 +82,6 @@ import {
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
 import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
-import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -181,10 +184,10 @@ type BridgeGroundedLlmToolCallsInput = {
      */
     refinementBasis?: ProposalGroundingBasis;
     /**
-     * The grounding of a pending card a batch replaces without refining against it (a compiled list): the
-     * operations the card's requests protected still bind the batch.
+     * Restrictions the pending card resolved when it was admitted, whether or not a command-aligned
+     * grounding basis can be carried by this batch.
      */
-    protectionBasis?: ProposalGroundingBasis;
+    protectionFacts?: ProposalProtectionFacts;
 };
 
 type GroundToolCallInput = {
@@ -6071,10 +6074,7 @@ function getActionTouchedIds(
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
 ): string[] {
-    const owners = proposalCommandShape
-        .targetObjects(actionType, payload)
-        .flatMap((target) => findTargetOwnerTrackIds(target.capability, target.id, context));
-    return [...new Set([...proposalCommandShape.objectIds(actionType, payload), ...owners])];
+    return proposalCommandShape.touchedObjectIds(actionType, payload, context);
 }
 
 function getRefinementProtectedObjects(input: {
@@ -7016,12 +7016,17 @@ function refuseWhenProtectionIsUnresolved(
         );
     }
     const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
-    const recordedControls =
-        input.protectionBasis === undefined ? [] : readRecordedControls(input.protectionBasis, context);
+    const recordedControls = (input.protectionFacts?.protectedControls ?? []).map(
+        ({ trackId, operations, exceptOperations }) => ({
+            trackId,
+            actionTypes: operations,
+            ...(exceptOperations === undefined ? {} : { exceptActionTypes: exceptOperations }),
+        })
+    );
     const changedTrack =
         findChangedObject(
             grounded.actions,
-            [...wholeTracks, ...(input.protectionBasis?.protectedUnchanged ?? [])],
+            [...wholeTracks, ...(input.protectionFacts?.protectedUnchanged ?? [])],
             context
         ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
     return changedTrack === null

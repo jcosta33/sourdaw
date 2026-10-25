@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { proposalGroundingBasis } from '../proposalGroundingBasis';
+import { proposalGroundingBasis, unionProposalProtectionFacts } from '../proposalGroundingBasis';
 
 const snare = { name: 'setTrackGain', arguments: { trackId: 'track-snare', deltaDb: -3 } };
 const snareRefined = { name: 'setTrackGain', arguments: { trackId: 'track-snare', deltaDb: -2 } };
@@ -17,6 +17,32 @@ function createCard(protectedControls: Array<{ trackId: string; operations: stri
 }
 
 describe('proposalGroundingBasis protected controls', () => {
+    it('unions independent facts without widening either whole-object exception', () => {
+        const first = {
+            protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+            protectedControls: [{ trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] }],
+        };
+        const second = {
+            protectedUnchanged: [],
+            protectedControls: [
+                structuredClone(fader),
+                { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackPan'] },
+            ],
+        };
+        const facts = unionProposalProtectionFacts(first, second);
+        expect(facts).toEqual({
+            protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+            protectedControls: [fader, first.protectedControls[0], second.protectedControls[1]],
+        });
+        first.protectedControls[0]!.exceptOperations.push('muteTrack');
+        second.protectedControls[0]!.operations.push('setTrackPan');
+        expect(facts.protectedControls).toEqual([
+            { trackId: 'track-vocals', operations: ['setTrackGain'] },
+            { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] },
+            { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackPan'] },
+        ]);
+    });
+
     it('records the operations a card keeps as they resolved', () => {
         expect(createCard([fader]).protectedControls).toEqual([fader]);
     });
