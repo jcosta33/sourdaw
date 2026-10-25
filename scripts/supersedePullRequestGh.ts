@@ -216,10 +216,10 @@ export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, stri
 
 type PullRequestCore = Omit<SupersededPullRequest, 'comments'>;
 
-function assertPullRequestIdentity(
-    pullRequest: { id?: unknown; number?: unknown } | undefined,
+function assertPullRequestIdentity<T extends { id?: unknown; number?: unknown }>(
+    pullRequest: T | undefined,
     number: number
-): asserts pullRequest is { id: string; number: number } {
+): asserts pullRequest is T & { id: string; number: number } {
     if (
         typeof pullRequest?.id !== 'string' ||
         pullRequest.id === '' ||
