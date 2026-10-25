@@ -172,6 +172,13 @@ type SlotReading = {
     /** Controls the slot lists with no owner ("except for the fader"). */
     controls: string[];
 };
+type MemberRange = Range & { afterThen: boolean; resetsOwner: boolean };
+type SlotMemberState = {
+    reading: SlotReading;
+    namedBefore: boolean;
+    pendingControls: string[];
+    lastOwner: { controls: string[] } | null;
+};
 type NamedRange = Range & { denotes: ReadonlySet<string> };
 
 /** Whether every token belongs to one track owner and its controls, or to a control waiting for its owner. */
@@ -223,6 +230,105 @@ function readBoundTrackMember(
     };
 }
 
+/** Split the original UTF16 slot at list members, retaining then boundaries that reset control ownership. */
+function readMemberRanges(masked: string, slot: Slot): MemberRange[] {
+    const separators = [
+        ...Array.from(masked.slice(slot.start, slot.end).matchAll(MEMBER_SEPARATOR), (separator) => ({
+            start: slot.start + separator.index,
+            end: slot.start + separator.index + separator[0].length,
+            continues: false,
+        })),
+        ...slot.memberSeparators
+            .filter((separator) => separator.start >= slot.start && separator.end <= slot.end)
+            .map((separator) => ({ ...separator, continues: true })),
+    ].toSorted((left, right) => left.start - right.start);
+    const bounds: MemberRange[] = [];
+    let start = slot.start;
+    let afterThen = false;
+    let resetsOwner = false;
+    for (const separator of separators) {
+        bounds.push({ start, end: separator.start, afterThen, resetsOwner });
+        start = separator.end;
+        afterThen ||= separator.continues;
+        resetsOwner = separator.continues;
+    }
+    bounds.push({ start, end: slot.end, afterThen, resetsOwner });
+    return bounds;
+}
+
+function parseSlotMember(input: {
+    prompt: string;
+    blanked: string;
+    masked: string;
+    slot: Slot;
+    range: MemberRange;
+    objects: readonly ProtectableObjectName[];
+}): { member: MemberReading; tokens: Token[]; complete: boolean } {
+    const { prompt, blanked, masked, slot, range, objects } = input;
+    const raw = readTokens(blanked, masked, range);
+    const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
+    const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
+    const phrase = prompt.slice(range.start, range.end).trim();
+    // A contained match cannot discharge an explicitly quoted owner such as the missing "Bass Amp".
+    const incompleteQuotedOwner = raw.some((token) => token.quoted && !isBoundToken(token));
+    const original = readTokens(prompt, masked, range).filter((token, index) => !isPossessiveS(token, index));
+    const unboundOwner =
+        slot.strict && incompleteQuotedOwner ? readObjectForm(original, raw.some(isPossessiveS), objects) : null;
+    const member = unboundOwner ?? readMember({ tokens, phrase, slot, possessive: raw.some(isPossessiveS), objects });
+    return { member, tokens, complete: fullyStatesTrackMember(tokens) };
+}
+
+/** Attach one member to its owner, keeping unresolved continuation spans out of track-only evidence. */
+function applySlotMember(
+    state: SlotMemberState,
+    range: MemberRange,
+    parsed: ReturnType<typeof parseSlotMember>,
+    references: readonly NamedRange[],
+    trackIds: ReadonlySet<string>
+): void {
+    const { member, tokens, complete } = parsed;
+    state.reading.complete &&= complete;
+    if (range.afterThen && !complete && member.kind !== 'variant') {
+        state.reading.unreadContinuations.push({ start: range.start, end: range.end });
+        if (member.kind === 'unbound' || member.kind === 'position') {
+            state.reading.unresolved.push(member.text);
+        }
+        return;
+    }
+    if (member.kind === 'controls') {
+        if (state.lastOwner === null) {
+            state.pendingControls.push(...member.controls);
+        } else {
+            state.lastOwner.controls.push(...member.controls);
+        }
+    } else if (member.kind === 'selection') {
+        const selection = {
+            ...member,
+            anaphoric: member.pronoun && member.phrase.toLocaleLowerCase().startsWith('its') && state.namedBefore,
+        };
+        state.reading.selection.push(selection);
+        state.lastOwner = adoptControls(selection, state.pendingControls);
+        state.pendingControls = [];
+    } else {
+        const pending = state.pendingControls;
+        state.pendingControls = [];
+        state.lastOwner = null;
+        if (member.kind === 'unbound' || member.kind === 'position') {
+            state.reading.unresolved.push(member.text);
+        } else if (member.kind === 'variant') {
+            state.reading.bound.push({ trackIds: member.trackIds, controls: [] });
+        } else {
+            const owner = readBoundTrackMember(member, references, range, trackIds);
+            state.reading.complete &&= owner !== null && owner.complete;
+            if (owner !== null) {
+                state.reading.bound.push(owner.member);
+                state.lastOwner = adoptControls(owner.member, pending);
+            }
+        }
+    }
+    state.namedBefore ||= tokens.some(isBoundToken);
+}
+
 function readSlotMembers(input: {
     prompt: string;
     blanked: string;
@@ -242,99 +348,23 @@ function readSlotMembers(input: {
         controls: [],
     };
     const trackIds = new Set(context.tracks.map((track) => track.id));
-    const separators = [
-        ...Array.from(masked.slice(slot.start, slot.end).matchAll(MEMBER_SEPARATOR), (separator) => ({
-            start: slot.start + separator.index,
-            end: slot.start + separator.index + separator[0].length,
-            continues: false,
-        })),
-        ...slot.memberSeparators
-            .filter((separator) => separator.start >= slot.start && separator.end <= slot.end)
-            .map((separator) => ({ ...separator, continues: true })),
-    ].toSorted((left, right) => left.start - right.start);
-    const bounds: Array<Range & { afterThen: boolean; resetsOwner: boolean }> = [];
-    let start = slot.start;
-    let afterThen = false;
-    let resetsOwner = false;
-    for (const separator of separators) {
-        bounds.push({ start, end: separator.start, afterThen, resetsOwner });
-        start = separator.end;
-        afterThen ||= separator.continues;
-        resetsOwner = separator.continues;
-    }
-    bounds.push({ start, end: slot.end, afterThen, resetsOwner });
-    let namedBefore = false;
+    const bounds = readMemberRanges(masked, slot);
     // Controls listed before their owner ("the fader and pan of Vocals") wait for it; ones after an owner that
     // names a control ("the Vocals pan and fader") join it. An owner protected whole never narrows to them.
-    let pendingControls: string[] = [];
-    let lastOwner: { controls: string[] } | null = null;
+    const state: SlotMemberState = { reading, namedBefore: false, pendingControls: [], lastOwner: null };
     for (const range of bounds) {
         if (range.resetsOwner) {
-            reading.complete &&= pendingControls.length === 0;
-            pendingControls = [];
-            lastOwner = null;
+            reading.complete &&= state.pendingControls.length === 0;
+            state.pendingControls = [];
+            state.lastOwner = null;
         }
-        const raw = readTokens(blanked, masked, range);
-        const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
-        const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
-        const phrase = prompt.slice(range.start, range.end).trim();
-        // A contained match cannot discharge an explicitly quoted owner such as the missing "Bass Amp".
-        const incompleteQuotedOwner = raw.some((token) => token.quoted && !isBoundToken(token));
-        const original = readTokens(prompt, masked, range).filter((token, index) => !isPossessiveS(token, index));
-        const unboundOwner =
-            slot.strict && incompleteQuotedOwner ? readObjectForm(original, raw.some(isPossessiveS), objects) : null;
-        const member =
-            unboundOwner ?? readMember({ tokens, phrase, slot, possessive: raw.some(isPossessiveS), objects });
-        const completeMember = fullyStatesTrackMember(tokens);
-        reading.complete &&= completeMember;
-        if (range.afterThen && !completeMember && member.kind !== 'variant') {
-            reading.unreadContinuations.push({ start: range.start, end: range.end });
-            if (member.kind === 'unbound' || member.kind === 'position') {
-                reading.unresolved.push(member.text);
-            }
-            continue;
-        }
-        if (member.kind === 'controls') {
-            if (lastOwner === null) {
-                pendingControls.push(...member.controls);
-            } else {
-                lastOwner.controls.push(...member.controls);
-            }
-            namedBefore ||= tokens.some(isBoundToken);
-            continue;
-        }
-        if (member.kind === 'selection') {
-            const selection = {
-                ...member,
-                anaphoric: member.pronoun && member.phrase.toLocaleLowerCase().startsWith('its') && namedBefore,
-            };
-            reading.selection.push(selection);
-            lastOwner = adoptControls(selection, pendingControls);
-            pendingControls = [];
-            namedBefore ||= tokens.some(isBoundToken);
-            continue;
-        }
-        const pending = pendingControls;
-        pendingControls = [];
-        lastOwner = null;
-        if (member.kind === 'unbound' || member.kind === 'position') {
-            reading.unresolved.push(member.text);
-        } else if (member.kind === 'variant') {
-            reading.bound.push({ trackIds: member.trackIds, controls: [] });
-        } else {
-            const owner = readBoundTrackMember(member, references, range, trackIds);
-            reading.complete &&= owner !== null && owner.complete;
-            if (owner !== null) {
-                reading.bound.push(owner.member);
-                lastOwner = adoptControls(owner.member, pending);
-            }
-        }
-        namedBefore ||= tokens.some(isBoundToken);
+        const parsed = parseSlotMember({ prompt, blanked, masked, slot, range, objects });
+        applySlotMember(state, range, parsed, references, trackIds);
     }
-    if (slot.memberSeparators.length > 0 && pendingControls.length > 0) {
+    if (slot.memberSeparators.length > 0 && state.pendingControls.length > 0) {
         reading.complete = false;
     }
-    reading.controls.push(...pendingControls);
+    reading.controls.push(...state.pendingControls);
     return reading;
 }
 
