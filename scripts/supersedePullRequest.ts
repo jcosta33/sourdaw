@@ -446,6 +446,24 @@ function assertStackedParentProofUnchanged(
     }
 }
 
+/** Finish composite proof reads with each authority's independent core witness. */
+function assertSupersessionAuthoritiesCurrent(
+    replacement: SupersededPullRequest,
+    stacked: StackedParentProof | undefined,
+    port: SupersedePullRequestPort
+): void {
+    const authorities: PullRequestProof[] = [pullRequestProof(replacement)];
+    if (stacked !== undefined) {
+        authorities.push(stacked.parent);
+        if (stacked.dependency !== undefined) {
+            authorities.push(stacked.dependency.parentReplacement);
+        }
+    }
+    for (const authority of authorities) {
+        port.assertCurrentPullRequest(authority.number, { ...authority, comments: [] });
+    }
+}
+
 type SupersessionInput = {
     oldNumber: number;
     expectedHead: string;
@@ -600,6 +618,7 @@ export function supersedePullRequest(
             checkedChildBaseRef(completed, replayProof.parent, true);
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
         }
+        assertSupersessionAuthoritiesCurrent(replacement, replayProof, port);
         port.assertCurrentPullRequest(oldNumber, before);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
@@ -618,6 +637,7 @@ export function supersedePullRequest(
                 assertStackedParentProofUnchanged(stackedParentProof, before, port);
                 assertFindingsUnchanged(oldNumber, coveredFindings, port);
             }
+            assertSupersessionAuthoritiesCurrent(replacement, stackedParentProof, port);
         },
         beforeClose: (markerIds) => {
             assertFindingsUnchanged(oldNumber, coveredFindings, port);
@@ -633,6 +653,7 @@ export function supersedePullRequest(
                 }
                 assertFindingsUnchanged(oldNumber, coveredFindings, port);
             }
+            assertSupersessionAuthoritiesCurrent(replacement, stackedParentProof, port);
         },
         afterClose: (verified, markerIds, closeReceipt) => {
             try {
@@ -660,6 +681,7 @@ export function supersedePullRequest(
                     );
                     assertFindingsUnchanged(oldNumber, coveredFindings, port);
                 }
+                assertSupersessionAuthoritiesCurrent(replacement, stackedParentProof, port);
             } catch (error) {
                 if (stackedParentProof !== undefined) {
                     fail(

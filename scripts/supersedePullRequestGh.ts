@@ -90,7 +90,13 @@ export function shellPort(
     };
 }
 type Gh = (args: string[]) => string;
-type CommitComparison = { status: unknown; aheadBy: number; behindBy: number; mergeBase: string };
+type CommitComparison = {
+    status: unknown;
+    aheadBy: number;
+    behindBy: number;
+    mergeBase: string;
+    head: string | undefined;
+};
 
 /** Compare immutable objects remotely; neither a mutable branch nor status alone proves containment. */
 export function inspectCommitAncestry(repository: string, ancestor: string, descendant: string, gh: Gh): boolean {
@@ -108,7 +114,7 @@ export function inspectCommitAncestry(repository: string, ancestor: string, desc
             return true;
         case 'ahead':
             assertComparisonCounts(comparison, true, false);
-            if (ancestor === descendant || comparison.mergeBase !== ancestor) {
+            if (ancestor === descendant || comparison.mergeBase !== ancestor || comparison.head !== descendant) {
                 fail('contradictory ahead supersession commit ancestry');
             }
             return true;
@@ -149,6 +155,7 @@ function readCommitComparison(output: string, endpoint: string, ancestor: string
         behind_by?: unknown;
         base_commit?: { sha?: unknown };
         merge_base_commit?: { sha?: unknown };
+        commits?: unknown;
     };
     if (
         value?.url !== `https://api.github.com/${endpoint}` ||
@@ -168,7 +175,20 @@ function readCommitComparison(output: string, endpoint: string, ancestor: string
         aheadBy: value.ahead_by,
         behindBy: value.behind_by,
         mergeBase: value.merge_base_commit.sha,
+        head: comparisonHead(value.commits),
     };
+}
+
+/** Without paging parameters GitHub returns the comparison's newest commit last, even above 250. */
+function comparisonHead(commits: unknown): string | undefined {
+    if (!isUnknownArray(commits)) {
+        return undefined;
+    }
+    const commit = commits.at(-1);
+    if (typeof commit !== 'object' || commit === null || !('sha' in commit) || !isCommit(commit.sha)) {
+        return undefined;
+    }
+    return commit.sha;
 }
 function isUnknownArray(value: unknown): value is readonly unknown[] {
     return Array.isArray(value);

@@ -562,18 +562,25 @@ function nativeSupersessionFixture(
     root: string,
     moveAtRead?: number,
     distinctParent = false,
-    afterCloseIdentity: Partial<Pick<SupersededPullRequest, 'head' | 'headRefName'>> = {}
+    afterCloseIdentity: Partial<Pick<SupersededPullRequest, 'head' | 'headRefName'>> = {},
+    options: { comparison?: Record<string, unknown>; initialMarkers?: boolean } = {}
 ) {
     let currentHead = head;
     let currentHeadRefName = 'fix/old';
     let state = 'OPEN';
     let closedAt: string | null = null;
     let commentReads = 0;
+    let parentThreadReads = 0;
+    let nextComment = 2002;
+    type AuthorityChange = Partial<Pick<SupersededPullRequest, 'state' | 'head' | 'headRefName' | 'closedAt'>>;
+    const authorityChanges = new Map<number, AuthorityChange>();
+    let pendingChange: { number: number; atParentThreadRead: number; patch: AuthorityChange } | undefined;
     let moveAt = moveAtRead;
     const comments = [
         oldComment,
-        markerComment('IC_receipt', '2001', receiptBody),
-        markerComment('IC_lineage', '2002', lineageBody),
+        ...(options.initialMarkers === false
+            ? []
+            : [markerComment('IC_receipt', '2001', receiptBody), markerComment('IC_lineage', '2002', lineageBody)]),
     ];
     const events: string[] = [];
     const capture = (command: string, args: string[]): string => {
@@ -583,7 +590,10 @@ function nativeSupersessionFixture(
         const query = args.find((arg) => arg.startsWith('query=')) ?? '';
         if (query.includes('headRefOid')) {
             const number = Number(args.find((arg) => arg.startsWith('number='))?.slice(7));
-            events.push(number === oldNumber ? 'old-core' : 'replacement-core');
+            events.push(`core:${number}`);
+            if (number === oldNumber) {
+                events.push('old-core');
+            }
             const old = number === oldNumber;
             const parent = number === parentNumber;
             const parentReplacement = number === parentReplacementNumber;
@@ -620,6 +630,7 @@ function nativeSupersessionFixture(
                 }
                 mergeCommit = { oid: mergeCommitOid };
             }
+            const change = authorityChanges.get(number);
             return JSON.stringify({
                 data: {
                     repository: {
@@ -627,19 +638,53 @@ function nativeSupersessionFixture(
                         pullRequest: {
                             id: old ? 'PR_old' : `PR_${number}`,
                             number,
-                            state: pullRequestState,
-                            headRefOid: pullRequestHead,
-                            headRefName: pullRequestBranch,
+                            state: change?.state ?? pullRequestState,
+                            headRefOid: change?.head ?? pullRequestHead,
+                            headRefName: change?.headRefName ?? pullRequestBranch,
                             headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
                             baseRefName: old && distinctParent ? parentBranch : 'main',
                             baseRef,
                             merged: !old && !parent,
                             mergeCommit,
-                            closedAt: old ? closedAt : '2026-10-24T00:00:00Z',
+                            closedAt:
+                                change?.closedAt !== undefined
+                                    ? change.closedAt
+                                    : old
+                                      ? closedAt
+                                      : '2026-10-24T00:00:00Z',
                         },
                     },
                 },
             });
+        }
+        if (query.includes('reviewThreads(first:100')) {
+            const number = Number(args.find((arg) => arg.startsWith('number='))?.slice(7));
+            events.push(`threads:${number}`);
+            const threads = number === parentNumber ? [] : defaultThreads;
+            const output = JSON.stringify({
+                data: {
+                    repository: {
+                        pullRequest: {
+                            reviewThreads: {
+                                nodes: threads.map((thread) => ({
+                                    id: thread.threadId,
+                                    comments: { nodes: [{ databaseId: Number(thread.rootCommentId) }] },
+                                })),
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        },
+                    },
+                },
+            });
+            if (number === parentNumber) {
+                parentThreadReads += 1;
+                if (pendingChange?.atParentThreadRead === parentThreadReads) {
+                    authorityChanges.set(pendingChange.number, pendingChange.patch);
+                    events.push(`authority-changed:${pendingChange.number}`);
+                    pendingChange = undefined;
+                }
+            }
+            return output;
         }
         if (query.includes('node(id:$subjectId)')) {
             const id = args.find((arg) => arg.startsWith('subjectId='))?.slice(10);
@@ -690,9 +735,42 @@ function nativeSupersessionFixture(
                 data: { closePullRequest: { clientMutationId, pullRequest: { id: 'PR_old', state, closedAt } } },
             });
         }
+        if (query.includes('addComment(input:')) {
+            events.push('comment');
+            const body = args.find((arg) => arg.startsWith('body='))?.slice(5);
+            if (body === undefined) {
+                throw new Error('missing fixture comment body');
+            }
+            nextComment += 1;
+            const created = markerComment(`IC_created_${nextComment}`, String(nextComment), body);
+            comments.push(created);
+            const clientMutationId = args.find((arg) => arg.startsWith('clientMutationId='))?.slice(17);
+            return JSON.stringify({
+                data: {
+                    addComment: {
+                        clientMutationId,
+                        commentEdge: {
+                            node: {
+                                id: created.id,
+                                fullDatabaseId: created.fullDatabaseId,
+                                body,
+                                author: { id: AUTHOR_BOT_NODE_ID, __typename: 'Bot', login: 'author[bot]' },
+                            },
+                        },
+                    },
+                },
+            });
+        }
         if (query.includes('deleteIssueComment(input:')) {
             events.push('delete');
-            throw new Error('unexpected native supersession marker deletion');
+            const id = args.find((arg) => arg.startsWith('id='))?.slice(3);
+            const index = comments.findIndex((comment) => comment.id === id);
+            if (index < 0) {
+                throw new Error('unexpected native supersession marker deletion');
+            }
+            comments.splice(index, 1);
+            const clientMutationId = args.find((arg) => arg.startsWith('clientMutationId='))?.slice(17);
+            return JSON.stringify({ data: { deleteIssueComment: { clientMutationId } } });
         }
         const endpoint = `repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`;
         if (args[0] === 'api' && args[1] === endpoint) {
@@ -704,13 +782,14 @@ function nativeSupersessionFixture(
                 behind_by: 0,
                 base_commit: { sha: parentMerge },
                 merge_base_commit: { sha: parentMerge },
+                commits: [{ sha: replacementHead }],
+                ...options.comparison,
             });
         }
         throw new Error(`unexpected native supersession query: ${query}`);
     };
     const port: SupersedePullRequestPort = {
         ...shellPort({ configDir: root, env: {}, dispose: () => undefined }, root, capture),
-        inspectReviewThreads: (number) => (number === parentNumber ? [] : defaultThreads),
         log: (message) => events.push(message),
     };
     return {
@@ -720,6 +799,9 @@ function nativeSupersessionFixture(
         comments: () => comments,
         moveOnReplay: () => {
             moveAt = commentReads + 1;
+        },
+        changeAuthorityDuringParentThreads: (number: number, read: number, patch: AuthorityChange) => {
+            pendingChange = { number, atParentThreadRead: parentThreadReads + read, patch };
         },
     };
 }
@@ -799,9 +881,18 @@ function sortedKeysEverywhere(value: unknown): boolean {
 }
 
 describe('pull-request supersession', () => {
-    it('carries the native eleven-argument CLI through serialization and distinct-parent ancestry proof', async () => {
+    it.each([
+        { label: 'correct', comparison: {}, admitted: true },
+        { label: 'wrong terminal', comparison: { commits: [{ sha: movedHead }] }, admitted: false },
+        { label: 'missing', comparison: { commits: undefined }, admitted: false },
+        {
+            label: 'contradictory terminal',
+            comparison: { commits: [{ sha: replacementHead }, { sha: parentMerge }] },
+            admitted: false,
+        },
+    ])('binds the native eleven-argument CLI to its $label comparison head', async ({ comparison, admitted }) => {
         await withLockRoot(async (root) => {
-            const current = nativeSupersessionFixture(root, undefined, true);
+            const current = nativeSupersessionFixture(root, undefined, true, {}, { comparison });
             const lineagePath = join(root, 'lineage.json');
             writeFileSync(lineagePath, JSON.stringify(repairedLineage));
             const nativeSerialize = withPullRequestMutationLock;
@@ -827,24 +918,29 @@ describe('pull-request supersession', () => {
                     })
             );
             try {
-                await expect(
-                    runSupersedePullRequestCli([
-                        String(oldNumber),
-                        '--head',
-                        head,
-                        '--replacement',
-                        String(replacementNumber),
-                        '--superseded-parent',
-                        String(parentNumber),
-                        '--parent-replacement',
-                        String(parentReplacementNumber),
-                        '--lineage',
-                        lineagePath,
-                    ])
-                ).resolves.toBe(0);
-                expect(current.state()).toBe('CLOSED');
-                expect(current.events.filter((event) => event === 'parent-merge-ancestry')).toHaveLength(4);
-                expect(current.events[current.events.indexOf('close') - 1]).toBe('old-core');
+                const result = runSupersedePullRequestCli([
+                    String(oldNumber),
+                    '--head',
+                    head,
+                    '--replacement',
+                    String(replacementNumber),
+                    '--superseded-parent',
+                    String(parentNumber),
+                    '--parent-replacement',
+                    String(parentReplacementNumber),
+                    '--lineage',
+                    lineagePath,
+                ]);
+                if (admitted) {
+                    await expect(result).resolves.toBe(0);
+                    expect(current.state()).toBe('CLOSED');
+                    expect(current.events.filter((event) => event === 'parent-merge-ancestry')).toHaveLength(4);
+                    expect(current.events[current.events.indexOf('close') - 1]).toBe('old-core');
+                } else {
+                    await expect(result).rejects.toThrow(/ancestry/i);
+                    expect(current.state()).toBe('OPEN');
+                    expect(current.events.filter((event) => /^(?:close|delete)$/.test(event))).toEqual([]);
+                }
                 expect(
                     readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
                 ).toBeUndefined();
@@ -915,6 +1011,95 @@ describe('pull-request supersession', () => {
             });
         }
     );
+    it.each(
+        [
+            { authority: 'parent', number: parentNumber, patch: { state: 'OPEN', closedAt: null } },
+            { authority: 'child replacement', number: replacementNumber, patch: { head: movedHead } },
+            { authority: 'parent replacement', number: parentReplacementNumber, patch: { head: movedHead } },
+        ].flatMap((authority) =>
+            [
+                { phase: 'before write', read: 2, closed: false, created: 0 },
+                { phase: 'during pre-close proof', read: 3, closed: false, created: 2 },
+                { phase: 'after close', read: 4, closed: true, created: 2 },
+            ].map((phase) => ({ ...authority, ...phase }))
+        )
+    )('rechecks native $authority core after its final dependent read $phase', async (testCase) => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
+            current.changeAuthorityDuringParentThreads(testCase.number, testCase.read, testCase.patch);
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).rejects.toThrow(testCase.closed ? /ambiguous/i : /core identity changed/i);
+            const changedAt = current.events.indexOf(`authority-changed:${testCase.number}`);
+            expect(changedAt).toBeGreaterThan(-1);
+            expect(current.events.slice(changedAt + 1)).toContain(`core:${testCase.number}`);
+            expect(current.events.filter((event) => event === 'comment')).toHaveLength(testCase.created);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(testCase.closed ? 1 : 0);
+            expect(current.state()).toBe(testCase.closed ? 'CLOSED' : 'OPEN');
+            expect(current.comments().map((comment) => comment.body)).toEqual(
+                testCase.closed ? [oldComment.body, receiptBody, lineageBody] : [oldComment.body]
+            );
+            expect(current.events.filter((event) => event.startsWith('pull-request-superseded:'))).toEqual([]);
+            if (testCase.closed) {
+                expect(current.events.filter((event) => event === 'delete')).toEqual([]);
+                expect(retainedOwner(root)).toBeDefined();
+            } else {
+                expect(current.events.filter((event) => event === 'delete')).toHaveLength(testCase.created);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
+            }
+        });
+    });
+    it.each([
+        { authority: 'parent', number: parentNumber, patch: { state: 'OPEN', closedAt: null } },
+        { authority: 'child replacement', number: replacementNumber, patch: { head: movedHead } },
+        { authority: 'parent replacement', number: parentReplacementNumber, patch: { head: movedHead } },
+    ])('refuses CLOSED replay when native $authority moves during its dependent thread read', async (testCase) => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true);
+            await runSerialized(
+                root,
+                current.port,
+                repairedLineage,
+                serializeFixture,
+                parentNumber,
+                parentReplacementNumber
+            );
+            const replayStart = current.events.length;
+            current.changeAuthorityDuringParentThreads(testCase.number, 1, testCase.patch);
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).rejects.toThrow(/core identity changed/i);
+            const replay = current.events.slice(replayStart);
+            expect(replay).toContain(`authority-changed:${testCase.number}`);
+            expect(replay.slice(replay.indexOf(`authority-changed:${testCase.number}`) + 1)).toContain(
+                `core:${testCase.number}`
+            );
+            expect(replay.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual(
+                []
+            );
+            expect(current.comments().map((comment) => comment.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                lineageBody,
+            ]);
+        });
+    });
     it('uses client mutation receipts for forward comment and close mutations', () => {
         const source = readFileSync(join(import.meta.dirname, '../supersedePullRequestGh.ts'), 'utf8');
         expect(source).toContain(
@@ -1309,10 +1494,41 @@ describe('pull-request supersession', () => {
                     status: 'ahead',
                     ahead_by: 3,
                     behind_by: 0,
+                    commits: [{ sha: replacementHead }],
                 });
             })
         ).toBe(true);
         expect(calls).toEqual([['api', `repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`]]);
+    });
+    it('binds the terminal head of a capped unpaginated comparison without requiring all commits', () => {
+        expect(
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, replacementHead, () =>
+                JSON.stringify({
+                    url: `https://api.github.com/repos/jcosta33/sourdaw/compare/${parentMerge}...${replacementHead}`,
+                    base_commit: { sha: parentMerge },
+                    merge_base_commit: { sha: parentMerge },
+                    status: 'ahead',
+                    ahead_by: 300,
+                    behind_by: 0,
+                    commits: [...Array.from({ length: 249 }, () => ({ sha: movedHead })), { sha: replacementHead }],
+                })
+            )
+        ).toBe(true);
+    });
+    it('accepts identical immutable objects without a terminal commit', () => {
+        expect(
+            inspectCommitAncestry('jcosta33/sourdaw', parentMerge, parentMerge, () =>
+                JSON.stringify({
+                    url: `https://api.github.com/repos/jcosta33/sourdaw/compare/${parentMerge}...${parentMerge}`,
+                    base_commit: { sha: parentMerge },
+                    merge_base_commit: { sha: parentMerge },
+                    status: 'identical',
+                    ahead_by: 0,
+                    behind_by: 0,
+                    commits: [],
+                })
+            )
+        ).toBe(true);
     });
     it.each([
         ['reversed', 'behind', replacementHead, 0, 3],
@@ -1348,6 +1564,11 @@ describe('pull-request supersession', () => {
         ['unknown status', { status: 'unknown' }],
         ['missing counts', { ahead_by: null }],
         ['contradictory counts', { behind_by: 1 }],
+        ['wrong terminal object', { commits: [{ sha: movedHead }] }],
+        ['missing terminal object', { commits: undefined }],
+        ['empty terminal object', { commits: [] }],
+        ['malformed terminal object', { commits: [{ sha: 'main' }] }],
+        ['contradictory terminal object', { commits: [{ sha: replacementHead }, { sha: parentMerge }] }],
     ])('fails closed on %s ancestry evidence', (label, patch) => {
         let response: unknown = patch;
         if (label !== 'status-only') {
@@ -1358,6 +1579,7 @@ describe('pull-request supersession', () => {
                 status: 'ahead',
                 ahead_by: 3,
                 behind_by: 0,
+                commits: [{ sha: replacementHead }],
                 ...patch,
             };
         }

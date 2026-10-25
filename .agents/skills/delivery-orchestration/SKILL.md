@@ -121,11 +121,17 @@ parent's canonical receipt and total live finding lineage must name its own
 replacement, while the child keeps its independent lineage to the child
 replacement. The parent's replacement merge commit must be an ancestor of the
 child replacement's source head. The read-only comparison binds the repository,
-ordered full commit SHAs, base object and merge-base object; a branch match or
+ordered full commit SHAs, base object, merge-base object and terminal descendant
+commit. The comparison has no paging parameters, so GitHub's terminal returned
+commit remains the newest even when its list is capped at 250. A branch match or
 status alone is insufficient, and unavailable evidence refuses. This path
 snapshots and revalidates all four identities, merge commits, parent markers and
 both old PR finding sets before the first child write, immediately before close,
-and after close. Pre-close refusals use the same marker compensation; post-close
+and after close. Each proof ends with independent core reads of every replacement
+and parent after the final dependent marker and thread reads, followed by the
+child's final core read. CLOSED replay uses the same final authority witnesses.
+These client reads cannot exclude changes after their respective observations.
+Pre-close refusals use the same marker compensation; post-close
 failure reports ambiguity and preserves the closed child's markers. The option
 does not infer a new parent from prose, retarget a branch, or change a registered
 stack. Ancestry proves dependency containment, not semantic replacement or product
