@@ -141,6 +141,13 @@ function applySplitTakeTransition(
     return [];
 }
 
+function prepareCreatedMidi(action: RestoreClipSplitStateAction) {
+    if (!action.payload.replacement.rightClip || action.payload.expected.rightClip) {
+        return null;
+    }
+    return createdClipMidiCapture({ phase: 'prepare', action, clipId: action.payload.rightClipId });
+}
+
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
     validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
@@ -153,10 +160,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             return { status: 'conflict' };
         }
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
-        const createdMidi =
-            action.payload.replacement.rightClip && !action.payload.expected.rightClip
-                ? createdClipMidiCapture({ phase: 'prepare', action, clipId: action.payload.rightClipId })
-                : null;
+        const createdMidi = prepareCreatedMidi(action);
         createdMidi?.stage(action.payload.replacement.rightMidi);
         const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
         const ownsPublication = capture ? captureProjectMutationAuthorization() : null;

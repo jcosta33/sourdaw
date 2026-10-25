@@ -1,7 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getMidiStoreState } from '#/modules/MIDI/useCases';
+import type { getMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createdClipMidiCapture } from '../createdClipMidiCapture';
@@ -64,7 +64,9 @@ function install(snapshot: ReturnType<typeof constructed>): void {
 
 function prepare(creator: ReturnType<typeof action>) {
     const prepared = createdClipMidiCapture({ phase: 'prepare', action: creator, clipId: 'copy' });
-    if (!prepared) throw new Error('Expected owned creation admission');
+    if (!prepared) {
+        throw new Error('Expected owned creation admission');
+    }
     return prepared;
 }
 
@@ -85,7 +87,7 @@ describe('createdClipMidiCapture execution authority', () => {
         install(output);
         expect(createdClipMidiCapture({ phase: 'take', action: creator, clipId: 'copy' })).toBeNull();
         expect(prepared.complete()).toBe(true);
-        output.notes.value[0]!.expression!.pressure![0]!.value = 0.75;
+        output.notes.value[0]!.expression.pressure[0]!.value = 0.75;
         expect(createdClipMidiCapture({ phase: 'take', action: action(), clipId: 'copy' })).toBeNull();
         expect(createdClipMidiCapture({ phase: 'take', action: creator, clipId: 'copy' })).toEqual(constructed());
         expect(createdClipMidiCapture({ phase: 'take', action: creator, clipId: 'copy' })).toBeNull();
@@ -127,18 +129,24 @@ describe('createdClipMidiCapture execution authority', () => {
             prepared.stage(constructed());
             install(constructed());
             expect(prepared.complete()).toBe(true);
-            if (change === 'owner') mocks.owner = {};
+            if (change === 'owner') {
+                mocks.owner = {};
+            }
             if (change === 'root') {
-                mocks.root = Automerge.clone(mocks.root!);
+                mocks.root = Automerge.clone(mocks.root);
                 mocks.identity = 'project-epoch-2';
             }
-            if (change === 'rollback') mocks.root = original;
+            if (change === 'rollback') {
+                mocks.root = original;
+            }
             if (change === 'frontier') {
-                mocks.root = Automerge.change(mocks.root!, (draft) => {
+                mocks.root = Automerge.change(mocks.root, (draft) => {
                     draft.name = 'Later project';
                 });
             }
-            if (change === 'discard') createdClipMidiCapture({ phase: 'discard', action: creator });
+            if (change === 'discard') {
+                createdClipMidiCapture({ phase: 'discard', action: creator });
+            }
             expect(createdClipMidiCapture({ phase: 'take', action: creator, clipId: 'copy' })).toBeNull();
         }
     );
