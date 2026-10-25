@@ -35,6 +35,30 @@ describe('BipolarSlider', () => {
         expect(onValueCommit).toHaveBeenCalledWith(expect.any(Number));
     });
 
+    it('commits the End key value before blur and does not commit it again on unmount', () => {
+        const onValueChange = vi.fn();
+        const onValueCommit = vi.fn();
+        const view = render(
+            <BipolarSlider
+                value={-20}
+                onValueChange={onValueChange}
+                onValueCommit={onValueCommit}
+                min={-60}
+                max={0}
+                aria-label="Threshold"
+            />
+        );
+        const slider = screen.getByRole('slider', { name: 'Threshold' });
+
+        fireEvent.keyDown(slider, { key: 'End' });
+        expect(onValueChange).toHaveBeenCalledWith(0);
+        expect(onValueCommit.mock.calls).toEqual([[0]]);
+
+        fireEvent.blur(slider);
+        view.unmount();
+        expect(onValueCommit.mock.calls).toEqual([[0]]);
+    });
+
     it.each(['metaKey', 'ctrlKey'])('commits a %s reset once without a later ghost commit', (modifier) => {
         const onValueChange = vi.fn();
         const onValueCommit = vi.fn();

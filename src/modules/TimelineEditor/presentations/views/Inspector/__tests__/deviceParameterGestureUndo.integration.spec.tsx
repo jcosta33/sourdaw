@@ -371,6 +371,30 @@ describe('Inspector continuous parameter gestures through real history', () => {
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-48);
     });
 
+    it('settles Compressor Threshold with End before blur through project, engine, and undo history', async () => {
+        const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+        const slider = screen.getByRole('slider', { name: 'Threshold' });
+
+        fireEvent.keyDown(slider, { key: 'End' });
+        await expectCommitted('comp-threshold', 0, 1, compressor.id);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(writes(compressor.id).at(-1)).toBe(0);
+
+        await act(() => undo());
+        expect(values(compressor.id)['comp-threshold']).toBe(-20);
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+        expect(writes(compressor.id).at(-1)).toBe(-20);
+        await act(() => redo());
+        expect(values(compressor.id)['comp-threshold']).toBe(0);
+        expect(rawValues(compressor.id)?.['comp-threshold']).toBe(0);
+        expect(writes(compressor.id).at(-1)).toBe(0);
+        expect(depth()).toBe(1);
+
+        fireEvent.blur(slider);
+        view.unmount();
+        expect(depth()).toBe(1);
+    });
+
     it('gives two parameter identities on two devices two independent entries', async () => {
         render(
             <>

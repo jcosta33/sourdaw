@@ -65,12 +65,27 @@ export const BipolarSlider = ({
     const normalizedDefault = range === 0 ? 50 : ((defaultValue - min) / range) * 100;
 
     const pendingValue = useRef<number | null>(null);
+    const settledValue = useRef<number | null>(null);
     const activePointerId = useRef<number | null>(null);
-    const commitPending = (): void => {
-        const pending = pendingValue.current;
+    useLayoutEffect(() => {
+        if (settledValue.current !== value) {
+            settledValue.current = null;
+        }
+    }, [value]);
+    const commitPending = (committed?: number[]): void => {
+        const normalizedCommit = committed?.[0];
+        const committedBeforeChange =
+            pendingValue.current === null && normalizedCommit !== undefined && activePointerId.current === null
+                ? min + (normalizedCommit / 100) * range
+                : null;
+        const pending = pendingValue.current ?? committedBeforeChange;
         pendingValue.current = null;
         activePointerId.current = null;
-        if (pending !== null) {
+        if (pending !== null && pending !== settledValue.current) {
+            if (committedBeforeChange !== null) {
+                onValueChange(committedBeforeChange);
+            }
+            settledValue.current = pending;
             onValueCommit?.(pending);
         }
     };
@@ -81,6 +96,10 @@ export const BipolarSlider = ({
             return;
         }
         const mapped = min + (v / 100) * range;
+        if (mapped === settledValue.current && pendingValue.current === null) {
+            return;
+        }
+        settledValue.current = null;
         if (onValueCommit) {
             pendingValue.current = mapped;
         }
