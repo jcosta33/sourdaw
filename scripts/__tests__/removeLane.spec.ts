@@ -201,6 +201,25 @@ function withUnusualIgnoredLane(fn: (input: { repository: string; lane: string; 
     });
 }
 
+function withLeadingLineFeedIgnoredLane(fn: (input: { repository: string; lane: string; ignored: string[] }) => void) {
+    withGitFixture(({ repository, git }) => {
+        const lane = join(repository, '.agents/worktrees/feature');
+        const protectedDirectory = join(lane, '\ndist');
+        mkdirSync(protectedDirectory, { recursive: true });
+        mkdirSync(join(lane, 'node_modules'), { recursive: true });
+        git(['init', '-b', 'main'], lane);
+        git(['config', 'user.name', 'Fixture'], lane);
+        git(['config', 'user.email', 'fixture@example.com'], lane);
+        writeFileSync(join(lane, '.gitignore'), 'receipt.json\nnode_modules/\n');
+        writeFileSync(join(protectedDirectory, 'keep.txt'), 'tracked sibling\n');
+        writeFileSync(join(protectedDirectory, 'receipt.json'), 'must survive\n');
+        writeFileSync(join(lane, 'node_modules', 'output.js'), 'disposable\n');
+        git(['add', '.gitignore', '\ndist/keep.txt'], lane);
+        git(['commit', '-m', 'fixture'], lane);
+        fn({ repository, lane, ignored: shellPort().ignored(lane) });
+    });
+}
+
 describe('disposableIgnored', () => {
     it.each([
         ['node_modules/', true],
@@ -244,6 +263,47 @@ describe('disposableIgnored', () => {
 });
 
 describe('ignored path framing', () => {
+    it('refuses removal before unlock when the first ignored pathname starts with a line feed', () => {
+        withLeadingLineFeedIgnoredLane(({ repository, lane, ignored }) => {
+            const { port, calls } = fakePort({
+                root: repository,
+                lane: worktree({ path: lane, locked: true, lockReason: AUTHOR_LOCK_REASON }),
+            });
+
+            expect(ignored).toContain('node_modules/');
+            expect(() =>
+                removeLane(lane, {
+                    ...port,
+                    ignored: () => ignored,
+                    clearGuardFailure: () => calls.push('clearGuardFailure'),
+                })
+            ).toThrow(/worktree contains ignored data/);
+            expect(ignored).toContain('\ndist/receipt.json');
+            expect(calls).not.toContain(`unlock:${lane}`);
+            expect(calls).not.toContain(`remove:${lane}`);
+            expect(calls).not.toContain('clearGuardFailure');
+        });
+    });
+
+    it('refuses stranding before receipt or branch deletion when the first pathname starts with a line feed', () => {
+        withLeadingLineFeedIgnoredLane(({ repository, lane, ignored }) => {
+            const { port, calls, receipts } = fakeStrandPort({
+                root: repository,
+                lane: worktree({ path: lane, locked: true, lockReason: AUTHOR_LOCK_REASON }),
+            });
+
+            expect(ignored).toContain('node_modules/');
+            expect(() => strandLane(lane, 'fixture', { ...port, ignored: () => ignored })).toThrow(
+                /worktree contains ignored data/
+            );
+            expect(ignored).toContain('\ndist/receipt.json');
+            expect(receipts).toEqual([]);
+            expect(calls).not.toContain(`unlock:${lane}`);
+            expect(calls).not.toContain(`remove:${lane}`);
+            expect(calls).not.toContain('branch:-D:feat/work');
+        });
+    });
+
     it('refuses removal before unlocking a protected path containing a line feed', () => {
         withUnusualIgnoredLane(({ repository, lane, ignored }) => {
             const { port, calls } = fakePort({

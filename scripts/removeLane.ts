@@ -71,8 +71,10 @@ export type LaneRemovalPort = {
     clearGuardFailure: (laneName: string) => void;
 };
 
+export type ShellCaptureOptions = { preserveStdout?: true };
+
 export type ShellRunner = {
-    capture: (command: string, args: string[]) => string;
+    capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
     run: (command: string, args: string[]) => void;
 };
 
@@ -668,7 +670,7 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
     }
 }
 
-function capture(command: string, args: string[]): string {
+function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
     const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
     if (result.error !== undefined) {
         throw result.error;
@@ -676,7 +678,7 @@ function capture(command: string, args: string[]): string {
     if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
     }
-    return result.stdout.trim();
+    return options?.preserveStdout === true ? result.stdout : result.stdout.trim();
 }
 
 function run(command: string, args: string[]): void {
@@ -738,16 +740,11 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
         ignored: (path) =>
             shell
-                .capture('git', [
-                    '-C',
-                    path,
-                    'ls-files',
-                    '--others',
-                    '--ignored',
-                    '--exclude-standard',
-                    '--directory',
-                    '-z',
-                ])
+                .capture(
+                    'git',
+                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+                    { preserveStdout: true }
+                )
                 .split('\0')
                 .filter((candidate) => candidate !== ''),
         operation: (path) => {
