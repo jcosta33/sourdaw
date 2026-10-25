@@ -1,0 +1,68 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_3168504f6ce387::t_3d6ddfc39d3cb1 863
+  s_3168504f6ce387::t_fa2bfa06c82bb7 864-865
+  s_3168504f6ce387::t_32423e5d04c93b 862
+  s_3168504f6ce387::t_18f7c16080b4fb 1667-1691
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_3168504f6ce387::t_e90b15f4c561dc 168,236-243,245-255,257-263,265,272-276,288-296,334-336,492-493,496-501,610
+  s_3168504f6ce387::t_e8dd914ee1860e 197,203,211-213,216-223,326,328-329
+src/modules/AiRuntime/useCases/agentReference/__tests__/getApplicationProtectedObjects.spec.ts
+  s_3168504f6ce387::t_be9632b8dc06e4 57-100,112-114,117-133
+  s_3168504f6ce387::t_c5d8af2289ea49 5,101-111,115-116
+  s_3168504f6ce387::t_37560cab305e2d 134-141
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_3168504f6ce387::t_20ad63983e914a 4,9,169,201-211,737-787,789-791,793-856,895-924
+  s_3168504f6ce387::t_c30596af26e604 620-624,707-710,714
+  s_3168504f6ce387::t_8ad0524dbb2fe5 792
+  s_3168504f6ce387::t_fa4536292d036b 857-886,892-894
+  s_3168504f6ce387::t_be9632b8dc06e4 788,1156-1180
+  s_3168504f6ce387::t_393017fb871b53 5,8,10-11,625-706,711-713,715-721,887-891
+  s_3168504f6ce387::t_32423e5d04c93b 212,218-222
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_3168504f6ce387::t_20ad63983e914a 5092-5098,6626-6650
+  s_567a084d0540c4::t_84f3ac3f130cff 6651
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_3168504f6ce387::t_32423e5d04c93b 388-402,405-407,409-410
+.agents/skills/review-stances/correctness.md
+  s_3168504f6ce387::t_9a9aaf4ab9822d 89-104
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_9a9aaf4ab9822d 519-535
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3168504f6ce387::t_216ddee9010ddc 7137-7141
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_3168504f6ce387::t_e8dd914ee1860e 41-42,45-46
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_3168504f6ce387::t_e90b15f4c561dc 44-49,55-56,114,119-129,138,190,202,215,227
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_3168504f6ce387::t_be9632b8dc06e4 343-359
+  s_3168504f6ce387::t_fa2bfa06c82bb7 360-368,370,438-439
+  s_3168504f6ce387::t_fa4536292d036b 328-342
+  s_3168504f6ce387::t_18f7c16080b4fb 369,371-437
+src/modules/AiRuntime/useCases/agentReference/refinementRemovalReading.ts
+  s_3168504f6ce387::t_fa2bfa06c82bb7 263-271
+  s_3168504f6ce387::t_32423e5d04c93b 7,56-57,257-262,272-274,290-301,303,312-314,316-317,381,398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b51c377532b71751b219c4dcae40dfcd141c6f62",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
