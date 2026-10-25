@@ -438,13 +438,6 @@ export function reviewStanceFloor(plan: Pick<ReviewRiskPlan, 'riskClasses'>): nu
     return fixed ?? Math.min(DEFAULT_STANCE_FLOOR, earnedStances(plan.riskClasses).length);
 }
 
-/** Specialist classes whose review must include at least one strongest-tier draw. */
-export const STRONGEST_DRAW_CLASSES: ReadonlySet<ReviewRiskClass> = new Set([
-    'native-security',
-    'realtime-audio',
-    'undo',
-]);
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

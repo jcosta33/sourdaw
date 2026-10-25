@@ -216,7 +216,7 @@ function fakePort(
             // Every valid fixture must carry the reviewer model, as real review.json files now do;
             // a fixture that sets the key at all (even to undefined) opts out to exercise refusal.
             if (typeof json === 'object' && json !== null && !Array.isArray(json) && !('reviewerModel' in json)) {
-                return { ...json, reviewerModel: 'glm-5.3-flash' };
+                return { ...json, reviewerModel: 'claude-sonnet-4.5' };
             }
             return json;
         },
@@ -339,7 +339,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
             body: 'Attacked; held.',
             comments: [],
             evidence: approvalEvidence(head),
-            reviewerModel: 'glm-5.3-flash',
+            reviewerModel: 'claude-sonnet-4.5',
         })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
@@ -1162,7 +1162,7 @@ describe('review publish', () => {
                             body: 'Attacked; held.',
                             comments: [],
                             evidence: approvalEvidence('a'.repeat(40)),
-                            reviewerModel: 'glm-5.3-flash',
+                            reviewerModel: 'claude-sonnet-4.5',
                         };
                     },
                     bundleFileExists: (path) => existsSync(path),
@@ -1386,7 +1386,7 @@ describe('review publish', () => {
         const { port, calls } = fakePort({
             labels: [
                 { name: 'enhancement', description: 'New feature or request' },
-                { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
             ],
         });
 
@@ -1408,34 +1408,34 @@ describe('review publish', () => {
 
     it('posts the same-model fallback through the publish path when exhaustion is recorded', () => {
         const { port, calls } = fakePort({
-            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            labels: [{ name: 'claude-sonnet-4', description: 'Authored by claude-sonnet-4' }],
             json: {
                 format: 'compact-v1',
                 event: 'APPROVE',
-                body: 'Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.',
+                body: 'Same-model fallback: reviewed on claude-sonnet-4 after every other harness was unavailable.',
                 comments: [],
                 evidence: approvalEvidence(),
-                reviewerModel: 'glm-5.3',
+                reviewerModel: 'claude-sonnet-4',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
 
         expect(publishReview(42, port)).toBe(99);
         expect(calls[1]).toContain(
-            'APPROVE:Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.'
+            'APPROVE:Same-model fallback: reviewed on claude-sonnet-4 after every other harness was unavailable.'
         );
     });
 
     it('refuses the same-model fallback on the publish path when the body does not name the model', () => {
         const { port, calls } = fakePort({
-            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            labels: [{ name: 'claude-sonnet-4', description: 'Authored by claude-sonnet-4' }],
             json: {
                 format: 'compact-v1',
                 event: 'APPROVE',
                 body: 'The change held under attack.',
                 comments: [],
                 evidence: approvalEvidence(),
-                reviewerModel: 'glm-5.3',
+                reviewerModel: 'claude-sonnet-4',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
@@ -1446,14 +1446,14 @@ describe('review publish', () => {
 
     it('refuses the same-model fallback when the body names only the longer prefix-sharing model', () => {
         const { port, calls } = fakePort({
-            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            labels: [{ name: 'claude-sonnet-4', description: 'Authored by claude-sonnet-4' }],
             json: {
                 format: 'compact-v1',
                 event: 'APPROVE',
-                body: 'Reviewed on glm-5.3-flash under the same-model fallback.',
+                body: 'Reviewed on claude-sonnet-4.5 under the same-model fallback.',
                 comments: [],
                 evidence: approvalEvidence(),
-                reviewerModel: 'glm-5.3',
+                reviewerModel: 'claude-sonnet-4',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
@@ -1465,7 +1465,7 @@ describe('review publish', () => {
     it('treats a bare label name as descriptive, never as the authoring model', () => {
         // A descriptive label that merely shares a model's name carries no `Authored by `
         // description fence, so it must not trigger the diversity refusal.
-        const { port } = fakePort({ labels: [{ name: 'glm-5.3-flash' }] });
+        const { port } = fakePort({ labels: [{ name: 'claude-sonnet-4.5' }] });
 
         expect(publishReview(42, port)).toBe(99);
     });
@@ -2401,7 +2401,7 @@ describe('shellPort postReview state verification', () => {
                     headRefOid: 'headsha',
                     labels: [
                         { name: 'bug', description: 'Something is broken' },
-                        { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                        { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
                         { name: 'no-description' },
                     ],
                 });
@@ -2415,7 +2415,7 @@ describe('shellPort postReview state verification', () => {
             head: 'headsha',
             labels: [
                 { name: 'bug', description: 'Something is broken' },
-                { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
                 { name: 'no-description' },
             ],
         });
@@ -2438,7 +2438,7 @@ describe('shellPort postReview state verification', () => {
                 body: 'Attacked; held.',
                 comments: [],
                 evidence: approvalEvidence(head),
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'claude-sonnet-4.5',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');
@@ -2451,7 +2451,7 @@ describe('shellPort postReview state verification', () => {
                     return JSON.stringify({
                         state: 'OPEN',
                         headRefOid: head,
-                        labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+                        labels: [{ name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' }],
                     });
                 }
                 throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
@@ -5189,11 +5189,11 @@ describe('fresh reviewer dossier publication', () => {
         ].join('\n');
     }
 
-    /** The round's default draws: three distinct stances, one of them strongest. */
+    /** The round's default draws: three distinct stances on an affordable standard model. */
     const defaultDraws: ReviewDraw[] = [
-        { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
-        { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
-        { stance: 'stale binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+        { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+        { stance: 'test-validity', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+        { stance: 'stale binding', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
     ];
 
     const findingDraws = defaultDraws.map((draw, index): ReviewDraw =>
@@ -5207,7 +5207,7 @@ describe('fresh reviewer dossier publication', () => {
         body: 'Attacked the dossier gate; it held.',
         comments: [],
         evidence: approvalEvidence(head),
-        reviewerModel: 'glm-5.3-flash',
+        reviewerModel: 'claude-sonnet-4.5',
     };
 
     /** The canonical record publication itself derives for the given round. */
@@ -5264,7 +5264,7 @@ describe('fresh reviewer dossier publication', () => {
                     sources: findingSources,
                 },
             ],
-            reviewerModel: 'glm-5.3-flash',
+            reviewerModel: 'claude-sonnet-4.5',
         };
     }
 
@@ -5526,12 +5526,12 @@ describe('fresh reviewer dossier publication', () => {
         ['missing sources', undefined, /comment 0 requires sources/u],
         [
             'unknown source',
-            [{ stance: 'uncompleted', reviewerModel: 'review-model' }],
+            [{ stance: 'uncompleted', reviewerModel: 'gpt-6-luna' }],
             /source.*does not name a completed findings draw/u,
         ],
         [
             'clean source',
-            [{ stance: 'test-validity', reviewerModel: 'review-model' }],
+            [{ stance: 'test-validity', reviewerModel: 'gpt-6-luna' }],
             /source.*does not name a completed findings draw/u,
         ],
     ])('refuses %s before any dossier write, journal, or remote publication', (_label, sources, message) => {
@@ -5602,7 +5602,7 @@ describe('fresh reviewer dossier publication', () => {
             // Discards stay in review.json: they are shape-checked, never posted, and never recorded.
             expect(discardedDispositions(persisted)).toEqual([]);
             expect(completedStances(persisted).map((draw) => [draw.stance, draw.modelTier, draw.outcome])).toEqual([
-                ['correctness', 'strongest', 'clean'],
+                ['correctness', 'standard', 'clean'],
                 ['test-validity', 'standard', 'clean'],
                 ['stale binding', 'standard', 'clean'],
             ]);
@@ -5682,23 +5682,41 @@ describe('fresh reviewer dossier publication', () => {
             }
         );
 
-        it('refuses a specialist round with no strongest draw, and publishes it with one', () => {
+        it('publishes a specialist round with affordable standard draws at the unchanged stance floor', () => {
             expect(governancePlan.riskClasses).toEqual(['native-security']);
             const standard = defaultDraws.map((draw): ReviewDraw => ({ ...draw, tier: 'standard' }));
             const governanceDiff = patchAdding('scripts/publishReview.ts', 1);
-            const refused = dossierFixture({ plan: governancePlan, draws: standard, diff: governanceDiff });
-            try {
-                expect(refusedBeforeSideEffects(refused)).toBe(
-                    'review.json draws need at least one strongest-tier draw for the native-security risk plan'
-                );
-            } finally {
-                removeTemporaryDirectory(refused.root);
-            }
-            const admitted = dossierFixture({ plan: governancePlan, diff: governanceDiff });
+            const admitted = dossierFixture({ plan: governancePlan, draws: standard, diff: governanceDiff });
             try {
                 expect(publishReview(number, admitted.port)).toBe(99);
             } finally {
                 removeTemporaryDirectory(admitted.root);
+            }
+        });
+
+        it.each([
+            ['premium summary', { reviewerModel: 'gpt-6.1-sol' }, /review.json reviewerModel.*permitted low-cost/u],
+            [
+                'premium later draw',
+                { draws: [...defaultDraws.slice(0, 2), { ...defaultDraws[2], reviewerModel: 'claude-opus-4.5' }] },
+                /draws\[2\].reviewerModel.*permitted low-cost/u,
+            ],
+            [
+                'strongest metadata',
+                { draws: [{ ...defaultDraws[0], tier: 'strongest' }, ...defaultDraws.slice(1)] },
+                /economy or standard/u,
+            ],
+            [
+                'exhaustion waiver',
+                { reviewerModel: 'gpt-6-astra', modelExhaustion: 'All affordable models were unavailable.' },
+                /permitted low-cost/u,
+            ],
+        ])('refuses a fresh %s before dossier, journal or remote writes', (_label, fields, message) => {
+            const fixture = dossierFixture({ document: { ...reviewDocument, ...fields } });
+            try {
+                expect(refusedBeforeSideEffects(fixture)).toMatch(message);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
             }
         });
 
@@ -6225,15 +6243,24 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('publishes a pre-ADR bundle whose unpublished record stands in for the draws its review.json lacks', () => {
+    it('refuses a premium unpublished historical record before a new publication without rewriting it', () => {
         const historical = canonicalPersistedDossier();
         const fixture = dossierFixture({ plan: riskPlan(), dossier: historical, draws: null });
         try {
             writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(parseReviewDossier(historical)));
             const before = readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8');
             expect(serializeReviewDossier(parseReviewDossier(JSON.parse(before)))).toBe(before);
+            expect(refusedBeforeSideEffects(fixture)).toMatch(/permitted low-cost review model/u);
+            expect(readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8')).toBe(before);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes an affordable pre-ADR unpublished record when review.json lacks draws', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: derivedRecord().dossier, draws: null });
+        try {
             expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.calls).toContain('post');
             expect(fixture.writes).toHaveLength(1);
             expect(publishedReviewId(parseReviewDossier(fixture.readDossier()))).toBe(99);
         } finally {
@@ -6305,7 +6332,7 @@ describe('fresh reviewer dossier publication', () => {
             draws: findingDraws,
             body: 'One blocking finding.',
             comments: [comment],
-            reviewerModel: 'glm-5.3-flash',
+            reviewerModel: 'claude-sonnet-4.5',
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6377,7 +6404,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'claude-sonnet-4.5',
             },
             diff: [
                 'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6578,7 +6605,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'claude-sonnet-4.5',
             },
             diff,
             reviewComments: [],
@@ -6621,7 +6648,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'claude-sonnet-4.5',
             },
             diff,
             reviewComments: [{ id: 2329000043, path: 'scripts/other.ts', line: 5, side: 'RIGHT', body: 'rendered' }],
@@ -6699,7 +6726,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'claude-sonnet-4.5',
             },
             diff,
             remoteReviews: {
@@ -6778,10 +6805,10 @@ describe('fresh reviewer dossier publication', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
             draws: [
-                { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
-                { stance: 'correctness', reviewerModel: 'review-model-2', tier: 'strongest', outcome: 'findings' },
-                { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
-                { stance: 'stale binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+                { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+                { stance: 'correctness', reviewerModel: 'gpt-5.6-terra', tier: 'standard', outcome: 'findings' },
+                { stance: 'test-validity', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+                { stance: 'stale binding', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
             ],
         });
         try {
@@ -6793,7 +6820,7 @@ describe('fresh reviewer dossier publication', () => {
                 persisted.events
                     .filter((event) => event.kind === 'stance-completed')
                     .map((event) => event.reviewerModel)
-            ).toEqual(['review-model', 'review-model-2', 'review-model', 'review-model']);
+            ).toEqual(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-luna', 'gpt-6-luna']);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -6802,10 +6829,10 @@ describe('fresh reviewer dossier publication', () => {
     it('keeps the whole-round fallback working when the dossier draws carry no authoring-model draw', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
-            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            labels: [{ name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' }],
             document: {
                 ...reviewDocument,
-                body: 'Whole-round fallback: reviewed on glm-5.3-flash after every other harness was unavailable.',
+                body: 'Whole-round fallback: reviewed on claude-sonnet-4.5 after every other harness was unavailable.',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
@@ -6875,7 +6902,7 @@ describe('fresh reviewer dossier publication', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
             labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-            document: { ...reviewDocument, body: mixedBody },
+            document: { ...reviewDocument, reviewerModel: 'claude-opus-4.5', body: mixedBody },
             draws: null,
             dossier: JSON.parse(serializeReviewDossier(authorized)),
             remoteReviews: { 99: landedReview },
