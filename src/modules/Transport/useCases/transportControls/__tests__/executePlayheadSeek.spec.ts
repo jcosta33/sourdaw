@@ -88,7 +88,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'probe' })),
     repositionNativeLiveGraphSession: mockReposition,
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mockResetMidiState }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    resetMidiState: mockResetMidiState,
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
 describe('executePlayheadSeek', () => {

@@ -331,14 +331,18 @@ the shared primary checkout holding credentials and other lanes. Its gitignored 
 are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds review documents,
 and `.env.sourdaw-*` credentials live there.
 
-`pnpm lane:open [issue] [slug]` fetches and branches from `origin/main`, locks the lane
+`pnpm lane:open [issue] [slug] --type <type>` fetches and branches from `origin/main`, locks the lane
 `active:sourdaw-author`, then stays offline without minting or spawning `gh`. To create a dependent
 lane, pass `--stack-on <absolute-parent-lane>`; the clean, committed, owned parent must belong to the
 same primary repository, and the command records the exact parent lineage under
 `.agents/lane-stacks/`. The selector asserts caller ownership within the existing same-account trust
 boundary; role locks alone do not prove it. Slugs cannot be purely numeric: bare numbers mean issues.
-Supply the ticket number for `agent/<issue>/<slug>`; otherwise use `agent/<slug>`. PRs close their
-issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
+`<type>` is the conventional-commit type of the change, from the set pull-request titles use
+(`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`; never `style`), and
+`lane:open` refuses a missing or unknown one. Supply the ticket number for `<type>/<issue>/<slug>`;
+otherwise use `<type>/<slug>`. Lanes opened before types existed keep their `agent/<issue>/<slug>`
+or `agent/<slug>` branches, which every script still recognizes; no new lane is created under
+`agent/`. PRs close their issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
 your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swaps the issue onto
 `status:active` and moves its board items to In progress; `lane:open` prints the command. The
 issue-bound and issueless procedures are in [delivery-orchestration]. Lane worktrees carry the

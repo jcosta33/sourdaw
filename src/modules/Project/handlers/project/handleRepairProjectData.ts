@@ -1,3 +1,5 @@
+import { Counter, ImmutableString } from '@automerge/automerge';
+
 import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { DOC_PREFIX_ROOT, mutateCrdtDoc, projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
 import { isTransportIdle } from '#/modules/Transport/useCases';
@@ -14,15 +16,44 @@ function isContainer(value: unknown): value is FieldContainer {
     return typeof value === 'object' && value !== null;
 }
 
+function writeResolvedValue(container: FieldContainer, key: string | number, value: unknown): void {
+    if (
+        !isContainer(value) ||
+        value instanceof Date ||
+        value instanceof Uint8Array ||
+        value instanceof Counter ||
+        value instanceof ImmutableString
+    ) {
+        container[key] = value;
+        return;
+    }
+
+    // Attached map/list proxies cannot be cloned or assigned to another field.
+    // Build fresh containers, then write each leaf through Automerge's scalar
+    // setter: its bulk subtree importer can round doubles just below an integer.
+    container[key] = Array.isArray(value) ? [] : {};
+    const replacement = container[key];
+    if (!isContainer(replacement)) {
+        throw new Error('Expected an Automerge container for the resolved conflict value');
+    }
+    if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index += 1) {
+            writeResolvedValue(replacement, index, value[index]);
+        }
+        return;
+    }
+    for (const [childKey, childValue] of Object.entries(value)) {
+        writeResolvedValue(replacement, childKey, childValue);
+    }
+}
+
 /**
  * Write the value a conflicted field already resolved to back onto that field.
  *
  * A conflicted path stays conflicted until some change names a successor, so
  * re-asserting the current value closes the conflict without choosing between
  * the concurrent alternatives — the winner was already picked when the document
- * resolved; this only records that pick as a deliberate change. The copy is
- * structural: assigning a document object onto itself would re-import it as a
- * new subtree anyway, and a plain copy keeps that explicit.
+ * resolved; this only records that pick as a deliberate change.
  */
 function reassertResolvedValue(draft: FieldContainer, path: readonly (number | string)[]): void {
     const key = path[path.length - 1];
@@ -43,7 +74,7 @@ function reassertResolvedValue(draft: FieldContainer, path: readonly (number | s
     if (current === undefined) {
         return;
     }
-    container[key] = isContainer(current) ? structuredClone(current) : current;
+    writeResolvedValue(container, key, current);
 }
 
 /**
