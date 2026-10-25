@@ -39,6 +39,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
     adjustmentLayerStore: { value: { layers: [] }, subscribe: vi.fn() },
     takeLaneStore: { value: { lanes: [] }, subscribe: vi.fn() },
+    vcaGroupStore: { value: { groups: [] }, subscribe: vi.fn(() => () => {}) },
     deriveVcaMultiplier: vi.fn(() => 1),
     getVcaGroupsState: vi.fn(() => ({})),
     shouldCreateLiveTrackStrip: vi.fn(() => false),

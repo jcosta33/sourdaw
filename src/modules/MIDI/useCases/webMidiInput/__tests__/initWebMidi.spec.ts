@@ -78,6 +78,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     getGainEnvelopeSeries: vi.fn(),
     readMusicalRange: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
+    vcaGroupStore: { value: { groups: [] }, subscribe: vi.fn(() => () => {}) },
     setWarpState: vi.fn(),
     getStoredWarpState: vi.fn(),
     warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
