@@ -60,6 +60,15 @@ export function persistedReviewDossier(raw: unknown): ReviewDossier | undefined 
     return parseReviewDossier(raw);
 }
 
+function requiredFindingSources(comment: ReviewDossierComment, index: number): ReviewFindingSource[] {
+    if (comment.sources === undefined) {
+        fail(
+            `review.json comment ${index} requires sources: non-empty { stance, reviewerModel } pairs naming the completed findings draws that independently detected it`
+        );
+    }
+    return comment.sources;
+}
+
 function assembleFromDraws(input: ReviewDossierBuildInput, draws: readonly ReviewDraw[]): ReviewDossier {
     const stanceEvents = draws.map((draw): ReviewDossierEvent => ({
         kind: 'stance-completed',
@@ -68,21 +77,14 @@ function assembleFromDraws(input: ReviewDossierBuildInput, draws: readonly Revie
         modelTier: draw.tier,
         outcome: DRAW_OUTCOMES[draw.outcome],
     }));
-    const findingEvents = input.comments.map((comment, index): ReviewDossierEvent => {
-        if (comment.sources === undefined) {
-            fail(
-                `review.json comment ${index} requires sources: non-empty { stance, reviewerModel } pairs naming the completed findings draws that independently detected it`
-            );
-        }
-        return {
-            kind: 'finding-accepted',
-            findingId: `comment-${index}`,
-            path: comment.path,
-            line: comment.line,
-            side: comment.side,
-            sources: comment.sources,
-        };
-    });
+    const findingEvents = input.comments.map((comment, index): ReviewDossierEvent => ({
+        kind: 'finding-accepted',
+        findingId: `comment-${index}`,
+        path: comment.path,
+        line: comment.line,
+        side: comment.side,
+        sources: requiredFindingSources(comment, index),
+    }));
     return assembleReviewDossier({
         plan: input.plan,
         events: [...stanceEvents, ...findingEvents],
@@ -170,9 +172,9 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
 /**
  * The record a publication persists or replays. A persisted record that already binds its
  * publication replays unchanged. Otherwise the record is derived from the document's `draws`; a
- * document without them falls back to a persisted record that never bound its publication — the
- * shape a pre-ADR-0054 run left behind when it crashed before its POST — and with neither the
- * publication is refused. A persisted record that claims a publication is not trusted on that claim
+ * document without them may fall back to an unpublished persisted record only when its findings
+ * carry explicit sources. Historical unknown attribution is reserved for proven landed recovery.
+ * With neither draws nor a record the publication is refused. A claimed publication is not trusted
  * alone: the publish path's replay must still prove the named review stands live and exact.
  */
 export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
@@ -182,12 +184,34 @@ export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossie
     return { dossier, canonical: serializeReviewDossier(dossier), fromPersisted: dossier === persisted };
 }
 
+/**
+ * Recovery has already proven a stable exact landed reviewer publication and its journal payload.
+ * Reuse the verified record that preceded that POST, preserving unknown historical attribution.
+ * This path never authorizes a new POST; fresh publications must use buildReviewDossier instead.
+ */
+export function recoverReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
+    const persisted = persistedReviewDossier(input.persisted);
+    if (persisted === undefined) {
+        return buildReviewDossier(input);
+    }
+    assertPublicationAgreement(persisted, input);
+    return { dossier: persisted, canonical: serializeReviewDossier(persisted), fromPersisted: true };
+}
+
 function selectPublicationRecord(persisted: ReviewDossier | undefined, input: ReviewDossierBuildInput): ReviewDossier {
-    if (persisted !== undefined && (publishedReviewId(persisted) !== undefined || input.draws === undefined)) {
+    if (persisted !== undefined && publishedReviewId(persisted) !== undefined) {
         return persisted;
     }
     if (input.draws !== undefined) {
         return assembleFromDraws(input, input.draws);
+    }
+    if (persisted !== undefined) {
+        // An unpublished record is no evidence that a review landed. A fresh publication still
+        // needs explicit finding sources when a pre-ADR document carries no draws of its own.
+        for (const [index, comment] of input.comments.entries()) {
+            requiredFindingSources(comment, index);
+        }
+        return persisted;
     }
     return fail(
         `review.json must carry draws for head ${input.plan.headSha}: one { stance, reviewerModel, tier, outcome } entry per completed blind draw`

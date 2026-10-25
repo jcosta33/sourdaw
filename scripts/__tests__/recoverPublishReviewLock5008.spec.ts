@@ -664,6 +664,50 @@ describe('review-publication recovery of a landed review among thread-reply revi
         expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
     });
 
+    it('recovers a source-absent historical lost response with its original draws and never posts again', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const bundle = bundlePath(fixture.root);
+        expect(JSON.parse(readFileSync(join(bundle, 'review.json'), 'utf8')).draws).toEqual(roundDraws);
+        const before = readDossier(fixture.root);
+        const remote = fakeGitHub({ posted: true });
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+        const recovered = readDossier(fixture.root);
+        expect(publishedReviewId(recovered)).toBe(landedReviewId);
+        expect(publishedFindings(recovered).map((finding) => finding.commentId)).toEqual(landedCommentIds);
+        expect(recovered.events.slice(0, before.events.length)).toEqual(before.events);
+        const findings = recovered.events.filter((event) => event.kind === 'finding-accepted');
+        expect(findings).toHaveLength(2);
+        for (const finding of findings) {
+            expect(finding).not.toHaveProperty('sources');
+        }
+        expect(lockOid(fixture.root)).toBeUndefined();
+        const bound = dossierText(fixture.root);
+        expect(publishReview(number, publicationPort(fixture.root, remote.gh))).toBe(landedReviewId);
+        expect(dossierText(fixture.root)).toBe(bound);
+        expect(remote.state.posts).toBe(0);
+    });
+
+    it.each([true, false])(
+        'refuses a fresh source-absent review over an unpublished historical record, draws=%s',
+        (withDraws) => {
+            const fixture = fixtureFor({ planCarrying: true });
+            if (!withDraws) {
+                const { draws: _draws, ...withoutDraws } = reviewDocumentJson;
+                writeFileSync(join(bundlePath(fixture.root), 'review.json'), JSON.stringify(withoutDraws));
+            }
+            const before = dossierText(fixture.root);
+            const remote = fakeGitHub({ posted: false });
+
+            expect(() => publishReview(number, publicationPort(fixture.root, remote.gh))).toThrow(
+                /comment 0 requires sources/u
+            );
+            expect(dossierText(fixture.root)).toBe(before);
+            expect(remote.state.posts).toBe(0);
+        }
+    );
+
     it('records the recovered publication in the dossier so a later publish replays it without posting', async () => {
         const fixture = fixtureFor({ planCarrying: true });
         const remote = fakeGitHub({ posted: false });

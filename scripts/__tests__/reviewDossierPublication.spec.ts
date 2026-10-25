@@ -8,7 +8,7 @@ import {
     serializeReviewDossier,
 } from '../reviewDossier.ts';
 import { buildDossier } from '../reviewDossierChain.ts';
-import { buildReviewDossier, persistedReviewDossier } from '../reviewDossierPublication.ts';
+import { buildReviewDossier, persistedReviewDossier, recoverReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
     completedStances,
@@ -268,12 +268,10 @@ describe('buildReviewDossier', () => {
         expect(discardedDispositions(result.dossier)).toHaveLength(1);
     });
 
-    it('falls back to an unpublished historical record when the document carries no draws', () => {
-        const persisted = historicalRecord(false);
-        const result = build({ persisted, draws: undefined, comments: [LOCATION] });
-
-        expect(result.fromPersisted).toBe(true);
-        expect(completedStances(result.dossier).map((draw) => draw.stance)).toEqual(['correctness', 'test-validity']);
+    it('refuses fresh source-absent findings over an unpublished historical record without draws', () => {
+        expect(() => build({ persisted: historicalRecord(false), draws: undefined, comments: [LOCATION] })).toThrow(
+            /comment 0 requires sources/u
+        );
     });
 
     it('refuses a fresh document without draws when no persisted record exists', () => {
@@ -321,6 +319,43 @@ describe('buildReviewDossier', () => {
         expect(persistedReviewDossier([])).toBeUndefined();
         expect(persistedReviewDossier({ format: 'dossier-input-v1' })).toBeUndefined();
         expect(persistedReviewDossier(historicalRecord(false))?.format).toBe('dossier-v1');
+    });
+});
+
+describe('recovered landed review dossier', () => {
+    function recover(overrides: Partial<BuildInput> = {}) {
+        return recoverReviewDossier({
+            plan: PLAN,
+            persisted: historicalRecord(false),
+            draws: DRAWS,
+            evidence: EVIDENCE,
+            comments: [LOCATION],
+            recommendation: 'request-changes',
+            ...overrides,
+        });
+    }
+
+    it.each([{ draws: DRAWS }, { draws: undefined }])(
+        'reuses an exact unpublished historical record without inferring sources, draws=$draws',
+        ({ draws }) => {
+            const result = recover({ draws });
+            expect(result.fromPersisted).toBe(true);
+            expect(result.canonical).toBe(serializeReviewDossier(parseReviewDossier(historicalRecord(false))));
+            expect(acceptedFindings(result.dossier)[0]).not.toHaveProperty('sources');
+        }
+    );
+
+    it('refuses changed source attribution while reusing a historical record', () => {
+        expect(() => recover({ comments: [COMMENT] })).toThrow(/accepted finding 0 sources mismatch/u);
+    });
+
+    it('still verifies plan and comment correspondence on the recovery route', () => {
+        expect(() => recover({ plan: { ...PLAN, headSha: 'c'.repeat(40) } })).toThrow(/publication headSha mismatch/u);
+        expect(() => recover({ comments: [{ ...LOCATION, line: 43 }] })).toThrow(/does not match review comment/u);
+    });
+
+    it('requires fresh sources when no verified persisted recovery record exists', () => {
+        expect(() => recover({ persisted: undefined })).toThrow(/comment 0 requires sources/u);
     });
 });
 
