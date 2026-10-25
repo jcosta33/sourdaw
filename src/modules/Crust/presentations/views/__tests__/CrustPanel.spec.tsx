@@ -200,12 +200,21 @@ describe('CrustPanel', () => {
         expect(useCaseMocks.hydrateCrustPatchFromProject).toHaveBeenCalledWith('crust-1');
     });
 
-    it('should route level chip writes through the Crust panel UI-level use case with the device id', () => {
+    it('routes named disclosure choices through the Crust panel use case with its device id', () => {
         render(<CrustPanel deviceId="crust-1" />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'L4' }));
+        fireEvent.click(screen.getByRole('button', { name: 'route' }));
 
         expect(useCaseMocks.setCrustPanelUiLevel).toHaveBeenCalledWith('crust-1', 4);
+        expect(useCaseMocks.setCrustParamWithAudio).not.toHaveBeenCalled();
+    });
+
+    it('keeps Build saturation on the existing parameter carrier', () => {
+        crustInstancesForTest = { 'crust-1': instanceWith({ uiLevel: 3 }) };
+        render(<CrustPanel deviceId="crust-1" />);
+
+        fireEvent.click(screen.getByRole('switch', { name: 'Saturation' }));
+        expect(useCaseMocks.setCrustParamWithAudio).toHaveBeenCalledWith('crust-1', 'satEnabled', true);
     });
 
     it('should route footer meter reset through the Crust panel meter use case with the device id', () => {
@@ -228,6 +237,7 @@ describe('CrustPanel', () => {
         // Enumerated from the model's list, not retyped here — the retyped copy
         // this replaces is how 2x went missing from the panel while the cascade
         // in `crates/daw-dsp/src/crust/oversample.rs` had a stage for it.
+        crustInstancesForTest = { 'crust-1': instanceWith({ uiLevel: 2 }) };
         render(<CrustPanel deviceId="crust-1" />);
 
         for (const factor of CRUST_OVERSAMPLE_FACTORS) {
@@ -237,6 +247,7 @@ describe('CrustPanel', () => {
     });
 
     it('writes the 2x factor the panel could not previously reach', () => {
+        crustInstancesForTest = { 'crust-1': instanceWith({ uiLevel: 2 }) };
         render(<CrustPanel deviceId="crust-1" />);
 
         fireEvent.click(screen.getByRole('button', { name: '2×' }));

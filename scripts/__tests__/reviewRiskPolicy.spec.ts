@@ -224,12 +224,31 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toContain('native-security:scripts/reviewStructuralAdmission.ts');
     });
 
+    it.each(['scripts/retirePullRequest.ts', 'scripts/supersedePullRequest.ts', 'scripts/supersedePullRequestGh.ts'])(
+        'classifies closure path %s native-security, including the legacy supersession write path',
+        (path) => {
+            const result = reviewPlan([handwritten(path, 1, 1)]);
+            expect(result.riskClasses).toEqual(['native-security']);
+            expect(result.triggers).toContain(`native-security:${path}`);
+        }
+    );
+
     it('should pin the governance-transition list to the closure union as sets, in both directions', () => {
         const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();
 
         expect(closurePaths.length).toBeGreaterThan(0);
         expect([...GOVERNANCE_TRANSITION_PATHS].sort()).toEqual(closurePaths);
     });
+
+    it.each(['supersedePullRequest', 'supersedePullRequestGh', 'findingLineage'])(
+        'requires native-security review for supersession closure member %s',
+        (name) => {
+            const result = reviewPlan([handwritten(`scripts/${name}.ts`, 1, 1)]);
+
+            expect(result.riskClasses).toEqual(['native-security']);
+            expect(result.requiredStances).toEqual(['correctness', 'security-platform', 'test-validity']);
+        }
+    );
 
     it('should classify every trusted GitHub-write closure path native-security, proving the wiring', () => {
         const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();

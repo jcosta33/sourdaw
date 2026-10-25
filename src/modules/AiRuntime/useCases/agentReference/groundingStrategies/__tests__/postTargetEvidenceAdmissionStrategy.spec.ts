@@ -195,4 +195,32 @@ describe('post-target evidence admission strategies', () => {
             })
         ).toBe(null);
     });
+
+    it('grounds a referenced level phrase only on the track its reference slot names', () => {
+        const bass = context.tracks[0]!;
+        const gainContext: ProjectContext = {
+            ...context,
+            tracks: [bass, { ...bass, id: 'track-keys', name: 'Keys', clips: [], clipCount: 0 }],
+            vcaGroups: [{ id: 'vca-strings', name: 'Strings', gain: 1, muted: false, trackIds: ['track-keys'] }],
+        };
+        const rejection = 'Provider track is not the reference the level phrase names';
+        const admit = (referencedSlot: string | undefined, trackId: string, referenceSlots?: number) =>
+            groundPostTargetEvidenceAdmission({
+                actionName: 'setTrackGain',
+                actionScope: { ...scope('set Bass to -6 dB', 'set {reference} to'), referencedSlot, referenceSlots },
+                admitsPlanCreatedObject: false,
+                context: gainContext,
+                groundedArguments: { gainDb: -6, trackId },
+            });
+
+        expect(admit('Bass', 'track-bass')).toBe(null);
+        expect(admit('bass', 'track-bass')).toBe(null);
+        expect(admit('track-bass', 'track-bass')).toBe(null);
+        expect(admit('Bass', 'track-keys')).toBe(rejection);
+        expect(admit('Strings', 'track-keys')).toBe(rejection);
+        expect(admit('Strings', 'track-bass')).toBe(rejection);
+        expect(admit(undefined, 'track-keys')).toBe(null);
+        expect(admit('Bass', 'track-keys', 2)).toBe(null);
+        expect(admit('Strings', 'track-keys', 2)).toBe(rejection);
+    });
 });

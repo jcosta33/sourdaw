@@ -144,6 +144,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     // A held note that survived would still have a change due, so a test that expects none sees it.
     advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
