@@ -6,6 +6,9 @@ import { isRecord } from '#/utils/structuralEquality';
 import { type applyTempoAudioSources } from '#/modules/Arrangement/useCases';
 import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
 import { normalizeTempoSourceOwnerContext } from '#/utils/tempoAudioSourcePromotion';
+import { readTempoMapRows, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
+
+import { tempoMapRowPlanMatchesCurrent } from '../models/tempoMapRowPlanMatchesCurrent';
 
 type Slot = 'transport' | 'tempoMap';
 type SourcePreservation = Extract<
@@ -18,8 +21,13 @@ export type TempoWriteIntent = {
     readonly bpm: number;
     readonly sourcePreservation?: SourcePreservation;
 };
+type TempoMapRowWriteIntent = {
+    readonly rowClock: TempoMapRowClockWitness;
+    readonly sourcePreservation?: SourcePreservation;
+};
+export type TempoClockWriteIntent = TempoWriteIntent | TempoMapRowWriteIntent;
 
-let pending: { readonly intent: TempoWriteIntent; readonly owner: object | undefined } | undefined;
+let pending: { readonly intent: TempoClockWriteIntent; readonly owner: object | undefined } | undefined;
 let pendingSource: { readonly value: SourcePreservation; readonly owner: object | undefined } | undefined;
 
 /** Supplied only after actual Arrangement admission, then consumed synchronously. */
@@ -35,6 +43,17 @@ export function runWithTempoSourcePreservation<Result>(value: SourcePreservation
 
 /** Only the synchronous scalar writer can supply this adapter metadata. */
 export function runWithTempoWriteIntent<Result>(intent: TempoWriteIntent, callback: () => Result): Result {
+    return runWithClockWriteIntent(intent, callback);
+}
+
+export function runWithTempoMapRowWriteIntent<Result>(
+    rowClock: TempoMapRowClockWitness,
+    callback: () => Result
+): Result {
+    return runWithClockWriteIntent({ rowClock }, callback);
+}
+
+function runWithClockWriteIntent<Result>(intent: TempoClockWriteIntent, callback: () => Result): Result {
     const source = pendingSource;
     pendingSource = undefined;
     if (source && source.owner !== getCurrentAutomergeStorageMutationOwner()) {
@@ -53,16 +72,19 @@ export function runWithTempoWriteIntent<Result>(intent: TempoWriteIntent, callba
     }
 }
 
-export function captureTempoWriteMetadata(slot: Slot): readonly TempoWriteIntent[] | null {
+export function captureTempoWriteMetadata(slot: 'transport'): readonly TempoWriteIntent[] | null;
+export function captureTempoWriteMetadata(slot: 'tempoMap'): readonly TempoClockWriteIntent[] | null;
+export function captureTempoWriteMetadata(slot: Slot): readonly TempoClockWriteIntent[] | null {
     const captured = pending;
     pending = undefined;
     if (!captured) {
         return null;
     }
-    if (
-        captured.owner !== getCurrentAutomergeStorageMutationOwner() ||
-        (captured.intent.tempoChangeId === null) !== (slot === 'transport')
-    ) {
+    const correctSlot =
+        'rowClock' in captured.intent
+            ? slot === 'tempoMap'
+            : (captured.intent.tempoChangeId === null) === (slot === 'transport');
+    if (captured.owner !== getCurrentAutomergeStorageMutationOwner() || !correctSlot) {
         throw new AutomergeStorageWriteConflictError('Tempo scalar intent belongs to another mutation owner or slot');
     }
     return [structuredClone(captured.intent)];
@@ -93,7 +115,7 @@ function rawTempo(document: Readonly<Record<string, unknown>>, tempoChangeId: st
  * The desired replacement is never an alternate expected peer state. */
 export function tempoWriteIntentsMatch(
     document: Readonly<Record<string, unknown>>,
-    metadata: readonly TempoWriteIntent[],
+    metadata: readonly TempoClockWriteIntent[],
     slot: Slot
 ): boolean {
     const current = new Map<string | null, number>();
@@ -101,6 +123,18 @@ export function tempoWriteIntentsMatch(
         const sourceContext = normalizeTempoSourceOwnerContext(document, intent.sourcePreservation?.ownerWitness);
         if (!sourceContext || !tempoAudioSourceCoverageMatches(sourceContext, intent.sourcePreservation?.promotion)) {
             return false;
+        }
+        if ('rowClock' in intent) {
+            const changes = readTempoMapRows(document);
+            if (
+                slot !== 'tempoMap' ||
+                metadata.length !== 1 ||
+                !changes ||
+                !tempoMapRowPlanMatchesCurrent(changes, intent.rowClock)
+            ) {
+                return false;
+            }
+            continue;
         }
         if (
             (intent.tempoChangeId === null) !== (slot === 'transport') ||

@@ -18,7 +18,8 @@ function createInternalReplayContract(
         | 'restoreAutomationPointPresence'
         | 'restoreTimeOperationState'
         | 'restoreCompRegionInterval'
-        | 'restoreTempoEdit',
+        | 'restoreTempoEdit'
+        | 'restoreTempoMapEdit',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -52,6 +53,13 @@ function createInternalReplayContract(
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
         {
+            actionType: 'editTempoMap',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('editTempoMap', payload),
+            validateEntry: (entry) => getHandlerByType('editTempoMap')?.validateSessionEntry?.(entry) === true,
+        },
+        {
             actionType: 'deleteTime',
             operationVersion: 1,
             role: 'forward',
@@ -71,5 +79,6 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreTimeOperationState', 1, 'required'),
         createInternalReplayContract('restoreCompRegionInterval', 1, 'required'),
         createInternalReplayContract('restoreTempoEdit', 1, 'required'),
+        createInternalReplayContract('restoreTempoMapEdit', 1, 'required'),
     ];
 }

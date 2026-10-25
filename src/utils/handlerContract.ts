@@ -11,6 +11,7 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type AudioSourceSnapshot, type AudioSourceTile } from './audioSourceTime';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
+import { type TempoMapEdit, type TempoMapRowPlan } from './tempoMapRowPlan';
 
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
@@ -1447,6 +1448,24 @@ export type AppAction =
               bpm: number;
               expectedBpm: number;
               tempoChangeId: string | null;
+              sourceDirection: 'promote' | 'restore';
+              audioSourcePromotion: TempoAudioSourcePromotionSnapshot;
+          };
+      }
+    | {
+          type: 'editTempoMap';
+          payload: {
+              edit: TempoMapEdit;
+              /** Owner-derived at admission; caller captures never grant writes. */
+              rowPlan?: TempoMapRowPlan;
+              audioSourcePromotion?: TempoAudioSourcePromotionSnapshot;
+          };
+      }
+    | {
+          type: 'restoreTempoMapEdit';
+          payload: {
+              rowPlan: TempoMapRowPlan;
+              rowDirection: 'apply' | 'restore';
               sourceDirection: 'promote' | 'restore';
               audioSourcePromotion: TempoAudioSourcePromotionSnapshot;
           };

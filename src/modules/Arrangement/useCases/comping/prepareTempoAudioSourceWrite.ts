@@ -1,16 +1,15 @@
 import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
-import {
-    isTempoAudioSourcePromotion,
-    tempoSourcePromotionsEqual,
-    type TempoSourceClockPath,
-} from '#/utils/tempoAudioSourcePromotion';
+import { isTempoAudioSourcePromotion, tempoSourcePromotionsEqual } from '#/utils/tempoAudioSourcePromotion';
 
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Track } from '../../models/Track';
 import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { projectTempoAudioSources } from '../../stores/tempoAudioSources';
-import { captureTempoAudioSourceWriteIntent } from '../../stores/tempoAudioSourceWriteIntent';
+import {
+    captureTempoAudioSourceWriteIntent,
+    type TempoAudioSourceWriteClock,
+} from '../../stores/tempoAudioSourceWriteIntent';
 
 import { captureTempoAudioSources } from './captureTempoAudioSources';
 import { getTrackStoreState } from '../getTrackStoreState';
@@ -21,10 +20,8 @@ type Input = {
     /** The original, pre-edit map. Neither callback is persisted. */
     readonly timeline: TempoTimeline;
     readonly clock: { readonly transport: unknown; readonly tempoMap: unknown };
-    readonly target: { readonly tempoChangeId: string | null; readonly expectedBpm: number; readonly bpm: number };
     readonly owners?: { readonly tracks: readonly Track[]; readonly lanes: readonly TakeLane[] };
-    readonly clockPath?: TempoSourceClockPath;
-};
+} & TempoAudioSourceWriteClock;
 
 export function prepareTempoAudioSourceWrite(input: Input) {
     const promotion = input.promotion;
@@ -45,12 +42,15 @@ export function prepareTempoAudioSourceWrite(input: Input) {
     if (!captured || !tempoSourcePromotionsEqual(captured, promotion)) {
         return null;
     }
+    const clock =
+        'target' in input
+            ? { target: input.target, ...(input.clockPath ? { clockPath: input.clockPath } : {}) }
+            : { rowClock: input.rowClock };
     const intent = captureTempoAudioSourceWriteIntent({
         promotion,
         direction: input.direction,
-        target: input.target,
+        ...clock,
         context: { ...input.clock, tracks, takeLanes: lanes },
-        clockPath: input.clockPath,
     });
     return intent ? { tracks, lanes, projected, intent } : null;
 }

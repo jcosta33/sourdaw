@@ -7,6 +7,12 @@ export type TempoMapRow = {
     readonly curve: 'instant' | 'linear';
 };
 
+export type TempoMapEdit =
+    | { readonly type: 'add'; readonly beat: number; readonly tempo: number; readonly curve?: 'instant' | 'linear' }
+    | { readonly type: 'update'; readonly id: string; readonly tempo: number }
+    | { readonly type: 'remove'; readonly id: string }
+    | { readonly type: 'replace'; readonly changes: readonly Omit<TempoMapRow, 'id'>[] };
+
 export type TempoMapRowPlan = {
     readonly operation: 'add' | 'update' | 'remove' | 'replace';
     readonly before: readonly TempoMapRow[];
@@ -18,6 +24,124 @@ export type TempoMapRowPlan = {
     }[];
     readonly collision?: { readonly beat: number; readonly targetId: string | null };
 };
+
+export type TempoMapRowClockWitness = {
+    readonly plan: TempoMapRowPlan;
+    readonly direction: 'apply' | 'restore';
+};
+
+/** Identify an owned clock observation, without changing rows or hiding peers.
+ * The row writer independently authenticates FROM and EPS collisions. */
+export function observeTempoMapRowPlan(
+    context: { readonly tempoMap?: unknown },
+    witness: TempoMapRowClockWitness
+): 'from' | 'to' | null {
+    const plan = decodeTempoMapRowPlan(witness.plan);
+    if (!plan) {
+        return null;
+    }
+    const changes = readTempoMapRows(context);
+    if (!changes) {
+        return null;
+    }
+    const ownedIds = new Set([...plan.before, ...plan.after].map((row) => row.id));
+    const matches = (side: 'before' | 'after'): boolean => {
+        const expected = plan[side];
+        return (
+            changes.filter((row) => ownedIds.has(row.id)).length === expected.length &&
+            expected.every((row) =>
+                valuesEqual(
+                    changes.find((current) => current.id === row.id),
+                    row
+                )
+            ) &&
+            plan.order.every((group) =>
+                valuesEqual(
+                    changes.filter((row) => row.beat === group.beat).map((row) => row.id),
+                    group[side]
+                )
+            )
+        );
+    };
+    const from = witness.direction === 'apply' ? 'before' : 'after';
+    const to = witness.direction === 'apply' ? 'after' : 'before';
+    if (matches(from)) {
+        return 'from';
+    }
+    return matches(to) ? 'to' : null;
+}
+
+/** Structural clock view only; Transport retains semantic bounds/admission. */
+export function readTempoMapRows(context: { readonly tempoMap?: unknown }): TempoMapRow[] | null {
+    let raw: unknown = [];
+    if (context.tempoMap !== undefined) {
+        if (!isRecord(context.tempoMap) || !Array.isArray(context.tempoMap.changes)) {
+            return null;
+        }
+        raw = context.tempoMap.changes;
+    }
+    if (!Array.isArray(raw)) {
+        return null;
+    }
+    const changes: TempoMapRow[] = [];
+    for (const value of raw) {
+        if (!isRecord(value) || Object.keys(value).length !== 4) {
+            return null;
+        }
+        const row = { id: value.id, beat: value.beat, tempo: value.tempo, curve: value.curve };
+        if (!readRow(row)) {
+            return null;
+        }
+        changes.push(row);
+    }
+    if (new Set(changes.map((row) => row.id)).size !== changes.length) {
+        return null;
+    }
+    return changes;
+}
+
+export function isTempoMapEdit(value: unknown): value is TempoMapEdit {
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (value.type === 'remove') {
+        return exactData(value, ['type', 'id']) && validId(value.id);
+    }
+    if (value.type === 'update') {
+        return (
+            exactData(value, ['type', 'id', 'tempo']) &&
+            validId(value.id) &&
+            typeof value.tempo === 'number' &&
+            Number.isFinite(value.tempo)
+        );
+    }
+    if (value.type === 'add') {
+        const keys = ['type', 'beat', 'tempo'];
+        if (Object.hasOwn(value, 'curve')) {
+            keys.push('curve');
+        }
+        return (
+            exactData(value, keys) &&
+            validBeat(value.beat) &&
+            typeof value.tempo === 'number' &&
+            Number.isFinite(value.tempo) &&
+            (value.curve === undefined || value.curve === 'instant' || value.curve === 'linear')
+        );
+    }
+    return (
+        value.type === 'replace' &&
+        exactData(value, ['type', 'changes']) &&
+        denseArray(value.changes) &&
+        value.changes.every(
+            (row) =>
+                exactData(row, ['beat', 'tempo', 'curve']) &&
+                validBeat(row.beat) &&
+                typeof row.tempo === 'number' &&
+                Number.isFinite(row.tempo) &&
+                (row.curve === 'instant' || row.curve === 'linear')
+        )
+    );
+}
 
 function exactData(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
     if (!isRecord(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {

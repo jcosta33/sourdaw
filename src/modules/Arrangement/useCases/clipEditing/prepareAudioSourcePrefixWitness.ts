@@ -15,6 +15,8 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { sanitizeTrackSnapshot } from '../../stores/trackStore';
+import { type TempoAudioSourceWriteClock } from '../../stores/tempoAudioSourceWriteIntent';
+import { type projectTempoAudioSources } from '../../stores/tempoAudioSources';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { projectClipReplayPrefix } from './projectClipReplayPrefix';
@@ -23,10 +25,10 @@ import { preparedClipSplits } from './preparedClipSplit';
 type Input = {
     readonly promotion: Extract<AppAction, { type: 'restoreTempoEdit' }>['payload']['audioSourcePromotion'];
     readonly direction: 'promote' | 'restore';
-    readonly target: TempoScalarTransition;
     readonly context?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
-};
+} & TempoAudioSourceWriteClock;
 type State = NonNullable<ReturnType<typeof projectClipReplayPrefix>>;
+type SourceState = Pick<State, 'tracks' | 'takeLanes'>;
 type OwnerFields = { owner: TempoSourceOwner; fields: Set<string> };
 
 const CLIP_SOURCE_FIELDS = [
@@ -70,7 +72,7 @@ function addOwner(owners: Map<string, OwnerFields>, owner: TempoSourceOwner, fie
     owners.set(key, { owner, fields: new Set([...(existing?.fields ?? []), ...fields]) });
 }
 
-function sourceContext(state: State) {
+function sourceContext(state: SourceState) {
     return { tracks: { tracks: state.tracks }, takeLanes: { lanes: state.takeLanes } };
 }
 
@@ -180,6 +182,10 @@ function addTempoOwners(owners: Map<string, OwnerFields>, action: AppAction): vo
     if (!plan) {
         return;
     }
+    addPromotionOwners(owners, plan);
+}
+
+function addPromotionOwners(owners: Map<string, OwnerFields>, plan: Input['promotion']): void {
     for (const clip of plan.clips) {
         addOwner(
             owners,
@@ -258,13 +264,36 @@ function initialClock(input: Input): TempoSourceClock | null {
 /** Current raw source owners, the actual prepared prefix and its final value.
  * Only their bounded source facets survive this function; no root snapshot,
  * callback or history authority enters adapter metadata. */
-export function prepareAudioSourcePrefixWitness(input: Input): {
+export function prepareAudioSourcePrefixWitness(
+    input: Input,
+    projected: NonNullable<ReturnType<typeof projectTempoAudioSources>>
+): {
     readonly ownerWitness: TempoSourceOwnerWitness;
     readonly commitValidation: HandlerCommitValidation;
 } | null {
     const document = getCrdtDoc('root');
     if (!document || !getTempoAudioSourceRequirements(document)) {
         return null;
+    }
+    if ('rowClock' in input) {
+        // Row commands are singletons until they have an owned prefix contract.
+        // These values come from the same admitted source producer, never JSON.
+        if (input.context && (input.context.actions.length !== 1 || input.context.actionIndex !== 0)) {
+            return null;
+        }
+        const owners = new Map<string, OwnerFields>();
+        addPromotionOwners(owners, input.promotion);
+        const witness = captureWitness(
+            document,
+            owners,
+            { tracks: getTrackStoreState()?.tracks ?? [], takeLanes: takeLaneStore.value?.lanes ?? [] },
+            { tracks: projected.tracks, takeLanes: projected.lanes }
+        );
+        if (witness && !tempoSourceOwnerWitnessMatches(document, witness.ownerWitness, 'read')) {
+            witness.commitValidation.release();
+            return null;
+        }
+        return witness;
     }
     const clock = initialClock(input);
     if (!clock) {
@@ -322,6 +351,18 @@ export function prepareAudioSourcePrefixWitness(input: Input): {
         addSplitOwners(owners, action, state, next);
         state = next;
     }
+    return captureWitness(document, owners, read, state);
+}
+
+function captureWitness(
+    document: Readonly<Record<string, unknown>>,
+    owners: ReadonlyMap<string, OwnerFields>,
+    read: SourceState,
+    state: SourceState
+): {
+    readonly ownerWitness: TempoSourceOwnerWitness;
+    readonly commitValidation: HandlerCommitValidation;
+} | null {
     const rows: TempoSourceOwnerWitness['rows'][number][] = [];
     for (const { owner, fields } of owners.values()) {
         const keys = [...fields];

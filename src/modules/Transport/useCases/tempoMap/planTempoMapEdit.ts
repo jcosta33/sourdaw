@@ -1,16 +1,15 @@
 import { valuesEqual } from '#/utils/structuralEquality';
-import { decodeTempoMapRowPlan, type TempoMapRow, type TempoMapRowPlan } from '#/utils/tempoMapRowPlan';
+import {
+    decodeTempoMapRowPlan,
+    type TempoMapEdit,
+    type TempoMapRow,
+    type TempoMapRowPlan,
+} from '#/utils/tempoMapRowPlan';
 
 import { BEAT_EPSILON, MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../../models/TempoMap';
 
 import { applyTempoMapRowPlan } from './applyTempoMapRowPlan';
 import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
-
-type Edit =
-    | { readonly type: 'add'; readonly beat: number; readonly tempo: number; readonly curve?: 'instant' | 'linear' }
-    | { readonly type: 'update'; readonly id: string; readonly tempo: number }
-    | { readonly type: 'remove'; readonly id: string }
-    | { readonly type: 'replace'; readonly changes: readonly Omit<TempoMapRow, 'id'>[] };
 
 type Result = { readonly status: 'ready'; readonly plan: TempoMapRowPlan } | { readonly status: 'no-op' | 'rejected' };
 
@@ -18,7 +17,7 @@ type Result = { readonly status: 'ready'; readonly plan: TempoMapRowPlan } | { r
  * supplies its existing row producer once; replay consumes only captured ids. */
 export function planTempoMapEdit(input: {
     readonly changes: readonly TempoMapRow[] | null;
-    readonly edit: Edit;
+    readonly edit: TempoMapEdit;
     readonly createRow?: (beat: number, tempo: number, curve: TempoMapRow['curve']) => TempoMapRow;
 }): Result {
     const { edit } = input;

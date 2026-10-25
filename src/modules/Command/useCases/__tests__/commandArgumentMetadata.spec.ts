@@ -65,53 +65,76 @@ function parseWithReferences(objectReferences: readonly CommandObjectReference[]
 }
 
 describe('compileCommandArgumentMetadata object references', () => {
-    it.each(['setTempo', 'restoreTempoEdit'])('omits only derived tempo source metadata for %s', (operation) => {
+    it.each(['setTempo', 'restoreTempoEdit', 'editTempoMap', 'restoreTempoMapEdit'])(
+        'omits only derived tempo source metadata for %s',
+        (operation) => {
+            const payload = {
+                bpm: 240,
+                audioSourcePromotion: {
+                    clips: [
+                        {
+                            trackId: 'audio',
+                            clipId: 'source',
+                            inputs: { audioBufferId: 'bursts', startBeat: 0, endBeat: 12 },
+                            after: { audioOffsetSeconds: 4 },
+                        },
+                    ],
+                },
+                audioSourcePromotionExtra: { clipId: 'sibling', startBeat: 2 },
+                other: { audioSourcePromotion: { clipId: 'nested', startBeat: 3 } },
+                clipId: 'requested',
+            };
+            const metadata = compileCommandArgumentMetadata(payload, operation);
+            expect(metadata.objectReferences).toEqual([
+                { argument: 'audioSourcePromotionExtra.clipId', id: 'sibling', scope: 'stable' },
+                { argument: 'other.audioSourcePromotion.clipId', id: 'nested', scope: 'stable' },
+                { argument: 'clipId', id: 'requested', scope: 'stable' },
+            ]);
+            expect(metadata.time.map((time) => time.argument)).toEqual([
+                'audioSourcePromotionExtra.startBeat',
+                'other.audioSourcePromotion.startBeat',
+            ]);
+            expect(metadata.parameterUnits.map((parameter) => parameter.argument)).toEqual([
+                'bpm',
+                'audioSourcePromotionExtra.startBeat',
+                'other.audioSourcePromotion.startBeat',
+            ]);
+            expect(collectCommandIdReferences(payload).map((reference) => reference.id)).toContain('bursts');
+            for (const other of [undefined, 'setCompRegion', 'addClip', 'unknown-operation']) {
+                expect(
+                    compileCommandArgumentMetadata(payload, other).objectReferences.map((reference) => reference.id)
+                ).toContain('bursts');
+            }
+            expect(isDerivedSourceSupportPath(operation, 'audioSourcePromotion')).toBe(true);
+            for (const path of [
+                'audioSourcePromotions',
+                'audioSourcePromotionExtra',
+                'other.audioSourcePromotion',
+                'audioSourcePromotion[0]',
+            ]) {
+                expect(isDerivedSourceSupportPath(operation, path)).toBe(false);
+            }
+        }
+    );
+
+    it.each(['editTempoMap', 'restoreTempoMapEdit'])('omits only captured row-plan support for %s', (operation) => {
         const payload = {
-            bpm: 240,
-            audioSourcePromotion: {
-                clips: [
-                    {
-                        trackId: 'audio',
-                        clipId: 'source',
-                        inputs: { audioBufferId: 'bursts', startBeat: 0, endBeat: 12 },
-                        after: { audioOffsetSeconds: 4 },
-                    },
-                ],
-            },
-            audioSourcePromotionExtra: { clipId: 'sibling', startBeat: 2 },
-            other: { audioSourcePromotion: { clipId: 'nested', startBeat: 3 } },
-            clipId: 'requested',
+            rowPlan: { before: [{ id: 'old', beat: 0, tempo: 120 }], after: [{ id: 'new', beat: 4, tempo: 240 }] },
+            edit: { type: 'update', id: 'head', tempo: 240 },
+            rowPlanExtra: { id: 'real', beat: 8 },
+            other: { rowPlan: { id: 'nested', beat: 12 } },
         };
         const metadata = compileCommandArgumentMetadata(payload, operation);
-        expect(metadata.objectReferences).toEqual([
-            { argument: 'audioSourcePromotionExtra.clipId', id: 'sibling', scope: 'stable' },
-            { argument: 'other.audioSourcePromotion.clipId', id: 'nested', scope: 'stable' },
-            { argument: 'clipId', id: 'requested', scope: 'stable' },
-        ]);
-        expect(metadata.time.map((time) => time.argument)).toEqual([
-            'audioSourcePromotionExtra.startBeat',
-            'other.audioSourcePromotion.startBeat',
-        ]);
+        expect(metadata.objectReferences.map((reference) => reference.id)).toEqual(['head', 'real', 'nested']);
         expect(metadata.parameterUnits.map((parameter) => parameter.argument)).toEqual([
-            'bpm',
-            'audioSourcePromotionExtra.startBeat',
-            'other.audioSourcePromotion.startBeat',
+            'edit.tempo',
+            'rowPlanExtra.beat',
+            'other.rowPlan.beat',
         ]);
-        expect(collectCommandIdReferences(payload).map((reference) => reference.id)).toContain('bursts');
-        for (const other of [undefined, 'setCompRegion', 'addClip', 'unknown-operation']) {
-            expect(
-                compileCommandArgumentMetadata(payload, other).objectReferences.map((reference) => reference.id)
-            ).toContain('bursts');
-        }
-        expect(isDerivedSourceSupportPath(operation, 'audioSourcePromotion')).toBe(true);
-        for (const path of [
-            'audioSourcePromotions',
-            'audioSourcePromotionExtra',
-            'other.audioSourcePromotion',
-            'audioSourcePromotion[0]',
-        ]) {
-            expect(isDerivedSourceSupportPath(operation, path)).toBe(false);
-        }
+        expect(collectCommandIdReferences(payload).map((reference) => reference.id)).toContain('old');
+        expect(
+            compileCommandArgumentMetadata(payload, 'setTempo').objectReferences.map((reference) => reference.id)
+        ).toContain('old');
     });
 
     // Red when a parameter id is read as an object: the batch preflight then requires a project

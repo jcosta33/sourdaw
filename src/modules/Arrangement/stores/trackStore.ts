@@ -9,6 +9,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import {
     captureTempoAudioSourceTrackMetadata,
+    projectTempoAudioSourceTrackWrite,
     tempoAudioSourceTrackIntentMatches,
     type TempoAudioSourceWriteIntent,
 } from './tempoAudioSourceWriteIntent';
@@ -888,6 +889,16 @@ export const trackStore = createStore<TrackStoreState>({
             mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
                 if (metadata?.some((intent) => !tempoAudioSourceTrackIntentMatches(intent, doc))) {
                     throw new AutomergeStorageWriteConflictError('Tempo source inputs changed before the track write');
+                }
+                if (metadata?.some((intent) => 'rowClock' in intent)) {
+                    const tracks = value ? projectTempoAudioSourceTrackWrite(value.tracks, metadata) : null;
+                    if (!tracks || !value) {
+                        throw new AutomergeStorageWriteConflictError(
+                            'Tempo-map source tuple changed during projection'
+                        );
+                    }
+                    reconcile({ ...value, tracks }, baseValue);
+                    return;
                 }
                 reconcile(value, baseValue);
             },

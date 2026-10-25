@@ -4,6 +4,8 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type CompAudioSourceInputProof, type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
+import { observeTempoMapRowPlan, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
 import {
     normalizeTempoSourceClockContext,
     normalizeTempoSourceOwnerContext,
@@ -16,6 +18,7 @@ import {
 import { captureCompAudioSourceInputProof, type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
     captureTempoSourceFields,
+    projectTempoAudioSources,
     tempoClipOptionalInputs,
     tempoClipSourceFields,
     tempoTakeSourceFields,
@@ -23,13 +26,26 @@ import {
 
 type Target = { readonly tempoChangeId: string | null; readonly expectedBpm: number; readonly bpm: number };
 type Dependency = { readonly clipIndex: number; readonly laneId?: string; readonly takeId?: string };
-type Proof = Dependency & { readonly inputs: CompAudioSourceInputProof };
-export type TempoAudioSourceWriteIntent = {
+type Proof = Dependency & {
+    readonly inputs: CompAudioSourceInputProof;
+    readonly afterClockInputs?: CompAudioSourceInputProof;
+};
+type ScalarClock = { readonly target: Target; readonly clockPath?: TempoSourceClockPath };
+type RowClock = { readonly rowClock: TempoMapRowClockWitness };
+export type TempoAudioSourceWriteClock =
+    | ScalarClock
+    | {
+          readonly rowClock: {
+              readonly witness: TempoMapRowClockWitness;
+              readonly after: { readonly transport: unknown; readonly tempoMap: unknown };
+          };
+      };
+type SourceLaw = {
     readonly promotion: TempoAudioSourcePromotionSnapshot;
     readonly direction: 'promote' | 'restore';
-    readonly target: Target;
+} & (ScalarClock | RowClock);
+export type TempoAudioSourceWriteIntent = SourceLaw & {
     readonly proofs: readonly Proof[];
-    readonly clockPath?: TempoSourceClockPath;
     readonly ownerWitness?: TempoSourceOwnerWitness;
 };
 
@@ -94,14 +110,15 @@ function locatedTake(context: CompAudioSourceInputContext, dependency: Dependenc
 
 function dependencyProof(
     context: CompAudioSourceInputContext,
-    intent: Pick<TempoAudioSourceWriteIntent, 'promotion' | 'direction' | 'target' | 'clockPath'>,
+    intent: SourceLaw,
     dependency: Dependency
 ): CompAudioSourceInputProof | null {
     const owner = intent.promotion.clips[dependency.clipIndex];
     if (!owner) {
         return null;
     }
-    const clock = normalizeTempoSourceClockContext(context, intent.target, intent.clockPath);
+    const clock =
+        'target' in intent ? normalizeTempoSourceClockContext(context, intent.target, intent.clockPath) : context;
     const clip = locatedClip(context, owner);
     if (
         !clock ||
@@ -193,15 +210,30 @@ function dependencyProof(
 }
 
 /** Called only by the owning synchronous writer, after actual capture-law admission. */
-export function captureTempoAudioSourceWriteIntent(input: {
-    readonly promotion: TempoAudioSourcePromotionSnapshot;
-    readonly direction: 'promote' | 'restore';
-    readonly target: Target;
-    readonly context: CompAudioSourceInputContext;
-    readonly clockPath?: TempoSourceClockPath;
-}): TempoAudioSourceWriteIntent | null {
-    if (readTempoSourceClockValue(input.context, input.target.tempoChangeId) !== input.target.expectedBpm) {
-        return null;
+export function captureTempoAudioSourceWriteIntent(
+    input: {
+        readonly promotion: TempoAudioSourcePromotionSnapshot;
+        readonly direction: 'promote' | 'restore';
+        readonly context: CompAudioSourceInputContext;
+    } & TempoAudioSourceWriteClock
+): TempoAudioSourceWriteIntent | null {
+    let law: SourceLaw;
+    let afterClock: CompAudioSourceInputContext | undefined;
+    const source = { promotion: input.promotion, direction: input.direction };
+    if ('target' in input) {
+        if (readTempoSourceClockValue(input.context, input.target.tempoChangeId) !== input.target.expectedBpm) {
+            return null;
+        }
+        law = { ...source, target: input.target, ...(input.clockPath ? { clockPath: input.clockPath } : {}) };
+    } else {
+        afterClock = { ...input.context, ...input.rowClock.after };
+        if (
+            observeTempoMapRowPlan(input.context, input.rowClock.witness) !== 'from' ||
+            observeTempoMapRowPlan(afterClock, input.rowClock.witness) !== 'to'
+        ) {
+            return null;
+        }
+        law = { ...source, rowClock: input.rowClock.witness };
     }
     const dependencies: Dependency[] = input.promotion.clips.map((_clip, clipIndex) => ({ clipIndex }));
     const takeKeys = new Set<string>();
@@ -221,19 +253,21 @@ export function captureTempoAudioSourceWriteIntent(input: {
     }
     const proofs: Proof[] = [];
     for (const dependency of dependencies) {
-        const inputs = dependencyProof(input.context, input, dependency);
+        const inputs = dependencyProof(input.context, law, dependency);
         if (!inputs) {
             return null;
         }
-        proofs.push({ ...dependency, inputs });
+        if (afterClock) {
+            const afterClockInputs = dependencyProof(afterClock, law, dependency);
+            if (!afterClockInputs) {
+                return null;
+            }
+            proofs.push({ ...dependency, inputs, afterClockInputs });
+        } else {
+            proofs.push({ ...dependency, inputs });
+        }
     }
-    return {
-        promotion: structuredClone(input.promotion),
-        direction: input.direction,
-        target: structuredClone(input.target),
-        proofs,
-        ...(input.clockPath ? { clockPath: structuredClone(input.clockPath) } : {}),
-    };
+    return structuredClone({ ...law, proofs });
 }
 
 export function tempoAudioSourceWriteIntentMatches(
@@ -241,9 +275,18 @@ export function tempoAudioSourceWriteIntentMatches(
     context: CompAudioSourceInputContext
 ): boolean {
     const normalized = normalizeTempoSourceOwnerContext(context, intent.ownerWitness);
-    return (
-        normalized !== null &&
-        intent.proofs.every((proof) => valuesEqual(dependencyProof(normalized, intent, proof), proof.inputs))
+    if (!normalized) {
+        return false;
+    }
+    const observation = 'rowClock' in intent ? observeTempoMapRowPlan(normalized, intent.rowClock) : 'from';
+    if (!observation) {
+        return false;
+    }
+    return intent.proofs.every((proof) =>
+        valuesEqual(
+            dependencyProof(normalized, intent, proof),
+            observation === 'from' ? proof.inputs : proof.afterClockInputs
+        )
     );
 }
 
@@ -270,11 +313,48 @@ export function tempoAudioSourceTrackIntentMatches(
     }
     const from = intent.direction === 'promote' ? 'before' : 'after';
     return (
+        (!('rowClock' in intent) || tempoAudioSourceCoverageMatches(context, intent.promotion)) &&
         intent.promotion.clips.every((owner) => {
             const clip = locatedClip(normalized, owner);
             return clip !== null && valuesEqual(captureTempoSourceFields(clip, tempoClipSourceFields), owner[from]);
-        }) && tempoAudioSourceWriteIntentMatches(intent, context)
+        }) &&
+        tempoAudioSourceWriteIntentMatches(intent, context)
     );
+}
+
+/** A singleton row edit has no later geometry prefix. Hydration may have
+ * dropped its source fields while retaining a peer's unrelated track edits. */
+export function projectTempoAudioSourceTrackWrite(
+    tracks: Parameters<typeof projectTempoAudioSources>[0],
+    intents: readonly TempoAudioSourceWriteIntent[]
+) {
+    let current = [...tracks];
+    for (const intent of intents) {
+        if (!('rowClock' in intent)) {
+            continue;
+        }
+        for (const delta of intent.promotion.clips) {
+            const plan: TempoAudioSourcePromotionSnapshot = {
+                version: 1,
+                clips: [delta],
+                takes: [],
+                regions: [],
+                gaps: [],
+                gapFieldPresence: [],
+            };
+            const projected = projectTempoAudioSources(current, [], plan, intent.direction);
+            if (projected) {
+                current = projected.tracks;
+                continue;
+            }
+            // Authenticate an already-applied TO without publishing a reverse.
+            const reverse = intent.direction === 'promote' ? 'restore' : 'promote';
+            if (!projectTempoAudioSources(current, [], plan, reverse)) {
+                return null;
+            }
+        }
+    }
+    return current;
 }
 
 let pendingTrackIntent:

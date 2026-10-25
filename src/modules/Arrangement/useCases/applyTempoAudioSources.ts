@@ -29,7 +29,7 @@ export function applyTempoAudioSources(
     if ((needsTracks && !tracks) || (needsLanes && !lanes)) {
         return { status: 'conflict' as const };
     }
-    const witness = prepareAudioSourcePrefixWitness(input);
+    const witness = prepareAudioSourcePrefixWitness(input, projected);
     if (!witness) {
         return { status: 'conflict' as const };
     }
