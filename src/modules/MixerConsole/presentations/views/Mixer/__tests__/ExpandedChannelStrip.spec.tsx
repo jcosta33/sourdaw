@@ -1,5 +1,5 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { trackStore, type Track as ProjectTrack } from '#/modules/Arrangement/stores';
@@ -168,6 +168,8 @@ describe('ExpandedChannelStrip', () => {
         // previous case's fixture.
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
+
+    afterEach(() => vi.restoreAllMocks());
 
     it('renders identity, gain readout, and pan readout', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
@@ -521,6 +523,113 @@ describe('ExpandedChannelStrip', () => {
         await act(async () => releaseRead('gain:0.25'));
         expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it.each(['project transition', 'same-ID successor'])(
+        'does not restore gain focus after a queued frame loses %s ownership',
+        async (lostOwner) => {
+            trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+            mocks.promptUser.mockResolvedValue('-1.9 dB');
+            let focusFrame: FrameRequestCallback | undefined;
+            vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+                focusFrame = callback;
+                return 1;
+            });
+            renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+            const slider = screen.getByRole('slider', { name: 'Track 1 gain' });
+            fireEvent.contextMenu(slider);
+            expect(screen.getByRole('menu', { name: 'Track 1 gain actions' })).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+            await waitFor(() => expect(focusFrame).toBeDefined());
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+            const restoreFrame = focusFrame;
+            slider.blur();
+            expect(document.body).toHaveFocus();
+            if (lostOwner === 'project transition') {
+                mocks.projectEpoch += 1;
+            } else {
+                trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+            }
+            act(() => restoreFrame?.(0));
+            expect(document.body).toHaveFocus();
+        }
+    );
+
+    it.each(['unchanged owner', 'outside focus'])(
+        'restores gain focus only when the frame keeps %s',
+        async (focusChoice) => {
+            trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+            mocks.promptUser.mockResolvedValue('-1.9 dB');
+            let focusFrame: FrameRequestCallback | undefined;
+            vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+                focusFrame = callback;
+                return 1;
+            });
+            renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+            const slider = screen.getByRole('slider', { name: 'Track 1 gain' });
+            fireEvent.contextMenu(slider);
+            expect(screen.getByRole('menu', { name: 'Track 1 gain actions' })).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+            await waitFor(() => expect(focusFrame).toBeDefined());
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+            const outside = document.createElement('button');
+            document.body.append(outside);
+            slider.blur();
+            if (focusChoice === 'outside focus') {
+                outside.focus();
+            }
+            act(() => focusFrame?.(0));
+            expect(focusChoice === 'outside focus' ? outside : slider).toHaveFocus();
+            outside.remove();
+        }
+    );
+
+    it('restores gain focus after its own successful track replacement', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        mocks.promptUser.mockResolvedValue('-6 dB');
+        const focusFrames: FrameRequestCallback[] = [];
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            focusFrames.push(callback);
+            return focusFrames.length;
+        });
+        mocks.executeUserAppAction.mockImplementationOnce(async (_action, options) => {
+            trackStore.set({
+                tracks: [createProjectTrack({ gain: 10 ** (-6 / 20) })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            options?.onCommitted?.();
+        });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        const slider = screen.getByRole('slider', { name: 'Track 1 gain' });
+        fireEvent.contextMenu(slider);
+        expect(screen.getByRole('menu', { name: 'Track 1 gain actions' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(focusFrames.length).toBeGreaterThan(0);
+        slider.blur();
+        expect(document.body).toHaveFocus();
+        act(() => focusFrames.forEach((frame) => frame(0)));
+        expect(slider).toHaveFocus();
+    });
+
+    it('moves between gain menu actions with wrap, Home, and End', () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        const menu = screen.getByRole('menu', { name: 'Track 1 gain actions' });
+        const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        expect(items).toHaveLength(4);
+        fireEvent.keyDown(menu, { key: 'ArrowDown' });
+        expect(items[0]).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'ArrowUp' });
+        expect(items[3]).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'Home' });
+        expect(items[0]).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'End' });
+        expect(items[3]).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'ArrowDown' });
+        expect(items[0]).toHaveFocus();
     });
 
     it('keeps an outside focus choice after the gain menu closes', async () => {

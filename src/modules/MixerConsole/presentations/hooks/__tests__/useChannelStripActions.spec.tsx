@@ -737,6 +737,7 @@ describe('useChannelStripActions', () => {
                 expectedGain: 0.8,
                 gain: 0.3,
                 shouldExecute: () => trackStore.value?.tracks[0] === capturedTrack,
+                onCommitted: vi.fn(),
             });
             seedProjectTruth({ gain: 0.8 });
         });
@@ -750,9 +751,16 @@ describe('useChannelStripActions', () => {
         seedProjectTruth({ gain: 0.8 });
         let current = true;
         const shouldExecute = () => current;
+        const onCommitted = vi.fn();
         const { result } = renderHook(() => useChannelStripActions(makeTrack()));
         act(() => {
-            result.current.setGainFromMenu({ trackId: 'track-1', expectedGain: 0.8, gain: 0.25, shouldExecute });
+            result.current.setGainFromMenu({
+                trackId: 'track-1',
+                expectedGain: 0.8,
+                gain: 0.25,
+                shouldExecute,
+                onCommitted,
+            });
         });
 
         await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
@@ -762,6 +770,8 @@ describe('useChannelStripActions', () => {
             payload: { trackId: 'track-1', gain: 0.25, expectedGain: 0.8, automationRecordingPolicy: 'suppressed' },
         });
         expect(options).toEqual({ shouldExecute, onCommitted: expect.any(Function) });
+        options?.onCommitted?.();
+        expect(onCommitted).toHaveBeenCalledTimes(1);
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
         current = false;
         expect(options?.shouldExecute?.()).toBe(false);

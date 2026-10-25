@@ -97,13 +97,13 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         openGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
     };
 
-    const restoreGainFocus = (intent: number): void => {
+    const restoreGainFocus = (receipt: NonNullable<ReturnType<typeof captureGainIntent>>): void => {
         if (focusFrame.current !== null) {
             window.cancelAnimationFrame(focusFrame.current);
         }
         focusFrame.current = window.requestAnimationFrame(() => {
             focusFrame.current = null;
-            if (mounted.current && gainIntent.current === intent && document.activeElement === document.body) {
+            if (receipt.ownsFocus() && document.activeElement === document.body) {
                 slider()?.focus();
             }
         });
@@ -118,6 +118,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             return null;
         }
         const expectedGain = target.gain;
+        let focusOwner = target;
         return {
             trackId: target.id,
             expectedGain,
@@ -128,6 +129,15 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 authority.isCurrent() &&
                 trackStore.value?.tracks.find((candidate) => candidate.id === target.id) === target &&
                 target.gain === expectedGain,
+            ownsFocus: () =>
+                mounted.current &&
+                gainIntent.current === intent &&
+                authority.isCurrent() &&
+                trackStore.value?.tracks.find((candidate) => candidate.id === target.id) === focusOwner,
+            onCommitted: () => {
+                // The owning gain write replaces its track object. Keep only that committed successor.
+                focusOwner = trackStore.value?.tracks.find((candidate) => candidate.id === target.id) ?? focusOwner;
+            },
         };
     };
 
@@ -135,7 +145,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         if (receipt.shouldExecute() && gain !== receipt.expectedGain) {
             actions.setGainFromMenu({ ...receipt, gain });
         }
-        restoreGainFocus(receipt.intent);
+        restoreGainFocus(receipt);
     };
 
     const resetGain = (): void => {
@@ -160,7 +170,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         if (!receipt.shouldExecute()) {
             return;
         }
-        restoreGainFocus(receipt.intent);
+        restoreGainFocus(receipt);
         if (input === null || input === initialValue) {
             return;
         }
@@ -183,12 +193,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             }
             await navigator.clipboard.writeText(`gain:${String(receipt.expectedGain)}`);
             if (receipt.shouldExecute()) {
-                restoreGainFocus(receipt.intent);
+                restoreGainFocus(receipt);
             }
         } catch {
             if (receipt.shouldExecute()) {
                 notifyUser('Could not copy track gain to the clipboard.', 'error');
-                restoreGainFocus(receipt.intent);
+                restoreGainFocus(receipt);
             }
         }
     };
@@ -207,7 +217,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         } catch {
             if (receipt.shouldExecute()) {
                 notifyUser('Could not read track gain from the clipboard.', 'error');
-                restoreGainFocus(receipt.intent);
+                restoreGainFocus(receipt);
             }
             return;
         }
@@ -218,7 +228,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         const gain = Number(encoded);
         if (!encoded || String(gain) !== encoded || !Number.isFinite(gain) || gain < 0 || gain > FADER_MAX_GAIN) {
             notifyUser('Clipboard does not contain a valid track gain value.', 'error');
-            restoreGainFocus(receipt.intent);
+            restoreGainFocus(receipt);
             return;
         }
         commitMenuGain(receipt, gain);
@@ -569,12 +579,15 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
                         );
                         const current = items.findIndex((item) => item === document.activeElement);
-                        const next =
-                            event.key === 'Home' || (current < 0 && event.key === 'ArrowDown')
-                                ? 0
-                                : event.key === 'End' || current < 0
-                                  ? items.length - 1
-                                  : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                        let next: number;
+                        if (event.key === 'Home' || (current < 0 && event.key === 'ArrowDown')) {
+                            next = 0;
+                        } else if (event.key === 'End' || current < 0) {
+                            next = items.length - 1;
+                        } else {
+                            const direction = event.key === 'ArrowDown' ? 1 : -1;
+                            next = (current + direction + items.length) % items.length;
+                        }
                         event.preventDefault();
                         event.stopPropagation();
                         items[next]?.focus();

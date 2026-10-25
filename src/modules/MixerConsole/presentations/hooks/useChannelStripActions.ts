@@ -37,6 +37,7 @@ export type ChannelStripActions = {
         expectedGain: number;
         gain: number;
         shouldExecute: () => boolean;
+        onCommitted: () => void;
     }) => void;
     setPan: (value: number, isTransient?: boolean) => void;
     setColor: (color: string) => void;
@@ -393,7 +394,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                 .catch(() => undefined)
                 .then(() => commitGain(value, token, wasOpen));
         },
-        setGainFromMenu: ({ trackId, expectedGain, gain, shouldExecute }) => {
+        setGainFromMenu: ({ trackId, expectedGain, gain, shouldExecute, onCommitted }) => {
             pendingGainCommit.current = pendingGainCommit.current
                 .catch(() => undefined)
                 .then(async () => {
@@ -410,6 +411,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                                 shouldExecute,
                                 onCommitted: () => {
                                     lastGainSettleTime.current = 0;
+                                    onCommitted();
                                 },
                             }
                         );
