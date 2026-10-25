@@ -14,7 +14,12 @@
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { assertPublicationBindings, collectPublicationBindings } from './reviewDossierBindings.ts';
+import {
+    assertFindingSourceBindings,
+    assertPublicationBindings,
+    collectPublicationBindings,
+    readFindingSourceBindings,
+} from './reviewDossierBindings.ts';
 import {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
@@ -271,27 +276,7 @@ function readPublicationSafeString(label: string, value: unknown): string {
 
 /** Shared by review.json and dossier readers so every persisted source has the same safe shape. */
 export function readReviewFindingSources(value: unknown, label: string): ReviewFindingSource[] {
-    if (!Array.isArray(value) || value.length === 0) {
-        fail(`${label} must be a non-empty array of { stance, reviewerModel } source pairs`);
-    }
-    const seen = new Set<string>();
-    return value.map((entry: unknown, index) => {
-        const sourceLabel = `${label}[${index}]`;
-        if (!isRecord(entry)) {
-            fail(`${sourceLabel} must be an object`);
-        }
-        assertExactKeys(entry, ['stance', 'reviewerModel'], sourceLabel);
-        const source = {
-            stance: readPublicationSafeString(`${sourceLabel}.stance`, entry.stance),
-            reviewerModel: readPublicationSafeString(`${sourceLabel}.reviewerModel`, entry.reviewerModel),
-        };
-        const key = JSON.stringify([source.stance, source.reviewerModel]);
-        if (seen.has(key)) {
-            fail(`${sourceLabel} repeats source ${source.stance} on ${source.reviewerModel}`);
-        }
-        seen.add(key);
-        return source;
-    });
+    return readFindingSourceBindings(value, label, readPublicationSafeString);
 }
 
 function readPositiveInteger(label: string, value: unknown): number {
@@ -531,20 +516,8 @@ function assertTotalMaps(payload: DossierPayload): void {
         if (event.kind === 'finding-discarded' && !payload.requiredStances.includes(event.stance)) {
             fail(`review dossier discards a finding under a stance its required stances do not carry: ${event.stance}`);
         }
-        if (event.kind === 'finding-accepted' && event.sources !== undefined) {
-            for (const source of event.sources) {
-                const draw = payload.events.find(
-                    (candidate) =>
-                        candidate.kind === 'stance-completed' &&
-                        candidate.stance === source.stance &&
-                        candidate.reviewerModel === source.reviewerModel
-                );
-                if (draw?.kind !== 'stance-completed' || draw.outcome !== 'blocker-found') {
-                    fail(
-                        `review dossier finding ${event.findingId} source ${source.stance} on ${source.reviewerModel} does not name a completed findings draw`
-                    );
-                }
-            }
+        if (event.kind === 'finding-accepted') {
+            assertFindingSourceBindings(event, payload.events);
         }
         const own = event.kind === 'finding-accepted' ? accepted : discarded;
         const other = event.kind === 'finding-accepted' ? discarded : accepted;
