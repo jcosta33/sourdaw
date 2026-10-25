@@ -15,11 +15,11 @@ vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: vi.fn(() => 0),
 }));
 
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import {
     type MapGraphBatchInput,
     type NativeGraphTransport,
 } from '../../../repositories/nativeGraph/nativeGraphTransport';
-import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
