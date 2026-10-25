@@ -1003,14 +1003,26 @@ setInterval(() => {}, 1000);
             // run while the descendant lives under a still-alive parent.
             const parent = [
                 "const fs = require('node:fs');",
-                'const [descendantPath, marker, rootMarker, exitWhenMarker] = process.argv.slice(1);',
+                'const [descendantPath, marker, rootMarker, programExtra, exitWhenMarker] = process.argv.slice(1);',
                 'fs.writeFileSync(rootMarker, String(process.pid));',
-                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker], { detached: true, stdio: "ignore", env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 2_000);',
+                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, programExtra], { detached: true, stdio: "ignore", env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 2_000);',
                 'const timer = setInterval(() => { if (fs.existsSync(marker) && exitWhenMarker === "true") { clearInterval(timer); process.exit(0); } }, 5);',
             ].join(' ');
+            // The multiline variant rides a newline-containing argument on the descendant's command
+            // line, so the census still samples a multiline command row in that variant.
+            const programExtra =
+                program === 'multiline program' ? 'depth\nrecorded\nunder\nrange' : 'depth recorded under range';
             const options = {
                 command: process.execPath,
-                args: ['-e', parent, descendantPath, marker, rootMarker, String(scenario === 'parent exit')],
+                args: [
+                    '-e',
+                    parent,
+                    descendantPath,
+                    marker,
+                    rootMarker,
+                    programExtra,
+                    String(scenario === 'parent exit'),
+                ],
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
                 maxRssBytes: 512 * 1024 ** 2,
