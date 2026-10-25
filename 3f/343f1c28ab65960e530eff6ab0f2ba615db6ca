@@ -1,6 +1,8 @@
 AGENTS.md
   s_567a084d0540c4::t_1050cfe10cc9ca 36-42,44-52,96-100
   s_567a084d0540c4::t_e4af8c12645c13 43
+scripts/__tests__/resourceGuard.spec.ts
+  s_7acdc945b846b6::t_66b3b5e4170e68 542,546-548
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -8,11 +10,27 @@ AGENTS.md
   "base_commit_sha": "3f343f1c28ab65960e530eff6ab0f2ba615db6ca",
   "prompts": {},
   "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_567a084d0540c4": {
       "agent_id": {
         "tool": "codex",
         "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
         "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6.1-sol"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }
