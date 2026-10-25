@@ -129,6 +129,7 @@ type ClipTiming = {
     endBeat: number;
     contentUnit: TimelineUnit;
     playStartBeat: number;
+    visibleDurationBeat: number | null;
     visibleEndBeat: number | null;
     tempo: number;
 };
@@ -153,9 +154,22 @@ function readClipTiming(
             : clip.attrNumber('duration', 0);
     const durationUnit = explicitDuration === null ? contentUnit : unit;
     const startBeat = originBeat + toBeats(clip.attrNumber('time', 0), unit, tempo);
-    const endBeat =
-        startBeat + toBeats(Math.max(0, rawDuration), durationUnit, explicitDuration === null ? contentTempo : tempo);
+    const durationBeat = toBeats(
+        Math.max(0, rawDuration),
+        durationUnit,
+        explicitDuration === null ? contentTempo : tempo
+    );
+    const endBeat = startBeat + durationBeat;
     const playStartBeat = toBeats(clip.attrNumber('playStart', 0), contentUnit, contentTempo);
+    const visibleDurationBeat =
+        explicitDuration === null && playStop === null
+            ? null
+            : Math.min(
+                  durationBeat,
+                  playStop === null
+                      ? durationBeat
+                      : toBeats(clip.attrNumber('playStop', 0), contentUnit, contentTempo) - playStartBeat
+              );
     const contentOriginBeat = startBeat - playStartBeat;
     const visibleEndBeat =
         explicitDuration === null && playStop === null
@@ -166,7 +180,7 @@ function readClipTiming(
                       ? endBeat
                       : contentOriginBeat + toBeats(clip.attrNumber('playStop', 0), contentUnit, contentTempo)
               );
-    return { startBeat, endBeat, contentUnit, playStartBeat, visibleEndBeat, tempo: contentTempo };
+    return { startBeat, endBeat, contentUnit, playStartBeat, visibleDurationBeat, visibleEndBeat, tempo: contentTempo };
 }
 
 function parseTransport(transport: XmlQuery | null): {
@@ -357,14 +371,12 @@ function repeatsClipLoop(clip: XmlQuery, timing: ClipTiming): boolean {
     if (loopStart === null && loopEnd === null) {
         return false;
     }
-    if (loopStart === null || loopEnd === null || timing.visibleEndBeat === null) {
+    if (loopStart === null || loopEnd === null || timing.visibleDurationBeat === null) {
         return true;
     }
     const loopStartBeat = toBeats(clip.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
     const loopEndBeat = toBeats(clip.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
-    return (
-        loopEndBeat <= loopStartBeat || timing.playStartBeat + (timing.visibleEndBeat - timing.startBeat) > loopEndBeat
-    );
+    return loopEndBeat <= loopStartBeat || timing.playStartBeat + timing.visibleDurationBeat > loopEndBeat;
 }
 
 function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming): boolean {

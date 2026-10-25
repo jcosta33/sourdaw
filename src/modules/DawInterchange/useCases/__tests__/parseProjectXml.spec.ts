@@ -2177,6 +2177,58 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toHaveLength(1);
     });
 
+    it.each([
+        { unit: 'beats at zero offset', contentTimeUnit: '', playStart: '0', loopStart: '0', loopEnd: '4' },
+        {
+            unit: 'seconds at zero offset',
+            contentTimeUnit: ' contentTimeUnit="seconds"',
+            playStart: '0',
+            loopStart: '0',
+            loopEnd: '2',
+        },
+        { unit: 'beats at nonzero offset', contentTimeUnit: '', playStart: '1', loopStart: '1', loopEnd: '5' },
+        {
+            unit: 'seconds at nonzero offset',
+            contentTimeUnit: ' contentTimeUnit="seconds"',
+            playStart: '0.5',
+            loopStart: '0.5',
+            loopEnd: '2.5',
+        },
+    ])(
+        'keeps a fractional-start one-pass Notes loop in $unit and still rejects a real repeat',
+        ({ contentTimeUnit, playStart, loopStart, loopEnd }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
+                        `<Clip id="one-pass" name="One pass" time="28.2" duration="4"${contentTimeUnit} playStart="${playStart}" loopStart="${loopStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                        '<Clip id="plain" name="Plain" time="32.2" duration="1"><Notes>' +
+                        '<Note time="0" duration="0.5" key="62"/></Notes></Clip>' +
+                        `<Clip id="repeat" name="Real repeat" time="36.2" duration="4.125"${contentTimeUnit} playStart="${playStart}" loopStart="${loopStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="64"/></Notes></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+
+            expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
+                ['One pass', 60],
+                ['Plain', 62],
+            ]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'unsupported-clip',
+                    sourceType: 'Clip',
+                    sourceId: 'repeat',
+                    name: 'Real repeat',
+                    context: 'Keys',
+                    handling: 'dropped',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
     it('reports a direct nonidentity warped Audio leaf while retaining identity and plain siblings', () => {
         const parsed = parseProjectXml(
             project(
