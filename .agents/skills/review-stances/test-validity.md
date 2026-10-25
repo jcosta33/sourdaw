@@ -6,6 +6,39 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-25 — current-ref fixtures omitted the old child's historical dependency (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) tested branch/ref identity while
+omitting the parent-to-old-child association. Source inspection shows the same-replacement gap;
+no base-head runtime proof was run. At PR #5627's reviewed head, a real content-bearing Git DAG
+proved unrelated parents could share the accepted current ref/replacement relationship while
+the actual old parent's committed work was absent. Its public #5615 approval describes changed
+targets; exact historical prompt/tier are unavailable. The missed input was a reused branch with
+a different old-child ancestry, not a stubbed false comparison.
+
+Use Git's actual ancestry oracle and independent file-tree assertions. Pair a genuine final-parent
+control, a registered late-parent control, and an unrelated reused-parent refusal through both
+same and distinct replacement routes. Do not replace the late-parent case with a child that
+already contains the final head. Delete local metadata/ref after successful closure and require
+exact preserved-marker replay; missing, foreign, duplicated, malformed or rebound records must
+refuse without new writes. A common cached base cannot stand in for native historical association.
+
+### 2026-10-25 — atomic dependency fixtures hid a parent reopen during thread composition (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) read parent core, comments and
+threads separately. Its public approval describes changed-target and late-finding probes; exact
+historical prompt and tier are unavailable. Source inspection establishes the older same-replacement
+gap; no base-head runtime proof was run. At PR #5627's reviewed head, native adapter controls
+reopened the parent during the final thread response without changing head, branch or child ref,
+and both post-close and CLOSED replay incorrectly logged success.
+
+Keep core and dependent responses separate in the fixture. Reopen the parent or move either
+replacement during the last thread response, exercise the real shell port and serialized caller,
+and inspect actual close/comment/delete events plus the Git owner. Require zero writes before
+admission, verified compensation before close, durable owner/markers after close, and zero extra
+writes on refused replay. A no-op `assertCurrentPullRequest` or atomic inspection fake cannot prove
+that every dependency receives the final native core observation.
+
 ### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
 
 Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
