@@ -159,7 +159,9 @@ describe('handler commit validation through single and atomic Command routes', (
             }),
             setSnapValue: {
                 execute: () => {
-                    if (kind === 'throw') throw new Error('later handler rejected');
+                    if (kind === 'throw') {
+                        throw new Error('later handler rejected');
+                    }
                     return { status: 'conflict' };
                 },
                 describe: () => ({ label: 'Set snap' }),

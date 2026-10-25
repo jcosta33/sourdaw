@@ -18,6 +18,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane, restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -312,7 +313,9 @@ describe('committed clip restoration through Command and real peer sync', () => 
         await expect(executeAppAction(entry.inverseAction, { skipUndo: true })).rejects.toThrow(
             'restoration write refused'
         );
-        for (const released of releases) expect(released).toHaveBeenCalledTimes(1);
+        for (const released of releases) {
+            expect(released).toHaveBeenCalledTimes(1);
+        }
         expect(owners()).toEqual([['survivor', 'Survivor']]);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
     });
@@ -339,9 +342,16 @@ describe('committed clip restoration through Command and real peer sync', () => 
             pitchBendSnapshot: null,
         });
         flushAutomergeStorageWrites();
+        const source = trackStore.value?.tracks
+            .find((track) => track.id === 'midi-track')
+            ?.clips.find((clip) => clip.id === 'source');
+        if (!source) {
+            throw new Error('Expected the full flushed MIDI source from its owner');
+        }
+        const sourceSnapshot = structuredClone(source);
         clearUndoHistory();
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'source', ripple: false } });
-        return programme;
+        return { ...programme, source: sourceSnapshot };
     }
 
     async function seedSatelliteProgramme() {
@@ -372,7 +382,8 @@ describe('committed clip restoration through Command and real peer sync', () => 
         if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreClip') {
             throw new Error('Expected the MIDI removal inverse');
         }
-        const source = entry.inverseAction.payload.clipSnapshot;
+        const source = programme.source;
+        expect(jsonValuesEqual(source, entry.inverseAction.payload.clipSnapshot)).toBe(true);
         const sourceMidi = {
             notes: { present: true, value: programme.notesSnapshot },
             controlChanges: { present: true, value: programme.controlChangeSnapshot },
@@ -429,7 +440,9 @@ describe('committed clip restoration through Command and real peer sync', () => 
     it('commits present-empty source MIDI buckets without turning them into absent captures', async () => {
         await seedMidiProgramme();
         const entry = undoHistoryStore.value?.past[0];
-        if (entry?.kind !== 'action' || !entry.inverseAction) throw new Error('Expected the MIDI removal inverse');
+        if (entry?.kind !== 'action' || !entry.inverseAction) {
+            throw new Error('Expected the MIDI removal inverse');
+        }
         await executeAppAction(entry.inverseAction, { skipUndo: true });
         restoreMidiClipData({
             clipId: 'source',
@@ -476,11 +489,15 @@ describe('committed clip restoration through Command and real peer sync', () => 
             for (const syncMessageBase64 of createPeerSyncMessages({ remote: peer, local: baseline })) {
                 sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64 });
             }
-            if (mode === 'published') await sync.flushPersistence();
+            if (mode === 'published') {
+                await sync.flushPersistence();
+            }
             const result = pending ? await pending : await undo();
             await sync.flushPersistence();
             expect(applied).toBe(true);
-            if (mode === 'published') expect(result.headConsumed).toBe(true);
+            if (mode === 'published') {
+                expect(result.headConsumed).toBe(true);
+            }
             expect(document().midi.notesByClipId['midi-peer']?.[0]?.velocity).toBe(99);
             expect(midiStore.value).toEqual(document().midi);
             expect(projectedOwners()).toEqual(owners());

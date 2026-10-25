@@ -2205,7 +2205,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
         const originalSaved = structuredClone(saved);
         if (!Array.isArray(saved.past)) {
-            throw new Error('Expected produced MIDI split history');
+            throw new TypeError('Expected produced MIDI split history');
         }
         const readSourceNote = (snapshot: Record<string, unknown>) => {
             const source = snapshot.sourceMidi;
@@ -2230,7 +2230,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }
         const onlyTwoChanges = structuredClone(saved);
         if (!Array.isArray(onlyTwoChanges.past)) {
-            throw new Error('Expected copied MIDI split history');
+            throw new TypeError('Expected copied MIDI split history');
         }
         for (const [action, side] of [
             ['inverseAction', 'replacement'],

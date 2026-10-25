@@ -5,6 +5,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
@@ -24,46 +25,50 @@ type Snapshot = {
     automationLaneIdentities: Map<string, number>;
 };
 
-function cloneValue(value: unknown): unknown {
-    return JSON.parse(JSON.stringify(value));
-}
+type CapturedSnapshot = Omit<Snapshot, 'owners'> & { owners: Map<string, string> };
 
 function readEntry(slot: unknown, key: string, id: string): Entry {
     if (!isRecord(slot) || !isRecord(slot[key]) || !Object.hasOwn(slot[key], id)) {
         return { present: false };
     }
-    return { present: true, value: cloneValue(slot[key][id]) };
+    return { present: true, value: slot[key][id] };
+}
+
+function gainEnvelopeIdentityMaterial(envelope: unknown): unknown {
+    if (!isRecord(envelope) || !Array.isArray(envelope.points)) {
+        return envelope;
+    }
+    const points: readonly unknown[] = envelope.points;
+    const pointMaterial = points.map((point) => {
+        if (!isRecord(point)) {
+            return point;
+        }
+        return Object.fromEntries(Object.entries(point).filter(([key]) => key !== 'id'));
+    });
+    return { ...envelope, points: pointMaterial };
 }
 
 function identityCounts(document: Readonly<Record<string, unknown>>, ids: ReadonlySet<string>): Map<string, number> {
-    if (ids.size === 0) return new Map();
+    const counts = new Map<string, number>();
+    if (ids.size === 0) {
+        return counts;
+    }
     const live = Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'arrangements'));
     const gain = document.gainEnvelopes;
     if (isRecord(gain) && isRecord(gain.envelopes)) {
-        live.gainEnvelopes = {
-            ...gain,
-            envelopes: Object.fromEntries(
-                Object.entries(gain.envelopes).map(([id, envelope]) => [
-                    id,
-                    isRecord(envelope) && Array.isArray(envelope.points)
-                        ? {
-                              ...envelope,
-                              points: envelope.points.map((point) =>
-                                  isRecord(point)
-                                      ? Object.fromEntries(Object.entries(point).filter(([key]) => key !== 'id'))
-                                      : point
-                              ),
-                          }
-                        : envelope,
-                ])
-            ),
-        };
+        const envelopeMaterial = Object.entries(gain.envelopes).map(([id, envelope]) => [
+            id,
+            gainEnvelopeIdentityMaterial(envelope),
+        ]);
+        live.gainEnvelopes = { ...gain, envelopes: Object.fromEntries(envelopeMaterial) };
     }
     // Match readClipSplitIdentityIds: arrangements are a separate namespace,
     // and canonical gain-point IDs are local to their clip. Mutable document
     // proxies need not preserve identity across reads, so omit just those IDs
     // from the census instead of relying on a WeakSet of point objects.
-    const counts = new Map([...ids].map((id) => [id, 0]));
+    for (const id of ids) {
+        counts.set(id, 0);
+    }
     for (const id of collectClipSplitIdentityIds(live)) {
         if (ids.has(id)) {
             counts.set(id, (counts.get(id) ?? 0) + 1);
@@ -83,31 +88,28 @@ function readSnapshot(
         return null;
     }
     const owners = new Map<string, ClipOwner>();
-    const lanes =
+    const lanes: readonly unknown[] =
         isRecord(document.automation) && Array.isArray(document.automation.lanes) ? document.automation.lanes : [];
     const warp = discard_warp_states_raw_keys(document.warpStates);
     for (const id of ids) {
-        owners.set(id, {
-            clips: [],
-            automation: lanes
-                .filter((lane) => isRecord(lane) && lane.clipId === id)
-                .map((lane) => cloneValue(lane))
-                .sort((left, right) => {
-                    if (!isRecord(left) || !isRecord(right)) return 0;
-                    return String(left.id).localeCompare(String(right.id));
-                }),
-            ...(restoredIds.has(id)
-                ? {
-                      programme: {
-                          notes: readEntry(document.midi, 'notesByClipId', id),
-                          controllers: readEntry(document.midi, 'ccByClipId', id),
-                          bends: readEntry(document.midi, 'pitchBendByClipId', id),
-                          gain: readEntry(document.gainEnvelopes, 'envelopes', id),
-                          warp: readEntry(warp, 'states', id),
-                      },
-                  }
-                : {}),
+        const scopedLanes = lanes.filter((lane) => isRecord(lane) && lane.clipId === id);
+        const orderedLanes = scopedLanes.toSorted((left, right) => {
+            if (!isRecord(left) || !isRecord(right)) {
+                return 0;
+            }
+            return String(left.id).localeCompare(String(right.id));
         });
+        const owner: ClipOwner = { clips: [], automation: orderedLanes };
+        if (restoredIds.has(id)) {
+            owner.programme = {
+                notes: readEntry(document.midi, 'notesByClipId', id),
+                controllers: readEntry(document.midi, 'ccByClipId', id),
+                bends: readEntry(document.midi, 'pitchBendByClipId', id),
+                gain: readEntry(document.gainEnvelopes, 'envelopes', id),
+                warp: readEntry(warp, 'states', id),
+            };
+        }
+        owners.set(id, owner);
     }
     for (const track of document.tracks.tracks) {
         if (!isRecord(track) || typeof track.id !== 'string' || !Array.isArray(track.clips)) {
@@ -119,26 +121,39 @@ function readSnapshot(
             }
             const owner = owners.get(clip.id);
             if (owner) {
-                const captured = cloneValue(clip);
-                if (!isRecord(captured)) return null;
-                owner.clips.push({ trackId: track.id, clipIndex, clip: captured });
+                owner.clips.push({ trackId: track.id, clipIndex, clip });
             }
         }
     }
+    const automationLaneIdentities = new Map<string, number>();
+    for (const id of laneIds) {
+        automationLaneIdentities.set(id, lanes.filter((lane) => isRecord(lane) && lane.id === id).length);
+    }
+    return { owners, identities: identityCounts(document, childIds), automationLaneIdentities };
+}
+
+function captureSnapshot(snapshot: Snapshot | null): CapturedSnapshot | null {
+    if (!snapshot) {
+        return null;
+    }
+    // Capture only bounded owner JSON. Live/prospective values may be Automerge
+    // proxies, so retain a serialized witness rather than trying to clone them.
+    const owners = new Map<string, string>();
+    for (const [id, owner] of snapshot.owners) {
+        owners.set(id, JSON.stringify(owner));
+    }
     return {
         owners,
-        identities: identityCounts(document, childIds),
-        automationLaneIdentities: new Map(
-            [...laneIds].map((id) => [id, lanes.filter((lane) => isRecord(lane) && lane.id === id).length])
-        ),
+        identities: snapshot.identities,
+        automationLaneIdentities: snapshot.automationLaneIdentities,
     };
 }
 
-function snapshotsMatch(left: Snapshot | null, right: Snapshot | null): boolean {
+function snapshotsMatch(left: CapturedSnapshot | null, right: Snapshot | null): boolean {
     return (
         left !== null &&
         right !== null &&
-        [...left.owners].every(([id, owner]) => valuesEqual(owner, right.owners.get(id))) &&
+        [...left.owners].every(([id, fingerprint]) => matchesJsonFingerprint(right.owners.get(id), fingerprint)) &&
         [...left.identities].every(([id, count]) => count === right.identities.get(id)) &&
         [...left.automationLaneIdentities].every(([id, count]) => count === right.automationLaneIdentities.get(id))
     );
@@ -162,14 +177,16 @@ export function captureRestoreClipCommitValidation(
 ): { validation: HandlerCommitValidation; captureWrittenState: () => boolean } | undefined {
     const owner = getCurrentAutomergeStorageMutationOwner();
     const root = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-    if (!owner || !root) return undefined;
+    if (!owner || !root) {
+        return undefined;
+    }
     const restoredIds = new Set(
         action.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [action.payload.clipId]
     );
-    const ids = new Set([
-        ...restoredIds,
-        ...(action.payload.ripplePlan?.shiftedClips.map((clip) => clip.clipId) ?? []),
-    ]);
+    const ids = new Set(restoredIds);
+    for (const shifted of action.payload.ripplePlan?.shiftedClips ?? []) {
+        ids.add(shifted.clipId);
+    }
     const childIds = new Set(
         collectClipSplitIdentityIds([
             action.payload.midiNotesSnapshot,
@@ -180,9 +197,9 @@ export function captureRestoreClipCommitValidation(
     const laneIds = new Set(action.payload.ripplePlan?.clipAutomationLanes.map((lane) => lane.id) ?? []);
     const read = (document: Readonly<Record<string, unknown>>) =>
         readSnapshot(document, ids, restoredIds, childIds, laneIds);
-    const before = read(root);
-    let observed = read(projectedDocument(root));
-    let expected: Snapshot | null = null;
+    const before = captureSnapshot(read(root));
+    let observed = captureSnapshot(read(projectedDocument(root)));
+    let expected: CapturedSnapshot | null = null;
     let observedHeads = getHeads(root).toSorted();
     let authorityIntervened = false;
     const observe = (): void => {
@@ -207,11 +224,20 @@ export function captureRestoreClipCommitValidation(
         ) {
             for (const id of ids) {
                 const nextOwner = next.owners.get(id);
-                if (nextOwner && !valuesEqual(observed.owners.get(id), nextOwner)) expected.owners.set(id, nextOwner);
+                const previousFingerprint = observed.owners.get(id);
+                if (
+                    nextOwner &&
+                    previousFingerprint !== undefined &&
+                    !matchesJsonFingerprint(nextOwner, previousFingerprint)
+                ) {
+                    expected.owners.set(id, JSON.stringify(nextOwner));
+                }
             }
             for (const id of childIds) {
                 const count = next.identities.get(id);
-                if (count !== undefined && observed.identities.get(id) !== count) expected.identities.set(id, count);
+                if (count !== undefined && observed.identities.get(id) !== count) {
+                    expected.identities.set(id, count);
+                }
             }
             for (const id of laneIds) {
                 const count = next.automationLaneIdentities.get(id);
@@ -220,7 +246,7 @@ export function captureRestoreClipCommitValidation(
                 }
             }
         }
-        observed = next;
+        observed = captureSnapshot(next);
         observedHeads = nextHeads;
     };
     const releases = [
@@ -242,15 +268,18 @@ export function captureRestoreClipCommitValidation(
         validateDocument: (document) =>
             snapshotsMatch(expected, read(document)) ? null : 'Clip restore did not reach the committed owners',
         release: () => {
-            for (const release of releases.splice(0)) release();
+            for (const release of releases.splice(0)) {
+                release();
+            }
         },
     };
     return {
         validation,
         captureWrittenState: () => {
             const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-            expected = current ? read(projectedDocument(current)) : null;
-            const restored = expected?.owners.get(action.payload.clipId)?.clips;
+            const next = current ? read(projectedDocument(current)) : null;
+            expected = captureSnapshot(next);
+            const restored = next?.owners.get(action.payload.clipId)?.clips;
             return restored?.length === 1 && restored[0]?.trackId === action.payload.trackId;
         },
     };
