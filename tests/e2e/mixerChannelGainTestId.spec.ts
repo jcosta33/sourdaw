@@ -64,12 +64,15 @@ test.describe('Mixer channel gain — keyboard response', () => {
         await firstGain.focus();
         await page.keyboard.press('Shift+F10');
         await expect(firstMenu).toBeVisible();
+        await expect(firstMenu.getByRole('menuitem', { name: 'Reset to Default' })).toBeFocused();
         await page.keyboard.press('Escape');
         await expect(firstMenu).toHaveCount(0);
         await expect(firstGain).toBeFocused();
 
-        await firstGain.click({ button: 'right' });
-        await firstMenu.getByRole('menuitem', { name: 'Reset to Default' }).click();
+        await page.keyboard.press('Shift+F10');
+        await expect(firstMenu.getByRole('menuitem', { name: 'Reset to Default' })).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(firstMenu).toHaveCount(0);
         await expect(firstGain).toHaveAttribute('aria-valuenow', '0.8');
         await firstGain.click({ button: 'right' });
         await firstMenu.getByRole('menuitem', { name: 'Enter Value' }).click();

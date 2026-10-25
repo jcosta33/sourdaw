@@ -609,7 +609,11 @@ describe('ExpandedChannelStrip', () => {
         expect(focusFrames.length).toBeGreaterThan(0);
         slider.blur();
         expect(document.body).toHaveFocus();
-        act(() => focusFrames.forEach((frame) => frame(0)));
+        act(() => {
+            for (const frame of focusFrames.slice()) {
+                frame(0);
+            }
+        });
         expect(slider).toHaveFocus();
     });
 
@@ -630,6 +634,19 @@ describe('ExpandedChannelStrip', () => {
         expect(items[3]).toHaveFocus();
         fireEvent.keyDown(menu, { key: 'ArrowDown' });
         expect(items[0]).toHaveFocus();
+    });
+
+    it('focuses the first gain action when the keyboard opens the menu', () => {
+        trackStore.set({ tracks: [createProjectTrack({ gain: 0.4 })], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(
+            <ExpandedChannelStrip track={{ ...mockTrack, gain: 0.4 }} isSelected={false} widthClass="w-40" />
+        );
+        const slider = screen.getByRole('slider', { name: 'Track 1 gain' });
+        slider.focus();
+        fireEvent.keyDown(slider, { key: 'F10', shiftKey: true });
+        const menu = screen.getByRole('menu', { name: 'Track 1 gain actions' });
+        expect(menu).toBeInTheDocument();
+        expect(screen.getByRole('menuitem', { name: 'Reset to Default' })).toHaveFocus();
     });
 
     it('keeps an outside focus choice after the gain menu closes', async () => {

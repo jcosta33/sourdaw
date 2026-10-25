@@ -35,6 +35,7 @@ import { SendsSection } from './SendsSection';
 import { parseMasterGainEntry } from './parseMasterGainEntry';
 
 type MixerMenu = { x: number; y: number } | null;
+type GainMenu = { x: number; y: number; keyboardOpen: boolean } | null;
 
 type ExpandedChannelStripProps = {
     track: Track;
@@ -45,7 +46,7 @@ type ExpandedChannelStripProps = {
 export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: ExpandedChannelStripProps): ReactElement => {
     const actions = useChannelStripActions(track);
     const [ctxMenu, setCtxMenu] = useState<MixerMenu>(null);
-    const [gainMenu, setGainMenu] = useState<MixerMenu>(null);
+    const [gainMenu, setGainMenu] = useState<GainMenu>(null);
     const [isRenaming, setIsRenaming] = useState(false);
     const ctxRef = useRef<HTMLDivElement>(null);
     const renameRef = useRef<HTMLInputElement>(null);
@@ -71,17 +72,23 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
     const closeGainMenu = (): void => setGainMenu(null);
     useContextMenuDismiss(gainMenuRef, closeGainMenu);
 
-    const openGainMenu = (x: number, y: number): void => {
+    useEffect(() => {
+        if (gainMenu?.keyboardOpen) {
+            gainMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')?.focus();
+        }
+    }, [gainMenu]);
+
+    const openGainMenu = (x: number, y: number, keyboardOpen: boolean): void => {
         gainIntent.current += 1;
         setCtxMenu(null);
         slider()?.focus();
-        setGainMenu({ x, y });
+        setGainMenu({ x, y, keyboardOpen });
     };
 
     const gainContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
         event.preventDefault();
         event.stopPropagation();
-        openGainMenu(event.clientX, event.clientY);
+        openGainMenu(event.clientX, event.clientY, false);
     };
 
     const gainMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -94,7 +101,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         event.preventDefault();
         event.stopPropagation();
         const bounds = slider()?.getBoundingClientRect();
-        openGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
+        openGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0, true);
     };
 
     const restoreGainFocus = (receipt: NonNullable<ReturnType<typeof captureGainIntent>>): void => {
