@@ -32,6 +32,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingBasis } from '../../models/ProposalGroundingBasis';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -43,6 +44,7 @@ import { validateRefinedProposalActions } from '../../validators/admitProposalRe
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 import { readStoredCardRemoval } from '../agentReference/readStoredCardRemoval';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
@@ -6118,7 +6120,7 @@ function getTrack(id: string): Track {
 }
 
 describe('refining a held card through the chat', () => {
-    beforeEach(() => {
+    function resetHeldCardFixture(): void {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
@@ -6137,6 +6139,7 @@ describe('refining a held card through the chat', () => {
         });
         clearAiHistory();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus({ emit: vi.fn(() => Promise.resolve()), on: vi.fn(() => () => undefined) });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
@@ -6153,7 +6156,9 @@ describe('refining a held card through the chat', () => {
         automationStore.set({ lanes: [] });
         transportStore.set(defaultTransportState);
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
-    });
+    }
+
+    beforeEach(resetHeldCardFixture);
 
     afterEach(() => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
@@ -6163,11 +6168,26 @@ describe('refining a held card through the chat', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         transportStore.set(defaultTransportState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('resets retained agent runs before starting a held-card fixture', async () => {
+        scriptProvider([{ calls: P1_PLAN, protectedTargetIds: ['track-drum-bus'] }]);
+        await sendChatMessage(P1);
+        const card = getPendingActionConfirmation(onlyProposedId());
+        if (card === null) {
+            throw new Error('Expected the real pending card.');
+        }
+        expect(agentRunLifecycle.get(card.runId)?.phase).toBe('waiting-for-approval');
+
+        resetHeldCardFixture();
+
+        expect(agentRunLifecycle.get(card.runId)).toBeNull();
     });
 
     it.each(
@@ -6499,6 +6519,7 @@ describe('refining a held card through the chat', () => {
     });
 
     it('walks the pull request How to test steps in order and applies only the last card, once', async () => {
+        expect(agentRunStore.value?.runs).toEqual([]);
         let pendingId = '';
         const drumBus = { name: 'setTrackGain', arguments: { trackId: 'track-drum-bus', deltaDb: -1 } };
         scriptProvider([
@@ -6550,6 +6571,7 @@ describe('refining a held card through the chat', () => {
         expect(getTrack('track-vocals').gain).toBeCloseTo(10 ** (-1 / 20), 6);
         expect(getTrack('track-snare').gain).toBe(1);
         expect(getTrack('track-drum-bus').gain).toBe(1);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(16);
     });
 
     it('row 19: refuses an inherited command whose target was deleted from the project', async () => {
