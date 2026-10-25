@@ -462,6 +462,57 @@ describe('importDawProject', () => {
         ]);
     });
 
+    it('reports local-tempo loop and warp omissions from real bytes after applying supported siblings', async () => {
+        vi.clearAllMocks();
+        await setupRealImport();
+        mocks.decodeDawProjectAssets.mockResolvedValue({
+            audioBuffers: {},
+            bufferIdsByPath: new Map([
+                ['identity.wav', 'identity-buffer'],
+                ['plain.wav', 'plain-buffer'],
+            ]),
+            failedPaths: [],
+        });
+        const projectXml = `<Project version="1.0"><Application name="Fixture" version="1.0"/>
+            <Transport><Tempo value="120"/></Transport>
+            <Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement><Lanes><Points target="tempo"><RealPoint time="4" value="60"/></Points>
+            <Clips track="keys"><Clip id="one-pass" name="One pass" time="8" duration="4" contentTimeUnit="seconds" playStart="0.1" loopStart="0.1" loopEnd="4.1"><Notes><Note key="60"/></Notes></Clip>
+                <Clip id="repeat" name="Repeat" time="12" duration="4.0001" contentTimeUnit="seconds" playStart="0.1" loopStart="0.1" loopEnd="4.1"><Notes><Note key="62"/></Notes></Clip></Clips>
+            <Clips track="audio"><Clip id="identity" name="Identity" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="identity.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>
+                <Clip id="stretched" name="Stretched" time="12" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="stretched.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="2"/></Warps></Clip>
+                <Clip id="plain" name="Plain" time="16" duration="1"><Audio file="plain.wav"/></Clip></Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'local-tempo-leaves.dawproject',
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Repeat', context: 'Keys' },
+            { kind: 'unsupported-clip', sourceId: 'stretched', name: 'Stretched', context: 'Audio' },
+        ]);
+        expect(result.warnings).toHaveLength(2);
+        expect(result.warnings[0]!.sourceOrder).toBeLessThan(result.warnings[1]!.sourceOrder);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(
+            applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')?.clips
+        ).toMatchObject([{ name: 'One pass' }]);
+        expect(
+            applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Audio')?.clips
+        ).toMatchObject([{ name: 'Identity' }, { name: 'Plain' }]);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [expect.stringContaining('warning 1/2: Clip "Repeat" on "Keys"'), 'warning'],
+            [expect.stringContaining('warning 2/2: Clip "Stretched" on "Audio"'), 'warning'],
+            [expect.stringContaining('Imported local-tempo-leaves.dawproject'), 'success'],
+        ]);
+        expect(mocks.applyImportedProjectData.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.notifyUser.mock.invocationCallOrder[0]!
+        );
+    });
+
     it('keeps a supported DAWproject import free of warning notices', async () => {
         vi.clearAllMocks();
         await setupRealImport();

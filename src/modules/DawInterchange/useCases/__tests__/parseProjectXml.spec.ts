@@ -2358,4 +2358,128 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         ]);
         expect(parsed.warnings).toHaveLength(1);
     });
+
+    it('classifies seconds loops and mixed-unit warps at the local tempo while preserving an audio seek', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                    '<Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes><Points target="tempo"><RealPoint time="4" value="60"/></Points>' +
+                    '<Clips track="keys">' +
+                    '<Clip id="one-pass" name="One pass" time="8" duration="4" contentTimeUnit="seconds" playStart="0.1" loopStart="0.1" loopEnd="4.1"><Notes><Note key="60"/></Notes></Clip>' +
+                    '<Clip id="repeat" name="Repeat" time="12" duration="4.0001" contentTimeUnit="seconds" playStart="0.1" loopStart="0.1" loopEnd="4.1"><Notes><Note key="62"/></Notes></Clip>' +
+                    '</Clips><Clips track="audio">' +
+                    '<Clip id="identity" name="Identity" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="identity.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="stretched" name="Stretched" time="12" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="stretched.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="2"/></Warps></Clip>' +
+                    '<Clip id="seek" name="Plain seek" time="16" duration="2" contentTimeUnit="seconds" playStart="1"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)).toEqual([
+            'One pass',
+        ]);
+        expect(
+            parsed.tracks.find((track) => track.name === 'Audio')?.clips.map((clip) => [clip.name, clip.playStartBeat])
+        ).toEqual([
+            ['Identity', undefined],
+            ['Plain seek', 2],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Repeat', context: 'Keys' },
+            { kind: 'unsupported-clip', sourceId: 'stretched', name: 'Stretched', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
+    });
+
+    it('ignores an unused audio source prefix when proving a local seconds loop', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="4" value="60"/></Points><Clips>' +
+                    '<Clip id="one-pass" name="Far seek" time="8" duration="4" contentTimeUnit="seconds" playStart="6" loopStart="6" loopEnd="10"><Audio file="seek.wav"/></Clip>' +
+                    '<Clip id="repeat" name="Real repeat" time="12" duration="4.0001" contentTimeUnit="seconds" playStart="6" loopStart="6" loopEnd="10"><Audio file="repeat.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.playStartBeat])).toEqual([['Far seek', 12]]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Real repeat', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('keeps same-unit warp identities and omits a malformed point after a tempo step', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="4" value="60"/></Points><Clips>' +
+                    '<Clip id="beats" name="Beat identity" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="beats"><Audio file="beats.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="seconds" name="Seconds identity" time="12" duration="4"><Warps timeUnit="seconds" contentTimeUnit="seconds"><Audio file="seconds.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="malformed" name="Malformed" time="16" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="bad.wav"/><Warp time="bad" contentTime="0"/></Warps></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Beat identity', 'Seconds identity']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'malformed', name: 'Malformed', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('rejects nonaffine mixed-unit leaf warps in direct and nested paths while retaining plain siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo">' +
+                    '<RealPoint time="4" value="60"/><RealPoint time="10" value="90"/></Points><Clips>' +
+                    '<Clip id="direct" name="Direct mixed" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="direct.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="parent" name="Parent" time="0" duration="32"><Audio file="parent.wav"/><Clips>' +
+                    '<Clip id="nested" name="Nested mixed" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="nested.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="plain" name="Plain" time="16" duration="1"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Parent', 'Plain']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'direct', name: 'Direct mixed', context: 'Audio' },
+            { kind: 'unsupported-clip', sourceId: 'nested', name: 'Nested mixed', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+    });
+
+    it.each([
+        { name: 'step', points: '<RealPoint time="4" value="60"/><RealPoint time="10" value="90"/>' },
+        {
+            name: 'ramp',
+            points: '<RealPoint time="4" value="60" interpolation="linear"/><RealPoint time="20" value="120"/>',
+        },
+    ])('omits seconds-loop and mixed-warp leaves crossing a tempo $name once each', ({ points }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    `<Arrangement><Lanes track="audio"><Points target="tempo">${points}</Points><Clips>` +
+                    '<Clip id="loop" name="Seconds loop" time="8" duration="4" contentTimeUnit="seconds" loopStart="0" loopEnd="4"><Audio file="loop.wav"/></Clip>' +
+                    '<Clip id="warp" name="Mixed warp" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="warp.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="plain" name="Plain" time="24" duration="1"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Plain']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'loop', name: 'Seconds loop', context: 'Audio' },
+            { kind: 'unsupported-clip', sourceId: 'warp', name: 'Mixed warp', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+    });
 });

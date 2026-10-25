@@ -366,25 +366,26 @@ function clipNotesUnit(content: ClipNotesContent, contentUnit: TimelineUnit): Ti
     return content.route.reduce((unit, node) => readTimeUnit(node, unit), contentUnit);
 }
 
-function repeatsClipLoop(clip: XmlQuery, timing: ClipTiming): boolean {
+function repeatsClipLoop(clip: XmlQuery, timing: ClipTiming, transformTempo: number | null): boolean {
     const loopStart = clip.attr('loopStart');
     const loopEnd = clip.attr('loopEnd');
     if (loopStart === null && loopEnd === null) {
         return false;
     }
-    if (loopStart === null || loopEnd === null || timing.visibleDurationBeat === null) {
+    if (loopStart === null || loopEnd === null || timing.visibleDurationBeat === null || transformTempo === null) {
         return true;
     }
-    const loopStartBeat = toBeats(clip.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
-    const loopEndBeat = toBeats(clip.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
+    const loopStartBeat = toBeats(clip.attrNumber('loopStart', 0), timing.contentUnit, transformTempo);
+    const loopEndBeat = toBeats(clip.attrNumber('loopEnd', 0), timing.contentUnit, transformTempo);
+    const playStartBeat = toBeats(clip.attrNumber('playStart', 0), timing.contentUnit, transformTempo);
     if (loopEndBeat <= loopStartBeat) {
         return true;
     }
     // Converted decimal endpoints can differ by a few ulps at a one-pass boundary.
-    return timing.playStartBeat + timing.visibleDurationBeat - loopEndBeat > LOOP_ROUNDOFF_TOLERANCE_BEATS;
+    return playStartBeat + timing.visibleDurationBeat - loopEndBeat > LOOP_ROUNDOFF_TOLERANCE_BEATS;
 }
 
-function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming): boolean {
+function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming, transformTempo: number | null): boolean {
     const warps = clip.child('Warps');
     if (!warps) {
         return false;
@@ -392,13 +393,16 @@ function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming): boolean {
     const timeUnit = readTimeUnit(warps, timing.contentUnit);
     const contentUnit = readContentTimeUnit(warps, timeUnit);
     return warps.children('Warp').some((warp) => {
+        if (transformTempo === null) {
+            return true;
+        }
         const time = readTimingScalar(warp, 'time', NaN);
         const contentTime = readTimingScalar(warp, 'contentTime', NaN);
         if (time === null || contentTime === null || !Number.isFinite(time) || !Number.isFinite(contentTime)) {
             return true;
         }
-        const timeBeat = toBeats(time, timeUnit, timing.tempo);
-        const contentBeat = toBeats(contentTime, contentUnit, timing.tempo);
+        const timeBeat = toBeats(time, timeUnit, transformTempo);
+        const contentBeat = toBeats(contentTime, contentUnit, transformTempo);
         return !Number.isFinite(timeBeat) || !Number.isFinite(contentBeat) || Math.abs(timeBeat - contentBeat) > 1e-9;
     });
 }
@@ -407,6 +411,7 @@ function parseClip(
     clip: XmlQuery,
     ownerKind: DawProjectParsedTrack['kind'],
     timing: ClipTiming,
+    transformTempo: number | null,
     context: ParseContext,
     index: number,
     trackName: string,
@@ -416,7 +421,7 @@ function parseClip(
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
-    if (repeatsClipLoop(clip, timing) || hasNonIdentityWarpPoints(clip, timing)) {
+    if (repeatsClipLoop(clip, timing, transformTempo) || hasNonIdentityWarpPoints(clip, timing, transformTempo)) {
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;
     }
@@ -823,6 +828,33 @@ function parseArrangementClips(
         return timing;
     }
 
+    function leafTransformTempo(clip: XmlQuery, timing: ClipTiming): number | null {
+        const hasLoop = clip.attr('loopStart') !== null || clip.attr('loopEnd') !== null;
+        const warps = clip.child('Warps');
+        const warpPoints = warps?.children('Warp') ?? [];
+        const warpTimeUnit = warps ? readTimeUnit(warps, timing.contentUnit) : timing.contentUnit;
+        const warpContentUnit = warps ? readContentTimeUnit(warps, warpTimeUnit) : warpTimeUnit;
+        const mixedWarp = warpPoints.length > 0 && warpTimeUnit !== warpContentUnit;
+        if (!(hasLoop && timing.contentUnit === 'seconds') && !mixedWarp) {
+            return timing.tempo;
+        }
+        if (!tempoPointsUseBeats) {
+            return null;
+        }
+        const visibleEndBeat = timing.visibleEndBeat;
+        if (
+            visibleEndBeat === null ||
+            !Number.isFinite(timing.startBeat) ||
+            !Number.isFinite(visibleEndBeat) ||
+            visibleEndBeat < timing.startBeat
+        ) {
+            return null;
+        }
+        // The source seek is represented separately. Only the visible playback
+        // interval needs one affine seconds-to-beats conversion for admission.
+        return constantTempo(timing.startBeat, visibleEndBeat);
+    }
+
     function resolveTrackId(candidate: string | null): string | null {
         if (candidate === null) {
             return null;
@@ -990,7 +1022,16 @@ function parseArrangementClips(
                 const targetTrackId = resolveTrackId(contentOwner.reference);
                 const target = targetTrackId ? trackById.get(targetTrackId) : null;
                 if (target) {
-                    const clip = parseClip(laneOrClips, target.kind, timing, context, index, target.name, muted);
+                    const clip = parseClip(
+                        laneOrClips,
+                        target.kind,
+                        timing,
+                        leafTransformTempo(laneOrClips, timing),
+                        context,
+                        index,
+                        target.name,
+                        muted
+                    );
                     if (clip) {
                         target.clips.push(clip);
                     }
