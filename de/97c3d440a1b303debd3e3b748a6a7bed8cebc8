@@ -1,0 +1,31 @@
+.agents/skills/review-stances/test-validity.md
+  s_7acdc945b846b6::t_c925f461c85de1 35-40
+scripts/__tests__/fixtures/resourceGuardSignal.ts
+  s_29d8df116c5b92::t_fbcf29d2a855a7 17,35-43,54-57,61-64,111-124,133,141-142,158-166,192
+scripts/__tests__/resourceGuard.spec.ts
+  s_7acdc945b846b6::t_66b3b5e4170e68 561-592
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de97c3d440a1b303debd3e3b748a6a7bed8cebc8",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
