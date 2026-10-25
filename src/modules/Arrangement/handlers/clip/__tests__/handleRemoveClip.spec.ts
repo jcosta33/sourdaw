@@ -70,6 +70,7 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({ workspaceStore: mocks.worksp
 
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(),
 }));
@@ -83,7 +84,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDocIds: vi.fn(() => ['root']),
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async () => ({
+    isExactMidiClipDataActionSnapshot: (
+        await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
+    ).isExactMidiClipDataActionSnapshot,
     decodeMidiClipDataSnapshots: vi.fn(() => null),
     getMidiStoreState: mocks.getMidiStoreState,
     removeMidiClipData: mocks.removeMidiClipData,

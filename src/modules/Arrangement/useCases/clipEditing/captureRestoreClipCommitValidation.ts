@@ -56,11 +56,11 @@ function identityCounts(document: Readonly<Record<string, unknown>>, ids: Readon
     const live = Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'arrangements'));
     const gain = document.gainEnvelopes;
     if (isRecord(gain) && isRecord(gain.envelopes)) {
-        const envelopeMaterial = Object.entries(gain.envelopes).map(([id, envelope]) => [
-            id,
-            gainEnvelopeIdentityMaterial(envelope),
-        ]);
-        live.gainEnvelopes = { ...gain, envelopes: Object.fromEntries(envelopeMaterial) };
+        const envelopeMaterial: [string, unknown][] = Object.entries(gain.envelopes).map(
+            ([id, envelope]): [string, unknown] => [id, gainEnvelopeIdentityMaterial(envelope)]
+        );
+        const envelopes: Record<string, unknown> = Object.fromEntries(envelopeMaterial);
+        live.gainEnvelopes = { ...gain, envelopes };
     }
     // Match readClipSplitIdentityIds: arrangements are a separate namespace,
     // and canonical gain-point IDs are local to their clip. Mutable document

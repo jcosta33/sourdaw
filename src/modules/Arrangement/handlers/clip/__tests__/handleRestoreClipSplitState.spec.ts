@@ -13,6 +13,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
         adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
+        isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
         decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         getGrooveTemplate: actual.getGrooveTemplate,
         getMidiStoreState: actual.getMidiStoreState,
