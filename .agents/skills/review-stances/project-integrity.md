@@ -1,5 +1,17 @@
 # Lesson library: project integrity
 
+## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
+
+An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
+because a queued selection flush writes no new content. A real edit followed by a same-lineage
+replacement of earlier heads also leaves those heads unchanged, but discards the edited history.
+After a checkpoint, an ancestry scan of the installed document cannot recover that discarded edit.
+At every same-lineage replacement and same-membership snapshot restore, require the new _active_
+heads to retain every prior active head in their causal ancestry. Record a monotonic discard epoch
+when they do not, and reject approvals captured before it even if current heads match. A forward
+merge with concurrent heads and a checkpoint-only change must remain eligible; a foreign write
+after authorization capture must still revoke execution.
+
 ## 2026-10-25 — queued selection writes revoked confirmed command authority (introduced by PR #2747)
 
 PR #2747 (`06fb56e389`) added a strict mutation-owner authorization check for confirmed AI

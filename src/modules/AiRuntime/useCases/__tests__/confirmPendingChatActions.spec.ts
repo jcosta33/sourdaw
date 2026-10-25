@@ -1,3 +1,4 @@
+import { clone } from '@automerge/automerge';
 import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -52,6 +53,7 @@ import {
     getCrdtDoc,
     inspectAgentProjectDivergence,
     registerCrdtStorageRuntime,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
@@ -890,6 +892,105 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
         } finally {
             issuer.mockRestore();
+        }
+    });
+
+    it('rejects an old approval after a published edit is rewound to its exact approved heads', async () => {
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.reviewSource = 120;
+            },
+        });
+        const confirmationId = 'confirmation-published-root-rewind';
+        const commandBatch = configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-published-root-rewind',
+        });
+        const approval = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.agentApproval;
+        const approvedRoot = getCrdtDoc<Record<string, unknown>>('root');
+        if (!approval || !approvedRoot) {
+            throw new Error('Expected the approved batch and root document.');
+        }
+        const approvedRootSnapshot = clone(approvedRoot);
+        const approvedRevision = JSON.parse(captureProjectRevision()) as {
+            documentIdentityEpoch: number;
+            mutationEpoch: number;
+            documents: unknown;
+        };
+
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.reviewSource = 128;
+            },
+        });
+        expect(getCrdtDoc<Record<string, unknown>>('root')?.reviewSource).toBe(128);
+        replaceCrdtDocInLineage({ id: 'root', doc: clone(approvedRootSnapshot) });
+        expect(getCrdtDoc<Record<string, unknown>>('root')?.reviewSource).toBe(120);
+        expect(JSON.parse(captureProjectRevision())).toMatchObject({
+            documentIdentityEpoch: approvedRevision.documentIdentityEpoch,
+            mutationEpoch: approvedRevision.mutationEpoch + 2,
+            documents: approvedRevision.documents,
+        });
+
+        const issuer = vi.spyOn(commandUseCases, 'issueCommandApprovalBinding');
+        let bindingValidation: ReturnType<
+            Parameters<typeof commandUseCases.issueCommandApprovalBinding>[0]['validate']
+        > | null = null;
+        try {
+            issueAgentCommandApprovalBinding({ approval, commandBatch });
+            expect(issuer).toHaveBeenCalledOnce();
+            const issued = issuer.mock.calls[0]?.[0];
+            if (!issued) {
+                throw new Error('Expected the final Command binding to receive the original approval.');
+            }
+            expect(issued.authority).toEqual(commandBatch.authority);
+            expect(issued.serialized).toBe(commandBatch.serialized);
+            bindingValidation = issued.validate();
+        } finally {
+            issuer.mockRestore();
+        }
+
+        const executeBatch = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope');
+        try {
+            const result = await confirmPendingChatActions({ confirmationId });
+            expect(result).toMatchObject({ status: 'reapproval_required' });
+            expect(bindingValidation).toEqual({
+                status: 'invalid',
+                reason: 'The approved source revision is stale.',
+                stale: true,
+            });
+            expect(executeBatch).not.toHaveBeenCalled();
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+            expect(undoStore.value?.past).toEqual([]);
+            expect(aiActionHistoryStore.value?.groups).toEqual([]);
+            expect(
+                await getVersionedCommandBatchIdempotentReplay({
+                    authority: commandBatch.authority,
+                    serialized: commandBatch.serialized,
+                })
+            ).toBeNull();
+
+            const refreshed = getPendingActionConfirmation(confirmationId);
+            const refreshedBatch = refreshed?.approvalSnapshot.commandBatch;
+            expect(refreshed?.status).toBe('proposed');
+            expect(refreshedBatch?.authority.baseRevision).toBe(captureProjectRevision());
+            expect(refreshedBatch?.serialized).not.toBe(commandBatch.serialized);
+
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+            expect(executeBatch).toHaveBeenCalledOnce();
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(
+                await getVersionedCommandBatchIdempotentReplay({
+                    authority: commandBatch.authority,
+                    serialized: commandBatch.serialized,
+                })
+            ).toBeNull();
+        } finally {
+            executeBatch.mockRestore();
         }
     });
 
