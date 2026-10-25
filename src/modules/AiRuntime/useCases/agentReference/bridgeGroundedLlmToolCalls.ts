@@ -7098,14 +7098,16 @@ function bridgeUnrefinedLlmToolCalls(
         };
     }
     if (transformCalls.length > 0 || compilerEvidence !== undefined) {
-        const trackProtections = readExplicitProtections(prompt, context);
-        // The shared reader has consumed these exact original spans as resolved track/control clauses.
-        // Residual clauses, including every actual clip protection, retain the older clip completeness check.
-        const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
-            (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
-            prompt
-        );
-        const clipProtection = getExplicitClipProtection(clipPrompt, context);
+        let clipProtection = getExplicitClipProtection(prompt, context);
+        if (!clipProtection.complete) {
+            const trackProtections = readExplicitProtections(prompt, context);
+            // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
+            const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+                (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+                prompt
+            );
+            clipProtection = getExplicitClipProtection(clipPrompt, context);
+        }
         const protectedIds = new Set(
             getApplicationProtectedObjects({ actions: [], context, prompt }).map((object) => object.id)
         );
