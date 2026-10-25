@@ -73,6 +73,20 @@ const MasterGainControl = ({ value, onChange, onResetToDefault }: MasterGainCont
         openMasterGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
     };
 
+    const activateMasterGainMenuReset = (): void => {
+        onResetToDefault();
+        closeMasterGainMenu();
+    };
+
+    const handleMasterGainMenuActivationKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
+            return;
+        }
+
+        event.preventDefault();
+        activateMasterGainMenuReset();
+    };
+
     return (
         <>
             <div
@@ -103,14 +117,9 @@ const MasterGainControl = ({ value, onChange, onResetToDefault }: MasterGainCont
                     x={masterGainMenu.x}
                     y={masterGainMenu.y}
                     onClose={closeMasterGainMenu}
+                    onKeyDown={handleMasterGainMenuActivationKeyDown}
                 >
-                    <DawMenuButton
-                        role="menuitem"
-                        onClick={() => {
-                            onResetToDefault();
-                            closeMasterGainMenu();
-                        }}
-                    >
+                    <DawMenuButton role="menuitem" onClick={activateMasterGainMenuReset}>
                         Reset to Default
                     </DawMenuButton>
                 </DawContextMenuSurface>

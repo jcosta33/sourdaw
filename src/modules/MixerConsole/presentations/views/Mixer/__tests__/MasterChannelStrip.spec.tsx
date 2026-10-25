@@ -207,6 +207,61 @@ describe('MasterChannelStrip', () => {
         );
     });
 
+    it.each([
+        { opener: 'ContextMenu', openKey: 'ContextMenu', shiftKey: false, activateKey: 'Enter' },
+        { opener: 'ContextMenu', openKey: 'ContextMenu', shiftKey: false, activateKey: ' ' },
+        { opener: 'Shift+F10', openKey: 'F10', shiftKey: true, activateKey: 'Enter' },
+        { opener: 'Shift+F10', openKey: 'F10', shiftKey: true, activateKey: ' ' },
+    ])(
+        'activates Reset once with $activateKey after $opener opens the menu',
+        async ({ openKey, shiftKey, activateKey }) => {
+            storeMocks.useStore.mockReturnValue({ masterGain: 60 });
+            storeMocks.transportStoreValue = { masterGain: 60 };
+            render(<MasterChannelStrip widthClass="w-36" />);
+            const fader = screen.getByRole('slider', { name: 'Master gain' });
+            fader.focus();
+
+            fireEvent.keyDown(fader, { key: openKey, shiftKey });
+            const menu = screen.getByRole('menu', { name: 'Master gain actions' });
+            expect(menu).toHaveFocus();
+            expect(screen.getByRole('menuitem', { name: 'Reset to Default' }).tagName).toBe('BUTTON');
+
+            fireEvent.keyDown(menu, { key: activateKey });
+
+            await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+            expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'setMasterGain',
+                payload: { gain: 0.8, expectedPercent: 60 },
+            });
+            expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
+            expect(fader).toHaveFocus();
+        }
+    );
+
+    it.each(['Enter', ' '])('does not duplicate native button activation for %s', async (key) => {
+        storeMocks.useStore.mockReturnValue({ masterGain: 60 });
+        storeMocks.transportStoreValue = { masterGain: 60 };
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        fader.focus();
+        fireEvent.keyDown(fader, { key: 'ContextMenu' });
+
+        const resetButton = screen.getByRole('menuitem', { name: 'Reset to Default' });
+        resetButton.focus();
+        act(() => {
+            fireEvent.keyDown(resetButton, { key });
+            resetButton.click();
+        });
+
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.8, expectedPercent: 60 },
+        });
+        expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
+        expect(fader).toHaveFocus();
+    });
+
     it('dispatches the settled change through the app action instead of writing the use case directly', async () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
