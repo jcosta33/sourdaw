@@ -1,0 +1,125 @@
+src/modules/Transport/useCases/tempoMap/__tests__/tempoMapCommands.integration.spec.ts
+  s_29d8df116c5b92::t_16230c5a420a7f 1-123
+  s_29d8df116c5b92::t_2a1351792a7b97 124-489
+src/modules/Arrangement/useCases/applyTempoAudioSources.ts
+  s_29d8df116c5b92::t_75fb8b29fefb30 32
+src/modules/Command/useCases/commandArgumentMetadata.ts
+  s_29d8df116c5b92::t_1e3c1bb8333c1a 112-114,117
+  s_29d8df116c5b92::t_866c254ffe4178 115-116,118-119
+src/modules/Transport/useCases/tempoMap/replaceTempoMap.ts
+  s_29d8df116c5b92::t_85ca55e5e9cfbc 1-2,13,31
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_965773c85a7e2c 14,1455-1468,1471-1472
+  s_26f70b851e8f7a::t_c2175f918dc967 1469-1470
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_29d8df116c5b92::t_1e3c1bb8333c1a 21,55-60
+  s_29d8df116c5b92::t_ff386448ec91cd 22
+  s_29d8df116c5b92::t_ecfd79749c6281 61,82
+src/utils/tempoMapRowPlan.ts
+  s_29d8df116c5b92::t_965773c85a7e2c 10-15
+  s_29d8df116c5b92::t_58c201b26f4a0f 28-42,64-87,94,113-114,126,137,141,145
+  s_29d8df116c5b92::t_d5251c3fc4ec83 43-63,88-93,95-112,117-118,125,136
+  s_29d8df116c5b92::t_e4eaa634131e2b 115-116,119-124,127-135,138-140,142-144
+src/modules/Transport/useCases/tempoMap/updateTempoChange.ts
+  s_29d8df116c5b92::t_85ca55e5e9cfbc 1,3-4
+src/modules/Arrangement/useCases/clipEditing/prepareAudioSourcePrefixWitness.ts
+  s_29d8df116c5b92::t_75fb8b29fefb30 18-19,29,31,75,185-188,267-270,278-282,284-285,354-359
+  s_29d8df116c5b92::t_dc5c75b11a74a6 283,286-290
+  s_29d8df116c5b92::t_2428edc054fa0f 291-297,360-365
+src/modules/Transport/useCases/getTransportHandlers.ts
+  s_29d8df116c5b92::t_ff386448ec91cd 20-21,52-53,72-73
+src/modules/Transport/handlers/transport/tempoMapAudioSourceEdit.ts
+  s_29d8df116c5b92::t_77171b5d1f2861 1-17,22-63,65-115,124-154,156,158-193,201-224
+  s_29d8df116c5b92::t_1c8fb8c3fb4697 18-21,64,155,157,194-200
+  s_29d8df116c5b92::t_0be5144be51ae1 116-123
+  s_29d8df116c5b92::t_d455d6203c4fcc 225-308
+src/modules/Arrangement/stores/tempoAudioSourceWriteIntent.ts
+  s_29d8df116c5b92::t_27b3fc49567b9c 8,33-34,43,46-47,113,220-229,234-236,256,260-268,270,278-284
+  s_29d8df116c5b92::t_d3cf9d16c8206d 7,21,29-32,35-42,120-121,213-219,230-233,285-289,316,320-321,325-336,345-357
+  s_29d8df116c5b92::t_b56e0fff5f3f75 337-344
+  s_29d8df116c5b92::t_676ddba7c1c43d 358-359
+src/modules/Transport/useCases/tempoMap/addTempoChange.ts
+  s_29d8df116c5b92::t_85ca55e5e9cfbc 1-2,4-5
+src/modules/Transport/stores/tempoWriteIntent.ts
+  s_29d8df116c5b92::t_5e9f465cc4849a 9-11,24-28,30,46-53,86
+  s_29d8df116c5b92::t_9dc7b31dfbafef 54-56,75-77,83-85,87,118,127-138
+src/modules/Arrangement/useCases/comping/prepareTempoAudioSourceWrite.ts
+  s_29d8df116c5b92::t_27b3fc49567b9c 9-12,24,45-46
+  s_29d8df116c5b92::t_740c0fbc65ca12 2,47-48,52
+src/modules/Transport/stores/tempoMapStore.ts
+  s_29d8df116c5b92::t_5e9f465cc4849a 7,119,128-130
+  s_29d8df116c5b92::t_688108d6d1ee45 131-134
+src/modules/Transport/models/tempoMapRowPlanMatchesCurrent.ts
+  s_29d8df116c5b92::t_ee64d6496a68ba 1-19
+src/modules/Transport/handlers/transport/handleEditTempoMap.ts
+  s_29d8df116c5b92::t_77171b5d1f2861 1-33
+  s_29d8df116c5b92::t_98d18f308c73dc 34-45
+src/modules/Transport/handlers/transport/handleRestoreTempoMapEdit.ts
+  s_29d8df116c5b92::t_77171b5d1f2861 1-24
+  s_29d8df116c5b92::t_3667ac144cca4b 25-27
+src/modules/Transport/useCases/tempoMap/removeTempoChange.ts
+  s_29d8df116c5b92::t_85ca55e5e9cfbc 1,3-4
+src/modules/Arrangement/stores/trackStore.ts
+  s_29d8df116c5b92::t_d3cf9d16c8206d 12,893-899
+  s_29d8df116c5b92::t_e20beac102e854 900-902
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorCommands.integration.spec.tsx
+  s_29d8df116c5b92::t_cd49161b3b40ec 1,103,109
+  s_29d8df116c5b92::t_9556e2dd481eff 2-102,104-108,110-113
+  s_29d8df116c5b92::t_5e3bae8cf7af02 114-184
+src/modules/Transport/useCases/tempoMap/applyTempoMapRowPlan.ts
+  s_29d8df116c5b92::t_ee64d6496a68ba 3,36
+src/modules/TimelineEditor/presentations/hooks/useTempoEditorState.ts
+  s_29d8df116c5b92::t_cd49161b3b40ec 6,336
+  s_29d8df116c5b92::t_eb1ed0a54d6010 337-339,355-358,369
+src/modules/Transport/useCases/tempoMap/planTempoMapEdit.ts
+  s_29d8df116c5b92::t_965773c85a7e2c 2
+  s_29d8df116c5b92::t_d099ac9eba32e5 3-7,20
+src/modules/Command/useCases/__tests__/commandArgumentMetadata.spec.ts
+  s_29d8df116c5b92::t_7493a9adda410b 68-120,122-125,128,130-132,134-137
+src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts
+  s_29d8df116c5b92::t_311ba58684580e 343-370
+src/modules/Command/useCases/__tests__/parseVersionedCommandEnvelopeHandlerMintedIds.spec.ts
+  s_29d8df116c5b92::t_e919de85ec5c30 10,268-281
+src/modules/Command/useCases/readHandlerMintedApplicationIds.ts
+  s_29d8df116c5b92::t_cb0aa200f37e7b 50-67
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_fdc70c1fd59538 1415-1578,1656-1657,1690,1700,1716,1746-1747,1817,1822,1838,1860,1869,1888,1901,1906-1908,1928,1935,1941,1960,1966,1984,1990,1998-2000,2010-2011,2013-2014,2038,2045-2046,2048,2076,2091,2109,2114,2120,2127,2141-2142,2161,2166,2175-2176,2222,2226,2229,2233,2239,2251,2255,2272,2278,2281,2299,2306,2317,2348,2360,2368,2380,2396,2404,2410,2419-2420,2436,2447,2484,2489,2532,2537,2655,2661,2679,2684,2751,2779,2798,2826,2849-2850,2873,2892,2900,2909,2920-2922,2936-2938,2969,2975,2984,2995,3003,3014-3015,3037,3059-3060,3085-3086,3141,3149,3184,3210,3228,3234,3256,3282,3290-3292,3299,3308-3309,3314-3319,3354,3361,3377,3385-3387,3410,3440-3441,3445-3446,3519,3530,3570,3576,3626,3641,3646,3665-3666,3673,3679,3686,3700-3701,3710,3712,3724-3725,3733-3734,3746,3762,3772,3790,3798-3800,3807,3828-3829,3843-3844,3858-3859,3902-3903,3979-3980,4060-4061,4203,4209,4213-4214,4229,4236,4239,4248,4250,4332-4333,4360-4361,4383,4397,4406,4428,4442,4449,4456-4458,4496-4498,4520,4525,4537,4544,4549,4551,4557,4562,4564-4565,4584,4591,4599-4600,4606,4609,4653-4654,4663-4664,4727,4733-4734,4747-4748,4774,4779-4780,4806,4814,4821,4826-4827,4843,4848-4849,4861,4871,4878,4884,4889,4898-4899,4921,4926-4927,4964-4965,4985,4999-5000,5008-5009,5027-5028,5050,5098,5105,5111-5112,5119,5133,5148,5162,5167-5170,5199,5205,5219,5225,5270,5272-5274,5287-5288,5296-5297,5299-5300,5312-5313,5316-5317,5323,5328,5355,5360,5455,5462,5490,5498,5504,5512-5513,5553,5564,5572,5578,5585,5590,5598-5599,5810,5826,5843,5850-5851,5854,5885,5898-5901,5911-5912,5957,5971,5976,5978,6026,6031,6049,6054,6086,6091,6158,6167,6179,6191,6212,6224,6230,6236-6237,6262,6268-6269,6333,6339,6342,6349,6354,6356,6365,6367,6376,6395,6403,6416-6417,6424,6429,6448,6453,6491-6494,6498-6499,6502-6538,6545-6569,6571-6601,6605,6607-6627,6630,6632-6642,6644-6645,6652-6686,6692-6693,6696-6700,6702-6719,6721-6723,6725-6729,6731-6732,6734-6736,6738-6750,6752,6754-6756,6761-6762,6764-6767,6771-6776,6781,6783-6784,6786-6787,6790-6804,6806-6810,6812-6815,6819-6834
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_29d8df116c5b92::t_3cfbff4f3248ba 25,27,2288-2299
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/cinematic.spec.ts
+  s_29d8df116c5b92::t_10ac8adc77d812 21,32,57,59-72
+src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts
+  s_29d8df116c5b92::t_7bd62c110c29c6 1,27-40
+src/modules/Transport/useCases/tempoMap/__tests__/addTempoChange.spec.ts
+  s_29d8df116c5b92::t_9d39658e1aa674 1,3-4,6,8-9,12-37
+src/modules/Transport/useCases/tempoMap/__tests__/removeTempoChange.spec.ts
+  s_29d8df116c5b92::t_0193126fb35795 1,3-4,6,8-9,12,15-23,26-29
+src/modules/Transport/useCases/tempoMap/__tests__/replaceTempoMap.spec.ts
+  s_29d8df116c5b92::t_0cf0513bbe904e 1,3-4,8-9,12,15-21,23-42
+src/modules/Transport/useCases/tempoMap/__tests__/updateTempoChange.spec.ts
+  s_29d8df116c5b92::t_aeb6e0a758522e 1,3-4,6,8-9,12,15-23,26-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f14cdcd5ce19edb8c4812fcba00872793015a52",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
