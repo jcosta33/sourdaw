@@ -27,6 +27,7 @@ export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
 export { decodeMidiClipDataSnapshots } from './midiClipData/decodeMidiClipDataSnapshots';
+export { isExactMidiClipDataActionSnapshot } from './midiClipData/isExactMidiClipDataActionSnapshot';
 export { commitRecordedControllers } from './recordedControllerTake/commitRecordedControllers';
 export { countSettledOverdubPasses } from './recordedControllerTake/countSettledOverdubPasses';
 export { discardRecordedControllers } from './recordedControllerTake/discardRecordedControllers';

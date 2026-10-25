@@ -4,6 +4,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { isExactMidiClipDataActionSnapshot } from './isExactMidiClipDataActionSnapshot';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiClipDataSlotSnapshot<Row> = {
@@ -133,6 +134,11 @@ export function midiClipSplitStateMatches(
     priorActions: readonly AppAction[] = []
 ): boolean {
     const { sourceClipId, rightClipId, expectedSource, expectedRight, replacementSource, replacementRight } = input;
+    if (
+        ![expectedSource, expectedRight, replacementSource, replacementRight].every(isExactMidiClipDataActionSnapshot)
+    ) {
+        return false;
+    }
     if (!state) {
         return [expectedSource, expectedRight, replacementSource, replacementRight].every(snapshotIsAbsent);
     }

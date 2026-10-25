@@ -189,6 +189,21 @@ describe('midiClipSplitStateMatches', () => {
         ).toBe(true);
     });
 
+    it('refuses an invalid replacement even when the expected MIDI owner slots match', () => {
+        const live = {
+            ...state({ source: [] }),
+            ccByClipId: { source: [] },
+            pitchBendByClipId: { source: [] },
+        };
+        const invalidReplacement = {
+            ...captured,
+            notes: { present: true, value: [{ ...note, articulation: ' bad ' }] },
+        };
+        expect(midiClipSplitStateMatches({ ...redoInput, replacementRight: invalidReplacement }, live)).toBe(false);
+        expect(midiClipSplitStateMatches(redoInput, live)).toBe(true);
+        expect(live.notesByClipId.source).toEqual([]);
+    });
+
     it('rejects changed values, array order, and present-versus-absent clip data', () => {
         const first = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
         const second = { id: 'note-2', pitch: 64, startBeat: 1, duration: 1, velocity: 100 };
