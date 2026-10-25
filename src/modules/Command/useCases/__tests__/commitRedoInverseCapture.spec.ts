@@ -127,7 +127,7 @@ describe('committed Redo inverse capture publication', () => {
         if (terminal === 'descendant-before') {
             replaceCrdtDocInLineage({
                 id: 'root',
-                doc: Automerge.change(Automerge.clone(getCrdtDoc('root')!), (draft) => {
+                doc: Automerge.change<Record<string, unknown>>(Automerge.clone(getCrdtDoc('root')!), (draft) => {
                     draft.peerDescendant = true;
                 }),
             });
