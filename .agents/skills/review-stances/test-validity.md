@@ -6,6 +6,38 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
+
+Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
+2 s close observer. No associated PR or historical review stance was established from GitHub's
+commit-to-PR lookup. Hosted runs 39973668261 and 40071014243 failed that observer; their
+uninstrumented traces do not establish which scheduling or cleanup phase consumed the deadline.
+A controlled hold at the existing storage-release seam reproduced the same timeout after the
+child was already dead, and completed with exit 143 when release was admitted.
+
+Require the resistant child's installed handler to acknowledge the first TERM before sending the
+second supervisor signal. Hold only the single fallback scheduled synchronously by that first
+signal turn, preserving its real timer handle and cancellation. With fallback admission closed,
+repeated TERM must kill the owned child; without repeated TERM, it must stay alive until explicit
+fallback admission. Hold real storage release afterward: require proved child absence, live temp
+storage, pending supervisor close, and a surviving unrelated process. Admit release, await close
+143 before removing fixture files, and require real storage removal. A sleep, larger deadline, or
+exit 143 alone cannot distinguish repeated-signal escalation from the fallback.
+
+PR #5661's initial fixture also treated file existence as a complete JSON acknowledgement.
+Stage a partial readiness record and first-TERM record before admission; each must remain
+unadmitted by the consumer until full same-directory publication by rename. Obtain child PID
+and start identity independently from the supervisor's storage process record, never from a
+readiness parse. Fail readiness while abort is held, with that identity present and withheld:
+clean the unrelated child, retain fixture and temporary storage, and report missing exit proof.
+Only matching affirmative supervisor-owned exit and storage-removal evidence admits root deletion.
+
+Teardown must not depend on the behavior under test. After first-TERM acknowledgement and fallback
+capture, suppress only the identified production repeated-signal handler and require abort cleanup
+to finish through the independently admitted fallback. Keep a fallback-admitting finally around
+this probe so its failing version also leaves no child. Fallback stays held throughout the deciding
+repeated-signal assertions; abort may admit it only after that path finishes or fails.
+
 ### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
 
 Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
