@@ -19,10 +19,10 @@ import {
 import { acceptedFindings, discardedDispositions, publishedReviewId } from './reviewDossierViews.ts';
 
 import type { ReviewDraw } from './reviewDocumentParser.ts';
-import type { ReviewDossier, ReviewDossierEvent } from './reviewDossier.ts';
+import type { AcceptedReviewFinding, ReviewDossier, ReviewDossierEvent, ReviewFindingSource } from './reviewDossier.ts';
 import type { ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
-type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
+type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT'; sources?: ReviewFindingSource[] };
 type ReviewRecommendation = 'approve' | 'request-changes';
 type ReviewDossierBuildInput = {
     plan: ReviewRiskPlan;
@@ -68,13 +68,21 @@ function assembleFromDraws(input: ReviewDossierBuildInput, draws: readonly Revie
         modelTier: draw.tier,
         outcome: DRAW_OUTCOMES[draw.outcome],
     }));
-    const findingEvents = input.comments.map((comment, index): ReviewDossierEvent => ({
-        kind: 'finding-accepted',
-        findingId: `comment-${index}`,
-        path: comment.path,
-        line: comment.line,
-        side: comment.side,
-    }));
+    const findingEvents = input.comments.map((comment, index): ReviewDossierEvent => {
+        if (comment.sources === undefined) {
+            fail(
+                `review.json comment ${index} requires sources: non-empty { stance, reviewerModel } pairs naming the completed findings draws that independently detected it`
+            );
+        }
+        return {
+            kind: 'finding-accepted',
+            findingId: `comment-${index}`,
+            path: comment.path,
+            line: comment.line,
+            side: comment.side,
+            sources: comment.sources,
+        };
+    });
     return assembleReviewDossier({
         plan: input.plan,
         events: [...stanceEvents, ...findingEvents],
@@ -97,8 +105,14 @@ function assertEqualList(label: string, actual: readonly string[], expected: rea
     fail(`${label} mismatch: record has [${actual.join(', ')}], expected [${expected.join(', ')}]`);
 }
 
+function sourceKeys(sources: readonly ReviewFindingSource[] | undefined): string | undefined {
+    return sources === undefined
+        ? undefined
+        : JSON.stringify(sources.map((source) => [source.stance, source.reviewerModel]));
+}
+
 function assertFindingsMatchComments(
-    accepted: readonly { findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }[],
+    accepted: readonly AcceptedReviewFinding[],
     comments: readonly ReviewDossierComment[]
 ): void {
     if (accepted.length !== comments.length) {
@@ -115,6 +129,9 @@ function assertFindingsMatchComments(
             fail(
                 `review dossier publication accepted finding ${index} id ${finding.findingId} must be comment-${index}`
             );
+        }
+        if (sourceKeys(finding.sources) !== sourceKeys(comment.sources)) {
+            fail(`review dossier publication accepted finding ${index} sources mismatch with review comment`);
         }
         if (finding.path !== comment.path || finding.line !== comment.line || finding.side !== comment.side) {
             fail(

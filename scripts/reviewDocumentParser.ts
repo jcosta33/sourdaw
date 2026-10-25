@@ -7,8 +7,9 @@
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { assertReviewDocumentFormat, parseApprovalEvidence, renderLegacyApprovalBody } from './reviewApprovalFormat.ts';
+import { readReviewFindingSources } from './reviewDossier.ts';
 
-import type { ReviewModelTier } from './reviewDossier.ts';
+import type { ReviewFindingSource, ReviewModelTier } from './reviewDossier.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -19,6 +20,8 @@ export type ReviewComment = {
     defect: string;
     consequence: string;
     done: string;
+    /** Required for new plan-carrying findings; exact draw pairs that independently found this defect. */
+    sources?: ReviewFindingSource[];
 };
 
 /** One completed blind review draw: one stance performed by one reviewer model. */
@@ -385,6 +388,14 @@ function parseCommentEntries(entries: unknown[]): ReviewComment[] {
             { defect: record.defect, consequence: record.consequence, done: record.done },
             index
         );
-        return { path, line, side, ...content };
+        return {
+            path,
+            line,
+            side,
+            ...content,
+            ...('sources' in record
+                ? { sources: readReviewFindingSources(record.sources, `review.json comments[${index}] sources`) }
+                : {}),
+        };
     });
 }

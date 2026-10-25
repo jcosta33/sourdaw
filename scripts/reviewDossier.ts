@@ -74,9 +74,21 @@ export type CompletedReviewStance = {
     exhaustion?: string;
 };
 
+/** Identity of one completed draw; independent duplicate detections may name several sources. */
+export type ReviewFindingSource = { stance: ReviewDossierStance; reviewerModel: string };
+
+export type AcceptedReviewFinding = {
+    findingId: string;
+    path: string;
+    line: number;
+    side: 'LEFT' | 'RIGHT';
+    /** Absent on historical records: attribution is unknown, never inferred from draw order. */
+    sources?: ReviewFindingSource[];
+};
+
 export type ReviewDossierEvent =
     | ({ kind: 'stance-completed' } & CompletedReviewStance)
-    | { kind: 'finding-accepted'; findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }
+    | ({ kind: 'finding-accepted' } & AcceptedReviewFinding)
     | { kind: 'finding-discarded'; findingId: string; stance: ReviewDossierStance; reason: string }
     // The post-publish bindings (#3375, spec #3367 AC-004): once the review POST lands, its public
     // ids append to the chain so the record binds not just the dispositions but the exact public
@@ -257,6 +269,31 @@ function readPublicationSafeString(label: string, value: unknown): string {
     return text;
 }
 
+/** Shared by review.json and dossier readers so every persisted source has the same safe shape. */
+export function readReviewFindingSources(value: unknown, label: string): ReviewFindingSource[] {
+    if (!Array.isArray(value) || value.length === 0) {
+        fail(`${label} must be a non-empty array of { stance, reviewerModel } source pairs`);
+    }
+    const seen = new Set<string>();
+    return value.map((entry: unknown, index) => {
+        const sourceLabel = `${label}[${index}]`;
+        if (!isRecord(entry)) {
+            fail(`${sourceLabel} must be an object`);
+        }
+        assertExactKeys(entry, ['stance', 'reviewerModel'], sourceLabel);
+        const source = {
+            stance: readPublicationSafeString(`${sourceLabel}.stance`, entry.stance),
+            reviewerModel: readPublicationSafeString(`${sourceLabel}.reviewerModel`, entry.reviewerModel),
+        };
+        const key = JSON.stringify([source.stance, source.reviewerModel]);
+        if (seen.has(key)) {
+            fail(`${sourceLabel} repeats source ${source.stance} on ${source.reviewerModel}`);
+        }
+        seen.add(key);
+        return source;
+    });
+}
+
 function readPositiveInteger(label: string, value: unknown): number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         fail(`review dossier ${label} must be a positive safe integer, found ${describeValue(value)}`);
@@ -356,6 +393,7 @@ function readEvent(
             path: readPublicationSafeString(`${label} path`, record.path),
             line: readPositiveInteger(`${label} line`, record.line),
             side: readLiteral(`${label} side`, record.side, isSide, 'LEFT or RIGHT'),
+            ...('sources' in record ? { sources: readReviewFindingSources(record.sources, `${label} sources`) } : {}),
         };
     }
     if (kind === 'review-published') {
@@ -409,6 +447,9 @@ function readEventRecord(value: unknown, label: string, withChain: boolean): Rea
     let kindKeys: readonly string[] = EVENT_KIND_KEYS[kind];
     if (kind === 'stance-completed' && 'exhaustion' in value) {
         kindKeys = [...kindKeys, 'exhaustion'];
+    }
+    if (kind === 'finding-accepted' && 'sources' in value) {
+        kindKeys = [...kindKeys, 'sources'];
     }
     assertExactKeys(value, withChain ? [...kindKeys, 'sequence', 'previousDigest', 'digest'] : kindKeys, label);
     return {
@@ -486,6 +527,21 @@ function assertTotalMaps(payload: DossierPayload): void {
         }
         if (event.kind === 'finding-discarded' && !payload.requiredStances.includes(event.stance)) {
             fail(`review dossier discards a finding under a stance its required stances do not carry: ${event.stance}`);
+        }
+        if (event.kind === 'finding-accepted' && event.sources !== undefined) {
+            for (const source of event.sources) {
+                const draw = payload.events.find(
+                    (candidate) =>
+                        candidate.kind === 'stance-completed' &&
+                        candidate.stance === source.stance &&
+                        candidate.reviewerModel === source.reviewerModel
+                );
+                if (draw?.kind !== 'stance-completed' || draw.outcome !== 'blocker-found') {
+                    fail(
+                        `review dossier finding ${event.findingId} source ${source.stance} on ${source.reviewerModel} does not name a completed findings draw`
+                    );
+                }
+            }
         }
         const own = event.kind === 'finding-accepted' ? accepted : discarded;
         const other = event.kind === 'finding-accepted' ? discarded : accepted;
