@@ -219,6 +219,7 @@ vi.mock('#/modules/Project/useCases', async () => {
         captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
         exportProjectFile: actual.exportProjectFile,
         newProject: actual.newProject,
+        pendingProjectReplacements: actual.pendingProjectReplacements,
         pickFiles: actual.pickFiles,
         saveProject: actual.saveProject,
         saveProjectBeforeReplacement: actual.saveProjectBeforeReplacement,

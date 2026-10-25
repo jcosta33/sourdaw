@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
+import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type TrackStoreState, trackStore } from '../../stores/trackStore';
 import { importMidiFile } from '../importMidiFile';
@@ -84,6 +86,8 @@ describe('importMidiFile', () => {
         vi.clearAllMocks();
         shouldInjectConcurrentTrack = true;
         trackStore.set({ tracks: [], selectedTrackId: null });
+        transportStore.set(defaultTransportState);
+        timeSignatureMapStore.set({ changes: [] });
         setMidiStoreState({
             notesByClipId: { 'existing-clip': [existingNote] },
             ccByClipId: {
@@ -512,6 +516,139 @@ describe('importMidiFile', () => {
         const clip = trackStore.value?.tracks[0]?.clips[0];
         expect(clip?.startBeat).toBe(0);
         expect(clip?.endBeat).toBe(4);
+    });
+
+    it('sizes an ordinary import to the destination meter and preserves project timing through undo and redo', async () => {
+        shouldInjectConcurrentTrack = false;
+        const existingTrack = TrackDummy.create({
+            id: 'keeper',
+            name: 'Keeper',
+            clips: [ClipDummy.create({ id: 'existing-clip', trackId: 'keeper', type: 'midi' })],
+        });
+        trackStore.set({ tracks: [existingTrack], selectedTrackId: 'keeper' });
+        transportStore.set({ ...defaultTransportState, tempo: 137, timeSignatureNumerator: 4 });
+        timeSignatureMapStore.set({ changes: [{ id: 'three-four', beat: 5, numerator: 3, denominator: 4 }] });
+        const transportBefore = transportStore.value;
+        const meterBefore = timeSignatureMapStore.value;
+        const note = { id: 'cut-bar-note', pitch: 60, startBeat: 4, duration: 0.5, velocity: 100, channel: 2 };
+        const cc = { id: 'new-bar-cc', controller: 64, value: 127, beat: 5, channel: 2 };
+        mocks.readMidiFile.mockResolvedValue({
+            declaredTrackCount: 2,
+            tracks: [
+                { name: 'Note', notes: [note], ccs: [], endTick: 2160 },
+                { name: 'Control', notes: [], ccs: [cc], endTick: 2400 },
+            ],
+            truncated: false,
+        });
+
+        await importMidiFile(new File([], 'seam.mid'), { shouldContinue: () => true });
+
+        const imported = trackStore.value?.tracks.filter((track) => track.id !== 'keeper');
+        expect(imported?.map((track) => track.clips[0]?.endBeat)).toEqual([5, 8]);
+        const noteClipId = imported?.[0]?.clips[0]?.id;
+        const ccClipId = imported?.[1]?.clips[0]?.id;
+        expect(getMidiStoreState()?.notesByClipId[noteClipId!]).toEqual([note]);
+        expect(getMidiStoreState()?.ccByClipId[ccClipId!]).toEqual([cc]);
+        expect(getMidiStoreState()?.notesByClipId['existing-clip']).toEqual([existingNote]);
+        expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
+        expect(transportStore.value).toBe(transportBefore);
+        expect(timeSignatureMapStore.value).toBe(meterBefore);
+
+        const [, undo, redo] = mocks.pushUndoEntry.mock.calls[0]!;
+        undo();
+        expect(trackStore.value?.tracks).toEqual([existingTrack]);
+        expect(getMidiStoreState()?.notesByClipId[noteClipId!]).toBeUndefined();
+        expect(getMidiStoreState()?.ccByClipId[ccClipId!]).toBeUndefined();
+        expect(getMidiStoreState()?.notesByClipId['existing-clip']).toEqual([existingNote]);
+        redo();
+        expect(
+            trackStore.value?.tracks.filter((track) => track.id !== 'keeper').map((track) => track.clips[0]?.endBeat)
+        ).toEqual([5, 8]);
+        expect(getMidiStoreState()?.notesByClipId[noteClipId!]).toEqual([note]);
+        expect(getMidiStoreState()?.ccByClipId[ccClipId!]).toEqual([cc]);
+        expect(getMidiStoreState()?.notesByClipId['existing-clip']).toEqual([existingNote]);
+        expect(trackStore.value?.tracks[0]).toEqual(existingTrack);
+        expect(transportStore.value).toBe(transportBefore);
+        expect(timeSignatureMapStore.value).toBe(meterBefore);
+    });
+
+    it.each([
+        { meter: '3/4', numerator: 3, denominator: 4 },
+        { meter: '6/8', numerator: 6, denominator: 8 },
+    ])('sizes an ordinary import in constant $meter to three-quarter-note bars', async ({ numerator, denominator }) => {
+        shouldInjectConcurrentTrack = false;
+        transportStore.set({
+            ...defaultTransportState,
+            timeSignatureNumerator: numerator,
+            timeSignatureDenominator: denominator,
+        });
+        const note = { ...importedNote, startBeat: 3.5, duration: 0.5 };
+        mocks.readMidiFile.mockResolvedValue({
+            declaredTrackCount: 2,
+            tracks: [
+                { name: 'Short', notes: [importedNote], ccs: [], endTick: 960 },
+                { name: 'Long', notes: [note], ccs: [], endTick: 1920 },
+            ],
+            truncated: false,
+        });
+
+        await importMidiFile(new File([], 'meter.mid'), { shouldContinue: () => true });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.endBeat)).toEqual([3, 6]);
+    });
+
+    it('rejects an invalid MIDI position before changing project state', async () => {
+        shouldInjectConcurrentTrack = false;
+        const trackStateBefore = trackStore.value;
+        const midiStateBefore = getMidiStoreState();
+        mocks.readMidiFile.mockResolvedValue({
+            declaredTrackCount: 1,
+            tracks: [{ name: 'Invalid', notes: [{ ...importedNote, startBeat: Number.NaN }], ccs: [], endTick: 960 }],
+            truncated: false,
+        });
+
+        await importMidiFile(new File([], 'invalid.mid'), { shouldContinue: () => true });
+
+        expect(trackStore.value).toBe(trackStateBefore);
+        expect(getMidiStoreState()).toBe(midiStateBefore);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to import "invalid.mid" - project meter or MIDI position is invalid',
+            'error'
+        );
+    });
+
+    it('refuses a corrupt project meter before importing MIDI or changing existing content', async () => {
+        shouldInjectConcurrentTrack = false;
+        const existingTrack = TrackDummy.create({
+            id: 'keeper',
+            clips: [ClipDummy.create({ id: 'existing-clip', trackId: 'keeper', type: 'midi' })],
+        });
+        trackStore.set({ tracks: [existingTrack], selectedTrackId: 'keeper' });
+        const trackBefore = trackStore.value;
+        const midiBefore = getMidiStoreState();
+        const transportBefore = transportStore.value;
+        const meterBefore = timeSignatureMapStore.value;
+        const meterRead = vi.spyOn(timeSignatureMapStore, 'value', 'get').mockReturnValue({
+            changes: [{ id: 'corrupt-meter', beat: 2, numerator: 0, denominator: 4 }],
+        });
+        try {
+            await importMidiFile(new File([], 'corrupt-meter.mid'), { shouldContinue: () => true });
+        } finally {
+            meterRead.mockRestore();
+        }
+
+        expect(trackStore.value).toBe(trackBefore);
+        expect(getMidiStoreState()).toBe(midiBefore);
+        expect(getMidiStoreState()?.notesByClipId['existing-clip']).toEqual([existingNote]);
+        expect(transportStore.value).toBe(transportBefore);
+        expect(timeSignatureMapStore.value).toBe(meterBefore);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to import "corrupt-meter.mid" - project meter or MIDI position is invalid',
+            'error'
+        );
     });
 
     it('extends the clip end across multiple bars when notes exceed one bar', async () => {

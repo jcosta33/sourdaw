@@ -18,6 +18,7 @@ import {
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import {
     projectLoadEpoch,
+    type ProjectLoadTransaction,
     runProjectLoadTransaction,
 } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from '../../projectPersistence/helpers/stopActiveAutoSave';
@@ -78,13 +79,41 @@ async function finalizeTemplatePersistence(templateId: string, replaced: Replace
     restorePersistence();
 }
 
-export async function createFromTemplate(templateId: string): Promise<boolean> {
+/** Prepare and activate the template's transition unless a newer one or the caller withdrew it. */
+async function activateTemplateTransition(
+    templateId: string,
+    transaction: ProjectLoadTransaction,
+    shouldProceed: () => boolean
+): Promise<boolean> {
+    const prepared = await transaction.prepare();
+    const activated = prepared && shouldProceed() && transaction.activate();
+    if (!activated) {
+        // Every false return here silently kicks the user back to the
+        // LaunchScreen with a generic toast — without this line the field
+        // has no way to tell WHICH rejection fired (found chasing an
+        // intermittent template-launch failure under load).
+        logger.warn(
+            `[createFromTemplate] transition rejected for "${templateId}" (prepared=${String(prepared)}, activated=${String(activated)})`
+        );
+    }
+    return activated;
+}
+
+type CreateFromTemplateOptions = {
+    /** The caller keeps this true only while the user still wants this replacement. */
+    readonly shouldProceed?: () => boolean;
+};
+
+export async function createFromTemplate(
+    templateId: string,
+    { shouldProceed = () => true }: CreateFromTemplateOptions = {}
+): Promise<boolean> {
     const template = templates.find((time) => time.id === templateId);
     if (!template) {
         return false;
     }
     if (template.executionBoundary === 'project-replacement') {
-        return await template.create();
+        return await template.create({ shouldProceed });
     }
 
     // Template creation REPLACES the open project, so it must run the same
@@ -99,22 +128,16 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
     let authorityReplaced = false;
     let replaced: ReplacedProject | null = null;
     let releaseRuntimeTransition: (() => void) | null = null;
+    // A caller's withdrawal starts no transaction, so it never supersedes this
+    // one: every check before the switch asks the caller as well.
+    const shouldContinue = (): boolean => transaction.isCurrent() && shouldProceed();
     try {
-        const prepared = await transaction.prepare();
-        const activated = prepared ? transaction.activate() : false;
-        if (!prepared || !activated) {
-            // Every false return here silently kicks the user back to the
-            // LaunchScreen with a generic toast — without this line the field
-            // has no way to tell WHICH rejection fired (found chasing an
-            // intermittent template-launch failure under load).
-            logger.warn(
-                `[createFromTemplate] transition rejected for "${templateId}" (prepared=${String(prepared)}, activated=${String(activated)})`
-            );
+        if (!(await activateTemplateTransition(templateId, transaction, shouldProceed))) {
             return false;
         }
         releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
         await stopPlayback();
-        if (!transaction.isCurrent()) {
+        if (!shouldContinue()) {
             logger.info(`[createFromTemplate] superseded during stopPlayback for "${templateId}"`);
             releaseRuntimeTransition();
             return false;
@@ -124,7 +147,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         graphWasReset = true;
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
-        if (!transaction.isCurrent()) {
+        if (!shouldContinue()) {
             restoreAudioGraph(templateId);
             restorePersistence();
             releaseRuntimeTransition();
@@ -137,7 +160,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             () => {
                 authorityReplaced = true;
             },
-            transaction.isCurrent
+            shouldContinue
         );
         if (reset.status === 'refused') {
             // Decided before the switch, so the previous project is intact and
