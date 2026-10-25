@@ -223,6 +223,50 @@ describe('perceptual goal admission', () => {
         { label: 'quoted name', prompt: 'make "Vocals" warmer', read: context },
         { label: 'selection', prompt: 'make this track warmer', read: { ...context, selectedTrackId: vocals.id } },
         {
+            label: 'matching qualified selection',
+            prompt: 'make the selected vocal track warmer',
+            read: { ...context, selectedTrackId: vocals.id },
+        },
+        { label: 'coordinated descriptors', prompt: 'make Vocals warmer and brighter', read: context },
+        { label: 'greeting-prefixed target', prompt: 'hi, make Vocals warmer', read: context },
+        { label: 'filler-prefixed target', prompt: 'please, make Vocals warmer', read: context },
+        {
+            label: 'actual courtesy-word name',
+            prompt: 'make Hi warmer',
+            read: { ...context, tracks: [{ ...vocals, name: 'Hi' }] },
+        },
+        {
+            label: 'quoted courtesy-word name',
+            prompt: 'make "Hi" warmer',
+            read: { ...context, tracks: [{ ...vocals, name: 'Hi' }] },
+        },
+        {
+            label: 'greeting-prefixed complete list',
+            prompt: 'hi, make Vocals and Keys warmer',
+            read: {
+                ...context,
+                tracks: [
+                    vocals,
+                    {
+                        ...vocals,
+                        id: 'track-keys',
+                        name: 'Keys',
+                        canonicalRole: { role: 'keys', source: 'name-tags', evidence: 'name-tokens' },
+                    },
+                ],
+            },
+        },
+        {
+            label: 'name containing and',
+            prompt: 'make Rock and Roll warmer',
+            read: { ...context, tracks: [{ ...vocals, name: 'Rock and Roll' }] },
+        },
+        {
+            label: 'quoted name containing and',
+            prompt: 'make "Rock and Roll" warmer',
+            read: { ...context, tracks: [{ ...vocals, name: 'Rock and Roll' }] },
+        },
+        {
             label: 'role',
             prompt: 'make the vocal tracks warmer',
             read: {
@@ -291,7 +335,39 @@ describe('perceptual goal admission', () => {
     it.each([
         { label: 'unstated target', prompt: 'make it warmer', read: { ...context, selectedTrackId: vocals.id } },
         { label: 'absent selection', prompt: 'make the selected track warmer', read: context },
+        {
+            label: 'absent selection with a role qualifier',
+            prompt: 'make the selected vocal track warmer',
+            read: context,
+        },
         { label: 'absent role', prompt: 'make the bass warmer', read: context },
+        {
+            label: 'actual courtesy-word target prefix',
+            prompt: 'Hi, make Vocals warmer',
+            read: { ...context, tracks: [vocals, { ...vocals, id: 'track-hi', name: 'Hi' }] },
+        },
+        {
+            label: 'quoted courtesy-word target prefix',
+            prompt: '"Hi", make Vocals warmer',
+            read: { ...context, tracks: [vocals, { ...vocals, id: 'track-hi', name: 'Hi' }] },
+        },
+        {
+            label: 'selected role mismatch',
+            prompt: 'make the selected vocal track warmer',
+            read: {
+                ...context,
+                selectedTrackId: 'track-keys',
+                tracks: [
+                    vocals,
+                    {
+                        ...vocals,
+                        id: 'track-keys',
+                        name: 'Keys',
+                        canonicalRole: { role: 'keys', source: 'name-tags', evidence: 'name-tokens' },
+                    },
+                ],
+            },
+        },
         { label: 'absent named track', prompt: 'make Clarinet warmer', read: context },
         {
             label: 'tied names',
@@ -299,6 +375,8 @@ describe('perceptual goal admission', () => {
             read: { ...context, tracks: [vocals, { ...vocals, id: 'track-guitar', name: 'Guitar' }] },
         },
         { label: 'unresolved list member', prompt: 'make Vocals and "Missing" warmer', read: context },
+        { label: 'unresolved unquoted list member', prompt: 'make Vocals and Missing warmer', read: context },
+        { label: 'unresolved first unquoted list member', prompt: 'make Missing and Vocals warmer', read: context },
         {
             label: 'duplicate names',
             prompt: 'make Vocals warmer',
