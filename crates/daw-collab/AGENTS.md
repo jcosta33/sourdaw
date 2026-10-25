@@ -17,6 +17,8 @@ Native LAN collaboration engine, mDNS peer discovery, Automerge CRDT binary sync
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package daw-collab
+pnpm cargo:test --package daw-collab <filter>
 ```

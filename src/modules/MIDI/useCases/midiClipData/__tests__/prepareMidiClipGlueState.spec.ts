@@ -601,6 +601,31 @@ describe('prepareMidiClipGlueState', () => {
                 }
             );
 
+            it('places the return of a window ending a rounding step past the next source’s head ahead of that head', () => {
+                const windowLength = 1 / 2000;
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve, 'source-b': rangeAt('b', 0, 5) },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+                const overlapping = [
+                    {
+                        clipId: 'source-a',
+                        beatOffset: -1.35,
+                        visibleStartBeat: 1.35,
+                        visibleEndBeat: 1.35 + windowLength,
+                    },
+                    { clipId: 'source-b', beatOffset: windowLength - 1e-12, visibleStartBeat: 0, visibleEndBeat: 4 },
+                ];
+
+                const plan = prepareMidiClipGlueState({ sources: overlapping, targetClipId: 'target' });
+
+                expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: 1, channel: 0 })).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: 1, rangeSemitones: 5 },
+                ]);
+            });
+
             it('returns to the state at the window start inside a window shorter than the return offset', () => {
                 const windowLength = 1 / 2000;
                 mocks.state.value = {

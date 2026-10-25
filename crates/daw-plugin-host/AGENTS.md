@@ -20,6 +20,8 @@ Native audio plugin hosting, parameter mapping, state serialization, and GUI win
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package daw-plugin-host
+pnpm cargo:test --package daw-plugin-host <filter>
 ```

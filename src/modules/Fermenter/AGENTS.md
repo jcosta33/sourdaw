@@ -24,6 +24,8 @@ Flagship multi-engine synthesizer instrument (wavetable, virtual analog, FM, Kar
 
 ## Verification
 
-- `pnpm vitest run src/modules/Fermenter`
-- `cargo test --package daw-dsp -- fermenter`
-- `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- `pnpm test:run <changed-spec>`
+- `pnpm cargo:test --package daw-dsp fermenter`
+- PR CI checks module boundaries; inspect that result after cross-module changes.
