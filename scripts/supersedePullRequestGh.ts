@@ -216,6 +216,21 @@ export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, stri
 
 type PullRequestCore = Omit<SupersededPullRequest, 'comments'>;
 
+function assertPullRequestIdentity(
+    pullRequest: { id?: unknown; number?: unknown } | undefined,
+    number: number
+): asserts pullRequest is { id: string; number: number } {
+    if (
+        typeof pullRequest?.id !== 'string' ||
+        pullRequest.id === '' ||
+        typeof pullRequest.number !== 'number' ||
+        !Number.isSafeInteger(pullRequest.number) ||
+        pullRequest.number !== number
+    ) {
+        fail(`cannot inspect PR #${number}`);
+    }
+}
+
 function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullRequestCore } {
     const query =
         'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt mergeCommit{oid} baseRef{name repository{nameWithOwner} target{oid}}}}}';
@@ -241,13 +256,11 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
     };
     const repository = response.data?.repository;
     const pullRequest = repository?.pullRequest;
+    if (repository?.nameWithOwner !== REQUIRED_REPOSITORY) {
+        fail(`cannot inspect PR #${number}`);
+    }
+    assertPullRequestIdentity(pullRequest, number);
     if (
-        repository?.nameWithOwner !== REQUIRED_REPOSITORY ||
-        typeof pullRequest?.id !== 'string' ||
-        pullRequest.id === '' ||
-        typeof pullRequest.number !== 'number' ||
-        !Number.isSafeInteger(pullRequest.number) ||
-        pullRequest.number !== number ||
         typeof pullRequest.state !== 'string' ||
         typeof pullRequest.headRefOid !== 'string' ||
         !/^[0-9a-f]{40}$/u.test(pullRequest.headRefOid) ||
