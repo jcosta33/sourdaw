@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { dbToGain, FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
@@ -58,6 +58,21 @@ const commandMocks = vi.hoisted(() => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: commandMocks.executeUserAppAction,
+}));
+
+const promptMocks = vi.hoisted(() => ({
+    promptUser: vi.fn<() => Promise<string | null>>(() => Promise.resolve(null)),
+    projectEpoch: 0,
+}));
+
+vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: promptMocks.promptUser }));
+
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureProjectTransitionAuthority: () => {
+        const epoch = promptMocks.projectEpoch;
+        return { isCurrent: () => promptMocks.projectEpoch === epoch };
+    },
 }));
 
 const undoStoreMocks = vi.hoisted(() => ({
@@ -148,6 +163,8 @@ describe('MasterChannelStrip', () => {
         storeMocks.useStore.mockReturnValue({ masterGain: 80 });
         storeMocks.transportStoreValue = { masterGain: 80 };
         commandMocks.executeUserAppAction.mockResolvedValue(undefined);
+        promptMocks.promptUser.mockResolvedValue(null);
+        promptMocks.projectEpoch = 0;
         undoStoreMocks.stackTop = undefined;
     });
 
@@ -174,10 +191,144 @@ describe('MasterChannelStrip', () => {
         expect(screen.getByRole('menu', { name: 'Master gain actions' })).toBeInTheDocument();
         fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
         await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.8, expectedPercent: 60 },
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.8, expectedPercent: 60 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
+    });
+
+    it('offers Enter Value from the master gain context menu', () => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+
+        expect(screen.getByRole('menuitem', { name: 'Enter Value' })).toBeInTheDocument();
+    });
+
+    it.each([
+        { input: '0 dB', gain: 1 },
+        { input: '-6 dB', gain: dbToGain(-6) },
+    ])('commits $input through the same settled typed action as the fader', async ({ input, gain }) => {
+        promptMocks.promptUser.mockResolvedValueOnce(input);
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain, expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
+        expect(promptMocks.promptUser).toHaveBeenCalledWith(
+            expect.objectContaining({ initialValue: `${formatGainDb(0.8)} dB` })
+        );
+    });
+
+    it('keeps typed entries separate from a just-recorded drag and from each other', async () => {
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
+            return Promise.resolve();
         });
+        promptMocks.promptUser.mockResolvedValueOnce('0 dB').mockResolvedValueOnce('-6 dB');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        fireEvent.change(fader, { target: { value: '0.6' } });
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByTestId('level-value')).toHaveTextContent('-1.9 dB'));
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2));
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 1, expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(3));
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            3,
+            {
+                type: 'setMasterGain',
+                payload: { gain: dbToGain(-6), expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
+    });
+
+    it('does not let a typed entry arm coalescing for a later keyboard nudge near startup', async () => {
+        const clock = vi.spyOn(performance, 'now').mockReturnValue(250);
+        try {
+            promptMocks.promptUser.mockResolvedValueOnce('0 dB');
+            render(<MasterChannelStrip widthClass="w-36" />);
+            const fader = screen.getByRole('slider', { name: 'Master gain' });
+            const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+            fireEvent.contextMenu(fader);
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+            await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+            await waitFor(() => expect(setMasterGain).toHaveBeenCalledTimes(2));
+
+            fireEvent.keyDown(fader, { key: 'ArrowUp' });
+            await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2));
+            expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+                2,
+                {
+                    type: 'setMasterGain',
+                    payload: { gain: 0.81, expectedPercent: 80 },
+                },
+                { onCommitted: expect.any(Function) }
+            );
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
+    it('drops an entered value queued behind a prior commit when the project changes before dispatch', async () => {
+        let releaseFirstCommit: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseFirstCommit = resolve;
+                })
+        );
+        promptMocks.promptUser.mockResolvedValueOnce('0 dB');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        fireEvent.change(fader, { target: { value: '0.62' } });
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+
+        fireEvent.contextMenu(fader);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(setMasterGain).toHaveBeenCalledWith(100, true));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        promptMocks.projectEpoch += 1;
+        storeMocks.transportStoreValue = { masterGain: 40 };
+        await act(async () => {
+            releaseFirstCommit?.();
+        });
+
+        await waitFor(() => expect(setMasterGain).toHaveBeenLastCalledWith(40, true));
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
     it.each([
@@ -190,7 +341,7 @@ describe('MasterChannelStrip', () => {
 
         fireEvent.keyDown(fader, { key, shiftKey });
 
-        expect(screen.getByRole('menu', { name: 'Master gain actions' })).toHaveFocus();
+        expect(screen.getByRole('menuitem', { name: 'Reset to Default' })).toHaveFocus();
         act(() => {
             fireEvent.keyDown(document, { key: 'Escape' });
         });
@@ -200,10 +351,13 @@ describe('MasterChannelStrip', () => {
 
         fireEvent.keyDown(fader, { key: 'ArrowUp' });
         await waitFor(() =>
-            expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-                type: 'setMasterGain',
-                payload: { gain: 0.81, expectedPercent: 80 },
-            })
+            expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+                {
+                    type: 'setMasterGain',
+                    payload: { gain: 0.81, expectedPercent: 80 },
+                },
+                { onCommitted: expect.any(Function) }
+            )
         );
     });
 
@@ -222,17 +376,22 @@ describe('MasterChannelStrip', () => {
             fader.focus();
 
             fireEvent.keyDown(fader, { key: openKey, shiftKey });
-            const menu = screen.getByRole('menu', { name: 'Master gain actions' });
-            expect(menu).toHaveFocus();
-            expect(screen.getByRole('menuitem', { name: 'Reset to Default' }).tagName).toBe('BUTTON');
+            const reset = screen.getByRole('menuitem', { name: 'Reset to Default' });
+            expect(reset).toHaveFocus();
+            expect(reset.tagName).toBe('BUTTON');
 
-            fireEvent.keyDown(menu, { key: activateKey });
+            fireEvent.keyDown(reset, { key: activateKey });
+            // jsdom does not synthesize the browser's native button click.
+            fireEvent.click(reset);
 
             await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
-            expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-                type: 'setMasterGain',
-                payload: { gain: 0.8, expectedPercent: 60 },
-            });
+            expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+                {
+                    type: 'setMasterGain',
+                    payload: { gain: 0.8, expectedPercent: 60 },
+                },
+                { onCommitted: expect.any(Function) }
+            );
             expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
             expect(fader).toHaveFocus();
         }
@@ -254,10 +413,41 @@ describe('MasterChannelStrip', () => {
         });
 
         await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.8, expectedPercent: 60 },
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.8, expectedPercent: 60 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
+        expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
+        expect(fader).toHaveFocus();
+    });
+
+    it.each(['Enter', ' '])('keeps native Enter Value button activation separate from Reset for %s', async (key) => {
+        promptMocks.promptUser.mockResolvedValueOnce('-6 dB');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        fader.focus();
+        fireEvent.keyDown(fader, { key: 'ContextMenu' });
+
+        const enterButton = screen.getByRole('menuitem', { name: 'Enter Value' });
+        fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Reset to Default' }), { key: 'ArrowDown' });
+        expect(enterButton).toHaveFocus();
+        act(() => {
+            fireEvent.keyDown(enterButton, { key });
+            enterButton.click();
         });
+
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(promptMocks.promptUser).toHaveBeenCalledOnce();
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: dbToGain(-6), expectedPercent: 80 },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), coalesceWithPrevious: false })
+        );
         expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
         expect(fader).toHaveFocus();
     });
@@ -274,10 +464,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.5, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.5, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
 
         // The settle dispatches through the app action rather than writing
         // the use case with the raw target value (50) directly. `setMasterGain`
@@ -384,10 +577,13 @@ describe('MasterChannelStrip', () => {
             fireEvent.change(fader, { target: { value: '0.6' } });
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.6, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.6, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
 
         // The settle drives the engine to its own value immediately, ahead
         // of the still-pending dispatch — a persistence barrier must not be
@@ -497,10 +693,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.3, expectedPercent: 65 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.3, expectedPercent: 65 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     it('lets the newer of two pending settles own the display and engine when the older lands late', async () => {
@@ -573,10 +772,13 @@ describe('MasterChannelStrip', () => {
         expect(vi.mocked(setMasterGain).mock.calls.length).toBe(engineCallsBeforeResolveA + 1);
         expect(setMasterGain).toHaveBeenLastCalledWith(45, true);
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2);
-        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.45, expectedPercent: 55 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.45, expectedPercent: 55 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
 
         // B lands: the store settles at 45 (what B's commit landed). B
         // still owns the token, so this restores the engine and display
@@ -697,10 +899,13 @@ describe('MasterChannelStrip', () => {
         });
 
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2);
-        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.45, expectedPercent: 55 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.45, expectedPercent: 55 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     it('restores the engine from project truth once a settled dispatch resolves a conflict `executeUserAppAction` swallowed', async () => {
@@ -734,10 +939,13 @@ describe('MasterChannelStrip', () => {
         // captured back when the gesture opened — so it names 60, the value
         // the store already holds by the time this settle's commit actually
         // reads it, not the 80 the store stood at when the drag began.
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.75, expectedPercent: 60 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.75, expectedPercent: 60 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
         // The engine's last word has to be the diverged store value (60), not
         // the released gesture sample (70) the transient half last wrote —
         // removing the restore call leaves the engine's last call at (70, true).
@@ -812,10 +1020,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.6, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.6, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
 
         await act(async () => {
             fireEvent.change(fader, { target: { value: '1.0' } });
@@ -827,7 +1038,7 @@ describe('MasterChannelStrip', () => {
                 type: 'setMasterGain',
                 payload: { gain: 1, expectedPercent: 80 },
             },
-            { coalesceWithPrevious: true }
+            { coalesceWithPrevious: true, onCommitted: expect.any(Function) }
         );
     });
 
@@ -850,20 +1061,28 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'setMasterGain',
-            payload: { gain: 0.6, expectedPercent: 50 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.6, expectedPercent: 50 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
 
         fireEvent.contextMenu(fader);
         await act(async () => {
             fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'setMasterGain',
-            payload: { gain: 0.8, expectedPercent: 60 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.8, expectedPercent: 60 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     it('keeps menu Reset separate when the prior drag records after Reset queues', async () => {
@@ -898,10 +1117,14 @@ describe('MasterChannelStrip', () => {
             releaseDragCommit?.();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'setMasterGain',
-            payload: { gain: 0.8, expectedPercent: 60 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.8, expectedPercent: 60 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     it('arms the double-click reset to coalesce when the groove tap settle recorded an undo entry', async () => {
@@ -952,7 +1175,7 @@ describe('MasterChannelStrip', () => {
 
         expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
             { type: 'setMasterGain', payload: { gain: 1, expectedPercent: 80 } },
-            { coalesceWithPrevious: true }
+            { coalesceWithPrevious: true, onCommitted: expect.any(Function) }
         );
     });
 
@@ -999,10 +1222,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 1, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 1, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     it('does not arm coalescing when a foreign setMasterGain records inside the held-open settle window', async () => {
@@ -1060,10 +1286,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 1, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 1, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     /**
@@ -1091,10 +1320,14 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'setMasterGain',
-            payload: { gain: 0.5, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.5, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
 
         // The second nudge, well inside the 500 ms window: the recording
         // first nudge must not have armed the window, so this one joins
@@ -1104,9 +1337,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
-        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'setMasterGain',
-            payload: { gain: 0.6, expectedPercent: 80 },
-        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'setMasterGain',
+                payload: { gain: 0.6, expectedPercent: 80 },
+            },
+            { onCommitted: expect.any(Function) }
+        );
     });
 });
