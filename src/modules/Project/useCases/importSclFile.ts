@@ -6,9 +6,13 @@ import { projectStore } from '../stores/projectStore';
 import { pickFiles } from './fileDialog';
 import { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 
+let latestImportRequest = 0;
+
 export async function importSclFile(): Promise<void> {
+    const request = ++latestImportRequest;
     const authority = captureProjectTransitionAuthority();
-    if (!authority.isCurrent()) {
+    const isCurrent = () => request === latestImportRequest && authority.isCurrent();
+    if (!isCurrent()) {
         return;
     }
 
@@ -17,7 +21,7 @@ export async function importSclFile(): Promise<void> {
             multiple: false,
             filters: [{ name: 'Scala', extensions: ['scl'] }],
         });
-        if (!authority.isCurrent() || !paths || paths.length === 0) {
+        if (!isCurrent() || !paths || paths.length === 0) {
             return;
         }
 
@@ -27,22 +31,24 @@ export async function importSclFile(): Promise<void> {
         }
 
         const content = await firstFile.text();
-        if (!authority.isCurrent()) {
+        if (!isCurrent()) {
             return;
         }
 
         const parsed = await parseScl(content);
-        if (!authority.isCurrent()) {
+        if (!isCurrent()) {
             return;
         }
         if (parsed.status === 'invalid') {
-            notifyUser(`Failed to import Scala file at line ${parsed.error.line}: ${parsed.error.reason}`, 'error');
+            if (isCurrent()) {
+                notifyUser(`Failed to import Scala file at line ${parsed.error.line}: ${parsed.error.reason}`, 'error');
+            }
             return;
         }
         const result = parsed.scale;
 
         const project = projectStore.value;
-        if (!project || !authority.isCurrent()) {
+        if (!project || !isCurrent()) {
             return;
         }
 
@@ -53,7 +59,7 @@ export async function importSclFile(): Promise<void> {
                 frequencies: result.frequencies,
             },
         });
-        if (!authority.isCurrent()) {
+        if (!isCurrent()) {
             return;
         }
 
@@ -66,7 +72,7 @@ export async function importSclFile(): Promise<void> {
             'success'
         );
     } catch (error) {
-        if (!authority.isCurrent()) {
+        if (!isCurrent()) {
             return;
         }
         notifyUser('Failed to import Scala file', 'error');

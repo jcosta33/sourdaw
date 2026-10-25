@@ -145,6 +145,55 @@ describe('importSclFile browser', () => {
         expect(mocks.registerTuningTable).not.toHaveBeenCalled();
     });
 
+    it('keeps the newest browser import when an older read finishes later', async () => {
+        const firstReference = references.parsed.find((entry) => entry.id === 'mixed')!;
+        const secondReference = references.parsed.find((entry) => entry.id === 'ratios-and-integer-period')!;
+        const createPendingFile = (content: string, name: string) => {
+            const file = new File([content], name);
+            const entered = Promise.withResolvers<void>();
+            const permission = Promise.withResolvers<void>();
+            vi.spyOn(file, 'text').mockImplementation(async () => {
+                entered.resolve();
+                await permission.promise;
+                return content;
+            });
+            return { file, entered, permission };
+        };
+        const first = createPendingFile(firstReference.content, 'first.scl');
+        const second = createPendingFile(secondReference.content, 'second.scl');
+        const files = [first.file, second.file];
+        const picker = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (
+            this: HTMLInputElement
+        ) {
+            expect(this.type).toBe('file');
+            expect(this.accept).toBe('.scl');
+            const file = files.shift();
+            Object.defineProperty(this, 'files', { configurable: true, value: file ? [file] : [] });
+            this.dispatchEvent(new Event(file ? 'change' : 'cancel'));
+        });
+
+        const firstImport = importSclFile();
+        await first.entered.promise;
+        const secondImport = importSclFile();
+        await second.entered.promise;
+
+        second.permission.resolve();
+        await secondImport;
+        first.permission.resolve();
+        await firstImport;
+
+        expect(picker).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenCalledExactlyOnceWith({
+            ...createProjectState(),
+            tuning: { name: secondReference.name, frequencies: expect.any(Array) },
+        });
+        expectFrequencies(mocks.projectStore.value!.tuning.frequencies, secondReference.frequencies);
+        expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Imported scale "Unnamed" — stored on the project; no instrument consumes project tuning yet',
+            'success'
+        );
+    });
+
     it('reports the native physical-line diagnostic without changing tuning', async () => {
         const prior = structuredClone(mocks.projectStore.value);
         selectBrowserFile(new File(['! demo.scl\nDemo\n! count comment\n1\n3/0\n'], 'invalid.scl'));
